@@ -106,22 +106,106 @@ describe("the ordering is declared, not polled", () => {
   });
 });
 
-describe("what arms a deploy", () => {
-  /**
-   * The `changed` job's `diff` step, which is the whole decision.
-   *
-   * The STEP, not the job — the header comment above it argues at length about
-   * the source-path arm and names the very globs the assertion below forbids,
-   * which is the comment-versus-condition problem this file already works
-   * around for the deleted waiters. Every caller therefore asserts something
-   * PRESENT as well, since an empty slice satisfies a `not.toContain` for free.
-   */
-  function diffStep(): string {
-    const source = workflow ?? "";
-    const diff = source.slice(source.indexOf("      - id: diff"));
-    return diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
-  }
+/**
+ * The `if:` one job declares, read the same way and for the same reason as
+ * `needsOf` — the whole gate below is one such line.
+ */
+function ifOf(source: string, job: string): string {
+  const block = source.slice(source.indexOf(`\n  ${job}:\n`));
+  const match = /\n {4}if: (.+)\n/.exec(block.slice(0, block.indexOf("\n    steps:")));
+  return match?.[1] ?? "";
+}
 
+/**
+ * The `changed` job's `diff` step, which is the whole decision.
+ *
+ * The STEP, not the job — the header comment above it argues at length about
+ * the source-path arm and names the very globs the assertion below forbids,
+ * which is the comment-versus-condition problem this file already works
+ * around for the deleted waiters. Every caller therefore asserts something
+ * PRESENT as well, since an empty slice satisfies a `not.toContain` for free.
+ */
+function diffStep(): string {
+  const source = workflow ?? "";
+  const diff = source.slice(source.indexOf("      - id: diff"));
+  return diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
+}
+
+describe("a merge to main ships nothing", () => {
+  /**
+   * The whole point of the gate. `changeset pack` was already a no-op on an
+   * ordinary push — every version it would pack is on the registry — which is
+   * what made the line LOOK release-gated when it was not: the guest image job
+   * behind it ran on every merge with no `paths` filter and pushed a fresh
+   * content-addressed tag to a public registry that no deploy would ever pin.
+   *
+   * Asserted on the `release` job because it is the one edge that puts every
+   * publishing job behind the version bump: `guest-image` needs `release`, and
+   * `deploy` needs both.
+   */
+  test("the npm release runs only when a version moved", () => {
+    const source = workflow ?? "";
+    expect(needsOf(source, "release")).toContain("changed");
+    expect(ifOf(source, "release")).toBe("needs.changed.outputs.release == 'true'");
+  });
+
+  /**
+   * The output the line above reads. A gate whose producer stopped emitting it
+   * is an empty string, which `== 'true'` answers false to — so the failure
+   * mode of a half-edit here is a workflow that never ships anything again,
+   * and the failure mode of deleting the consumer is one that ships on every
+   * merge. Both are one line.
+   */
+  test("the gate is a version line, and it defaults to not shipping", () => {
+    const step = diffStep();
+    // A regex, not a `toContain`: a `${{ … }}` inside a plain string reads to
+    // Biome as a template placeholder — the same reason the image spec below
+    // asserts on the expression body.
+    expect(workflow ?? "").toMatch(/\n {6}release: \$\{\{ steps\.diff\.outputs\.release \}\}\n/);
+    expect(step).toContain("release=false");
+    // The bump is read off the workspace manifests with a SHELL glob: a git
+    // pathspec `*` crosses `/`, so it would also answer for the scaffold and
+    // toolchain manifests, which a release does not bump.
+    expect(step).toContain("for manifest in packages/*/package.json; do");
+  });
+
+  /**
+   * `supabase db push` applies whatever is PENDING, so the release is where a
+   * migration merged earlier — without a version bump of its own — is applied,
+   * ahead of the code that assumes it. Before the gate this job armed `migrate`
+   * off a `HEAD^..HEAD` diff over `supabase/migrations/**`, which at a release
+   * commit finds nothing: the migration is in an earlier commit. Counted like
+   * the deploy pairing below, because the failure is an ABSENT line.
+   */
+  test("the branch that arms a release also arms the migration", () => {
+    const step = diffStep();
+    // The BRANCH, not a count over the whole step: the deploy branch arms a
+    // migration too, so a total satisfies itself and this mutation passes.
+    const loop = step.slice(step.indexOf("for manifest in"), step.indexOf("\n          done"));
+    expect(loop, "the version scan no longer slices out — the shape of this step moved").toContain(
+      "release=true",
+    );
+    expect(
+      loop,
+      "a release arms no migration, so it can deploy over a schema nothing applied",
+    ).toContain("migrate=true");
+  });
+
+  /**
+   * The escape hatch, and the rollback path with it: a dispatch names a ref to
+   * ship and no version line has to have moved for it. A gate that forgot this
+   * branch would leave `release` empty on a dispatch and skip the whole line,
+   * which is a rollback that silently does nothing.
+   */
+  test("a dispatch ships without a version bump", () => {
+    const step = diffStep();
+    const dispatch = step.slice(0, step.indexOf("\n          fi"));
+    expect(dispatch).toContain('github.event_name }}" = "workflow_dispatch"');
+    expect(dispatch).toContain('echo "release=true"');
+  });
+});
+
+describe("what arms a deploy", () => {
   /**
    * A version bump is what ships the platform, and BOTH server packages count.
    * There is one Modal app serving both surfaces from the aai-studio-server

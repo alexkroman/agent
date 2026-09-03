@@ -1,6 +1,13 @@
-# Everything that ships when a commit lands on `main`: publish to npm, publish
+# Everything that ships when a RELEASE lands on `main`: publish to npm, publish
 # the guest image, migrate the schema, deploy the platform — in that order,
 # because each stage needs the one before it.
+#
+# A release is the merged "Version Packages" PR, i.e. a commit that moved a
+# version line. An ordinary merge to main opens or updates that PR and ships
+# NOTHING — no npm publish, no guest image, no migration, no rollout. The gate
+# is job 1 (`changed`) and its comment carries the argument; every other job is
+# behind it. `workflow_dispatch` is the escape hatch for shipping, or rolling
+# back to, a commit that is not a release.
 #
 # ## Why this is ONE workflow
 #
@@ -43,11 +50,11 @@
 # from this checkout's, and verifies each tarball against the integrity the
 # publish plan recorded.
 #
-# On an ordinary push (no version bump, nothing to pack) the image installs
-# `name@version` from npm exactly as before — those versions were published on
-# some earlier release, so nothing is being waited for there either.
+# On a dispatch that packs nothing the image installs `name@version` from npm
+# exactly as before — those versions were published on some earlier release, so
+# nothing is being waited for there either.
 #
-# ## Pack and publish run UNCONDITIONALLY
+# ## Pack and publish run UNCONDITIONALLY *within* a release
 #
 # `changesets/action` only invokes its `publish:` when there are NO pending
 # changesets; with any pending it takes the version path instead. So a version
@@ -55,12 +62,16 @@
 # published by the normal flow — which is what happened on 6.1.0, and it left
 # every guest image build 404ing on a version that did not exist.
 #
-# The pack and publish steps below sit OUTSIDE the action and always run.
-# `changeset pack` computes its plan against the registry, so with everything
-# published it packs nothing and both steps are quiet no-ops; when a version is
-# missing it packs and publishes it, whatever branch the action took. That also
-# restores the property the old `workflow_dispatch: publish_only` input existed
-# to provide by hand, so that input is gone.
+# The pack and publish steps below sit OUTSIDE the action, so they run whatever
+# branch it took. `changeset pack` computes its plan against the registry: with
+# everything published it packs nothing and both steps are quiet no-ops, and
+# when a version is missing it packs and publishes it. That also restores the
+# property the old `workflow_dispatch: publish_only` input existed to provide by
+# hand, so that input is gone.
+#
+# Unconditional means unconditional in the RELEASE, not on every push — the job
+# holding them is gated (see job 1). The 6.1.0 case is unaffected, since the
+# push that fails to publish there is itself a version bump.
 #
 # ## npm publishes by TRUSTED PUBLISHING, which pins THIS FILE'S NAME
 #
@@ -214,8 +225,149 @@ jobs:
           # in that workflow's `push` list.
           LEFTHOOK: "0"
 
-  # ── 1. npm ──────────────────────────────────────────────────────────────────
+  # ── 1. does this commit ship anything? ──────────────────────────────────────
+  #
+  # ## A RELEASE ships. A MERGE does not.
+  #
+  # Every job below this one is gated on `release`, which is true only when this
+  # commit MOVED A VERSION — the merged "Version Packages" PR — or when a human
+  # dispatched this workflow. An ordinary merge to main runs the version-pr job,
+  # updating the PR that will ship it, and stops there.
+  #
+  # That used to be half true and the half that was not cost a publish per
+  # merge. `changeset pack` really is a no-op on an ordinary push (every version
+  # it would pack is already on the registry, so `packed=false` and nothing is
+  # uploaded), which is what made the shipping line look release-gated when it
+  # was not. The guest image was NOT: it ran on every push with no `paths`
+  # filter and pushed a content-addressed tag to a PUBLIC registry that no
+  # deploy would ever ask for, because the tag a deploy pins is the one built
+  # from the release commit it deploys. Merging is now a git operation with no
+  # external side effect, and the image is built by the release that ships it —
+  # from the same tree, which is what makes the tag the deploy pins the tag the
+  # publisher pushed.
+  #
+  # The gate is the version LINE rather than the branch name or the commit
+  # subject: `changeset version` is the only thing on main that moves one, it is
+  # the same predicate `bumped()` below already used to arm the deploy, and it
+  # survives a squash, a rebase and a hand-run `pnpm version`. A dispatch needs
+  # no bump at all — that is the rollback and out-of-band path, and it is one a
+  # human chose.
+  #
+  # ## Migrations are applied by the RELEASE that ships them
+  #
+  # `supabase db push` applies whatever is PENDING, so a release arms `migrate`
+  # on its own, even when no server package bumped: a schema change merged
+  # earlier without a version bump is applied by the next release, ahead of any
+  # code that assumes it. Before the gate this job read `HEAD^..HEAD` for
+  # migration files, which was the right question for a merge that ships and the
+  # wrong one for a release — the migration is in an EARLIER commit, so a
+  # release would have deployed over an unapplied schema. A schema-only merge
+  # therefore touches production at release time and not before; to apply one
+  # sooner, dispatch with `deploy: true`.
+  #
+  # ## What arms a DEPLOY, within a release
+  #
+  # There is ONE Modal app (`aai-server-web`, from packages/aai-server/
+  # modal_deploy.py) and it serves both surfaces from the aai-studio-server entry
+  # — see "One app, both surfaces" in that file. So a bump to EITHER package is a
+  # reason to deploy: aai-server is the platform core the app is built from, and
+  # aai-studio-server is the entry it actually runs. Gating on aai-server alone
+  # would silently strand every studio-only release.
+  #
+  # An arm on `git diff --name-only … packages/aai-server/**
+  # packages/aai-studio-server/**` was added (#1343) and is REVERTED. It was
+  # correct about the symptom — #1341 rewrote most of the platform, moved no
+  # version line, and reached production only because a Version Packages commit
+  # happened to land behind it — and wrong about the remedy: it made a
+  # production rollout the consequence of a MERGE rather than of a RELEASE.
+  # Every server PR then deployed on its own, several times a day, each one a
+  # rolling Modal rollout plus a migration job, with no release to name in an
+  # incident and nothing batching them.
+  #
+  # So a version bump is the gate, and it is a DECISION rather than a proxy:
+  # shipping the platform is something a release does. A server-only change
+  # reaches production the same way every other change does — a changeset naming
+  # `aai-server` or `aai-studio-server` (both are `private`, and
+  # `privatePackages: { version: true }` means a changeset may name them and the
+  # version really moves), then the Version Packages PR. `guard-invariants`
+  # rule 20's `SHIPS_VIA` table is built on exactly this model, which is why
+  # `aai-studio-client` and `aai-guest` changes are already required to name a
+  # carrier: neither is covered by a server-source diff either.
+  #
+  # To ship a merged server change WITHOUT waiting for a release, dispatch this
+  # workflow with `deploy: true`. That is the escape hatch, and it is one a
+  # human chose.
+  changed:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.diff.outputs.release }}
+      deploy: ${{ steps.diff.outputs.deploy }}
+      migrate: ${{ steps.diff.outputs.migrate }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job wants precisely `HEAD^..HEAD`; every other checkout in the
+          # repo is depth 0.
+          fetch-depth: 2
+          ref: ${{ inputs.ref || github.sha }}
+      - id: diff
+        name: Detect changeset version bumps
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # No version line has to have moved: a dispatch is a human naming a
+            # ref to ship, which is what makes it a rollback path.
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "deploy=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
+            # A manual deploy still needs its migrations applied first.
+            echo "migrate=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bumped() {
+            # True when the package's version field changed in this push —
+            # the changesets release commit is the only thing that moves it.
+            git diff HEAD^ HEAD -- "packages/$1/package.json" | grep -q '^+.*"version":'
+          }
+          release=false
+          deploy=false
+          migrate=false
+          # A SHELL glob, which stops at one level, rather than a git pathspec:
+          # a pathspec `*` crosses `/` (AGENTS.md, "A pathspec is fnmatch
+          # WITHOUT FNM_PATHNAME"), so `packages/*/package.json` as a pathspec
+          # also matches `packages/aai-templates/scaffold/package.json` and
+          # `packages/aai-guest/toolchain/package.json`. Neither carries a
+          # `version` field today, so that is a latent false positive rather
+          # than a live one — but a workspace package is what a release bumps,
+          # and one level is what says so.
+          for manifest in packages/*/package.json; do
+            package="${manifest#packages/}"
+            if bumped "${package%/package.json}"; then
+              release=true
+              # `supabase db push` applies what is PENDING, so this is where a
+              # migration merged since the last release gets applied.
+              migrate=true
+              break
+            fi
+          done
+          if bumped aai-server || bumped aai-studio-server; then
+            deploy=true
+            # Deploying implies migrating: the code being shipped is entitled to
+            # assume the schema it was written against. This is why the deploy job
+            # can simply `needs: migrate` — when it runs at all, migrate ran too.
+            migrate=true
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "migrate=$migrate" >> "$GITHUB_OUTPUT"
+
+  # ── 2. npm ──────────────────────────────────────────────────────────────────
   release:
+    # The gate. Nothing here — nor in `guest-image`, `migrate` or `deploy`
+    # behind it — runs on an ordinary merge to main; see "A RELEASE ships. A
+    # MERGE does not." above. `changeset pack` would pack nothing on such a
+    # push anyway, but the image build behind this job would not, and a skipped
+    # job is a fact a reader of the run list can see.
+    needs: changed
+    if: needs.changed.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       # `contents: write` for the tag push, `id-token: write` for npm
@@ -333,18 +485,25 @@ jobs:
         if: steps.pack.outputs.packed == 'true'
         run: git push --tags
 
-  # ── 2. the guest sandbox image ──────────────────────────────────────────────
+  # ── 3. the guest sandbox image ──────────────────────────────────────────────
   #
-  # Runs on EVERY push, with no `paths` filter, and that is deliberate: the tag
-  # hashes the harness BUNDLE, and the harness bundles the SDK, the host runtime,
-  # the UI and the CLI — so almost any change to packages/ produces a new tag. A
-  # filter that tried to name them would silently stop publishing the moment it
-  # went stale, and the symptom is a tag the server asks for and no registry has.
+  # Runs on every RELEASE, with no `paths` filter, and the absence of the filter
+  # is deliberate: the tag hashes the harness BUNDLE, and the harness bundles the
+  # SDK, the host runtime, the UI and the CLI — so almost any change to packages/
+  # produces a new tag. A filter that tried to name them would silently stop
+  # publishing the moment it went stale, and the symptom is a tag the server asks
+  # for and no registry has.
   #
-  # A run that changes nothing is cheap rather than skipped: the tag is
-  # content-addressed, so an unchanged tree resolves to a tag that already exists
-  # and every layer is a cache hit. That is also what makes a rollback dispatch
-  # to an older `ref` safe here — it rebuilds the identical tag.
+  # It used to run on every PUSH, on the argument that a run changing nothing is
+  # cheap: the tag is content-addressed, so an unchanged tree is a tag that
+  # already exists and every layer a cache hit. True about cost and wrong about
+  # what it was doing — the tree between two releases is NOT unchanged, so each
+  # merge published a fresh public tag to GHCR that no deploy would ever pin.
+  # `needs: release` is what makes the image a release artifact rather than a
+  # side effect of merging.
+  #
+  # The content-addressed tag is still what makes a rollback dispatch to an older
+  # `ref` safe here — it rebuilds the identical tag.
   guest-image:
     needs: release
     runs-on: ubuntu-latest
@@ -439,89 +598,6 @@ jobs:
             echo "GUEST_IMAGE_REGISTRY=ghcr.io/${{ github.repository_owner }} pnpm dev:aai-server"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
-  # ── 3. does this push ship anything? ────────────────────────────────────────
-  #
-  # Versions only move via changesets (the merged "Version Packages" PR), so a
-  # docs-only merge ships nothing. workflow_dispatch is the manual escape hatch
-  # to ship outside a changeset release — and, with `ref`, to ROLL BACK to a
-  # known-good commit without a revert-and-release cycle.
-  #
-  # There is ONE Modal app (`aai-server-web`, from packages/aai-server/
-  # modal_deploy.py) and it serves both surfaces from the aai-studio-server entry
-  # — see "One app, both surfaces" in that file. So a bump to EITHER package is a
-  # reason to deploy: aai-server is the platform core the app is built from, and
-  # aai-studio-server is the entry it actually runs. Gating on aai-server alone
-  # would silently strand every studio-only release.
-  #
-  # ## A VERSION BUMP is what arms a deploy — not a source change
-  #
-  # An arm on `git diff --name-only … packages/aai-server/**
-  # packages/aai-studio-server/**` was added (#1343) and is REVERTED. It was
-  # correct about the symptom — #1341 rewrote most of the platform, moved no
-  # version line, and reached production only because a Version Packages commit
-  # happened to land behind it — and wrong about the remedy: it made a
-  # production rollout the consequence of a MERGE rather than of a RELEASE.
-  # Every server PR then deployed on its own, several times a day, each one a
-  # rolling Modal rollout plus a migration job, with no release to name in an
-  # incident and nothing batching them.
-  #
-  # So a version bump is the gate, and it is a DECISION rather than a proxy:
-  # shipping the platform is something a release does. A server-only change
-  # reaches production the same way every other change does — a changeset naming
-  # `aai-server` or `aai-studio-server` (both are `private`, and
-  # `privatePackages: { version: true }` means a changeset may name them and the
-  # version really moves), then the Version Packages PR. `guard-invariants`
-  # rule 20's `SHIPS_VIA` table is built on exactly this model, which is why
-  # `aai-studio-client` and `aai-guest` changes are already required to name a
-  # carrier: neither is covered by a server-source diff either.
-  #
-  # To ship a merged server change WITHOUT waiting for a release, dispatch this
-  # workflow with `deploy: true`. That is the escape hatch, and it is one a
-  # human chose.
-  changed:
-    runs-on: ubuntu-latest
-    outputs:
-      deploy: ${{ steps.diff.outputs.deploy }}
-      migrate: ${{ steps.diff.outputs.migrate }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # This job wants precisely `HEAD^..HEAD`; every other checkout in the
-          # repo is depth 0.
-          fetch-depth: 2
-          ref: ${{ inputs.ref || github.sha }}
-      - id: diff
-        name: Detect changeset version bumps and schema changes
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "deploy=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
-            # A manual deploy still needs its migrations applied first.
-            echo "migrate=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          bumped() {
-            # True when the package's version field changed in this push —
-            # the changesets release commit is the only thing that moves it.
-            git diff HEAD^ HEAD -- "packages/$1/package.json" | grep -q '^+.*"version":'
-          }
-          deploy=false
-          migrate=false
-          if bumped aai-server || bumped aai-studio-server; then
-            deploy=true
-            # Deploying implies migrating: the code being shipped is entitled to
-            # assume the schema it was written against. This is why the deploy job
-            # can simply `needs: migrate` — when it runs at all, migrate ran too.
-            migrate=true
-          fi
-          # ...and a migration merged WITHOUT a version bump still has to be
-          # applied. Otherwise a schema-only PR lands, deploys nothing, migrates
-          # nothing, and the next unrelated release is what discovers it.
-          if git diff --name-only HEAD^ HEAD -- 'supabase/migrations/**' | grep -q .; then
-            migrate=true
-          fi
-          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
-          echo "migrate=$migrate" >> "$GITHUB_OUTPUT"
 
   # ── 4. the schema ───────────────────────────────────────────────────────────
   #
