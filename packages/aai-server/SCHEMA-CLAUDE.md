@@ -68,12 +68,17 @@ Three things, and none of them is "the projection is more work":
   write path is behind, and a console listing runs does not care. A read that
   has to be transactional with the status write does, and that is the one
   argument for putting the column on the row itself. Name the caller.
-- **The filter is already indexed.** `workflow_runs_stalled_idx` and
-  `workflow_runs_terminal_idx` between them cover both halves of `status`
-  ordered by `created_at`. A listing that wants exactly "live runs, newest
-  first" is a query the sweeps have already paid for, and re-serving it from a
-  projection would be a second copy for nothing. This is a narrow exemption for
-  a predicate that already exists, not a licence to add a fourth index.
+- **The filter is already indexed — and check the LEADING COLUMN before
+  believing it.** `workflow_runs_stalled_idx` and `workflow_runs_terminal_idx`
+  between them cover both halves of `status` ordered by `created_at`, so "live
+  runs, newest first" looks like a query the sweeps have already paid for. They
+  have not paid for a CALLER's version of it: both are keyed `(created_at)` with
+  no `slug`, because a sweep is deliberately cross-tenant. Every listing a
+  caller wants is scoped to one agent, and against a `(created_at)` index that
+  is a scan of every tenant's rows with a filter on top — which degrades as the
+  platform grows, in exactly the way an index that "already exists" is assumed
+  not to. So this exemption is real but nearly empty: it covers a cross-tenant
+  read, which is what the sweeps are, and nothing a tenant asks for.
 - **Steps stop being append-only.** `workflow_steps` is at one index entry per
   insert BECAUSE nothing reads it by anything but the primary key. If a run's
   steps become a real HTTP read (`GET /runs/:id/steps`, which does not exist
