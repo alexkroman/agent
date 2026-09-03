@@ -29,7 +29,7 @@
     "ai": "catalog:",
     "diff": "^9.0.0",
     "p-timeout": "catalog:",
-    "picomatch": "^4.0.4",
+    "picomatch": "^4.0.7",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwindcss": "catalog:",

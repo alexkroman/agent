@@ -16,7 +16,7 @@
     "@alexkroman1/aai-runtime": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@types/react": "catalog:",
-    "oxc-parser": "^0.144.0",
+    "oxc-parser": "^0.148.0",
     "vite": "catalog:",
     "vitest": "catalog:",
     "xstate": "catalog:",

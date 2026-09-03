@@ -1338,7 +1338,7 @@ function TranscribeForm() {
 #### Call Signature
 
 ```ts
-function useAgentState<S>(): S | null;
+function useAgentState<S = any>(): S | null;
 ```
 
 The agent's projected session state, or `null` before the first push.
@@ -1429,7 +1429,7 @@ The same `slot.projection(view)` the agent declares as
 #### Call Signature
 
 ```ts
-function useAgentState<S>(fallback: S): S;
+function useAgentState<S = any>(fallback: S): S;
 ```
 
 The agent's projected session state, falling back to `fallback` before the
@@ -1578,7 +1578,7 @@ function Playback() {
 ### useEvent()
 
 ```ts
-function useEvent<T>(event: string, callback: (data: T) => void): void;
+function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
 ```
 
 Subscribe to custom events emitted by agent tools via
@@ -1881,7 +1881,7 @@ function Activity() {
 #### Call Signature
 
 ```ts
-function useToolResult<R>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
+function useToolResult<R = any>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
 ```
 
 Fire a callback when ONE named tool settles, with its parsed JSON result.
@@ -1939,7 +1939,7 @@ function QuoteCard() {
 #### Call Signature
 
 ```ts
-function useToolResult<R>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
+function useToolResult<R = any>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
 ```
 
 Fire a callback when ANY tool call settles — the tool's name is the
@@ -2019,7 +2019,7 @@ function LiveTranscript() {
 ### useWorkflowProgress()
 
 ```ts
-function useWorkflowProgress<T>(runId: string | undefined, opts?: {
+function useWorkflowProgress<T = string>(runId: string | undefined, opts?: {
   api?: WorkflowApi;
   intervalMs?: number;
   namespace?: string;
@@ -2094,7 +2094,7 @@ function Progress({ runId }: { runId?: string }) {
 ### useWorkflowRun()
 
 ```ts
-function useWorkflowRun<R>(runId: string | undefined, opts?: {
+function useWorkflowRun<R = unknown>(runId: string | undefined, opts?: {
   api?: WorkflowApi;
   intervalMs?: number;
 }): UseWorkflowRunResult<R>;
@@ -2195,7 +2195,7 @@ function RunPanel({ runId }: { runId: string | undefined }) {
 ### useWorkflowRuns()
 
 ```ts
-function useWorkflowRuns<R>(workflow: string | undefined, opts?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+function useWorkflowRuns<R = unknown>(workflow: string | undefined, opts?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 ```
 
 Read a workflow's recent runs.
@@ -2298,7 +2298,7 @@ function WorkflowPicker({ onPick }: { onPick: (name: string) => void }) {
 ### useWorkflowStream()
 
 ```ts
-function useWorkflowStream<D>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 ```
 
 Start a workflow run and stream a file into it while it works.
@@ -2345,7 +2345,7 @@ const { submit, run, upload, pending, error } = useWorkflowStream("transcribe");
 ### useWorkflowSubmit()
 
 ```ts
-function useWorkflowSubmit<D>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 ```
 
 Start a workflow from a form, and follow the run it creates.
@@ -4403,7 +4403,7 @@ the render that read it.
 ### UseWorkflowProgressResult
 
 ```ts
-type UseWorkflowProgressResult<T> = {
+type UseWorkflowProgressResult<T = string> = {
   latest: T | undefined;
   progress: T[];
   streaming: boolean;
@@ -4460,7 +4460,7 @@ uses it to hide the section rather than show an empty one forever.
 ### UseWorkflowRunResult
 
 ```ts
-type UseWorkflowRunResult<R> = {
+type UseWorkflowRunResult<R = unknown> = {
   error: string | undefined;
   polling: boolean;
   run: WorkflowRun<R> | undefined;
@@ -4558,7 +4558,7 @@ Skip the read entirely — for a page that does not know its workflow yet.
 ### UseWorkflowRunsResult
 
 ```ts
-type UseWorkflowRunsResult<R> = {
+type UseWorkflowRunsResult<R = unknown> = {
   error: string | undefined;
   loading: boolean;
   refresh: () => void;
@@ -5021,7 +5021,8 @@ find(
    key: string, 
    options?: {
   limit?: number;
-}): Promise<WorkflowRunSnapshot[]>;
+}
+): Promise<WorkflowRunSnapshot[]>;
 ```
 
 Runs of `workflow` started with `key`, newest first.
@@ -5230,7 +5231,8 @@ start(
    input?: unknown, 
    options?: {
   key?: string;
-}): Promise<string>;
+}
+): Promise<string>;
 ```
 
 Start a run and resolve its id WITHOUT waiting for it — the point of the
@@ -5271,7 +5273,8 @@ startAndWait(
    options?: {
   key?: string;
   wait?: number;
-}): Promise<WorkflowRunSnapshot>;
+}
+): Promise<WorkflowRunSnapshot>;
 ```
 
 Start a run and resolve the FINISHED one — the synchronous call.
@@ -5421,7 +5424,8 @@ which a slow link and a dead client both produce.
 uploadStream(
    id: string, 
    file: UploadBody, 
-options?: UploadOptions): Promise<UploadRef>;
+   options?: UploadOptions
+): Promise<UploadRef>;
 ```
 
 Store a file under an id YOU chose, so a run can start before it is all in.
@@ -5692,7 +5696,7 @@ the settled value.
 ### WorkflowRun
 
 ```ts
-type WorkflowRun<R> = WorkflowRunSnapshot<R>;
+type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
 ```
 
 A run's observable state.
@@ -5736,7 +5740,7 @@ Lifecycle of one workflow run.
 ### WorkflowStreamSubmission
 
 ```ts
-type WorkflowStreamSubmission<R, I> = WorkflowSubmission<R, I>;
+type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
 ```
 
 What [useWorkflowStream](#useworkflowstream) returns: a [WorkflowSubmission](#workflowsubmission), exactly.
@@ -5773,7 +5777,7 @@ follow from WHEN the run is created — it exists before its bytes do:
 ### WorkflowSubmission
 
 ```ts
-type WorkflowSubmission<R, I> = {
+type WorkflowSubmission<R = unknown, I = unknown> = {
   cancel: () => Promise<boolean>;
   error: string | undefined;
   pauseUpload: () => void;

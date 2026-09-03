@@ -45,7 +45,12 @@ type StreamPart =
   | {
       type: "finish";
       usage: { inputTokens: number; outputTokens: number; totalTokens: number };
-      finishReason: string;
+      /**
+       * The `{ unified, raw }` PAIR the v3 provider spec declares
+       * (`LanguageModelV3FinishReason`), never the bare v2 string — see
+       * {@link streamScript}, which carries what the bare string cost.
+       */
+      finishReason: { unified: string; raw: string };
     };
 
 /** What `doGenerate` answers with — the non-streaming twin of {@link StreamPart}. */
@@ -112,7 +117,17 @@ async function streamScript(
     controller.enqueue({
       type: "finish",
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-      finishReason,
+      // `{ unified, raw }`, not the bare string — the SAME fidelity bug
+      // `doGenerate` below already carries a note about, on the OTHER entry
+      // point, and the half a `string` type let through. `streamText` reads
+      // `chunk.finishReason.unified`, so a string resolved `undefined`, which
+      // was harmless until ai@7.0.70 ("Prevent automatic tool execution when a
+      // model call ends with an unsafe finish reason") made tool execution
+      // conditional on that value being `stop` or `tool-calls`. Under a string
+      // it is neither: the tool never ran, so no result was accumulated and no
+      // follow-up step happened — 30 pipeline specs failed as if the transport
+      // had stopped mid-turn, none of them naming the fake.
+      finishReason: { unified: finishReason, raw: finishReason },
     });
     controller.close();
   }

@@ -152,7 +152,8 @@ ttsSampleRate: number;
 function lenientParse<T>(
    schema: ZodType<T>, 
    json: unknown, 
-   knownTypes?: ReadonlySet<string>): 
+   knownTypes?: ReadonlySet<string>
+): 
   | {
   data: T;
   ok: true;

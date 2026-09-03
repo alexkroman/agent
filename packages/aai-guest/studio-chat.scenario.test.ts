@@ -66,7 +66,7 @@ const textStep = (text: string): ScriptedPart[] => [
   {
     type: "finish",
     usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    finishReason: "stop",
+    finishReason: { unified: "stop", raw: "stop" },
   },
 ];
 
@@ -115,7 +115,7 @@ function pendingModel(): {
       controller?.enqueue({
         type: "finish",
         usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-        finishReason: "stop",
+        finishReason: { unified: "stop", raw: "stop" },
       });
       controller?.close();
     },
@@ -128,7 +128,7 @@ const toolStep = (toolName: string, input: Record<string, unknown>): ScriptedPar
   {
     type: "finish",
     usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    finishReason: "tool-calls",
+    finishReason: { unified: "tool-calls", raw: "tool-calls" },
   },
 ];
 

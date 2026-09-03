@@ -242,7 +242,7 @@ export async function summarize(text: string): Promise<string> {
 ### stepGenerateJsonClassified()
 
 ```ts
-function stepGenerateJsonClassified<S>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+function stepGenerateJsonClassified<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 ```
 
 `stepGenerateJson`, with its failure classified — see

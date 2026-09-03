@@ -391,7 +391,9 @@ would put top-level `await` in a bundle the guest loads.
 ### withTools()
 
 ```ts
-function withTools<D>(def: D, registry: ToolRegistry): D;
+function withTools<D extends {
+  tools: ToolRegistry;
+}>(def: D, registry: ToolRegistry): D;
 ```
 
 Attach a registry to an agent definition, returning the def the runtime runs.

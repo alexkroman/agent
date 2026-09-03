@@ -99,6 +99,15 @@ describe("PipelineTransport — STT → LLM turn", () => {
     // — the caller heard "Sure," then dead air. The segment boundary must
     // release it.
     const toolStarted = Promise.withResolvers<void>();
+    // Holds the tool open so the assertion below lands INSIDE the execution
+    // window. Waiting on `toolStarted` alone asserted an ordering the SDK does
+    // not promise: the tool runs concurrently with our `fullStream` read, so
+    // whether the `tool-call` part has been handled by the time `execute` is
+    // entered is the SDK's scheduling, and ai@7.0.71 changed it (it wraps the
+    // streaming callbacks now, one turn of the microtask queue earlier). What
+    // the caller actually hears turns on the fragment being released before
+    // the tool RETURNS, which is what this holds the window open to state.
+    const finishTool = Promise.withResolvers<void>();
     const { opts, stt, tts, callbacks } = makeOpts({
       llm: createFakeLanguageModel({
         steps: [
@@ -112,6 +121,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
       }),
       executeTool: vi.fn(async () => {
         toolStarted.resolve();
+        await finishTool.promise;
         return "result";
       }),
       toolSchemas: [noopToolSchema],
@@ -121,9 +131,12 @@ describe("PipelineTransport — STT → LLM turn", () => {
     stt.last()?.fireFinal("look it up");
 
     await toolStarted.promise;
-    // Everything spoken before the tool call has reached TTS by the time the
-    // tool starts — nothing is still buffered.
-    expect(tts.last()?.textChunks.join("")).toBe("Sure, let me");
+    // Everything spoken before the tool call reaches TTS while the tool is
+    // still running — nothing sits in the batch buffer for the window.
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.join("")).toBe("Sure, let me");
+    });
+    finishTool.resolve();
 
     await vi.waitFor(() => {
       expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();

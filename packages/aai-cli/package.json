@@ -73,7 +73,7 @@
     "aai-templates": "workspace:*",
     "playwright": "^1.62.1",
     "tsdown": "catalog:",
-    "verdaccio": "^6.9.2",
+    "verdaccio": "^6.10.1",
     "vitest": "catalog:"
   },
   "peerDependencies": {

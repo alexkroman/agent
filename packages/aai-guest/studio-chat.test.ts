@@ -73,7 +73,7 @@ const scriptedModel = {
       {
         type: "finish",
         usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-        finishReason: "stop",
+        finishReason: { unified: "stop", raw: "stop" },
       },
     ];
     return Promise.resolve({

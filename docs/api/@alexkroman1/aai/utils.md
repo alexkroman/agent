@@ -298,7 +298,8 @@ function orderTotal(id: string): number | ToolFailure {
 function plural(
    n: number, 
    one: string, 
-   many?: string): string;
+   many?: string
+): string;
 ```
 
 The right form of an English noun for a count: `plural(1, "risk")` is
@@ -357,7 +358,8 @@ const risks = 3;
 function pushCapped<T>(
    list: T[], 
    item: T, 
-   max: number): T[];
+   max: number
+): T[];
 ```
 
 Append to a list, dropping the oldest entries so it never exceeds `max`.

@@ -18,7 +18,7 @@
     "@alexkroman1/aai": "workspace:*",
     "ai": "catalog:",
     "eventsource-parser": "catalog:",
-    "undici": "^8.10.0"
+    "undici": "^8.10.1"
   },
   "devDependencies": {
     "@alexkroman1/aai-runtime": "workspace:*",

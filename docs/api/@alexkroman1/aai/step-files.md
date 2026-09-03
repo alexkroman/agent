@@ -70,7 +70,8 @@ and what crosses the step boundary is an upload id.
 function readUploadToFile(
    uploadId: string, 
    path: string, 
-opts?: ReadUploadToFileOptions): Promise<number>;
+   opts?: ReadUploadToFileOptions
+): Promise<number>;
 ```
 
 Write an upload to a local path, a window at a time, and answer with the byte
