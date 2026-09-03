@@ -1,5 +1,64 @@
 # @alexkroman1/aai-server
 
+## 3.7.0
+
+### Minor Changes
+
+- f10b6aa: Publish `@alexkroman1/aai/html` — `htmlToText`, `parseFeed` and `pageMetadata` over the htmlparser2 and html-to-text parsers the SDK already carried, so a step reading somebody else's markup gets a real parse instead of regexes. The `link-digest` and `podcast-digest` templates move onto it, dropping ~65 lines of hand-written scraping. Also: one `jitteredBackoff` in place of three byte-identical retry-delay copies (guard-invariants rule 31), and `aai-server`'s TTL cache moves from quick-lru to the lru-cache it already depended on, making its entry cap exact.
+
+### Patch Changes
+
+- 165f9b2: Make the durable-workflow journal's first-write-wins claims one statement each and retry the indeterminate answer, escape the characters PostgreSQL cannot store, and give the reconcile pass an end so a run its guest can never finish is failed rather than re-walked forever.
+- 36a3f22: Record when a step STARTED. `StepEntry.startedAt` joins the journal, so `finishedAt - startedAt` is what the step cost.
+  
+  An entry carried `attempts` and `finishedAt` and no start, so the only elapsed time derivable from a run's history was the gap between one step's finish and the next's — which is the previous step's cost plus whatever the body did between them, and is nothing at all for the first step of a run or the first after a durable wait. The park-curve numbers in `packages/aai-runtime/CLAUDE.md` came off a log line because the journal could not be asked.
+  
+  An absolute instant rather than a stored duration: the difference is derivable and the instant is not, and the gap between one entry's finish and the next's start is DELIVERY latency — a different question from step cost, and the one that tells a slow step from a slow queue. The span covers the whole reach (every try and its backoff) and excludes time queued behind the step gate.
+  
+  OPTIONAL, and absence means the row predates the column: the rows already stored have no start, and `0` would report a long step as instant. All four backends carry it, the conformance table pins absence in both directions (a start of `0` is kept, so an arm cannot satisfy the absence case by coercing), and `20260902000000_workflow_step_started_at.sql` adds the platform column.
+  
+  No reader surfaces it yet — the public workflow API carries a run snapshot and no step history — so it is queryable from the database and nowhere else. A route and a CLI verb are the next move and are not in this change.
+  
+  Also widens `journal-ddl-parity.test.ts`, which read only the migration that CREATES these tables and was therefore blind to any later ALTER — the drift it exists to catch. It now reads every migration in filename order, applies `add column` on both sides, and scopes the parse to the five tables the pairing derives. That immediately surfaced three previously uncompared platform-only objects (`workflow_runs.reconciled_at` and the two reconcile indexes), each now declared with its reason.
+- 623a8bb: Collapse duplicate workflow-journal round trips and widen the platform admin pool.
+  
+  A deployed run's every journal operation is one `POST /:slug/workflow-journal`, measured at ~840 ms of platform time each. Three things multiplied them: a fan-out's stale-snapshot check re-read the whole journal once per step, overlapping walks each opened with their own `getRun` and `readSteps`, and every delivery took three of those round trips sequentially before a body ran.
+  
+  Concurrent identical `getRun`/`readSteps` now share one round trip (a coalescer, not a cache — no caller is answered from a read that started before it asked), and a delivery's step read is issued beside the `running` compare-and-set rather than after it. `ADMIN_POOL_MAX` goes 4 to 16: guest platform routes reserve a connection for the whole request, so 4 was a hard ceiling of four in-flight guest calls per replica, and with `PLATFORM_POOLER_URL` in transaction mode the pool costs the instance's max_connections nothing.
+- 0718b57: Sort the platform manifests to syncpack's format rules (key order and exports condition order). No behaviour change: every manifest is deep-equal across the reformat, verified before landing. The version bump is here because package.json is shipped source, so check:deploy-changeset requires a carrier to name the deploy rather than letting a manifest edit ride an unrelated release.
+- 36a3f22: Ship the named-wait key grammar. The replay engine now journals a durable wait as `sleep!<label>#<occurrence>` / `hook!<token>#<occurrence>` rather than positionally, and those keys are written to `aai_platform.workflow_sleeps` and `aai_platform.workflow_hooks` — so the platform wants the release that carries them.
+  
+  No schema change and no statement change: `key` is `text` and the reconcile query was already grammar-independent by design (it reads `delivered`/`closed`/`wake_at`, never the key). Its comment naming the old `hook!<n>` shape is updated.
+- 36a3f22: Record which CODE a durable run was started against. `RunRecord.codeVersion` joins the journal, and the divergence message uses it to state whether the code changed instead of handing the reader a test.
+  
+  A run outlives the process that started it — that is what durable means — so it also outlives the bundle: a `ctx.sleep("nextDigest", DAY_MS)` parks for a day, deploys land, and the delivery that wakes it replays the body from whatever bundle the sandbox now runs. The engine has always been honest that resuming a run against a changed body is unsupported and had no way to say whether that is what happened.
+  
+  The cost showed up in the sharpest error this engine produces. `workflow-replay-divergence.ts`'s message ends by handing the reader a test to run against their own source, because the two causes of an unreached step key — a redeploy mid-flight, or a non-deterministic body — want opposite fixes, and a journal holds what a value WAS and never how it was produced. One version per run settles half of it: an inequality states the redeploy and names both bundles, an equality ELIMINATES it and leaves the computed name as the only remaining cause. The two-cause fork stays in the text either way, because it is what tells a reader what to look for.
+  
+  It is a DIAGNOSTIC and never a gate. Nothing refuses a run whose version moved: a deploy touching a page, a tool, a prompt or an unrelated workflow leaves this body's step sequence identical while the bundle hash changes on every deploy, so refusing on inequality would fail nearly all such runs to catch the few that really diverged — and the divergence check already catches those precisely, at the step that proves it.
+  
+  The value is read from THIS PROCESS's environment (`AAI_BUNDLE_SHA256`), never the agent's, for the reason `platformGuestOptions` is a separate name from `resolvePlatformQueue`: `agentServerEnv` strips only `AAI_ALLOW_HOST`, so an agent may set any other `AAI_*` key as a secret. Read from a tenant env, an agent could pin its own version and every walk would then report the code unchanged — which is worse than no version at all, since the message would assert as a fact the one cause it had ruled out. Absence therefore means UNKNOWN in both directions and must never read as unchanged; only a deployed guest has a hash, so `aai dev` and a self-hosted server keep the original two-cause fork.
+  
+  All four journal backends carry it, `20260902010000_workflow_run_code_version.sql` adds the platform column, and three conformance cases pin the round trip — one of them asserting `listRuns` carries it and not only `getRun`, which caught two live instances of exactly that: the postgres arm's second select, and the unit platform arm's fake transport, whose run-row field list was written out twice and is now one function.
+- Updated dependencies [36a3f22]
+- Updated dependencies [0718b57]
+- Updated dependencies [165f9b2]
+- Updated dependencies [36a3f22]
+- Updated dependencies [fe3b6d6]
+- Updated dependencies [6bbef9b]
+- Updated dependencies [63e1c8e]
+- Updated dependencies [36a3f22]
+- Updated dependencies [f10b6aa]
+- Updated dependencies [623a8bb]
+- Updated dependencies [7ab47cf]
+- Updated dependencies [36a3f22]
+- Updated dependencies [36a3f22]
+- Updated dependencies [31459e8]
+  - @alexkroman1/aai@11.0.0
+  - @alexkroman1/aai-runtime@11.0.0
+  - aai-guest@0.5.12
+  - @alexkroman1/aai-ui@11.0.0
+
 ## 3.6.20
 
 ### Patch Changes

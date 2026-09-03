@@ -1,5 +1,19 @@
 # aai-evals
 
+## 0.1.29
+
+### Patch Changes
+
+- Updated dependencies [36a3f22]
+- Updated dependencies [0718b57]
+- Updated dependencies [fe3b6d6]
+- Updated dependencies [63e1c8e]
+- Updated dependencies [36a3f22]
+- Updated dependencies [f10b6aa]
+- Updated dependencies [7ab47cf]
+- Updated dependencies [31459e8]
+  - @alexkroman1/aai@11.0.0
+
 ## 0.1.28
 
 ### Patch Changes

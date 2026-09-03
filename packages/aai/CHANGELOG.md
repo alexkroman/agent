@@ -1,5 +1,34 @@
 # @alexkroman1/aai
 
+## 11.0.0
+
+### Major Changes
+
+- 36a3f22: Key durable waits by NAME rather than by position. `ctx.sleep` now takes a label as its first argument — `ctx.sleep("review-window", 6 * 60 * 60 * 1000)` — and a wait is journaled as `sleep!<label>#<occurrence>` / `hook!<token>#<occurrence>`, exactly as a step is keyed `name#occurrence`.
+  
+  Waits were keyed positionally off a counter that advances only when a wait is reached, so a body reaching a different NUMBER of waits read its predecessor's record. Measured: a week-long `ctx.sleep` behind an `if` was skipped in full with the clock unmoved and the run reported `completed`; the `ctx.waitFor` version hands the body another wait's payload. Both are unrepresentable now.
+  
+  BREAKING: every `ctx.sleep(until)` call needs a label. `RecordedSleep` (`@alexkroman1/aai/testing`) and `EvalSleep` (`@alexkroman1/aai-runtime/eval`) each carry the label too, so a case can assert WHICH wait a body reached. Runs suspended when this ships resume against the new key space and fail with the replay engine's divergence message rather than silently reading the wrong record — drain in-flight runs before deploying.
+- 63e1c8e: Durable-workflow SUSPENSION is no longer observable by a workflow body. `ctx.sleep` and `ctx.waitFor` used to suspend by THROWING a branded signal, so a `catch` in a body caught it — one shipped template did, unwound its compensation stack and deleted the transcript its run was waiting for, then re-threw, and the engine recorded the run as healthily suspended. A wait now returns a promise that never settles and the engine races the body against an out-of-band interruption channel, so there is nothing for a `catch` to catch and nothing for a `finally` to run on. `isWorkflowSuspend` is removed (there is nothing left for it to test) along with the internal suspend brand. Concurrent waits are also aggregated now: a `Promise.race` or `Promise.all` over several waits suspends ONCE, carrying the earliest outstanding timer deadline, so racing a hook against a sleep composes where it previously stopped the body at whichever wait was reached first.
+
+### Minor Changes
+
+- fe3b6d6: Add ctx.now(), ctx.random() and ctx.uuid() to WorkflowCtx — three journaled non-deterministic reads, so a workflow body gets the same value on every replay instead of a determinism bug. Each is keyed in its own positional journal space, takes no step attempt lease, and is refused inside a ctx.step. The transcription-workflow and call-audit templates drop their hand-rolled clock steps.
+- 36a3f22: Add `stepInfo()` to `@alexkroman1/aai/step`: which step a body is running as, which ATTEMPT of it, the ceiling that attempt is counted against, and whether it is the last.
+  
+  The engine already tracked the number — it is where a `report()` line's `(attempt N)` suffix comes from — and nothing else could read it, so the one decision a retry policy cannot make for an author was unavailable: degrade rather than fail. A smaller model on the final try beats a failed run, and only the body knows what cheaper means for its own work.
+  
+  It is the Workflow DevKit's `getStepMetadata()` with two differences. It answers `undefined` outside a step rather than throwing, because an exported step is also an ordinary async function and every workflow template's tests call one directly. And it carries `maxAttempts`, without which `isLastAttempt` is a number the body restates from the `ctx.step` call site — two literals in two files whose disagreement makes a step degrade early on every run and still return an answer.
+  
+  `stubStepInfo` (`@alexkroman1/aai/testing`) is how a spec reaches that branch at all; it derives `isLastAttempt` from the two numbers rather than accepting it, so a test cannot assert a body against attempt 1 of 3 calling itself the last.
+- f10b6aa: Publish `@alexkroman1/aai/html` — `htmlToText`, `parseFeed` and `pageMetadata` over the htmlparser2 and html-to-text parsers the SDK already carried, so a step reading somebody else's markup gets a real parse instead of regexes. The `link-digest` and `podcast-digest` templates move onto it, dropping ~65 lines of hand-written scraping. Also: one `jitteredBackoff` in place of three byte-identical retry-delay copies (guard-invariants rule 31), and `aai-server`'s TTL cache moves from quick-lru to the lru-cache it already depended on, making its entry cap exact.
+- 7ab47cf: Carry Map and Set across the durable-workflow journal, which JSON.stringify silently answered {} for
+
+### Patch Changes
+
+- 0718b57: Declare MIT license terms in the published packages: every tarball shipped with no license field and no LICENSE file of its own, which registries and license scanners read as all-rights-reserved. Also declare sideEffects - false for aai and aai-runtime, and the css entries for aai-ui, whose styles.css consumers import for effect.
+- 31459e8: Extract three duplicated internals into shared helpers: one `missingEnvMessage` behind `requireEnv`/`requireStepEnv`, one `createLlmModelCache`/`isLlmDescriptor` behind `ctx.generate` and `ctx.delegate`, and one `credentialVerdict` behind the two eval credential checks. No behaviour change — each pair had a verbatim copy of the string or the memo, which is how the two halves come to disagree.
+
 ## 10.0.1
 
 ## 10.0.0

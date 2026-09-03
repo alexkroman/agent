@@ -1,5 +1,54 @@
 # @alexkroman1/aai-runtime
 
+## 11.0.0
+
+### Minor Changes
+
+- 36a3f22: Make a `createAgentServer` forwarding gap unrepresentable, and close the fourth one.
+  
+  `AgentServerOptions` is a hand-written subset of `RuntimeOptions` where every field is optional, so an option added to the runtime is silently unreachable through the door most deployments use. That is not a hazard to remember — it has happened FOUR times, and each was found by somebody needing the option rather than by anything checking: `telephony` mounted an unauthenticated `WS /phone` with no way to switch it off, `page` served a static agent the voice surfaces, `env` left `AAI_WORKFLOW_API_TOKEN` and `DATABASE_URL` doing nothing, and `journal` left a deployment that owns a database unable to say so.
+  
+  `journal` is forwarded now. And `agent-server-forwarding.ts` is what stops a fifth: every `RuntimeOptions` member is either on `AgentServerOptions` or on an explicit `UnforwardedRuntimeOption` deny-list carrying its reason, and `ForwardingGap` is the subtraction — `never` today, and the NAME of the offending member the moment one is added. It fails `turbo run typecheck` AND the build, since the module is compiled by `tsconfig.build.json` and a build failure cannot be skipped by a test filter. Same shape as `AgentConfigSchema`'s `HOST_ONLY_AGENT_FIELDS` subtraction one package over, for the same reason.
+  
+  Checked in BOTH directions, and the reverse one earned its place immediately: a `StaleExcuse` (an entry naming a member `RuntimeOptions` no longer has) and a `RedundantExcuse` (one the door now forwards) each fail the same way, and the first caught three wrong entries on its first run — a draft excused `name`, `greeting` and `hostBaseAgent`, none of which is a `RuntimeOptions` member at all.
+- 6bbef9b: Add `@alexkroman1/aai-runtime/testing` — `runWorkflow`, which starts a declared workflow on the real replay engine over an in-memory journal so a spec can assert that a run suspended, resumed off its journal, retried, was answered by a signal, and survived a worker that died mid-step. The constraint the older helpers cite — that a body is only durable after a compile-time transform — has not been true since the Workflow DevKit was replaced.
+- 36a3f22: Record which CODE a durable run was started against. `RunRecord.codeVersion` joins the journal, and the divergence message uses it to state whether the code changed instead of handing the reader a test.
+  
+  A run outlives the process that started it — that is what durable means — so it also outlives the bundle: a `ctx.sleep("nextDigest", DAY_MS)` parks for a day, deploys land, and the delivery that wakes it replays the body from whatever bundle the sandbox now runs. The engine has always been honest that resuming a run against a changed body is unsupported and had no way to say whether that is what happened.
+  
+  The cost showed up in the sharpest error this engine produces. `workflow-replay-divergence.ts`'s message ends by handing the reader a test to run against their own source, because the two causes of an unreached step key — a redeploy mid-flight, or a non-deterministic body — want opposite fixes, and a journal holds what a value WAS and never how it was produced. One version per run settles half of it: an inequality states the redeploy and names both bundles, an equality ELIMINATES it and leaves the computed name as the only remaining cause. The two-cause fork stays in the text either way, because it is what tells a reader what to look for.
+  
+  It is a DIAGNOSTIC and never a gate. Nothing refuses a run whose version moved: a deploy touching a page, a tool, a prompt or an unrelated workflow leaves this body's step sequence identical while the bundle hash changes on every deploy, so refusing on inequality would fail nearly all such runs to catch the few that really diverged — and the divergence check already catches those precisely, at the step that proves it.
+  
+  The value is read from THIS PROCESS's environment (`AAI_BUNDLE_SHA256`), never the agent's, for the reason `platformGuestOptions` is a separate name from `resolvePlatformQueue`: `agentServerEnv` strips only `AAI_ALLOW_HOST`, so an agent may set any other `AAI_*` key as a secret. Read from a tenant env, an agent could pin its own version and every walk would then report the code unchanged — which is worse than no version at all, since the message would assert as a fact the one cause it had ruled out. Absence therefore means UNKNOWN in both directions and must never read as unchanged; only a deployed guest has a hash, so `aai dev` and a self-hosted server keep the original two-cause fork.
+  
+  All four journal backends carry it, `20260902010000_workflow_run_code_version.sql` adds the platform column, and three conformance cases pin the round trip — one of them asserting `listRuns` carries it and not only `getRun`, which caught two live instances of exactly that: the postgres arm's second select, and the unit platform arm's fake transport, whose run-row field list was written out twice and is now one function.
+
+### Patch Changes
+
+- 165f9b2: Make the durable-workflow journal's first-write-wins claims one statement each and retry the indeterminate answer, escape the characters PostgreSQL cannot store, and give the reconcile pass an end so a run its guest can never finish is failed rather than re-walked forever.
+- 623a8bb: Collapse duplicate workflow-journal round trips and widen the platform admin pool.
+  
+  A deployed run's every journal operation is one `POST /:slug/workflow-journal`, measured at ~840 ms of platform time each. Three things multiplied them: a fan-out's stale-snapshot check re-read the whole journal once per step, overlapping walks each opened with their own `getRun` and `readSteps`, and every delivery took three of those round trips sequentially before a body ran.
+  
+  Concurrent identical `getRun`/`readSteps` now share one round trip (a coalescer, not a cache — no caller is answered from a read that started before it asked), and a delivery's step read is issued beside the `running` compare-and-set rather than after it. `ADMIN_POOL_MAX` goes 4 to 16: guest platform routes reserve a connection for the whole request, so 4 was a hard ceiling of four in-flight guest calls per replica, and with `PLATFORM_POOLER_URL` in transaction mode the pool costs the instance's max_connections nothing.
+- 36a3f22: Re-take the rollback property's coverage floors at `numRuns: 80`, because two of them were unsatisfiable at 20.
+  
+  `pipeline-history-rollback-property.test.ts` aggregates its five reach counters across the property's runs, so `numRuns` is what decides how heavy their left tail is. Measured over 24 consecutive runs at 20: `toolHealedAtCap` came out **0 twice** against a floor of `> 10` — a state the corpus simply failed to reach on ~8% of green runs, so no positive floor was settable at all — and `atCapConversation` produced the **144** that failed a real CI job against a floor of 200 whose recorded range started at 442.
+  
+  Neither recorded range was wrong when it was taken. Twenty draws was too few to describe the unluckiest run, which is the failure mode `AGENTS.md` warns about in the same paragraph that says to floor under the observed minimum: what one script reaches is correlated across all 260 of its steps rather than independent per step.
+  
+  So the fix is the draw count rather than lower numbers — a floor under a distribution whose minimum is zero cannot be set. Four times the draws costs 635ms → ~2.6s against the unit tier's 5s budget, and it moves `toolHealedAtCap`'s observed minimum from 0 to 672. Every floor is re-taken over 14 consecutive runs at 80 with its new range recorded in place.
+- Updated dependencies [36a3f22]
+- Updated dependencies [0718b57]
+- Updated dependencies [fe3b6d6]
+- Updated dependencies [63e1c8e]
+- Updated dependencies [36a3f22]
+- Updated dependencies [f10b6aa]
+- Updated dependencies [7ab47cf]
+- Updated dependencies [31459e8]
+  - @alexkroman1/aai@11.0.0
+
 ## 10.0.1
 
 ### Patch Changes
