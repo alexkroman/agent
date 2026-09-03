@@ -182,9 +182,17 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
   // DROPPED TABLES, last. A fixture that ignores a drop builds a schema
   // production does not have, which is the trap every comment above is about:
   // `schema-drift.scenario.test.ts` rightly fails any `aai_platform` table no
-  // migration declares, and `journal-ddl-parity.test.ts` pairs the two journal
-  // schemas as a BIJECTION — so a retired table left standing here fails both
-  // over a database that is only wrong because this replay is.
+  // migration declares, so a retired table left standing here fails it over a
+  // database that is only wrong because this replay is.
+  //
+  // **No migration drops a table today, so this currently applies nothing** —
+  // said out loud, because unexercised replay logic is exactly the shape this
+  // repo keeps getting bitten by. It is here rather than owed because the
+  // obligation is already committed: `RETIRED_OBJECTS` in
+  // `platform-schema.test.ts` holds `workflow_attempts` and fails the release
+  // that drops it unless the entry goes too, so the drop this serves is
+  // scheduled rather than hypothetical — and without the line, that release
+  // fails `schema-drift` for a reason that has nothing to do with it.
   //
   // Last rather than in migration order, which is a stated assumption rather
   // than a subtlety nobody noticed: no migration re-creates a table it dropped,

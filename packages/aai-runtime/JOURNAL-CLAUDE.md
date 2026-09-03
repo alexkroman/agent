@@ -333,15 +333,32 @@ recorder tests in `workflow-journal-postgres.test.ts` and
 `platform-workflow-journal.test.ts` pin the branch with no clock in them, because
 the conformance case that pins the EFFECT can only fail in one direction.
 
-### The old table is gone, and the fixture had to learn to drop one
+### The old table is RETIRED, not dropped
 
-`aai_workflow_attempts` is dropped by
-`supabase/migrations/20260903160000_workflow_attempt_leases.sql`, which also
-re-issues `sweep_terminal_workflow_runs` — a function body naming a dropped table
-fails at RUN time, and that one runs from pg_cron with nobody watching.
+`aai_workflow_attempts` is gone from the runtime's own DDL, which is free — a
+self-hoster's copy is an empty table nothing reads, and a shipped applier has no
+business running `drop table` on an operator's database.
 
-`ensurePlatformTables` replayed only creates, alters and indexes, so the test
-fixtures kept a table production no longer has: `schema-drift.scenario.test.ts`
-failed on an undeclared `workflow_attempts` and `journal-ddl-parity.test.ts`
-would have failed its bijection. It replays `drop table if exists` now, last, on
-the stated assumption that no migration re-creates a table it dropped.
+The PLATFORM's copy is the expand half of an expand/contract.
+`supabase db push` runs before the deploy (`ship.yml` gates the deploy job on
+migrate) and Modal's rolling strategy keeps the previous build serving beside the
+new one, so dropping `aai_platform.workflow_attempts` in the same release is
+`42P01` under still-running old containers — on the one journal call every step
+makes before its body runs. It compounds with the retry-budget change beside it:
+that failure reaches the guest as a 503, and because the guest ANSWERED it spends
+the message's own five attempts, whose backoff totals ~380 s. A rollout longer
+than about six minutes would drop messages.
+
+So the drop is owed to a later release and `RETIRED_OBJECTS` in
+`platform-schema.test.ts` is the ledger that remembers — self-clearing, because
+the entry's own assertion fails once the drop lands. `20260903160000`'s re-issued
+`sweep_terminal_workflow_runs` cleans BOTH tables for the length of the expand,
+and the `gone_attempts` arm goes with the table.
+
+Two fixture consequences. `platform-schema.scenario.test.ts` asserts the EXACT
+set of `aai_platform` tables, so it lists both for one release — that suite needs
+a Supabase stack and skips without one, which is why this was caught in CI's
+`platform-stack` job rather than locally. And `ensurePlatformTables` replayed only
+creates, alters and indexes; it replays `drop table if exists` now, which applies
+nothing yet and is pre-positioned for the contract release the ledger entry
+guarantees.

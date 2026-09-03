@@ -54,30 +54,42 @@ create table if not exists aai_platform.workflow_attempt_leases (
 -- it.
 alter table aai_platform.workflow_attempt_leases enable row level security;
 
--- The old table goes. Its rows are transient charges with no meaning once a step
--- settles, so there is nothing to migrate — and leaving it would break
--- `journal-ddl-parity.test.ts`'s bijection, which is the gate that keeps the two
--- copies of this schema one schema.
+-- The old table STAYS, and its drop is owed to a later release.
 --
--- Ordered AFTER the function below in intent but BEFORE it in fact, which is
--- safe: `create or replace function` does not resolve table names at definition
--- time, so the replacement below can name a table this statement just dropped
--- and vice versa. What is NOT safe is leaving the old name inside the function,
--- which is why the whole body is re-issued.
-drop table if exists aai_platform.workflow_attempts;
+-- This is the expand half of an expand/contract, and the ledger that remembers
+-- the other half is `RETIRED_OBJECTS` in `platform-schema.test.ts`. Its own doc
+-- carries the argument and it is exactly this case one granularity up: `supabase
+-- db push` runs BEFORE the deploy (`ship.yml` gates the deploy job on migrate)
+-- and Modal's rolling strategy keeps the previous build serving beside the new
+-- one, so a table dropped in this step is a table the still-serving old
+-- containers name in their `claimAttempt` — `42P01` for the length of the
+-- rollout, on the one journal call every step makes before its body runs.
+--
+-- What that would cost is not hypothetical and it compounds with the change
+-- beside it: the failure reaches the guest as a 503, the delivery fails, and
+-- because the guest ANSWERED it spends the message's own five attempts. Their
+-- backoff totals ~380 s, so a rollout longer than about six minutes drops
+-- messages, and the runs then wait out `STALL_GRACE_MS` for reconcile. A
+-- rollback inside the window is worse: the restored containers find the table
+-- gone for good.
+--
+-- Nothing is lost by waiting. The rows are transient charges with no meaning
+-- once a step settles, so the retired table simply stops being written; the
+-- sweep below keeps cleaning it until the contract release deletes both it and
+-- its ledger entry.
 
--- The terminal-run sweep, re-issued to clean the new table.
+-- The terminal-run sweep, re-issued to clean BOTH tables.
 --
 -- **The SIGNATURE and the BODY are otherwise unchanged**, deliberately — the
--- only edit is `workflow_attempts` to `workflow_attempt_leases` in
--- `gone_attempts`. `20260902120000_workflow_run_abandonment.sql` is the version
--- this replaces and carries the argument for every other line of it; a diff
--- between the two should show one table name.
+-- only edit is one more CTE beside `gone_attempts`.
+-- `20260902120000_workflow_run_abandonment.sql` is the version this replaces and
+-- carries the argument for every other line of it; a diff between the two should
+-- show one added block.
 --
--- It has to be re-issued rather than left alone: a function body naming a table
--- that no longer exists fails at RUN time, and this one runs from pg_cron with
--- nobody watching. Without it the new table would also leak a row per
--- outstanding charge for every run the sweep retires.
+-- BOTH, for the length of the expand: old containers still write the retired
+-- table during the rollout, and without its own CTE the new one would leak a row
+-- per outstanding charge for every run the sweep retires. The `gone_attempts`
+-- arm goes with the retired table in the contract release.
 create or replace function aai_platform.sweep_terminal_workflow_runs(
   retain_ms bigint default 30::bigint * 24 * 60 * 60 * 1000,
   batch integer default 5000
@@ -108,8 +120,12 @@ begin
        using doomed d where s.slug = d.slug and s.run_id = d.run_id
     ),
     gone_attempts as (
-      delete from aai_platform.workflow_attempt_leases a
+      delete from aai_platform.workflow_attempts a
        using doomed d where a.slug = d.slug and a.run_id = d.run_id
+    ),
+    gone_leases as (
+      delete from aai_platform.workflow_attempt_leases l
+       using doomed d where l.slug = d.slug and l.run_id = d.run_id
     ),
     gone_sleeps as (
       delete from aai_platform.workflow_sleeps sl
