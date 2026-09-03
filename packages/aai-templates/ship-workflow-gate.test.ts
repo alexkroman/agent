@@ -322,7 +322,13 @@ describe("the packed release reaches the image", () => {
     // changesets action's job, and the action no longer runs the publish. Drop
     // this step and the versions still reach npm while every release tag names
     // no commit, which nothing notices until somebody goes looking for one.
-    expect(source).toContain("git push --tags");
+    //
+    // The RUN LINE, not the string anywhere in the file: the workflow's header
+    // now quotes `git push --tags` while explaining that it printed
+    // `Everything up-to-date` over nine releases' worth of tags that were never
+    // created, so a `toContain` over the whole source is satisfied by the prose
+    // about the step and would survive its deletion.
+    expect(source).toMatch(/^\s*run: git push --tags$/m);
   });
 
   test("the image build is told whether a release was packed", () => {
@@ -335,6 +341,134 @@ describe("the packed release reaches the image", () => {
     expect(source).toContain("packed: ");
     expect(source).toContain("steps.pack.outputs.packed");
     expect(source).toContain("needs.release.outputs.packed == 'true'");
+  });
+});
+
+/**
+ * The `release` job's steps, with every COMMENT LINE dropped.
+ *
+ * This file's header explains why it reads raw text rather than parsing YAML,
+ * and the release job is where that choice costs something: its steps are argued
+ * at length in prose that NAMES what it forbids — the deleted `NODE_AUTH_TOKEN`
+ * fallback, the `git push --tags` that reported success over nothing, the
+ * annotated tag git will not write without an identity. An assertion that could
+ * not tell a `run:` from the paragraph about it would make the explanation
+ * unwriteable, which is the same trade `diffStep` above already makes for the
+ * `changed` job — so every caller here asserts something PRESENT too, since an
+ * empty slice satisfies a `not.toContain` for free.
+ */
+function releaseSteps(): string {
+  const source = workflow ?? "";
+  const job = source.slice(source.indexOf("\n  release:\n"), source.indexOf("\n  guest-image:"));
+  return job
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+}
+
+/** One named step of that job, up to the next one. */
+function releaseStep(name: string): string {
+  const steps = releaseSteps();
+  const start = steps.indexOf(`- name: ${name}`);
+  if (start === -1) return "";
+  const rest = steps.slice(start + name.length);
+  const end = rest.indexOf("      - name:");
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+describe("a released version names its commit", () => {
+  /**
+   * The tags were silently broken for nine releases — npm reached
+   * `@alexkroman1/aai@13.0.0` while the highest tag in the repo stayed at
+   * `5.14.0`, so 9.0.1 through 13.0.0 name no commit.
+   *
+   * The cause is one absent line. `@changesets/git`'s `tag()` runs
+   * `git tag <name> -m <name>`, and `-m` makes it an ANNOTATED tag — the one
+   * kind git refuses to write without a committer identity (`fatal: unable to
+   * auto-detect email address (got 'root@vm.(none)')`, exit 128). Nothing
+   * reports it: `createGitTags` discards the boolean `git.tag()` returns and
+   * writes "Created git tags" to its reporter regardless. The identity used to
+   * come from `changesets/action`, which stopped being the thing that publishes
+   * here — on exactly the date tagging stopped.
+   *
+   * Asserted BEFORE the publish, because the publish is what tags: `changeset
+   * publish` creates them as a side effect, so an identity configured after it
+   * is an identity configured too late.
+   */
+  test("the release job configures a git identity before it publishes", () => {
+    const steps = releaseSteps();
+    expect(steps, "the release job no longer slices out — its shape moved").toContain(
+      "changeset publish",
+    );
+    expect(
+      steps,
+      "the release tags are annotated, so `git tag` fails without an identity — and " +
+        "reports success anyway",
+    ).toContain('git config user.name "github-actions[bot]"');
+    expect(steps).toContain("git config user.email");
+    expect(steps.indexOf("git config user.email")).toBeLessThan(steps.indexOf("changeset publish"));
+  });
+
+  /**
+   * Tagging is a step rather than a by-product of a command named "publish",
+   * and `changeset git-tag` is idempotent about it: `splitByTagStatus` consults
+   * the local tags and `git.remoteTagExists` before writing, so an existing tag
+   * is skipped rather than moved. It also tags every non-private workspace
+   * package at its manifest version rather than only what this run packed,
+   * which is what lets a release backfill a version that reached npm on a run
+   * that failed to tag it — the nine-release hole above.
+   */
+  test("the tags are created by a step of their own", () => {
+    const steps = releaseSteps();
+    expect(steps).toMatch(/^\s*run: pnpm exec changeset git-tag$/m);
+    // After the publish (a tag for a version that failed to upload names a
+    // release that does not exist) and before the push.
+    expect(steps.indexOf("changeset git-tag")).toBeGreaterThan(steps.indexOf("changeset publish"));
+    expect(steps.indexOf("changeset git-tag")).toBeLessThan(steps.indexOf("git push --tags"));
+  });
+
+  /**
+   * `git push` runs the lefthook pre-push hook, and in this job that is the
+   * ENTIRE `pnpm check`. Measured on run 33772177324: the tag-push step ran
+   * `changeset-status`, `✔️ check (683.15 seconds)` — build, api-report,
+   * docs:md, typedoc and the e2e suite — `no-conflicts-with-main`,
+   * `no-push-main` and `up-to-date-with-main`, then printed `Everything
+   * up-to-date`. 11m26s to push nothing, on the critical path: `guest-image`
+   * started 8 seconds after this job finished and `deploy` waits on that.
+   *
+   * `version-pr` has set `LEFTHOOK: "0"` for this reason all along, and its
+   * comment carries the argument — the merge commit was already gated by the
+   * Check workflow.
+   */
+  test("the tag push does not re-run the pre-push gate", () => {
+    const push = releaseStep("Push the release tags");
+    expect(push, "the tag-push step no longer slices out").toContain("git push --tags");
+    expect(
+      push,
+      "the pre-push hook runs the whole `pnpm check` here — 683 seconds, on the " +
+        "critical path, to push four tags",
+    ).toContain('LEFTHOOK: "0"');
+  });
+
+  /**
+   * The push is verified rather than trusted, and that is the whole reason the
+   * missing identity survived nine releases: `git push --tags` printed
+   * `Everything up-to-date` over tags that had never been created, and nothing
+   * else in the run had an opinion about whether they existed. Reading them
+   * back off the REMOTE is the only question worth asking — AGENTS.md's own
+   * standing rule, never report success over a comparison you could not make.
+   */
+  test("the tag push is read back off the remote", () => {
+    const verify = releaseStep("Verify the release tags reached the remote");
+    expect(verify, "nothing verifies the tag push, which reports success either way").toContain(
+      "git ls-remote --tags origin",
+    );
+    // A report is not a gate: a missing tag has to fail the job.
+    expect(verify).toContain("exit 1");
+    const steps = releaseSteps();
+    expect(steps.indexOf("Verify the release tags")).toBeGreaterThan(
+      steps.indexOf("run: git push --tags"),
+    );
   });
 });
 
@@ -364,6 +498,32 @@ describe("a rollback can name its commit", () => {
    * down for ~50 minutes on a content-addressed tag nothing had built. The
    * workflow's own header carries the full account.
    */
+  /**
+   * A dispatch ships a ref; it must not RE-PLAN the next release.
+   *
+   * `version-pr` carried no `if:` at all, so it ran on every push AND every
+   * dispatch — and a dispatch is the rollback path, whose `inputs.ref` may name
+   * an old commit. `changeset version` against that older tree then force-pushes
+   * `changeset-release/main` from it, so rolling production back would also
+   * replace the Version Packages PR that is currently open with whatever the
+   * changesets in the rolled-back tree happened to say. The two acts are
+   * unrelated and the job is behind nothing, so the event has to be named
+   * directly.
+   */
+  test("a dispatch does not re-plan the next release", () => {
+    const source = workflow ?? "";
+    expect(
+      ifOf(source, "version-pr"),
+      "a rollback dispatch recomputes and force-pushes changeset-release/main from " +
+        "the ref it is rolling back to",
+    ).toBe("github.event_name == 'push'");
+    // And the shipping line still runs on a dispatch, or this spec could pass
+    // by the whole workflow quietly becoming push-only — which would make the
+    // rollback path a no-op instead.
+    expect(ifOf(source, "release")).toBe("needs.changed.outputs.release == 'true'");
+    expect(diffStep()).toContain('github.event_name }}" = "workflow_dispatch"');
+  });
+
   test("no checkout resolves a mutable branch ref", () => {
     const source = workflow ?? "";
     // Anchored on `ref:` — `github.ref` is legitimate in the concurrency GROUP,
