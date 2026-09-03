@@ -148,11 +148,13 @@ export function scheduleJournal(inner: JournalStore, options: ScheduleOptions): 
     readSteps: wrap("readSteps", (runId: string) => inner.readSteps(runId)),
     readStep: wrap("readStep", (runId: string, key: string) => inner.readStep(runId, key)),
     readSleeps: wrap("readSleeps", (runId: string) => inner.readSleeps(runId)),
-    claimAttempt: wrap("claimAttempt", (runId: string, key: string) =>
-      inner.claimAttempt(runId, key),
+    claimAttempt: wrap(
+      "claimAttempt",
+      (runId: string, key: string, holder: string, leaseMs: number) =>
+        inner.claimAttempt(runId, key, holder, leaseMs),
     ),
-    releaseAttempt: wrap("releaseAttempt", (runId: string, key: string) =>
-      inner.releaseAttempt(runId, key),
+    releaseAttempt: wrap("releaseAttempt", (runId: string, key: string, holder: string) =>
+      inner.releaseAttempt(runId, key, holder),
     ),
     claimSleep: wrap(
       "claimSleep",

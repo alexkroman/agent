@@ -24,6 +24,7 @@
  * exists to close.
  */
 
+import { codeUnit, newestFirst, settledFirst, soonestFirst } from "./_workflow-journal-order.ts";
 import type {
   HookRecord,
   JournalStore,
@@ -46,8 +47,15 @@ type Slot = {
   steps: StepEntry[];
   /** By `key`, so `appendStep`'s idempotency is a lookup rather than a scan. */
   byKey: Map<string, StepEntry>;
-  /** Attempts consumed per step key. */
-  attempts: Map<string, number>;
+  /**
+   * Outstanding attempt LEASES per step key: holder to when it was claimed.
+   *
+   * A map rather than a count, for the same reason both databases hold a row
+   * per charge — `_workflow-journal-attempts.ts` carries the argument. The
+   * value is a `Date.now()`, so the expiry is a comparison against the engine's
+   * own clock rather than against a second one.
+   */
+  attempts: Map<string, Map<string, number>>;
   /** Durable waits by key. Mutable, unlike `steps` — see `SleepRecord`. */
   sleeps: Map<string, SleepRecord>;
   /** Outstanding hooks by key. The token index below points back at these. */
@@ -126,51 +134,6 @@ function hasOpenHook(slot: Slot): boolean {
     if (!(hook.delivered || hook.closed)) return true;
   }
   return false;
-}
-
-/**
- * Earliest deadline first, the id breaking a tie.
- *
- * A run with NO deadline is due NOW, so it sorts as `0` rather than last: what
- * the ordering decides is which runs survive `limit`, and the most overdue are
- * the ones that have been stranded longest.
- */
-function soonestFirst(a: ResumableRun, b: ResumableRun): number {
-  const at = (run: ResumableRun) => run.wakeAt ?? 0;
-  return at(a) - at(b) || codeUnit(a.runId, b.runId);
-}
-
-/**
- * `finishedAt`, ties broken by `key` — which is what both databases do
- * (`order by finished_at, key`).
- *
- * A named comparator rather than an inline one because the tie-break is a nested
- * ternary inline, which Biome's `noNestedTernary` rejects.
- */
-function settledFirst(a: StepEntry, b: StepEntry): number {
-  return a.finishedAt - b.finishedAt || codeUnit(a.key, b.key);
-}
-
-/**
- * Code-unit order, and never `localeCompare`: with no explicit locale that
- * answers to the runtime's ICU default, so the same two values would order
- * differently on two machines.
- */
-function codeUnit(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
-
-/**
- * Newest first, with the id breaking a tie.
- *
- * `createdAt` alone is not a total order — two runs started in the same
- * millisecond are ordinary under a fan-out — so the id is what makes the
- * listing STABLE across calls rather than merely sorted. Both terms are
- * REVERSED, which is what makes it newest first.
- */
-function newestFirst(a: RunRecord, b: RunRecord): number {
-  return b.createdAt - a.createdAt || codeUnit(b.runId, a.runId);
 }
 
 /**
@@ -347,21 +310,41 @@ export function createMemoryJournal(): JournalStore {
       return entry ? { ...entry } : undefined;
     },
 
-    async claimAttempt(runId: string, key: string): Promise<number> {
+    async claimAttempt(
+      runId: string,
+      key: string,
+      holder: string,
+      leaseMs: number,
+    ): Promise<number> {
       const slot = slotOf(runId);
       if (!slot) throw new Error(`workflow run ${runId} not found`);
-      const next = (slot.attempts.get(key) ?? 0) + 1;
-      slot.attempts.set(key, next);
-      return next;
+      const leases = slot.attempts.get(key) ?? new Map<string, number>();
+      slot.attempts.set(key, leases);
+      const cutoff = Date.now() - leaseMs;
+      // A LIVE holder's `claimed_at` is left alone; an expired one's is renewed.
+      // Both halves are the contract — `JournalStore.claimAttempt` argues why a
+      // re-claim must not refresh a live lease, and the databases spell the same
+      // rule as `on conflict … do update … where claimed_at <= cutoff`.
+      const held = leases.get(holder);
+      if (held === undefined || held < cutoff) leases.set(holder, Date.now());
+      // Expired leases are FORGOTTEN rather than merely skipped, which the
+      // databases do not bother with — they can afford a row nothing counts,
+      // where this map is the process's own memory for the life of the run.
+      //
+      // `<` and not `<=`, matching the databases: the boundary has to be
+      // inclusive or a `leaseMs` of zero sweeps away the charge this call just
+      // took and answers `0`. `_workflow-journal-attempts.ts` argues it.
+      for (const [who, at] of leases) if (at < cutoff) leases.delete(who);
+      return leases.size;
     },
 
-    async releaseAttempt(runId: string, key: string): Promise<void> {
+    async releaseAttempt(runId: string, key: string, holder: string): Promise<void> {
       const slot = slotOf(runId);
       if (!slot) throw new Error(`workflow run ${runId} not found`);
-      // Floored at zero, never below: an extra release may only under-charge a
-      // budget the next claim re-takes, where a negative one is an unbounded
-      // budget for a step that wedges the guest.
-      slot.attempts.set(key, Math.max((slot.attempts.get(key) ?? 0) - 1, 0));
+      // Deletes the NAMED charge, so a release that lands twice is a no-op and
+      // no release can take another walk's charge. The floor the counter needed
+      // is gone with the counter.
+      slot.attempts.get(key)?.delete(holder);
     },
 
     async readSleeps(runId: string): Promise<SleepEntry[]> {

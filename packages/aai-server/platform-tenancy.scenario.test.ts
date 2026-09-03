@@ -73,8 +73,8 @@ import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { emptyCensus, programArb, SLUGS } from "./_tenancy-ops-harness.ts";
 import { createPlatformArm } from "./_tenancy-platform-harness.ts";
 import { checkPartition, explain } from "./_tenancy-world-harness.ts";
+import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { ensurePlatformTables } from "./test-utils.ts";
 
 describeWithPg("the platform's stores over a real Postgres, two tenants at once", () => {
   let db: ReturnType<typeof createPostgresDb>;

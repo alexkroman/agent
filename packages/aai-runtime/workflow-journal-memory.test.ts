@@ -211,7 +211,7 @@ describe("the refusals", () => {
   });
 
   test.each([
-    ["claimAttempt", (j: JournalStore) => j.claimAttempt("wrun_missing", "a#0")],
+    ["claimAttempt", (j: JournalStore) => j.claimAttempt("wrun_missing", "a#0", "w", 1000)],
     ["claimSleep", (j: JournalStore) => j.claimSleep("wrun_missing", "s#0", 1, undefined)],
     ["claimHook", (j: JournalStore) => j.claimHook("wrun_missing", "h#0", "tok")],
     [

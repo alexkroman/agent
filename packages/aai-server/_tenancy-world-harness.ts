@@ -110,6 +110,7 @@ const emptyTables = (): Tables => ({
   runs: new Map(),
   steps: new Map(),
   attempts: new Map(),
+  holders: new Map(),
   sleeps: new Map(),
   hooks: new Map(),
   uploads: new Map(),

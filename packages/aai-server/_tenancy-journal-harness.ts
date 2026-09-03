@@ -69,6 +69,15 @@ export type Tables = StateTables & {
   runs: Map<string, Run>;
   steps: Map<string, Step>;
   attempts: Map<string, Attempt>;
+  /**
+   * Who holds a live charge, per step key — the map the real row keeps.
+   *
+   * Beside `attempts` rather than replacing it, because the CENSUS compares
+   * `attempts` (a count per key) and the holder names are the walk's business,
+   * not the tenant boundary's. This is what makes a re-claim by the same holder
+   * answer the same number, which the count alone cannot express.
+   */
+  holders: Map<string, Set<string>>;
   sleeps: Map<string, Sleep>;
   hooks: Map<string, Hook>;
 };
@@ -199,13 +208,21 @@ export function applyStepOp(t: Tables, op: StepOp, targets: Targets): Answer {
           .map(({ runId: _runId, ...row }) => ({ ...row })),
       };
     case "claimAttempt": {
-      // ONE statement, `do update set n = n + 1 returning n`. Read-then-increment
-      // lets two concurrent deliveries read the same number and take a step past
-      // its ceiling.
+      // ONE statement over ONE row, holding a MAP of holder to when it claimed —
+      // `_workflow-journal-attempts.ts` carries the shape. What the model has to
+      // reproduce is that a re-claim by a holder that already holds one answers
+      // the SAME number, which a counter cannot.
+      //
+      // The EXPIRY is deliberately not modelled: these programs run in under a
+      // second against a window of minutes, so nothing here can age out, and a
+      // model that pruned on a clock would diverge from the arm on timing rather
+      // than on tenancy. The conformance suite is where the window is tested.
       const bucket = targets.attempts;
-      const n = (bucket.attempts.get(key)?.n ?? 0) + 1;
-      bucket.attempts.set(key, { runId: op.runId, key: op.key, n });
-      return { ok: n };
+      const holders = bucket.holders.get(key) ?? new Set<string>();
+      holders.add(op.holder);
+      bucket.holders.set(key, holders);
+      bucket.attempts.set(key, { runId: op.runId, key: op.key, n: holders.size });
+      return { ok: holders.size };
     }
     case "claimSleep": {
       // First write wins and later calls are READS — what stops a replay pushing

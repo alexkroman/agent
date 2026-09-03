@@ -68,6 +68,7 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import { firstWriteWins } from "./_journal-claim.ts";
+import { claimAttemptLease, releaseAttemptLease } from "./_workflow-journal-attempts.ts";
 import {
   encodedOrNull,
   type RunRow,
@@ -215,31 +216,11 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       return row ? toStepEntry(row) : undefined;
     },
 
-    async claimAttempt(runId: string, key: string): Promise<number> {
-      // ONE statement, so two concurrent deliveries cannot read the same number
-      // and let a step exceed its ceiling.
-      const rows = await db.query<{ n: number }>(
-        `insert into ${WORKFLOW_ATTEMPT_TABLE} (run_id, key, n) values ($1, $2, 1)
-         on conflict (run_id, key) do update set n = ${WORKFLOW_ATTEMPT_TABLE}.n + 1
-         returning n`,
-        [runId, key],
-      );
-      const n = rows[0]?.n;
-      if (n === undefined) throw new Error(`workflow attempt claim returned nothing for ${runId}`);
-      return n;
-    },
+    claimAttempt: (runId, key, holder, leaseMs) =>
+      claimAttemptLease(db, WORKFLOW_ATTEMPT_TABLE, { runId, key, holder, leaseMs }),
 
-    async releaseAttempt(runId: string, key: string): Promise<void> {
-      // ONE statement, and `greatest` is the floor: a release that lands twice
-      // may only under-charge a budget the next claim re-takes, where a negative
-      // count is an unbounded budget for a step that wedges the guest. A missing
-      // row is a no-op — there is nothing charged to give back.
-      await db.query(
-        `update ${WORKFLOW_ATTEMPT_TABLE} set n = greatest(n - 1, 0)
-         where run_id = $1 and key = $2`,
-        [runId, key],
-      );
-    },
+    releaseAttempt: (runId, key, holder) =>
+      releaseAttemptLease(db, WORKFLOW_ATTEMPT_TABLE, { runId, key, holder }),
 
     async readSleeps(runId: string): Promise<SleepEntry[]> {
       // `order by key`, which is what the interface promises and what makes the

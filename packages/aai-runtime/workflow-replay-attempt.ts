@@ -20,6 +20,47 @@ import type { StepEntry } from "./workflow-journal-types.ts";
 import type { StepAttemptOptions } from "./workflow-replay-step.ts";
 
 /**
+ * How long an attempt CHARGE counts against a step's budget.
+ *
+ * A charge is a lease and this is its length: past it, the charge is not in
+ * `claimAttempt`'s answer and the store may forget it. The number exists because
+ * the alternative — a charge that never expires — is a bug this engine shipped:
+ * a walk that DIED holding one could not release it, so the charge stood
+ * forever, and `maxAttempts` deaths on one step key made
+ * {@link StepAbandonedError} permanent for a run nobody could revive. That
+ * module's own doc named the missing mechanism ("needs a heartbeat to close").
+ *
+ * ## An hour, and it is deliberately far longer than any walk
+ *
+ * There is NO heartbeat: a live walk does not refresh its charge. So the window
+ * has to clear the longest walk that can legitimately be running, or a live
+ * walk's charge expires and the ceiling stops bounding anything. Production
+ * walks have been measured at 285 s and ~900 s (see "A parked delivery asks to
+ * come back PROPORTIONATELY" in `packages/aai-runtime/CLAUDE.md`), a step's own
+ * `stepFetch` may run for `STEP_FETCH_INACTIVITY_MS` at a time, and a fan-out
+ * queues behind `StepGate`. An hour is above all of it with room to spare.
+ *
+ * **Both ways of being wrong are not equal, which is what makes a generous
+ * window the right trade.** Too SHORT and a live walk's charge vanishes: the
+ * ceiling under-counts, a step is re-run, and the engine's own at-least-once
+ * cost applies — recoverable, and the direction `JournalStore.releaseAttempt`
+ * already calls safe. Too LONG and a dead walk's charge lingers: the ceiling
+ * over-counts and refuses a healthy step, which is the bug being fixed. So the
+ * error to prefer is the short one, and an hour still turns "forever" into
+ * "an hour" for every death.
+ *
+ * **What a heartbeat would buy is a SHORTER window**, not a different mechanism:
+ * a walk that renewed its lease could be given one measured in minutes, and the
+ * ceiling would then bound concurrency in near-real time instead of over an
+ * hour. It is not built — it needs a timer per in-flight step and its teardown
+ * — and this is the half that needs no timer and cannot be wrong in the
+ * expensive direction.
+ *
+ * @internal
+ */
+export const ATTEMPT_LEASE_MS = 60 * 60 * 1000;
+
+/**
  * A step whose attempt budget is spent by attempts that never ENDED.
  *
  * Its own class, and not a `FatalError`, for the reason `ReplayDivergenceError`
@@ -112,7 +153,7 @@ export async function chargeAttempt(options: StepAttemptOptions): Promise<StepEn
   const { runId, name, key, maxAttempts, journal } = options;
   // Before the body, never after — see `JournalStore.claimAttempt`. What comes
   // back is how many attempts are OUTSTANDING, this one included.
-  const outstanding = await journal.claimAttempt(runId, key);
+  const outstanding = await journal.claimAttempt(runId, key, options.holder, ATTEMPT_LEASE_MS);
   // `1` means nothing is outstanding but this attempt — so no earlier walk is
   // holding one and none was ever abandoned here. Outside the caller's try, so
   // a refusal escapes unretried and unjournaled — see `onFirstReach`.
@@ -145,7 +186,7 @@ export async function chargeAttempt(options: StepAttemptOptions): Promise<StepEn
   // This attempt ends here, in a refusal, so its charge goes back like any
   // other — which also keeps the refusal STABLE: the next reach re-takes the
   // same number and is refused for the same reason.
-  await journal.releaseAttempt(runId, key);
+  await journal.releaseAttempt(runId, key, options.holder);
   const message = abandonedMessage(name, outstanding - 1, maxAttempts);
   options.onAbandoned?.(message);
   // NOT journaled. See {@link StepAbandonedError}: nothing failed, and the walk

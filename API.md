@@ -8055,8 +8055,8 @@ type JournalStore = {
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
-    claimAttempt(runId: string, key: string): Promise<number>;
-    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
+    releaseAttempt(runId: string, key: string, holder: string): Promise<void>;
     readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
@@ -8747,6 +8747,9 @@ export function createUploadStore(opts: {
 export function decodeStorageJson(text: string): unknown;
 
 // @internal
+export const EGRESS_KEEP_ALIVE_MS = 30000;
+
+// @internal
 export function encodeStorageJson(value: unknown): string;
 
 // @public
@@ -8838,8 +8841,8 @@ type JournalStore = {
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
-    claimAttempt(runId: string, key: string): Promise<number>;
-    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
+    releaseAttempt(runId: string, key: string, holder: string): Promise<void>;
     readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
@@ -9151,6 +9154,9 @@ type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: 
 // @internal
 type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
 
+// @internal
+export function traceIdOf(header: string | null | undefined): string | undefined;
+
 // @public
 type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 
@@ -9275,8 +9281,8 @@ type JournalStore = {
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
-    claimAttempt(runId: string, key: string): Promise<number>;
-    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
+    releaseAttempt(runId: string, key: string, holder: string): Promise<void>;
     readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;

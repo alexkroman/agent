@@ -56,9 +56,10 @@ import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 import type { DeliveryBudget } from "./workflow-queue-budget.ts";
 import { claimDue } from "./workflow-queue-claim.ts";
+import { fail, failUnreachable, isGuestUnreachable } from "./workflow-queue-failure.ts";
 import type { ReconcilePass } from "./workflow-queue-reconcile.ts";
 import { reconcileStalledRuns, STALL_GRACE_MS } from "./workflow-queue-reconcile.ts";
-import { ack, fail, type QueuedMessage, reschedule } from "./workflow-queue-store.ts";
+import { ack, type QueuedMessage, reschedule } from "./workflow-queue-store.ts";
 
 const log = createLogger("workflow.queue.sweep");
 
@@ -339,13 +340,23 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
         // PER-MESSAGE isolation. One unreachable guest must not cost every
         // other tenant its tick — which is the same argument the wake sweep's
         // per-app connection makes, one layer up.
+        // Which BUDGET this spends is decided here and nowhere else, off the
+        // one thing the deliverer can say for certain: was a request sent at
+        // all. `workflow-queue-failure.ts` carries the argument; the short
+        // version is that a sandbox still booting is not a fact about the
+        // message, and charging it the message's five attempts dropped runs
+        // over infrastructure.
+        const unreachable = isGuestUnreachable(err);
         log.debug("delivery failed", {
           id: message.id,
           slug: message.slug,
           attempt: message.attempt,
+          unreachable,
           error: errorMessage(err),
         });
-        return await settle((sql) => fail(sql, message.id, message.attempt));
+        return await settle((sql) =>
+          unreachable ? failUnreachable(sql, message.id) : fail(sql, message.id, message.attempt),
+        );
       } finally {
         // ONE slot, as soon as THIS message settles — not the whole batch when
         // the pass returns. Freeing them together would leave the head-of-line

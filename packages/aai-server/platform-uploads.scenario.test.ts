@@ -21,6 +21,7 @@
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
 import {
   claimUpload,
   finishUpload,
@@ -30,7 +31,6 @@ import {
   updateUpload,
 } from "./platform-uploads.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { ensurePlatformTables } from "./test-utils.ts";
 
 describeWithPg("platform upload records", () => {
   let close: () => Promise<void>;

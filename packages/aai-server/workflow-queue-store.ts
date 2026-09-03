@@ -60,19 +60,6 @@ import type { SqlExec } from "./secret-store.ts";
 
 const log = createLogger("workflow.queue");
 
-/** Backoff for a delivery that failed, indexed by the attempt just made. */
-const RETRY_BACKOFF_MS = [1000, 5000, 15_000, 60_000, 300_000] as const;
-
-/**
- * Attempts after which a message is abandoned.
- *
- * Bounded, because a message whose guest cannot be reached is not made more
- * deliverable by trying forever, and every attempt boots a sandbox. Past this the
- * row is dropped and the run stalls — which the DevKit already recovers from on
- * any later boot, since its world re-enqueues active runs on `start()`.
- */
-export const QUEUE_MAX_ATTEMPTS = RETRY_BACKOFF_MS.length;
-
 /** One queued message, as the sweep sees it. */
 export type QueuedMessage = {
   id: string;
@@ -354,42 +341,4 @@ export async function reschedule(sql: SqlExec, id: string, delaySeconds: number)
     [id, String(delayMs)],
   );
   await announce(sql, delayMs);
-}
-
-/**
- * A message whose delivery failed: back off, or abandon it.
- *
- * Reports which happened, because the two are different operational events — a
- * retry is noise and an abandonment is a stalled run.
- */
-export async function fail(
-  sql: SqlExec,
-  id: string,
-  attempt: number,
-): Promise<"retry" | "dropped"> {
-  const next = attempt + 1;
-  if (next >= QUEUE_MAX_ATTEMPTS) {
-    await ack(sql, id);
-    log.warn("message abandoned after the retry budget", { id, attempt: next });
-    return "dropped";
-  }
-  // In range by construction: the guard above returned for every `attempt` the table
-  // does not cover, so this is at most `QUEUE_MAX_ATTEMPTS - 2`. The `??` is what
-  // `noUncheckedIndexedAccess` asks for, not a real branch. It used to carry TWO arms
-  // that disagreed about the value — `.at(-1)` (300_000) and a literal 60_000 — so
-  // whichever fired was a coin flip about intent; one arm, matching the table's own
-  // longest wait, is the whole of what an unreachable fallback can honestly say.
-  const backoffMs = RETRY_BACKOFF_MS[attempt] ?? 300_000;
-  await sql(
-    `update aai_platform.workflow_queue
-        set attempt = $2,
-            locked_at = null,
-            available_at = now() + $3::bigint * interval '1 millisecond'
-      where id = $1`,
-    [id, next, String(backoffMs)],
-  );
-  // No {@link announce} here, and it is not an omission: every entry in
-  // `RETRY_BACKOFF_MS` is positive, so a failed delivery is never due now and a
-  // notification would wake every replica to find nothing.
-  return "retry";
 }

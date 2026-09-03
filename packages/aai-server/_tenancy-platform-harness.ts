@@ -116,7 +116,13 @@ async function applyStep(sql: SqlExec, op: StepOp): Promise<Answer> {
     case "readSteps":
       return { ok: await journal.readSteps(sql, op.slug, op.runId) };
     case "claimAttempt":
-      return { ok: await journal.claimAttempt(sql, op.slug, op.runId, op.key) };
+      return {
+        // The op names its own holder — a charge is a lease held by a WALK, so
+        // which walk is claiming is part of the operation. The window is
+        // generous: these programs run in under a second, so nothing ages out
+        // and the property stays about TENANCY.
+        ok: await journal.claimAttempt(sql, op.slug, op.runId, op.key, op.holder, 60_000),
+      };
     case "claimSleep":
       return {
         ok: await journal.claimSleep(
@@ -273,7 +279,13 @@ async function readJournal(
       finishedAt: num(row.finished_at),
     });
   }
-  for (const row of await read("workflow_attempts", "run_id, key, n")) {
+  // `holders` is a MAP of holder to when it claimed, so the census reads its
+  // SIZE: what a tenant boundary is about is that a charge appears under one
+  // slug and not the other, and the holder names are the walk's business.
+  for (const row of await read(
+    "workflow_attempt_leases",
+    "run_id, key, (select count(*) from jsonb_object_keys(holders)) as n",
+  )) {
     into(row)?.attempts.push({ runId: str(row.run_id), key: str(row.key), n: num(row.n) });
   }
   for (const row of await read(

@@ -40,7 +40,7 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { createPgChatStore } from "./chat-store.ts";
-import { ensurePlatformTables } from "./test-utils.ts";
+import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
 import { createPgWorkspaceStore } from "./workspace-store.ts";
 
 const SCOPE = "jsonb-encoding-test";

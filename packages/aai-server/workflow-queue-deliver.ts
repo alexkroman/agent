@@ -58,6 +58,7 @@ import { createLogger } from "./logger.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import { GuestUnreachableError } from "./workflow-queue-failure.ts";
 import { envelopeBody, parseEnvelope, type QueuedMessage } from "./workflow-queue-store.ts";
 import type { DeliverMessage } from "./workflow-queue-sweep.ts";
 
@@ -137,17 +138,24 @@ export function createQueueDeliverer(opts: QueueDelivererOptions): DeliverMessag
         // Both cases THROW, and neither is silently dropped. A 404 means the slug
         // has no agent — normally impossible, because the queue row's FK cascades
         // on delete, so this is a delete/redeploy race — and a 503 means the boot
-        // is still in flight, which the next tick joins. The sweep's backoff
-        // covers both, and its abandonment budget bounds a slug that never comes
-        // back. A "drop it now" outcome would turn that race into a lost run.
-        throw new Error(`broker refused ${slug}: HTTP ${brokered.status}`);
+        // is still in flight, which the next tick joins. A "drop it now" outcome
+        // would turn that race into a lost run.
+        //
+        // UNREACHABLE, because no request has been sent: whatever is wrong is
+        // wrong with the fleet and not with this message, so it spends the
+        // patient budget rather than the five attempts a refusing guest gets.
+        // The 503 arm is the whole reason that distinction exists — see
+        // `workflow-queue-failure.ts`.
+        throw new GuestUnreachableError(`broker refused ${slug}: HTTP ${brokered.status}`);
       }
       // INSIDE the flight with the broker, because the two answer one question
       // together: the version is what the guest's bearer is derived from, and a
       // version read beside a DIFFERENT broker's origin is a token for another
       // sandbox.
       const deployed = await opts.store.getAgentVersion(slug);
-      if (deployed === null) throw new Error(`no deployed version for ${slug}`);
+      // Also UNREACHABLE: without a version there is no bearer to derive, so
+      // nothing was asked. A deploy in flight is the ordinary cause.
+      if (deployed === null) throw new GuestUnreachableError(`no deployed version for ${slug}`);
       return { guestOrigin: brokered.guestOrigin, version: deployed };
     });
     // Unwraps the QUEUE's envelope, not the DevKit's message: `data` holds the

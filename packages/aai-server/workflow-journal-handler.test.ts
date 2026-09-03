@@ -29,6 +29,7 @@ import { MAX_WORKFLOW_FIND_LIMIT } from "@alexkroman1/aai-runtime";
 import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
+  captureLogs,
   createTestOrchestrator,
   deploy,
   fakeAdminDbOver,
@@ -61,14 +62,23 @@ function callRoute(
   slug: string,
   body: unknown,
   bearer?: string,
+  traceparent?: string,
 ): Promise<Response> {
   const authorization = bearer === undefined ? undefined : `Bearer ${bearer}`;
   return fetch(`/${slug}/workflow-journal`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...omitUndefined({ authorization }) },
+    headers: {
+      "content-type": "application/json",
+      ...omitUndefined({ authorization, traceparent }),
+    },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
+
+// At module scope, because `captureLogs` installs `beforeEach`/`afterEach` —
+// called inside a test body it registers its hooks too late to have recorded
+// anything.
+const logs = captureLogs();
 
 describe("POST /:slug/workflow-journal", () => {
   describe("authorization", () => {
@@ -188,6 +198,10 @@ describe("POST /:slug/workflow-journal", () => {
           now: 1,
           kind: "sleep",
           token: "tok",
+          // The attempt lease's two, both required — see the route's own note on
+          // why neither is defaulted here.
+          holder: "walk-1",
+          leaseMs: 60_000,
           entry: {
             key: "a#0",
             name: "a",
@@ -201,6 +215,56 @@ describe("POST /:slug/workflow-journal", () => {
       // 200 or 500 — a 400 would mean the route rejected the CALL rather than the
       // database answering oddly, which is what a missing method looks like.
       expect(res.status, method).not.toBe(400);
+    });
+
+    test.each(["holder", "leaseMs"] as const)(
+      "claimAttempt without %s is a 400, never a defaulted lease",
+      async (missing) => {
+        // Both are REQUIRED at the door. An absent holder would make every walk
+        // one holder and put the scalar counter back; an absent window would
+        // need a default here, and a ceiling whose window this route chose is a
+        // ceiling the engine cannot reason about. 400 says so; a default would
+        // be a silently different budget.
+        const p = await platform();
+        const body: Record<string, unknown> = {
+          method: "claimAttempt",
+          runId: "wrun_1",
+          key: "a#0",
+          holder: "walk-1",
+          leaseMs: 60_000,
+        };
+        delete body[missing];
+        const res = await callRoute(p.fetch, MINE, body, await bearerFor(p.store, MINE));
+        expect(res.status, missing).toBe(400);
+      },
+    );
+
+    /**
+     * The trace id end to end, over the real route rather than over
+     * `withReserved` alone.
+     *
+     * `_platform-route.test.ts` pins that every line the frame writes carries the
+     * id; what only a route can show is that the id is READ — that the header the
+     * runtime mints (`aai-runtime/platform-rpc.ts`) reaches `guestTrace` through
+     * hono's own request, which is the half a middleware change can break with
+     * every unit test still green.
+     */
+    test("a caller's traceparent reaches the route's own log line", async () => {
+      const TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
+      const p = await platform(() => {
+        throw new Error("connection reset");
+      });
+      const res = await callRoute(
+        p.fetch,
+        MINE,
+        { method: "getRun", runId: "wrun_1" },
+        await bearerFor(p.store, MINE),
+        `00-${TRACE}-00f067aa0ba902b7-01`,
+      );
+      expect(res.status).toBe(503);
+      expect(logs.all().map((line) => line.ctx)).toContainEqual(
+        expect.objectContaining({ slug: MINE, traceId: TRACE }),
+      );
     });
 
     test("a refused hook-token claim is a 409 that SAYS why, never a retryable 503", async () => {

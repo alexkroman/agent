@@ -35,7 +35,25 @@ export const WORKFLOW_RUN_TABLE = "aai_workflow_runs";
 
 /** One row per settled step, plus the attempt counter and the two wait kinds. */
 export const WORKFLOW_STEP_TABLE = "aai_workflow_steps";
-export const WORKFLOW_ATTEMPT_TABLE = "aai_workflow_attempts";
+/**
+ * One row per OUTSTANDING attempt, and a new table rather than a changed one.
+ *
+ * `aai_workflow_attempts` held a scalar `n` keyed `(run_id, key)`, and a scalar
+ * cannot expire: the charge a dead walk left was indistinguishable from a live
+ * one and stood forever, so `maxAttempts` deaths on one step key refused it
+ * permanently. Expiring individual charges needs a timestamp PER charge, which
+ * needs a row per charge, which needs the holder in the primary key — so the key
+ * changes, and `create table if not exists` cannot change a key.
+ *
+ * The old table is left in place rather than dropped here. A shipped DDL
+ * applier runs on operator databases, and `drop table` is not a thing a library
+ * should do to one on its own initiative; the platform's own migration retires
+ * its copy, and a self-hoster's is an empty table nothing reads. Outstanding
+ * charges are lost at the changeover, which is the safe direction — see
+ * `JournalStore.releaseAttempt` on why under-charging is recoverable and
+ * over-charging is not.
+ */
+export const WORKFLOW_ATTEMPT_TABLE = "aai_workflow_attempt_leases";
 export const WORKFLOW_SLEEP_TABLE = "aai_workflow_sleeps";
 export const WORKFLOW_HOOK_TABLE = "aai_workflow_hooks";
 
@@ -117,10 +135,27 @@ const ALTER_STEPS_STARTED_AT = (t: string) =>
 const ALTER_RUNS_CODE_VERSION = (t: string) =>
   `alter table ${t} add column if not exists code_version text`;
 
+/**
+ * Every outstanding attempt for one step key: WHO holds a charge, and since when.
+ *
+ * `holders` is a map of holder to the instant it claimed, and the primary key
+ * stays `(run_id, key)` — ONE row per key, not one per holder. That is the
+ * atomicity: two concurrent claims collide on this row, so the second blocks and
+ * re-evaluates against the first's committed value. A row per holder conflicts
+ * on nothing and both claims answer `1`, which is a step's ceiling bounding
+ * nothing; `_workflow-journal-attempts.ts` carries the measurement.
+ *
+ * Instants are milliseconds since the epoch, as TEXT inside the map, like every
+ * other instant in this schema (`finished_at`, `wake_at`) and deliberately not a
+ * `timestamptz`: the engine compares them against its OWN clock, so a type that
+ * made the database the clock would put the two on different ones. A charge's
+ * instant is set by the CLAIM and never refreshed by a live holder — see
+ * `ATTEMPT_LEASE_MS`, which argues the window and what a heartbeat would buy.
+ */
 const CREATE_ATTEMPTS = (t: string) => `create table if not exists ${t} (
   run_id text not null,
   key text not null,
-  n integer not null,
+  holders jsonb not null default '{}'::jsonb,
   primary key (run_id, key)
 )`;
 

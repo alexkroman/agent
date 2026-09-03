@@ -71,6 +71,26 @@ describe("what crosses to the platform", () => {
     expect(platform.calls[0]?.url).toBe("https://api.test/my-agent/session-state");
   });
 
+  test("carries a W3C traceparent, so the platform's own lines can be joined", async () => {
+    const platform = recordingPlatform();
+    await platformPost(endpoint(platform.fetch), CALL);
+    // The header the SERVER parses (`aai-server/_platform-route.ts`), asserted
+    // against the grammar rather than a fixture — there is nothing to fix here,
+    // and a shape the parser refuses is a correlation key that silently never
+    // correlates.
+    expect(platform.calls[0]?.headers.get("traceparent")).toMatch(
+      /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/,
+    );
+  });
+
+  test("mints a fresh trace per call — one span per RPC", async () => {
+    const platform = recordingPlatform();
+    await platformPost(endpoint(platform.fetch), CALL);
+    await platformPost(endpoint(platform.fetch), CALL);
+    const [first, second] = platform.calls;
+    expect(first?.headers.get("traceparent")).not.toBe(second?.headers.get("traceparent"));
+  });
+
   test("the bearer is one spelling, which both ends of the wire read", () => {
     // Five call sites wrote this out; a scheme that disagrees with the server's
     // parser by a character is a 401 with nothing naming the header.

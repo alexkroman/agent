@@ -62,6 +62,7 @@
  * method whose identity the walk itself decides.
  */
 
+import { randomUUID } from "node:crypto";
 import { DEFAULT_STEP_MAX_ATTEMPTS, type StepOptions, type WorkflowCtx } from "@alexkroman1/aai";
 import type { Logger } from "./runtime-config.ts";
 import { describeCodeChange } from "./workflow-code-version.ts";
@@ -123,6 +124,16 @@ export type ReplayOptions = {
    * `workflow-engine.ts` issues it beside the CAS and hands the promise down.
    * Optional: a caller with nothing to overlap it with passes nothing.
    */
+  /**
+   * WHOSE attempt charges this walk takes. Defaults to a fresh id.
+   *
+   * An option only so a spec can name it — a harness that wants to model two
+   * walks of one run needs two holders, and a harness that wants to model a
+   * REDELIVERY of the same walk needs one. Production never passes it: a walk
+   * that inherited another's holder would inherit its charge, and the ceiling
+   * would stop counting the thing it exists to count.
+   */
+  holder?: string | undefined;
   steps?: Promise<StepEntry[]> | undefined;
   /**
    * This walk's WAIT snapshot, already in flight — the other half of
@@ -202,6 +213,12 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // journal call would be silently exempt from the rule.
   const journalWatch = watchJournalFailure(options.journal);
   const journal = journalWatch.journal;
+  // WHOSE attempt charges this walk takes. One id for the whole walk, not one
+  // per step: a charge attributes the WALK, so one that dies takes every charge
+  // it holds with it and one that reaches a key twice must not pay twice. See
+  // `JournalStore.claimAttempt`, and `ATTEMPT_LEASE_MS` for how long a charge
+  // outlives the walk that abandoned it.
+  const holder = options.holder ?? randomUUID();
 
   // One read for the whole replay — see `JournalStore`'s doc for why this is not
   // a lookup per step. Indexed by `key`, which is what `ctx.step` computes.
@@ -348,6 +365,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
             key,
             maxAttempts: stepOptions?.maxAttempts ?? DEFAULT_STEP_MAX_ATTEMPTS,
             journal,
+            holder,
             signal,
             // GATED around the attempt loop rather than around `fn`, so a step
             // holds its slot across its own retries. Re-queueing between attempts

@@ -1,0 +1,51 @@
+-- A SECOND retry budget for the queue: attempts that never reached a guest.
+--
+-- `attempt` counted every way a delivery can go wrong, and two of them are not
+-- the same fact. A guest that ANSWERED — a step that threw, a 4xx, a response
+-- lost on the way back — has told us something about this message. A guest that
+-- was never reached has not: the broker answering 503 means a sandbox is still
+-- booting, which is literally "up but not ready", and 404 means a
+-- delete/redeploy race.
+--
+-- With one counter the cheapest of those spent the same attempt as a real
+-- failure. Five 503s inside ~380 s dropped the message, after which the run
+-- waited out `STALL_GRACE_MS` (10 minutes) before
+-- `workflow-queue-reconcile.ts` brought it back — sixteen minutes and six
+-- sandbox boots for a condition that was never about the message. So the
+-- blameless failures get a counter and a backoff table of their own
+-- (`workflow-queue-failure.ts`, which carries the budgets and the argument for
+-- splitting them rather than raising the one).
+--
+-- ## Why a column and not a wall clock
+--
+-- The obvious alternative needs no migration: keep one counter and refuse to
+-- DROP a message younger than some grace. It does not work, because the
+-- counter is also the backoff INDEX — holding it still to avoid the drop holds
+-- the delay at its first entry too, so an unreachable guest would be retried
+-- every two seconds forever, booting a sandbox each time. Two budgets need two
+-- counters.
+--
+-- ## `not null default 0`, and why that is safe to add in place
+--
+-- Postgres 11+ stores a non-volatile column default in the catalogue rather
+-- than rewriting the heap, so this is a metadata-only `add column` on a table
+-- that can hold hundreds of thousands of rows. No rewrite, no long lock. That
+-- is the same property `20260903010000_workflow_queue_run_kind_columns.sql`
+-- relies on for `kind`, and unlike its `generated … stored` sibling this one
+-- really is O(1) rather than merely quick.
+--
+-- `not null` rather than nullable, so `unreachable_attempts + 1` in
+-- `failUnreachable` needs no `coalesce` and an existing row starts its patient
+-- budget unspent — which is the right answer for a message written before this
+-- distinction existed.
+--
+-- `add column if not exists` makes the whole statement idempotent, so a replay
+-- against a database that already has it is a no-op; the test-suite fixtures
+-- replay every migration in order (`ensurePlatformTables`).
+alter table aai_platform.workflow_queue
+  add column if not exists unreachable_attempts integer not null default 0;
+
+-- No index. Nothing SELECTS on this column: `claimDue` never reads it, and
+-- `failUnreachable` addresses its row by primary key. An index here would be
+-- write cost with no reader — the trap `20260903120000_workflow_queue_group_index.sql`
+-- argues the other side of.

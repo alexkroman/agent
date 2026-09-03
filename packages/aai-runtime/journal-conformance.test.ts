@@ -273,11 +273,18 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
         .readStep(str(body, "runId"), str(body, "key"))
         .then((step) => (step ? stepRow(step) : null));
     case "claimAttempt":
-      return store.claimAttempt(str(body, "runId"), str(body, "key"));
+      return store.claimAttempt(
+        str(body, "runId"),
+        str(body, "key"),
+        str(body, "holder"),
+        Number(body.leaseMs),
+      );
     case "releaseAttempt":
       // `null` rather than `undefined`: the route answers JSON, and the client
       // reads nothing off it — see `releaseAttempt` in `workflow-journal-platform.ts`.
-      return store.releaseAttempt(str(body, "runId"), str(body, "key")).then(() => null);
+      return store
+        .releaseAttempt(str(body, "runId"), str(body, "key"), str(body, "holder"))
+        .then(() => null);
     case "readSleeps":
       return store.readSleeps(str(body, "runId")).then((records) =>
         records.map((record) => ({

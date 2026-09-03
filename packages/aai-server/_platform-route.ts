@@ -62,10 +62,13 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "@alexkroman1/aai-runtime";
+import { traceIdOf } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "./context.ts";
 import { assertGuestBearer } from "./guest-bearer.ts";
+import { PLATFORM_DB_RESERVE_TIMEOUT_MS } from "./platform-db-errors.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -83,6 +86,27 @@ export async function guestSlug(c: AppContext): Promise<string> {
   const slug = c.var.slug;
   await assertGuestBearer(c, slug);
   return slug;
+}
+
+/**
+ * The caller's trace id, for this request's log lines.
+ *
+ * Every guest→platform RPC now carries a `traceparent`
+ * (`aai-runtime/_trace-context.ts`), and this is the other end of it: the id
+ * goes on every line {@link withReserved} writes, so the caller's wall clock and
+ * this side's `waitedMs`/`workMs` can be put beside each other. A busy replica
+ * writes hundreds of these a second, so a timestamp cannot make that join and an
+ * id can.
+ *
+ * `undefined` for any caller that sent no header — an older guest, or a request
+ * from something that is not a guest at all — which is why {@link ReservedCall}
+ * declares the key REQUIRED with an optional value: a route may have no trace,
+ * but it may not forget to look.
+ *
+ * @internal
+ */
+export function guestTrace(c: AppContext): string | undefined {
+  return traceIdOf(c.req.header("traceparent"));
 }
 
 /**
@@ -148,6 +172,15 @@ export type ReservedCall = {
   /** What the warn line carries besides the error: the slug, and the method where a route has one. */
   detail: Record<string, unknown>;
   /**
+   * This request's trace id — {@link guestTrace}.
+   *
+   * A REQUIRED key with an optional value, deliberately: `traceparent` is absent
+   * for plenty of legitimate callers, but a route that never asked for it is a
+   * route whose lines cannot be joined to the caller's, and that is a mistake
+   * the checker can catch where a `?:` would let it pass.
+   */
+  trace: string | undefined;
+  /**
    * A domain error this route answers with a status of its own.
    *
    * Consulted after `HTTPException` and before the 503. Only the upload records
@@ -158,16 +191,95 @@ export type ReservedCall = {
 };
 
 /**
- * Run one call on a reserved admin connection, and release it whatever happens.
+ * How long a route may wait for an admin connection before the WAIT is the news.
+ *
+ * A tenth of {@link PLATFORM_DB_RESERVE_TIMEOUT_MS}, derived rather than written
+ * down twice: the two describe the same pressure at different heights, and a
+ * threshold that did not move with the deadline would eventually sit above it
+ * and never fire at all.
+ *
+ * Nothing legitimate waits this long. That constant's own doc is the argument —
+ * every reservation on this pool is one guest request or one queue statement, so
+ * half a second of queueing is a pool with nothing to give rather than a pool
+ * that is busy — which is what makes a line here a fact about the POOL and not
+ * about whichever route happened to print it.
  *
  * @internal
  */
+export const RESERVE_WAIT_WARN_MS = PLATFORM_DB_RESERVE_TIMEOUT_MS / 10;
+
+/**
+ * Run one call on a reserved admin connection, and release it whatever happens.
+ *
+ * ## The ACQUIRE is timed, because the number was unobservable and load-bearing
+ *
+ * A guest-called platform route is one `POST` holding one of `ADMIN_POOL_MAX`
+ * connections for its whole duration, and the measured cost of the busiest of
+ * them — the journal RPC, at ~840 ms of server time
+ * (`packages/aai-runtime/CLAUDE.md`, "A journal read is a round trip") — was a
+ * total with no breakdown. So the one question an operator actually has about it
+ * had no answer from inside the system: is that our own pool queueing, or is it
+ * the proxy and the round trip? Those have opposite remedies — the first is a
+ * pool or a call-volume problem, the second cannot be fixed by widening
+ * anything — and `ADMIN_POOL_MAX` had already been widened once on the
+ * assumption.
+ *
+ * Three lines, and which one a request prints is the answer:
+ *
+ * - **A wait past {@link RESERVE_WAIT_WARN_MS} WARNS.** Unambiguously abnormal,
+ *   per that constant's doc, and it names the pool rather than the route.
+ * - **Every other reservation logs at DEBUG**, which `consoleLogger` makes a
+ *   no-op unless `AAI_DEBUG=1` — so the distribution is readable on one replica
+ *   on demand, and absence of a warn is not the only evidence available. That
+ *   matters: "no warns" is indistinguishable from "not deployed" otherwise.
+ * - **A FAILED acquire warns with the wait it spent.** It used to log nothing
+ *   at all here, because the reservation is taken before the `try` below — so
+ *   `POOL_EXHAUSTED` at the 5s deadline reached the router's error handler with
+ *   no line naming the slug, and the 503 read as the route's fault. The error is
+ *   rethrown UNCHANGED: `isPlatformDbUnreachable` is what classifies it and this
+ *   only reports it.
+ *
+ * The 503 below carries `waitedMs` and `workMs` for the same reason — a failure
+ * after 20 ms of work behind 4,900 ms of queueing is a different incident from
+ * one that spent thirty seconds in a statement, and the old line could not tell
+ * them apart.
+ *
+ * @internal
+ */
+/**
+ * A route's `detail`, plus its trace id when it has one.
+ *
+ * `omitUndefined` rather than a spread of `{ traceId }`: a `traceId: undefined`
+ * in a log context prints as a field that is there and empty, which reads as a
+ * caller that sent a broken header rather than one that sent none.
+ */
+function traced(call: ReservedCall): Record<string, unknown> {
+  return { ...call.detail, ...omitUndefined({ traceId: call.trace }) };
+}
+
 export async function withReserved<T>(
   adminDb: AdminDb,
   call: ReservedCall,
   run: (sql: SqlExec) => Promise<T>,
 ): Promise<T> {
-  const reserved = await adminDb.reserve();
+  const askedAt = performance.now();
+  const since = (from: number) => Math.round(performance.now() - from);
+  let reserved: Awaited<ReturnType<AdminDb["reserve"]>>;
+  try {
+    reserved = await adminDb.reserve();
+  } catch (err: unknown) {
+    call.log.warn("Platform admin reservation failed", {
+      ...traced(call),
+      waitedMs: since(askedAt),
+      error: errorMessage(err),
+    });
+    throw err;
+  }
+  const waitedMs = since(askedAt);
+  const line = { ...traced(call), waitedMs };
+  if (waitedMs >= RESERVE_WAIT_WARN_MS) call.log.warn("Platform admin reservation was slow", line);
+  else call.log.debug("Platform admin reservation", line);
+  const heldAt = performance.now();
   try {
     return await run((q, p) => reserved.query(q, p));
   } catch (err: unknown) {
@@ -176,7 +288,12 @@ export async function withReserved<T>(
     if (err instanceof HTTPException) throw err;
     const own = call.statusFor?.(err);
     if (own) throw own;
-    call.log.warn(call.logMessage ?? call.failure, { ...call.detail, error: errorMessage(err) });
+    call.log.warn(call.logMessage ?? call.failure, {
+      ...traced(call),
+      waitedMs,
+      workMs: since(heldAt),
+      error: errorMessage(err),
+    });
     // 503 rather than 500: from the guest's point of view every remaining cause is
     // transient — a connection shortage, a partitioned database — and the caller
     // above (the DevKit's step retry, the runtime's own flush) is built to retry.

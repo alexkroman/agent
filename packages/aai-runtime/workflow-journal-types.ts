@@ -237,7 +237,7 @@ export type JournalStore = {
    */
   readStep(runId: string, key: string): Promise<StepEntry | undefined>;
   /**
-   * Charge one attempt for `key` and resolve the attempt's 1-based number.
+   * Charge one attempt for `key` and resolve how many are outstanding.
    *
    * Called BEFORE the step body runs, and that order is the whole contract: a
    * process that dies mid-step has already burned the attempt, so a step whose
@@ -259,12 +259,42 @@ export type JournalStore = {
    * loser journaled `failed` over a step that had SUCCEEDED. See
    * `workflow-replay-step.ts`, "An attempt is a lease".
    *
+   * ## `holder` is WHOSE lease, and it is what makes the charge attributable
+   *
+   * The walk's own id (`replayRun` mints one per walk). Two things follow, and
+   * the second is why the parameter exists at all:
+   *
+   * - **A claim is IDEMPOTENT for a holder that already has one.** Re-claiming
+   *   answers the same number rather than a higher one. Today the engine claims
+   *   once per walk per key, so this is a defence rather than a fix — but this
+   *   is a non-idempotent write over an at-least-once transport, and the
+   *   platform backend's own doc has to say "must not soften it by retrying the
+   *   call itself" precisely because a retry used to cost an attempt.
+   * - **A charge can EXPIRE.** A scalar counter cannot: the charge a dead walk
+   *   left is indistinguishable from a live one, so it stood forever and
+   *   `maxAttempts` deaths on one key refused that step permanently. Expiring
+   *   individual charges needs a timestamp per charge, which needs a row per
+   *   charge, which needs the holder in the key.
+   *
+   * ## `leaseMs` is how long a charge counts for
+   *
+   * A charge older than this does not appear in the answer, and is the store's
+   * to forget. The window is the CALLER's policy — `ATTEMPT_LEASE_MS` in
+   * `workflow-replay-attempt.ts` carries the number and the argument for it,
+   * including why it is generous and what a heartbeat would buy.
+   *
+   * The store must NOT refresh a live holder's `claimed_at` on a re-claim: the
+   * lease measures how long ago the attempt STARTED, and refreshing it would let
+   * a walk that keeps re-reaching one key hold a charge indefinitely — the
+   * failure the expiry exists to end, by a slower route.
+   *
    * Monotonic per `(runId, key)` in the only sense that matters for correctness:
-   * two concurrent charges never answer the same number. A backend implements it
-   * as an upsert-and-increment; anything that reads then writes can hand the same
-   * number to two concurrent deliveries and let a step exceed its ceiling.
+   * two concurrent charges by DIFFERENT holders never answer the same number. A
+   * backend implements it as one statement that writes and then counts; anything
+   * that reads then writes can hand the same number to two concurrent
+   * deliveries and let a step exceed its ceiling.
    */
-  claimAttempt(runId: string, key: string): Promise<number>;
+  claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
   /**
    * Give back one attempt charged for `key`. Floored at zero.
    *
@@ -285,14 +315,19 @@ export type JournalStore = {
    * - **An ABORT keeps it**, for the same reason a death does: the walk is over
    *   and it did not finish.
    *
-   * Idempotent at the floor rather than matched to a token: a release that lands
-   * twice can only under-charge a budget the next charge re-takes, where one
-   * that could go negative would hand a wedging step an unbounded budget.
+   * Idempotent, and now MATCHED to a holder rather than floored at zero: the
+   * charge being given back is a row, so a release that lands twice deletes
+   * nothing the second time and a release can no longer take somebody else's
+   * charge. The old floor existed because a decrement could not tell whose
+   * charge it was spending, and it kept the safe direction — under-charge a
+   * budget the next claim re-takes, rather than let a wedging step reach an
+   * unbounded one. Naming the row keeps that direction and stops needing the
+   * floor.
    *
    * The happy path therefore still costs exactly one journal round trip per
    * step: no release at all.
    */
-  releaseAttempt(runId: string, key: string): Promise<void>;
+  releaseAttempt(runId: string, key: string, holder: string): Promise<void>;
   /**
    * Every durable wait this run has ever registered, ordered by `key`.
    *

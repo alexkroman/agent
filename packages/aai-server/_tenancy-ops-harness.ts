@@ -57,7 +57,7 @@ export type Op =
       finishedAt: number;
     }
   | { t: "readSteps"; slug: Slug; runId: string }
-  | { t: "claimAttempt"; slug: Slug; runId: string; key: string }
+  | { t: "claimAttempt"; slug: Slug; runId: string; key: string; holder: string }
   | {
       t: "claimSleep";
       slug: Slug;

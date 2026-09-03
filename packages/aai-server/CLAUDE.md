@@ -1538,6 +1538,20 @@ enqueue must NOT notify, and an absence-of-notification spec needs a barrier
 channel — a `vi.waitFor` on an exact count passes against an unconditional
 notify, verified by A/B.
 
+**A failed delivery spends ONE OF TWO budgets, and which one is the sweep's
+decision.** `workflow-queue-failure.ts` owns both and carries the argument. The
+short version: `attempt` counted every way a delivery can go wrong, so the
+broker answering 503 because a boot is still in flight — literally "up but not
+ready" — spent the same attempt as a step that threw, and five of those inside
+~380 s dropped the message. The run then waited out `STALL_GRACE_MS` before
+reconcile brought it back: sixteen minutes and six sandbox boots for a condition
+that was never about the message. So a delivery that sent NO REQUEST throws
+`GuestUnreachableError` and spends `unreachable_attempts` on a longer table
+instead. Two things not to relitigate: a `fetch` that throws is deliberately NOT
+unreachable (the guest may have the message and be running the step), and the
+patient budget's total is sized just INSIDE `STALL_GRACE_MS` so reconcile
+follows it rather than racing it.
+
 **A TICK is not gated on the previous pass, and that is a fix rather than a
 detail.** It was: the coalescing runner sat behind both triggers, and a pass
 awaits every delivery it claimed, where one delivery is bounded only by

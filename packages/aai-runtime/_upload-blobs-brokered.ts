@@ -51,7 +51,7 @@ import { RETRYABLE_STATUS, sleep } from "@alexkroman1/aai/host-internal";
 import { jitteredBackoff } from "@alexkroman1/aai/internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import { egressFetch } from "./_egress-fetch.ts";
+import { blobFetch } from "./_egress-fetch.ts";
 import type { UploadBlobs } from "./_upload-blobs.ts";
 import { contentLength, IDENTITY_ENCODING } from "./_upload-blobs.ts";
 import { collectCapped } from "./_upload-byte-util.ts";
@@ -113,7 +113,7 @@ export type BrokeredUploadBlobsOptions = {
    */
   base: string;
   /**
-   * Test seam — production takes the pooled HTTP/1.1 `egressFetch`, NEVER
+   * Test seam — production takes the pooled HTTP/1.1 `blobFetch`, NEVER
    * `globalThis.fetch`: see `_egress-fetch.ts`.
    */
   fetch?: typeof globalThis.fetch | undefined;
@@ -125,12 +125,12 @@ export const BROKERED_UPLOADS_PATH = "uploads";
 /** {@link UploadBlobs} brokered through the platform's own byte route. */
 export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): UploadBlobs {
   const base = opts.base.replace(/\/+$/, "");
-  // `egressFetch`, NEVER `globalThis.fetch`: these are several concurrent requests
+  // `blobFetch`, NEVER `globalThis.fetch`: these are several concurrent requests
   // to one origin, some of them carrying megabytes, which is the exact shape undici
   // 8's HTTP/2 default turns into one multiplexed connection and a stream reset with
   // no status. That reset is the `fetch failed` this module's own retry could not
   // ride out — `_egress-fetch.ts` carries the production log and the measurements.
-  const call = opts.fetch ?? egressFetch;
+  const call = opts.fetch ?? blobFetch;
   // The key the STORE composes is `<prefix>/<id>/<at>`; the platform composes its
   // own from the slug, so only the last two segments travel. Sliced rather than
   // re-derived so there is one definition of a key's shape (`partKey`).

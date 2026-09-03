@@ -118,7 +118,7 @@ describeWithPg("the durable workflow journal over a real Postgres", () => {
       [SCHEMA],
     );
     expect(rows.map((r) => r.table_name)).toEqual([
-      "aai_workflow_attempts",
+      "aai_workflow_attempt_leases",
       "aai_workflow_hooks",
       "aai_workflow_runs",
       "aai_workflow_sleeps",
@@ -176,7 +176,9 @@ describeWithPg("the durable workflow journal over a real Postgres", () => {
     // forever.
     await seed("wrun_attempts");
     const claims = await Promise.all(
-      Array.from({ length: 8 }, () => journal.claimAttempt("wrun_attempts", "step#0")),
+      Array.from({ length: 8 }, (_unused, i) =>
+        journal.claimAttempt("wrun_attempts", "step#0", `walk-${i}`, 60_000),
+      ),
     );
     expect([...claims].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });

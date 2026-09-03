@@ -74,8 +74,16 @@ export type JournalWrite = { threw?: string | undefined } & (
       expect: readonly RunStatus[] | undefined;
       moved: boolean;
     }
-  | { m: "claimAttempt"; runId: string; key: string; attempt: number | undefined }
-  | { m: "releaseAttempt"; runId: string; key: string }
+  | {
+      m: "claimAttempt";
+      runId: string;
+      key: string;
+      /** WHOSE charge — a rebuild that dropped it would merge two walks into one. */
+      holder: string;
+      leaseMs: number;
+      attempt: number | undefined;
+    }
+  | { m: "releaseAttempt"; runId: string; key: string; holder: string }
   | {
       m: "claimSleep";
       runId: string;
@@ -144,15 +152,15 @@ export function recordJournal(inner: JournalStore = createMemoryJournal()): Reco
         () => inner.setStatus(runId, next, patch, expect),
         (moved) => ({ m: "setStatus", runId, next, patch, expect, moved: moved === true }),
       ),
-    claimAttempt: (runId, key) =>
+    claimAttempt: (runId, key, holder, leaseMs) =>
       log(
-        () => inner.claimAttempt(runId, key),
-        (attempt) => ({ m: "claimAttempt", runId, key, attempt }),
+        () => inner.claimAttempt(runId, key, holder, leaseMs),
+        (attempt) => ({ m: "claimAttempt", runId, key, holder, leaseMs, attempt }),
       ),
-    releaseAttempt: (runId, key) =>
+    releaseAttempt: (runId, key, holder) =>
       log(
-        () => inner.releaseAttempt(runId, key),
-        () => ({ m: "releaseAttempt", runId, key }),
+        () => inner.releaseAttempt(runId, key, holder),
+        () => ({ m: "releaseAttempt", runId, key, holder }),
       ),
     claimSleep: (runId, key, wakeAt, correlationId, kind) =>
       log(
@@ -272,10 +280,10 @@ async function applyWrite(journal: JournalStore, write: JournalWrite): Promise<v
       if (write.moved) await journal.setStatus(write.runId, write.next, write.patch, write.expect);
       return;
     case "claimAttempt":
-      await journal.claimAttempt(write.runId, write.key);
+      await journal.claimAttempt(write.runId, write.key, write.holder, write.leaseMs);
       return;
     case "releaseAttempt":
-      await journal.releaseAttempt(write.runId, write.key);
+      await journal.releaseAttempt(write.runId, write.key, write.holder);
       return;
     case "claimSleep":
       await journal.claimSleep(

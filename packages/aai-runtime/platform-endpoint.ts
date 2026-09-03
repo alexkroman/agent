@@ -102,7 +102,7 @@ export type PlatformEndpoint = {
    */
   token: string;
   /**
-   * Test seam — production takes the pooled HTTP/1.1 `egressFetch`, NEVER
+   * Test seam — production takes the pooled HTTP/1.1 `rpcFetch`, NEVER
    * `globalThis.fetch`: see `_egress-fetch.ts`.
    */
   fetch?: typeof globalThis.fetch | undefined;

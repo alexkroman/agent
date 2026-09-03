@@ -13,11 +13,31 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import type { AdminDb } from "./platform-lock.ts";
 import { captureLogs, fakeAdminDbOver } from "./test-utils.ts";
+import { claimDue } from "./workflow-queue-claim.ts";
+import { GuestUnreachableError } from "./workflow-queue-failure.ts";
 import { startWorkflowQueueSweep } from "./workflow-queue-scheduler.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";
 import { type Delivered, runQueuePass } from "./workflow-queue-sweep.ts";
 
 const logs = captureLogs();
+
+/**
+ * The fragment that identifies `claimDue`'s statement to the fakes below.
+ *
+ * A CTE NAME rather than an operator, and the test at the bottom of this file is
+ * why. It was `distinct on` — the shape only the claim issued — and the claim's
+ * anti-join rewrite deleted that operator, which the fakes could not notice:
+ * twelve tests failed with `claimed: 0` and nothing pointing at the cause, and
+ * one ("a notification does not queue an unbounded number of passes") went
+ * VACUOUSLY GREEN, its `filter(s => s.includes(…)).length <= 2` counting zero
+ * matches of a fragment nothing emitted any more.
+ *
+ * A substring is still the right coupling — keying on call ORDER makes a pass
+ * that reorders its statements read wrongly — so what changed is that the
+ * coupling is now CHECKED. `orchestration_due` is the claim's own CTE, so a
+ * rewrite that renames it fails one named test with a message saying so.
+ */
+const CLAIM_SQL_KEY = "orchestration_due";
 
 /** A message as `claimDue` returns one. */
 /**
@@ -35,9 +55,10 @@ function msg(id: string, over: Partial<QueuedMessage> = {}): QueuedMessage {
  * An `AdminDb` whose claim answers `claimed` once, and which records every
  * statement so the settle half can be asserted.
  *
- * The claim is matched on `distinct on`, which is the shape only `claimDue`
- * issues — keying on a fragment of our own SQL rather than on call order, so a
- * pass that issued its statements in a different sequence still reads correctly.
+ * The claim is matched on {@link CLAIM_SQL_KEY} — a fragment of our own SQL
+ * rather than a call ORDER, so a pass that issued its statements in a different
+ * sequence still reads correctly. That fragment's own doc carries what it costs
+ * when it stops matching, and the last test in this file is what stops it.
  */
 function fakeDb(claimed: QueuedMessage[]): {
   db: AdminDb;
@@ -64,7 +85,7 @@ function fakeDb(claimed: QueuedMessage[]): {
   let unlistened = 0;
   const inner = fakeAdminDbOver((sql) => {
     statements.push(sql);
-    if (sql.includes("distinct on")) {
+    if (sql.includes(CLAIM_SQL_KEY)) {
       if (handed) return [];
       handed = true;
       return claimed.map((m) => ({
@@ -77,6 +98,12 @@ function fakeDb(claimed: QueuedMessage[]): {
         attempt: m.attempt,
       }));
     }
+    // `failUnreachable` reads its NEW counter out of a `returning`, so a fake
+    // answering `[]` would make every unreachable settle look like the counter
+    // was already spent — i.e. the drop path, on the first attempt, in every
+    // unit test. One is the honest answer for a message failing for the first
+    // time; the budget's own edges belong to the real-Postgres suite.
+    if (sql.includes("unreachable_attempts")) return [{ unreachable_attempts: 1 }];
     return [];
   });
   const db: AdminDb = {
@@ -402,7 +429,7 @@ describe("a slow delivery", () => {
   function fakeDbPerClaim(batches: QueuedMessage[][]): { db: AdminDb; claims: () => number } {
     let claims = 0;
     const inner = fakeAdminDbOver((sql) => {
-      if (!sql.includes("distinct on")) return [];
+      if (!sql.includes(CLAIM_SQL_KEY)) return [];
       const batch = batches[claims++] ?? [];
       return batch.map((m) => ({
         id: m.id,
@@ -515,7 +542,7 @@ describe("delivery on NOTIFY", () => {
     // a ceiling rather than an exact count because which of the ten lands during
     // the first pass is a scheduling detail — the property is that it is bounded,
     // not that it is 2.
-    expect(statements.filter((s) => s.includes("distinct on")).length).toBeLessThanOrEqual(2);
+    expect(statements.filter((s) => s.includes(CLAIM_SQL_KEY)).length).toBeLessThanOrEqual(2);
     stop();
   });
 
@@ -580,4 +607,90 @@ describe("delivery on NOTIFY", () => {
     );
     expect(stop).not.toThrow();
   });
+});
+
+/**
+ * WHICH budget a failed delivery spends, which is the sweep's decision and no
+ * one else's.
+ *
+ * `workflow-queue-failure.ts` owns the two budgets and the argument; what is
+ * asserted here is the routing, because it is the half a wrong `instanceof`
+ * silently breaks — and breaks in the direction that looks fine, since both
+ * paths back off and only one of them drops a message six minutes early.
+ */
+describe("a failed delivery is charged to the right budget", () => {
+  /** The statement each settle issues, so the routing is read off the SQL. */
+  const settledWith = (statements: string[]): string[] =>
+    statements.filter(
+      (sql) => sql.includes("set attempt =") || sql.includes("unreachable_attempts"),
+    );
+
+  test("a guest that ANSWERED wrongly spends the message's own attempts", async () => {
+    const { db, statements } = fakeDb([msg("m1")]);
+    await runQueuePass({
+      adminDb: db,
+      deliver: () => Promise.reject(new Error("guest answered HTTP 500: boom")),
+    });
+    expect(settledWith(statements)).toHaveLength(1);
+    expect(settledWith(statements)[0]).toContain("set attempt =");
+  });
+
+  test("a guest that was never REACHED spends the patient budget instead", async () => {
+    // The broker answering 503 because a boot is still in flight: nothing was
+    // asked, so nothing has been learned about this message.
+    const { db, statements } = fakeDb([msg("m1")]);
+    await runQueuePass({
+      adminDb: db,
+      deliver: () => Promise.reject(new GuestUnreachableError("broker refused t1: HTTP 503")),
+    });
+    expect(settledWith(statements)).toHaveLength(1);
+    expect(settledWith(statements)[0]).toContain("unreachable_attempts");
+    // And NOT the message's own counter, which is the whole point.
+    expect(statements.some((sql) => sql.includes("set attempt ="))).toBe(false);
+  });
+
+  test("a transport throw stays on the STRICTER budget, being ambiguous", async () => {
+    // A `fetch` that throws may mean the guest received the message and is
+    // running the step. `workflow-queue-deliver.ts` therefore does not classify
+    // it as unreachable, and this pins that a bare Error does not drift into the
+    // patient budget by accident.
+    const { db, statements } = fakeDb([msg("m1")]);
+    await runQueuePass({
+      adminDb: db,
+      deliver: () => Promise.reject(new TypeError("fetch failed")),
+    });
+    expect(settledWith(statements)[0]).toContain("set attempt =");
+  });
+
+  test("the pass reports it as a retry either way, so a caller's counts hold", async () => {
+    const { db } = fakeDb([msg("m1")]);
+    const pass = await runQueuePass({
+      adminDb: db,
+      deliver: () => Promise.reject(new GuestUnreachableError("broker refused t1: HTTP 503")),
+    });
+    expect(pass).toMatchObject({ claimed: 1, delivered: 0, retried: 1, dropped: 0 });
+  });
+});
+
+/**
+ * The fakes above answer a claim by matching {@link CLAIM_SQL_KEY} against the
+ * statement, so a `claimDue` that stopped containing it would make every one of
+ * them answer "nothing due" — which is a suite that tests the sweep against a
+ * queue that is never non-empty. It has happened once; this is what turns it into
+ * one failure that names the fragment.
+ *
+ * Deliberately asserted against the REAL `claimDue` rather than against a
+ * constant it exports: a key the subject hands out cannot go stale, and cannot
+ * catch this either.
+ */
+test("the claim fragment the fakes key on is one `claimDue` really issues", async () => {
+  const issued: string[] = [];
+  await claimDue(async (q) => {
+    issued.push(q);
+    return [];
+  }, 1);
+  expect(
+    issued.filter((q) => q.includes(CLAIM_SQL_KEY)),
+    `claimDue no longer contains "${CLAIM_SQL_KEY}" — update CLAIM_SQL_KEY`,
+  ).toHaveLength(1);
 });

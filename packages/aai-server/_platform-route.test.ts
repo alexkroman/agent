@@ -18,11 +18,18 @@
  * - **A status the route claims for itself is not logged as a failure.** The
  *   upload records route answers 409 to a refused claim, which is that route
  *   working.
+ * - **The ACQUIRE is timed, and every outcome of it says so.** A route holds one
+ *   of `ADMIN_POOL_MAX` connections for its whole duration, and until this the
+ *   only number anybody had was the total — so "the journal RPC costs ~840 ms"
+ *   could not be attributed to our own pool or to the round trip. The three
+ *   cases below are the three answers a request can print, and the failed-acquire
+ *   one is a line that did not exist at all: the reservation is taken before the
+ *   `try`, so `POOL_EXHAUSTED` reached the router with nothing naming the slug.
  */
 
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test, vi } from "vitest";
-import { notConfigured, withReserved } from "./_platform-route.ts";
+import { notConfigured, RESERVE_WAIT_WARN_MS, withReserved } from "./_platform-route.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import { captureLogs } from "./test-utils.ts";
@@ -56,7 +63,14 @@ function countingDb(): { db: AdminDb; released: () => number; reserved: () => nu
   };
 }
 
-const CALL = { log, failure: "storage call failed", detail: { slug: "my-agent" } };
+const CALL = {
+  log,
+  failure: "storage call failed",
+  detail: { slug: "my-agent" },
+  // The key is REQUIRED with an optional value, so every route has to look for a
+  // trace even when there is not one. Absent here except where a case is about it.
+  trace: undefined,
+};
 
 test("hands the work a query function bound to the reserved connection", async () => {
   const { db } = countingDb();
@@ -164,6 +178,137 @@ describe("what the work threw", () => {
       message: "could not queue the message",
     });
     expect(logs.warns().join(" ")).toContain("enqueue failed");
+  });
+});
+
+describe("the acquire is timed", () => {
+  /**
+   * A pool whose `reserve()` costs `waitMs` on a clock the test owns.
+   *
+   * `performance.now` is stubbed to READ a mutable counter rather than to answer
+   * a scripted sequence, so the fake does not have to know how many times
+   * `withReserved` reads the clock — which is the coupling that makes a timing
+   * test fail on an unrelated edit. `restoreMocks` puts the real one back.
+   */
+  function slowDb(waitMs: number, fail?: Error): AdminDb {
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    return {
+      listen: () => Promise.resolve(() => undefined),
+      reserve: async () => {
+        clock += waitMs;
+        if (fail) throw fail;
+        return { query: () => Promise.resolve([]), release: () => undefined };
+      },
+    } as AdminDb;
+  }
+
+  const debugs = () => logs.all().filter((l) => l.level === "debug");
+
+  test("an ordinary wait is a DEBUG line, so it costs nothing unless asked for", async () => {
+    await withReserved(slowDb(1), CALL, async () => "ok");
+    expect(debugs().map((l) => l.msg)).toEqual(["test.route Platform admin reservation"]);
+    expect(debugs()[0]?.ctx).toMatchObject({ slug: "my-agent", waitedMs: 1 });
+    // Not news, so not a warn: an operator greps warns for a pool with nothing
+    // to give, and one line per request would drown it.
+    expect(logs.warns()).toEqual([]);
+  });
+
+  test("a wait past the threshold WARNS, naming the pool rather than the route", async () => {
+    await withReserved(slowDb(RESERVE_WAIT_WARN_MS), CALL, async () => "ok");
+    expect(logs.warns()).toEqual(["test.route Platform admin reservation was slow"]);
+    expect(logs.all().at(-1)?.ctx).toMatchObject({
+      slug: "my-agent",
+      waitedMs: RESERVE_WAIT_WARN_MS,
+    });
+    // One line per reservation, at the level the number deserves — never both.
+    expect(debugs()).toEqual([]);
+  });
+
+  test("a FAILED acquire warns with the wait it spent, and rethrows unchanged", async () => {
+    const exhausted = Object.assign(new Error("no connection available"), {
+      code: "POOL_EXHAUSTED",
+    });
+    // Rethrown as itself: `isPlatformDbUnreachable` reads that code to decide the
+    // 503, so wrapping it here would take the classification away from the layer
+    // that owns it.
+    await expect(withReserved(slowDb(5000, exhausted), CALL, async () => "ok")).rejects.toBe(
+      exhausted,
+    );
+    expect(logs.warns()).toEqual(["test.route Platform admin reservation failed"]);
+    expect(logs.all().at(-1)?.ctx).toMatchObject({
+      slug: "my-agent",
+      waitedMs: 5000,
+      error: "no connection available",
+    });
+  });
+
+  test("a 503 says how much of itself was queueing and how much was work", async () => {
+    // The distinction the old line could not make: 20 ms of work behind 4,900 ms
+    // of queueing is a pool incident; thirty seconds inside a statement is not.
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const db = {
+      listen: () => Promise.resolve(() => undefined),
+      reserve: async () => {
+        clock += 4900;
+        return { query: () => Promise.resolve([]), release: () => undefined };
+      },
+    } as AdminDb;
+    await expect(
+      withReserved(db, CALL, () => {
+        clock += 20;
+        throw new Error("connection reset");
+      }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(logs.all().at(-1)?.ctx).toMatchObject({ waitedMs: 4900, workMs: 20 });
+  });
+});
+
+/**
+ * The other end of the guest's `traceparent`, which is what makes the two sides
+ * of the ~840 ms hop JOINABLE.
+ *
+ * A busy replica writes hundreds of these lines a second, so a timestamp cannot
+ * put a caller's elapsed beside this side's `waitedMs`/`workMs` and an id can.
+ * Every line `withReserved` writes therefore carries it — and NONE of them
+ * carries an empty one, which is the half worth pinning: a `traceId: undefined`
+ * in a log context reads as a caller that sent a broken header rather than one
+ * that sent none.
+ */
+describe("the caller's trace id", () => {
+  const TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
+  const traced = { ...CALL, trace: TRACE };
+
+  test("is on the reservation line, beside the wait it explains", async () => {
+    const { db } = countingDb();
+    await withReserved(db, traced, async () => "ok");
+    expect(logs.all().at(-1)?.ctx).toMatchObject({ slug: "my-agent", traceId: TRACE });
+  });
+
+  test("is on the 503's warn, so a failed call is correlatable too", async () => {
+    const { db } = countingDb();
+    await expect(
+      withReserved(db, traced, () => {
+        throw new Error("connection reset");
+      }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(logs.all().at(-1)?.ctx).toMatchObject({ traceId: TRACE, error: "connection reset" });
+  });
+
+  test("is on a FAILED acquire, which is the line that had no trace at all", async () => {
+    const failing = {
+      listen: () => Promise.resolve(() => undefined),
+      reserve: () => Promise.reject(new Error("no connection available")),
+    } as AdminDb;
+    await expect(withReserved(failing, traced, async () => "ok")).rejects.toThrow();
+    expect(logs.all().at(-1)?.ctx).toMatchObject({ traceId: TRACE });
+  });
+
+  test("is OMITTED rather than empty when the caller sent none", async () => {
+    const { db } = countingDb();
+    await withReserved(db, CALL, async () => "ok");
+    expect(logs.all().at(-1)?.ctx).not.toHaveProperty("traceId");
   });
 });
 

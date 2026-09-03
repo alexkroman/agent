@@ -444,6 +444,12 @@ describe("platform schema migrations", () => {
       droppedBy: "drop table if exists aai_platform.workflow_run_owner",
       why: "the run→slug mapping; a rollback of the schema rename needs it to say whose runs those are",
     },
+    {
+      name: "workflow_attempts",
+      declaredBy: "create table if not exists aai_platform.workflow_attempts",
+      droppedBy: "drop table if exists aai_platform.workflow_attempts",
+      why: "the attempt CHARGE's old scalar-counter table, replaced by workflow_attempt_leases; still written by old containers for the length of a rollout",
+    },
   ];
 
   describe.each(RETIRED_OBJECTS)("retired $name", ({ name, declaredBy, droppedBy, why }) => {

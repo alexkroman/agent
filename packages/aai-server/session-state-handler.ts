@@ -26,7 +26,13 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { isOneOf, requiredInt, requiredString } from "./_body-fields.ts";
-import { guestSlug, notConfigured, type PlatformCall, withReserved } from "./_platform-route.ts";
+import {
+  guestSlug,
+  guestTrace,
+  notConfigured,
+  type PlatformCall,
+  withReserved,
+} from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
@@ -130,7 +136,7 @@ export function createSessionStateHandler(
 
     return await withReserved(
       adminDb,
-      { log, failure: "session-state call failed", detail: { slug, method } },
+      { log, failure: "session-state call failed", detail: { slug, method }, trace: guestTrace(c) },
       async (sql) => c.json({ result: await call(sql) }, 200),
     );
   };

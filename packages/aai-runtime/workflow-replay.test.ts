@@ -292,8 +292,8 @@ describe("attempts", () => {
     // The claim happens BEFORE the step body, which is what makes a step that
     // wedges the guest reach its ceiling rather than be redelivered forever.
     const { journal } = await seed();
-    await journal.claimAttempt("wrun_1", "wedged#0");
-    await journal.claimAttempt("wrun_1", "wedged#0");
+    await journal.claimAttempt("wrun_1", "wedged#0", "dead-1", 60 * 60 * 1000);
+    await journal.claimAttempt("wrun_1", "wedged#0", "dead-2", 60 * 60 * 1000);
     let calls = 0;
     const outcome = await replay(journal, async (_input, ctx) =>
       ctx.step(
@@ -312,7 +312,8 @@ describe("attempts", () => {
 
   test("refuses a step whose attempts were all burned before it ran", async () => {
     const { journal } = await seed();
-    for (let i = 0; i < 3; i++) await journal.claimAttempt("wrun_1", "spent#0");
+    for (const walk of ["dead-1", "dead-2", "dead-3"])
+      await journal.claimAttempt("wrun_1", "spent#0", walk, 60 * 60 * 1000);
     const work = vi.fn(() => "ok");
     const outcome = await replay(journal, async (_input, ctx) => ctx.step("spent", work));
     expect(work).not.toHaveBeenCalled();
@@ -326,6 +327,31 @@ describe("attempts", () => {
     expect(await journal.readSteps("wrun_1")).toEqual([]);
   });
 
+  test("but NOT one whose burned attempts have expired — a death is no longer forever", async () => {
+    // The headline of the lease. A charge is a row with a timestamp, so a walk
+    // that DIED holding one stops counting once `ATTEMPT_LEASE_MS` has passed.
+    // Before that a charge was a scalar counter and could not expire: three
+    // deaths on one step key refused it PERMANENTLY, `StepAbandonedError`
+    // reported a run nobody could revive, and the module's own doc named the
+    // missing mechanism.
+    //
+    // Aged by moving the CLOCK the store stamps with, not by waiting an hour and
+    // not by making the window an option: `claimed_at` is `Date.now()` inside
+    // the backend, so three charges taken two hours ago are three charges the
+    // engine's own window excludes. `restoreMocks` puts the clock back, and the
+    // replay below runs on the real one.
+    const { journal } = await seed();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 2 * 60 * 60 * 1000);
+    for (const walk of ["dead-1", "dead-2", "dead-3"])
+      await journal.claimAttempt("wrun_1", "spent#0", walk, 60_000);
+    clock.mockRestore();
+    // This walk is the only live one, so the budget is untouched.
+    const work = vi.fn(() => "ok");
+    const outcome = await replay(journal, async (_input, ctx) => ctx.step("spent", work));
+    expect(work).toHaveBeenCalledOnce();
+    expect(outcome.kind).toBe("completed");
+  });
+
   test("a refusal beats a suspension, so a broken walk cannot park", async () => {
     // The one ORDERING that changed when suspension stopped being a throw, and
     // it changed towards the truth. A body that catches the engine's refusal and
@@ -333,7 +359,8 @@ describe("attempts", () => {
     // every later delivery raised it again and the run read as healthily waiting
     // forever. `classifyThrow` consults `refused` first.
     const { journal } = await seed();
-    for (let i = 0; i < 3; i++) await journal.claimAttempt("wrun_1", "spent#0");
+    for (const walk of ["dead-1", "dead-2", "dead-3"])
+      await journal.claimAttempt("wrun_1", "spent#0", walk, 60 * 60 * 1000);
     const outcome = await replay(journal, async (_input, ctx) => {
       try {
         await ctx.step("spent", () => "ok");

@@ -16,7 +16,11 @@ function quietLogger() {
 describe("the DDL", () => {
   test("declares all five tables, and qualifies them when given a schema", () => {
     const bare = workflowJournalDdl().join("\n");
-    for (const table of ["runs", "steps", "attempts", "sleeps", "hooks"]) {
+    // `attempt_leases` and not `attempts`: a charge is a row per outstanding
+    // attempt now, which needed the holder in the primary key and so a new
+    // table. `journal-ddl-parity.test.ts` is what keeps the platform's copy
+    // renamed with it.
+    for (const table of ["runs", "steps", "attempt_leases", "sleeps", "hooks"]) {
       expect(bare).toContain(`aai_workflow_${table}`);
     }
     expect(workflowJournalDdl("aai_platform").join("\n")).toContain('"aai_platform".aai_workflow');

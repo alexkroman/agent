@@ -51,8 +51,8 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { createPgChatStore } from "./chat-store.ts";
+import { platformMigrationSql } from "./platform-schema-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { platformMigrationSql } from "./test-utils.ts";
 import { createPgWorkspaceStore } from "./workspace-store.ts";
 
 // The migration as it ships, minus the one line a throwaway database cannot
@@ -235,6 +235,15 @@ describeWithStack("the platform migration applies and the stores work against it
       // Tenancy is the leading column of every primary key, so a guessed run id
       // reaches nothing — same design as `session_slots` above, and the reason
       // the `workflow_run_owner` mapping table below had to exist at all.
+      // TWO attempt tables, for one release. An attempt CHARGE became a LEASE
+      // that expires, which needed the holder in the primary key and so a new
+      // table (`20260903160000_workflow_attempt_leases.sql`) — and its drop is
+      // owed to a later release, because `supabase db push` runs before the
+      // deploy and the old containers still name the old one. `RETIRED_OBJECTS`
+      // in `platform-schema.test.ts` is the ledger that remembers; delete this
+      // line in the same commit as that drop. `_` precedes `s`, so the new name
+      // sorts first.
+      "workflow_attempt_leases",
       "workflow_attempts",
       "workflow_hooks",
       // The platform-owned durable-workflow QUEUE
@@ -262,7 +271,8 @@ describeWithStack("the platform migration applies and the stores work against it
       // drop is forgotten; delete this line in the same commit as that drop.
       "workflow_run_owner",
       // The journal's own three remaining tables, alphabetically after the owner
-      // row — see the block above `workflow_attempts` for the whole account.
+      // row — see the block above `workflow_attempt_leases` for the whole
+      // account.
       "workflow_runs",
       "workflow_sleeps",
       "workflow_steps",

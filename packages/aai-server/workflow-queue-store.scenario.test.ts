@@ -36,6 +36,15 @@
  * So the seam here is still the HARNESS, not the subject. If this file has to
  * shrink again, extract more setup or move a group whose tests touch neither
  * `claimDue` nor the channel.
+ *
+ * **And the "must not be" above expired when the database became private.**
+ * `workflow-queue-claim.scenario.test.ts` is a second suite over this same
+ * surface — the equivalence differential for the anti-join rewrite — and it does
+ * not collide with this one, because `useQueueFixture` registers a
+ * {@link useThrowawayPlatformDb} of its own: the claim it runs is fleet-wide over
+ * a fleet of one file. The rule that survives is the REASON rather than the
+ * conclusion: a suite over a fleet-wide predicate needs its own database, and a
+ * suite that shares one still must not exist.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
@@ -48,15 +57,7 @@ import {
 } from "./_workflow-queue-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { claimDue, WORKFLOW_QUEUE_STEPS_PER_RUN } from "./workflow-queue-claim.ts";
-import {
-  ack,
-  enqueue,
-  envelopeBody,
-  fail,
-  parseEnvelope,
-  QUEUE_MAX_ATTEMPTS,
-  reschedule,
-} from "./workflow-queue-store.ts";
+import { ack, enqueue, envelopeBody, parseEnvelope, reschedule } from "./workflow-queue-store.ts";
 import { runQueuePass } from "./workflow-queue-sweep.ts";
 
 describeWithPg("workflow queue store", () => {
@@ -408,22 +409,6 @@ describeWithPg("workflow queue store", () => {
     await enqueue(sql, { ...msg("m2", "r1"), slug: SLUGS[1] as string, idempotencyKey: "k" });
     const rows = await sql("select count(*)::int as n from aai_platform.workflow_queue");
     expect(rows[0]?.n).toBe(2);
-  });
-
-  test("a failed delivery backs off, then is abandoned at the budget", async () => {
-    await enqueue(sql, msg("m1", "r1"));
-    const [claimed] = await claimDue(sql, 1);
-    expect(await fail(sql, claimed?.id ?? "", claimed?.attempt ?? 0)).toBe("retry");
-    // Backed off, so not immediately due again — and unclaimed, so a later sweep
-    // can take it.
-    expect(await claimDue(sql, 10)).toEqual([]);
-    const rows = await sql("select attempt, locked_at from aai_platform.workflow_queue");
-    expect(rows[0]?.attempt).toBe(1);
-    expect(rows[0]?.locked_at).toBeNull();
-
-    expect(await fail(sql, "m1", QUEUE_MAX_ATTEMPTS - 1)).toBe("dropped");
-    const after = await sql("select count(*)::int as n from aai_platform.workflow_queue");
-    expect(after[0]?.n).toBe(0);
   });
 
   /**

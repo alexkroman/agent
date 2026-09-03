@@ -24,8 +24,9 @@
 
 import type { CloseableDb } from "@alexkroman1/aai-runtime";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
+import { ensurePlatformTables } from "aai-server/platform-schema-test-utils";
 import type { SqlExec } from "aai-server/secret-store";
-import { describeWithStack, ensurePlatformTables, pgUrl } from "aai-server/test-utils";
+import { describeWithStack, pgUrl } from "aai-server/test-utils";
 import { createPgWorkspaceStore } from "aai-server/workspace-store";
 import { afterAll, beforeAll, describe } from "vitest";
 import { createPgPreviewQueue } from "./studio-preview-queue.ts";

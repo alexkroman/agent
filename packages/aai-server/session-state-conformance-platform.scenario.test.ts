@@ -105,12 +105,12 @@ import {
 } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
 import {
   bearerFor,
   createTestOrchestrator,
   deploy,
-  ensurePlatformTables,
   fakeAdminDbOver,
   type TestFetch,
 } from "./test-utils.ts";

@@ -22,8 +22,11 @@
  *
  * - **`claimAttempt` is claimed BEFORE the body runs**, so a crash burns the
  *   attempt and a wedged step reaches its ceiling instead of retrying forever.
- *   That is a property of when the engine calls it, and this backend must not
- *   soften it by retrying the call itself — a retried claim would burn two.
+ *   That is a property of when the engine calls it, and this backend still must
+ *   not soften it by retrying the call itself — though a retry is no longer the
+ *   catastrophe it was: a claim names its HOLDER now and is idempotent for one,
+ *   so a re-claim answers the same number instead of burning a second attempt.
+ *   The rule stays because a retry is still a round trip nobody asked for.
  *   `releaseAttempt` gives one back when the attempt ENDED without settling the
  *   step, which is what keeps that ceiling a bound on abandonment rather than on
  *   reaches; a retried release is harmless for the mirror reason, being floored.
@@ -355,8 +358,13 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       return toStep(await call(opts, "readStep", { runId, key }));
     },
 
-    async claimAttempt(runId: string, key: string): Promise<number> {
-      const n = await call(opts, "claimAttempt", { runId, key });
+    async claimAttempt(
+      runId: string,
+      key: string,
+      holder: string,
+      leaseMs: number,
+    ): Promise<number> {
+      const n = await call(opts, "claimAttempt", { runId, key, holder, leaseMs });
       if (typeof n !== "number") {
         // Never invented. An attempt number the caller made up is a ceiling that
         // does not hold, which is the one thing this primitive exists to provide.
@@ -365,11 +373,11 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       return n;
     },
 
-    async releaseAttempt(runId: string, key: string): Promise<void> {
+    async releaseAttempt(runId: string, key: string, holder: string): Promise<void> {
       // Nothing to validate: the answer is that the release happened, and the
       // call rejects when it did not. A charge that is not given back only
       // brings a step's ceiling closer, which is the safe direction.
-      await call(opts, "releaseAttempt", { runId, key });
+      await call(opts, "releaseAttempt", { runId, key, holder });
     },
 
     async claimSleep(

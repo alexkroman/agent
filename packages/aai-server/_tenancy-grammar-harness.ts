@@ -160,6 +160,11 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
       slug: el(SLUGS),
       runId: el(RUN_IDS),
       key: el(KEYS),
+      // A charge is a LEASE held by a WALK, so which walk is claiming is part of
+      // the operation. Drawn from a SMALL pool on purpose: what makes the answer
+      // interesting is two walks colliding on one key and one walk re-claiming
+      // its own charge, and a fresh id per op would generate neither.
+      holder: el(["walk-1", "walk-2"] as const),
     }),
   ),
   w(
@@ -327,8 +332,8 @@ const COLLIDING: readonly Op[] = [
   // both tenants may hold `tok1`.
   { t: "claimHook", slug: A, runId: "wf_r1", key: "k!1", token: "tok1" },
   { t: "claimHook", slug: B, runId: "wf_r1", key: "k!1", token: "tok1" },
-  { t: "claimAttempt", slug: A, runId: "wf_r0", key: "k!0" },
-  { t: "claimAttempt", slug: B, runId: "wf_r0", key: "k!0" },
+  { t: "claimAttempt", slug: A, runId: "wf_r0", key: "k!0", holder: "walk-1" },
+  { t: "claimAttempt", slug: B, runId: "wf_r0", key: "k!0", holder: "walk-1" },
   {
     t: "claimSleep",
     slug: A,
@@ -385,7 +390,7 @@ const LOPSIDED: readonly Op[] = [
   // than only from B.
   { t: "createRun", slug: B, runId: "wf_r2", workflow: "recap", input: "2", createdAt: 0 },
   { t: "claimHook", slug: A, runId: "wf_r2", key: "k!0", token: "tok2" },
-  { t: "claimAttempt", slug: A, runId: "wf_r1", key: "k!1" },
+  { t: "claimAttempt", slug: A, runId: "wf_r1", key: "k!1", holder: "walk-2" },
   {
     t: "claimSleep",
     slug: A,
