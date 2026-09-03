@@ -1,5 +1,23 @@
 # @alexkroman1/aai
 
+## 13.0.0
+
+### Minor Changes
+
+- 9584e2e: ctx.waitFor and ctx.step take an optional Standard Schema, the first check over the two values a durable workflow body handles that it did not compute. A hook payload arrives over public HTTP and reached the body as a cast; a step's journaled output is read back days later, possibly by a different bundle, and reached it as another. waitFor validates the delivered payload and refuses a bad one fatally, leaving the window as the delivery found it - answered, never reopened, since the same bytes are what every redelivery reads. step validates on BOTH sides of the journal: on the write, where a rejection is the step's own failure and spends an attempt, and on the read, where it is a verdict about the journal in the family of a divergence and journals nothing over a step that succeeded. Durable slot values have been checked structurally in both backends for a long time; a step's output is exactly as durable and had no check at all.
+- 9584e2e: Workflows can declare an `output` schema beside `input`: what a completed run answers with, validated where the engine records the run — a body that misses its own declaration fails the run rather than reporting `completed` with an output the declaration denies — served to a page as `WorkflowSummary.outputSchema`, and read by `WorkflowOutputOf`, which now derives from the declared schema rather than from inferring the body. That fixes `WorkflowOutputOf` resolving to `never` for an annotated def, and lets an annotated `agent.ts` state its output type once, in the schema.
+
+### Patch Changes
+
+- 9e12bb2: Bump dependencies across the workspace: the ai SDK and its provider adapters, zod, vite, vitest, hono, the Supabase clients, xstate, undici, modal, @cartesia/cartesia-js and the build/lint toolchain.
+  
+  Two source changes come with it. The scripted fake language model emitted a bare-string stream finish reason where the v3 provider spec declares a { unified, raw } pair — harmless until ai@7.0.70 made automatic tool execution conditional on that value, after which a scripted tool call never ran; the fake's doGenerate half already had the pair. And protocol-compat.test.ts moves off zod's deprecated ZodTypeAny to ZodType.
+- 9e12bb2: Bound turbo's task concurrency on every fan-out test door, and take biome 2.5.12.
+  
+  `pnpm test` and five sibling scripts ran `turbo run <task>` with no TURBO_CONCURRENCY, so turbo's default of 10 tasks each took vitest's full `cores - 1` worker budget — ~40 processes on 4 cores. The two halves of that budget are one mechanism and only bound the machine when the variable is set, and only `scripts/check.mjs` set it. A/B on one commit: unbounded times out three aai-cli bundler and dev-server specs, bounded passes all 16 tasks.
+  
+  biome moves to ^2.5.12 under the release-age quarantine's one exemption. 2.5.9-2.5.11 report an already-awaited `await pTimeout(…)` as a floating promise across nine call sites; 2.5.12 fixes that and also retires the suppression the same defect had already cost at 2.5.8, lowering the escape-hatch baseline to 124.
+
 ## 12.0.0
 
 ## 11.0.0

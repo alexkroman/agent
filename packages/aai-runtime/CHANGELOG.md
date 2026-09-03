@@ -1,5 +1,57 @@
 # @alexkroman1/aai-runtime
 
+## 13.0.0
+
+### Major Changes
+
+- b94fdd1: Read an upload's record ONCE per read, not once per chunk.
+  
+  `UploadReader.info` and `UploadReader.read` each resolve the record for themselves and every reader needs both, so one logical read cost two look-ups of one row and the byte route cost one per `UPLOAD_CHUNK_BYTES` of the answer. On a deployed guest a look-up is a `POST /:slug/upload-records` across the platform and into the admin pool — measured over 48h of production at n=1428, mean 537ms, and within one 33-segment transcription it outnumbered the journal 515 to 212 for a run that moved 140 part windows.
+  
+  `UploadReader.open(id)` hands back the record AND a reader bound to the windows THAT record named. `readUpload` is 1 look-up where it was 2; `GET /workflows/uploads/:id` is 1 where it was N+1 for an N-chunk answer. It also PINS the window map for the operation, which the route's own `Content-Length` was already assuming: a part landing mid-download could previously answer bytes the header had promised were something else.
+  
+  BREAKING: `UploadStore` gains a required `open(id)`, so a host implementing that interface must supply one. `UploadReader.open` is OPTIONAL and `readUpload` falls back to `info` + `read`, so every two-method fake — `stubUploads` included — is unchanged.
+  
+  The claim path is deliberately untouched at two calls: `recordParts` reads before it writes because it validates every named window against the DECLARED total and decides the finished-upload refusal, neither of which the write can see.
+- b94fdd1: Answer an ELAPSED durable wait from the walk's own snapshot, so a polling run's journal traffic stops being quadratic.
+  
+  A replay answered a settled `ctx.step` from the one `readSteps` it takes at the top of a walk, and round-tripped `claimSleep` for every elapsed `ctx.sleep` it walked past — an unconditional call whose answer was almost always "that finished several deliveries ago". A body that polls mints a new wait key per iteration, so delivery N re-claimed N-1 finished waits before doing any work. Measured on a deployed 34-segment transcription run: journal POSTs rose +1 per delivery, monotonically, across 69 consecutive deliveries — 2,675 in 25 minutes, the gap between deliveries growing 11s to 37s in step with the count, and the run never completed. Every call succeeded, so the only symptom was a run getting slower.
+  
+  BREAKING: `JournalStore` gains a required `readSleeps(runId)`. A host supplying its own journal through `RuntimeOptions.journal` must implement it: it answers every durable wait of a run, ordered by key, as a `SleepEntry` (a `SleepRecord` plus its key). Both shipped databases key the sleeps table on (run_id, key), so it is a range scan already in that order and needs no migration. The engine issues it beside `readSteps`, concurrently, and hands it down as `ReplayOptions.sleeps`.
+  
+  The snapshot may only answer a wait it already HOLDS and that is over by a monotonic test — woken, or a deadline already past. `claimSleep` is a claim rather than a read, so a miss must still create the record, and a future-dated unwoken wait must still round-trip in case a wake landed since. A stale snapshot can therefore only ever cost a round trip it did not need.
+
+### Patch Changes
+
+- 4647b84: The durable-workflow queue claim reads two new columns instead of re-deriving them every tick: `workflow_queue.run_id` (generated from the payload envelope) and `workflow_queue.kind` (written at enqueue from the DevKit queue-name grammar). A busy tick goes 516 ms to 20 ms and an idle one 1.7 ms to 0.9 ms on a 200,000-row queue, and the expression index the old spelling needed is dropped with nothing in its place. Also: a zero-delay re-park now notifies, so a guest parking a busy walk no longer waits out a whole poll interval; and `STEP_QUEUE_NAME_PATTERN`/`WORKFLOW_QUEUE_NAME_PATTERN` leave `@alexkroman1/aai-runtime/internal`, which existed only to cross into that SQL.
+- ef6c39c: Workflow engine performance and concurrency: the divergence check scans the journal with a cursor rather than re-scanning every journaled step per fresh step, the step gate dequeues waiters through a head cursor rather than an O(n) shift, a walk issues its two opening journal reads together rather than one after the other, the memory journal answers readStep from its key index rather than a scan, and the in-process dispatcher collapses deliveries that arrive during a walk into one deferred re-delivery instead of racing concurrent walks of the same run.
+- 4647b84: Give the workflow correlation-key index a platform backend, so a deployed run
+  stays findable by the caller who started it.
+  
+  `(workflow, key) -> runId` is the only pointer from a caller to the durable run
+  their last call started, and it had two backends: the agent's own `DATABASE_URL`
+  and a `Map`. The platform provisions no tenant database, so on a typical deployed
+  agent `resolveKeyStore` fell to the `Map` — inside a sandbox that self-exits after
+  `AGENT_IDLE_EXIT_MS`. Since the journal gained its platform backend the RUN
+  outlives that sandbox and the pointer did not, so `find()` answered `[]` on the
+  caller's next call and the agent started a second run for somebody it had already
+  served. Nothing reported it: an empty index and a first-time caller are the same
+  answer, and the boot line printed `keyStore: "memory"` on every deployment.
+  
+  The third implementation is `createPlatformKeyStore`, one `POST
+  /:slug/workflow-keys` per call over the per-sandbox bearer, against a new
+  slug-scoped `aai_platform.workflow_run_keys` under deny-all RLS. `selectKeyStore`
+  resolves platform, then postgres, then memory — the same preference
+  `selectJournal` makes, so the runs and the index cannot land in different homes —
+  and the boot line now names which one won. A new hourly pg_cron sweep collects a
+  key whose run the retention pass already deleted.
+- ef6c39c: The self-hosted journal's boot-sweep query reads the wait table once instead of once per candidate run. resumableRuns computed each run's earliest wake with a correlated subquery inside a CTE, which Postgres inlines - so the expression was re-planned as a fresh index scan at each of its three sites (filter, sort key, output). A grouped left join plus a hashed anti-join takes it from 349-375ms and 123,102 shared buffers to 24-28ms and 1,194, result-identical over the whole answer, verified with EXPLAIN ANALYZE against a real Postgres holding 50,000 runs. It matters because aai dev rebuilds its runtime on every file save and each rebuild is a boot sweep.
+- Updated dependencies [9e12bb2]
+- Updated dependencies [9e12bb2]
+- Updated dependencies [9584e2e]
+- Updated dependencies [9584e2e]
+  - @alexkroman1/aai@13.0.0
+
 ## 12.0.0
 
 ### Major Changes

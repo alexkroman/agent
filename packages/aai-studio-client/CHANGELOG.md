@@ -1,5 +1,19 @@
 # aai-studio-client
 
+## 0.6.19
+
+### Patch Changes
+
+- 9e12bb2: Bump dependencies across the workspace: the ai SDK and its provider adapters, zod, vite, vitest, hono, the Supabase clients, xstate, undici, modal, @cartesia/cartesia-js and the build/lint toolchain.
+  
+  Two source changes come with it. The scripted fake language model emitted a bare-string stream finish reason where the v3 provider spec declares a { unified, raw } pair — harmless until ai@7.0.70 made automatic tool execution conditional on that value, after which a scripted tool call never ran; the fake's doGenerate half already had the pair. And protocol-compat.test.ts moves off zod's deprecated ZodTypeAny to ZodType.
+- Updated dependencies [9e12bb2]
+- Updated dependencies [9e12bb2]
+- Updated dependencies [9584e2e]
+- Updated dependencies [9584e2e]
+  - @alexkroman1/aai@13.0.0
+  - @alexkroman1/aai-ui@13.0.0
+
 ## 0.6.18
 
 ### Patch Changes
