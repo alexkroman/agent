@@ -165,22 +165,30 @@ export function parseSandboxLimitsFromEnv(
  * (`Regions us-east-1 are not supported`), so an operator setting this is
  * choosing from Modal's list, not from anything in this tree.
  *
- * **Production leaves this UNSET on purpose** — an operator override, not a
- * deployed default. Pinning trades placement capacity for locality, and
- * capacity is the scarcer of the two: a spawn Modal cannot schedule in the
- * ~50s `sandbox.tunnels()` waits fails the whole session with
- * `Sandbox operation timed out`, which is what pinning every guest to the
- * web server's single region produced under load.
+ * **Production sets this to a LIST, and the list is what makes it safe** —
+ * `modal_deploy.py` bakes the web function's own `REGIONS` into the image, so
+ * host and guests express the same preference. It was UNSET for a while, and
+ * the reason was a single-region pin: that trades placement capacity for
+ * locality, and capacity is the scarcer of the two — a spawn Modal cannot
+ * schedule in the ~50s `sandbox.tunnels()` waits fails the whole session with
+ * `Sandbox operation timed out`, which is what pinning every guest to the web
+ * server's ONE region produced under load. A spill region keeps the
+ * preference and leaves that state unreachable, which is the same fix the web
+ * function's `REGIONS` list is.
  *
- * The locality it bought is real but narrower than it looks. Unpinned, Modal
- * places sandboxes wherever it finds capacity — including a different
- * continent and cloud than the platform server (observed: server in
- * us-east-1/AWS, sandboxes in uk-london-1/OCI). But AGENT guests hold no
- * host channel at all: voice clients dial the sandbox tunnel directly, so a
- * voice turn crosses the host↔guest hop zero times. Only the STUDIO's
- * control-channel RPCs pay the RTT, and those are not inside a latency
- * budget the way a voice turn is. Set it (comma-separated for several
- * acceptable regions) when an environment wants locality back.
+ * What unpinning cost is narrower than it looks from the voice path and wider
+ * than it looks from anywhere else. Unpinned, Modal places sandboxes wherever
+ * it finds capacity — including a different continent and cloud than the
+ * platform server (observed: server in us-east-1/AWS, sandboxes in
+ * uk-london-1/OCI). AGENT guests hold no host channel at all: voice clients
+ * dial the sandbox tunnel directly, so a voice turn crosses the host↔guest hop
+ * zero times, and that is what the unpinned default was argued from. A DURABLE
+ * RUN does cross it, once per journal operation, sequentially — measured at
+ * ~24 ms an operation out of region against ~2 ms in it.
+ *
+ * An operator can still override it per environment (comma-separated for
+ * several acceptable regions); an empty or absent value is unpinned, which is
+ * what local dev gets.
  */
 export function parseSandboxRegionsFromEnv(
   env: Record<string, string | undefined>,

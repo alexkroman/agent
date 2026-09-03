@@ -23,6 +23,12 @@ import type { Interleaving } from "./interleaving.ts";
  * is documented to prevent"*, and what a signal landing inside the window then
  * produced was this walk taking the TIMED-OUT branch while every later replay
  * read the ANSWERED one.
+ *
+ * Regenerated when `execute`'s opening collapsed to ONE round trip
+ * (`workflow-engine.ts`): a delivery issues four journal calls where it issued
+ * one and then three, so the old ordering named ids in an order this arm never
+ * schedules and the replay STARVED rather than failing — the shape this type's
+ * own doc warns about, and why an ordering is read off a run and never edited.
  */
 export const hookCloseRace: Interleaving = {
   name: "hook-close-race",
@@ -32,6 +38,6 @@ export const hookCloseRace: Interleaving = {
   deliveries: 2,
   stepConcurrency: 1,
   arm: "direct",
-  ordering: [1, 2, 3, 4, 7, 5, 6, 8, 11, 12, 10, 9, 13, 14, 16, 17, 15, 19, 18, 20, 21],
+  ordering: [2, 1, 8, 11, 9, 5, 10, 3, 4, 6, 13, 7, 12, 15, 16, 14, 17, 18, 20, 19, 21, 22, 23, 24],
   catches: { defect: "unconditionalClose", law: "was both delivered and closed" },
 };

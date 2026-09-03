@@ -782,8 +782,8 @@ measured at **~840 ms of server time**, on a route holding one of
 `ADMIN_POOL_MAX` connections for the whole request — so these are the pool a
 run's own WRITES queue behind. `use-transcript-workflow` sustained ~2 a second
 on ONE run: a fan-out's `settledSince` re-reads the WHOLE journal once per step,
-the overlapping walks above each do it again, and a delivery takes three
-SEQUENTIAL opening reads.
+the overlapping walks above each do it again, and a delivery's opening was three
+SEQUENTIAL round trips, then two, and is now ONE.
 
 `_journal-shared-reads.ts` collapses the first two — `getRun`, `readSteps` and
 `readSleeps` being the reads that are pure functions of a run id — and its
@@ -794,6 +794,21 @@ exists to rely on exactly that; a cache would silently defeat it.
 `ReplayOptions.steps` is the third — the step read is issued BESIDE the
 `running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (the
 admin pool note under "Stateless server", `packages/aai-server/CLAUDE.md`).
+
+**The record read joined them, and `setStatus`'s `expect` is what made that
+possible.** `execute` opened with `await journal.getRun(runId)` and only then
+issued the rest, so a delivery cost two round trips before a body could run;
+folding the read in leaves one, nothing in the opening depending on the record.
+Two things are load-bearing, both argued at the call site: a run this delivery
+may not walk answers `false` rather than moving, so an eager set can neither
+resurrect a terminal run nor undo an `abandon`; and a LOST eager set is
+**re-asked, never believed** — issued beside the record read it can reach the
+store ahead of a racing `start`'s `createRun` and decline a run that is alive,
+which `workflow-concurrent-delivery.test.ts` shrinks to a step the body needed
+and nothing ever ran. `workflow-engine-opening.test.ts` states both. The
+speedup also moved where a cancel lands, which is why law 1 relaxes its
+per-name floor for a cancelled run and `cancelsMidWalk`'s floor was
+re-measured.
 
 The FOURTH is a WAIT, and it was the worst of them because it grew with the
 number of DELIVERIES rather than with the body: a settled step was answered from

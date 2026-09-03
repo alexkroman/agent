@@ -44,6 +44,12 @@ import type { Interleaving } from "./interleaving.ts";
  * are two orderings now. They were always kept in two files, because a reader
  * looking for the START race should not have to find it inside a file named for
  * the terminal one.
+ *
+ * Regenerated a second time when `execute`'s opening collapsed to ONE round trip
+ * (`workflow-engine.ts`): a delivery issues four journal calls where it issued
+ * one and then three, so the old ordering named ids in an order this arm never
+ * schedules and the replay STARVED — the failure the type's own doc predicts,
+ * and the reason a frozen ordering is read off a run rather than edited.
  */
 export const collidingStart: Interleaving = {
   name: "colliding-start",
@@ -52,6 +58,6 @@ export const collidingStart: Interleaving = {
   deliveries: 2,
   stepConcurrency: 1,
   arm: "direct",
-  ordering: [2, 1, 3, 5, 7, 6, 8, 9, 4, 11, 12, 13, 10, 14],
+  ordering: [2, 1, 4, 10, 6, 9, 8, 3, 7, 11, 12, 13, 5, 14, 15, 16, 17],
   catches: { defect: "silentDuplicateCreate", law: "colliding starts won the id" },
 };

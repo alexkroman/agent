@@ -927,7 +927,7 @@ Two rules from it that a reader of THIS package needs in front of them:
   spawn and delivered via the EXEC's env (never the sandbox's). The tunnel
   URL is public; the token is what keeps the managed surfaces from being an
   open door.
-- **The WEB service PREFERS the database's region; SANDBOXES stay unpinned.**
+- **The WEB service PREFERS the database's region; SANDBOXES take that list.**
   `modal_deploy.py`'s `REGIONS` is `["us-east-2", "us-east"]` — a FALLBACK
   LIST, never a single value, because a bare `us-east-2` is what once left a
   `deployed` app with zero tasks, zero bytes and no container logs at all. The
@@ -939,12 +939,13 @@ Two rules from it that a reader of THIS package needs in front of them:
   orders of magnitude. **The fallback is that BROAD region, not a second
   datacenter**: Modal answers `Regions us-east-1 are not supported` at DEPLOY
   time, so that list shipped nothing while the app served the old revision.
-  `MODAL_SANDBOX_REGION` stays UNSET — a guest holds no host channel, so
-  pinning it buys only the ~117 ms guest→platform hop and costs the spawn
-  capacity whose exhaustion is `Sandbox operation timed out`. Both outage
-  accounts are in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md);
-  `modal-image-inputs.test.ts` pins the list, its first entry, that every entry
-  is deploy-accepted, and that it is actually passed.
+  `MODAL_SANDBOX_REGION` is that list, exported into the image: a run's journal
+  calls are the GUEST's and sequential, ~24 ms an op out of region, ~2 ms in
+  it. It was unset while a pin meant ONE region, exhausted as
+  `Sandbox operation timed out`. Both outages are in
+  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md); `modal-image-inputs.test.ts` pins the
+  list, its first entry, that each is deploy-accepted, that it is passed, and
+  that the guest export is DERIVED.
 
 - **Orphan cleanup differs per mode.** STUDIO guests: the host's
   WebSocket IS the liveness signal — a host that dies without teardown

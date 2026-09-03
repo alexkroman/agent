@@ -64,6 +64,22 @@ export function checkLaws(program: Program, run: ConcurrentScenario, oracle: Sce
  * keys are a subset rather than the same set — which is a weaker claim and the
  * only honest one: `replayRun` checks the signal before each step executes, so
  * where the prefix ends is the cancel's business.
+ *
+ * **The per-name FLOOR is relaxed by a cancel for exactly the same reason**, and
+ * it took a faster delivery to notice. A prefix does not end on a name boundary:
+ * a `loop` reaches one name twice, so a cancel between its two iterations leaves
+ * `s0` at one against the oracle's two — the same truncation the keys rule
+ * already calls the cancel's business, seen at a finer grain. The suite REQUIRES
+ * that state (`cancelsMidWalk`, floored above 8, counts a cancel that won with
+ * `run.total < oracle.total`), so forbidding it here was two claims about one
+ * fact disagreeing. It never fired because a delivery opened with two sequential
+ * round trips, which gave a cancel issued in the same burst time to land before
+ * any body ran at all — a shortfall of WHOLE names, which the keys rule covers.
+ * Collapsing that opening to one round trip (`workflow-engine.ts`'s `execute`)
+ * is what let a cancel land BETWEEN two iterations instead.
+ *
+ * What stays absolute either way is the other half — a step the oracle never
+ * reached may not have run — and the whole law for a run nobody cancelled.
  */
 function checkEffectConservation(
   run: ConcurrentScenario,
@@ -82,7 +98,7 @@ function checkEffectConservation(
   for (const [name, count] of Object.entries(run.counts)) {
     const floor = oracle.counts[name] ?? 0;
     if (floor === 0) problems.push(`step ${name} ran but the oracle never reached it`);
-    else if (count < floor) {
+    else if (count < floor && !cancelled) {
       problems.push(`step ${name} ran ${count} time(s), under the oracle's ${floor}`);
     }
   }
