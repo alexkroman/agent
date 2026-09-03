@@ -106,7 +106,13 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
 
 describe("the agent declares its workflow", () => {
   test("under the name ctx.workflows.start resolves it by", () => {
-    expect(Object.keys(agentDef.workflows ?? {})).toEqual(["research"]);
+    // `toContain` rather than an exact key list: a second workflow is an
+    // invited edit and must not redden a test the author did not write. The
+    // NAME is still pinned, deliberately — this key is a STRING to everything
+    // outside this file (the REST route, `ctx.workflows.get`, a schedule), so
+    // renaming it is a runtime 404 rather than a compile error, and nothing
+    // else says so.
+    expect(Object.keys(agentDef.workflows ?? {})).toContain("research");
     expect(agentDef.workflows?.research).toBe(research);
   });
 

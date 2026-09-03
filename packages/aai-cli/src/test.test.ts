@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { silenced } from "./_test-utils.ts";
-import { executeTest, resolveVitestCommand, runVitest, unrunSpecFiles } from "./test.ts";
+import {
+  executeTest,
+  projectSpecFiles,
+  resolveVitestCommand,
+  runVitest,
+  unrunSpecFiles,
+} from "./test.ts";
 
 const execaSync = vi.hoisted(() => vi.fn());
 vi.mock("execa", async (importOriginal) => {
@@ -35,6 +41,12 @@ afterEach(async () => {
   await rm(tempDir, { recursive: true, force: true });
 });
 
+/** The vitest CLI arguments of the run under test. */
+function vitestArgs(): string[] {
+  const [, args] = execaSync.mock.calls[0] as [string, string[]];
+  return args;
+}
+
 describe("aai test", () => {
   test("returns false when no test files exist", () => {
     const result = runVitest(tempDir);
@@ -46,16 +58,15 @@ describe("aai test", () => {
     // so it passed with `test.ts` deleted. The `.js` arm is the half of
     // `runVitest`'s detection the `.ts` test below does not reach.
     await writeFile(path.join(tempDir, "agent.test.js"), "// test file");
-    // The NAME it ran, not a boolean — the caller reports it and
-    // `warnUnrunSpecs` reports the complement.
-    expect(runVitest(tempDir)).toBe("agent.test.js");
-    const [, args] = execaSync.mock.calls[0] as [string, string[]];
-    expect(args.at(-1)).toBe("agent.test.js");
+    // The NAMES it ran, not a boolean — the caller reports them and
+    // `unrunSpecFiles` reports the complement.
+    expect(runVitest(tempDir)).toEqual(["agent.test.js"]);
+    expect(vitestArgs().at(-1)).toBe("agent.test.js");
   });
 
   test("runs vitest against agent.test.ts without overriding NODE_OPTIONS", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    expect(runVitest(tempDir)).toBe("agent.test.ts");
+    expect(runVitest(tempDir)).toEqual(["agent.test.ts"]);
     const [, args, opts] = execaSync.mock.calls[0] as [
       string,
       string[],
@@ -82,7 +93,7 @@ describe("aai test", () => {
     await writeFile(path.join(vitestDir, "vitest.mjs"), "// fake bin");
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
 
-    expect(runVitest(tempDir)).toBe("agent.test.ts");
+    expect(runVitest(tempDir)).toEqual(["agent.test.ts"]);
     const [cmd, args] = execaSync.mock.calls[0] as [string, string[]];
     // No npx: the local bin JS runs with the current Node executable.
     expect(cmd).toBe(process.execPath);
@@ -116,46 +127,142 @@ describe("aai test", () => {
 
   test("falls back to agent.test.js when no .ts test exists", async () => {
     await writeFile(path.join(tempDir, "agent.test.js"), "// test file");
-    expect(runVitest(tempDir)).toBe("agent.test.js");
-    expect(execaSync.mock.calls[0]?.[1]).toContain("agent.test.js");
+    expect(runVitest(tempDir)).toEqual(["agent.test.js"]);
+    expect(vitestArgs()).toContain("agent.test.js");
+  });
+});
+
+describe("runVitest announces what it did not run", () => {
+  test("a caller that reports nothing of its own gets the notice by default", async () => {
+    // `aai build`'s pre-build gate is that caller: it calls `runVitest(cwd)` and
+    // prints "Build complete", so a build gated on one file out of eight said so
+    // nowhere. The default is what closes it without the gate having to know.
+    await writeFile(path.join(tempDir, "agent.test.ts"), "");
+    await writeFile(path.join(tempDir, "store.test.ts"), "");
+    runVitest(tempDir);
+    const [level, message] = notify.mock.calls.at(-1) as [string, string];
+    expect(level).toBe("warn");
+    expect(message).toContain("store.test.ts");
+    // The remedy, not just the finding.
+    expect(message).toContain("aai test --all");
+  });
+
+  test("a complete run says nothing", async () => {
+    await writeFile(path.join(tempDir, "agent.test.ts"), "");
+    runVitest(tempDir);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  test("announceUnrun: false silences it for a caller that reports the set itself", async () => {
+    await writeFile(path.join(tempDir, "agent.test.ts"), "");
+    await writeFile(path.join(tempDir, "store.test.ts"), "");
+    runVitest(tempDir, { candidates: ["agent.test.ts"], announceUnrun: false });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  test("`all` runs every non-eval spec, and the eval tier stays disjoint", async () => {
+    // Still a FILTER list rather than an include glob, which is what keeps
+    // `aai test --all` from reaching `agent.eval.test.ts`.
+    await writeFile(path.join(tempDir, "agent.test.ts"), "");
+    await writeFile(path.join(tempDir, "agent.eval.test.ts"), "");
+    await mkdir(path.join(tempDir, "tools"), { recursive: true });
+    await writeFile(path.join(tempDir, "tools", "swap.test.ts"), "");
+    expect(runVitest(tempDir, { candidates: ["agent.test.ts"], all: true })).toEqual([
+      "agent.test.ts",
+      "tools/swap.test.ts",
+    ]);
+    expect(vitestArgs().slice(-2)).toEqual(["agent.test.ts", "tools/swap.test.ts"]);
+  });
+
+  test("`all` with nothing to run does not spawn vitest", () => {
+    expect(runVitest(tempDir, { candidates: ["agent.test.ts"], all: true })).toBe(false);
+    expect(execaSync).not.toHaveBeenCalled();
   });
 });
 
 describe("executeTest", () => {
-  test("returns skipped result when no test file exists", async () => {
+  test("returns skipped result when the project has no specs at all", async () => {
     const result = await silenced(() => executeTest(tempDir))(tempDir);
-    expect(result).toEqual({ ok: true, data: { passed: true, skipped: true } });
+    expect(result).toEqual({
+      ok: true,
+      data: { passed: true, skipped: true, ran: [], unrun: [], complete: true },
+    });
     expect(execaSync).not.toHaveBeenCalled();
   });
 
-  test("a project with ONLY co-located specs is still told they did not run", async () => {
-    // The skip path returned before the warning, and it is the case where the
-    // silence misleads most: `aai test` says "No test file found" while the
-    // project's spec files sit right there, unrun. Measured on a real project
-    // whose only spec was `tools/echo_back.test.ts` — `{"passed":true,
-    // "skipped":true}` and not a word about it.
+  test("a project with ONLY co-located specs FAILS rather than reporting a pass", async () => {
+    // The arm that misled longest: `aai test` printed "No test file found" while
+    // the project's specs sat right there unrun, and answered
+    // `{"passed":true,"skipped":true}` with exit 0 — which in CI reads as a
+    // passing suite. Measured on a real project whose only spec was
+    // `tools/echo_back.test.ts`.
     await mkdir(path.join(tempDir, "tools"), { recursive: true });
     await writeFile(path.join(tempDir, "tools", "echo_back.test.ts"), "");
     const result = await silenced(() => executeTest(tempDir))(tempDir);
 
-    expect(result).toEqual({ ok: true, data: { passed: true, skipped: true } });
+    expect(result.ok).toBe(false);
+    if (result.ok) expect.fail("an unrun spec must not be a passing result");
+    expect(result.code).toBe("incomplete_run");
+    expect(result.error).toContain("tools/echo_back.test.ts");
+    expect(result.hint).toContain("aai test --all");
     expect(execaSync).not.toHaveBeenCalled();
-    const [level, message] = notify.mock.calls.at(-1) as [string, string];
-    expect(level).toBe("warn");
-    expect(message).toContain("tools/echo_back.test.ts");
   });
 
-  test("a project with no specs at all says nothing extra", async () => {
-    // The complement: the warning names files, so with none to name it must
-    // not fire — "0 other spec file(s)" is noise on an empty project.
-    await silenced(() => executeTest(tempDir))(tempDir);
-    expect(notify).not.toHaveBeenCalled();
+  test("a narrowed run over a project with other specs is NOT a pass", async () => {
+    // The reproduction from the field: one tool added to the `retail` template
+    // broke `registry.test.ts` in 17 assertions while `pnpm test` and
+    // `pnpm build` stayed green, because the scaffold wires `"test": "aai test"`
+    // and `aai test` ran `agent.test.ts` alone and exited 0.
+    await writeFile(path.join(tempDir, "agent.test.ts"), "");
+    await writeFile(path.join(tempDir, "registry.test.ts"), "");
+    const result = await silenced(() => executeTest(tempDir))(tempDir);
+
+    if (result.ok) expect.fail("a narrowed run must not be a passing result");
+    expect(result.code).toBe("incomplete_run");
+    expect(result.error).toBe(
+      "`aai test` ran agent.test.ts only — 1 other spec file(s) in this project were not run: " +
+        "registry.test.ts. An unrun spec is not a passing one, so this is not a green result.",
+    );
+    expect(result.hint).toContain("aai test --all");
+    // It still RAN what it could: the failure is the verdict, not a refusal to
+    // test. A reader gets vitest's own report and then why it is not enough.
+    expect(execaSync).toHaveBeenCalledTimes(1);
   });
 
-  test("returns passed result when vitest succeeds", async () => {
+  test("the failure names at most ten specs and counts the rest", async () => {
+    // A project may hold hundreds; the message has to stay readable.
+    await writeFile(path.join(tempDir, "agent.test.ts"), "");
+    for (let i = 0; i < 12; i++) {
+      await writeFile(path.join(tempDir, `s${String(i).padStart(2, "0")}.test.ts`), "");
+    }
+    const result = await silenced(() => executeTest(tempDir))(tempDir);
+    if (result.ok) expect.fail("12 unrun specs must not be a passing result");
+    expect(result.error).toContain("and 2 more");
+    expect(result.error).not.toContain("s11.test.ts");
+  });
+
+  test("--all widens the run and makes the verdict complete", async () => {
+    await writeFile(path.join(tempDir, "agent.test.ts"), "");
+    await writeFile(path.join(tempDir, "registry.test.ts"), "");
+    const result = await silenced(() => executeTest(tempDir, { all: true }))(tempDir);
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        passed: true,
+        ran: ["agent.test.ts", "registry.test.ts"],
+        unrun: [],
+        complete: true,
+      },
+    });
+  });
+
+  test("a passing complete run reports the set it covered", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
     const result = await silenced(() => executeTest(tempDir))(tempDir);
-    expect(result).toEqual({ ok: true, data: { passed: true } });
+    expect(result).toEqual({
+      ok: true,
+      data: { passed: true, ran: ["agent.test.ts"], unrun: [], complete: true },
+    });
   });
 
   test("returns test_failed with detail when vitest exits non-zero", async () => {
@@ -200,6 +307,12 @@ describe("unrunSpecFiles", () => {
     ]);
   });
 
+  test("a widened run covers the whole set, so nothing is unrun", async () => {
+    await writeFile(path.join(tempDir, "agent.test.ts"), "");
+    await writeFile(path.join(tempDir, "store.test.ts"), "");
+    expect(unrunSpecFiles(tempDir, ["agent.test.ts", "store.test.ts"])).toEqual([]);
+  });
+
   test("the file that RAN and the eval tier are both excluded", async () => {
     // Evals have their own command; excluding them by the `.eval.` INFIX rather
     // than by a filename list is what keeps this module from importing
@@ -207,6 +320,7 @@ describe("unrunSpecFiles", () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "");
     await writeFile(path.join(tempDir, "agent.eval.test.ts"), "");
     expect(unrunSpecFiles(tempDir, "agent.test.ts")).toEqual([]);
+    expect(projectSpecFiles(tempDir)).toEqual(["agent.test.ts"]);
   });
 
   test("never walks into node_modules or build output", async () => {

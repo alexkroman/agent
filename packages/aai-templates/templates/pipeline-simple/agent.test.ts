@@ -13,25 +13,42 @@ describe("pipeline-simple template", () => {
     expect(() => toAgentConfig(agentDef)).not.toThrow();
   });
 
-  test("declares only the LLM stage on the def", () => {
-    // The template's point: swap one stage, leave the rest unset. The
-    // unset stages are filled with the AssemblyAI defaults at parse time.
-    expect(agentDef.name).toBe("pipeline-simple");
-    expect(agentDef.llm).toBeDefined();
-    expect(agentDef.stt).toBeUndefined();
-    expect(agentDef.tts).toBeUndefined();
+  test("exports an agent the platform can name", () => {
+    // Not the literal. `aai init <project>` scaffolds this file verbatim, so a
+    // pinned name is a test about the TEMPLATE inside somebody else's project —
+    // and renaming the agent is the first thing they will do. What has to hold
+    // is that there is a name and the conversion carries it through.
+    expect(agentDef.name).toBeTruthy();
+    expect(toAgentConfig(agentDef).name).toBe(agentDef.name);
   });
 
-  test("LLM descriptor is Anthropic", () => {
-    expect(agentDef.llm?.kind).toBe("anthropic");
+  test("declares at least one stage itself, which is what makes it a pipeline", () => {
+    // WHICH stage is deliberately not asserted: `agent.ts` invites you to move
+    // the declaration ("Declare only the stage you want elsewhere"), so naming
+    // one here would redden on the edit the comment above it asks for.
+    const declared = (["stt", "llm", "tts"] as const).filter(
+      (stage) => agentDef[stage] !== undefined,
+    );
+    expect(declared.length).toBeGreaterThan(0);
   });
 
-  test("unset stages fill to AssemblyAI in the deployable config", () => {
+  test("a stage you declare survives, and every stage you leave unset defaults", () => {
+    // The template's whole subject, stated so it survives a swap: the config a
+    // deploy carries agrees with the def wherever the def has an opinion, and
+    // fills the AssemblyAI default wherever it does not.
     const config = toAgentConfig(agentDef);
-    expect(config.mode).toBe("pipeline");
-    expect(config.stt?.kind).toBe("assemblyai");
-    expect(config.tts?.kind).toBe("assemblyai");
-    expect(config.llm?.kind).toBe("anthropic");
+    if (config.mode !== "pipeline") {
+      // Switched the def to `s2s`? Then there is no cascade to fill — S2S
+      // REPLACES the pipeline rather than joining it, which the last describe
+      // below is the worked example for.
+      expect(config.mode).toBe("s2s");
+      expect(config.stt).toBeUndefined();
+      expect(config.tts).toBeUndefined();
+      return;
+    }
+    for (const stage of ["stt", "llm", "tts"] as const) {
+      expect(config[stage]?.kind, stage).toBe(agentDef[stage]?.kind ?? "assemblyai");
+    }
   });
 });
 

@@ -46,6 +46,60 @@ The harness the eval file is written against is published from
 is not "skip". See "Driving an agent from text is a published surface" in
 `packages/aai-runtime/CLAUDE.md`.
 
+## An INCOMPLETE `aai test` is not a pass
+
+`aai test` runs `agent.test.ts` and nothing else, and that narrow default
+STANDS: which files it runs is a documented contract, and widening it by default
+would reach specs that are slow or want credentials. What did not stand is the
+verdict it printed over the difference. It answered
+`{"ok":true,"data":{"passed":true}}` with **exit 0** while naming the files it
+had skipped in a warning printed *after* the green summary — so the scaffold's
+`"test": "aai test"`, which is what users wire into CI, could report a passing
+suite over 211 unrun tests. Measured: one tool added to the `retail` template
+broke its `registry.test.ts` in 17 assertions with `pnpm test` and `pnpm build`
+green throughout, and one user concatenated a 25-test suite into `agent.test.ts`
+to get it gated at all.
+
+It is the same defect `defineExec`'s `cwd` policy exists for — "a green result
+for a project that is not there reads, in CI, exactly like a passing suite" —
+one directory over, and it gets the same answer. Four parts, and the split
+between them is the design:
+
+- **`executeTest` FAILS with `incomplete_run`** when any non-eval spec in the
+  project was not covered, naming the files (capped at ten, then counted) and
+  the flag that runs them. Both arms fail, including the one that misled longest
+  — no `agent.test.ts` at all, where the CLI printed "No test file found" while
+  the project's specs sat right there. A warning after a green summary is not a
+  gate; an exit code is.
+- **The result carries the SET, not just a boolean.** `ran`, `unrun` and
+  `complete` ride `TestData`, because `jq -e .data.passed` answered `true` for a
+  narrowed run and a complete one alike, so no script could tell them apart.
+  `aai eval` reports its `ran` for the same reason.
+- **`aai test --all`** is the opt-in: every non-eval spec in one run
+  (`TestOptions.all` → `VitestRunOptions.all`, declared as the `test` command's
+  one non-`json` arg in `cli.ts`). Still a vitest FILTER LIST rather than an
+  include glob, so the eval tier stays disjoint by construction exactly as the
+  narrow path is (see above) — nothing had to learn the other command's
+  filename. The failure's hint names the project's own `npm test` FIRST and the
+  flag second, because the script is the answer that needs nothing remembered.
+- **`runVitest` announces the unrun set ITSELF by default**
+  (`announceUnrun`, default `true`), which is what finally covers `aai build`.
+  That command runs the same narrowed gate as its pre-build check and printed
+  "Build complete" with no notice of any kind. The default is on so the caller
+  that does not know it is narrowing cannot stay silent; `aai test` and
+  `aai eval` pass `false` — the first because its own result and failure report
+  the set, the second because "did not run" is a claim about the TEST tier and
+  an eval run would otherwise name every unit spec in the project.
+
+**And the scaffold's `test` script is no longer `aai test`.** It is
+`vitest run --exclude "**/*.eval.test.*"` (`scaffold/package.json`), with the
+narrow command kept as `test:agent`. The command a project wires into CI must be
+the one that runs that project's suite — and vitest's CLI `--exclude` is PUSHED
+onto `defaultExclude` rather than replacing it (verified in vitest 4.1's own
+`resolved.cliExclude` handling), so `node_modules` stays excluded and the one
+pattern buys the same test/eval disjointness the CLI gets from its filter. The
+scaffold guide already said `pnpm test`; this makes that true.
+
 **`aai workflow` talks to the AGENT, not to the platform API** (`workflow.ts`,
 `cli-workflow.ts`): `list`, `runs <name>`, `show <runId>`, `cancel <runId>` over
 the brokered `/:slug/workflows` surface. It is deliberately NOT an `apiRequest`

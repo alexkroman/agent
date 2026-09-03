@@ -116,7 +116,13 @@ function finishedOutput(over: { kept?: boolean; answered?: boolean } = {}) {
 
 describe("the agent declares its workflow", () => {
   test("under the name ctx.workflows.start resolves it by", () => {
-    expect(Object.keys(agentDef.workflows ?? {})).toEqual(["recap"]);
+    // `toContain` rather than an exact key list: a second workflow is an
+    // invited edit and must not redden a test the author did not write. The
+    // NAME is still pinned, deliberately — this key is a STRING to everything
+    // outside this file (the REST route, `ctx.workflows.get`, a schedule), so
+    // renaming it is a runtime 404 rather than a compile error, and nothing
+    // else says so.
+    expect(Object.keys(agentDef.workflows ?? {})).toContain("recap");
     expect(agentDef.workflows?.recap).toBe(recap);
   });
 
@@ -143,14 +149,21 @@ describe("the agent declares its workflow", () => {
   });
 
   test("discovers every tool in tools/, by file name", () => {
-    // Discovered, not declared: every name here is a file in `tools/`.
-    expect(Object.keys(agentDef.tools).sort()).toEqual([
-      "cancel_recap",
-      "keep_transcript",
-      "recap_progress",
-      "recap_status",
-      "request_recap",
-    ]);
+    // Discovered, not declared: every name here is a file in `tools/`. Asserted
+    // with `arrayContaining`, because dropping a file into `tools/` is the
+    // cheapest edit this template invites and an exact list would turn it into
+    // a failing test in somebody else's project. What still fails is a tool
+    // going MISSING — which is what a broken discovery looks like, and it looks
+    // identical to a template that never had tools.
+    expect(Object.keys(agentDef.tools)).toEqual(
+      expect.arrayContaining([
+        "cancel_recap",
+        "keep_transcript",
+        "recap_progress",
+        "recap_status",
+        "request_recap",
+      ]),
+    );
   });
 });
 

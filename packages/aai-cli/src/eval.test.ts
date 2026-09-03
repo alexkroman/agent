@@ -13,11 +13,19 @@ vi.mock("execa", async (importOriginal) => {
   return { ...orig, execaSync };
 });
 
+/** The channel `runVitest`'s unrun-spec notice goes out on. */
+const notify = vi.hoisted(() => vi.fn());
+vi.mock("./_ui.ts", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./_ui.ts")>();
+  return { ...orig, notify };
+});
+
 let tempDir: string;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(tmpdir(), "aai-eval-"));
   execaSync.mockReset();
+  notify.mockReset();
 });
 
 afterEach(async () => {
@@ -37,21 +45,21 @@ function invocation(): { args: string[]; opts: { cwd: string; env?: Record<strin
 describe("executeEval", () => {
   test("skips, saying what to create, when the project has no eval file", async () => {
     const result = await silenced(() => executeEval(tempDir))(tempDir);
-    expect(result).toEqual({ ok: true, data: { passed: true, skipped: true } });
+    expect(result).toEqual({ ok: true, data: { passed: true, skipped: true, ran: [] } });
     expect(execaSync).not.toHaveBeenCalled();
   });
 
   test("does not pick up the unit test file — the two commands are disjoint", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// unit test");
     const result = await silenced(() => executeEval(tempDir))(tempDir);
-    expect(result).toEqual({ ok: true, data: { passed: true, skipped: true } });
+    expect(result).toEqual({ ok: true, data: { passed: true, skipped: true, ran: [] } });
     expect(execaSync).not.toHaveBeenCalled();
   });
 
   test("runs agent.eval.test.ts with a budget a live model turn can meet", async () => {
     await writeFile(path.join(tempDir, "agent.eval.test.ts"), "// eval file");
     const result = await silenced(() => executeEval(tempDir))(tempDir);
-    expect(result).toEqual({ ok: true, data: { passed: true } });
+    expect(result).toEqual({ ok: true, data: { passed: true, ran: ["agent.eval.test.ts"] } });
     const { args, opts } = invocation();
     expect(args.slice(-6)).toEqual([
       "run",
@@ -91,6 +99,18 @@ describe("executeEval", () => {
     });
     const result = await silenced(() => executeEval(tempDir))(tempDir);
     expect(result).toEqual({ ok: false, code: "test_failed", error: "Evals failed: exit 1" });
+  });
+
+  test("an eval run never names the project's unit specs as skipped", async () => {
+    // `unrunSpecFiles` drops eval files by infix, so the notice `aai build`
+    // gets from `runVitest` would, left on here, list every unit spec in the
+    // project as "NOT run" during `aai eval`. True and not this command's
+    // business — `aai test` is what reports and refuses that set.
+    await writeFile(path.join(tempDir, "agent.eval.test.ts"), "// eval file");
+    await writeFile(path.join(tempDir, "agent.test.ts"), "// unit test");
+    await writeFile(path.join(tempDir, "store.test.ts"), "// unit test");
+    await silenced(() => executeEval(tempDir))(tempDir);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   test("reports a runner that could not be spawned as infrastructure", async () => {
