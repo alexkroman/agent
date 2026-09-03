@@ -257,19 +257,18 @@ export {
   WORKFLOW_API_PREFIX,
   WORKFLOW_API_TOKEN_ENV,
 } from "./workflow-api.ts";
-// The durable-workflow host side's TYPES, plus the key-store resolver: the
-// guest picks between the two stores — Postgres on the platform, memory under
-// `aai dev`. The client that becomes `ctx.workflows`, and the DevKit binding
-// itself, are on `@alexkroman1/aai-runtime/internal`.
-export {
-  resolveKeyStore,
-  type WdkAdapter,
-  type WdkRunRecord,
+// The durable-workflow host side's TYPES. The client that becomes
+// `ctx.workflows`, and the DevKit binding itself, are on
+// `@alexkroman1/aai-runtime/internal`; `resolveKeyStore` is below, beside the
+// stores it chooses between.
+export type {
+  WdkAdapter,
+  WdkRunRecord,
   // `readStream`'s options. Exported because `WdkAdapter` is: a type a public
   // signature MENTIONS but does not export is a docs-build warning here, and
   // warnings are errors — see the root guide's `includeForgottenExports` note.
-  type WdkStreamOptions,
-  type WorkflowClientOptions,
+  WdkStreamOptions,
+  WorkflowClientOptions,
 } from "./workflow-client.ts";
 // The journal's tables, for the same reason and the same operator: a self-hosted
 // deployment owns its database and `server.mjs` may import only this surface.
@@ -281,6 +280,11 @@ export {
   MAX_WORKFLOW_FIND_LIMIT,
   type WorkflowKeyStore,
 } from "./workflow-keys.ts";
+// An embedder's choice between the two LOCAL key stores — Postgres when it holds
+// a `Db`, memory otherwise. A DEPLOYED guest does not come through it: the
+// platform's own index is selected by `selectKeyStore` (`workflow-runtime.ts`)
+// out of the environment, beside `selectJournal`.
+export { resolveKeyStore } from "./workflow-keys-select.ts";
 // The upload store's two blob backends and the key grammar a window is written
 // under. `createUploadStore` and `resolveUploadBlobs`, which JOIN them to a
 // record, are `@internal` and on `@alexkroman1/aai-runtime/internal` — the

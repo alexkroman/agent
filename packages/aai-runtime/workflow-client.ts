@@ -45,7 +45,6 @@ import {
   PUBLIC_URL_UNCONFIGURED_MESSAGE,
   toToolJsonSchema,
 } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
@@ -61,12 +60,7 @@ import type {
 } from "@alexkroman1/aai/workflow-api";
 import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
-import {
-  createMemoryKeyStore,
-  createPostgresKeyStore,
-  resolveFindLimit,
-  type WorkflowKeyStore,
-} from "./workflow-keys.ts";
+import { resolveFindLimit, type WorkflowKeyStore } from "./workflow-keys.ts";
 import { WORKFLOW_WEBHOOK_PREFIX } from "./workflow-serve.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
 
@@ -492,26 +486,4 @@ function safeJsonSchema(
 function unknownWorkflowMessage(named: string, declared: readonly string[]): string {
   const list = declared.length > 0 ? declared.join(", ") : "(none)";
   return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.`;
-}
-
-/**
- * Build the key store an embedder holding a `Db` should use: that database, or
- * memory.
- *
- * The two LOCAL arms, and that is the whole of what this can decide. There is a
- * third — the platform's own index, which a DEPLOYED guest reaches over HTTP
- * (`workflow-keys-platform.ts`) — and it is deliberately not reachable from here:
- * it takes no argument an embedder could supply, being read out of the environment
- * the platform itself wrote, and reading that environment is a decision about which
- * deployment this is rather than about which `Db` the caller holds. `selectKeyStore`
- * in `workflow-runtime.ts` is where that decision lives, beside `selectJournal`,
- * which resolves the RUNS by the same preference and for the same reasons.
- *
- * So a deployed guest does not come through this function, and this signature is
- * unchanged for that reason as much as any: it is on this package's root barrel,
- * i.e. contracted, and widening it would oblige an epoch on the `keys` capability
- * to describe a platform arm no embedder can build.
- */
-export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore {
-  return db ? createPostgresKeyStore(db) : createMemoryKeyStore();
 }
