@@ -247,6 +247,51 @@ describe("what the check must NOT accuse", () => {
   });
 
   /**
+   * Every fresh key in a fan-out is judged, not just the first one reached.
+   *
+   * A fan-out issues its keys SYNCHRONOUSLY, so `displaced()` is asked once per
+   * sibling before any of them settles — and the displaced entry it answers has
+   * to be the same one every time. That is a property of the scan rather than of
+   * the check, and it is what makes the cursor over the journal (which is what
+   * keeps this from re-reading every journaled step per fresh step, see
+   * `watchDivergence`) safe: it may only ever step past an entry that can never
+   * qualify again.
+   *
+   * A/B'd against a cursor that advances past the entry it ANSWERED: the second
+   * sibling is then judged against an exhausted scan, answers `undefined`, and
+   * the run reports `completed` having executed the very side effect the check
+   * exists to refuse.
+   */
+  test("judges the SECOND fresh key of a fan-out on the same displaced entry", async () => {
+    const journal = await seed();
+    // `segment#0` was reached and lost, so its claim exonerates it — this walk
+    // may legitimately re-run it, and it is NOT what gets refused.
+    await journal.claimAttempt(RUN, "segment#0");
+    // A journaled step this walk never reads, finished after everything it has
+    // answered: the displaced entry.
+    await journal.appendStep(RUN, {
+      key: "other#0",
+      name: "other",
+      status: "ok",
+      output: "kept",
+      attempts: 1,
+      finishedAt: Date.now(),
+    });
+
+    const ran = vi.fn((n: number) => `re-${n}`);
+    const outcome = await replay(journal, async (_input, ctx) =>
+      Promise.all([0, 1].map((n) => ctx.step("segment", () => ran(n)))),
+    );
+
+    // `segment#1` is the fresh key — never claimed by any walk — so it is the
+    // one refused, and the message names it against the displaced entry.
+    expect(failure(outcome)).toContain('reached step "segment" as journal key segment#1');
+    expect(failure(outcome)).toContain("the first being other#0");
+    // The exonerated sibling ran; the refused one never did.
+    expect(ran.mock.calls.flat()).toEqual([0]);
+  });
+
+  /**
    * The shape that broke the naive check, found by
    * `workflow-resume-equivalence.test.ts` rather than by anyone's imagination.
    *

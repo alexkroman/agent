@@ -324,15 +324,26 @@ export function createMemoryJournal(): JournalStore {
       // read the journal back with `order by finished_at, key` and this is the
       // reference the other two are checked against. Insertion order agrees with
       // them right up to a same-millisecond tie, which a fan-out produces
-      // routinely. A COPY, so the sort cannot reorder the stored array — that
+      // routinely. COPIES, so the sort cannot reorder the stored array — that
       // one is append-only and `appendStep`'s own idempotency reads it.
-      return [...(slotOf(runId)?.steps ?? [])].sort(settledFirst).map((entry) => ({ ...entry }));
+      //
+      // Copied THEN sorted rather than spread-sorted-then-mapped, which is one
+      // intermediate array instead of two on the read every walk opens with.
+      return (slotOf(runId)?.steps ?? []).map((entry) => ({ ...entry })).sort(settledFirst);
     },
 
     async readStep(runId: string, key: string): Promise<StepEntry | undefined> {
-      // A COPY, for the same reason `readSteps` maps one: the stored array is
-      // append-only and `appendStep`'s own idempotency reads it.
-      const entry = slotOf(runId)?.steps.find((step) => step.key === key);
+      // Through `byKey`, never a scan of `steps`. The two hold the SAME objects
+      // (see `appendStep`), so the answer is identical — and the point of this
+      // method is that it asks an O(1) question, which
+      // `workflow-replay-attempt.ts` states in so many words when it explains
+      // why `settledSince` reaches this rather than `readSteps`. A `find` here
+      // gave that back: it is on the CONTENDED path, reached once per step of
+      // every overlapping walk, in exactly the runs where `steps` is longest.
+      //
+      // A COPY, for the same reason `readSteps` maps one: the stored entry is
+      // shared with `steps` and with `appendStep`'s own idempotency check.
+      const entry = slotOf(runId)?.byKey.get(key);
       return entry ? { ...entry } : undefined;
     },
 

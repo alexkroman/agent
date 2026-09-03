@@ -70,7 +70,6 @@ import type { Db } from "@alexkroman1/aai/internal";
 import { firstWriteWins } from "./_journal-claim.ts";
 import {
   encodedOrNull,
-  millis,
   type RunRow,
   type SleepRow,
   type StepRow,
@@ -78,6 +77,7 @@ import {
   toSleepRecord,
   toStepEntry,
 } from "./_workflow-journal-postgres-rows.ts";
+import { resumableRuns } from "./_workflow-journal-resumable.ts";
 import {
   WORKFLOW_ATTEMPT_TABLE,
   WORKFLOW_HOOK_TABLE,
@@ -422,34 +422,10 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
     },
 
     async resumableRuns(limit: number): Promise<ResumableRun[]> {
-      // The status list is written OUT rather than negated and the `parked` arm is
-      // the platform reconcile's park rule (see the interface). `coalesce(wake_at,
-      // 0)` orders so that a run waiting on nothing, and the most overdue sleeps,
-      // are what survive `limit`. Unindexed deliberately: this runs ONCE, at boot,
-      // and an index on `status` would be maintained by every `setStatus` for it.
-      const rows = await db.query<{ run_id: string; wake_at: string | number | null }>(
-        `with candidate as (
-           select r.run_id,
-                  (select min(s.wake_at) from ${WORKFLOW_SLEEP_TABLE} s
-                    where s.run_id = r.run_id and s.woken = false) as wake_at,
-                  exists (select 1 from ${WORKFLOW_HOOK_TABLE} h
-                           where h.run_id = r.run_id
-                             and h.delivered = false and h.closed = false) as parked
-             from ${WORKFLOW_RUN_TABLE} r
-            where r.status in ('pending', 'running')
-         )
-         select run_id, wake_at from candidate
-          where wake_at is not null or not parked
-          order by coalesce(wake_at, 0), run_id
-          limit $1`,
-        [limit],
-      );
-      return rows.map((row) => ({
-        runId: row.run_id,
-        // `undefined` and not `null`, which is what the memory backend answers —
-        // one of the five absence drifts the conformance table exists to hammer.
-        ...(row.wake_at === null ? {} : { wakeAt: millis(row.wake_at) }),
-      }));
+      // Its own module — see `_workflow-journal-resumable.ts`, which carries the
+      // planner measurement behind the statement's shape. It is a leaf: nothing
+      // else in this store reads it, and this file is at the 500-line cap.
+      return resumableRuns(db, limit);
     },
 
     async appendStep(runId: string, entry: StepEntry): Promise<StepEntry> {
