@@ -382,6 +382,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -1764,6 +1765,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -1802,6 +1804,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 
@@ -1903,6 +1906,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -2746,6 +2750,11 @@ type WakeUpOptions = {
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
 
 // @public
+export function workflow<P extends ToolInputSchema = ToolInputSchema, O extends StandardSchemaV1 = StandardSchemaV1>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
+    output: O;
+}): WorkflowDef<P, InferSchemaOutput<O>>;
+
+// @public (undocumented)
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
 
 // @public
@@ -2799,6 +2808,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -2834,6 +2844,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 ```
@@ -2849,6 +2860,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -3257,6 +3269,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -3295,6 +3308,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 
@@ -3536,6 +3550,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -4074,6 +4089,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -4109,6 +4125,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 ```
@@ -5220,6 +5237,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -6051,6 +6069,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -6086,6 +6105,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 ```
@@ -6116,6 +6136,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -6401,6 +6422,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -6436,6 +6458,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 ```
@@ -6657,6 +6680,7 @@ export type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -6922,6 +6946,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -6929,7 +6954,10 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
 
 // @public
-export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+export type WorkflowOutputOf<D> = D extends {
+    run: WorkflowBody<never, infer R>;
+    output?: StandardSchemaV1<unknown, infer O> | undefined;
+} ? Awaited<unknown extends O ? R : O> : never;
 
 // @public
 export type WorkflowRunBase = {
@@ -6969,6 +6997,7 @@ export type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 ```

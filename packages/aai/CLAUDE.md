@@ -651,7 +651,10 @@ infers `R` from `run`, so `typeof theDef` needs the body's signature, which need
 it independently, and neither the type tests (every def there uses an inline
 arrow) nor `sdk/workflow.ts`'s `@example` (marked `no-check`) catches it. The
 convention that works — name the schema const and ANNOTATE the def — is in
-`packages/aai-templates/CLAUDE.md`.
+`packages/aai-templates/CLAUDE.md`. **A declared `output` schema is what makes
+that annotation cheap**: `WorkflowOutputOf` reads the SCHEMA, not the body, so
+the type is stated once and the value is checked where the run completes.
+`sdk/workflow.ts` owns it.
 
 ## A callback URL comes from `publicWebhookUrl`
 

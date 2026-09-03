@@ -17,6 +17,7 @@ export type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -282,6 +283,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -289,7 +291,10 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
 
 // @public
-export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+export type WorkflowOutputOf<D> = D extends {
+    run: WorkflowBody<never, infer R>;
+    output?: StandardSchemaV1<unknown, infer O> | undefined;
+} ? Awaited<unknown extends O ? R : O> : never;
 
 // @public
 export type WorkflowRunBase = {
@@ -329,6 +334,7 @@ export type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 

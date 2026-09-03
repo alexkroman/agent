@@ -47,6 +47,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -890,6 +891,11 @@ type WakeUpOptions = {
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
 
 // @public
+export function workflow<P extends ToolInputSchema = ToolInputSchema, O extends StandardSchemaV1 = StandardSchemaV1>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
+    output: O;
+}): WorkflowDef<P, InferSchemaOutput<O>>;
+
+// @public (undocumented)
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
 
 // @public
@@ -943,6 +949,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -978,6 +985,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 

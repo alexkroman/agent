@@ -965,8 +965,12 @@ neither an annotated context nor a cast.
 
 ### workflow()
 
+#### Call Signature
+
 ```ts
-function workflow<P, R>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+function workflow<P, O>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
+  output: O;
+}): WorkflowDef<P, InferSchemaOutput<O>>;
 ```
 
 Declare a durable workflow.
@@ -975,27 +979,29 @@ An identity function for type inference, exactly like `tool()` — the returned
 object is the input unchanged. Workflows are named by the key they are declared
 under, so this takes no `name`.
 
-#### Type Parameters
+##### Type Parameters
 
-##### P
+###### P
 
 `P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
 
-##### R
+###### O
 
-`R` = `unknown`
+`O` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\> = `StandardSchemaV1`\<`unknown`, `unknown`\>
 
-#### Parameters
+##### Parameters
 
-##### def
+###### def
 
-[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+`Omit`\<[`WorkflowDef`](#workflowdef)\<`P`, [`InferSchemaOutput`](#inferschemaoutput)\<`O`\>\>, `"output"`\> & \{
+  `output`: `O`;
+\}
 
-#### Returns
+##### Returns
 
-[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+[`WorkflowDef`](#workflowdef)\<`P`, [`InferSchemaOutput`](#inferschemaoutput)\<`O`\>\>
 
-#### Remarks
+##### Remarks
 
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
@@ -1008,10 +1014,19 @@ validate: a body is an ordinary function and a workflow's identity is the key
 it is declared under, so the `workflowId` a compiler used to attach — and the
 check that used to look for it — are both gone. See [WorkflowBody](workflow-api.md#workflowbody).
 
-#### Examples
+**Two signatures, and which one applies is decided by `output`.** With an
+output schema the result type comes from the SCHEMA and the body is CHECKED
+against it — a body returning something else is an error at the declaration,
+naming the property that disagrees, rather than quietly redefining what the
+workflow promises. With no `output` nothing changes: the result type is
+inferred from the body exactly as before. Both answer the same
+`WorkflowDef<P, R>`, so nothing downstream can tell which was used.
+
+##### Examples
 
 `agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
-`agent()` takes no `tools`.
+`agent()` takes no `tools`. Declaring `output` beside `input` is what makes
+the run's result checked where it completes and typed where it is read.
 ```ts no-check
 import { agent, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
@@ -1020,6 +1035,101 @@ import { digestFlow } from "./workflows/digest.ts";
 export const digest = workflow({
   description: "Research a topic overnight and store the result",
   input: z.object({ topic: z.string() }),
+  output: z.object({ topic: z.string(), headline: z.string() }),
+  run: digestFlow,
+});
+
+export default agent({
+  name: "Researcher",
+  workflows: { digest },
+});
+```
+
+`tools/research.ts` — the tool that starts a run.
+```ts no-check
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digest } from "../agent.ts";
+
+export default tool({
+  description: "Kick off overnight research on a topic",
+  inputSchema: z.object({ topic: z.string() }),
+  execute: async ({ topic }, ctx) => {
+    // The workflow itself, not its name: typed input, and a typo is a
+    // compile error. `key` is what lets a later turn find this run.
+    const runId = await ctx.workflows.start(digest, { topic }, { key: ctx.sessionId });
+    return `Working on it — run ${runId}.`;
+  },
+});
+```
+
+#### Call Signature
+
+```ts
+function workflow<P, R>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+```
+
+Declare a durable workflow.
+
+An identity function for type inference, exactly like `tool()` — the returned
+object is the input unchanged. Workflows are named by the key they are declared
+under, so this takes no `name`.
+
+##### Type Parameters
+
+###### P
+
+`P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
+
+###### R
+
+`R` = `unknown`
+
+##### Parameters
+
+###### def
+
+[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+
+##### Returns
+
+[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+
+##### Remarks
+
+**Three primitives here run a defined process; pick by SCOPE.** A
+[dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
+across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
+DURABLY, outliving the session.
+
+It validates nothing at declaration time, and there is nothing left to
+validate: a body is an ordinary function and a workflow's identity is the key
+it is declared under, so the `workflowId` a compiler used to attach — and the
+check that used to look for it — are both gone. See [WorkflowBody](workflow-api.md#workflowbody).
+
+**Two signatures, and which one applies is decided by `output`.** With an
+output schema the result type comes from the SCHEMA and the body is CHECKED
+against it — a body returning something else is an error at the declaration,
+naming the property that disagrees, rather than quietly redefining what the
+workflow promises. With no `output` nothing changes: the result type is
+inferred from the body exactly as before. Both answer the same
+`WorkflowDef<P, R>`, so nothing downstream can tell which was used.
+
+##### Examples
+
+`agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
+`agent()` takes no `tools`. Declaring `output` beside `input` is what makes
+the run's result checked where it completes and typed where it is read.
+```ts no-check
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digestFlow } from "./workflows/digest.ts";
+
+export const digest = workflow({
+  description: "Research a topic overnight and store the result",
+  input: z.object({ topic: z.string() }),
+  output: z.object({ topic: z.string(), headline: z.string() }),
   run: digestFlow,
 });
 
@@ -6558,6 +6668,7 @@ Key the workflow is declared under in `agent({ workflows })`.
 type WorkflowDef<P, R> = {
   description?: string;
   input?: P;
+  output?: StandardSchemaV1<unknown, R>;
   run: WorkflowBody<InferSchemaOutput<P>, R>;
   uploads?: readonly string[];
 };
@@ -6580,10 +6691,11 @@ Input schema (any Standard Schema, Zod by convention),
 
 `R` = `unknown`
 
-What the body resolves with, inferred from the function. It
-  reaches a caller as `WorkflowRunSnapshot`'s `output`, so passing the
-  workflow to `start`/`get`/`find` is what makes a completed run's result
-  typed instead of `unknown`.
+What the body resolves with — inferred from the declared
+  [WorkflowDef.output](#output) schema when there is one, and from the function
+  otherwise. It reaches a caller as `WorkflowRunSnapshot`'s `output`, so
+  passing the workflow to `start`/`get`/`find` is what makes a completed
+  run's result typed instead of `unknown`.
 
 #### Properties
 
@@ -6602,6 +6714,41 @@ optional input?: P;
 ```
 
 Schema for the run input, validated at `start()` so a bad payload fails at the call site.
+
+##### output?
+
+```ts
+optional output?: StandardSchemaV1<unknown, R>;
+```
+
+Schema for what a COMPLETED run answers with — `input` from the other end.
+
+Optional, and a workflow that declares none behaves exactly as it always
+did. What declaring one buys is three things a body's inferred return type
+cannot:
+
+- **The value is checked where the run completes**, once, against this
+  schema; a body that returns something the declaration denies fails the
+  run rather than reporting `completed` with an output its own workflow
+  says is impossible. A run's output crosses a durable journal, a
+  typed-JSON codec and an HTTP hop before a page reads it, and
+  `useWorkflowRun<R>`'s `run.output` is otherwise an unchecked CLAIM about
+  everything that happened in between.
+- **[WorkflowOutputOf](workflow-api.md#workflowoutputof) reads THIS**, so a page's type comes from the
+  declaration rather than from inferring the body — which is what lets an
+  annotated `agent.ts` resolve it without the body's signature. See that
+  type for the circularity that removes.
+- **A page can render results the way it renders the form**, because the
+  listing serves it as JSON Schema ([WorkflowSummary.outputSchema](workflow-api.md#outputschema)).
+
+Any Standard Schema, Zod by convention — the same acceptance as `input`,
+and not a TypeScript type for the same reason: a type is erased, and this
+has to be checked at run time and converted for a browser.
+
+What is stored is the schema's PARSED value, exactly as `start()` stores
+the parsed input. So an unknown key a zod object strips is not in what the
+caller reads back, and the type a caller holds is a promise the run kept
+rather than a claim about it.
 
 ##### run
 
