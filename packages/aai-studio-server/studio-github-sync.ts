@@ -36,6 +36,18 @@
  * creates a repository for this has one with no commits, so there is no ref
  * to read a parent from — the first sync creates the ref instead of updating
  * it, and both paths write the same tree.
+ *
+ * **And on that repository the Git Data API is CLOSED.** Reading the missing
+ * ref is not the only thing an empty repository answers differently: GitHub
+ * refuses `POST /git/blobs` outright with 409 `Git Repository is empty.`, so
+ * the ref-creating path above could never be reached — the very first blob
+ * failed, and the user's whole reward for creating a repository for this was
+ * a link to the create-a-blob reference page. There is one endpoint that DOES
+ * write to a repository with no commits, the Contents API, so a sync that
+ * meets that refusal makes the repository non-empty with a single-file commit
+ * through it and writes its tree onto that (`initializeRepo`). The tree is
+ * still written whole, so that first file is replaced by the sync's own
+ * commit a moment later like every other path here.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
@@ -147,6 +159,58 @@ async function readBranchHead(
     if (status === 404 || status === 409) return null;
     throw err;
   }
+}
+
+/**
+ * Whether a failure is GitHub refusing the Git Data API on a repository that
+ * has no commits at all.
+ *
+ * Status alone, which is the same reading `readBranchHead` already takes: on
+ * this surface 409 is `Git Repository is empty.` and nothing else. Matching
+ * the sentence instead would put the fix at the mercy of GitHub's wording,
+ * and the cost of being wrong is bounded — a repository that is NOT empty
+ * refuses the bootstrap below rather than gaining a stray commit, because the
+ * Contents API will not create a file that already exists.
+ */
+function isEmptyRepoRefusal(err: unknown): boolean {
+  return githubErrorStatus(err) === 409;
+}
+
+/**
+ * Give a repository with no commits its first one, through the one endpoint
+ * that works there.
+ *
+ * `PUT /repos/{owner}/{repo}/contents/{path}` is the whole reason this
+ * function exists: it creates the initial commit on a repository the Git Data
+ * API will not touch. It writes a REAL workspace file rather than a
+ * placeholder, so the repository's first commit is content the user
+ * recognises and nothing has to be deleted afterwards.
+ *
+ * No `branch`: on an empty repository GitHub only accepts a commit to the
+ * default branch, and naming a branch it is about to create is how that call
+ * gets refused. When the sync's target IS that branch — what the routes
+ * always pass — the caller re-reads the head and commits onto this one; when
+ * it is not, the repository is merely no longer empty and the normal
+ * create-the-ref path runs unchanged.
+ */
+async function initializeRepo(
+  octokit: GithubOctokit,
+  target: GithubRepoTarget,
+  project: string,
+  files: Record<string, string>,
+): Promise<void> {
+  // Sorted, so a retried sync writes the same first commit rather than
+  // whichever key the file map happened to yield first. `.gitkeep` covers the
+  // workspace with no files at all, which has no first file to offer.
+  const [path = ".gitkeep", content = ""] =
+    Object.entries(files).sort(([a], [b]) => a.localeCompare(b))[0] ?? [];
+  await octokit.request("PUT /repos/{owner}/{repo}/contents/{path}", {
+    owner: target.owner,
+    repo: target.repo,
+    path,
+    message: `Initialize ${project} from AAI Studio`,
+    content: Buffer.from(content, "utf8").toString("base64"),
+  });
 }
 
 /**
@@ -268,7 +332,7 @@ export async function syncWorkspaceToGithub(opts: {
   const commitUrlFor = (sha: string): string =>
     `https://github.com/${target.owner}/${target.repo}/commit/${sha}`;
 
-  const head = await readBranchHead(octokit, target);
+  let head = await readBranchHead(octokit, target);
 
   // The no-op, checked AFTER reading the head rather than before opening a
   // client: a stamp claiming the branch is current is only believable while
@@ -287,7 +351,27 @@ export async function syncWorkspaceToGithub(opts: {
   // head that moved changes which commit we build and never which tree it
   // carries. Re-uploading the blobs per attempt would make a busy branch
   // quadratically expensive for no different result.
-  const treeSha = await writeTree(octokit, target, workspace.files);
+  //
+  // The one thing that is retried here is the refusal a repository with NO
+  // COMMITS gives every Git Data write (see the module header). Reactive
+  // rather than predicted, because the ref read cannot tell an empty
+  // repository from a branch that does not exist yet — it answers 404 for
+  // both — while this failure says exactly which one it met. Re-uploading the
+  // blobs after the bootstrap costs nothing twice: a blob is content-
+  // addressed, so the ones that did land are re-created as themselves.
+  let treeSha: string;
+  try {
+    treeSha = await writeTree(octokit, target, workspace.files);
+  } catch (err) {
+    if (!isEmptyRepoRefusal(err)) throw err;
+    await initializeRepo(octokit, target, project, workspace.files);
+    // The bootstrap commit is the parent this sync now builds on — when it
+    // landed on the branch we are targeting, which is every sync the routes
+    // issue. When it did not, this reads null again and the create-the-ref
+    // path below runs exactly as it did before.
+    head = await readBranchHead(octokit, target);
+    treeSha = await writeTree(octokit, target, workspace.files);
+  }
 
   let parent = head;
   for (let attempt = 0; attempt <= REF_CONFLICT_RETRIES; attempt += 1) {
