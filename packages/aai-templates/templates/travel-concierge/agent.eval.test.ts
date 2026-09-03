@@ -29,7 +29,15 @@
  * tools and read as a model that refuses to act.
  */
 import agentDef from "virtual:aai/agent";
-import { type EvalSession, type EvalTurn, lastStateIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  callsIn,
+  describeTurn,
+  type EvalSession,
+  type EvalToolCall,
+  lastStateIn,
+  toolNames,
+  turnCalling,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -76,33 +84,17 @@ function framesBeforeConfirm(session: EvalSession): z.infer<typeof ProjectedTrip
 const tripState = (session: EvalSession) => lastStateIn(session.events(), ProjectedTrip);
 
 /**
- * Drive a whole call, one caller line at a time, and hand back every turn.
+ * A call that really STAGED — it answered with the read-back rather than with a
+ * gate's refusal.
  *
- * The cases below assert about the turn a MECHANISM fired in rather than about
- * turn one, because how many turns a desk takes to get there is the model's
- * business and it moved when the desk gate landed: the flight desk's brief says
- * to search before quoting anything, so measured live this concierge now spends
- * its first turn on `to_flight_assistant` and `search_flights` and reads the
- * fare back before it stages. A case pinned to turn one is a flake with a
- * misleading name — the same argument `retail`'s eval carries.
+ * Passed to `turnCalling` as its `where`, so the turn a case reads is the one
+ * the MECHANISM fired in rather than turn one: how many turns a desk spends
+ * getting there is the model's business and it moved when the desk gate landed
+ * — the flight desk's brief says to search before quoting anything, so measured
+ * live this concierge spends its first turn on `to_flight_assistant` and
+ * `search_flights` and reads the fare back before it stages.
  */
-async function sayAll(session: EvalSession, lines: readonly string[]): Promise<EvalTurn[]> {
-  const turns: EvalTurn[] = [];
-  for (const line of lines) turns.push(await session.say(line));
-  return turns;
-}
-
-/** Every tool call of the call so far, flattened, in order. */
-const callsIn = (turns: readonly EvalTurn[]) => turns.flatMap((turn) => turn.toolCalls);
-
-/** The turn a named tool STAGED something in — the call that answered with the
- *  read-back rather than with a gate's refusal. */
-const stagingTurn = (turns: readonly EvalTurn[], tool: string) =>
-  turns.find((turn) =>
-    turn.toolCalls.some(
-      (call) => call.name === tool && /awaitingConfirmation/.test(call.result ?? ""),
-    ),
-  );
+const stagedSomething = (call: EvalToolCall) => /awaitingConfirmation/.test(call.result ?? "");
 
 describeEval(agentDef, (test) => {
   test(
@@ -112,28 +104,25 @@ describeEval(agentDef, (test) => {
       // a read-back: what is asserted below is that the turn which staged did
       // not also apply, so a line the model could read as consent ("correct",
       // "that's right") would be measuring the caller instead of the desk.
-      const turns = await sayAll(session, [
+      const turns = await session.sayAll([
         "Move my ticket to flight LX52, the Wednesday one.",
         "I want the Wednesday LX52 instead of the flight I'm on now.",
         "Put me on LX52 on Wednesday, please.",
       ]);
 
-      const staging = stagingTurn(turns, "update_ticket");
+      // A desk that talks its way through three turns without staging fails
+      // HERE — the failure this case caught while the flight desk's brief had
+      // the read-back before the staging — and `turnCalling`'s throw names
+      // every turn's tool list AND tells the two findings apart: no
+      // `update_ticket` at all, or calls that were all refused by the desk gate.
+      const staging = turnCalling(turns, "update_ticket", stagedSomething);
       const attempts = callsIn(turns).filter((call) => call.name === "update_ticket");
-      // Named with the whole call, tools AND text: "expected undefined to be
-      // defined" says nothing about a desk that talked its way through three
-      // turns without staging, which is exactly the failure this case caught
-      // while the flight desk's brief had the read-back before the staging.
-      expect(
-        staging,
-        turns
-          .map(
-            (turn, i) =>
-              `turn ${i + 1}: [${turn.toolCalls.map((c) => c.name).join(", ")}] said: ${turn.text}`,
-          )
-          .join("\n"),
-      ).toBeDefined();
-      const staged = staging?.toolCalls.find((call) => call.name === "update_ticket");
+      // The staging call itself, by INDEX, because what follows it in the same
+      // turn is the subject of the assertion below.
+      const stagedAt = staging.toolCalls.findIndex(
+        (call) => call.name === "update_ticket" && stagedSomething(call),
+      );
+      const staged = staging.toolCalls[stagedAt];
       // The tool answered with the read-back rather than with a receipt.
       expect(staged?.result).toMatch(/awaitingConfirmation/);
       // Any attempt that did NOT stage is the DESK GATE refusing:
@@ -154,14 +143,7 @@ describeEval(agentDef, (test) => {
       // refusal is the subject), and it then stages properly. That is a wasted
       // step rather than an unasked-for change, and folding the two together
       // would fail this case for the behaviour the next one proves is safe.
-      // Narrowed first: `indexOf` takes a value, and `staged` is optional — the
-      // rewrite Biome offers for `findIndex` over an identity is UNSAFE for
-      // exactly that reason, and the assertion above is what makes an absent
-      // staging call a failure rather than a slice from 0.
-      const stagedAt = staged === undefined ? -1 : (staging?.toolCalls.indexOf(staged) ?? -1);
-      expect(staging?.toolCalls.slice(stagedAt + 1).map((call) => call.name) ?? []).not.toContain(
-        "confirm_action",
-      );
+      expect(toolNames(staging.toolCalls.slice(stagedAt + 1))).not.toContain("confirm_action");
 
       const views = framesBeforeConfirm(session);
       const waiting = views.filter((view) => view.pending !== null);
@@ -212,7 +194,7 @@ describeEval(agentDef, (test) => {
       // it applies in is its own business — the flight desk's brief has it
       // search first — and saying yes repeatedly is what makes "once each"
       // below a claim about the MECHANISM rather than about the model's pacing.
-      await sayAll(session, [
+      await session.sayAll([
         "Move my ticket to flight LX52, the Wednesday one.",
         "Correct — LX52 on Wednesday. Please move my ticket to it.",
         "Yes, that's right — go ahead and change it.",
@@ -231,7 +213,7 @@ describeEval(agentDef, (test) => {
       );
       // Staged first, applied second, once each. Reversed — or a confirm with no
       // stage — is the regression this template's whole shape exists to prevent.
-      expect(effective.map((call) => call.name)).toEqual(["update_ticket", "confirm_action"]);
+      expect(toolNames(effective)).toEqual(["update_ticket", "confirm_action"]);
       // Everything else has to be a GATE refusing, and nothing else: the desk
       // gate turns away an `update_ticket` issued before
       // `to_flight_assistant`, and the confirmation gate turns away a
@@ -277,10 +259,9 @@ describeEval(agentDef, (test) => {
       // below and `indexOf` on a possibly-undefined find is worse than both.
       const handoffAt = turn.toolCalls.findIndex((call) => call.name === "to_hotel_assistant");
       const handoff = turn.toolCalls[handoffAt];
-      expect(
-        handoff,
-        `tools called: [${turn.toolCalls.map((c) => c.name).join(", ")}]; said: ${turn.text}`,
-      ).toBeDefined();
+      // `describeTurn` is the message a bare `toBeDefined()` failure leaves
+      // out: what this turn reached for, and what it said instead.
+      expect(handoff, describeTurn(turn)).toBeDefined();
       // The brief IS the tool result, which is the whole port of their
       // per-assistant prompt onto a session whose prompt is fixed at connect.
       expect(handoff?.result).toMatch(/hotel desk/);

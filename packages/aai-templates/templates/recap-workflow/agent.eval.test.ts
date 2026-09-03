@@ -65,6 +65,7 @@ import agentDef from "virtual:aai/agent";
 import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import {
+  describeToolCalls,
   type EvalToolCall,
   type EvalWorkflows,
   toolResultIn,
@@ -193,9 +194,10 @@ function recapStarts(calls: readonly EvalToolCall[]): readonly z.infer<typeof Re
 function startedRunId(calls: readonly EvalToolCall[]): string {
   const [first] = recapStarts(calls);
   if (first === undefined) {
-    throw new Error(
-      `the desk called no request_recap: ${calls.map((one) => one.name).join(", ") || "(no tools)"}`,
-    );
+    // `describeToolCalls` is the harness's own sentence for this — including
+    // "called no tools", which is the answer a desk that asked a question
+    // instead of acting gives and the one an empty list reads as truncation.
+    throw new Error(`no request_recap in this turn: ${describeToolCalls(calls)}`);
   }
   return first.runId;
 }
@@ -230,14 +232,19 @@ const START_TURN = [
  * Not tidiness: the scripted provider is unpublished when the test that
  * installed it finishes, so a body still mid-flight would make its next request
  * against whatever the next case publishes — or against the real provider, with
- * a real key. A run drained here COMPLETES rather than failing, and the last
- * thing it does on the way is delete its own transcript: the retention gate's
- * window closes with nobody having answered, which is the safe default. See the
- * header, and the case that pins it.
+ * a real key. `close()` says so on stderr (`EvalRunAbandoned`) when a case
+ * forgets, which is a report rather than a fix — the wait is `settleAll`'s and
+ * the RELEASE is this template's, because what holds the run in flight is this
+ * file's own gate and nothing in the harness can open one.
+ *
+ * A run drained here COMPLETES rather than failing, and the last thing it does
+ * on the way is delete its own transcript: the retention gate's window closes
+ * with nobody having answered, which is the safe default. See the header, and
+ * the case that pins it.
  */
 async function drain(workflows: EvalWorkflows | undefined, provider: ScriptedProvider) {
   provider.release();
-  for (const run of await (workflows?.runs() ?? [])) await workflows?.settle(run.runId, recap);
+  await workflows?.settleAll();
 }
 
 describeEval(

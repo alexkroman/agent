@@ -186,12 +186,13 @@ const START_TURN = [
  * Not tidiness: the scripted `stepFetch` is unpublished when the test that
  * installed it finishes, so a body still mid-flight would make its next model
  * call against whatever the next case publishes — or against the real gateway.
+ * `close()` reports that on stderr (`EvalRunAbandoned`) rather than fixing it:
+ * the wait is `settleAll`'s, and the RELEASE stays here, because what holds the
+ * run in flight is this file's own gate and nothing in the harness can open one.
  */
 async function drain(workflows: EvalWorkflows | undefined, steps: ScriptedSteps): Promise<void> {
   steps.release();
-  for (const run of await (workflows?.runs() ?? [])) {
-    await workflows?.settle(run.runId, research);
-  }
+  await workflows?.settleAll();
 }
 
 describeEval(
