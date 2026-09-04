@@ -32,6 +32,13 @@
  * half-owned. The four stage types themselves stay with their stages, which
  * publish the factories that produce them.
  *
+ * The six `Mcp*` names are here for the same reason `AgentDef` is: `mcpServers`
+ * is a field of an agent declaration, so its shape, the grammar of a server
+ * key, and the rule turning a server's tool name into the one the model calls
+ * are all part of what declaring an agent looks like. The CLIENT that reads
+ * them is `withMcpTools` on `@alexkroman1/aai-runtime` and belongs to that
+ * package's own `tools` capability — this SDK opens no sockets.
+ *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -50,6 +57,12 @@ export {
   agent,
   assemblyAIPipeline,
   type BuiltinTool,
+  MCP_SERVER_KEY_RE,
+  MCP_TOOL_NAME_MAX,
+  MCP_TOOL_PREFIX,
+  type McpServerConfig,
+  type McpServers,
+  mcpToolName,
   type PipelineAgentParams,
   type PipelineVoiceTuning,
   type ProviderCredentialOptions,

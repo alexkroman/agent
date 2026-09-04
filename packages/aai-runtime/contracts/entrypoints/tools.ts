@@ -2,8 +2,9 @@
 /**
  * Capability contract: `tools`.
  *
- * How a host that has a filesystem — rather than a bundler — finds the tools
- * an agent serves, and attaches them to the definition it runs.
+ * How a host finds the tools an agent serves and attaches them to the
+ * definition it runs — from a `tools/` DIRECTORY when it has a filesystem
+ * rather than a bundler, and from the MCP SERVERS the agent declares.
  *
  * Its own capability and not part of `runtime`: this is about assembling the
  * DEFINITION, which is `createRuntime`'s input rather than any of its shape, so
@@ -16,4 +17,19 @@
  * See `scripts/api-contracts.mjs`.
  */
 
-export { withToolsDir } from "../../runtime-barrel.ts";
+export {
+  MCP_CONNECT_TIMEOUT_MS,
+  type McpCallResult,
+  type McpConnectOptions,
+  type McpDrift,
+  type McpInputSchema,
+  type McpServerStatus,
+  type McpSession,
+  type McpSessionOpener,
+  type McpToolSurface,
+  type McpToolsOptions,
+  type McpTrust,
+  type ResolvedMcpServer,
+  withMcpTools,
+  withToolsDir,
+} from "../../runtime-barrel.ts";

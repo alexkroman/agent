@@ -112,6 +112,26 @@ export {
   type LogPage,
   type LogStream,
 } from "./log-buffer.ts";
+// MCP tool discovery — the other source of tools a host assembles before it
+// builds a runtime, and the only one that reaches a third party. HTTP only; the
+// modules' docs carry why stdio is refused rather than discouraged, and why a
+// server that is down costs its own tools and never the session.
+export {
+  MCP_CONNECT_TIMEOUT_MS,
+  type McpCallResult,
+  type McpConnectOptions,
+  type McpSession,
+  type McpSessionOpener,
+  type ResolvedMcpServer,
+} from "./mcp-connect.ts";
+export type { McpDrift, McpTrust } from "./mcp-drift.ts";
+export type { McpInputSchema } from "./mcp-schema.ts";
+export {
+  type McpServerStatus,
+  type McpToolSurface,
+  type McpToolsOptions,
+  withMcpTools,
+} from "./mcp-tools.ts";
 export {
   type CloseableDb,
   type CreatePostgresDbOptions,

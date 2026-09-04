@@ -70,6 +70,11 @@ export const AgentConfigSchema: z.ZodObject<{
         text: "text";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodURL;
+        tokenEnv: z.ZodOptional<z.ZodString>;
+        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    }, z.core.$strict>>>;
     page: z.ZodOptional<z.ZodEnum<{
         static: "static";
         voice: "voice";
@@ -97,6 +102,7 @@ interface AgentDef extends PipelineVoiceTuning {
     idleTimeoutMs?: number;
     llm?: LlmProvider;
     maxSteps: number;
+    mcpServers?: McpServers;
     name: string;
     page?: "voice" | "static";
     requiredEnv?: readonly string[];
@@ -204,6 +210,16 @@ type Literal<S extends string> = string extends S ? never : S;
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type McpServerConfig = {
+    url: string;
+    tokenEnv?: string;
+    pinnedTools?: Readonly<Record<string, string>>;
+};
+
+// @public
+type McpServers = Readonly<Record<string, McpServerConfig>>;
 
 // @public
 type Message = {

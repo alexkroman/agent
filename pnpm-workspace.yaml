@@ -3,6 +3,7 @@ packages:
   - docs
 
 catalog:
+  '@ai-sdk/mcp': ^2.0.43
   '@hono/otel': ^1.1.2
   '@hono/zod-validator': ^0.9.1
   '@opentelemetry/api': ^1.9.1
