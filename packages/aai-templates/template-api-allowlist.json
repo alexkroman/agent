@@ -221,7 +221,7 @@
     "useWorkflowRun",
     "useWorkflows"
   ],
-  "@alexkroman1/aai-ui/client-dir": [],
+  "@alexkroman1/aai-ui/client-dir": ["defaultClientDir"],
   "@alexkroman1/aai/channels": [
     "Channel",
     "CHANNEL_POST_TIMEOUT_MS",

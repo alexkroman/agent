@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { plural } from "@alexkroman1/aai/utils";
+import { omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { defineCommand, runMain, showUsage } from "citty";
 import {
   commandPath,
@@ -16,7 +16,7 @@ import {
 import { fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
 import { logs, secret } from "./_resource-commands.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
-import { log } from "./_ui.ts";
+import { log, parsePort } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, readPackageJson, resolveCwd } from "./_utils.ts";
 import { workflow } from "./cli-workflow.ts";
 
@@ -116,6 +116,34 @@ const dev = defineExec({
   },
 });
 
+const start = defineExec({
+  meta: { name: "start", description: "Serve the built agent (production)" },
+  args: {
+    port: { type: "string", alias: "p", description: "Port to listen on" },
+    host: { type: "string", description: "Address to bind (default: loopback)" },
+    json: sharedArgs.json,
+  },
+  // Like dev/build/publish: a directory with no `agent.ts` is not a project to
+  // serve, and the alternative is a server that boots and answers 404 for the
+  // one thing it exists for.
+  cwd: "agent",
+  async run({ args, cwd }) {
+    const { executeStart } = await import("./start.ts");
+    // Parsed here rather than in the executor, so a non-numeric value fails as
+    // a CLI error naming the flag — the same rule `aai workflow --limit` follows.
+    return executeStart({
+      cwd,
+      // `omitEmpty` on HOST rather than a truthiness guard: an empty `--host=`
+      // means unset, not "every interface", which is the one value here whose
+      // falsy reading would widen the bind. `parsePort` already refuses "".
+      ...omitUndefined({
+        port: args.port === undefined ? undefined : parsePort(args.port),
+        host: args.host?.trim() || undefined,
+      }),
+    });
+  },
+});
+
 const test = defineExec({
   meta: { name: "test", description: "Run agent tests" },
   args: {
@@ -161,11 +189,23 @@ const build = defineExec({
     json: sharedArgs.json,
     skipTests: { type: "boolean", description: "Skip running tests before build" },
     skipTypecheck: { type: "boolean", description: "Skip type checking before build" },
+    // No `default`, deliberately: absence is what leaves the host-environment
+    // detection in charge, and a default here would make the flag the only way
+    // to reach any target but `node`.
+    target: {
+      type: "string",
+      description: "Deployment shape to emit (node, vercel; default: detected)",
+    },
   },
   cwd: "agent",
   async run({ args, cwd }) {
     const { executeBuild } = await import("./build.ts");
-    return executeBuild({ cwd, skipTests: args.skipTests, skipTypecheck: args.skipTypecheck });
+    return executeBuild({
+      cwd,
+      skipTests: args.skipTests,
+      skipTypecheck: args.skipTypecheck,
+      target: args.target,
+    });
   },
 });
 
@@ -252,6 +292,7 @@ export const mainCommand = defineCommand({
   subCommands: {
     init,
     dev,
+    start,
     test,
     eval: evalCommand,
     build,

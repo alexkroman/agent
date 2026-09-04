@@ -6,7 +6,7 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 
 ## Commands and exports
 
-Binary: `aai` — subcommands: init, dev, test, eval, build, list, pull,
+Binary: `aai` — subcommands: init, dev, start, test, eval, build, list, pull,
 push, publish, delete, login, secret, logs, workflow, templates.
 
 **That list is PINNED to the registry** (`cli.test.ts`, "the subcommand list in
@@ -142,13 +142,24 @@ second away — so only a signalled stop ends the loop. The `--json` result
 reports the LINE COUNT, not the lines: a follow has no final set, and a one-shot
 would duplicate what it just printed.
 
-**Self-hosting is the DEFAULT, and there is no command for it.** The scaffold
-ships `server.mjs` plus a `prestart`/`start` pair, so every project
-`aai init`/`aai pull` produces already runs with `npm start` — no platform
-account, nothing managed (see `packages/aai-templates/CLAUDE.md`). There used to
-be an `aai eject` that back-filled those two files into projects predating the
-scaffold; it is gone, because `layerScaffold()` copies them into every `init`
-AND every `pull`, so no project this CLI produces can be missing them.
+**Self-hosting is the DEFAULT, and `aai start` is the command.** The scaffold
+ships a `prestart`/`start` pair (`aai build --skip-tests`, then `aai start`), so
+every project `aai init`/`aai pull` produces runs with `npm start` — no platform
+account, nothing managed. There used to be an `aai eject` that back-filled the
+boot files into projects predating the scaffold; it is gone, because
+`layerScaffold()` copies the manifest into every `init` AND every `pull`.
+
+**It used to be a FILE, `scaffold/server.mjs`, and that is why this is a
+command now.** ~300 lines of boot copied into every project — worker load, env
+resolution, schema DDL, client-dir probing, error classification, listen, signal
+handlers — made every one of those a fact a USER's repository asserted, so
+improving any of them reached only projects scaffolded afterwards and an
+existing project kept the old behaviour with nothing to report the drift. It is
+`start.ts` here, whose module doc carries the argument and the precedent (Next's
+`next start`, Nitro's `node-server` preset: the boot belongs to the framework
+and a custom server is a documented opt-out). That opt-out is
+`createProjectServer`, published on `@alexkroman1/aai-cli/start` — it builds the
+`AgentServer` and binds nothing, which is also what a serverless host wants.
 
 **`aai build` LEAVES its worker on disk** (`.aai/worker.mjs`, beside the built
 client), and that is what `npm start` boots — so the CLI is a build-time
@@ -158,6 +169,13 @@ enumerates `tools/` and emits the imports, so a loader that reads `agent.ts`
 directly serves an agent with none of its tools and nothing reports it. That is
 why the scaffold declares `prestart` beside `start`: `scaffold/package.json` is
 the single definition of both, so there is no second copy to pin against.
+
+**`aai build --target` is the other half, and it is Nitro's shape.** A host that
+wants a specific entry file gets one EMITTED into the build output rather than
+committed to the project — `_build-target.ts` carries the argument and the
+precedent. The target is detected from the host's own build environment
+(`VERCEL`), so a git-push deploy configures nothing, and `node` — which emits
+nothing extra — is what every other build gets.
 
 **`bin.mjs` is the bin in BOTH layouts** — the source checkout (where it loads
 `cli.ts`) and the published tarball (where only `dist/` ships, so it loads
@@ -1018,15 +1036,17 @@ about Windows.
 
 ## Self-hosting is the scaffold's default, and it runs the BUILT worker
 
-`scaffold/server.mjs` plus the `prestart`/`start` pair ship in every project, so
-**any** project runs on its own with `npm start`: no platform account, nothing
-managed. It is deliberately a FILE rather than a CLI command — a command is
-something you have to know exists, and the whole gap it closes was that
-`createAgentServer` already made self-hosting one call and nothing put that call
-in front of anyone. Every `aai init` and every `aai pull` layers it in, so a
-project cannot end up without it.
+The `prestart`/`start` pair ships in every project, so **any** project runs on
+its own with `npm start`: no platform account, nothing managed. Every `aai init`
+and every `aai pull` layers the manifest in, so a project cannot end up without
+it.
 
-**`server.mjs` imports `.aai/worker.mjs`, and `prestart` (`aai build
+**It used to be a FILE**, on the argument that a command is something you have
+to know exists. What that cost is above, under "Self-hosting is the DEFAULT":
+the boot became 300 lines of a user's own source, frozen at scaffold time.
+`aai start` is the command and `start.ts` is the boot.
+
+**`aai start` imports `.aai/worker.mjs`, and `prestart` (`aai build
 --skip-tests`) is what produces it.** It used to import `./agent.ts` directly,
 under a "no CLI at run time, no bundler" banner, and that banner is what had to
 go: a tool is registered by EXISTING, and the only place a directory can be

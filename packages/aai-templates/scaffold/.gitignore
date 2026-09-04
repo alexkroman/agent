@@ -4,6 +4,11 @@ node_modules/
 # build output (managed by CLI)
 .aai/
 
+# host entry emitted by `aai build --target` — generated, never authored, and
+# regenerated on the host's own build, so committing it would pin a stale copy
+api/
+vercel.json
+
 # local workflow runs and uploads (written by `aai dev`)
 .workflow-data/
 

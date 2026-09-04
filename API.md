@@ -40,6 +40,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/workspace-files` — `packages/aai/etc/workspace-files.api.md`
 - `@alexkroman1/aai-cli/client-bundler` — `packages/aai-cli/etc/client-bundler.api.md`
 - `@alexkroman1/aai-cli/project-config` — `packages/aai-cli/etc/project-config.api.md`
+- `@alexkroman1/aai-cli/start` — `packages/aai-cli/etc/start.api.md`
 - `@alexkroman1/aai-cli/typecheck` — `packages/aai-cli/etc/typecheck.api.md`
 - `@alexkroman1/aai-cli/worker-bundler` — `packages/aai-cli/etc/worker-bundler.api.md`
 - `@alexkroman1/aai-runtime/eval` — `packages/aai-runtime/etc/eval.api.md`
@@ -7332,6 +7333,46 @@ export function updateProjectConfig(agentDir: string, patch: Partial<ProjectConf
 
 // @public (undocumented)
 export function writeConfigHome(configDir: string, data: GlobalConfig): Promise<void>;
+```
+
+## `@alexkroman1/aai-cli/start`
+
+```ts
+import type { AgentDef } from '@alexkroman1/aai';
+import { AgentServer } from '@alexkroman1/aai-runtime';
+
+// @public
+export const CLIENT_ARTIFACT_REL: string;
+
+// @public
+export function createProjectServer(options: StartOptions): Promise<AgentServer>;
+
+// @public
+export const DEFAULT_START_PORT = 3000;
+
+// @public
+export function executeStart(options: StartOptions): Promise<StartResult>;
+
+// @public
+export function loadBuiltAgent(cwd: string): Promise<AgentDef>;
+
+// @public
+export interface StartOptions {
+    cwd: string;
+    host?: string | undefined;
+    port?: number | undefined;
+}
+
+// @public
+export interface StartResult {
+    // (undocumented)
+    data: {
+        name: string;
+        port: number | undefined;
+    };
+    // (undocumented)
+    ok: true;
+}
 ```
 
 ## `@alexkroman1/aai-cli/typecheck`

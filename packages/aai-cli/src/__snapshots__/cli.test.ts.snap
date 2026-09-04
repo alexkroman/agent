@@ -2,10 +2,11 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|test|eval|build|list|pull|push|publish|delete|login|secret|logs|workflow|templates
+USAGE aai init|dev|start|test|eval|build|list|pull|push|publish|delete|login|secret|logs|workflow|templates
 COMMANDS
        init    Scaffold a new agent project
         dev    Start a local development server
+      start    Serve the built agent (production)
        test    Run agent tests
        eval    Run agent behaviour evals against a live model
       build    Bundle agent without deploying
@@ -26,9 +27,10 @@ exports[`cli usage snapshots > aai build --help 1`] = `
 "Bundle agent without deploying (build)
 USAGE build [OPTIONS]
 OPTIONS
-           --json    Output JSON (auto-detected in non-TTY)
-      --skipTests    Skip running tests before build
-  --skipTypecheck    Skip type checking before build"
+             --json    Output JSON (auto-detected in non-TTY)
+        --skipTests    Skip running tests before build
+    --skipTypecheck    Skip type checking before build
+  --target=<target>    Deployment shape to emit (node, vercel; default: detected)"
 `;
 
 exports[`cli usage snapshots > aai delete --help 1`] = `

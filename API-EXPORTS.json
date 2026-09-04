@@ -847,6 +847,15 @@
     "updateProjectConfig",
     "writeConfigHome"
   ],
+  "@alexkroman1/aai-cli/start": [
+    "CLIENT_ARTIFACT_REL",
+    "DEFAULT_START_PORT",
+    "StartOptions",
+    "StartResult",
+    "createProjectServer",
+    "executeStart",
+    "loadBuiltAgent"
+  ],
   "@alexkroman1/aai-cli/typecheck": [
     "TypecheckResult",
     "typecheckProject"

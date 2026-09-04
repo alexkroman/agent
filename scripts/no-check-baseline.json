@@ -1,7 +1,8 @@
 {
-  "_description": "Per-file budget of `no-check` doc fences — examples this repo SHIPS and compiles nowhere. See scripts/check-doc-examples.mjs. Goal is zero; `--update` lowers an entry and refuses to raise one.",
+  "_description": "Per-file budget of `no-check` doc fences \u2014 examples this repo SHIPS and compiles nowhere. See scripts/check-doc-examples.mjs. Goal is zero; `--update` lowers an entry and refuses to raise one.",
   "no-check": {
     "README.md": 1,
+    "packages/aai-cli/src/start.ts": 1,
     "packages/aai-runtime/src/_pipeline-test-fakes.ts": 1,
     "packages/aai-runtime/src/eval-barrel.ts": 1,
     "packages/aai-runtime/src/eval/describe-workflows.ts": 1,

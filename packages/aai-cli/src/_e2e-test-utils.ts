@@ -214,7 +214,7 @@ export async function waitForExit(child: ChildProcess, timeoutMs = 5000): Promis
 
 /**
  * Run a scaffolded project the way a self-hoster does — `npm start`, which runs
- * the project's own `prestart` (`aai build`) and then `server.mjs`.
+ * the project's own `prestart` (`aai build`) and then `aai start`.
  *
  * Extracted because there are two legs now and the spawn is the fiddly half: the
  * port has to be read off stdout, and every way this can fail — a build error, a
@@ -248,7 +248,7 @@ export async function startSelfHostedServer(
   try {
     const port = await new Promise<number>((resolve, reject) => {
       const check = () => {
-        // The line server.mjs prints on listen: "<name> listening on <url>".
+        // The line `aai start` prints on listen: "<name> listening on <url>".
         const match = buf.match(/listening on http:\/\/[^:]+:(\d+)/);
         if (match) resolve(Number(match[1]));
       };
