@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 26, rule 28.",
+  "_description": "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 26, rule 28, rule 31, rule 32.",
   "rule2_spreadTernary": {
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-server/subprocess-sandbox.ts": 1,
@@ -60,7 +60,6 @@
     "packages/aai-server/guest-forward.ts": 1,
     "packages/aai-server/modal-agent-sandbox.test.ts": 1,
     "packages/aai-server/supabase-auth.test.ts": 2,
-    "packages/aai-server/warm-harness.ts": 1,
     "packages/aai-studio-server/_test-combined.ts": 1,
     "packages/aai-studio-server/studio-account-routes.ts": 1,
     "packages/aai-studio-server/studio-deploy.test.ts": 1,
