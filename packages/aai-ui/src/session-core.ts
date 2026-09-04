@@ -27,9 +27,9 @@ import {
 import { reconnectPending } from "./session-core-reconnect.ts";
 import { createSessionStateMachine } from "./session-core-state.ts";
 import {
+  type BrowserSession,
   bargeIn,
   type ConnState,
-  type BrowserSession,
   type SessionSnapshot,
   STOPPED,
 } from "./session-core-types.ts";

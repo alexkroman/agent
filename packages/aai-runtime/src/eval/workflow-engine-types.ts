@@ -12,7 +12,11 @@
  */
 
 import type { SpeechSynthesizer, StepFetch } from "@alexkroman1/aai/host-internal";
-import type { WorkflowContext, WorkflowDef, WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
+import type {
+  WorkflowContext,
+  WorkflowDef,
+  WorkflowRunStatus,
+} from "@alexkroman1/aai/workflow-api";
 import type { WdkAdapter } from "../workflow-wdk-types.ts";
 
 /** One chunk `stepEmit()` wrote during a run, and the stream it named. */

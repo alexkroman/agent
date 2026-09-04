@@ -35,7 +35,13 @@ const SessionCtx = createContext<BrowserSession | null>(null);
  *
  * @internal
  */
-export function SessionProvider({ value, children }: { value: BrowserSession; children?: ReactNode }) {
+export function SessionProvider({
+  value,
+  children,
+}: {
+  value: BrowserSession;
+  children?: ReactNode;
+}) {
   return createElement(SessionCtx.Provider, { value }, children);
 }
 
@@ -116,7 +122,7 @@ export function useSessionCore(): BrowserSession {
  *
  * Identity-stable per core, so it is safe in a dependency array and in a
  * `memo()` child's props: the methods are closures created once by
- * `createSessionCore`, and the object wrapping them is memoized on the core.
+ * `createBrowserSession`, and the object wrapping them is memoized on the core.
  *
  * Throws outside the provider `mountClient()` installs, like every session hook.
  *

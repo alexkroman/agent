@@ -99,7 +99,7 @@ describe("gradeStarter", () => {
       files: {
         "agent.ts": "export default workflowApp({ name: 'W' })",
         "workflows/main.ts": "export default async function run() {}",
-        "client.tsx": "export default page(() => null)",
+        "client.tsx": "export default mountPage(() => null)",
       },
     });
     expect(checks.has("workflow-app shape")).toBe(true);

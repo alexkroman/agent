@@ -105,7 +105,7 @@ export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hook
 // Workflow apps — the `workflowApp()` half of this package. `mountPage()`
 // is the mount (no session, no audio, no socket) and the two workflow exports
 // are what its component talks to the agent with, in place of `useSession()`.
-export { type PageConfig, type PageHandle, mountPage } from "./page.tsx";
+export { mountPage, type PageConfig, type PageHandle } from "./page.tsx";
 // Session core (for advanced use)
 export { createBrowserSession } from "./session-core.ts";
 export type {

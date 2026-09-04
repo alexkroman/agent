@@ -127,17 +127,17 @@ describe("API-EXPORTS.json", () => {
       "ToolBearingAgent",
       "ToolContextOverrides",
       "ToolRunner",
-      "WORKFLOW_CTX_NOW",
-      "WorkflowCtxOptions",
-      "WorkflowCtxRecorder",
+      "WORKFLOW_CONTEXT_NOW",
+      "WorkflowContextOptions",
+      "WorkflowContextRecorder",
       "createProgressStream",
       "createRunSnapshot",
       "createStubWorkflows",
       "createToolContext",
-      "createWorkflowCtx",
+      "createWorkflowContext",
       "deployedAgent",
-      "ok",
-      "okPosition",
+      "expectDialogOk",
+      "expectToolOk",
       "parseSchemaInput",
       "parseToolInput",
       "routeStepFetch",
@@ -165,14 +165,14 @@ describe("API-EXPORTS.json", () => {
     // nothing and restores nothing, but its methods are `vi.fn`s, so `vi` IS its
     // content. See `sdk/testing-vitest.ts`.
     expect(surface["@alexkroman1/aai/testing/vitest"]).toEqual([
-      "MockWorkflowsOptions",
+      "StubWorkflowsOptions",
       "installStubGateway",
       "installStubReporter",
       "installStubSpeech",
       "installStubStepFetch",
       "installStubTranscribe",
       "installStubUploads",
-      "mockWorkflows",
+      "installStubWorkflows",
     ]);
     // `WorkflowClient` is `mockWorkflows`'s return type and is FORGOTTEN here
     // for the same reason it is forgotten on `/testing`: it is exported from the

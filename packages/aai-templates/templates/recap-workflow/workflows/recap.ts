@@ -112,7 +112,7 @@
  */
 
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { stepReport, requireStepEnv, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
+import { requireStepEnv, stepFetch, stepReport, stepWebhookUrl } from "@alexkroman1/aai/step";
 import {
   FatalError,
   stepFetchOrFail,
