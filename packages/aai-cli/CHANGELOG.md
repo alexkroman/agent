@@ -1,5 +1,22 @@
 # @alexkroman1/aai-cli
 
+## 13.3.0
+
+### Patch Changes
+
+- 14c54ac: `aai test` no longer reports a pass over specs it did not run: an incomplete run fails with `incomplete_run` naming the files, the result carries `ran`/`unrun`/`complete` for CI to read, `--all` runs the whole suite, and `aai build`'s pre-build gate announces the same set. Scaffolded projects now wire `npm test` to their own vitest run so the CI entrypoint is the command that runs their suite.
+- 14c54ac: aai secret put no longer blocks forever: the value source is decided by stdin rather than by the output mode, an idle stdin gives up after 10s naming both working forms, a value passed as an argument is refused instead of silently discarded, and `--help` documents the stdin contract. JSON-mode output is stripped of ANSI escapes, so a bundler's coloured diagnostic is legible in the envelope, and an unknown command is reported as a JSON result naming the command instead of a colour-escaped sentence on stderr.
+- 14c54ac: aai build now gates on the project's whole test suite rather than agent.test.ts alone, and a declared-but-empty .env value is dropped instead of being handed to a provider as "" (which silently defeated the host-credential fallback). aai test gained the --all flag its own incomplete-run failure recommends.
+- 14c54ac: aai dev: report a missing ASSEMBLYAI_API_KEY as a credential problem, not a login one. The failure now names the two purely local remedies (.env, a shell export) before `aai login`; the scaffold's .env.example documents the key the default pipeline needs; and the generated README runs the CLI through npm (it is a devDependency, not on PATH) and names `aai login` where publishing actually needs it.
+- 14c54ac: Template specs assert invariants that survive customization: renaming an agent, swapping a provider stage, or adding a tool or workflow no longer fails a shipped test (and so no longer blocks `aai build`).
+- Updated dependencies [14c54ac]
+- Updated dependencies [25e42e8]
+- Updated dependencies [78ed86c]
+- Updated dependencies [130898e]
+  - @alexkroman1/aai-runtime@13.3.0
+  - @alexkroman1/aai-ui@13.3.0
+  - @alexkroman1/aai@13.3.0
+
 ## 13.2.0
 
 ### Patch Changes
