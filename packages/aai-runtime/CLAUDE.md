@@ -302,13 +302,23 @@ The replay engine executes a run in THIS process off the agent's own `workflows`
 declaration. There is no artifact to load, no world to resolve, no memoization
 window, and no port-0 special case. What is left of the sequence is one line:
 
-- **`publishWorkflowStepEnv()` before the bind**, guarded on the agent declaring
+- **`publishWorkflowStepEnv()` at CONSTRUCTION**, guarded on the agent declaring
   workflows. The guard is not frugality — it writes a module-global, so
   publishing for every `createAgentServer` would leak one test's env into the
   next (`unstubEnvs` only undoes `vi.stubEnv`). It publishes the AGENT env
   rather than `providerEnv`, so a step sees exactly what `.env` declares and
   cannot come to depend on a shell-exported key that will not exist after a
   deploy.
+
+  **It sat just before the BIND, which reads as "as early as possible" and was
+  really "only on the path `aai dev` takes".** `AgentServer.node` (below) means
+  a host can bind the server without going through this door's `listen()`, and
+  such a deployment then published no step env at all: every `stepEnv` read fell
+  through to `process.env`, so a key that resolved locally was absent in
+  production with nothing raised at either end — the parity rule `ctx.env`
+  follows, broken by the deployment shape. Construction is the one point every
+  route in goes through. Nothing was waiting for the bind: the ordering this
+  replaces belonged to the DevKit world, and the replay engine resolves none.
 
 Two things the old wiring's failure taught, which still hold:
 
@@ -336,6 +346,45 @@ that a door cannot silently LACK the route.
 
 **What is still NOT wired is host mode** (`createHostServer`): its sessions run
 caller-supplied agents, which declare no workflows.
+
+### A server is HANDED to a serverless host, never started by one
+
+`AgentServer.node` is the wired `node:http` server underneath, and it is on the
+handle because a serverless platform is given a server rather than asked to run
+one: Vercel's Node runtime wants `export default <http.Server>` from the module
+and binds the socket itself. Without it the only route was to `listen()` on an
+ephemeral port inside the function and proxy HTTP plus upgrades to it — a hop
+that buys nothing, since the thing being proxied to is this exact object.
+
+It costs one field because `createRuntimeServer` already builds the server fully
+before binding, and `createHostServer` returns that handle unchanged. Two
+consequences are the part worth knowing:
+
+- **`port` is ASKED of the server, not latched by `listen()`.** A host that
+  bound `node` itself never calls our `listen`, and a recorded port answered
+  `undefined` for a server that was plainly serving. `close()` moved the same
+  way — it gates on `httpServer.listening` rather than on a port this handle
+  recorded, so a socket bound through `node` is really released rather than
+  leaked with nothing to report it.
+- **Anything `listen()` does that is not the BIND is a bug.** The step env was
+  exactly that (above), and it is the shape to check the next time something is
+  added there: a host that binds `node` skips `listen()` entirely, so a step
+  performed there runs in dev and not in production, silently. `listen()` is now
+  the bind plus the boot line, and nothing else.
+
+**What a serverless host does NOT get is a WebSocket.** Vercel Functions are
+request/response only and never deliver the `upgrade` event, so `/websocket` and
+`/phone` are unreachable there however this server is mounted — a voice agent
+needs a platform that keeps a socket open. The HTTP surface (`/health`,
+`/client-config`, `/workflows/*`, the webhook route, static assets) is
+unaffected, which is what a `page: "static"` workflow app needs and all it needs.
+
+**`server.mjs` deliberately still calls `listen()`.** `npm start` is a
+long-lived process that owns its own lifecycle — it binds a port from `PORT`,
+prints a boot line, and installs `SIGINT`/`SIGTERM` handlers — which is the
+opposite of what a function host wants, and there is no way to tell the two
+apart at run time that is not a guess. A serverless deployment is a SECOND,
+tiny entry module beside it, not a mode of that one.
 
 ### `createAgentServer` forwards what only it can
 

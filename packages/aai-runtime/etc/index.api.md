@@ -79,6 +79,7 @@ export type AgentServer = {
     listen(port?: number, host?: string): Promise<void>;
     close(): Promise<void>;
     port: number | undefined;
+    node: http.Server;
 };
 
 // @public

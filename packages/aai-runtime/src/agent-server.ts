@@ -385,7 +385,23 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     publishStepEnv(env);
   }
 
+  // Published at CONSTRUCTION, not from `listen()`. It used to sit just before
+  // the bind, which was correct while `listen()` was the only way this server
+  // could come to serve a request — and it is not: a host that takes
+  // `AgentServer.node` and binds it itself never calls our `listen`, so a
+  // deployed workflow's steps read `process.env` instead of the agent env, and
+  // a key resolved in `aai dev` (which does bind through this door) is absent
+  // once deployed. That is the develop-one-way/deploy-another failure this
+  // guide keeps recording, and construction is the one point every route in.
+  //
+  // Nothing was waiting for the bind: the ordering this replaces belonged to
+  // the DevKit world, which had to be configured before a request could
+  // memoize an unconfigured one. The replay engine resolves no world.
+  publishWorkflowStepEnv();
+
   return {
+    // Spread carries `node` — the raw `http.Server` a serverless host exports —
+    // along with `close`, both of which this door has nothing to add to.
     ...server,
     get port() {
       return server.port;
@@ -393,16 +409,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // The arguments are FORWARDED rather than re-defaulted, so this door and the
     // one underneath cannot disagree about what `listen()` with no port means —
     // `createRuntimeServer` owns that default (3000), and restating it here is the kind
-    // of second copy that drifts. Reading `port` out of the tuple is only for the
-    // ordering decision below.
+    // of second copy that drifts.
     async listen(...args: Parameters<AgentServer["listen"]>) {
-      // The step env is published BEFORE the bind, which is all that is left of
-      // an ordering that used to matter a great deal: the world had to be
-      // configured before anything could reach a `getWorld()` that would resolve
-      // and memoize an unconfigured one, and `listen(0)` could not do that
-      // because the loopback callback base was unknowable until bound. The engine
-      // resolves no world, so there is no window and no port-0 special case.
-      publishWorkflowStepEnv();
       await server.listen(...args);
       // After the bind, so a server that could not take the port advertises
       // nothing.

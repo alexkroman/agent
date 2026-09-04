@@ -163,7 +163,51 @@ export type AgentServer = {
    */
   listen(port?: number, host?: string): Promise<void>;
   close(): Promise<void>;
+  /**
+   * The bound port, or `undefined` when this server is not listening.
+   *
+   * Read off the underlying {@link AgentServer.node} rather than recorded by
+   * {@link AgentServer.listen}, so it is right no matter who bound the socket
+   * — a host that took {@link AgentServer.node} and called `listen` on it
+   * itself gets the port here, where a value latched by our own `listen` would
+   * answer `undefined` for a server that is plainly serving.
+   */
   port: number | undefined;
+  /**
+   * The `node:http` server underneath — fully wired (routes, the WebSocket
+   * upgrade handler, the timeouts) and deliberately NOT listening.
+   *
+   * It is here because a serverless host is handed a server rather than
+   * asked to start one: Vercel's Node runtime wants
+   * `export default <http.Server>` from the module and binds the socket
+   * itself, and Fastify/Express-shaped embedders likewise mount onto a server
+   * object. Without this the only route was to `listen()` on an ephemeral port
+   * inside the function and proxy HTTP plus upgrades to it — a hop that buys
+   * nothing.
+   *
+   * ```ts
+   * // api/index.ts — deployed to Vercel
+   * import { agent } from "@alexkroman1/aai";
+   * import { createAgentServer } from "@alexkroman1/aai-runtime";
+   *
+   * const server = createAgentServer({
+   *   agent: agent({ name: "Support", systemPrompt: "You are helpful." }),
+   *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
+   * });
+   *
+   * export default server.node; // no listen() — the platform binds it
+   * ```
+   *
+   * Two things a host that binds this itself owns. **`close()` still works** —
+   * it closes whatever is listening, so it does not care which side called
+   * `listen`. And **a platform that does not deliver the `upgrade` event
+   * serves no WebSocket**: Vercel Functions are request/response only, so
+   * `WS /websocket` and `WS /phone` are unreachable there however this server
+   * is mounted. The HTTP surface — `/health`, `/client-config`,
+   * `/workflows/*`, the webhook route, static assets — is unaffected, which is
+   * what a `page: "static"` workflow app needs and all it needs.
+   */
+  node: http.Server;
 };
 
 /**

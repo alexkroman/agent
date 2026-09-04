@@ -379,8 +379,6 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
     });
   });
 
-  let listenPort: number | undefined;
-
   // Post-listen server errors have no promise to reject into (listen()'s
   // one-shot reject is removed once bound) — log instead of crashing on an
   // unhandled 'error' event.
@@ -389,8 +387,18 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
   });
 
   return {
+    // The wired-but-unbound `node:http` server, for a host that binds it
+    // itself — see `AgentServer.node`, which carries the argument.
+    node: httpServer,
+
     get port() {
-      return listenPort;
+      // ASKED of the server rather than latched by `listen()` below. A caller
+      // that took `node` and bound it itself — every serverless host does —
+      // never goes through our `listen`, and a recorded port would answer
+      // `undefined` for a server that is plainly serving. A string address is
+      // a pipe or a UNIX socket, which has no port.
+      const addr = httpServer.address();
+      return typeof addr === "object" && addr ? addr.port : undefined;
     },
 
     async listen(port = 3000, host = DEFAULT_LISTEN_HOST) {
@@ -400,8 +408,6 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
         httpServer.once("error", reject);
         httpServer.listen(port, host, () => {
           httpServer.removeListener("error", reject);
-          const addr = httpServer.address();
-          listenPort = typeof addr === "object" && addr ? addr.port : port;
           resolve();
         });
       });
@@ -424,7 +430,10 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
           for (const client of wss.clients) client.terminate();
           wss.close();
         } finally {
-          if (listenPort !== undefined) {
+          // `listening`, not a port this handle recorded: a host that bound
+          // `node` itself still gets its socket closed here, and a server that
+          // never bound has nothing to close either way.
+          if (httpServer.listening) {
             // `close()` stops accepting and then waits for every open
             // connection to END — IDLE keep-alive sockets included, which is
             // the HTTP twin of the WebSocket case above. A browser (or undici,
@@ -456,7 +465,6 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
               clearInterval(sweep);
             }
           }
-          listenPort = undefined;
         }
       }
     },
