@@ -133,8 +133,8 @@ gate in front of `aai build`.
 
 ## Running it yourself (`npm start`)
 
-`server.mjs` serves this agent from a plain Node process — no platform
-account, nothing managed. It is the deployment counterpart of `aai dev`:
+`aai start` serves this agent from a plain Node process — no platform account,
+nothing managed. It is the deployment counterpart of `aai dev`:
 
 ```sh
 npm start                          # http://127.0.0.1:3000
@@ -142,11 +142,18 @@ PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
 ```
 
 `npm start` **builds first** (that is the `prestart` script) and then serves
-the result: `server.mjs` boots `.aai/worker.mjs`, the same artifact
+the result: `aai start` boots `.aai/worker.mjs`, the same artifact
 `aai publish` uploads. It serves your own `client.tsx` build when there is one
-and falls back to `defaultClientDir()` (`@alexkroman1/aai-ui/client-dir`), the
-prebuilt default UI shipped inside the package — the only export of `aai-ui`
-that runs on Node rather than in the browser.
+and falls back to the prebuilt default UI shipped inside `@alexkroman1/aai-ui`.
+
+There is no server file in your project, and that is deliberate — the boot
+belongs to the framework, so it improves when you update rather than being
+frozen at the moment you scaffolded. When you need to own it, import
+`createProjectServer` from `@alexkroman1/aai-cli/start`: it builds the server
+and binds nothing, so you decide how it is served. Building one from scratch
+instead, `defaultClientDir()` (`@alexkroman1/aai-ui/client-dir`) is where that
+prebuilt UI lives — the only export of `aai-ui` that runs on Node rather than
+in the browser.
 
 The build is what makes `tools/` work — a tool is registered by existing, and
 the enumeration happens where the bundle is assembled, so a server that loaded
@@ -161,9 +168,31 @@ One thing to know: it binds **loopback by default**, because this server has
 no request authentication of its own; set `HOST=0.0.0.0` only behind your own
 proxy or auth.
 
-Deleting `server.mjs` costs nothing: `aai dev`, `aai publish` and the managed
-platform never read it. `run_code` is the one feature that does not follow —
-it needs the platform's sandbox and refuses outside one.
+`run_code` is the one feature that does not follow — it needs the platform's
+sandbox and refuses outside one.
+
+### Deploying to a host that wants its own entry file
+
+`aai build --target <host>` writes the deployment that host expects into the
+build output. Nothing host-specific lives in your project: the files are
+generated, gitignored, and rewritten by the host's own build.
+
+```sh
+aai build --target vercel   # writes .vercel/output/ (Build Output API v3)
+```
+
+You rarely type it. The target is detected from the host's own build
+environment, so `vercel deploy` (or a git push) picks it up with nothing
+configured; `--target node`, the default everywhere else, emits nothing extra
+and is what `npm start` runs.
+
+One thing to know before deploying a VOICE agent to a serverless host: the
+session is a WebSocket, so the host has to support one. Vercel does — it hands
+the function the raw upgrade, and the emitted entry passes it to the same
+server `aai dev` runs. A host that serves only request/response still runs the
+HTTP surface — `/health`, `/client-config`,
+`/workflows/*` and your static assets — which is everything a workflow app
+needs and none of what a voice agent needs.
 
 ## Project structure
 

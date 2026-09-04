@@ -24,7 +24,9 @@
  */
 
 import { agent, workflow, workflowApp } from "@alexkroman1/aai";
-import { describe, expect, test } from "vitest";
+import { publishStepEnv } from "@alexkroman1/aai/host-internal";
+import { stepEnv } from "@alexkroman1/aai/step";
+import { describe, expect, test, vi } from "vitest";
 import { WebSocket as NodeWebSocket } from "ws";
 import { z } from "zod";
 import { AGENT_SERVER_ENV as ENV, withServer } from "./_agent-server-test-utils.ts";
@@ -190,6 +192,56 @@ describe("createAgentServer", () => {
       expect((await fetch(`${baseUrl}/health/deep`, { method: "HEAD" })).status).toBe(404);
       expect((await fetch(`${baseUrl}/nope`, { method: "HEAD" })).status).toBe(404);
     });
+  });
+
+  /**
+   * The serverless shape, at this door: build it, hand `node` to the platform,
+   * never call `listen()`.
+   *
+   * The step env is the half that used to fall through the gap. It was
+   * published just before the bind, which reads as "as early as possible" and
+   * is really "only on the path `aai dev` takes" — so a deployed workflow's
+   * steps read `process.env` and a key that resolved locally was absent in
+   * production, with nothing raised at either end.
+   */
+  test("a server nobody listened on is still fully wired for a host that binds node", async () => {
+    const myAgent = workflowApp({
+      name: "Digest",
+      workflows: {
+        echo: workflow({
+          description: "Echo the input back.",
+          input: z.object({ text: z.string() }),
+          run: async ({ text }) => {
+            "use workflow";
+            return text;
+          },
+        }),
+      },
+    });
+    vi.stubEnv("DIGEST_TOKEN", undefined);
+    const server = createAgentServer({
+      agent: myAgent,
+      env: { ...ENV, DIGEST_TOKEN: "from-agent-env" },
+      logger: silentLogger,
+    });
+    try {
+      // Published at CONSTRUCTION — no `listen()` has run, and the value comes
+      // from the agent env rather than this process's.
+      expect(stepEnv("DIGEST_TOKEN")).toBe("from-agent-env");
+
+      await new Promise<void>((resolve) => server.node.listen(0, "127.0.0.1", resolve));
+      const baseUrl = `http://127.0.0.1:${server.port}`;
+      expect((await fetch(`${baseUrl}/health`)).status).toBe(200);
+      // The routes this door adds through the `request` hook are wired too —
+      // `listen()` is the bind and nothing else.
+      expect((await fetch(`${baseUrl}/health`, { method: "HEAD" })).status).toBe(200);
+      const workflows = await fetch(`${baseUrl}/workflows`);
+      expect(workflows.status).toBe(200);
+      await workflows.text();
+    } finally {
+      await server.close();
+      publishStepEnv(undefined);
+    }
   });
 
   test("close() shuts the runtime down, so callers need no second call", async () => {

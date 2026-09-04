@@ -4,6 +4,11 @@ node_modules/
 # build output (managed by CLI)
 .aai/
 
+# prebuilt deployment emitted by `aai build --target` — generated, never
+# authored, and rewritten by the host's own build, so committing it would pin
+# a stale copy
+.vercel/
+
 # local workflow runs and uploads (written by `aai dev`)
 .workflow-data/
 

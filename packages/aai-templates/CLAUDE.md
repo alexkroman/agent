@@ -230,6 +230,11 @@ once, and the templates are now their reference use:
 | `WorkflowInputOf` / `WorkflowRunOf` / `lastLine` | `podcast-digest`, `call-audit` and `spoken-summary` for the input type (see below — it obliges an annotation on the def); `research-workflow` and `recap-workflow` for the other two, each dropping an eight-line `streamTail`-then-`stream` dance and the comment warning that reading a stream with nothing in it waits forever |
 | `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails. `stubUploads` answers `{ restore, writes, read }`, so a write is assertable without round-tripping through the seam that wrote it |
 
+**`defaultClientDir` is the worked example of that rule**: its only exerciser
+was `scaffold/server.mjs`, and the boot is `aai start` now. An allowlist entry
+rather than a contrived use — its caller is framework code, and a scaffolded
+project no longer resolves that directory at all.
+
 **The last remover pays.** A cross-template migration moves the allowlist in a
 way no single diff shows — `ChatMessage`, `useUserTranscript` and `useTheme`
 were each exercised by exactly three clients, and three agents converting three
@@ -1666,12 +1671,10 @@ injecting a type error into a file you expect to be covered.
 
 ## Self-hosting is the scaffold's default
 
-`scaffold/server.mjs` plus the `prestart`/`start` pair ship in every project, so
-**any** project runs on its own with `npm start` — no platform account, nothing
-managed. Every mechanism in it is the CLI's (`aai build --skip-tests` produces
-the `.aai/worker.mjs` the server imports, `layerScaffold()` puts the file into
-every project, and `aai-cli`'s e2e leg is the only tier that can prove any of
-it), so **the account lives in `packages/aai-cli/CLAUDE.md`, "Self-hosting is
-the scaffold's default, and it runs the BUILT worker"** — including why there is
-no runtime `tools/` scan anywhere, and why `ctx.env` and provider credentials
-come from different places.
+The `prestart`/`start` pair ships in every project, so **any** project runs on
+its own with `npm start` — no platform account, nothing managed. It used to be a
+`server.mjs` here; the boot is `aai start` now, and every mechanism is the
+CLI's, so **the account lives in `packages/aai-cli/CLAUDE.md`, "Self-hosting is
+the scaffold's default, and it runs the BUILT worker"** — including why the boot
+stopped being a file, why there is no runtime `tools/` scan anywhere, and why
+`ctx.env` and provider credentials come from different places.

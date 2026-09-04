@@ -185,7 +185,7 @@ describe("executeBuild", () => {
     );
   });
 
-  test("leaves the built worker on disk, importable, where server.mjs looks for it", {
+  test("leaves the built worker on disk, importable, where `aai start` looks for it", {
     timeout: 120_000,
   }, async () => {
     // The self-hosting contract: `npm start` runs `aai build` and then

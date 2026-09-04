@@ -135,6 +135,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
+import { decodeBase64 } from "./_base64.ts";
 import {
   escapeReservedKeys,
   escapeUnstorableCharacters,
@@ -323,13 +324,18 @@ export function binaryReviver(_key: string, value: unknown): unknown {
  * guess.
  */
 function bytesFromBase64(data: string): Uint8Array {
-  try {
-    return Uint8Array.fromBase64(data, { alphabet: "base64", lastChunkHandling: "strict" });
-  } catch (cause) {
+  // Through `_base64.ts`, which feature-detects: `Uint8Array.fromBase64` does
+  // not exist on Node 24 — the SDK's engine floor — so calling it directly
+  // threw `TypeError: not a function` and this function re-labelled that as
+  // "malformed base64". Same cause as the silent audio drop that module's doc
+  // records, surfacing as a wrong diagnosis rather than as silence.
+  const bytes = decodeBase64(data, "strict");
+  if (bytes === undefined) {
     // Named, because the raw message ("Found a character that cannot be part of a
     // valid base64 string") says nothing about which wire or which field.
-    throw new Error("typed-json: Uint8Array envelope carries malformed base64", { cause });
+    throw new Error("typed-json: Uint8Array envelope carries malformed base64");
   }
+  return bytes;
 }
 
 /**

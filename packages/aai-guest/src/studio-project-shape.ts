@@ -141,6 +141,12 @@ export function workspaceTsconfig(scaffoldTsconfig: string): string {
  */
 export const WORKSPACE_DEPENDENCIES = [
   "@alexkroman1/aai",
+  // A runtime dependency since the self-hosted boot became `aai start`: a
+  // scaffolded project's `npm start` runs this package, so it is no longer a
+  // devDependency. It is baked into the guest image like the rest of the
+  // toolchain, so nothing about the guest changes — what changes is that a
+  // workspace naming it by hand must not be able to bump it.
+  "@alexkroman1/aai-cli",
   "@alexkroman1/aai-runtime",
   "@alexkroman1/aai-ui",
   "react",

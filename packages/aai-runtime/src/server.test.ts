@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { SessionEventBody } from "@alexkroman1/aai/protocol";
@@ -54,6 +55,55 @@ describe("createRuntimeServer", () => {
     server = createRuntimeServer({ runtime, logger: silentLogger });
     expect(server).toHaveProperty("listen");
     expect(server).toHaveProperty("close");
+  });
+
+  /**
+   * The serverless case, in one file: a host takes `node`, binds it itself, and
+   * never calls our `listen()`.
+   *
+   * Vercel wants `export default <http.Server>` and binds the socket for you,
+   * so what is asserted is that the object handed over is FULLY WIRED before
+   * any `listen()` of ours has run — routes and all — and that the handle
+   * around it still reports the truth afterwards. Bound through
+   * `server.node.listen` rather than `server.listen` deliberately: routing that
+   * only works when our own `listen` ran is exactly the failure this exists to
+   * rule out.
+   */
+  test("node is a wired, unbound http.Server a host can bind itself", async () => {
+    const { runtime } = makeRuntime();
+    server = createRuntimeServer({ runtime, name: "Serverless", logger: silentLogger });
+
+    expect(server.node).toBeInstanceOf(http.Server);
+    // Nothing bound yet — a serverless host is handed a server, not a running one.
+    expect(server.node.listening).toBe(false);
+    expect(server.port).toBeUndefined();
+
+    const bound = server.node;
+    await new Promise<void>((resolve) => bound.listen(0, "127.0.0.1", resolve));
+
+    // `port` is ASKED of the server, so it is right even though our own
+    // `listen()` never ran.
+    expect(server.port).toBe((bound.address() as { port: number }).port);
+    const { status, body } = await get(`http://127.0.0.1:${server.port}/health`);
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toMatchObject({ status: "ok", name: "Serverless" });
+  });
+
+  test("close() releases a socket the caller bound on node itself", async () => {
+    const { runtime } = makeRuntime();
+    const handle = createRuntimeServer({ runtime, logger: silentLogger });
+    await new Promise<void>((resolve) => handle.node.listen(0, "127.0.0.1", resolve));
+    const port = handle.port;
+    expect(port).toBeDefined();
+
+    // The close path used to gate on a port THIS handle recorded, so a socket
+    // bound through `node` was left open by `close()` — a leaked listener with
+    // nothing to report it.
+    await handle.close();
+
+    expect(handle.node.listening).toBe(false);
+    expect(handle.port).toBeUndefined();
+    await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
   });
 
   /**

@@ -163,7 +163,63 @@ export type AgentServer = {
    */
   listen(port?: number, host?: string): Promise<void>;
   close(): Promise<void>;
+  /**
+   * The bound port, or `undefined` when this server is not listening.
+   *
+   * Read off the underlying {@link AgentServer.node} rather than recorded by
+   * {@link AgentServer.listen}, so it is right no matter who bound the socket
+   * — a host that took {@link AgentServer.node} and called `listen` on it
+   * itself gets the port here, where a value latched by our own `listen` would
+   * answer `undefined` for a server that is plainly serving.
+   */
   port: number | undefined;
+  /**
+   * The `node:http` server underneath — fully wired (routes, the WebSocket
+   * upgrade handler, the timeouts) and deliberately NOT listening.
+   *
+   * It is here because a serverless host is handed a server rather than
+   * asked to start one: Vercel's Node runtime wants
+   * `export default <http.Server>` from the module and binds the socket
+   * itself, and Fastify/Express-shaped embedders likewise mount onto a server
+   * object. Without this the only route was to `listen()` on an ephemeral port
+   * inside the function and proxy HTTP plus upgrades to it — a hop that buys
+   * nothing.
+   *
+   * ```ts
+   * // deployed to Vercel through its own `@vercel/node` builder
+   * import { agent } from "@alexkroman1/aai";
+   * import { createAgentServer } from "@alexkroman1/aai-runtime";
+   *
+   * const server = createAgentServer({
+   *   agent: agent({ name: "Support", systemPrompt: "You are helpful." }),
+   *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
+   * });
+   *
+   * export default server.node; // no listen() — the platform binds it
+   * ```
+   *
+   * **`close()` still works** — it closes whatever is listening, so it does not
+   * care which side called `listen`.
+   *
+   * ## A host that never raises `upgrade` can still serve a WebSocket
+   *
+   * This used to say Vercel Functions were request/response only and that
+   * `WS /websocket` and `WS /phone` were therefore unreachable there. That is
+   * wrong, and it is the claim a voice agent's whole deployment turns on. What
+   * is true is narrower: some hosts do not raise the EVENT. Vercel exposes the
+   * raw `{ req, socket, head }` through a per-request context instead
+   * (`globalThis[Symbol.for("@vercel/request-context")].get().upgradeWebSocket()`),
+   * and re-emitting that triple onto this server is the whole adapter — see
+   * `VERCEL_ENTRY_SOURCE` in `@alexkroman1/aai-cli`, which `aai build --target
+   * vercel` emits, and which is verified against a real handshake.
+   *
+   * So the rule is: reach for the host's own upgrade channel before concluding
+   * it has none. A host that genuinely has neither still runs the HTTP surface
+   * — `/health`, `/client-config`, `/workflows/*`, the webhook route, static
+   * assets — which is what a `page: "static"` workflow app needs and all it
+   * needs.
+   */
+  node: http.Server;
 };
 
 /**

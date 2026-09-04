@@ -114,15 +114,169 @@ function reportDrop(chars: number, logger: Logger): void {
   );
 }
 
-export function base64ToUint8(base64: string, logger: Logger = consoleLogger): Uint8Array {
+/**
+ * Whether this runtime has the TC39 `Uint8Array` base64 methods.
+ *
+ * **Node 24 does NOT, and that cost a deployment its voice.** The decode below
+ * used to call `Uint8Array.fromBase64` inside a `try` whose `catch` exists for
+ * a MALFORMED payload — so on a runtime without the method the `TypeError` was
+ * caught, reported as "a malformed payload", and every audio frame decoded to
+ * zero bytes. `assemblyai-frames.ts` drops an empty chunk silently, so a
+ * deployed agent transcribed the caller, answered in text, and said nothing.
+ * Measured on Vercel `nodejs24.x` (Node v24.18.0): 77 TTS `Audio` frames in,
+ * 77 empty, 0 emitted — against 73/0/73 on the same code at Node v26.
+ *
+ * The scaffold declares `engines: { node: ">=24 <27" }`, so this was never
+ * Vercel-specific: any Node 24 or 25 host — a `node:24` image, a CI runner —
+ * had silently mute audio on every path this module serves (TTS, S2S,
+ * telephony, OpenAI Realtime).
+ *
+ * Detected ONCE, at module load, rather than per call: a feature test inside
+ * the decode is what let a missing method masquerade as bad input.
+ */
+type NativeFromBase64 = (
+  base64: string,
+  options: { alphabet: "base64"; lastChunkHandling?: "strict" },
+) => Uint8Array;
+
+/**
+ * `Uint8Array` narrowed to the one method this module wants, present or not.
+ *
+ * The root `tsconfig.json` pins `lib` to ES2025 precisely so a proposal-stage
+ * builtin cannot compile unnoticed, so the method is not on the declared type
+ * and has to be reached through this. Kept as an OBJECT rather than a detached
+ * function so the call stays a method call and `this` is still `Uint8Array`.
+ */
+const NATIVE = Uint8Array as { fromBase64?: NativeFromBase64 };
+
+const HAS_NATIVE_BASE64 = typeof NATIVE.fromBase64 === "function";
+
+/**
+ * Standard base64 only — `=` may appear at most twice and only at the end.
+ * base64URL (`-_`) is refused here, which is one of the three spellings the
+ * module doc requires be refused rather than guessed at.
+ */
+const STANDARD_BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * ASCII whitespace, which the native decoder accepts AT ANY POSITION and this
+ * module deliberately keeps accepting: the spec allows it and, unlike the
+ * spellings refused above, a string with spaces in it has one unambiguous
+ * decoding rather than several.
+ *
+ * Stripped before validation, so the fallback agrees with the native path
+ * instead of being quietly stricter than it. It was stricter for one draft —
+ * `base64-parity.test.ts` carried no whitespace case and passed anyway, which
+ * is why the corpus names each accepted shape explicitly now.
+ */
+const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
+
+/**
+ * How the FINAL chunk is judged — the one axis on which this module's two
+ * callers disagree.
+ *
+ * `"loose"` accepts an unpadded final chunk (`"aGVsbG8"`) and non-zero
+ * trailing bits (`"AAB="`), each of which has exactly one decoding; the far
+ * end is a third party, and refusing a sloppy spelling would drop real audio.
+ * `"strict"` refuses both, which is what `workflow-typed-json.ts` wants of a
+ * value we encoded ourselves.
+ */
+export type LastChunkHandling = "loose" | "strict";
+
+/**
+ * A standard-base64 character's 6-bit value, or -1.
+ *
+ * Arithmetic rather than an index into an alphabet STRING, because that
+ * literal is 64 mixed-case characters and Biome's `noSecrets` reads it as a
+ * high-entropy credential. Suppressing that would spend an escape-hatch
+ * budget on a false positive; the ranges say the same thing and need nothing.
+ */
+function base64Value(char: string): number {
+  const code = char.charCodeAt(0);
+  if (code >= 65 && code <= 90) return code - 65; // A-Z
+  if (code >= 97 && code <= 122) return code - 97 + 26; // a-z
+  if (code >= 48 && code <= 57) return code - 48 + 52; // 0-9
+  if (code === 43) return 62; // +
+  if (code === 47) return 63; // /
+  return -1;
+}
+
+/** Do the bits past the last chunk's real bytes read as zero? */
+function trailingBitsZero(base64: string, padding: number): boolean {
+  if (padding === 0) return true;
+  const last = base64.at(-padding - 1);
+  const index = last === undefined ? -1 : base64Value(last);
+  if (index < 0) return false;
+  // One `=` means the final quad carries 3 chars / 2 bytes, so the last char
+  // contributes 2 spare low bits; two `=` means 2 chars / 1 byte and 4 spare.
+  return (index & (padding === 1 ? 0b11 : 0b1111)) === 0;
+}
+
+/**
+ * The decode without the native method: VALIDATE, then `Buffer.from`.
+ *
+ * Exported for `base64-parity.test.ts` only. It is the path every Node 24 and
+ * 25 host takes, so on a developer's newer Node it is the half of this module
+ * that nothing would otherwise execute — which is exactly how a fallback rots.
+ *
+ * Validation first is the whole point. `Buffer.from(s, "base64")` is lenient —
+ * it drops every character outside the alphabet and returns whatever the
+ * survivors spell — which is the defect this module exists to refuse, so the
+ * fallback may only reach it once the string is known to be well-formed.
+ */
+export function decodeWithoutNative(
+  base64: string,
+  lastChunkHandling: LastChunkHandling,
+): Uint8Array | undefined {
+  const compact = base64.replace(ASCII_WHITESPACE, "");
+  if (!STANDARD_BASE64.test(compact)) return undefined;
+  const padding = compact.endsWith("==") ? 2 : Number(compact.endsWith("="));
+  // A padded string is a whole number of quads; `"AAAA=="` is over-padding.
+  if (padding > 0 && compact.length % 4 !== 0) return undefined;
+  // One leftover character spells no byte, under either handling.
+  if ((compact.length - padding) % 4 === 1) return undefined;
+  if (lastChunkHandling === "strict") {
+    if (compact.length % 4 !== 0) return undefined;
+    if (!trailingBitsZero(compact, padding)) return undefined;
+  }
+  const decoded = Buffer.from(compact, "base64");
+  // Exactly sized and unpooled: `Buffer.from` returns a view into Node's
+  // 64 KiB allocation pool at a nonzero offset, so handing its `.buffer` on
+  // would expose 64 KiB of unrelated pooled memory.
+  const out = new Uint8Array(decoded.byteLength);
+  out.set(decoded);
+  return out;
+}
+
+/**
+ * Decode base64 to bytes, or `undefined` when the input spells none.
+ *
+ * The one primitive both callers share, so "what counts as base64 here" is
+ * decided once. Neither the native path nor the fallback may invent a byte the
+ * input does not spell; `base64-parity.test.ts` holds them to the same answers.
+ */
+export function decodeBase64(
+  base64: string,
+  lastChunkHandling: LastChunkHandling,
+): Uint8Array | undefined {
+  if (!HAS_NATIVE_BASE64 || NATIVE.fromBase64 === undefined) {
+    return decodeWithoutNative(base64, lastChunkHandling);
+  }
   try {
-    // Exactly sized and unpooled, unlike the `Buffer.from` view this replaces:
-    // that one aliased Node's 64 KiB allocation pool at a nonzero offset, so
-    // `new Uint8Array(decoded.buffer)` exposed 64 KiB of unrelated pooled
-    // memory from behind a comment that called it a zero-copy view.
-    return Uint8Array.fromBase64(base64, { alphabet: "base64" });
+    return NATIVE.fromBase64(base64, {
+      alphabet: "base64",
+      ...(lastChunkHandling === "strict" ? { lastChunkHandling: "strict" as const } : {}),
+    });
   } catch {
+    return undefined;
+  }
+}
+
+export function base64ToUint8(base64: string, logger: Logger = consoleLogger): Uint8Array {
+  const bytes = decodeBase64(base64, "loose");
+  if (bytes === undefined) {
     reportDrop(base64.length, logger);
     return NOTHING;
   }
+  return bytes;
 }

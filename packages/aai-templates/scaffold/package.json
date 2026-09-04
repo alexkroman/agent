@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "aai dev",
     "prestart": "aai build --skip-tests",
-    "start": "node server.mjs",
+    "start": "aai start",
     "build": "aai build",
     "test": "vitest run --exclude \"**/*.eval.test.*\"",
     "test:agent": "aai test",
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "^14.0.0",
+    "@alexkroman1/aai-cli": "^14.0.0",
     "@alexkroman1/aai-runtime": "^14.0.0",
     "@alexkroman1/aai-ui": "^14.0.0",
     "react": "^19.2.8",
@@ -25,9 +26,8 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@alexkroman1/aai-cli": "^14.0.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.4.1",
+    "@types/node": "^24.10.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",

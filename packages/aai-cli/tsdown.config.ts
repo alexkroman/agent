@@ -1,15 +1,25 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "tsdown";
 
+/**
+ * Every subpath export, DERIVED — the same rule `aai-runtime`'s config follows,
+ * and for a reason this list paid for: it was hand-written, so adding `./start`
+ * to the exports map built nothing and `publint` failed on a subpath pointing
+ * at a file that does not exist. A derived list cannot drift.
+ *
+ * `src/cli.ts` is appended rather than derived: it is the BIN, which the
+ * exports map does not name.
+ */
+const pkg = JSON.parse(readFileSync("package.json", "utf-8")) as {
+  exports: Record<string, Record<string, string>>;
+};
+const subpaths = Object.values(pkg.exports)
+  .map((entry) => entry["@dev/source"])
+  .filter((source): source is string => typeof source === "string")
+  .map((source) => source.replace(/^\.\//, ""));
+
 export default defineConfig({
-  // The *-bundler and typecheck modules are public subpath exports (the
-  // guest sandbox builds and typechecks workspaces through them).
-  entry: [
-    "src/cli.ts",
-    "src/client-bundler.ts",
-    "src/worker-bundler.ts",
-    "src/typecheck.ts",
-    "src/project-config.ts",
-  ],
+  entry: [...new Set(["src/cli.ts", ...subpaths])],
   format: "esm",
   platform: "node",
   target: "node22",

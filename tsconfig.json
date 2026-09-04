@@ -22,6 +22,19 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "customConditions": ["@dev/source"],
-    "lib": ["ESNext"]
+    // ES2025, NOT ESNext — the SDK's engine floor is Node 24 (see `engines` in
+    // the scaffold's package.json), and `ESNext` hands the checker every
+    // proposal-stage builtin regardless of whether the minimum runtime has it.
+    // That is not a hypothetical: `Uint8Array.fromBase64` is Stage 3, so it
+    // lives in the `esnext` lib and compiled clean, while Vercel's
+    // `nodejs24.x` (Node v24.18.0) does not implement it. The call sat inside
+    // a `try` whose `catch` exists for a malformed payload, so every TTS audio
+    // frame decoded to zero bytes and a deployed voice agent answered in text
+    // and said nothing — no error, no failed build, no failing test.
+    //
+    // ES2025 is what Node 24 actually implements, so a too-new builtin is a
+    // COMPILE error now rather than a silent runtime one. Raise this only
+    // together with the engine floor.
+    "lib": ["ES2025"]
   }
 }

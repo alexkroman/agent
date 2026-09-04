@@ -5,21 +5,25 @@
  * artifact and its failures alike.
  *
  * It also LEAVES that artifact on disk, at {@link WORKER_ARTIFACT_REL}, which is
- * what makes self-hosting work: `server.mjs` loads the built worker rather than
+ * what makes self-hosting work: `aai start` loads the built worker rather than
  * `agent.ts`, because a tool is discovered by the bundler enumerating `tools/`
- * and no un-bundled loader can see that directory. See the scaffold's own
- * `server.mjs` and "Self-hosting runs the built worker" in
- * `packages/aai-templates/CLAUDE.md`.
+ * and no un-bundled loader can see that directory. See `start.ts` and
+ * "Self-hosting is the scaffold's default" in `packages/aai-cli/CLAUDE.md`.
+ *
+ * `--target` decides what else it emits — see `_build-target.ts`.
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
+import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
+import { type BuildTarget, resolveBuildTarget, VERCEL_OUTPUT_DIR } from "./_build-target.ts";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
+import { emitVercelOutput } from "./_vercel-output.ts";
 import { determinismWarnings, scanWorkflowDeterminism } from "./_workflow-determinism.ts";
 import { classifyVitestError, runVitest, TEST_FILES } from "./test.ts";
 
@@ -27,12 +31,12 @@ import { classifyVitestError, runVitest, TEST_FILES } from "./test.ts";
  * Where the built worker lands, relative to the project root — under `.aai/`,
  * beside the built client, so one gitignore rule covers every build output.
  *
- * `server.mjs` hardcodes this path: it is a plain `.mjs` file in a user's
- * project and may not import from the CLI (which a deployed project does not
- * install at all). The pair is covered end-to-end by the `npm start` leg of
- * `e2e.test.ts` — the only tier that runs both halves as a user does.
+ * `start.ts` imports this constant rather than restating the path, which it
+ * could not do while the loader was a `.mjs` file in the user's project. The
+ * pair is covered end-to-end by the `npm start` leg of `e2e.test.ts` — the only
+ * tier that runs both halves as a user does.
  */
-export const WORKER_ARTIFACT_REL = path.join(".aai", "worker.mjs");
+export { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 
 type BuildData = {
   name: string;
@@ -44,6 +48,8 @@ type BuildData = {
    * {@link systemPromptSource}.
    */
   systemPrompt: string;
+  /** Which deployment shape this build emitted — see `_build-target.ts`. */
+  target: BuildTarget;
 };
 
 /**
@@ -105,8 +111,16 @@ export async function executeBuild(opts: {
   cwd: string;
   skipTests?: boolean | undefined;
   skipTypecheck?: boolean | undefined;
+  /**
+   * Which deployment shape to emit beside the worker. Absent, it is detected
+   * from the host's own build environment — see `resolveBuildTarget`.
+   */
+  target?: string | undefined;
 }): Promise<CommandResult<BuildData>> {
   const { cwd } = opts;
+  // Resolved BEFORE the suite and the typecheck, so an unknown `--target` fails
+  // in a second rather than after a full test run.
+  const target = resolveBuildTarget(opts.target);
   if (!opts.skipTests) {
     try {
       // The WHOLE suite, not `agent.test.ts` alone. `aai test`'s narrowing is
@@ -150,6 +164,8 @@ export async function executeBuild(opts: {
   await fs.mkdir(path.dirname(worker), { recursive: true });
   await fs.writeFile(worker, bundle.worker, "utf-8");
 
+  await emitTargetFiles(cwd, target);
+
   // Reported in BOTH modes, deliberately: `log` is silenced under --json, and a
   // field on the result is invisible on a TTY, so the swap this exists to
   // surface would stay invisible in whichever mode the reader happened to use.
@@ -162,5 +178,21 @@ export async function executeBuild(opts: {
     workerBytes: bundle.worker.length,
     worker,
     systemPrompt,
+    target,
   });
+}
+
+/**
+ * Write what a target needs, if it needs anything.
+ *
+ * `node` writes nothing: a long-lived process runs `aai start`, which needs no
+ * generated file. `vercel` writes a complete prebuilt deployment under
+ * `.vercel/output/` — see `_vercel-output.ts`, and `VERCEL_OUTPUT_DIR` in
+ * `_build-target.ts` for why that directory and not an `api/` entry beside a
+ * generated `vercel.json`.
+ */
+async function emitTargetFiles(cwd: string, target: BuildTarget): Promise<void> {
+  if (target === "node") return;
+  await emitVercelOutput(cwd);
+  log.info(`Target ${target}: wrote ${VERCEL_OUTPUT_DIR}`);
 }

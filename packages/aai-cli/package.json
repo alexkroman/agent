@@ -38,6 +38,11 @@
       "@dev/source": "./src/project-config.ts",
       "types": "./dist/project-config.d.ts",
       "import": "./dist/project-config.mjs"
+    },
+    "./start": {
+      "@dev/source": "./src/start.ts",
+      "types": "./dist/start.d.ts",
+      "import": "./dist/start.mjs"
     }
   },
   "scripts": {
