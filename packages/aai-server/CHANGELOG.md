@@ -1,5 +1,16 @@
 # @alexkroman1/aai-server
 
+## 5.3.2
+
+### Patch Changes
+
+- 6e9fd4b: Lower the engines floor on the private packages from Node >=26 to >=24, matching the published packages and the scaffold. The deployed images still run Node 26; the floor only stops a warning on every install under Node 24.
+- Updated dependencies [6e9fd4b]
+  - aai-guest@0.6.2
+  - @alexkroman1/aai@15.1.0
+  - @alexkroman1/aai-runtime@15.1.0
+  - @alexkroman1/aai-ui@15.1.0
+
 ## 5.3.1
 
 ### Patch Changes

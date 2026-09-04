@@ -1,5 +1,17 @@
 # @alexkroman1/aai-cli
 
+## 15.1.0
+
+### Minor Changes
+
+- c7511ea: `aai init` no longer publishes after scaffolding. Creating a project is now purely local: it scaffolds and installs, and shipping to production is the explicit `aai publish` step once `aai dev` says the agent works. The `--skip-deploy` and `--server` flags are gone with the behaviour, and the init result no longer carries `deployed`, `slug` or `url`.
+
+### Patch Changes
+
+- @alexkroman1/aai@15.1.0
+  - @alexkroman1/aai-runtime@15.1.0
+  - @alexkroman1/aai-ui@15.1.0
+
 ## 15.0.0
 
 ### Major Changes

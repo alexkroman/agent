@@ -1,5 +1,11 @@
 # @alexkroman1/aai-ui
 
+## 15.1.0
+
+### Patch Changes
+
+- @alexkroman1/aai@15.1.0
+
 ## 15.0.0
 
 ### Minor Changes
