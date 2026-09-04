@@ -50,42 +50,46 @@ import { isToolFailure } from "./utils.ts";
  * @example
  * ```ts no-check
  * // `no-check`: the agent under test is in another file, which is the point.
- * import { ok, runTool } from "@alexkroman1/aai/testing";
+ * import { expectToolOk, runTool } from "@alexkroman1/aai/testing";
  *
- * const order = ok<{ id: string }>(await runTool(agentDef, "place_order", {}, ctx));
+ * const order = expectToolOk<{ id: string }>(
+ *   await runTool(agentDef, "place_order", {}, ctx),
+ * );
  * expect(order.id).toBe("ord_1");
  * ```
  *
  * @public
  */
-export function ok<T>(result: unknown): T {
-  return okPosition<T>(result).result;
+export function expectToolOk<T>(result: unknown): T {
+  return expectDialogOk<T>(result).result;
 }
 
 /**
- * The same unwrap as {@link ok}, keeping WHERE the dialog landed.
+ * The same unwrap as {@link expectToolOk}, keeping WHERE the dialog landed.
  *
  * The half a spec needs when the assertion is about the conversation rather
  * than about the tool's own value — that a call advanced the machine into
- * `quote.pending`, that a final state reports `done`. `ok()` is this with
- * `.result` taken off the end.
+ * `quote.pending`, that a final state reports `done`. `expectToolOk()` is this
+ * with `.result` taken off the end.
  *
  * @typeParam T - What the tool's `execute` returns, under `result`.
  *
- * @throws As {@link ok} does, and for the same reasons.
+ * @throws As {@link expectToolOk} does, and for the same reasons.
  *
  * @example
  * ```ts no-check
- * import { okPosition, runTool } from "@alexkroman1/aai/testing";
+ * import { expectDialogOk, runTool } from "@alexkroman1/aai/testing";
  *
- * const answered = okPosition<{ quoted: number }>(await runTool(agentDef, "quote", {}, ctx));
+ * const answered = expectDialogOk<{ quoted: number }>(
+ *   await runTool(agentDef, "quote", {}, ctx),
+ * );
  * expect(answered.state).toBe("quote.pending");
  * expect(answered.result.quoted).toBe(42);
  * ```
  *
  * @public
  */
-export function okPosition<T>(result: unknown): DialogToolResult<T> {
+export function expectDialogOk<T>(result: unknown): DialogToolResult<T> {
   // The refusal FIRST, because it is the case worth reporting well: a
   // `ToolFailure` is a record without `result`, so the envelope check below
   // would otherwise report it as "not a tool result" and throw away the

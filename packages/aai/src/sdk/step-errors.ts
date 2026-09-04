@@ -62,13 +62,13 @@
  * makes. Two had already wrapped it in a local `ask()` whose only content was
  * that `.catch`, each paying a doc block to say why, and the second one records
  * that two OTHER templates wrote the same mapping before it was extracted. So it
- * is hoisted one level further: {@link stepGenerateClassified} and its
+ * is hoisted one level further: {@link stepGenerateOrFail} and its
  * siblings are the `/step` call and {@link throwStepError}, nothing else.
  *
  * They live here rather than in `/step` because IMPORTING THEM IS THE OPT-IN.
  * `/step` names no verdict vocabulary at all, and whether a terminal failure should
  * burn a step's remaining attempts is the caller's decision — a `404` meaning
- * "already deleted" wants the raw call. The `Classified` suffix keeps the `/step`
+ * "already deleted" wants the raw call. The `OrFail` suffix keeps the `/step`
  * name intact, so a wrapper reads as the call it wraps.
  *
  * @module step-errors
@@ -96,7 +96,7 @@ import { responseErrorMessage } from "./utils.ts";
 // The verdict itself is one file over — see `_step-verdict.ts` for the seam and
 // why the dependency runs in that direction. The three names are part of THIS
 // subpath's surface, so they are re-exported rather than reached through a
-// second import path; they are imported above as well, because `stepFetchOk`,
+// second import path; they are imported above as well, because `stepFetchOrFail`,
 // the ffmpeg arm and the classified callers all CALL them and a
 // re-export brings nothing into this module's scope.
 export { throwFatalStepError, throwStepError, toStepError } from "./_step-verdict.ts";
@@ -148,17 +148,17 @@ export {
  *
  * @example
  * ```ts
- * import { stepFetchOk } from "@alexkroman1/aai/step-errors";
+ * import { stepFetchOrFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function readFeed(url: string): Promise<string> {
- *   return await (await stepFetchOk(url, { signal: AbortSignal.timeout(30_000) })).text();
+ *   return await (await stepFetchOrFail(url, { signal: AbortSignal.timeout(30_000) })).text();
  * }
  * ```
  *
  * @throws {Error} a `FatalError` or `RetryableError` — see {@link toStepError}.
  * @public
  */
-export async function stepFetchOk(url: string, init?: StepFetchInit): Promise<Response> {
+export async function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response> {
   const response = await stepFetch(url, init);
   if (response.ok) return response;
   // The label is the REQUEST, because a run's log holds many of these and the
@@ -258,25 +258,22 @@ function ffmpegFailureKind(cause: unknown): string | undefined {
  *
  * @example
  * ```ts
- * import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
+ * import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
- *   return await stepGenerateClassified(text, { system: "Summarize in two sentences." });
+ *   return await stepGenerateOrFail(text, { system: "Summarize in two sentences." });
  * }
  * ```
  *
  * @public
  */
-export function stepGenerateClassified(
-  prompt: string,
-  opts?: StepGenerateOptions,
-): Promise<string> {
+export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string> {
   return stepGenerate(prompt, opts).catch(throwStepError);
 }
 
 /**
  * `stepGenerateJson`, with its failure classified — see
- * {@link stepGenerateClassified}. The most-copied member of the family (**7 of the
+ * {@link stepGenerateOrFail}. The most-copied member of the family (**7 of the
  * 17 sites**): a workflow that asks a model for a SHAPE is the usual shape.
  *
  * Worth knowing what it does NOT flatten: a gateway refusal arrives as a
@@ -288,7 +285,7 @@ export function stepGenerateClassified(
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
  * @public
  */
-export function stepGenerateJsonClassified<S extends StandardSchemaV1>(
+export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(
   prompt: string,
   opts: StepGenerateJsonOptions<S>,
 ): Promise<InferSchemaOutput<S>> {
@@ -297,7 +294,7 @@ export function stepGenerateJsonClassified<S extends StandardSchemaV1>(
 
 /**
  * `stepTranscribeSync`, with its failure classified — see
- * {@link stepGenerateClassified}.
+ * {@link stepGenerateOrFail}.
  *
  * This is the arm where classifying earns the most. `TranscribeError` carries
  * `retryable`, and a refusal the PROVIDER decided — a recording with no speech in
@@ -308,7 +305,7 @@ export function stepGenerateJsonClassified<S extends StandardSchemaV1>(
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
  * @public
  */
-export function stepTranscribeSyncClassified(
+export function stepTranscribeSyncOrFail(
   bytes: Uint8Array | readonly Uint8Array[],
   opts?: TranscribeSyncOptions,
 ): Promise<{ text: string }> {
@@ -317,12 +314,12 @@ export function stepTranscribeSyncClassified(
 
 /**
  * `stepTranscribeUpload`, with its failure classified — see
- * {@link stepTranscribeSyncClassified} for what a transcription verdict carries.
+ * {@link stepTranscribeSyncOrFail} for what a transcription verdict carries.
  *
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
  * @public
  */
-export function stepTranscribeUploadClassified(
+export function stepTranscribeUploadOrFail(
   uploadId: string,
   opts?: TranscribeRequestOptions,
 ): Promise<{ audioUrl: string }> {
@@ -331,15 +328,15 @@ export function stepTranscribeUploadClassified(
 
 /**
  * `stepTranscribeSubmit`, with its failure classified — see
- * {@link stepTranscribeSyncClassified}. Half of the async job API, whose other
- * half is {@link stepTranscribePollClassified}; both are wrapped because a submit
+ * {@link stepTranscribeSyncOrFail}. Half of the async job API, whose other
+ * half is {@link stepTranscribePollOrFail}; both are wrapped because a submit
  * and its poll are separate steps with separate attempt budgets — classify one
  * and not the other and the run gives up in one place and never in the other.
  *
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
  * @public
  */
-export function stepTranscribeSubmitClassified(
+export function stepTranscribeSubmitOrFail(
   audioUrl: string,
   opts?: TranscribeSubmitOptions,
 ): Promise<{ id: string }> {
@@ -348,7 +345,7 @@ export function stepTranscribeSubmitClassified(
 
 /**
  * `stepTranscribePoll`, with its failure classified — see
- * {@link stepTranscribeSubmitClassified}. A poll that answers is not a poll that
+ * {@link stepTranscribeSubmitOrFail}. A poll that answers is not a poll that
  * SUCCEEDED: an unfinished job comes back as a `TranscribeProgress` and only a
  * transport or API failure rejects, so this classifies the rejection and says
  * nothing about the job's own status.
@@ -356,7 +353,7 @@ export function stepTranscribeSubmitClassified(
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
  * @public
  */
-export function stepTranscribePollClassified(
+export function stepTranscribePollOrFail(
   id: string,
   opts?: TranscribeRequestOptions,
 ): Promise<TranscribeProgress> {
@@ -365,7 +362,7 @@ export function stepTranscribePollClassified(
 
 /**
  * `sendToChannel` (`@alexkroman1/aai/channels`), with its failure classified —
- * see {@link stepGenerateClassified} for the family, and this module's doc for
+ * see {@link stepGenerateOrFail} for the family, and this module's doc for
  * why the wrapper lives here rather than beside the call it wraps.
  *
  * `ChannelDeliveryError` carries the platform's verdict AND its `Retry-After`,
@@ -384,18 +381,15 @@ export function stepTranscribePollClassified(
  * @example
  * ```ts
  * import { slackChannel } from "@alexkroman1/aai/channels";
- * import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+ * import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function announce(webhookUrl: string, headline: string): Promise<string> {
- *   return await sendToChannelClassified(slackChannel({ webhookUrl }), { text: headline });
+ *   return await sendToChannelOrFail(slackChannel({ webhookUrl }), { text: headline });
  * }
  * ```
  *
  * @public
  */
-export function sendToChannelClassified(
-  channel: Channel,
-  message: ChannelMessage,
-): Promise<string> {
+export function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string> {
   return sendToChannel(channel, message).catch(throwStepError);
 }

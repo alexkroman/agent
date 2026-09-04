@@ -33,11 +33,11 @@
  */
 
 import type { WorkflowCtx } from "@alexkroman1/aai";
-import { report } from "@alexkroman1/aai/step";
+import { stepReport } from "@alexkroman1/aai/step";
 import {
   FatalError,
-  stepGenerateClassified,
-  stepGenerateJsonClassified,
+  stepGenerateJsonOrFail,
+  stepGenerateOrFail,
 } from "@alexkroman1/aai/step-errors";
 import { countWords } from "@alexkroman1/aai/utils";
 import { z } from "zod";
@@ -153,12 +153,12 @@ export async function writeDraft(input: RedlineInput): Promise<string> {
     );
   }
 
-  await report(`Writing the first draft for ${input.audience}.`);
+  await stepReport(`Writing the first draft for ${input.audience}.`);
   // No empty-reply guard here or in `reviseDraft`, and that is not an omission:
   // `stepGenerate` already refuses an empty completion, as a RETRYABLE
   // `StepGenerateError` — which is the right answer, and one a hand-written
   // check would have to re-derive.
-  const draft = await stepGenerateClassified(briefBlock(input), { system: WRITER_SYSTEM });
+  const draft = await stepGenerateOrFail(briefBlock(input), { system: WRITER_SYSTEM });
   return draft.trim();
 }
 
@@ -175,14 +175,14 @@ export async function critiqueDraft(
   input: RedlineInput,
   round: number,
 ): Promise<Critique> {
-  await report(`Round ${round}: reading it back critically.`);
+  await stepReport(`Round ${round}: reading it back critically.`);
   // `stepGenerateJson` owns the fence, the parse, the non-object case and the
   // shape — and throws PLAINLY when any of them misses, unlike the fatal one
   // above: a model that answered with prose may well obey on the next attempt.
-  const parsed = await stepGenerateJsonClassified(
-    `${briefBlock(input)}\n\nThe submission:\n${draft}`,
-    { schema: CritiqueReply, system: CRITIC_SYSTEM },
-  );
+  const parsed = await stepGenerateJsonOrFail(`${briefBlock(input)}\n\nThe submission:\n${draft}`, {
+    schema: CritiqueReply,
+    system: CRITIC_SYSTEM,
+  });
 
   const critique: Critique = {
     verdict: parsed.verdict,
@@ -192,7 +192,7 @@ export async function critiqueDraft(
     score: clampScore(parsed.score),
     notes: parsed.notes.slice(0, MAX_NOTES),
   };
-  await report(
+  await stepReport(
     critique.verdict === "ship"
       ? `Round ${round}: the critic would ship it (${critique.score}/10).`
       : `Round ${round}: ${critique.notes.length} note(s) to address (${critique.score}/10).`,
@@ -207,8 +207,8 @@ export async function reviseDraft(
   input: RedlineInput,
   round: number,
 ): Promise<string> {
-  await report(`Round ${round}: revising.`);
-  const revised = await stepGenerateClassified(
+  await stepReport(`Round ${round}: revising.`);
+  const revised = await stepGenerateOrFail(
     [
       briefBlock(input),
       `Your current draft:\n${draft}`,
@@ -241,8 +241,8 @@ export function clampScore(score: number): number {
 // There is no local `ask()` any more, and its absence is the point. The SDK
 // classifies the gateway's failure (`StepGenerateError.retryable`) and stops
 // there — whether a terminal failure should burn the step's remaining attempts
-// is the caller's call — so `stepGenerateClassified` and
-// `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`) are that call
+// is the caller's call — so `stepGenerateOrFail` and
+// `stepGenerateJsonOrFail` (`@alexkroman1/aai/step-errors`) are that call
 // made one way: terminal stays terminal, and a rate limit becomes a
 // `RetryableError` carrying the delay the gateway itself named, which beats
 // `RetryableError`'s own one-second default. Three templates each wrapped the

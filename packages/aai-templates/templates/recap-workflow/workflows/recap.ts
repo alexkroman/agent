@@ -99,7 +99,7 @@
  * Everything the desk claims to do. `submitRecording`, `checkTranscript` and
  * `discardTranscript` are AssemblyAI's pre-recorded API (`POST`, `GET` and
  * `DELETE` on `/v2/transcript`), and `summarize` is a real model call through
- * `stepGenerateJsonClassified`. The BATCH API is what makes the polling port honest: it
+ * `stepGenerateJsonOrFail`. The BATCH API is what makes the polling port honest: it
  * answers with a job id in milliseconds and finishes minutes later, so the wait
  * is the provider's, not a `setTimeout` this template chose. (Its sibling
  * `transcription-workflow` takes the other endpoint — the sync one, which answers in
@@ -111,13 +111,13 @@
  * just your shell.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
-import { report, requireStepEnv, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepReport, requireStepEnv, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
 import {
   FatalError,
-  stepFetchOk,
-  stepGenerateJsonClassified,
-  stepTranscribeSubmitClassified,
+  stepFetchOrFail,
+  stepGenerateJsonOrFail,
+  stepTranscribeSubmitOrFail,
   toStepError,
 } from "@alexkroman1/aai/step-errors";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
@@ -239,7 +239,7 @@ const POINTS = 3;
 /**
  * The shape the model must answer in.
  *
- * `stepGenerateJsonClassified` validates against this and throws PLAINLY when the reply
+ * `stepGenerateJsonOrFail` validates against this and throws PLAINLY when the reply
  * misses, which is the retry policy in one distinction: a model that answered in
  * prose may answer correctly next time, where a 401 will not. `spoken` is the
  * field this template exists for — without it the announced turn has nothing to
@@ -347,7 +347,7 @@ export type Compensation = { label: string; undo: () => Promise<void> };
  * `agent.ts` reads back down the phone, so it is shaped for an ear rather than
  * a page.
  */
-export async function recapFlow(input: { url: string; requestedBy: string }, ctx: WorkflowCtx) {
+export async function recapFlow(input: { url: string; requestedBy: string }, ctx: WorkflowContext) {
   // The compensation stack, newest first — `unshift` after each successful
   // acquisition, exactly as Temporal's `openAccount` does. Registering the undo
   // AFTER the step it undoes is the whole discipline: a step that never
@@ -462,7 +462,7 @@ export async function recapFlow(input: { url: string; requestedBy: string }, ctx
  */
 export async function awaitTranscript(
   id: string,
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
   nudge?: string,
 ): Promise<TranscriptState> {
   // Which turn says "still going". A pure function of `nudge`, which the body
@@ -518,7 +518,7 @@ export async function askWhetherToKeep(
   requestedBy: string,
   transcriptId: string,
   compensations: Compensation[],
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<Retention> {
   await ctx.step("noteGate", () =>
     note(
@@ -560,7 +560,7 @@ export async function askWhetherToKeep(
 export async function compensate(
   compensations: Compensation[],
   because: string,
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<void> {
   if (compensations.length === 0) return;
   // The narration is a STEP like every other, so an unwind interrupted by a
@@ -607,9 +607,9 @@ export async function submitRecording(
   url: string,
   webhookUrl?: string,
 ): Promise<{ id: string; callback: boolean }> {
-  await report(`Submitting ${new URL(url).hostname} for transcription…`);
+  await stepReport(`Submitting ${new URL(url).hostname} for transcription…`);
 
-  // `stepTranscribeSubmitClassified` owns the endpoint, the raw-key auth, the
+  // `stepTranscribeSubmitOrFail` owns the endpoint, the raw-key auth, the
   // PLURAL `speech_models` field and the failure classification — the
   // `Classified` suffix being that last part: it is `stepTranscribeSubmit` with
   // `throwStepError` already applied, so a provider refusal stays terminal and a
@@ -625,7 +625,7 @@ export async function submitRecording(
   // What must not creep in is a `?? null` or a `?? ""` to "be explicit": either
   // one puts the key back, and a provider handed a null for a URL is entitled to
   // refuse the whole submission.
-  const job = await stepTranscribeSubmitClassified(url, {
+  const job = await stepTranscribeSubmitOrFail(url, {
     params: { speaker_labels: true, webhook_url: webhookUrl },
   });
   return { id: job.id, callback: webhookUrl !== undefined };
@@ -698,7 +698,7 @@ export async function checkTranscript(id: string): Promise<TranscriptState> {
     );
   }
 
-  await report(`Transcript ${parsed.data.status}.`);
+  await stepReport(`Transcript ${parsed.data.status}.`);
   return {
     status: parsed.data.status,
     // `omitUndefined` rather than a spread-ternary per field: under
@@ -730,7 +730,7 @@ export async function checkTranscript(id: string): Promise<TranscriptState> {
  * a replay is exactly that world.
  */
 export async function discardTranscript(id: string): Promise<void> {
-  await report(`Discarding transcript ${id}.`);
+  await stepReport(`Discarding transcript ${id}.`);
   // Not through `request` above, because a 404 is a SUCCESS here — see below.
   // `stepFetch` for the same reason it does; only the status handling differs.
   const response = await stepFetch(`${TRANSCRIPT_ENDPOINT}/${id}`, {
@@ -756,7 +756,7 @@ export async function discardTranscript(id: string): Promise<void> {
  * journal instead of submitting the recording again.
  */
 export async function summarize(url: string, transcript: TranscriptState): Promise<Recap> {
-  await report("Writing the recap.");
+  await stepReport("Writing the recap.");
 
   const text = (transcript.text ?? "").slice(0, MAX_TRANSCRIPT_CHARS);
   if (text.trim() === "") {
@@ -765,13 +765,13 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
     throw new FatalError("That recording came back with no speech in it.");
   }
 
-  // `stepGenerateJsonClassified` unwraps the fence a model puts around JSON
+  // `stepGenerateJsonOrFail` unwraps the fence a model puts around JSON
   // however firmly it is told not to, parses it, and validates it — all four
   // things this step used to re-derive. The `Classified` half is what makes a
   // terminal gateway failure (a bad key, a rejected request) stop rather than
   // burn the remaining attempts, where a reply that missed the SHAPE throws
   // plainly and retries.
-  const parsed = await stepGenerateJsonClassified(text, {
+  const parsed = await stepGenerateJsonOrFail(text, {
     schema: RecapReply,
     system:
       "You write up recordings for someone who will hear the result on a phone call. " +
@@ -792,13 +792,13 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
 /**
  * Say one line into the run's progress channel.
  *
- * A step for one reason: the body REPLAYS, so a `report()` written there is
+ * A step for one reason: the body REPLAYS, so a `stepReport()` written there is
  * re-emitted on every resume. Everything the body itself wants to narrate —
  * the slow-recording note, the unwind — comes through here, and `agent.ts`'s
  * `recap_progress` is what reads it back down the phone.
  */
 export async function note(line: string): Promise<void> {
-  await report(line);
+  await stepReport(line);
 }
 
 // ---- HTTP -------------------------------------------------------------------
@@ -818,13 +818,13 @@ async function request(url: string): Promise<Response> {
   // `TypeError: fetch failed`, which for a template whose whole subject is
   // durability is the difference between a diagnosable resume and a mystery.
   // `sdk/step-fetch.ts` carries the measurements.
-  // `stepFetchOk` makes the three-way retry decision: a 401 or a 400 answers the
+  // `stepFetchOrFail` makes the three-way retry decision: a 401 or a 400 answers the
   // same way on the fourth attempt and burns the step, a 429 or a 5xx is what
   // retries are for, and a `Retry-After` the provider named is waited out rather
   // than replaced by the DevKit's one-second default — which matters here more
   // than usual, because a fan-out of segments hits a rate limit together. The
   // DELETE below stays on plain `stepFetch`, because there a 404 is a SUCCESS.
-  return await stepFetchOk(url, {
+  return await stepFetchOrFail(url, {
     headers: { authorization: requireStepEnv(API_KEY_ENV), "content-type": "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });

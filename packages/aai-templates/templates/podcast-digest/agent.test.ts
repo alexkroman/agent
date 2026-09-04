@@ -846,7 +846,7 @@ describe("posting the digest", () => {
   });
 
   /**
-   * The 4xx/5xx split is the reason this is not a one-line `stepFetchOk`: a
+   * The 4xx/5xx split is the reason this is not a one-line `stepFetchOrFail`: a
    * revoked webhook answers 4xx identically on every retry, so retrying it
    * burns the DevKit's attempts and delays the real error by minutes.
    */

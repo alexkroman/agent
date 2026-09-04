@@ -17,7 +17,7 @@
  * its return value, and audio in one is megabytes replayed on every resume.
  */
 
-import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
+import { stepReadUpload, stepUploadInfo } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { createWorkflowCtx, stubGatewayRoute } from "@alexkroman1/aai/testing";
 import {
@@ -215,14 +215,14 @@ describe("speaking", () => {
 
     const { audio } = await speak("Hello.");
 
-    await expect(uploadInfo(audio)).resolves.toMatchObject({
+    await expect(stepUploadInfo(audio)).resolves.toMatchObject({
       name: "summary.wav",
       // The byte route serves this as `Content-Type`, and a browser will not
       // play inline a file it was handed as octet-stream.
       type: "audio/wav",
       size: 44 + 4000,
     });
-    const { bytes } = await readUpload(audio, { end: 12 });
+    const { bytes } = await stepReadUpload(audio, { end: 12 });
     expect(String.fromCharCode(...bytes.subarray(0, 4))).toBe("RIFF");
     expect(String.fromCharCode(...bytes.subarray(8, 12))).toBe("WAVE");
   });

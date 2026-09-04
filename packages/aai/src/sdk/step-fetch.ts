@@ -187,7 +187,7 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
  *   `404` is fatal.
  * @public
  *
- * **From a step, prefer `stepFetchOk`
+ * **From a step, prefer `stepFetchOrFail`
  * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
@@ -329,7 +329,7 @@ export type MultipartBody = {
  *
  * **A part's `name` and `filename` are ESCAPED, because they are the one thing
  * here that is routinely not the author's own string.** An upload's `name` is
- * "the filename the uploader gave" (`uploadInfo`), so it reaches a step from a
+ * "the filename the uploader gave" (`stepUploadInfo`), so it reaches a step from a
  * browser form and lands in a header this function writes — and a `"`, a CR or
  * an LF in it closed the quoted string and appended headers of the caller's
  * choosing to the request. The escaping is the HTML form-encoding algorithm's,

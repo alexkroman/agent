@@ -11,10 +11,10 @@
  * @example Post a run's result to Slack
  * ```ts
  * import { slackChannel } from "@alexkroman1/aai/channels";
- * import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+ * import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
- *   return await sendToChannelClassified(slackChannel({ webhookUrl }), {
+ *   return await sendToChannelOrFail(slackChannel({ webhookUrl }), {
  *     text: `Weekly summary: ${points.length} items`,
  *     heading: "Weekly summary",
  *     sections: [{ title: "Highlights", bullets: points }],
@@ -40,7 +40,7 @@
  *   the value where a PERSON supplies it, which is a security boundary and not
  *   only a typo check.
  * - {@link sendToChannel} — post, and throw a {@link ChannelDeliveryError}
- *   carrying the retry verdict. `sendToChannelClassified`
+ *   carrying the retry verdict. `sendToChannelOrFail`
  *   (`@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
  *   mapping already applied.
  * - {@link renderChannelPayload} — the request that WOULD be sent, pure, so a

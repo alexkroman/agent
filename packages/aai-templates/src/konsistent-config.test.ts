@@ -302,10 +302,11 @@ describe("konsistent.json", () => {
   });
 
   test("case-map entries are only there for names the defaults get wrong", () => {
-    // An identity entry in kebabToCamelMap looks redundant and is not: the
-    // camel map is DERIVED from the pascal map when absent, so declaring
-    // `openai: OpenAI` for the type names silently turns the factory function
-    // into `openAI`. The identity entry is what keeps `openai()` correct.
+    // The camel map is DERIVED from the pascal map when absent, so declaring
+    // `openai: OpenAI` for the type names also makes the factory function
+    // `openAILlm`. That derivation is wanted here — the identity entries that
+    // used to suppress it (`openai: openai`, `openrouter: openrouter`) are
+    // gone with the lowercase factory spellings they kept alive.
     for (const [kebab, pascal] of Object.entries(config.kebabToPascalMap ?? {})) {
       expect(kebab, `kebabToPascalMap key "${kebab}" is not kebab-case`).toMatch(/^[a-z0-9-]+$/);
       expect(pascal, `kebabToPascalMap["${kebab}"] is not PascalCase`).toMatch(/^[A-Z]/);

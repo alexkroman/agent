@@ -276,7 +276,7 @@ export function encodeWav(
  * `NaN` duration is journaled by a step, rendered into a progress bar and
  * reported to a caller without anything on the way saying which call produced
  * it. That is the one misuse this signature invites — `encodeWav`, `stepSpeak`
- * and `readUpload` all deal in the bytes themselves. {@link wavHeader} is the
+ * and `stepReadUpload` all deal in the bytes themselves. {@link wavHeader} is the
  * other function here taking a count, and shares this check for that reason.
  *
  * @throws {RangeError} for a format no header can describe — the same check

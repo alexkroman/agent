@@ -20,7 +20,7 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { readUpload, type UploadRange } from "@alexkroman1/aai/step";
+import { stepReadUpload, type UploadRange } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { createWorkflowCtx } from "@alexkroman1/aai/testing";
 import {
@@ -88,7 +88,7 @@ const STARTED_AT = 1_000_000;
 /**
  * Publish one in-memory upload, the way `createServer` publishes a real store.
  *
- * This is the seam that makes a step testable at all: `readUpload` reads a
+ * This is the seam that makes a step testable at all: `stepReadUpload` reads a
  * process-wide slot rather than dialling anything, so a spec supplies its own
  * bytes with no server, no database and no HTTP.
  */
@@ -896,7 +896,7 @@ describe("transcribeSegment", () => {
     // What makes the run's answer streamable rather than only its narration: the
     // page stitches whatever has arrived, so the transcript renders growing
     // instead of appearing when the last segment does. The reporter is the SDK's
-    // published slot, which is the same seam `report()` goes through.
+    // published slot, which is the same seam `stepReport()` goes through.
     const reported = installStubReporter();
     stubProvider();
 
@@ -1114,7 +1114,7 @@ describe("the streaming flow", () => {
 
   test("segmentStored refuses a window that STRADDLES a hole", () => {
     // A run is contiguous, so containment in one is the whole test — and it has to
-    // be, because `readUpload` clamps to the run a read starts in. A segment
+    // be, because `stepReadUpload` clamps to the run a read starts in. A segment
     // spanning two runs would come back short and be transcribed as a fragment,
     // which is a wrong transcript rather than a failed one.
     const at = poll(
@@ -1189,12 +1189,12 @@ describe("the streaming flow", () => {
   });
 
   test("a segment reads SHORT rather than failing when its bytes have not landed", async () => {
-    // The property the whole flow rests on, and it predates streaming: `readUpload`
+    // The property the whole flow rests on, and it predates streaming: `stepReadUpload`
     // clamps its window to what is stored. So a body that asks slightly early gets
     // what exists — which is why the body checks `end <= size` and can trust the
     // clamp for the final segment of a file that came up short.
     publishPartial(1000, 320_000);
-    const slice = await readUpload(UPLOAD_ID, { start: 44, end: 44 + 320_000 });
+    const slice = await stepReadUpload(UPLOAD_ID, { start: 44, end: 44 + 320_000 });
     expect(slice.bytes.length).toBe(1000);
     expect(slice.end).toBe(44 + 1000);
   });

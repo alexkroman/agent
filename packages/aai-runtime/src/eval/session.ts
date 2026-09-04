@@ -68,7 +68,7 @@ import { type Logger, silentLogger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { assertTurnMeasurable } from "./_turn-faults.ts";
 import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsIn } from "./events.ts";
-import { type FakeSpeech, installFakeSpeech } from "./fake-speech.ts";
+import { type StubSpeechProviders, installStubSpeechProviders } from "./fake-speech.ts";
 
 /** How long one turn may take before the harness gives up on it. */
 const DEFAULT_TURN_TIMEOUT_MS = 90_000;
@@ -293,14 +293,14 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
     );
   }
   // Everything between the install and the returned `close()` is wrapped,
-  // because `installFakeSpeech` registers a PROCESS-GLOBAL kind pair and the
+  // because `installStubSpeechProviders` registers a PROCESS-GLOBAL kind pair and the
   // only thing that unregisters it is the handle this function returns. A throw
   // in between — a runtime that will not start, an agent whose provider config
   // is wrong, the greeting timing out — left the pair registered for the
   // worker's life with nobody holding a release, so five repeats against a
   // failing agent orphaned five of them. A runner that catches the throw and
   // runs the next repeat is exactly what makes the leak compound.
-  const fake = installFakeSpeech();
+  const fake = installStubSpeechProviders();
   try {
     return await openWithFakes(opts, fake);
   } catch (err) {
@@ -309,7 +309,7 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
   }
 }
 
-async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promise<EvalSession> {
+async function openWithFakes(opts: EvalSessionOptions, fake: StubSpeechProviders): Promise<EvalSession> {
   const events: SessionEvent[] = [];
   const sink: ClientSink = {
     open: true,

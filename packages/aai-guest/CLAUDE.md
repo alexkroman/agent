@@ -968,12 +968,12 @@ So **`GUEST_SYSTEM_PACKAGES`** (`aai-server/modal-system-packages.ts`) installs
 **`@alexkroman1/aai/ffmpeg`** is how a step reaches it:
 
 ```ts no-check
-import { readUpload } from "@alexkroman1/aai/utils";
+import { stepReadUpload } from "@alexkroman1/aai/utils";
 import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
 
 export async function toPcm(uploadId: string) {
   "use step";
-  const { bytes } = await readUpload(uploadId);
+  const { bytes } = await stepReadUpload(uploadId);
   const info = await probeMedia(bytes);
   return info.audio?.codec === "pcm_s16le"
     ? bytes

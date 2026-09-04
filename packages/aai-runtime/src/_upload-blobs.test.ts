@@ -59,7 +59,7 @@ describe("the memory implementation", () => {
   });
 
   test("answers SHORT rather than throwing when there is less than was asked for", async () => {
-    // The clamp `readUpload` has always applied: a plan computed from a header is
+    // The clamp `stepReadUpload` has always applied: a plan computed from a header is
     // allowed to end one byte past the file.
     const blobs = createMemoryUploadBlobs();
     await blobs.put("a/1/0", once(ramp(10)));

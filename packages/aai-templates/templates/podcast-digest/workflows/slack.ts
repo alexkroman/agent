@@ -7,7 +7,7 @@
  * webhook shapes and the branch between them, Block Kit assembly, mrkdwn
  * escaping, the 4xx/5xx split and the advice each refusal deserves. All of it
  * is `@alexkroman1/aai/channels` now — `slackChannel()` names the destination,
- * `sendToChannelClassified` posts and classifies — and what is left here is the
+ * `sendToChannelOrFail` posts and classifies — and what is left here is the
  * part that is actually about podcasts: turning episode digests into a
  * {@link ChannelMessage}.
  *
@@ -22,13 +22,13 @@
  * The step BOUNDARY is not here — only a body holds a `ctx`, and the call this
  * file is reached through is `ctx.step("postDigest", …)` in `digest.ts`. What
  * stays here is what a step DOES: the digest rendered as a `ChannelMessage` and
- * one `sendToChannelClassified` call. Deciding which steps exist is the
+ * one `sendToChannelOrFail` call. Deciding which steps exist is the
  * template's job; what happens inside one is the SDK's.
  */
 
 import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
-import { report } from "@alexkroman1/aai/step";
-import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+import { stepReport } from "@alexkroman1/aai/step";
+import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 import type { EpisodeDigest } from "./digest.ts";
 
 /** Everything the message needs, so rendering can stay a pure function. */
@@ -46,14 +46,14 @@ export type SlackDigestInput = {
  *
  * It is three lines because the interesting decisions moved. `slackChannel()` builds
  * the descriptor, {@link renderDigestMessage} says what the message contains,
- * and `sendToChannelClassified` does the render-post-classify round — throwing
+ * and `sendToChannelOrFail` does the render-post-classify round — throwing
  * a `FatalError` on a 4xx (a revoked webhook and a wrong variable name answer
  * identically on every retry, so retrying only delays the real error) and a
  * `RetryableError` carrying Slack's own `Retry-After` on a 5xx.
  */
 export async function sendDigestToSlack(input: SlackDigestInput): Promise<string> {
-  await report("Posting the digest to Slack.");
-  return await sendToChannelClassified(
+  await stepReport("Posting the digest to Slack.");
+  return await sendToChannelOrFail(
     slackChannel({ webhookUrl: input.slackWebhookUrl, textParam: input.slackWorkflowTextParam }),
     renderDigestMessage(input),
   );

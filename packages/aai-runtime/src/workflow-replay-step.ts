@@ -73,7 +73,7 @@
  */
 
 import { type StandardSchemaV1, sleep } from "@alexkroman1/aai/host-internal";
-import { report } from "@alexkroman1/aai/step";
+import { stepReport } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
@@ -173,9 +173,9 @@ function withCause(err: unknown): string {
  * and retrying into it. Hours of the wrong hypothesis came out of that gap, and
  * the fix is one line per non-final failure.
  *
- * ## `report()`, not a logger — and it is not the constraint that decided it
+ * ## `stepReport()`, not a logger — and it is not the constraint that decided it
  *
- * `report()` reaches BOTH readers, because `createStepReporter` writes the
+ * `stepReport()` reaches BOTH readers, because `createStepReporter` writes the
  * server log line as well as the run's stream. So the choice is not "page or
  * operator": it is whether the page ALSO sees this, and it should.
  *
@@ -200,7 +200,7 @@ function withCause(err: unknown): string {
  * reporter's own `(attempt N)` suffix from doubling up on a number the line
  * already states.
  *
- * `report()` swallows its own failures and resolves either way, so awaiting it
+ * `stepReport()` swallows its own failures and resolves either way, so awaiting it
  * cannot fail a step or lose an attempt.
  */
 async function reportRetry(
@@ -210,7 +210,7 @@ async function reportRetry(
   delayMs: number,
   err: unknown,
 ): Promise<void> {
-  await report(
+  await stepReport(
     `Step ${name} failed on attempt ${attempt} of ${maxAttempts}, ` +
       `retrying in ${delayMs}ms: ${withCause(err)}`,
   );
@@ -384,7 +384,7 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
     signal?.throwIfAborted();
     tries++;
     try {
-      // Inside the step's own context, so a `report()` from the body or any
+      // Inside the step's own context, so a `stepReport()` from the body or any
       // helper it calls is attributed to THIS step and this attempt — and so
       // that `stepFetch` can reach the WALK's signal without the body having to
       // thread one down to it. See `RunContext["step"].signal`.

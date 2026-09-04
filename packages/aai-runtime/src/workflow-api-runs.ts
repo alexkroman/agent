@@ -190,7 +190,7 @@ export async function startRun(
   }
   // The run's opening line in the server log. A workflow app otherwise answers
   // this request and then does minutes of work with nothing anywhere naming it;
-  // every later line a step writes through `report()` is read against this one.
+  // every later line a step writes through `stepReport()` is read against this one.
   //
   // The caller's `key` is deliberately NOT on it, and used to be. A
   // caller-controlled string in an operator's log is a liability twice over: it

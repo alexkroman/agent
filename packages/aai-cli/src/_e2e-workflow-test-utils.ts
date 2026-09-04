@@ -54,7 +54,7 @@ import { ofetch } from "ofetch";
  */
 const LAB_FLOWS_TS = `// Written by the e2e suite — a provider-free workflow lab.
 import type { WorkflowCtx } from "@alexkroman1/aai";
-import { report } from "@alexkroman1/aai/step";
+import { stepReport } from "@alexkroman1/aai/step";
 
 export async function labSleepFlow(input: { seconds: number }, ctx: WorkflowCtx) {
   // Stamped by a STEP either side, so the elapsed time is journaled rather than
@@ -67,7 +67,7 @@ export async function labSleepFlow(input: { seconds: number }, ctx: WorkflowCtx)
   // Waiting on status alone therefore raced, and \`wakeUp\` answered 0 — a
   // green-looking assertion about nothing. This line is the only signal that
   // the sleep is actually registered.
-  report(\`lab-sleeping \${input.seconds}\`);
+  stepReport(\`lab-sleeping \${input.seconds}\`);
   await ctx.sleep("labSleep", input.seconds * 1000);
   const after = await ctx.step("labNowAfter", () => labNow());
   return { before, after, elapsedMs: after - before };
@@ -77,7 +77,7 @@ export async function labCountFlow(input: { steps: number }, ctx: WorkflowCtx) {
   let total = 0;
   for (let i = 0; i < input.steps; i += 1) {
     total = await ctx.step("labInc", () => labInc(total));
-    report(\`lab-count \${total}\`);
+    stepReport(\`lab-count \${total}\`);
     await ctx.sleep("labTick", 1000);
   }
   return { total };

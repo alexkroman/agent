@@ -47,7 +47,7 @@
 
 import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "./constants.ts";
 import type { UploadBody } from "./workflow-upload-client.ts";
-import type { UploadPartsSettings } from "./workflow-upload-parts.ts";
+import type { UploadPartsOptions } from "./workflow-upload-parts.ts";
 
 export type UploadPartsPlan = { total: number; parts: Part[] };
 
@@ -106,7 +106,7 @@ export function sliceOf(file: UploadBody, start: number, end: number): UploadBod
  */
 export function partsPlan(
   file: UploadBody,
-  settings: UploadPartsSettings,
+  settings: UploadPartsOptions,
   opts: { resumable?: boolean } = {},
 ): UploadPartsPlan | undefined {
   const total = sliceableBytes(file);

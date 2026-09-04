@@ -22,7 +22,7 @@
  * input has to wait for the whole upload. `PUT` takes the id in the path, so the
  * caller already has it: start the run, then stream the file, and the run reads
  * what has arrived. `GET …/info` is how anything other than a step watches that
- * happen; a step reads the same record in-process through `uploadInfo`.
+ * happen; a step reads the same record in-process through `stepUploadInfo`.
  *
  * Split from `workflow-api.ts` because nothing here is about runs — the store is
  * the only thing these two touch, and the module they came out of is the one
@@ -40,7 +40,7 @@
  * bytes, the cap is the same, the id is the caller's — and the two rules that come
  * with it are the store's rather than this module's: a part starts on a megabyte
  * boundary, and `size` reports the CONTIGUOUS prefix, so nothing downstream (the
- * range route, `readUpload`, a run polling `size`) learns that parts exist.
+ * range route, `stepReadUpload`, a run polling `size`) learns that parts exist.
  * `workflow-uploads.ts` carries the argument.
  *
  * ## The body is the FILE, not a multipart envelope

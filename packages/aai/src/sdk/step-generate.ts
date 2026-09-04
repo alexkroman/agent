@@ -138,7 +138,7 @@ export class StepGenerateError extends Error {
 /**
  * Ask the AssemblyAI LLM Gateway one question and return its reply.
  *
- * **From a step, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
+ * **From a step, prefer `stepGenerateOrFail` (`@alexkroman1/aai/step-errors`).**
  * It is this call plus `throwStepError`, and the engine decides its retry policy
  * from WHICH error a step throws: raw, a terminal failure burns every remaining
  * attempt and a rate limit backs off for one second while the delay the far side

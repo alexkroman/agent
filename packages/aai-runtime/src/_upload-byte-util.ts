@@ -83,7 +83,7 @@ export type PlacedWindow = { at: number; bytes: Uint8Array };
  * the fix is the cut and not the number — a `size` counting bytes that have merely
  * arrived would send a reader to a window that is not there.
  *
- * Two things that cost, both real: a body watching `uploadInfo` sees no progress at
+ * Two things that cost, both real: a body watching `stepUploadInfo` sees no progress at
  * all, and a template judging a STALL on that number reads a healthy slow uplink as
  * dead (`templates/transcription-workflow`'s idle-poll bound gives up after five
  * minutes of an unchanging `size`).

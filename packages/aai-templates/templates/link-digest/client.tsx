@@ -49,7 +49,7 @@
  *
  * `useWorkflowSubmit` answers "where has this got to" from the world's own
  * record — pending, running, completed. `<WorkflowProgress>` answers "what is it
- * doing" from what the run wrote itself (`report()` in `workflows/digest.ts`). A
+ * doing" from what the run wrote itself (`stepReport()` in `workflows/digest.ts`). A
  * page with only the first shows "Working…" for the length of the run; a page
  * with only the second cannot tell a finished run from a quiet one. Both are
  * cheap: one stream each, ended by the agent when there is nothing left to say.

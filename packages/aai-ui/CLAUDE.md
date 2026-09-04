@@ -793,7 +793,7 @@ O(n²) copy of a log the reader can only see one frame of at a time.
 The write half is the author's, and it is `getWritable()` from `workflow`
 (imported directly, like `sleep`) called from a STEP and never from the body —
 the body replays from the top, so a line written there is re-emitted on every
-resume. Both page templates carry the same six-line `report()` helper, which is
+resume. Both page templates carry the same six-line `stepReport()` helper, which is
 best-effort deliberately: a run must not fail because its narration could not be
 written, and that is also what keeps a step callable from a spec, where there is
 no run and `getWritable()` throws by design.
@@ -875,7 +875,7 @@ engine, which is what keeps the rule above meaning what it says.
 **Bytes go in once and are read by window.** The body is the file itself — the
 name rides in `?name=`, the type in `Content-Type`, so there is no multipart
 envelope to parse and one chunk is in memory at a time. A step then reads what
-it needs with `readUpload(id, { start, end })` (`@alexkroman1/aai/utils`), which
+it needs with `stepReadUpload(id, { start, end })` (`@alexkroman1/aai/utils`), which
 is IN-PROCESS: the DevKit dispatches a step to the same server that stored the
 upload, so the store is handed over through a `Symbol.for` slot exactly as the
 agent env is (`publishUploadReader`, published by `createServer`). Sixty steps
@@ -960,7 +960,7 @@ this route to describe the same 413.
 Every upload above travels one way — a person's file, in. The store serves the
 other direction too, and it is what makes a workflow app whose answer is not
 text possible at all: a run's OUTPUT is read back as JSON, so a step that made
-audio, an image or a PDF stores it with `writeUpload` and returns the ID, and
+audio, an image or a PDF stores it with `stepWriteUpload` and returns the ID, and
 `api.download(id)` reads the bytes back as a `Blob`.
 
 **A `Blob` rather than a URL, and the reason is one a page cannot discover on
@@ -1029,7 +1029,7 @@ answer. For a long recording that order is most of the wall clock.
 upload.** So the id exists before the bytes are sent, which is all a run input
 needs. The record then exists from the first byte with `complete: false` and a
 `size` that grows as chunks land, and the run reads whatever has arrived —
-`readUpload` already clamped its window to what is stored, which is why almost
+`stepReadUpload` already clamped its window to what is stored, which is why almost
 nothing else had to change.
 
 `useWorkflowStream(workflow)` is the browser half, and it is a drop-in sibling
@@ -1228,9 +1228,9 @@ overwrote a newer one's answer with a staler list, which for the
 Reach for the primitive rather than a `useRef(0)` counter — see "Concurrency
 primitives" in the root guide.
 
-### `report()` writes to the page AND the server log
+### `stepReport()` writes to the page AND the server log
 
-`report(line)` (`@alexkroman1/aai/utils`) is what a step says about itself. It
+`stepReport(line)` (`@alexkroman1/aai/utils`) is what a step says about itself. It
 replaced the twelve-line `getWritable()` helper each of the three workflow
 templates had copied — this guide's own note said extracting it was not worth
 minting a subpath for, which was true of the helper and false of the FEATURE:
@@ -1251,9 +1251,9 @@ the step and its attempt, and past the first the reporter appends
 as one that is succeeding, sixty times, and a reader cannot tell a slow run from
 a wedged one.
 
-### `emit()` is the other channel, and it makes a run's ANSWER streamable
+### `stepEmit()` is the other channel, and it makes a run's ANSWER streamable
 
-`report()` writes a sentence for a person. **`emit(namespace, chunk)`** writes a
+`stepReport()` writes a sentence for a person. **`stepEmit(namespace, chunk)`** writes a
 VALUE for a program, into a stream named by the caller — which is what lets a long
 fan-out hand over each result as it lands. Without it a run's partial results have
 nowhere to go: a snapshot carries a status and, once terminal, an output, so a
@@ -1265,12 +1265,12 @@ and `useWorkflowProgress<T>(runId, { namespace })` have taken one since they wer
 written. What was missing was the write.
 
 **The namespace is REQUIRED, and that is the point of the argument.** The default
-stream is `report()`'s, and a page renders those chunks verbatim — an object in
+stream is `stepReport()`'s, and a page renders those chunks verbatim — an object in
 there is `[object Object]` in the middle of the progress log. A named stream is
 also what lets `useWorkflowProgress<T>` be typed at all, since a subscription
 then carries one shape.
 
-Everything else is `report()`'s rule: call it from a STEP (a body replays), it is
+Everything else is `stepReport()`'s rule: call it from a STEP (a body replays), it is
 best-effort, and the chunks are RETAINED with the run so a reader that arrives
 late gets the whole stream. It is NOT logged — a structured chunk per item would
 bury the narration beside it — which is the one place the two paths differ inside

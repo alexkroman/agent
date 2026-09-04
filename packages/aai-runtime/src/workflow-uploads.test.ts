@@ -73,7 +73,7 @@ describe("the store", () => {
 
   test("cuts a whole-file write into the SAME windows a parts upload uses", async () => {
     // One byte layout whatever route an upload arrived by — the property
-    // `_upload-blobs.ts` states, and the reason `readUpload` needs no idea which
+    // `_upload-blobs.ts` states, and the reason `stepReadUpload` needs no idea which
     // write produced an object.
     const whole = memoryStore();
     const created = await whole.store.create({}, body(ramp(UPLOAD_PART_BYTES + 100)));

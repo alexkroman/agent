@@ -170,7 +170,7 @@ describe("fetchArticle", () => {
   });
 
   test("fails FATALLY on a 404 and plainly on a 503", async () => {
-    // `stepFetchOk` builds the message, so it is the SDK's one spelling for a
+    // `stepFetchOrFail` builds the message, so it is the SDK's one spelling for a
     // bad response — the REQUEST, the status, and a preview of any body.
     stubPage("", 404);
     await expect(fetchArticle("https://example.com/gone")).rejects.toThrow(

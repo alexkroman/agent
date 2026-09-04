@@ -1,6 +1,6 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, ok, okPosition } from "@alexkroman1/aai/testing";
+import { createToolContext, expectDialogOk, expectToolOk } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import type { StagedResult } from "./pending.ts";
 import { retailSlot } from "./store.ts";
@@ -17,7 +17,7 @@ import transferToHumanAgents from "./tools/transfer_to_human_agents.ts";
  *  one delivered order (#W4316152), which is every shape these cases need. */
 async function aaravCtx(): Promise<ToolContext> {
   const ctx = createToolContext();
-  ok(await findUserIdByEmail.execute({ email: "aarav.anderson9752@example.com" }, ctx));
+  expectToolOk(await findUserIdByEmail.execute({ email: "aarav.anderson9752@example.com" }, ctx));
   return ctx;
 }
 
@@ -29,7 +29,7 @@ describe("staging", () => {
     const ctx = await aaravCtx();
     const before = structuredClone(retailSlot.get(ctx).store.orders["#W9300146"]);
 
-    const staged = okPosition<StagedResult>(await stageCancel(ctx));
+    const staged = expectDialogOk<StagedResult>(await stageCancel(ctx));
 
     expect(staged.state).toBe("serving.awaitingConfirmation");
     expect(staged.result.staged).toBe("cancel_pending_order");
@@ -43,7 +43,7 @@ describe("staging", () => {
 
   test("the readback names the order, the items, the amount and where the money goes", async () => {
     const ctx = await aaravCtx();
-    const staged = ok<StagedResult>(await stageCancel(ctx));
+    const staged = expectToolOk<StagedResult>(await stageCancel(ctx));
     expect(staged.read_back).toContain("#W9300146");
     expect(staged.read_back).toContain("153.23");
     expect(staged.read_back).toContain("gift_card_7245904");
@@ -52,14 +52,14 @@ describe("staging", () => {
 
   test("the result says out loud that nothing has happened", async () => {
     const ctx = await aaravCtx();
-    const staged = ok<StagedResult>(await stageCancel(ctx));
+    const staged = expectToolOk<StagedResult>(await stageCancel(ctx));
     expect(staged.message).toContain("NOTHING HAS CHANGED YET");
     expect(staged.message).toContain("confirm_change");
   });
 
   test("a second stage is refused, and the refusal names the one already waiting", async () => {
     const ctx = await aaravCtx();
-    ok(await stageCancel(ctx));
+    expectToolOk(await stageCancel(ctx));
 
     // A DIFFERENT change, so this is not a repeat of the first call.
     const second = await modifyUserAddress.execute(
@@ -89,9 +89,9 @@ describe("staging", () => {
 describe("confirming", () => {
   test("confirm_change applies the staged change and returns to helping", async () => {
     const ctx = await aaravCtx();
-    ok(await stageCancel(ctx));
+    expectToolOk(await stageCancel(ctx));
 
-    const done = okPosition<{ confirmed: string; status: string }>(
+    const done = expectDialogOk<{ confirmed: string; status: string }>(
       await confirmChange.execute({}, ctx),
     );
     expect(done.state).toBe("serving.helping");
@@ -114,8 +114,8 @@ describe("confirming", () => {
 
   test("confirming twice is refused — the second call has nothing staged", async () => {
     const ctx = await aaravCtx();
-    ok(await stageCancel(ctx));
-    ok(await confirmChange.execute({}, ctx));
+    expectToolOk(await stageCancel(ctx));
+    expectToolOk(await confirmChange.execute({}, ctx));
 
     const again = await confirmChange.execute({}, ctx);
     expect(isToolFailure(again)).toBe(true);
@@ -130,9 +130,9 @@ describe("confirming", () => {
 describe("cancelling a staged change", () => {
   test("cancel_change drops it, changes nothing, and frees the call", async () => {
     const ctx = await aaravCtx();
-    ok(await stageCancel(ctx));
+    expectToolOk(await stageCancel(ctx));
 
-    const dropped = okPosition<{ dropped: string | null; message: string }>(
+    const dropped = expectDialogOk<{ dropped: string | null; message: string }>(
       await cancelChange.execute({}, ctx),
     );
     expect(dropped.state).toBe("serving.helping");
@@ -144,12 +144,12 @@ describe("cancelling a staged change", () => {
 
   test("a corrected change can be staged straight after", async () => {
     const ctx = await aaravCtx();
-    ok(await stageCancel(ctx));
-    ok(await cancelChange.execute({}, ctx));
+    expectToolOk(await stageCancel(ctx));
+    expectToolOk(await cancelChange.execute({}, ctx));
 
     // The caller changed their mind about which order — the very thing
     // `cancel_change` exists for.
-    const restaged = ok<StagedResult>(
+    const restaged = expectToolOk<StagedResult>(
       await returnDeliveredOrderItems.execute(
         {
           order_id: "#W4316152",
@@ -166,9 +166,9 @@ describe("cancelling a staged change", () => {
 describe("what stays legal while a change waits", () => {
   test("a read is still answerable — 'what was the total again?'", async () => {
     const ctx = await aaravCtx();
-    ok(await stageCancel(ctx));
+    expectToolOk(await stageCancel(ctx));
     // `when: "serving"` matches both children, which is what makes this work.
-    const read = okPosition<{ order_id: string }>(
+    const read = expectDialogOk<{ order_id: string }>(
       await getOrderDetails.execute({ order_id: "#W9300146" }, ctx),
     );
     expect(read.result.order_id).toBe("#W9300146");
@@ -178,9 +178,9 @@ describe("what stays legal while a change waits", () => {
 
   test("a caller can still ask for a human, and everything refuses afterwards", async () => {
     const ctx = await aaravCtx();
-    ok(await stageCancel(ctx));
+    expectToolOk(await stageCancel(ctx));
 
-    const transferred = okPosition(
+    const transferred = expectDialogOk(
       await transferToHumanAgents.execute({ summary: "wants a human" }, ctx),
     );
     // `TRANSFERRED` is declared on the `serving` PARENT, which is what lets it

@@ -26,7 +26,7 @@
  * only a step body crosses; the capability owning the decision is what retires
  * them.
  *
- * The seven `*Classified` callers are the SDK's own step calls with exactly that
+ * The seven `*OrFail` callers are the SDK's own step calls with exactly that
  * `.catch` already attached — `stepGenerate`, `stepGenerateJson`, the four
  * transcription calls, and `sendToChannel`. They are on the contract rather
  * than left as a recipe for
@@ -48,14 +48,14 @@ export {
   FatalError,
   RetryableError,
   type RetryableErrorOptions,
-  sendToChannelClassified,
-  stepFetchOk,
-  stepGenerateClassified,
-  stepGenerateJsonClassified,
-  stepTranscribePollClassified,
-  stepTranscribeSubmitClassified,
-  stepTranscribeSyncClassified,
-  stepTranscribeUploadClassified,
+  sendToChannelOrFail,
+  stepFetchOrFail,
+  stepGenerateJsonOrFail,
+  stepGenerateOrFail,
+  stepTranscribePollOrFail,
+  stepTranscribeSubmitOrFail,
+  stepTranscribeSyncOrFail,
+  stepTranscribeUploadOrFail,
   throwFatalStepError,
   throwFfmpegStepError,
   throwStepError,

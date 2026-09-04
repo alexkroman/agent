@@ -103,13 +103,13 @@ export {
 // own — one that paces real PCM, or scripts a provider failure — is written the
 // same way rather than against a private hook.
 export {
-  createFakeSttOpener,
-  createFakeTtsOpener,
-  FAKE_SPEECH_API_KEY_ENV,
-  type FakeSpeech,
-  type FakeSttSession,
-  type FakeTtsSession,
-  installFakeSpeech,
+  createStubSttOpener,
+  createStubTtsOpener,
+  STUB_SPEECH_API_KEY_ENV,
+  type StubSpeechProviders,
+  type StubSttSession,
+  type StubTtsSession,
+  installStubSpeechProviders,
 } from "./eval/fake-speech.ts";
 export {
   type EvalCredentials,

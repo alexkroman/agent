@@ -257,7 +257,7 @@ The declaration crossing a package boundary is what makes the rule hold now that
 the target is published.
 
 **`openEvalSession` releases the fake stages when its own setup throws.**
-`installFakeSpeech()` registers a PROCESS-GLOBAL kind pair and the only thing
+`installStubSpeechProviders()` registers a PROCESS-GLOBAL kind pair and the only thing
 that unregisters it is the handle the function returns, so a runtime that would
 not start, or a greeting that timed out, left the pair registered for the
 worker's life with nobody holding a release. `runEval` catches the throw and runs

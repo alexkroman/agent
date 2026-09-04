@@ -37,7 +37,10 @@ import {
   schemaInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
-import { mockWorkflows, installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
+import {
+  installStubWorkflows,
+  installStubGateway as stubGateway,
+} from "@alexkroman1/aai/testing/vitest";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
@@ -89,7 +92,7 @@ const run = toolRunner(agentDef);
  *
  * Returned WITHOUT a cast, which is the property worth keeping: a cast would
  * also stop reporting the day `WorkflowClient` grows a method, and this stub is
- * how the template's tools reach the client at all. `mockWorkflows`
+ * how the template's tools reach the client at all. `installStubWorkflows`
  * (`@alexkroman1/aai/testing/vitest`) is what keeps that affordable — a `vi.fn`
  * per method over one `runs` list, filling in what this desk does not drive, so
  * the day the client does grow a method only the tests using it change.
@@ -101,7 +104,7 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
   // Name only: `WorkflowSummary.description` is optional, so passing this
   // desk's through would mean handing `description: undefined` to a field that
   // does not accept it. Nothing here reads the description anyway.
-  return mockWorkflows({ runs, names: ["research"] });
+  return installStubWorkflows({ runs, names: ["research"] });
 }
 
 describe("the agent declares its workflow", () => {

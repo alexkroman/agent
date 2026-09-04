@@ -13,7 +13,7 @@
  */
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import type { UploadParallel } from "@alexkroman1/aai/workflow-api";
+import type { UploadParallelOption } from "@alexkroman1/aai/workflow-api";
 import { forgetUploadId, recallUploadId, rememberUploadId } from "./_upload-recall.ts";
 import {
   createUploadGate,
@@ -147,7 +147,7 @@ export async function uploadFiles(
   api: WorkflowApi,
   input: unknown,
   report: (status: UploadStatus) => void,
-  parallel: UploadParallel | undefined,
+  parallel: UploadParallelOption | undefined,
   session: UploadSession,
 ): Promise<unknown> {
   if (!isRecord(input)) return input;

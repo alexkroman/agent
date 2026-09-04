@@ -20,7 +20,7 @@
  * - `transcription-workflow` owns the FAN-OUT — why the sync transcription
  *   endpoint's 120-second cap forces one, and how a run survives dying on segment
  *   27 of 60.
- * - `spoken-summary` owns the audio ROUND TRIP — `stepSpeak`, `writeUpload`, and
+ * - `spoken-summary` owns the audio ROUND TRIP — `stepSpeak`, `stepWriteUpload`, and
  *   why a page needs `api.download` rather than a URL.
  *
  * **What this template adds is a decoder**, and everything downstream changes
@@ -153,7 +153,7 @@ export const audit: WorkflowDef<typeof auditInput, CallAudit> = workflow({
   input: auditInput,
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
   // picker for this property, `useWorkflowSubmit` stores the chosen file, and the
-  // ingest step reads it back with `readUpload`.
+  // ingest step reads it back with `stepReadUpload`.
   uploads: ["recording"],
   run: auditFlow,
 });

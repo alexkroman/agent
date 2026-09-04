@@ -18,7 +18,7 @@
  * - **`stepSpeak`** synthesizes from inside a step. The session TTS surface
  *   cannot: a `TtsSession` is an event stream wired into a live pipeline's
  *   playback, and a step has no turn to be part of and has to return a VALUE.
- * - **`writeUpload`** puts that value somewhere. A run's OUTPUT is read back as
+ * - **`stepWriteUpload`** puts that value somewhere. A run's OUTPUT is read back as
  *   JSON, so audio cannot travel in one — the same rule that keeps a
  *   recording's bytes out of a run's INPUT, arriving at the other end of the
  *   run. The bytes go to the store, the output carries the id, and the page
@@ -50,8 +50,8 @@
  */
 
 import type { WorkflowCtx } from "@alexkroman1/aai";
-import { report, stepSpeak, TRANSCRIBE_API, writeUpload } from "@alexkroman1/aai/step";
-import { stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import { stepReport, stepSpeak, stepWriteUpload, TRANSCRIBE_API } from "@alexkroman1/aai/step";
+import { stepGenerateJsonOrFail } from "@alexkroman1/aai/step-errors";
 import { countWords, omitUndefined } from "@alexkroman1/aai/utils";
 // ERASED at build time, so the body can name the schema's own output type without
 // a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
@@ -187,8 +187,8 @@ async function transcribe(recording: string, ctx: WorkflowCtx): Promise<Transcri
 export async function summarize(
   text: string,
 ): Promise<{ headline: string; points: string[]; spoken: string }> {
-  await report("Summarizing the transcript.");
-  const reply = await stepGenerateJsonClassified(
+  await stepReport("Summarizing the transcript.");
+  const reply = await stepGenerateJsonOrFail(
     "Summarize this transcript of a recording.\n\n" +
       "Answer with JSON only, in this shape:\n" +
       `{"headline": "...", "points": ["..."], "spoken": "..."}\n\n` +
@@ -204,7 +204,7 @@ export async function summarize(
       system: "You summarize recordings. You answer with JSON and nothing else.",
       schema: SummaryReply,
     },
-    // The `Classified` caller is `stepGenerateJson` plus `throwStepError`, which
+    // The `OrFail` caller is `stepGenerateJson` plus `throwStepError`, which
     // reads the gateway's own status: a 429 is worth another attempt and a 400
     // is not, and that is what tells the DevKit which.
   );
@@ -226,7 +226,7 @@ export async function speak(
   voice?: string,
 ): Promise<{ audio: string; durationMs: number }> {
   const spoken = await stepSpeak(script, omitUndefined({ voice }));
-  const stored = await writeUpload(spoken.audio, {
+  const stored = await stepWriteUpload(spoken.audio, {
     // Named, because this is what a person sees on the download link rather
     // than an opaque id — and typed, because the byte route serves the type it
     // was given and a browser will not play a file it was handed as bytes.
@@ -234,7 +234,7 @@ export async function speak(
     type: "audio/wav",
   });
 
-  await report(
+  await stepReport(
     `Recorded a ${Math.round(spoken.durationMs / 1000)}s summary in ${spoken.voice}'s voice.`,
   );
   return { audio: stored.id, durationMs: spoken.durationMs };

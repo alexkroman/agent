@@ -6,7 +6,7 @@ import type {
   ToolInputSchema,
 } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, ok } from "@alexkroman1/aai/testing";
+import { createToolContext, expectToolOk } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { callFlow, dispatchSlot } from "./shared.ts";
 import incidentAddNote from "./tools/incident_add_note.ts";
@@ -32,7 +32,7 @@ const makeCtx = (): ToolContext => createToolContext();
  * shapes the assertions below used to restate, which were a second copy of each
  * tool's return type that could not go stale loudly.
  *
- * The unwrap itself is `ok` from `@alexkroman1/aai/testing`; the hand-rolled
+ * The unwrap itself is `expectToolOk` from `@alexkroman1/aai/testing`; the hand-rolled
  * copy that used to sit here was byte-identical to three other templates'.
  */
 type Result<T extends ToolDef<ToolInputSchema>> = Extract<
@@ -78,7 +78,7 @@ describe("dispatch-center template", () => {
     const ctx = makeCtx();
     const incidentId = await createIncidentFor(ctx, "cardiac arrest, patient not breathing");
 
-    const result = ok<Result<typeof resourcesDispatch>>(
+    const result = expectToolOk<Result<typeof resourcesDispatch>>(
       await resourcesDispatch.execute({ incidentId, callsigns: ["auto"] }, ctx),
     );
 
@@ -205,13 +205,13 @@ describe("the call flow", () => {
     expect(created.state).toBe("working.triaging");
     expect(created.instruction).toMatch(/incident_triage/);
 
-    const triaged = ok<Result<typeof incidentTriage>>(
+    const triaged = expectToolOk<Result<typeof incidentTriage>>(
       await incidentTriage.execute({ incidentId: created.incidentId, severity: "critical" }, ctx),
     );
     expect(triaged.triageScore).toBeGreaterThan(0);
     expect(at(ctx).state).toBe("working.dispatching");
 
-    ok(
+    expectToolOk(
       await resourcesDispatch.execute({ incidentId: created.incidentId, autoDispatch: true }, ctx),
     );
     expect(at(ctx).state).toBe("working.monitoring");
@@ -226,7 +226,7 @@ describe("the call flow", () => {
 
     // Every requested callsign is unknown, so no unit moved — and the call has
     // not moved on either.
-    const result = ok<Result<typeof resourcesDispatch>>(
+    const result = expectToolOk<Result<typeof resourcesDispatch>>(
       await resourcesDispatch.execute({ incidentId, callsigns: ["Ghost-1"] }, ctx),
     );
     expect(result.dispatched).toHaveLength(0);
@@ -245,7 +245,7 @@ describe("the call flow", () => {
 
     // The first incident is still workable — the position tracks the call in
     // hand, and the tools are addressed by id.
-    ok(await incidentAddNote.execute({ incidentId: first, note: "crews on scene" }, ctx));
+    expectToolOk(await incidentAddNote.execute({ incidentId: first, note: "crews on scene" }, ctx));
   });
 
   test("a failed tool does not advance the flow", async () => {

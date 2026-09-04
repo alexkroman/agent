@@ -4,7 +4,7 @@
  * render the same run.
  *
  * They are here because both halves of a template need them and only one of
- * those halves is a Node process. A `workflows/*.ts` step calls `report()` with
+ * those halves is a Node process. A `workflows/*.ts` step calls `stepReport()` with
  * a sentence a person reads; the `client.tsx` rendering that run's output
  * writes the same sentence again. Every template that reports progress had
  * therefore grown a private copy of each — four of `mb()`, five of

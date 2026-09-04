@@ -31,7 +31,7 @@
  * - **HTTP** — {@link stepFetch} (HTTP/1.1-pinned; `fetch` speaks h2 and a
  *   fan-out on one connection turns a rate limit into an unreadable stream
  *   reset) and {@link multipartBody}.
- * - **Narration** — {@link report} / {@link emit}, what a page's progress
+ * - **Narration** — {@link stepReport} / {@link stepEmit}, what a page's progress
  *   stream renders.
  * - **Being woken** — {@link stepWebhookUrl}, the public callback URL a step
  *   hands a third party so a delivery resolves the body's `ctx.waitFor` instead
@@ -40,8 +40,8 @@
  * - **The model** — {@link stepGenerate} (one `fetch` to the LLM gateway on the
  *   agent's own key, because the AI SDK would be megabytes in a ~7 KB artifact)
  *   and {@link stepGenerateJson} / {@link stripJsonFence}.
- * - **Audio, both directions** — {@link writeUpload} / {@link readUpload} /
- *   {@link uploadInfo}, {@link stepSpeak} and {@link encodeWav} out, and
+ * - **Audio, both directions** — {@link stepWriteUpload} / {@link stepReadUpload} /
+ *   {@link stepUploadInfo}, {@link stepSpeak} and {@link encodeWav} out, and
  *   {@link stepTranscribeUpload} / {@link stepTranscribeSubmit} /
  *   {@link stepTranscribePoll} for the async job API or
  *   {@link stepTranscribeSync} for the one-request one, back in.
@@ -97,7 +97,7 @@ export {
   stepGenerateJson,
   stripJsonFence,
 } from "./step-generate-json.ts";
-export { emit, report } from "./step-report.ts";
+export { stepEmit, stepReport } from "./step-report.ts";
 export { isTransientStatus, retryAfter } from "./step-retry.ts";
 export {
   type SpeakOptions,
@@ -127,16 +127,16 @@ export {
 } from "./step-transcribe-sync.ts";
 export {
   type ReadUploadOptions,
-  readUpload,
+  stepReadUpload,
+  stepUploadInfo,
   type UploadInfo,
   // `UploadInfo.ranges` mentions this, and a type a public signature MENTIONS but
   // does not export is a docs-build warning — which `treatWarningsAsErrors` makes a
   // failed build. `runtime-barrel.ts` carries the same note for the same reason.
   type UploadRange,
   type UploadSlice,
-  uploadInfo,
 } from "./step-uploads.ts";
-export { requireCompleteUpload, UploadIncompleteError } from "./step-uploads-complete.ts";
-export { type WriteUploadOptions, writeUpload } from "./step-uploads-write.ts";
+export { stepRequireCompleteUpload, UploadIncompleteError } from "./step-uploads-complete.ts";
+export { stepWriteUpload, type WriteUploadOptions } from "./step-uploads-write.ts";
 export { stepWebhookUrl } from "./step-webhook.ts";
 export { encodeWav, type PcmFormat, pcmDurationMs, WAV_HEADER_BYTES, wavHeader } from "./wav.ts";

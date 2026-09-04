@@ -46,7 +46,6 @@
  */
 
 export {
-  emit,
   encodeWav,
   isTransientStatus,
   type MultipartBody,
@@ -55,7 +54,6 @@ export {
   multipartBody,
   type PcmFormat,
   pcmDurationMs,
-  report,
   requireStepEnv,
   retryAfter,
   type SpeakOptions,
@@ -68,11 +66,13 @@ export {
   type StepGenerateOptions,
   type StepInfo,
   StepTransportError,
+  stepEmit,
   stepEnv,
   stepFetch,
   stepGenerate,
   stepGenerateJson,
   stepInfo,
+  stepReport,
   stepSpeak,
   stepWebhookUrl,
   stripJsonFence,

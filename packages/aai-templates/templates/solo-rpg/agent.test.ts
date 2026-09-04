@@ -1,6 +1,6 @@
 import type { ToolContext, ToolDef, ToolInputSchema } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, ok } from "@alexkroman1/aai/testing";
+import { createToolContext, expectToolOk } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import {
   applyConsequences,
@@ -288,7 +288,7 @@ describe("burn_momentum", () => {
     const ctx = makeCtx();
     seedRolledState(8, ctx); // 8 beats both dice (3, 5)
 
-    const result = ok<Record<string, unknown>>(await callNoArgs(burnMomentum, ctx));
+    const result = expectToolOk<Record<string, unknown>>(await callNoArgs(burnMomentum, ctx));
     expect(result.burned).toBe(true);
     expect(result.newResultCode).toBe("STRONG_HIT");
 
@@ -302,7 +302,7 @@ describe("burn_momentum", () => {
   test("momentum beating only one die upgrades a MISS to WEAK_HIT", async () => {
     const ctx = makeCtx();
     seedRolledState(4, ctx); // beats 3, not 5
-    const result = ok<{ newResultCode: string }>(await callNoArgs(burnMomentum, ctx));
+    const result = expectToolOk<{ newResultCode: string }>(await callNoArgs(burnMomentum, ctx));
     expect(result.newResultCode).toBe("WEAK_HIT");
   });
 
@@ -528,7 +528,7 @@ describe("update_state", () => {
     state.clocks[0]!.filled = 3; // 3 of 4
     seedPlaying(ctx, state);
 
-    const result = ok<{ clockEvents: { clock: string; trigger: string }[] }>(
+    const result = expectToolOk<{ clockEvents: { clock: string; trigger: string }[] }>(
       await updateState.execute({ advanceClockName: "Doom" }, ctx),
     );
     expect(result.clockEvents).toEqual([{ clock: "Doom", trigger: "The doom arrives" }]);
@@ -542,7 +542,7 @@ describe("update_state", () => {
     }
     seedPlaying(ctx, state);
 
-    const result = ok<{ warnings?: string[] }>(
+    const result = expectToolOk<{ warnings?: string[] }>(
       await updateState.execute({ addNpcName: "One Too Many" }, ctx),
     );
     expect(result.warnings?.[0]).toMatch(/NPC limit/);
@@ -609,7 +609,7 @@ describe("the story flow", () => {
     expect(created.state).toBe("playing.awaitingRoll");
     expect(created.instruction).toMatch(/action_roll/);
 
-    ok(
+    expectToolOk(
       await actionRoll.execute(
         { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "swing" },
         ctx,
@@ -618,7 +618,7 @@ describe("the story flow", () => {
     expect(storyFlow.position(ctx).state).toBe("playing.rollResolved");
 
     // Moving the scene on SPENDS the roll: the burn window is closed.
-    ok(await updateState.execute({ location: "The Bridge" }, ctx));
+    expectToolOk(await updateState.execute({ location: "The Bridge" }, ctx));
     expect(storyFlow.position(ctx).state).toBe("playing.awaitingRoll");
     expect(isToolFailure(await callNoArgs(burnMomentum, ctx))).toBe(true);
   });
@@ -644,7 +644,7 @@ describe("the story flow", () => {
     // act on it, so a player could keep rolling after both tracks emptied. The
     // WRITE is `gameSlot`'s `after` hook; this tool no longer calls it, which
     // is the point of moving it there.
-    ok(await updateState.execute({ health: 0, spirit: 0 }, ctx));
+    expectToolOk(await updateState.execute({ health: 0, spirit: 0 }, ctx));
     const at = storyFlow.position(ctx);
     expect(at.state).toBe("gameOver");
     expect(at.done).toBe(true);

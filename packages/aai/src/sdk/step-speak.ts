@@ -43,7 +43,7 @@
  * Unlike `stepFetch` there is NO global fallback, because there is no global
  * synthesizer to fall back to. An unpublished slot therefore fails with a
  * sentence naming both causes — a process serving no agent, and a spec calling
- * the step directly — the way `readUpload` does. A spec supplies its own with
+ * the step directly — the way `stepReadUpload` does. A spec supplies its own with
  * `stubSpeech` from `@alexkroman1/aai/testing`.
  *
  * ## The WAV framing is HERE, and the PCM is the provider's
@@ -207,11 +207,11 @@ export const SPEECH_UNAVAILABLE_MESSAGE =
  * it returns, so an id is replayed on a resume and bytes are not — splitting
  * this in two would carry the audio across the queue on every resume.
  * ```ts
- * import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
+ * import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string): Promise<string> {
  *   const spoken = await stepSpeak(summary, { voice: "jane" });
- *   const stored = await writeUpload(spoken.audio, {
+ *   const stored = await stepWriteUpload(spoken.audio, {
  *     name: "summary.wav",
  *     type: "audio/wav",
  *   });

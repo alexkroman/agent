@@ -102,7 +102,7 @@ import type {
  *
  * @public
  */
-export type UploadPartsSettings = {
+export type UploadPartsOptions = {
   /**
    * Bytes per part. Defaults to 8 MiB (`UPLOAD_PART_BYTES`).
    *
@@ -121,7 +121,7 @@ export type UploadPartsSettings = {
  *
  * @public
  */
-export type UploadParallel = boolean | UploadPartsSettings;
+export type UploadParallelOption = boolean | UploadPartsOptions;
 
 /**
  * The settings this upload runs with, or nothing when the caller opted OUT.
@@ -138,8 +138,8 @@ export type UploadParallel = boolean | UploadPartsSettings;
  * would not have helped.
  */
 export function partsSettings(
-  parallel: UploadParallel | undefined,
-): UploadPartsSettings | undefined {
+  parallel: UploadParallelOption | undefined,
+): UploadPartsOptions | undefined {
   if (parallel === false) return undefined;
   return parallel === undefined || parallel === true ? {} : parallel;
 }
@@ -165,7 +165,7 @@ export type UploadPartsRequest = {
   /** The caller's upload options — signal and progress. */
   options: UploadOptions | undefined;
   /** What the caller asked for, already normalized. */
-  settings: UploadPartsSettings;
+  settings: UploadPartsOptions;
   /** The windows to send, as {@link partsPlan} worked them out. */
   plan: UploadPartsPlan;
 };

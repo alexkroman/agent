@@ -442,7 +442,7 @@ export function parseSilences(log: string, durationSec: number): Silence[] {
  * Exact rather than rounded, and that distinction cost a bug: `pcmDurationMs`
  * answers whole MILLISECONDS, so a 640,500-byte file reports 20,016 ms where it
  * really holds 20,015.625. Planning from the rounded number put the last segment's
- * `endByte` at 640,512 — twelve bytes past the end of the file. `readUpload` clamps
+ * `endByte` at 640,512 — twelve bytes past the end of the file. `stepReadUpload` clamps
  * a window to the stored size, so nothing threw; the plan was simply describing
  * audio that does not exist. Verified against a real ffmpeg, which is the only
  * place a 12-byte error was ever going to show up.
@@ -460,7 +460,7 @@ export function durationSeconds(totalBytes: number): number {
  * Greedy from the front: a segment grows until the next cut candidate would take
  * it past {@link MAX_SEGMENT_SECONDS}, so it ends at the LAST pause that still
  * fits. Segments are therefore contiguous and non-overlapping — together they are
- * the whole recording, each one addressable as a single `readUpload` window.
+ * the whole recording, each one addressable as a single `stepReadUpload` window.
  *
  * Three properties, each of which a simpler version gets wrong:
  *

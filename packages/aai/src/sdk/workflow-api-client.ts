@@ -98,8 +98,8 @@ export type { WorkflowApi, WorkflowApiClientOptions } from "./workflow-api-types
 export type {
   UploadBody,
   UploadOptions,
-  UploadParallel,
-  UploadPartsSettings,
+  UploadParallelOption,
+  UploadPartsOptions,
   UploadProgress,
   UploadRef,
 } from "./workflow-upload-client.ts";

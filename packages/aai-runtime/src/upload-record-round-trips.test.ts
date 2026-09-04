@@ -16,13 +16,13 @@
  * | --- | --- | --- |
  * | `beginParts` | 1 | the claim itself |
  * | `recordParts` (one claim) | **2** | a read the refusals need, then the write |
- * | `uploadInfo` (one poll) | 1 | the poll IS a read |
- * | `readUpload` (one window) | **1**, was 2 | see below |
+ * | `stepUploadInfo` (one poll) | 1 | the poll IS a read |
+ * | `stepReadUpload` (one window) | **1**, was 2 | see below |
  * | `GET /uploads/:id` (N chunks) | **1**, was N+1 | see below |
  *
  * The two that moved were the same defect: {@link UploadReader.info} and
  * {@link UploadReader.read} each resolve the record for themselves, and every
- * reader needs both — so a `readUpload` looked the row up twice and the byte route
+ * reader needs both — so a `stepReadUpload` looked the row up twice and the byte route
  * looked it up once per `UPLOAD_CHUNK_BYTES` of the answer. `UploadReader.open`
  * hands back the record AND a reader bound to it, which is one look-up per logical
  * read and pins the window map for its duration.
@@ -38,7 +38,7 @@
  */
 
 import { publishUploadReader, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
-import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
+import { stepReadUpload, stepUploadInfo } from "@alexkroman1/aai/step";
 import { afterEach, expect, test } from "vitest";
 import { partKey } from "./_upload-blobs.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
@@ -134,14 +134,14 @@ test("one parts upload costs a countable number of record round trips", async ()
   }
 
   const poll = calls();
-  await uploadInfo(id);
+  await stepUploadInfo(id);
   expect(calls() - poll).toBe(1);
 
-  // ONE, where it used to be two: `readUpload` resolved the record for its clamp and
+  // ONE, where it used to be two: `stepReadUpload` resolved the record for its clamp and
   // then again for its bytes. The window spans two objects, so this also pins that
   // the count is per READ rather than per object touched.
   const read = calls();
-  const slice = await readUpload(id, {
+  const slice = await stepReadUpload(id, {
     start: UPLOAD_PART_BYTES - 1,
     end: UPLOAD_PART_BYTES * 2,
   });
@@ -165,7 +165,7 @@ test("a reader with no `open` still resolves through info and read", async () =>
       return Promise.resolve(new Uint8Array([1, 2, 3, 4]).subarray(start, end));
     },
   });
-  const slice = await readUpload("upl_fake", { start: 1, end: 3 });
+  const slice = await stepReadUpload("upl_fake", { start: 1, end: 3 });
   expect([...slice.bytes]).toEqual([2, 3]);
   expect(lookups).toBe(2);
 });

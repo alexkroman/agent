@@ -340,7 +340,7 @@ export function CheckboxField({
  * travel in it. With `upload` the field contributes the `File` itself,
  * `useWorkflowSubmit` stores it through `POST /workflows/uploads` before
  * starting the run, and the input carries the upload id — which a step reads
- * windows of with `readUpload`. Declaring the property in the workflow's
+ * windows of with `stepReadUpload`. Declaring the property in the workflow's
  * `uploads` list makes `<WorkflowFields>` render exactly this, so a declared
  * form needs no file markup at all.
  *

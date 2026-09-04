@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { stepFetch } from "./step-fetch.ts";
-import { report } from "./step-report.ts";
+import { stepReport } from "./step-report.ts";
 import { stepSpeak } from "./step-speak.ts";
 import { stepTranscribePoll } from "./step-transcribe.ts";
-import { uploadInfo } from "./step-uploads.ts";
+import { stepUploadInfo } from "./step-uploads.ts";
 import {
   installStubGateway,
   installStubReporter,
@@ -27,12 +27,12 @@ import {
 describe("installStubUploads", () => {
   test("publishes the store", async () => {
     const uploads = installStubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
-    await expect(uploadInfo("upl_1")).resolves.toMatchObject({ size: 3 });
+    await expect(stepUploadInfo("upl_1")).resolves.toMatchObject({ size: 3 });
     expect(uploads.writes).toEqual([]);
   });
 
   test("and the store is gone by the next test", async () => {
-    await expect(uploadInfo("upl_1")).rejects.toThrow();
+    await expect(stepUploadInfo("upl_1")).rejects.toThrow();
   });
 });
 
@@ -55,7 +55,7 @@ describe("installStubStepFetch", () => {
 describe("installStubReporter", () => {
   test("captures what a step narrates", async () => {
     const reported = installStubReporter();
-    await report("halfway");
+    await stepReport("halfway");
     expect(reported.lines).toEqual(["halfway"]);
   });
 
@@ -64,7 +64,7 @@ describe("installStubReporter", () => {
     // and the proof that `onTestFinished` really ran the previous test's
     // `restore`, with no `afterEach` anywhere in this file.
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await report("nobody is listening");
+    await stepReport("nobody is listening");
     expect(spy).toHaveBeenCalled();
   });
 });

@@ -228,7 +228,7 @@ describe("the steps", () => {
  * to take the same branch on every walk.
  *
  * The model is the whole world here (`writeDraft`, `critiqueDraft` and
- * `reviseDraft` are all `stepGenerate*Classified`), so `stubGateway`'s scripted
+ * `reviseDraft` are all `stepGenerate*OrFail`), so `stubGateway`'s scripted
  * replies ARE the run, and its call log is what proves a replay did not pay for
  * a round twice. Scripted in body order, with the last reply repeating.
  */

@@ -516,7 +516,7 @@ describe("planning where to cut", () => {
   test("the last segment never addresses a byte the file does not have", () => {
     // The twelve-byte bug this API shape exists to prevent: planning from a
     // duration rounded to whole milliseconds put `endByte` at 640,512 for a
-    // 640,500-byte file. `readUpload` clamps a window to the stored size, so
+    // 640,500-byte file. `stepReadUpload` clamps a window to the stored size, so
     // nothing threw — the plan was simply describing audio that does not exist.
     // Found by running the real argv against a real ffmpeg, which is the only
     // place a twelve-byte error was ever going to surface.

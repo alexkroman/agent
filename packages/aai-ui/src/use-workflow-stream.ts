@@ -26,7 +26,7 @@
  * earlier version of this hook took a `cut` callback and uploaded N parts into a
  * "group" that a separate call had to seal; it worked, and every piece of it was
  * something the caller had to get right. The whole of that is replaced by the store
- * publishing `size` as bytes land — which `readUpload` already clamped to — so the
+ * publishing `size` as bytes land — which `stepReadUpload` already clamped to — so the
  * run does exactly what it does over a finished file and simply waits for windows to
  * become present.
  *
@@ -82,7 +82,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
   AnyWorkflowDef,
-  UploadParallel,
+  UploadParallelOption,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useState } from "react";
@@ -316,7 +316,7 @@ async function streamFile(opts: {
   gate: UploadGate;
   id: string;
   file: File;
-  parallel: UploadParallel | undefined;
+  parallel: UploadParallelOption | undefined;
   report: (status: UploadStatus) => void;
 }): Promise<void> {
   const { client, gate, id, file, parallel, report } = opts;

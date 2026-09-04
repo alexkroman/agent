@@ -128,7 +128,7 @@ export function explainChannelFailure(channel: Channel, detail: string): string 
  *
  * The `ChannelDeliveryError` it throws is what `toStepError` reads, so a step
  * body hands it straight on and the engine gives up or waits the right amount
- * — see {@link ChannelDeliveryError}, or reach for `sendToChannelClassified`
+ * — see {@link ChannelDeliveryError}, or reach for `sendToChannelOrFail`
  * (`@alexkroman1/aai/step-errors`) to skip the `.catch`.
  *
  * @returns whatever the platform answered with, or `"ok"` when it sent no body.

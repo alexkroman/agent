@@ -118,7 +118,7 @@ function selectJournal(
    *
    * Carried rather than re-derived from `journalKind`, which is a sentence for a
    * human. The one reader is the progress-store warning in
-   * {@link buildWorkflowClient}: a durable journal beside an in-memory `report()`
+   * {@link buildWorkflowClient}: a durable journal beside an in-memory `stepReport()`
    * channel is the asymmetry worth saying out loud.
    */
   journalDurable: boolean;
@@ -247,7 +247,7 @@ function selectKeyStore(db: Db | undefined): {
  *
  * `createMemoryStreams` is the only {@link StreamStore} in the repo: the durable
  * journal has three backends and the stream store has one, so a deployed guest
- * gets a run that outlives its sandbox and a `report()` channel that does not.
+ * gets a run that outlives its sandbox and a `stepReport()` channel that does not.
  * What that costs is not cosmetic — the same store answers `WorkflowClient.
  * lastLine` and backs the progress channel a page polls, so a run resumed in a
  * fresh sandbox narrates into an empty log and `lastLine` answers `undefined` for
@@ -315,7 +315,7 @@ export function buildWorkflowClient(
     // assumed, because a durability tradeoff absent from the log reads as a bug —
     // and because there is now a case where the answer is good.
     runStore: journalKind,
-    // What `report()` writes into, which is a THIRD question from the two above
+    // What `stepReport()` writes into, which is a THIRD question from the two above
     // and the only one whose answer is always the same — see
     // `PROGRESS_STORE_KIND`. In the line rather than inferred from the run store,
     // because the two now legitimately disagree on every deployed guest.

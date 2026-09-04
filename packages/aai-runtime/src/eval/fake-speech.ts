@@ -45,10 +45,10 @@ import { createNanoEvents } from "nanoevents";
 import { registerSttKind, registerTtsKind } from "../providers/resolve.ts";
 
 /** The env var the fake stages resolve their (unused) credential from. */
-export const FAKE_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
 
 /** One open fake STT stream, plus the two edges a case drives. */
-export type FakeSttSession = SttSession & {
+export type StubSttSession = SttSession & {
   /** Emit an interim transcript. */
   partial(text: string): void;
   /** Emit the committed turn — the cue the pipeline runs the LLM on. */
@@ -56,7 +56,7 @@ export type FakeSttSession = SttSession & {
 };
 
 /** One open fake TTS stream, plus what it captured. */
-export type FakeTtsSession = TtsSession & {
+export type StubTtsSession = TtsSession & {
   /** Every text chunk the pipeline handed to TTS, in order. */
   readonly spoken: readonly string[];
 };
@@ -68,25 +68,25 @@ export type FakeTtsSession = TtsSession & {
  * is process-global and a session may outlive the case that opened it), so two
  * concurrent eval sessions cannot serve each other's transcripts.
  */
-export type FakeSpeech = {
+export type StubSpeechProviders = {
   readonly stt: SttProvider;
   readonly tts: TtsProvider;
   /** Merge into the runtime env: the fake stages resolve a credential too. */
   readonly env: Record<string, string>;
   /** The most recently opened STT stream, once the session has started. */
-  sttSession(): FakeSttSession | undefined;
+  sttSession(): StubSttSession | undefined;
   /** The most recently opened TTS stream, once the session has started. */
-  ttsSession(): FakeTtsSession | undefined;
+  ttsSession(): StubTtsSession | undefined;
   release(): void;
 };
 
 let installs = 0;
 
 /** One fake STT stage, and the last stream it opened. */
-export function createFakeSttOpener(name: string): SttOpener & {
-  last(): FakeSttSession | undefined;
+export function createStubSttOpener(name: string): SttOpener & {
+  last(): StubSttSession | undefined;
 } {
-  let last: FakeSttSession | undefined;
+  let last: StubSttSession | undefined;
   return {
     name,
     last: () => last,
@@ -111,10 +111,10 @@ export function createFakeSttOpener(name: string): SttOpener & {
 }
 
 /** One fake TTS stage, and the last stream it opened. */
-export function createFakeTtsOpener(name: string): TtsOpener & {
-  last(): FakeTtsSession | undefined;
+export function createStubTtsOpener(name: string): TtsOpener & {
+  last(): StubTtsSession | undefined;
 } {
-  let last: FakeTtsSession | undefined;
+  let last: StubTtsSession | undefined;
   return {
     name,
     last: () => last,
@@ -155,25 +155,25 @@ export function createFakeTtsOpener(name: string): TtsOpener & {
 }
 
 /** Register both fake stages. Call `release()` when the case is done. */
-export function installFakeSpeech(): FakeSpeech {
+export function installStubSpeechProviders(): StubSpeechProviders {
   installs += 1;
   const sttKind = `aai-eval-stt-${installs}`;
   const ttsKind = `aai-eval-tts-${installs}`;
-  const stt = createFakeSttOpener(sttKind);
-  const tts = createFakeTtsOpener(ttsKind);
+  const stt = createStubSttOpener(sttKind);
+  const tts = createStubTtsOpener(ttsKind);
   const undoStt = registerSttKind(sttKind, {
-    envVar: FAKE_SPEECH_API_KEY_ENV,
+    envVar: STUB_SPEECH_API_KEY_ENV,
     open: () => stt,
   });
   const undoTts = registerTtsKind(ttsKind, {
-    envVar: FAKE_SPEECH_API_KEY_ENV,
+    envVar: STUB_SPEECH_API_KEY_ENV,
     open: () => tts,
   });
 
   return {
     stt: { kind: sttKind, options: {} },
     tts: { kind: ttsKind, options: {} },
-    env: { [FAKE_SPEECH_API_KEY_ENV]: "eval-fake-speech" },
+    env: { [STUB_SPEECH_API_KEY_ENV]: "eval-fake-speech" },
     sttSession: () => stt.last(),
     ttsSession: () => tts.last(),
     release() {

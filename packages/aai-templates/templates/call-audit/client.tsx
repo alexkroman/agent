@@ -174,7 +174,7 @@ export function App() {
           for `<WorkflowProgress>` to read. */}
       <UploadProgressBar upload={upload} onPause={pauseUpload} onResume={resumeUpload} />
 
-      {/* What the run itself says, from `report()` in the workflow's steps — which
+      {/* What the run itself says, from `stepReport()` in the workflow's steps — which
           for this template is the ffmpeg narration: what the file was, what it
           measured, how many pauses were found. */}
       <WorkflowProgress runId={run?.runId} api={api} />

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the published reporter — the half that turns one `report()` into a
+ * Specs for the published reporter — the half that turns one `stepReport()` into a
  * stream chunk AND a server-log line.
  *
  * The run is entered through `withRunContext`, the engine's own
@@ -56,7 +56,7 @@ function inRun<T>(fn: () => Promise<T> | T): Promise<T> {
   );
 }
 
-/** The default stream's chunks — `report()`'s own. */
+/** The default stream's chunks — `stepReport()`'s own. */
 const defaultStream = () => streams.get(DEFAULT_STREAM_NAMESPACE) ?? [];
 
 beforeEach(() => {
@@ -123,7 +123,7 @@ describe("a chunk emitted into a named stream", () => {
       ),
     );
     expect(streams.get("transcript")).toEqual([{ index: 3, text: "and then we shipped it" }]);
-    // The default stream is `report()`'s, and an object in it renders as
+    // The default stream is `stepReport()`'s, and an object in it renders as
     // `[object Object]` in the middle of a page's progress log.
     expect(streams.get(DEFAULT_STREAM_NAMESPACE)).toBeUndefined();
   });
@@ -160,7 +160,7 @@ describe("a chunk emitted into a named stream", () => {
   });
 
   test("a LINE still goes to the default stream, with its attempt suffix", async () => {
-    // The other half of the same reporter: `report()` passes no namespace, and
+    // The other half of the same reporter: `stepReport()` passes no namespace, and
     // an absent one IS the default stream — `streamNamespace` owns that
     // resolution, which is why `write` takes it unresolved.
     step = { name: "transcribeSegment", key: "s", attempt: 2, maxAttempts: 3 };

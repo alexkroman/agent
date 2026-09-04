@@ -1,9 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import { MAX_CLIENT_EVENT_NAME_LENGTH, MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "./constants.ts";
-import { emit, publishStepReporter, report } from "./step-report.ts";
-import { publishUploadReader, readUpload, uploadInfo } from "./step-uploads.ts";
-import { writeUpload } from "./step-uploads-write.ts";
+import { publishStepReporter, stepEmit, stepReport } from "./step-report.ts";
+import { publishUploadReader, stepReadUpload, stepUploadInfo } from "./step-uploads.ts";
+import { stepWriteUpload } from "./step-uploads-write.ts";
 import {
   createStubWorkflows,
   createToolContext,
@@ -248,12 +248,12 @@ describe("stubReporter", () => {
   test("separates the SENTENCES from the CHUNKS, the way the streams are", async () => {
     // The split is the helper's whole value: a spec asserting a partial result
     // never has to filter the narration out of it, and the test it applies is
-    // the same one `emit()`'s contract rests on — an absent namespace is the
-    // default stream, which is `report()`'s.
+    // the same one `stepEmit()`'s contract rests on — an absent namespace is the
+    // default stream, which is `stepReport()`'s.
     const reported = stubReporter();
-    await report("Transcribing 0:00–0:58.");
-    await emit("transcript", { index: 0, text: "hello" });
-    await report("Transcribed 0:00–0:58 in 4.2s.");
+    await stepReport("Transcribing 0:00–0:58.");
+    await stepEmit("transcript", { index: 0, text: "hello" });
+    await stepReport("Transcribed 0:00–0:58 in 4.2s.");
 
     expect(reported.lines).toEqual(["Transcribing 0:00–0:58.", "Transcribed 0:00–0:58 in 4.2s."]);
     expect(reported.emitted).toEqual([
@@ -263,9 +263,9 @@ describe("stubReporter", () => {
 
   test("keeps chunks from different streams apart, and in order", async () => {
     const reported = stubReporter();
-    await emit("transcript", "one");
-    await emit("costs", { usd: 0.02 });
-    await emit("transcript", "two");
+    await stepEmit("transcript", "one");
+    await stepEmit("costs", { usd: 0.02 });
+    await stepEmit("transcript", "two");
     expect(reported.emitted.map((one) => one.namespace)).toEqual([
       "transcript",
       "costs",
@@ -277,7 +277,7 @@ describe("stubReporter", () => {
     const reported = stubReporter();
     reported.restore();
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await report("after");
+    await stepReport("after");
     expect(reported.lines).toEqual([]);
     // Back to the console fallback, which is what an unpublished slot means.
     expect(spy).toHaveBeenCalled();
@@ -290,20 +290,20 @@ describe("stubUploads", () => {
   test("serves the files it was given to a step's reader", async () => {
     stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
 
-    await expect(uploadInfo("upl_1")).resolves.toMatchObject({ size: 3, complete: true });
-    expect([...(await readUpload("upl_1")).bytes]).toEqual([1, 2, 3]);
+    await expect(stepUploadInfo("upl_1")).resolves.toMatchObject({ size: 3, complete: true });
+    expect([...(await stepReadUpload("upl_1")).bytes]).toEqual([1, 2, 3]);
   });
 
   test("is READ-ONLY by default, so a step that writes cannot do so unnoticed", async () => {
     stubUploads({ upl_1: new Uint8Array([1]) });
 
-    await expect(writeUpload(new Uint8Array([9]))).rejects.toThrow("read-only");
+    await expect(stepWriteUpload(new Uint8Array([9]))).rejects.toThrow("read-only");
   });
 
   test("`writable` mints assertable ids and makes what was written readable", async () => {
     stubUploads({}, { writable: true });
 
-    const stored = await writeUpload(new Uint8Array([4, 5]), {
+    const stored = await stepWriteUpload(new Uint8Array([4, 5]), {
       name: "summary.wav",
       type: "audio/wav",
     });
@@ -315,25 +315,25 @@ describe("stubUploads", () => {
       size: 2,
       complete: true,
     });
-    expect([...(await readUpload(stored.id)).bytes]).toEqual([4, 5]);
+    expect([...(await stepReadUpload(stored.id)).bytes]).toEqual([4, 5]);
   });
 
   test("counts up, so two writes in one run are distinguishable", async () => {
     stubUploads({}, { writable: true, idPrefix: "wav_" });
 
-    const first = await writeUpload(new Uint8Array([1]));
-    const second = await writeUpload(new Uint8Array([2]));
+    const first = await stepWriteUpload(new Uint8Array([1]));
+    const second = await stepWriteUpload(new Uint8Array([2]));
 
     expect([first.id, second.id]).toEqual(["wav_1", "wav_2"]);
   });
 
   test("records what a step WROTE, so no spec has to read it back through the slot", async () => {
-    // The round trip this replaces: `writeUpload` then `uploadInfo`/`readUpload`
+    // The round trip this replaces: `stepWriteUpload` then `stepUploadInfo`/`stepReadUpload`
     // on the id it returned, through the same published seam the step used, to
     // answer "did it write anything at all".
     const uploads = stubUploads({}, { writable: true });
 
-    await writeUpload(new Uint8Array([4, 5]), { name: "summary.wav", type: "audio/wav" });
+    await stepWriteUpload(new Uint8Array([4, 5]), { name: "summary.wav", type: "audio/wav" });
 
     expect(uploads.writes).toEqual([
       { id: "upl_stub_1", name: "summary.wav", type: "audio/wav", bytes: new Uint8Array([4, 5]) },
@@ -343,7 +343,7 @@ describe("stubUploads", () => {
   test("a read-only store records no writes, because it accepted none", async () => {
     const uploads = stubUploads({ upl_1: new Uint8Array([1]) });
 
-    await expect(writeUpload(new Uint8Array([9]))).rejects.toThrow("read-only");
+    await expect(stepWriteUpload(new Uint8Array([9]))).rejects.toThrow("read-only");
     expect(uploads.writes).toEqual([]);
   });
 
@@ -365,6 +365,6 @@ describe("stubUploads", () => {
 
     // Nothing published: the reader reports there is no store rather than
     // answering with the last file's.
-    await expect(uploadInfo("upl_1")).rejects.toThrow();
+    await expect(stepUploadInfo("upl_1")).rejects.toThrow();
   });
 });

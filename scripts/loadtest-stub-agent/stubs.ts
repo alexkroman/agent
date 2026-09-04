@@ -7,7 +7,7 @@
 //
 // ## Why the EVAL fakes cannot serve this
 //
-// `installFakeSpeech` (`@alexkroman1/aai-runtime/eval`) exists for exactly this
+// `installStubSpeechProviders` (`@alexkroman1/aai-runtime/eval`) exists for exactly this
 // shape and is deliberately narrower. Its STT ignores audio — a case drives a
 // turn by calling `commit()` — and its TTS forwards no audio at all, on purpose:
 // a fake that forwarded silence would make every case after the greeting look

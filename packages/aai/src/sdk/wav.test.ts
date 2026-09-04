@@ -171,7 +171,7 @@ describe("pcmDurationMs", () => {
 
   test("refuses BYTES where a byte count goes, instead of answering NaN", () => {
     // The misuse this signature invites: every neighbour (`encodeWav`,
-    // `stepSpeak`, `readUpload`) deals in the bytes themselves, and
+    // `stepSpeak`, `stepReadUpload`) deals in the bytes themselves, and
     // `bytes / blockAlign` is `NaN` — a duration that is journaled, rendered
     // and reported with nothing on the way naming the call that made it.
     //

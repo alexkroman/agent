@@ -26,8 +26,8 @@
 
 import type { WorkflowCtx } from "@alexkroman1/aai";
 import { htmlToText, pageMetadata } from "@alexkroman1/aai/html";
-import { report, stepInfo } from "@alexkroman1/aai/step";
-import { FatalError, stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import { stepInfo, stepReport } from "@alexkroman1/aai/step";
+import { FatalError, stepFetchOrFail, stepGenerateJsonOrFail } from "@alexkroman1/aai/step-errors";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 
@@ -138,7 +138,7 @@ export async function digestFlow(input: { url: string }, ctx: WorkflowCtx) {
  */
 export async function fetchArticle(url: string): Promise<Article> {
   const { hostname } = new URL(url);
-  await report(`Reading ${hostname}…`);
+  await stepReport(`Reading ${hostname}…`);
 
   // `stepFetch`, not `fetch`, and the rule has no exception for a step that
   // makes only one request: the global pins nothing, so it offers h2 in ALPN
@@ -147,12 +147,12 @@ export async function fetchArticle(url: string): Promise<Article> {
   // reset with no HTTP status, which `toStepError` below has nothing to read.
   // It also reports a connection failure with its whole `cause` chain instead
   // of a bare `TypeError: fetch failed`. Redirects are followed by default.
-  // `stepFetchOk` rather than `stepFetch` + an `ok` check: it makes the
+  // `stepFetchOrFail` rather than `stepFetch` + an `ok` check: it makes the
   // retryable/terminal split for us — a 404 or a 403 answers the same way on
   // the fourth attempt, while a rate limit is exactly what retries are for, and
   // its `Retry-After` reaches the engine's schedule instead of the default
   // backoff. It also puts the server's own error text in the message.
-  const response = await stepFetchOk(url, {
+  const response = await stepFetchOrFail(url, {
     // Some sites answer a bare request with a challenge page; asking for HTML
     // at least says what we want. Nothing here defeats a real bot wall, and a
     // template pretending otherwise would be the dishonest version.
@@ -191,19 +191,19 @@ export async function summarize(article: Article): Promise<Digest> {
   // built with `omitUndefined` rather than a conditional spread — the guard is
   // then the value, which is the case that primitive is for.
   const model = lastChance ? FALLBACK_MODEL : undefined;
-  await report(
+  await stepReport(
     lastChance
       ? `Last attempt (${step?.attempt} of ${step?.maxAttempts}): asking for something simpler.`
       : "Pulling out the claims worth keeping.",
   );
 
-  // `stepGenerateJsonClassified` unwraps the fence a model puts around JSON,
+  // `stepGenerateJsonOrFail` unwraps the fence a model puts around JSON,
   // parses it, and validates it against `DigestReply` — and throws PLAINLY when
   // any of those misses, which is the whole retry policy in one distinction: a
   // model that answered with prose may answer correctly on the next attempt,
-  // where a 401 will not. The `Classified` suffix is what makes the 401 half
+  // where a 401 will not. The `OrFail` suffix is what makes the 401 half
   // terminal: it is `stepGenerateJson` with `throwStepError` already applied.
-  const parsed = await stepGenerateJsonClassified(
+  const parsed = await stepGenerateJsonOrFail(
     `Title: ${article.title}\nURL: ${article.url}\n\n${article.text}`,
     {
       schema: DigestReply,
@@ -246,7 +246,7 @@ export async function summarize(article: Article): Promise<Digest> {
  * file(digest))`. Anything at BODY level is the bug, not an exception.
  */
 export async function file(_digest: Digest): Promise<string> {
-  await report("Filing the digest.");
+  await stepReport("Filing the digest.");
   // A real desk would write the digest to its database here. The stub writes
   // nothing, which is what the `_` says — and it is a stub because `ctx.db` is
   // the half of a tool context a step still cannot reach.

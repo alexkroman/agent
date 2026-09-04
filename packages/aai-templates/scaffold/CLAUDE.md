@@ -754,7 +754,7 @@ root barrel would drag the whole SDK into that bundle.
 
 ```ts
 import { stepEnv } from "@alexkroman1/aai/step";
-import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
+import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
 
 async function summarize(text: string) {
   // The agent's env by name — the same values a tool reads from `ctx.env`.
@@ -762,7 +762,7 @@ async function summarize(text: string) {
   const style = stepEnv("DIGEST_STYLE") ?? "plain";
 
   // One model call, on the agent's own ASSEMBLYAI_API_KEY and default model.
-  return await stepGenerateClassified(`${style} summary of:\n\n${text}`, {
+  return await stepGenerateOrFail(`${style} summary of:\n\n${text}`, {
     system: "Reply with two sentences and nothing else.",
   });
 }
@@ -774,9 +774,9 @@ before and after a deploy. List what you read in `requiredEnv` and a deploy
 checks it for you. And **`stepGenerate` is not `ctx.generate`**: it is one
 request to the AssemblyAI LLM Gateway, with no tools and no structured output,
 because bundling the AI SDK into a step artifact costs megabytes on every
-deploy. Use `stepGenerateJsonClassified` with a Zod `schema` if you need a shape.
+deploy. Use `stepGenerateJsonOrFail` with a Zod `schema` if you need a shape.
 
-### From a step, reach for the `Classified` call
+### From a step, reach for the `OrFail` call
 
 `@alexkroman1/aai/step-errors` publishes a wrapper for every `/step` call that
 can fail against a remote service, and **inside a step the wrapper is the one to
@@ -784,14 +784,14 @@ use**:
 
 | Raw, on `@alexkroman1/aai/step` | Use this instead, on `@alexkroman1/aai/step-errors` |
 | --- | --- |
-| `stepGenerate` | `stepGenerateClassified` |
-| `stepGenerateJson` | `stepGenerateJsonClassified` |
-| `stepFetch` | `stepFetchOk` |
-| `stepTranscribeSync` | `stepTranscribeSyncClassified` |
-| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*Classified` |
-| `sendToChannel` (`/channels`) | `sendToChannelClassified` |
+| `stepGenerate` | `stepGenerateOrFail` |
+| `stepGenerateJson` | `stepGenerateJsonOrFail` |
+| `stepFetch` | `stepFetchOrFail` |
+| `stepTranscribeSync` | `stepTranscribeSyncOrFail` |
+| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*OrFail` |
+| `sendToChannel` (`/channels`) | `sendToChannelOrFail` |
 
-`stepFetchOk` is the one that is not spelled `*Classified`, and the name is the
+`stepFetchOrFail` is the one that is not spelled `*OrFail`, and the name is the
 difference: the others turn an already-thrown failure into a classified one,
 while this also turns a NON-2XX RESPONSE into a throw — `stepFetch` resolves
 with a `404` rather than raising it. Two changes, so two names.
@@ -829,7 +829,7 @@ bundling rule as `/step` — import them there, never through the root barrel:
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
   the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Use the `Classified`
+  lives on `/step` with the other step primitives.) Use the `OrFail`
   wrappers above: a provider refusal — a container it will not read, a
   recording with no speech — arrives
   with `retryable: false`, and unclassified a step re-uploads the same bytes
@@ -866,19 +866,19 @@ export async function measure(uploadId: string) {
 
 A run that finishes while nobody is on the line needs somewhere to put the
 result. `slackChannel({ webhookUrl })` names a destination and
-`sendToChannelClassified(channel, message)` posts to it:
+`sendToChannelOrFail(channel, message)` posts to it:
 
 ```ts no-check
 import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
 import { requireStepEnv } from "@alexkroman1/aai/step";
-import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 
 export async function announce(headline: string, points: string[]) {
   const message: ChannelMessage = {
     text: headline,
     sections: points.map((point) => ({ text: point })),
   };
-  return await sendToChannelClassified(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
+  return await sendToChannelOrFail(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
 }
 ```
 
@@ -966,11 +966,11 @@ Both are on `@alexkroman1/aai/step`, and `spoken-summary` is the template that
 shows the whole round trip.
 
 ```ts
-import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
+import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(script: string) {
   const spoken = await stepSpeak(script, { voice: "jane" });
-  const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
+  const stored = await stepWriteUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
   return { audio: stored.id, durationMs: spoken.durationMs };
 }
 ```
@@ -987,11 +987,13 @@ opens and produces silence rather than an error. The `AssemblyAITtsVoice` type
 gives you autocomplete over it and nothing more: it accepts any string, so that
 a voice the service adds after this release still compiles.
 
-**`writeUpload` is `readUpload`'s other direction, and you need it.** A run's
-output is read back as JSON, so audio cannot travel in one — the same rule that
-keeps an uploaded recording's bytes out of a run's INPUT, arriving at the other
-end of the run. Store the bytes, return the **id**, and let the page fetch it
-with `api.download(id)`.
+**`stepWriteUpload` is `stepReadUpload`'s other direction, and you need it.** A
+run's output is read back as JSON, so audio cannot travel in one — the same rule
+that keeps an uploaded recording's bytes out of a run's INPUT, arriving at the
+other end of the run. Store the bytes, return the **id**, and let the page fetch
+it with `api.download(id)`. A step that wants the record rather than the bytes
+reads it with `stepUploadInfo(id)`, which answers an `UploadInfo` — the name,
+the size stored so far, and whether that is all of it.
 
 Three rules come with it:
 

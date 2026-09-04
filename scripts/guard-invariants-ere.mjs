@@ -126,7 +126,7 @@ export const AT_LINE_START = "^ *";
 export const DECLARES = `(\\?)?(:|${ARGS} *(:|\\{))`;
 
 /**
- * The `/step` callers that reach a remote service and have a `*Classified`
+ * The `/step` callers that reach a remote service and have a `*OrFail`
  * sibling on `@alexkroman1/aai/step-errors` — rule 26's alternation.
  *
  * Named here rather than inline for this module's founding reason, and BUILT
@@ -134,7 +134,7 @@ export const DECLARES = `(\\?)?(:|${ARGS} *(:|\\{))`;
  * alternation is long enough that biome's `noSecrets` entropy heuristic scores
  * it as a credential. One name per element keeps every literal short.
  *
- * `stepFetch` is deliberately ABSENT. Its sibling is `stepFetchOk`, whose value
+ * `stepFetch` is deliberately ABSENT. Its sibling is `stepFetchOrFail`, whose value
  * is the non-2xx branch rather than the verdict, and a raw `stepFetch` whose
  * caller reads the status itself is the ordinary correct spelling — see
  * `recap-workflow`'s `discardTranscript`, where a 404 is success.
@@ -171,7 +171,7 @@ export const DISPOSE_CALL = `[${ID_TAIL}]\\[Symbol\\.(async)?[Dd]ispose\\]\\(`;
  * Not preceded by an identifier character — POSIX ERE's stand-in for `\\b`,
  * which git's matcher does not implement.
  *
- * What keeps rule 26 off the `*Classified` wrappers is the other end (their
+ * What keeps rule 26 off the `*OrFail` wrappers is the other end (their
  * names are the banned name plus a suffix, so the `\\(` never follows); this end
  * is what keeps it off `myStepGenerate(` and off a property access.
  */

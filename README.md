@@ -167,7 +167,7 @@ the AssemblyAI default. `llm` also takes a bare model id, so
 | Subpath | Factories |
 | --- | --- |
 | `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt` |
-| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropicLlm`, `openaiLlm`, `googleLlm`, `mistralLlm`, `xaiLlm`, `groqLlm`, `openrouterLlm`, `gatewayLlm` |
+| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `gatewayLlm` |
 | `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts` |
 
 Factories return pure descriptors — serializable data, not SDK clients — so
@@ -175,7 +175,7 @@ no provider SDK and no secret ever enters the agent bundle; credentials
 resolve server-side from the agent's own env.
 
 Speech-to-speech is an explicit opt-in, never something you reach by
-omission: `s2s: assemblyAIS2s()`, or `openaiS2s()` from
+omission: `s2s: assemblyAIS2s()`, or `openAIS2s()` from
 `@alexkroman1/aai/s2s`. There the transcription, the model loop and the
 voice all run service-side over one socket.
 
@@ -272,10 +272,10 @@ too long for one provider request, so it becomes a segment per step:
 import {
   mapConcurrent,
   multipartBody,
-  readUpload,
-  report,
   requireStepEnv,
   stepFetch,
+  stepReadUpload,
+  stepReport,
 } from "@alexkroman1/aai/step";
 
 type Segment = { index: number; start: number; end: number };
@@ -297,15 +297,15 @@ async function planSegments(uploadId: string): Promise<Segment[]> {
   "use step";
   // Read the header alone — the bytes never travel in the run's input, and a
   // resumed step re-reads only its own window.
-  const { info } = await readUpload(uploadId, { end: 64 * 1024 });
-  await report(`Planning ${info.name} — ${info.size} bytes.`);
+  const { info } = await stepReadUpload(uploadId, { end: 64 * 1024 });
+  await stepReport(`Planning ${info.name} — ${info.size} bytes.`);
   return [{ index: 0, start: 44, end: info.size }];
 }
 
 async function transcribeSegment(uploadId: string, segment: Segment) {
   "use step";
-  await report(`Transcribing segment ${segment.index + 1}.`);
-  const audio = await readUpload(uploadId, { start: segment.start, end: segment.end });
+  await stepReport(`Transcribing segment ${segment.index + 1}.`);
+  const audio = await stepReadUpload(uploadId, { start: segment.start, end: segment.end });
   const part = multipartBody({
     name: "audio",
     filename: `segment-${segment.index}.wav`,
@@ -335,7 +335,7 @@ cases, and `retryAfter()` carries a provider's own `Retry-After` instead of a
 backoff you invented). A run can wait on a third-party callback through a
 webhook whose public URL the SDK mints, and `wake` sends a sleeping run on
 early rather than making you choose between waiting and cancelling. The
-`report()` lines above are retained with the run instead of streamed
+`stepReport()` lines above are retained with the run instead of streamed
 live-only, so a page that reloads mid-transcription — or opens tomorrow —
 reads the whole log, and the same line lands in the server log with its
 attempt number attached.

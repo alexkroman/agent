@@ -22,7 +22,7 @@
  * ## `Range` is honoured because the reader is a fan-out
  *
  * A page downloading its own upload is the rare case; the common one is sixty steps
- * each reading their own window. Steps read through `readUpload`, which is
+ * each reading their own window. Steps read through `stepReadUpload`, which is
  * in-process and never touches HTTP — but the route has to agree with it, because
  * the same window is what a browser, a `curl -r`, and the platform proxy ask for. So
  * the range arithmetic is HTTP's (inclusive bounds, 206, a `Content-Range` naming
@@ -101,7 +101,7 @@ async function orFail<T>(
  * `GET /workflows/uploads/:id/info` — the record, including how much has arrived.
  *
  * The read a CLIENT polls while its own `PUT` is still in flight, and the one a
- * page shows progress from. A step reads the same record in-process (`uploadInfo`),
+ * page shows progress from. A step reads the same record in-process (`stepUploadInfo`),
  * so this exists for everything that is not one: a script, a dashboard, or a person
  * with `curl` asking why a run is still waiting.
  */

@@ -94,7 +94,7 @@ export default agent({
 
 const WORKFLOW_TS = `
 import type { WorkflowCtx } from "@alexkroman1/aai";
-import { report } from "@alexkroman1/aai/step";
+import { stepReport } from "@alexkroman1/aai/step";
 
 export async function researchFlow(input: { topic: string }, ctx: WorkflowCtx) {
   const findings = await ctx.step("gather", () => gather(input.topic));
@@ -106,7 +106,7 @@ export async function researchFlow(input: { topic: string }, ctx: WorkflowCtx) {
 }
 
 async function gather(topic: string) {
-  await report("gathering " + topic);
+  await stepReport("gathering " + topic);
   return { topic, sources: 3 };
 }
 
@@ -114,7 +114,7 @@ async function gather(topic: string) {
 // across a suspension — the run resumes in a fresh delivery and has to append to
 // the same stream rather than starting a new one.
 async function file(topic: string) {
-  await report("filed " + topic);
+  await stepReport("filed " + topic);
 }
 `;
 
@@ -189,7 +189,7 @@ async function shout(word: string, index: number) {
 /**
  * The SDK's own two narration channels, against a real world.
  *
- * `report()` and `emit()` write to the same run through the same published
+ * `stepReport()` and `stepEmit()` write to the same run through the same published
  * reporter, and what separates them is a DevKit namespace — which is precisely
  * the part a mocked `getWritable` cannot check. If the namespace did not really
  * key a distinct stream, the two would land in one and a page reading progress
@@ -200,7 +200,7 @@ async function shout(word: string, index: number) {
  */
 const NARRATE_TS = `
 import type { WorkflowCtx } from "@alexkroman1/aai";
-import { emit, mapConcurrent, report } from "@alexkroman1/aai/step";
+import { stepEmit, mapConcurrent, stepReport } from "@alexkroman1/aai/step";
 
 export async function narrateFlow(input: { items: string[] }, ctx: WorkflowCtx) {
   const seen = await mapConcurrent(input.items, 2, (item, index) =>
@@ -210,8 +210,8 @@ export async function narrateFlow(input: { items: string[] }, ctx: WorkflowCtx) 
 }
 
 async function handle(item: string, index: number) {
-  await report("handling " + item);
-  await emit("results", { index, shouted: item.toUpperCase() });
+  await stepReport("handling " + item);
+  await stepEmit("results", { index, shouted: item.toUpperCase() });
   return item.toUpperCase();
 }
 `;
@@ -475,10 +475,10 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(body).toContain("event: done");
   }, 40_000);
 
-  test("`emit` streams results into their OWN namespace, beside the narration", async () => {
+  test("`stepEmit` streams results into their OWN namespace, beside the narration", async () => {
     // The half a mocked `getWritable` cannot reach: whether a namespace really
-    // keys a distinct stream in a real world. It has to, or `report()`'s lines
-    // and `emit()`'s objects share one channel and a page renders
+    // keys a distinct stream in a real world. It has to, or `stepReport()`'s lines
+    // and `stepEmit()`'s objects share one channel and a page renders
     // `[object Object]` in the middle of its progress log.
     const started = await api("/workflows/runs", {
       method: "POST",

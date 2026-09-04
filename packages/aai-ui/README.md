@@ -170,7 +170,7 @@ function App() {
       {/* The upload is its own wait: the run does not exist until the bytes
           are in, so nothing else on the page can describe it. */}
       <UploadProgressBar upload={upload} />
-      {/* What the run has SAID, from `report()` in its steps. */}
+      {/* What the run has SAID, from `stepReport()` in its steps. */}
       <WorkflowProgress runId={run?.runId} />
       {run?.status === "completed" && <pre>{JSON.stringify(run.output)}</pre>}
     </main>

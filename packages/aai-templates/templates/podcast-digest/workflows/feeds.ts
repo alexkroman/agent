@@ -65,8 +65,8 @@
  */
 
 import { type FeedItem, type ParsedFeed, pageMetadata, parseFeed } from "@alexkroman1/aai/html";
-import { mapConcurrent, report } from "@alexkroman1/aai/step";
-import { FatalError, stepFetchOk } from "@alexkroman1/aai/step-errors";
+import { mapConcurrent, stepReport } from "@alexkroman1/aai/step";
+import { FatalError, stepFetchOrFail } from "@alexkroman1/aai/step-errors";
 import { isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 
@@ -127,7 +127,7 @@ export async function discoverEpisodes(
   podcastChannels: string,
   maxEpisodes: number,
 ): Promise<Episode[]> {
-  await report("Finding recent podcast episodes.");
+  await stepReport("Finding recent podcast episodes.");
   const links = parsePodcastChannels(podcastChannels);
   if (links.length === 0) throw new FatalError("Add at least one podcast link.");
 
@@ -557,7 +557,7 @@ function appleResults(body: unknown): AppleResult[] {
 /**
  * Every outbound call in this file, with one timeout and one failure policy.
  *
- * `stepFetchOk` is `stepFetch` plus the non-2xx branch — see its own doc. Three
+ * `stepFetchOrFail` is `stepFetch` plus the non-2xx branch — see its own doc. Three
  * things come with it that a bare `fetch` here would each have to re-derive:
  * HTTP/1.1 (so a rate limit arrives as a `503` with `Retry-After` rather than
  * an h2 stream reset carrying no status), the transient/terminal verdict the
@@ -565,7 +565,7 @@ function appleResults(body: unknown): AppleResult[] {
  * the iTunes endpoints is the difference between "403" and a sentence.
  */
 async function fetchText(url: string): Promise<string> {
-  const response = await stepFetchOk(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  const response = await stepFetchOrFail(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   return await response.text();
 }
 

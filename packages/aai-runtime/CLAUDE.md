@@ -861,7 +861,7 @@ argument** — the two differences from the DevKit's `getStepMetadata()`, and wh
 
 What is this package's: `installWorkflowSupport` publishes the reader
 (`createStepInfoReader` in `workflow-report.ts`) into a `Symbol.for` slot like
-`report()`'s, because the answer lives in this package's `AsyncLocalStorage` and
+`stepReport()`'s, because the answer lives in this package's `AsyncLocalStorage` and
 `/step` rides the browser bundle. It derives `isLastAttempt` with `>=` and not
 `===`, since a burned boot can push the count past the ceiling and that is
 exactly the try a body most wants to degrade on. And the EVAL engine fills the
@@ -1138,7 +1138,7 @@ keyed on `globalThis`, not on a module-level value.**
 
 The instance that got this wrong was the workflow run context, and its own doc
 had already stated the failure — "two stores would each see only their own
-`run()` calls, so a `report()` reaching the wrong one would silently find no
+`run()` calls, so a `stepReport()` reaching the wrong one would silently find no
 context and degrade to log-only" — while taking a module-level
 `new AsyncLocalStorage()`, which is one store per COPY rather than one per
 process. So the reporter `installWorkflowSupport` published belonged to the

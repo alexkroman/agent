@@ -13,7 +13,7 @@
  */
 
 import { workflow } from "@alexkroman1/aai";
-import { emit, report, stepEnv } from "@alexkroman1/aai/step";
+import { stepEmit, stepEnv, stepReport } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createEvalWorkflowEngine, type EvalWorkflowEngine } from "./workflow-engine.ts";
@@ -33,17 +33,17 @@ const SLEEP_MS = 10_000;
 const narrator = workflow({
   input: z.object({ topic: z.string() }),
   run: async (input: { topic: string }, ctx) => {
-    await report(`reading ${input.topic}`);
-    await emit("results", { topic: input.topic });
+    await stepReport(`reading ${input.topic}`);
+    await stepEmit("results", { topic: input.topic });
     await ctx.sleep("nap", SLEEP_MS);
-    await report("done");
+    await stepReport("done");
     return { topic: input.topic, key: stepEnv("FIXTURE_KEY") };
   },
 });
 
 const thrower = workflow({
   run: async () => {
-    await report("about to fail");
+    await stepReport("about to fail");
     throw new Error("the page returned no readable text");
   },
 });
@@ -54,7 +54,7 @@ const fanOut = workflow({
   run: async (input: { items: string[] }) =>
     await Promise.all(
       input.items.map(async (item) => {
-        await report(`handling ${item}`);
+        await stepReport(`handling ${item}`);
         return item.toUpperCase();
       }),
     ),
@@ -155,7 +155,7 @@ describe("createEvalWorkflowEngine", () => {
     ]);
     expect(await drain(active.adapter.readStream(runId, { startIndex: 1 }))).toEqual(["done"]);
     expect(await drain(active.adapter.readStream(runId, { startIndex: 2 }))).toEqual([]);
-    // A named stream is `emit`'s, kept apart from the sentences.
+    // A named stream is `stepEmit`'s, kept apart from the sentences.
     expect(await active.adapter.streamTail(runId, { namespace: "results" })).toBe(0);
     expect(await drain(active.adapter.readStream(runId, { namespace: "results" }))).toEqual([
       { topic: "otters" },

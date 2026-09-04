@@ -151,14 +151,14 @@ export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void
  * Submit the work and hand the callback over in the same step, so the far side
  * is told about the waitpoint before the body parks on it.
  * ```ts
- * import { report, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
+ * import { stepReport, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
  *
  * // The token is DERIVED from the run's own input, so the step handing the URL
  * // out and the body parking on it agree — the rule `ctx.waitFor` states.
  * export const renderToken = (id: string) => `render:${id}`;
  *
  * export async function submitRender(id: string): Promise<void> {
- *   await report(`Submitting render ${id}.`);
+ *   await stepReport(`Submitting render ${id}.`);
  *   await stepFetch("https://renders.example.com/jobs", {
  *     method: "POST",
  *     headers: { "content-type": "application/json" },

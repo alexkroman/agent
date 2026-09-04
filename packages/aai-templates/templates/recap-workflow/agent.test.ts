@@ -55,7 +55,7 @@ import {
 } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
-  mockWorkflows,
+  installStubWorkflows,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
@@ -89,14 +89,14 @@ const run = toolRunner(agentDef);
 /**
  * A `ctx.workflows` that records `start` and answers the lookups from a fixture.
  *
- * `mockWorkflows` (`@alexkroman1/aai/testing/vitest`) is the whole thing — a
+ * `installStubWorkflows` (`@alexkroman1/aai/testing/vitest`) is the whole thing — a
  * `vi.fn` per method over one `runs` list, with `stream`/`streamTail` left
  * rejecting because `recap_progress` reads progress through `lastLine` and
  * composing those two by hand is the hazard `lastLine` exists to remove. What
  * is local is only which workflow this desk declares.
  */
 function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
-  return mockWorkflows({ runs, names: ["recap"] });
+  return installStubWorkflows({ runs, names: ["recap"] });
 }
 
 /** A finished recap, as the workflow's output reaches the tools. */
@@ -399,7 +399,7 @@ describe("cancel_recap", () => {
  *
  * Published into `stepFetch`'s OWN slot, not over `globalThis.fetch`. Every
  * request in this file goes through `stepFetch` — `request()` and
- * `discardTranscript` reach it directly, `stepTranscribeSubmitClassified`
+ * `discardTranscript` reach it directly, `stepTranscribeSubmitOrFail`
  * through the SDK — and `step-fetch.ts` falls back to `globalThis.fetch` only
  * when nothing is published. A global stub therefore passed while exercising a
  * path production never takes; every sibling template already stubs the slot,

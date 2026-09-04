@@ -108,7 +108,7 @@ export const WORKFLOW_BODY_RULES = [
     key: "rule26_unclassifiedStepCall",
     label: "raw step call in a shipped workflow body",
     // A call position. The wrappers themselves are excluded by the trailing
-    // `\\(`: their names are the banned name plus `Classified`, so the paren
+    // `\\(`: their names are the banned name plus `OrFail`, so the paren
     // never follows. See both fragments' docs.
     re: `${NOT_IDENT_BEFORE}(${CLASSIFIABLE_STEP_CALLS})\\(`,
     paths: WORKFLOW_BODY_PATHSPECS,
@@ -117,21 +117,21 @@ export const WORKFLOW_BODY_RULES = [
       // DERIVED from the alternation, one pair per banned name, so a name added
       // to `CLASSIFIABLE_STEP_CALLS` is sampled in both directions without
       // anyone remembering to. It also keeps every literal here short: spelled
-      // out, `  await stepTranscribeSyncClassified(bytes);` is long enough that
+      // out, `  await stepTranscribeSyncOrFail(bytes);` is long enough that
       // biome's `noSecrets` entropy heuristic scores it as a credential, and
       // the formatter folds any concatenation written to dodge that.
       matches: CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}(x);`),
       ignores: [
         // The remedy: the same name plus the suffix, which the trailing `(`
         // in the pattern is what excludes.
-        ...CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}Classified(x);`),
+        ...CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}OrFail(x);`),
         // Not a call: an import, a type position, a property.
         'import { stepGenerate } from "@alexkroman1/aai/step";',
         "  const opts: StepGenerateOptions = { system };",
       ],
     },
     remedy:
-      'Inside a `"use step"` body, call the `*Classified` sibling from\n' +
+      'Inside a `"use step"` body, call the `*OrFail` sibling from\n' +
       "`@alexkroman1/aai/step-errors` — the same name plus that suffix, for\n" +
       "each of the callers this rule names.\n" +
       "\n" +

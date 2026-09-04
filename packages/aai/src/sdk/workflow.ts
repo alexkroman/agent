@@ -155,7 +155,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
    * A run's input is journaled and replayed on every resume, so a file's bytes
    * may not travel in it — the bytes go to `POST /workflows/uploads` and the
    * input carries the id it answered with, which a step reads windows of through
-   * `readUpload`. Naming the property here is what makes that automatic at both
+   * `stepReadUpload`. Naming the property here is what makes that automatic at both
    * ends: `<WorkflowFields>` renders a file picker for it instead of a text box,
    * and `useWorkflowSubmit` uploads the chosen file and substitutes its id.
    *

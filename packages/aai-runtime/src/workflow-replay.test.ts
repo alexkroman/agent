@@ -49,7 +49,7 @@ function replay(
  *
  * The reporter slot is process-global (`sdk/step-report.ts`), so it is installed
  * and taken back down per test — and taking it down matters twice over: an
- * unpublished slot makes `report()` fall back to the console, which would put
+ * unpublished slot makes `stepReport()` fall back to the console, which would put
  * the engine's retry lines in every other suite's output.
  */
 function reportedLines(): () => string[] {

@@ -39,7 +39,7 @@
  * `AnyWorkflowDef` and `WorkflowBody` are the parameter and member types of
  * `WorkflowClient` and `WorkflowDef`, so moving them fails the docs build. Same
  * rule keeps `TerminalWorkflowRun`, `WorkflowRunBase`, `EventStreamFrame` and
- * `UploadPartsSettings` here.
+ * `UploadPartsOptions` here.
  *
  * Re-exported from `@alexkroman1/aai/workflow-api`, which is now a barrel over
  * four modules — the agent client (a superset of the workflow one), the workflow
@@ -64,8 +64,8 @@ export {
   type TerminalWorkflowRun,
   type UploadBody,
   type UploadOptions,
-  type UploadParallel,
-  type UploadPartsSettings,
+  type UploadParallelOption,
+  type UploadPartsOptions,
   type UploadProgress,
   type UploadRef,
   type WakeUpOptions,

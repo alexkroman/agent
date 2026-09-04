@@ -151,7 +151,7 @@ export type ReplayOptions = {
    */
   sleeps?: Promise<SleepEntry[]> | undefined;
   /**
-   * Where `report()` writes. Optional: a spec driving a body directly has no
+   * Where `stepReport()` writes. Optional: a spec driving a body directly has no
    * reader, and a body that reports into nothing is not an error.
    */
   streams?: StreamStore | undefined;
@@ -435,7 +435,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       {
         runId,
         workflow,
-        // HELD like a journal call, so a `report()` between two waits cannot be
+        // HELD like a journal call, so a `stepReport()` between two waits cannot be
         // mistaken for quiescence and suspend the walk before the second one is
         // reached. It is the one piece of engine work a BODY can start directly.
         write: async (namespace, value) => {

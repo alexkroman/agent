@@ -1,7 +1,12 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
-import { createToolContext, ok, okPosition, toolRunner } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  expectDialogOk,
+  expectToolOk,
+  toolRunner,
+} from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -196,11 +201,11 @@ describe("sensitive tools stage rather than act", () => {
     expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
 
     // A gated tool answers the flow's POSITION wrapped around the body's own
-    // return value, so the applied sentence is under `result`. `okPosition`
+    // return value, so the applied sentence is under `result`. `expectDialogOk`
     // keeps the position and THROWS on a refusal, quoting it — where the cast
     // it replaces read `undefined` off the failure and died three assertions
     // later on a property of undefined.
-    const confirmed = okPosition<{ applied: string; reference: string }>(
+    const confirmed = expectDialogOk<{ applied: string; reference: string }>(
       await run("confirm_action", ctx),
     );
     expect(confirmed.result.applied).toContain("Harborview Suites");
@@ -225,7 +230,7 @@ describe("sensitive tools stage rather than act", () => {
     const ctx = makeCtx();
     await atDesk("flight", ctx);
     await run("update_ticket", { flightId: "LX54" }, ctx);
-    const dropped = okPosition<{ discarded: string }>(await run("cancel_action", ctx));
+    const dropped = expectDialogOk<{ discarded: string }>(await run("cancel_action", ctx));
     expect(dropped.result.discarded).toContain("LX54");
     expect(dropped.state).toBe("browsing");
 
@@ -291,9 +296,9 @@ describe("sensitive tools stage rather than act", () => {
     // A refused SECOND staging must not have moved the gate either — it was
     // already `awaitingConfirmation` and the refusal changed nothing.
     expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
-    // `ok` is `okPosition` with `.result` taken off: this assertion is about
+    // `expectToolOk` is `expectDialogOk` with `.result` taken off: this assertion is about
     // what the apply DID, not about where the gate landed.
-    const applied = ok<{ applied: string }>(await run("confirm_action", ctx));
+    const applied = expectToolOk<{ applied: string }>(await run("confirm_action", ctx));
     expect(applied.applied).toContain("LX52");
     expect(stateOf(ctx).bookings).toEqual([]);
 

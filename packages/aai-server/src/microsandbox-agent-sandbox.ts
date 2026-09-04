@@ -109,7 +109,7 @@ export async function spawnMicrosandboxAgentServer(
     // rewrite for the same reason the DSNs above do — `127.0.0.1` in a microVM
     // is the VM:
     //
-    // - `AAI_UPLOAD_BROKER_URL`: `writeUpload` PUTs every byte window to
+    // - `AAI_UPLOAD_BROKER_URL`: `stepWriteUpload` PUTs every byte window to
     //   `<broker>/uploads/<id>/<offset>`.
     // - `AAI_PLATFORM_BASE_URL`: every platform RPC — run storage, the queue,
     //   session state, upload records (`resolvePlatformQueue`).

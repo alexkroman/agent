@@ -63,7 +63,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-import { pcmDurationMs, report, requireCompleteUpload } from "@alexkroman1/aai/step";
+import { pcmDurationMs, stepReport, stepRequireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFatalStepError, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, plural } from "@alexkroman1/aai/utils";
@@ -132,10 +132,10 @@ export type Ingested = {
 // nothing. Removing them is what took the file under the floor: a directive
 // propping a coverage number up is the least useful statement in the tree.
 export async function ingestRecording(uploadId: string): Promise<Ingested> {
-  // `requireCompleteUpload`, not `uploadInfo`: `size` is the readable PREFIX, so
+  // `stepRequireCompleteUpload`, not `stepUploadInfo`: `size` is the readable PREFIX, so
   // an upload still arriving would be copied short and levelled as the whole call.
-  const stored = await requireCompleteUpload(uploadId);
-  await report(`Reading ${stored.name || uploadId} (${formatBytes(stored.size)}).`);
+  const stored = await stepRequireCompleteUpload(uploadId);
+  await stepReport(`Reading ${stored.name || uploadId} (${formatBytes(stored.size)}).`);
 
   return await withTempDir(
     async (dir) => {
@@ -148,7 +148,7 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
       // `STEP_FILE_READ_CONCURRENCY` of them. Passing `size` means "I am judging
       // completeness myself", which is what a body polling a still-arriving
       // upload needs and is the opposite of what happened above: this step has
-      // already called `requireCompleteUpload`, so the file IS whole and the
+      // already called `stepRequireCompleteUpload`, so the file IS whole and the
       // windows may land in any order. Omitting it lets `readUploadToFile`
       // establish that for itself and fan out. The cost is one metadata round
       // trip, against the dozens of window reads it overlaps.
@@ -162,7 +162,7 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
         throwFfmpegStepError,
       );
       const codec = probed.audio?.codec ?? "unknown";
-      await report(
+      await stepReport(
         `Levelling ${describeSource(codec, probed.durationSec)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
       );
 
@@ -206,7 +206,7 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
         type: "application/octet-stream",
       });
 
-      await report(
+      await stepReport(
         `Levelled ${formatDuration(durationMs)} from ${loudness.inputLufs} LUFS, ` +
           `${Math.round(speechFraction(silences, durationMs / 1000) * 100)}% speech across ` +
           `${silences.length} ${plural(silences.length, "pause")}.`,

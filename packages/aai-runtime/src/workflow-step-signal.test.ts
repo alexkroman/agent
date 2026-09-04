@@ -6,7 +6,7 @@
  * without moving a published signature (`WorkflowCtx.step`'s callback). So the
  * walk's signal rides the RUN CONTEXT instead, which is what lets `step-fetch.ts`
  * combine it into every outbound request without a body threading one down
- * through its own helpers — the same argument `report()` rests on, in
+ * through its own helpers — the same argument `stepReport()` rests on, in
  * `workflow-run-context.ts`'s module doc.
  *
  * Its own file rather than a `describe` in `workflow-replay.test.ts`, which is at

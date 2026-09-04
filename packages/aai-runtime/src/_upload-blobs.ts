@@ -32,7 +32,7 @@
  * A part is one object, keyed by the byte it starts at. Nothing concatenates them
  * and no upload has a single whole-file object — `create` and `stream` cut their
  * body into windows as it streams, so there is exactly ONE byte layout whatever
- * route an upload arrived by, and {@link readUpload} maps a window onto objects
+ * route an upload arrived by, and {@link stepReadUpload} maps a window onto objects
  * the same way in every case. The alternative (one object for a whole-file write,
  * N for a parts upload) is two layouts and a reader that has to ask which.
  *
@@ -104,7 +104,7 @@ export type UploadBlobs = {
    * A window rather than the whole object, because the reader is a fan-out: sixty
    * steps each want their own slice, and a header probe wants 64 KB of an 8 MiB
    * part. Answers SHORT rather than throwing when the object holds less than was
-   * asked for — the same clamp `readUpload` has always applied, which is what lets
+   * asked for — the same clamp `stepReadUpload` has always applied, which is what lets
    * a plan computed from a header end one byte past the file.
    */
   read(key: string, start: number, end: number): Promise<Uint8Array>;

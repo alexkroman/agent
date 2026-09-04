@@ -88,7 +88,7 @@ export type WorkflowApi = {
    * The other half of `WorkflowDef.uploads`: a workflow's input is journaled and
    * replayed on every resume, so bytes may not travel in it — they go here once,
    * and the run carries {@link UploadRef.id}, which a step reads windows of with
-   * `readUpload`.
+   * `stepReadUpload`.
    *
    * A `File` from an `<input type="file">` needs no second argument: its own
    * `name` and `type` are what get stored. Anything else — a `Blob`, a
@@ -277,7 +277,7 @@ export type WorkflowApi = {
   uploadInfo(id: string): Promise<UploadInfo>;
   /**
    * Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
-   * a file (`writeUpload` stores it, the output carries the id). A `Blob`
+   * a file (`stepWriteUpload` stores it, the output carries the id). A `Blob`
    * rather than a URL because the byte route takes the same bearer every route
    * here does and neither `<audio src>` nor `<a href>` can send one;
    * `downloadUpload` carries the rest.
