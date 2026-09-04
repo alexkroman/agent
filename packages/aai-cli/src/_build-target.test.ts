@@ -18,6 +18,8 @@ import {
   TARGET_ENV_MARKERS,
   VERCEL_BUILD_CONFIG_SOURCE,
   VERCEL_ENTRY_SOURCE,
+  VERCEL_FUNCTION_DIR,
+  VERCEL_FUNCTION_ROUTE,
   vercelFunctionConfigSource,
   vercelNodeRuntime,
 } from "./_build-target.ts";
@@ -133,7 +135,19 @@ describe("the emitted Build Output API config", () => {
     // what lets the CDN answer for the client bundle, and the catch-all after
     // it is what keeps /client-config, /websocket, /workflows/* and the webhook
     // route reaching the agent. Reversed, every asset costs an invocation.
-    expect(config.routes).toEqual([{ handle: "filesystem" }, { src: "/(.*)", dest: "/index" }]);
+    expect(config.routes).toEqual([
+      { handle: "filesystem" },
+      { src: "/(.*)", dest: VERCEL_FUNCTION_ROUTE },
+    ]);
+  });
+
+  test("the function's route cannot be claimed by a static file", () => {
+    // The Build Output API derives the route from the directory name, so the
+    // name is a URL. `index.func` served at `/index` took `/` from the static
+    // index.html on a real preview deployment — every other asset was fine and
+    // the home page 500'd. A `__` prefix is not a path any bundler emits.
+    expect(VERCEL_FUNCTION_DIR.endsWith(`${VERCEL_FUNCTION_ROUTE.slice(1)}.func`)).toBe(true);
+    expect(VERCEL_FUNCTION_ROUTE).toMatch(/^\/__/);
   });
 
   test("the function config names the entry and keeps streaming on", () => {

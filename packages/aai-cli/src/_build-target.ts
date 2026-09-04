@@ -117,11 +117,27 @@ export const VERCEL_OUTPUT_DIR = path.join(".vercel", "output");
 /**
  * The one function every request that is not a static file reaches.
  *
- * Named `index.func` because the Build Output API derives a function's ROUTE
- * from its path — `functions/index.func` is served at `/index`, which is what
- * {@link VERCEL_BUILD_CONFIG_SOURCE}'s catch-all names as its `dest`.
+ * The Build Output API derives a function's ROUTE from its path, so the
+ * directory name IS a URL and must not collide with one the static output
+ * claims. **`index.func` collides**, which a deployment is the only way to
+ * find out: it is served at `/index`, and Vercel's directory index resolves
+ * `/` to the extensionless `/index` — so the function won `/`, every other
+ * asset came off the CDN correctly, and the home page 500'd on a deployment
+ * whose static output was perfect. Measured on a real preview:
+ * `/favicon.ico`, `/index.html` and both hashed `/assets/*` returned 200
+ * while `/` and `/index` did not.
+ *
+ * `__server` is Nitro's answer to the same problem (`__server.func`) and the
+ * reason is this one: a double-underscore prefix is not a path any bundler
+ * emits, so no static file can ever take the name.
  */
-export const VERCEL_FUNCTION_DIR = path.join(VERCEL_OUTPUT_DIR, "functions", "index.func");
+export const VERCEL_FUNCTION_DIR = path.join(VERCEL_OUTPUT_DIR, "functions", "__server.func");
+
+/**
+ * The route {@link VERCEL_FUNCTION_DIR} is served at — its directory name
+ * without `.func`, which is how the Build Output API names a function.
+ */
+export const VERCEL_FUNCTION_ROUTE = "/__server";
 
 /** Static assets the Vercel CDN serves directly, never reaching the function. */
 export const VERCEL_STATIC_DIR = path.join(VERCEL_OUTPUT_DIR, "static");
@@ -240,7 +256,7 @@ export function vercelFunctionConfigSource(runtime: string = vercelNodeRuntime()
 export const VERCEL_BUILD_CONFIG_SOURCE = `${JSON.stringify(
   {
     version: 3,
-    routes: [{ handle: "filesystem" }, { src: "/(.*)", dest: "/index" }],
+    routes: [{ handle: "filesystem" }, { src: "/(.*)", dest: VERCEL_FUNCTION_ROUTE }],
   },
   null,
   2,
