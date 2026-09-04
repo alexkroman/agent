@@ -76,7 +76,21 @@ export function newTraceparent(): string {
 }
 
 /**
- * The trace id inside a `traceparent`, or `undefined` when there is not one.
+ * The three fields of a `traceparent` a reader can act on.
+ *
+ * @internal
+ */
+export type TraceParent = {
+  /** 32 lower-case hex characters, never all zero. */
+  traceId: string;
+  /** 16 lower-case hex characters, never all zero — the CALLER's own span. */
+  spanId: string;
+  /** The trace-flags byte; `0x01` is "sampled". */
+  flags: number;
+};
+
+/**
+ * A `traceparent`, parsed — or `undefined` when the header is not one.
  *
  * REFUSES rather than repairs, and the refusals matter more than the successes:
  * this value is a log field, so a malformed header that parsed to something
@@ -84,14 +98,44 @@ export function newTraceparent(): string {
  * lines from unrelated requests. An absent header is the ordinary case — an
  * older guest, or any other caller — and is not a failure.
  *
+ * ## ONE parser, because a second one is a second ANSWER
+ *
+ * `aai-server` now turns this same header into an exported OTLP span as well as
+ * into a log field (`tracing-propagator.ts`), and the whole value of doing that
+ * is that the id in the log line and the id on the span are the same id — an
+ * operator pivots from one to the other. Two parsers of one header can disagree,
+ * and the disagreements here are concrete rather than theoretical: this grammar
+ * pins version `00` and rejects both all-zero ids, where a library parser
+ * following the spec's forward-compatibility rule accepts a higher version. On a
+ * header the two read differently, the log line and the span would carry
+ * DIFFERENT trace ids — which is worse than carrying none, because it is
+ * silently wrong rather than absent. So the server's propagator is built on this
+ * function rather than beside it.
+ *
  * @internal
  */
-export function traceIdOf(header: string | null | undefined): string | undefined {
-  const match = TRACEPARENT_RE.exec(header ?? "");
+export function parseTraceparent(header: string | null | undefined): TraceParent | undefined {
+  const raw = header ?? "";
+  const match = TRACEPARENT_RE.exec(raw);
   if (!match) return undefined;
   const [, traceId, spanId] = match;
   if (traceId === undefined || spanId === undefined) return undefined;
   // Both all-zero ids are invalid per the spec, and a caller that sends one is
   // saying "I have no trace" in the most confusing way available.
-  return isZero(traceId) || isZero(spanId) ? undefined : traceId;
+  if (isZero(traceId) || isZero(spanId)) return undefined;
+  // The last two characters are the flags byte, and the grammar above already
+  // proved they are hex — so this cannot be `NaN`.
+  return { traceId, spanId, flags: Number.parseInt(raw.slice(-2), 16) };
+}
+
+/**
+ * The trace id inside a `traceparent`, or `undefined` when there is not one.
+ *
+ * The log-field half of {@link parseTraceparent}, and the caller that has always
+ * existed: every line `withReserved` writes carries this.
+ *
+ * @internal
+ */
+export function traceIdOf(header: string | null | undefined): string | undefined {
+  return parseTraceparent(header)?.traceId;
 }

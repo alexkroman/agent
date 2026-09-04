@@ -14,6 +14,7 @@ import type { HonoEnv } from "./context.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { rememberPublicOrigin } from "./public-origin.ts";
+import { tracingMiddleware } from "./tracing.ts";
 
 /**
  * Cross-origin callers this deployment allows, from `AAI_ALLOWED_ORIGINS`.
@@ -59,6 +60,13 @@ export function applyPlatformMiddleware<E extends HonoEnv>(
    */
   allowedOrigins: string[] | undefined,
 ): void {
+  // FIRST, so the server span covers everything below it — including a CORS
+  // preflight and a rejected origin, which are answers this service gave and
+  // are exactly what an operator is looking at when they ask why a browser saw
+  // nothing. `undefined` unless a collector is configured, and then nothing at
+  // all is installed: see `tracing.ts` on why the off state constructs nothing.
+  const tracing = tracingMiddleware();
+  if (tracing) app.use("*", tracing);
   const origins = allowedOrigins ?? resolveAllowedOrigins();
   app.use(
     "*",
