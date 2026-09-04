@@ -4,4 +4,6 @@
  * gives it its name.
  */
 
-export { confirmAction as default } from "../routing.ts";
+import { confirmActionTool } from "../routing.ts";
+
+export default confirmActionTool();

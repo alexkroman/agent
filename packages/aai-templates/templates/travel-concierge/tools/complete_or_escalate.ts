@@ -4,4 +4,6 @@
  * gives it its name.
  */
 
-export { completeOrEscalate as default } from "../routing.ts";
+import { completeOrEscalateTool } from "../routing.ts";
+
+export default completeOrEscalateTool();

@@ -4,4 +4,6 @@
  * gives it its name.
  */
 
-export { cancelAction as default } from "../routing.ts";
+import { cancelActionTool } from "../routing.ts";
+
+export default cancelActionTool();
