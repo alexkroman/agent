@@ -617,7 +617,7 @@ it honours, and the two bracketing requests that are retried with it.
 
 `AgentDef.page` declares an agent's front door: `"voice"` (the default, and what
 absent means) or `"static"` — a page over the workflow HTTP API that
-`createServer` mounts, declared with `workflowApp()` (`sdk/define.ts`, the fourth
+`createRuntimeServer` mounts, declared with `workflowApp()` (`sdk/define.ts`, the fourth
 arm of `AgentParams`), which refuses the fields such an app cannot use. **This
 guide is AT its cap: the author-facing half is "Workflow apps" in
 `packages/aai-ui/CLAUDE.md`.** Three authoring types on `/workflow-api` are
@@ -1160,7 +1160,7 @@ the stack rejects before a handler cuts the path apart. Those five sites sat in
 three different accidental safety regimes — one caught explicitly, three inside
 an `async` router whose rejection is answered 500, and **one fully synchronous**
 (`webhookToken` → `pickWorkflowHandler` → `handleWorkflowRequest`, called from
-`createServer`'s `options.request?.(…)` hook with no `try`). That one reached the
+`createRuntimeServer`'s `options.request?.(…)` hook with no `try`). That one reached the
 guest's `uncaughtException` guard and `process.exit(4)`, unauthenticated, taking
 every concurrent voice session on the sandbox down with it.
 
@@ -1298,7 +1298,7 @@ re-checking if one of them shows unexplained per-session memory.
 
 ## Self-hosted server defaults (`aai/host/server.ts`)
 
-`createServer` has no request authentication of its own — it is the `aai dev`
+`createRuntimeServer` has no request authentication of its own — it is the `aai dev`
 backend, not the managed platform — so two defaults are fail-closed: it **binds
 loopback** (`127.0.0.1`; pass `"0.0.0.0"` deliberately, and `aai dev` exposes
 `AAI_DEV_HOST` for setups where loopback isn't reachable), and **host mode is

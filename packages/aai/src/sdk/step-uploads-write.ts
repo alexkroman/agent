@@ -101,7 +101,7 @@ export async function stepWriteUpload(
 export const UPLOAD_WRITES_UNAVAILABLE_MESSAGE =
   "The upload store in this process is read-only, so `stepWriteUpload` has nowhere to put the " +
   "bytes. Every deployed agent, every self-hosted server and `aai dev` publish a writable " +
-  "store through `createServer`; in a test, pass `{ writable: true }` to `stubUploads` from " +
+  "store through `createRuntimeServer`; in a test, pass `{ writable: true }` to `stubUploads` from " +
   "`@alexkroman1/aai/testing`.";
 
 /**

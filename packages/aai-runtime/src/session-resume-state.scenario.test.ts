@@ -9,7 +9,7 @@
  * eviction) against a MOCKED socket; `session-resume.scenario.test.ts` drives a
  * really-severed socket against a FAKE runtime. A defect needing both to be real
  * would slip through both, so this is the configuration neither covers: a real
- * `createRuntime`, a real `createServer`, a real WebSocket, and
+ * `createRuntime`, a real `createRuntimeServer`, a real WebSocket, and
  * `_fault-socket.ts` destroying it.
  *
  * What it pins is `pushStateSnapshot(sessionId, emitter)` — wired in by
@@ -59,7 +59,7 @@ import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";
 import { makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import type { S2sCallbacks } from "./s2s.ts";
-import { createServer } from "./server.ts";
+import { createRuntimeServer } from "./server.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 
 /** The agent's state, and what its `syncState` projection puts on the wire. */
@@ -126,7 +126,7 @@ async function serve(): Promise<Harness> {
     logger: silentLogger,
   });
 
-  const server = createServer({ runtime, logger: silentLogger });
+  const server = createRuntimeServer({ runtime, logger: silentLogger });
   await server.listen(0, "127.0.0.1");
   const target = server.port;
   if (target === undefined) throw new Error("server did not report a port");

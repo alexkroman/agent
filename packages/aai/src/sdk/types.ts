@@ -268,7 +268,7 @@ export interface AgentDef extends PipelineVoiceTuning {
    * mounts with `page()` instead of `client()` and reaches the agent through
    * `createWorkflowApi()` / `useWorkflowRun()` instead of `useSession()`.
    *
-   * Declaring it is not decoration. `createServer` refuses the voice surfaces
+   * Declaring it is not decoration. `createRuntimeServer` refuses the voice surfaces
    * for a static agent, so a page that has no session cannot be handed a socket
    * that would never answer, and telephony defaults off for one — an agent with
    * no `stt`/`llm`/`tts` has nothing to put on a phone call.

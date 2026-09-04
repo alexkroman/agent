@@ -23,7 +23,7 @@
 import { randomUUID } from "node:crypto";
 import {
   CARTESIA_API_KEY_ENV,
-  makeTtsError,
+  createTtsError,
   resolveCartesiaTtsSettings,
   type TtsEvents,
   type TtsOpener,
@@ -61,11 +61,11 @@ export function openCartesia(opts: CartesiaTtsOptions): TtsOpener {
     name: "cartesia",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
       const apiKey = requireApiKey(openOpts.apiKey, CARTESIA_API_KEY_ENV, "Cartesia TTS", (msg) =>
-        makeTtsError("tts_auth_failed", msg),
+        createTtsError("tts_auth_failed", msg),
       );
 
       const sampleRate: Pcm16Rate = assertPcm16Rate(openOpts.sampleRate, "Cartesia TTS", (msg) =>
-        makeTtsError("tts_connect_failed", msg),
+        createTtsError("tts_connect_failed", msg),
       );
       const { model, language, voice } = resolveCartesiaTtsSettings(opts);
 
@@ -91,7 +91,7 @@ export function openCartesia(opts: CartesiaTtsOptions): TtsOpener {
 
       await connectOrThrow(
         "Cartesia TTS",
-        (msg) => makeTtsError("tts_connect_failed", msg),
+        (msg) => createTtsError("tts_connect_failed", msg),
         () => ws.connect(),
       );
 

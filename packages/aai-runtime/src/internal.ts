@@ -213,7 +213,7 @@ export { createSessionStateStore } from "./session-state-store.ts";
 // substituting an executor names — are contracted, on the root barrel.
 export { executeToolCall } from "./tool-executor.ts";
 // The workflow HTTP API's method list, which the platform's guest-route table
-// has to agree with. The HANDLER is not here: `createServer` mounts the route
+// has to agree with. The HANDLER is not here: `createRuntimeServer` mounts the route
 // itself, so nothing outside this package wires one by hand.
 export { WORKFLOW_API_METHODS } from "./workflow-api.ts";
 // Where a LOCAL deployment keeps a workflow's on-disk state. The READER

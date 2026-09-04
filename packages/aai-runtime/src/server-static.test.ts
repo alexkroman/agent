@@ -2,7 +2,7 @@
 /**
  * Specs for the static-asset path, at the level `server.test.ts` cannot reach.
  *
- * That suite drives `createServer`, which always hands `serveStatic` whatever
+ * That suite drives `createRuntimeServer`, which always hands `serveStatic` whatever
  * the caller put in `clientDir` — and every in-repo caller passes an absolute
  * path, so the one thing the containment check can get wrong about a RELATIVE
  * one is invisible from up there. `clientDir` is a `@public` option that states
@@ -43,7 +43,7 @@ async function assetDir(): Promise<string> {
 
 /**
  * Serve `clientDir` and answer 404 for anything `serveStatic` declines — the
- * same shape `createServer` gives it, so a decline is observable as a status.
+ * same shape `createRuntimeServer` gives it, so a decline is observable as a status.
  */
 async function serving(clientDir: string): Promise<string> {
   const server = http.createServer((req, res) => {

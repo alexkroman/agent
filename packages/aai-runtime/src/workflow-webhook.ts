@@ -48,7 +48,7 @@
  * waitpoint and the hook closes — so a bare `GET` from a link-preview fetcher,
  * a URL scanner, a crawler or a mail client's link checker resolved an approval
  * workflow with an empty payload and no human anywhere near it. A delivery
- * carries a payload, so it is a verb that has a body; `createServer` answers
+ * carries a payload, so it is a verb that has a body; `createRuntimeServer` answers
  * `405` with `Allow: POST` to anything else, and the route table
  * (`server-routes.ts`) is where the verb is declared.
  *
@@ -69,7 +69,7 @@ import { WORKFLOW_WEBHOOK_PREFIX } from "./workflow-serve.ts";
  * one.
  *
  * **A segment that will not decode is "not a webhook path" too**, and that is
- * the load-bearing part: this call is synchronous and `createServer` invokes it
+ * the load-bearing part: this call is synchronous and `createRuntimeServer` invokes it
  * from the request path with no `try`, so a `URIError` from a raw `%` here
  * reached the guest's `uncaughtException` guard and exited the process — from
  * an unauthenticated `GET`. See `_path-decode.ts`.
@@ -93,7 +93,7 @@ export type WebhookTarget = {
 /**
  * The body cap. A webhook payload is a notification, never a file.
  *
- * Enforced at the BOUNDARY — `createServer` hands it to `serveFetch`, which
+ * Enforced at the BOUNDARY — `createRuntimeServer` hands it to `serveFetch`, which
  * refuses the stream as it crosses the limit — and restated in `readPayload`
  * for a caller that builds its own `Request`.
  */

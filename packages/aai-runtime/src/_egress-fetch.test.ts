@@ -38,7 +38,7 @@ vi.mock("undici", () => ({
 const { blobFetch, closeEgressFetch, EGRESS_RPC_HTTP2_ENV, egressRpcAllowsH2, rpcFetch } =
   await import("./_egress-fetch.ts");
 const { createBrokeredUploadBlobs } = await import("./_upload-blobs-brokered.ts");
-const { createHttpUploadBlobs } = await import("./_upload-blobs-http.ts");
+const { createHttpUploadBackend } = await import("./_upload-blobs-http.ts");
 const { platformPost } = await import("./platform-rpc.ts");
 
 /** Forget any pool a previous test built, so `agentOptions` counts this test's. */
@@ -193,7 +193,7 @@ describe("the runtime's own callers default to it", () => {
   test("the operator's own bucket, reached the same way", async () => {
     await fresh();
     const global = forbidGlobalFetch();
-    const blobs = createHttpUploadBlobs({
+    const blobs = createHttpUploadBackend({
       url: "https://ref.supabase.test",
       serviceKey: "k",
       bucket: "b",

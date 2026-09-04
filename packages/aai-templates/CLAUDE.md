@@ -1226,7 +1226,7 @@ rather than naming a call it cannot make.
 `@alexkroman1/aai/step`, used by every workflow template. The objection recorded
 here (it needed a writable stream out of the workflow engine, which that subpath
 may not import) was answered by the same `Symbol.for` slot `stepEnv` uses:
-`createServer` publishes a reporter and the helper stays dependency-free. What
+`createRuntimeServer` publishes a reporter and the helper stays dependency-free. What
 forced the question was
 not the duplication but the second reader — a step's narration now also reaches
 the SERVER LOG, with the attempt number appended past the first, so a retrying

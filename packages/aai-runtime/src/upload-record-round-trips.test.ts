@@ -43,7 +43,7 @@ import { afterEach, expect, test } from "vitest";
 import { partKey } from "./_upload-blobs.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
 import { createBlobUploadStore } from "./_upload-store-blobs.ts";
-import { createMemoryUploadBlobs } from "./workflow-uploads.ts";
+import { createMemoryUploadBackend } from "./workflow-uploads.ts";
 
 /** Where this deployment's objects live — arbitrary, and the same on both sides. */
 const PREFIX = "uploads/agent";
@@ -102,7 +102,7 @@ afterEach(() => publishUploadReader(undefined));
 
 test("one parts upload costs a countable number of record round trips", async () => {
   const { records, calls } = countingRecords();
-  const blobs = createMemoryUploadBlobs();
+  const blobs = createMemoryUploadBackend();
   const store = createBlobUploadStore({ records, blobs, prefix: PREFIX, maxBytes: 1e12 });
   publishUploadReader(store);
   const id = "upl_counted";

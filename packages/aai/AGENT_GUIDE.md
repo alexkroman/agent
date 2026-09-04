@@ -1210,7 +1210,7 @@ statement about pipeline mode, not about the SDK.
 ### Answering a phone call
 
 A deployed voice agent already serves carrier media streams — there is nothing
-to switch on. `createServer` mounts `WS /phone` whenever the agent is a voice
+to switch on. `createRuntimeServer` mounts `WS /phone` whenever the agent is a voice
 agent (`telephony` defaults to `true`, and to `false` for a `page: "static"`
 workflow app, which has no stages to put on a call). Point the carrier at it
 with a `carrier` query parameter naming who is dialling:
@@ -1226,7 +1226,7 @@ the bridge transcodes in both directions, so the agent, its tools and its slots
 behave exactly as they do in the browser — a phone call is a transport, not a
 mode. Nothing about `agent.ts` changes to support one.
 
-Turn the route off with `telephony: false` on `createServer`. If you are
+Turn the route off with `telephony: false` on `createRuntimeServer`. If you are
 embedding the runtime yourself rather than deploying, the pieces are
 `createTelephonyBridge`, `startTelephonySession`, `TELEPHONY_PATH` and
 `carrierByName`, all on `@alexkroman1/aai-runtime`.

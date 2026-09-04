@@ -6,7 +6,7 @@
  * ## Why a proxy and not a server-side kill switch
  *
  * Only the server holds the session's WebSocket, so the obvious shape is an
- * env-gated `ws.close()` inside `createServer` — a fault injector living in
+ * env-gated `ws.close()` inside `createRuntimeServer` — a fault injector living in
  * production code, able to fire in production. `aai-cli/_fault-mode.ts` (the
  * process-restart mode) refuses that on principle and this follows it: a proxy in
  * front of the server is test-only by construction.

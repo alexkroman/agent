@@ -40,7 +40,7 @@ so the truncated-auth regression is invisible to it)". Level 1 cannot see an
 endpointing bug; level 2 without tools cannot see the bug an endpointing change
 caused. **Nothing here may be named, documented or reported in a way that
 implies level 2 coverage** — building level 1 and claiming level 2's questions
-would be a worse outcome than having neither. `eval/fake-speech.ts` in
+would be a worse outcome than having neither. `eval/stub-speech.ts` in
 `aai-runtime` repeats the warning at the seam where it would be forgotten.
 
 **Level 2's corpus decision is deferred, not made.** The honest options were a
@@ -129,7 +129,7 @@ The finding is the asymmetry: at this scope the SCORE is not the noisy thing,
 LATENCY is. Read the 100% carefully — it says these four cases do not
 discriminate between a good agent and a slightly worse one; it does not say they
 check nothing. They failed loudly on two real harness bugs during development
-(see `eval/fake-speech.ts` and `eval/session.ts`'s `repliedTo` in
+(see `eval/stub-speech.ts` and `eval/session.ts`'s `repliedTo` in
 `aai-runtime`), which is the
 discrimination evidence there is. A case that flips is more informative than one
 that always passes, and the way to get there is a harder case, never a lower
@@ -211,7 +211,7 @@ template is a user's project and had no way to ask this question at all — see
 `packages/aai-runtime/CLAUDE.md`. What stays here is the half that is a promise
 about a NOISY instrument: the recording runner, the spread report, and the
 assertion vocabulary. `assertions.ts` imports `TURN_ENDS`, `saidIn` and
-`toolCallsIn` from the published subpath rather than restating them, which is the
+`toolCallsInEvents` from the published subpath rather than restating them, which is the
 same one-declaration rule that section records being bitten by twice, now across
 a package boundary. What is REAL: `createRuntime`, the pipeline transport, the
 LLM on a live key, the tool executor, `ctx` and its slots, history trimming, the

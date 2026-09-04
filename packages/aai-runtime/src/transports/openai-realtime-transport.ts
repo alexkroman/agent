@@ -21,7 +21,7 @@ import { consoleLogger } from "../runtime-config.ts";
 import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import {
-  type SkipGreeting,
+  type SkipGreetingOption,
   shouldSkipGreeting,
   type Transport,
   type TransportCallbacks,
@@ -50,11 +50,11 @@ type OpenaiRealtimeTransportOptions = {
   outputSampleRate: number;
   /**
    * Skip the initial greeting (used for session resume) — a boolean, or a thunk
-   * resolved when the greeting would fire. See {@link SkipGreeting}: the runtime
+   * resolved when the greeting would fire. See {@link SkipGreetingOption}: the runtime
    * cannot answer this at construction, because whether a resume recovered
    * anything is only known once its lookups have run.
    */
-  skipGreeting?: SkipGreeting;
+  skipGreeting?: SkipGreetingOption;
   createWebSocket?: CreateOpenaiRealtimeWebSocket;
   logger?: Logger;
 };

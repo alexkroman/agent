@@ -16,8 +16,8 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
 import { registerLlmKind, requiredProviderEnvVars } from "../providers/resolve.ts";
-import { STUB_SPEECH_API_KEY_ENV } from "./fake-speech.ts";
 import { evalCredentials, openEvalSession } from "./session.ts";
+import { STUB_SPEECH_API_KEY_ENV } from "./stub-speech.ts";
 
 const SPEC_LLM_KIND = "eval-spec-llm";
 const SPEC_LLM_ENV = "EVAL_SPEC_LLM_KEY";

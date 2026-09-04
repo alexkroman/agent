@@ -20,7 +20,7 @@ export {
   registerSttKind,
   registerTtsKind,
   resolveLlm,
-  type S2SConfig,
+  type S2sConfig,
   type SttError,
   type SttEvents,
   type SttOpener,

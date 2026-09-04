@@ -204,7 +204,7 @@ const METHOD_SOURCES: Record<string, { source: string; methods: readonly string[
   // webhook — the URL goes to a third party that picks its own verb. It gates
   // POST now: a delivery is PERMANENT, so a bare `GET` from a link-preview
   // fetcher or a crawler was resolving a run's waitpoint with `{}`. The verb
-  // lives in the runtime's route table and `createServer` answers 405 with
+  // lives in the runtime's route table and `createRuntimeServer` answers 405 with
   // `Allow: POST` to anything else, so this reads it from there.
   workflowWebhook: {
     source: "WORKFLOW_CALLBACK_ROUTES.webhook.methods",

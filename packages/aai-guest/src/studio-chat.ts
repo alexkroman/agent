@@ -208,7 +208,7 @@ async function runTurn(
 
 /**
  * The harness's HTTP hook for `/studio/*` — returns true when the request
- * was claimed. Wired into `createServer`'s `request` option.
+ * was claimed. Wired into `createRuntimeServer`'s `request` option.
  */
 export function handleStudioRequest(
   session: StudioSession | null,

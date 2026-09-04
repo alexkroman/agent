@@ -18,7 +18,7 @@
  * ## One store, two homes, and the rule that picks between them
  *
  * `_upload-store-blobs.ts` is the only store, and it names neither half's home: a
- * RECORD through {@link UploadRecords}, BYTES through {@link UploadBlobs}. What
+ * RECORD through {@link UploadRecords}, BYTES through {@link UploadBackend}. What
  * this module owns is the pairing, and it follows ONE rule — **an upload must be at
  * least as durable as the runs that read it** — which makes it the same decision
  * `workflow-world.ts` already makes off the same input:
@@ -49,9 +49,9 @@ import { MAX_WORKFLOW_UPLOAD_BYTES, type OpenUpload } from "@alexkroman1/aai/hos
 import type { Db } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { UploadBlobs } from "./_upload-blobs.ts";
+import type { UploadBackend } from "./_upload-blobs.ts";
 import { createBrokeredUploadBlobs } from "./_upload-blobs-brokered.ts";
-import { createHttpUploadBlobs } from "./_upload-blobs-http.ts";
+import { createHttpUploadBackend } from "./_upload-blobs-http.ts";
 import {
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
@@ -67,15 +67,15 @@ import {
 } from "./uploads-platform.ts";
 
 export {
-  createMemoryUploadBlobs,
+  createMemoryUploadBackend,
   partKey,
   partsCovering,
   partsOf,
   rangesOf,
-  type UploadBlobs,
+  type UploadBackend,
   type UploadPart,
 } from "./_upload-blobs.ts";
-export { createHttpUploadBlobs, type HttpUploadBlobsOptions } from "./_upload-blobs-http.ts";
+export { createHttpUploadBackend, type HttpUploadBackendOptions } from "./_upload-blobs-http.ts";
 export {
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
@@ -152,8 +152,8 @@ const UPLOAD_ENV_EXAMPLE = [
  * @internal
  */
 export function uploadBytesAreRemote<
-  T extends { db?: Db | undefined; blobs?: UploadBlobs | undefined },
->(opts: T): opts is T & { db: Db; blobs: UploadBlobs } {
+  T extends { db?: Db | undefined; blobs?: UploadBackend | undefined },
+>(opts: T): opts is T & { db: Db; blobs: UploadBackend } {
   return Boolean(opts.db && opts.blobs);
 }
 
@@ -165,7 +165,7 @@ export function uploadBytesAreRemote<
  * directory. See the module doc for the rule, and `_upload-files.ts` for why the
  * second arm is not the file backend this store used to have.
  *
- * Passing neither is still a legitimate call — a bare `createServer` with nothing
+ * Passing neither is still a legitimate call — a bare `createRuntimeServer` with nothing
  * configured has to answer the upload routes somehow — and what it answers is a
  * refusal naming what it lacks.
  *
@@ -173,7 +173,7 @@ export function uploadBytesAreRemote<
  */
 export function createUploadStore(opts: {
   db?: Db | undefined;
-  blobs?: UploadBlobs | undefined;
+  blobs?: UploadBackend | undefined;
   /**
    * Where the LOCAL workflow world keeps its run state, for a deployment with no
    * database. Both halves of the store live under it, so an upload and the runs
@@ -292,10 +292,10 @@ export function createUploadStore(opts: {
  */
 export function resolveUploadBlobs(opts: {
   env?: Record<string, string> | undefined;
-  /** See `ServerOptions.uploadBroker` — a claim about the deployment, not a URL. */
+  /** See `RuntimeServerOptions.uploadBroker` — a claim about the deployment, not a URL. */
   broker?: string | undefined;
   fetch?: typeof globalThis.fetch | undefined;
-}): UploadBlobs | undefined {
+}): UploadBackend | undefined {
   const base = opts.broker?.trim();
   if (base) {
     return createBrokeredUploadBlobs({ base, ...omitUndefined({ fetch: opts.fetch }) });
@@ -307,7 +307,7 @@ export function resolveUploadBlobs(opts: {
   // resolve would turn a typo into a 500 on the first upload instead of a refusal
   // that names the key.
   if (!(url && serviceKey && bucket)) return undefined;
-  return createHttpUploadBlobs({
+  return createHttpUploadBackend({
     url,
     serviceKey,
     bucket,

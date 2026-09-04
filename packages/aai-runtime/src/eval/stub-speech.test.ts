@@ -4,9 +4,9 @@ import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import {
   createStubSttOpener,
   createStubTtsOpener,
-  STUB_SPEECH_API_KEY_ENV,
   installStubSpeechProviders,
-} from "./fake-speech.ts";
+  STUB_SPEECH_API_KEY_ENV,
+} from "./stub-speech.ts";
 
 const OPEN = { sampleRate: 16_000, apiKey: "k", signal: AbortSignal.abort() };
 

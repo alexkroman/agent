@@ -406,7 +406,7 @@ export function requiredProviderEnvVars(agent: {
   // same object and only `page` still tells them apart.
   //
   // The cost is that a static agent given a voice surface by an EMBEDDER
-  // (`createServer({ telephony: true })`, self-hosted) is not preflighted. Its
+  // (`createRuntimeServer({ telephony: true })`, self-hosted) is not preflighted. Its
   // runtime still resolves credentials the ordinary way and reports a missing
   // one at the first call; nothing here gates a session.
   if (agent.page === "static") return [];

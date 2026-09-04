@@ -109,7 +109,7 @@ export function platformSocketFor(opts: PlatformEndpoint): PlatformSocket | unde
  * Not refcounted, because that overlap is unreachable where a socket exists: the
  * registry is only ever filled when `platformGuestOptions()` answers, i.e. in a
  * DEPLOYED guest, and a guest process builds one server for one agent. `aai dev`
- * and a self-hosted `createServer` — the compositions that really do rebuild a
+ * and a self-hosted `createRuntimeServer` — the compositions that really do rebuild a
  * server in place — have neither platform key and open nothing. If that stops
  * being true, a handle per holder is the fix rather than a lazier `platformSocketFor`:
  * re-opening from the read path is what would let a unit test dial.

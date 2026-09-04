@@ -32,7 +32,7 @@
  *
  * ## Why `createAgentServer` specifically
  *
- * Every other session suite in this package builds `createServer` directly. This
+ * Every other session suite in this package builds `createRuntimeServer` directly. This
  * one goes through `createAgentServer`, which is the SELF-HOSTED front door — the
  * one the scaffold's `server.mjs` calls and the only one that reads
  * `DATABASE_URL` out of an agent's own env into `providerEnv`. That mattered

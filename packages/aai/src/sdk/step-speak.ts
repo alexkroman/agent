@@ -38,7 +38,7 @@
  * client, this module is on the CLI's zero-dependency startup path and rides
  * the browser bundle, and the agent bundle carries its own copy of this file —
  * so the publisher and the reader are two module instances in one realm.
- * `createServer` publishes; `host/step-speak.ts` is the published half.
+ * `createRuntimeServer` publishes; `host/step-speak.ts` is the published half.
  *
  * Unlike `stepFetch` there is NO global fallback, because there is no global
  * synthesizer to fall back to. An unpublished slot therefore fails with a
@@ -163,7 +163,7 @@ type StepSpeakSlot = { [STEP_SPEAK_SLOT]?: SpeechSynthesizer };
 /**
  * Publish the speech synthesizer for this process's steps.
  *
- * `createServer` does this, which is what makes {@link stepSpeak} behave
+ * `createRuntimeServer` does this, which is what makes {@link stepSpeak} behave
  * identically under `aai dev`, on a self-hosted server and in a deployed
  * guest. Pass `undefined` to unpublish.
  *
@@ -185,7 +185,7 @@ export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefi
  * @internal
  */
 export const SPEECH_UNAVAILABLE_MESSAGE =
-  "No speech synthesizer in this process. Speech is served by `createServer`, which every " +
+  "No speech synthesizer in this process. Speech is served by `createRuntimeServer`, which every " +
   "deployed agent, every self-hosted server and `aai dev` go through. In a test, publish a " +
   "synthesizer of your own with `stubSpeech` from `@alexkroman1/aai/testing`.";
 

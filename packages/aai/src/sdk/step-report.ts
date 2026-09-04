@@ -87,7 +87,7 @@ type StepReporterSlot = { [STEP_REPORTER_SLOT]?: StepReporter };
 /**
  * Publish the reporter for this process's steps.
  *
- * Called by whatever is about to serve workflows — `createServer`, which is the
+ * Called by whatever is about to serve workflows — `createRuntimeServer`, which is the
  * one front door `aai dev`, a self-hosted server and every deployed guest all
  * go through. Publishing again REPLACES, which is what a dev-server restart
  * means; pass `undefined` to unpublish, which is what a spec does when it is

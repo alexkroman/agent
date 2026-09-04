@@ -29,7 +29,7 @@ import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import { createRelayExecuteTool } from "./host-relay.ts";
 import { ALL_PROVIDER_ENV_VARS } from "./providers/resolve.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
-import type { Logger, S2SConfig } from "./runtime-config.ts";
+import type { Logger, S2sConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { usesAssemblyS2s } from "./runtime-transport.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
@@ -294,7 +294,7 @@ function assertHostRatesSupported(
 function s2sConfigFromHandshake(msg: {
   sampleRate?: number | undefined;
   ttsSampleRate?: number | undefined;
-}): S2SConfig {
+}): S2sConfig {
   return {
     ...DEFAULT_S2S_CONFIG,
     ...omitUndefined({ inputSampleRate: msg.sampleRate, outputSampleRate: msg.ttsSampleRate }),

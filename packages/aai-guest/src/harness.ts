@@ -51,7 +51,7 @@
  * replaced, and the broker names the live one.
  *
  * The session surface IS the dev server: the harness wraps the same
- * `createServer` `aai dev` runs (health, client-config, `/websocket`
+ * `createRuntimeServer` `aai dev` runs (health, client-config, `/websocket`
  * sessions), adding only the `/ws` control channel via the server's
  * `upgrade` hook and a lazy runtime facade (the runtime is built on the
  * first session, never at load — studio inspection loads carry an empty
@@ -70,7 +70,7 @@ import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
-import { createServer } from "@alexkroman1/aai-runtime";
+import { createRuntimeServer } from "@alexkroman1/aai-runtime";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
 import { startGuestTracingDetached } from "./guest-tracing.ts";
@@ -277,7 +277,7 @@ export function main(): void {
   // The control channel keeps ws's default payload cap — bundle/load frames
   // run to ~30 MB (workers ship their runtime); client sessions get the
   // protocol's own cap (applied by
-  // createServer's WebSocketServer).
+  // createRuntimeServer's WebSocketServer).
   const controlWss = new WebSocketServer({ noServer: true });
 
   controlWss.on("connection", (ws) => {
@@ -328,7 +328,7 @@ export function main(): void {
   // The dev server's HTTP+WS surface (health, client-config, /websocket
   // sessions), with the control channel claimed first via the upgrade hook
   // and the studio chat surface claimed via the request hook.
-  const server = createServer({
+  const server = createRuntimeServer({
     runtime: lazyRuntime(state),
     request: (req, res, url, method) =>
       // Ahead of the chat surface: the install route is gated by the HOST

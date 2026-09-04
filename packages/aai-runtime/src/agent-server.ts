@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Serve one agent — the front door over `createRuntime` + `createServer`.
+ * Serve one agent — the front door over `createRuntime` + `createRuntimeServer`.
  *
  * The two-layer pair underneath stays exported and unchanged: an embedder that
  * needs `runtime.startSession(ws)` inside an existing HTTP stack, or a server
@@ -10,7 +10,7 @@
  * had to say three things by hand, one of which failed silently:
  *
  * - **`name` and `greeting` were re-stated from the agent.** `SessionRuntime` is
- *   deliberately narrowed to `startSession`/`shutdown`, so `createServer` cannot
+ *   deliberately narrowed to `startSession`/`shutdown`, so `createRuntimeServer` cannot
  *   see the agent and the caller passed both again. Omitting `greeting` raised
  *   nothing — `GET /client-config` just served none, and the browser client
  *   rendered no greeting. A dropped field with no failure signal is the bug
@@ -23,14 +23,14 @@
  *
  * **A field this bag does not carry is a field nobody can reach**, which is the
  * failure mode a front door has and a two-call pair does not: dropping back to
- * `createRuntime` + `createServer` to set one option means restating by hand
+ * `createRuntime` + `createRuntimeServer` to set one option means restating by hand
  * every field this function derives, i.e. re-opening the silent drop above.
  * `telephony` was the sharp instance — off by default only for a static agent,
  * and unreachable from here, so every server built through this door mounted an
  * unauthenticated `WS /phone`. Its neighbour `page` was worse: the agent
  * DECLARES it and nothing carried the declaration through. Both are here now.
  *
- * What deliberately stays out is `createServer`'s host-mode pair (`env`,
+ * What deliberately stays out is `createRuntimeServer`'s host-mode pair (`env`,
  * `hostBaseAgent`) — a server whose sessions run agents their callers supply is
  * `createHostServer`, not this — and `createRuntime`'s testing and sandbox seams
  * (`executeTool`, `toolSchemas`, `createWebSocket`, `runCode`, `fetch`), which
@@ -46,7 +46,7 @@ import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";
+import { type AgentServer, createRuntimeServer, type SharedServerOptions } from "./server.ts";
 import { agentServerEnv } from "./server-env.ts";
 import { routeMatches, SERVER_ROUTES, type ServerRoute } from "./server-routes.ts";
 import { handleWorkflowRequest } from "./workflow-serve.ts";
@@ -65,7 +65,7 @@ import { handleWorkflowRequest } from "./workflow-serve.ts";
  * the body of a HEAD response itself, so there is nothing here to keep in step
  * with what `GET /health` serializes.
  *
- * Claimed through this door's `request` hook rather than in `createServer`,
+ * Claimed through this door's `request` hook rather than in `createRuntimeServer`,
  * which is not this package's to widen from here. If that dispatch ever adds
  * the verb, this stops being REACHED rather than starting to disagree — the
  * health route is matched there before any hook runs.
@@ -79,7 +79,7 @@ const HEALTH_HEAD_ROUTE = {
 // An interface rather than an intersection: TypeDoc documents inherited
 // members of an interface, and cannot resolve a `{@link X.member}` into one
 // side of an `A & B` alias — which is how the `providerEnv` link below broke.
-export interface AgentServerOptions extends PassthroughServerOptions {
+export interface AgentServerOptions extends SharedServerOptions {
   /**
    * The agent to serve. Its `name` and `greeting` feed `GET /client-config`.
    *
@@ -94,7 +94,7 @@ export interface AgentServerOptions extends PassthroughServerOptions {
    * deliberate, not boilerplate.
    *
    * The SERVER reads it too, and for a long time it did not: this option was
-   * forwarded to the runtime alone, so three of the four things `createServer`
+   * forwarded to the runtime alone, so three of the four things `createRuntimeServer`
    * takes out of an env were silently dropped by the door most self-hosters use.
    * `AAI_WORKFLOW_API_TOKEN` — documented as what CLOSES `/workflows/*` — did
    * nothing, so an operator who set it was still serving that API, and its
@@ -135,16 +135,16 @@ export interface AgentServerOptions extends PassthroughServerOptions {
    * Where this server is reachable from outside — see `RuntimeOptions.publicUrl`.
    * `ctx.workflows.publicWebhookUrl()` is the only reader; without it, it throws.
    *
-   * Declared HERE and not on {@link PassthroughServerOptions}, although the two
+   * Declared HERE and not on {@link SharedServerOptions}, although the two
    * other front doors share that bag. The bag exists so a hook added to it reaches
-   * both wrappers, and this is not that shape: `createServer` builds no workflow
+   * both wrappers, and this is not that shape: `createRuntimeServer` builds no workflow
    * client (its runtime is handed in), and `createHostServer`'s sessions run
    * caller-supplied agents, which declare no workflows. On either it would be a
    * field that quietly does nothing.
    */
   publicUrl?: string | undefined;
   /**
-   * What this server's front door IS — see `ServerOptions.page`. Defaults to
+   * What this server's front door IS — see `RuntimeServerOptions.page`. Defaults to
    * the agent's own `page`, so declaring `page: "static"` on the agent is
    * enough.
    *
@@ -156,19 +156,19 @@ export interface AgentServerOptions extends PassthroughServerOptions {
    */
   page?: "voice" | "static" | undefined;
   /**
-   * Serve carrier media streams on `WS /phone` — see `ServerOptions.telephony`.
+   * Serve carrier media streams on `WS /phone` — see `RuntimeServerOptions.telephony`.
    * Defaults to true for a voice agent and false for a static one.
    *
    * Forwarded rather than left to the pair underneath because it is the one
    * option here that ADDS an unauthenticated surface: reaching `false` used to
-   * mean abandoning this function for `createRuntime` + `createServer` and
+   * mean abandoning this function for `createRuntime` + `createRuntimeServer` and
    * restating every field it derives, which is the silent-drop bug this wrapper
    * exists to prevent.
    */
   telephony?: boolean | undefined;
   /**
    * Base URL of a PLATFORM that serves this agent's upload bytes for it — see
-   * `ServerOptions.uploadBroker`. Absent, this process talks to a bucket
+   * `RuntimeServerOptions.uploadBroker`. Absent, this process talks to a bucket
    * itself.
    */
   uploadBroker?: string | undefined;
@@ -224,7 +224,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
 
   /**
    * What this door will actually mount, decided HERE rather than in
-   * `createServer`.
+   * `createRuntimeServer`.
    *
    * `page` was already resolved here (the agent declares it); `telephony`'s
    * `?? !isStatic` lived one layer down, so this function could not say which
@@ -236,7 +236,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
    * This is the one place the `listen()` comment's rule — forward, never
    * re-default — is broken on purpose, and what pays for it is
    * `agent-server.test.ts`, which probes every route the line names (and the
-   * absence of every route it omits) over the wire. If `createServer`'s default
+   * absence of every route it omits) over the wire. If `createRuntimeServer`'s default
    * moves, that spec fails rather than the log quietly becoming false.
    */
   const effectivePage = page ?? agent.page;
@@ -290,15 +290,15 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     return { http: httpRoutes, ws: wsRoutes };
   }
 
-  const server = createServer({
+  const server = createRuntimeServer({
     runtime,
-    // The agent's env, MINUS the host-mode gate: `createServer` reads the two
+    // The agent's env, MINUS the host-mode gate: `createRuntimeServer` reads the two
     // route tokens and `DATABASE_URL` out of it, and `agentServerEnv` carries
     // the argument for why the fourth key it reads may not arrive by this door.
     env: agentServerEnv(env),
     // Read off the agent rather than asked for again — see the module doc.
     // `page` joins them, and an explicit one still wins: the field is the more
-    // specific statement, the same rule `telephony` follows in `createServer`.
+    // specific statement, the same rule `telephony` follows in `createRuntimeServer`.
     name: agent.name,
     // Resolved above rather than left to the layer underneath — see
     // `servedRoutes`. `telephony` is no longer `omitUndefined`'d: it is always a
@@ -312,7 +312,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       uploadBroker,
     }),
     // The hook bag, SPREAD — legal only because every field on
-    // `PassthroughServerOptions` accepts `undefined`. Naming the three by hand
+    // `SharedServerOptions` accepts `undefined`. Naming the three by hand
     // instead is how a fourth one added to that bag reaches the other front
     // door and silently not this one.
     ...hooks,
@@ -383,7 +383,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     },
     // The arguments are FORWARDED rather than re-defaulted, so this door and the
     // one underneath cannot disagree about what `listen()` with no port means —
-    // `createServer` owns that default (3000), and restating it here is the kind
+    // `createRuntimeServer` owns that default (3000), and restating it here is the kind
     // of second copy that drifts. Reading `port` out of the tuple is only for the
     // ordering decision below.
     async listen(...args: Parameters<AgentServer["listen"]>) {

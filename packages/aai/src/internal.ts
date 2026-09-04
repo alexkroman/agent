@@ -51,7 +51,7 @@ export { WORKFLOW_API_PREFIX } from "./sdk/_workflow-api-envelope.ts";
 // socket exists does.
 export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
 // Pool SIZES for a database a guest was GIVEN — an author's own `DATABASE_URL`,
-// on a self-hosted `createServer` or under `aai dev`. Here rather than in the
+// on a self-hosted `createRuntimeServer` or under `aai dev`. Here rather than in the
 // runtime because both ends of that number have to agree and the platform
 // provisions no database of its own to derive it from; `sdk/app-db-budget.ts`
 // carries each measurement and why the `APP_DB_` prefix is now a misnomer. Pure

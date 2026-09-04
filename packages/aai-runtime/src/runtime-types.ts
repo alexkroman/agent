@@ -16,7 +16,7 @@ import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "./generate.ts";
-import type { Logger, S2SConfig } from "./runtime-config.ts";
+import type { Logger, S2sConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
@@ -62,7 +62,7 @@ export type AgentRuntime = {
   readonly readyConfig: ReadyConfig;
   /**
    * `ctx.workflows` for this runtime — the same client tool code is given, and
-   * what {@link createServer} serves `/workflows/*` from. Undefined for an agent
+   * what {@link createRuntimeServer} serves `/workflows/*` from. Undefined for an agent
    * that declares none, which is what makes that API answer 404 rather than
    * pretending to a surface the agent does not have.
    */
@@ -92,7 +92,7 @@ export type AgentRuntime = {
    */
   readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
   /**
-   * This runtime's session event stream — what {@link createServer} serves
+   * This runtime's session event stream — what {@link createRuntimeServer} serves
    * `/session-events/:id` from, and what a resuming session reads its
    * conversation back out of.
    *
@@ -230,7 +230,7 @@ export type RuntimeOptions = {
   /** Structured logger for runtime and session logs. Defaults to the console. */
   logger?: Logger | undefined;
   /** S2S endpoint URL and audio sample rates. Defaults to `DEFAULT_S2S_CONFIG`. */
-  s2sConfig?: S2SConfig | undefined;
+  s2sConfig?: S2sConfig | undefined;
   /**
    * Timeout in ms for `session.start()` (S2S connection setup).
    * Defaults to 10 000 (10 s).

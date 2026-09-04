@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Serving-path tests for the dev server, deliberately mock-free: the
- * existing _dev-server tests mock createServer/createRuntime/vite wholesale,
+ * existing _dev-server tests mock createRuntimeServer/createRuntime/vite wholesale,
  * so nothing there would catch the real server failing to boot or serve.
  * (The heavier Vite/client path is exercised by e2e; the proxy wiring it
  * depends on is asserted below via `viteDevConfig`.)
@@ -189,7 +189,7 @@ describe("viteDevConfig", () => {
 
   test.each(["", "   ", undefined])("binds the BACKEND's host for AAI_DEV_HOST=%o", (value) => {
     // `devBindHost` normalizes blank to "unset", and unset takes the same
-    // constant `createServer` binds rather than Vite's own default. Vite's
+    // constant `createRuntimeServer` binds rather than Vite's own default. Vite's
     // default is the HOSTNAME `localhost`, so Node binds whatever
     // `getaddrinfo` answers first — measured `::1` on macOS, which makes
     // `http://127.0.0.1:<port>` ECONNREFUSED against a healthy server whose

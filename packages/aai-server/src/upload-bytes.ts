@@ -49,10 +49,10 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
-  createHttpUploadBlobs,
-  createMemoryUploadBlobs,
+  createHttpUploadBackend,
+  createMemoryUploadBackend,
   UPLOAD_KEY_PREFIX,
-  type UploadBlobs,
+  type UploadBackend,
 } from "@alexkroman1/aai-runtime";
 import { StorageClient } from "@supabase/storage-js";
 import { type SupabaseBlobStorageOptions, storageEndpoint } from "./blob-storage.ts";
@@ -67,7 +67,7 @@ import { type SupabaseBlobStorageOptions, storageEndpoint } from "./blob-storage
 export const UPLOAD_READ_URL_TTL_SECONDS = 300;
 
 /** The byte operations the platform's upload route performs, and only those. */
-export type UploadBytes = UploadBlobs & {
+export type UploadBytes = UploadBackend & {
   /**
    * A time-boxed, object-scoped read URL, or `null` when this backend cannot mint
    * one — see the module doc for why that is not the same as a failure.
@@ -90,14 +90,14 @@ export function uploadKey(slug: string, id: string, offset: number): string {
 /**
  * Supabase Storage-backed upload bytes (production).
  *
- * The byte half is `createHttpUploadBlobs`, which is the SDK's own implementation —
+ * The byte half is `createHttpUploadBackend`, which is the SDK's own implementation —
  * the same code the `aai dev` path runs, so a guest brokering through this route and
  * a dev server talking to a bucket directly cannot diverge in how an object is
  * written or how a window is read. The signing half is storage-js, which is already
  * a dependency here and is what `blob-storage.ts` signs deploy blobs with.
  */
 export function createSupabaseUploadBytes(opts: SupabaseBlobStorageOptions): UploadBytes {
-  const blobs = createHttpUploadBlobs({
+  const blobs = createHttpUploadBackend({
     url: opts.url,
     serviceKey: opts.serviceRoleKey,
     bucket: opts.bucket,
@@ -126,7 +126,7 @@ export function createSupabaseUploadBytes(opts: SupabaseBlobStorageOptions): Upl
 /** In-memory upload bytes for local dev and tests. */
 export function createMemoryUploadBytes(): UploadBytes {
   return {
-    ...createMemoryUploadBlobs(),
+    ...createMemoryUploadBackend(),
     // No URL to hand out: there is no server in front of a Map. The route reads the
     // window instead, which is exactly the pre-signing behaviour.
     readUrl: () => Promise.resolve(null),

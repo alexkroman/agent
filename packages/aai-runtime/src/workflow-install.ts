@@ -8,7 +8,7 @@
  * `sdk/step-env.ts` states — the step artifact bundles its own copy of the SDK,
  * so the publisher and the reader are two module instances in one realm — and
  * all four are published HERE, in one call, because they have one correct wiring
- * point: `createServer`. That is the front door `aai dev`, a self-hosted server
+ * point: `createRuntimeServer`. That is the front door `aai dev`, a self-hosted server
  * and every deployed guest all go through, which is what makes a step behave
  * identically in all three.
  *
@@ -50,7 +50,7 @@ import {
  * What one server's workflow support OWNS, so it can give it back.
  *
  * The `close` half is the whole reason this is an object rather than the store
- * on its own. `aai dev` re-runs `createServer` on every file save and
+ * on its own. `aai dev` re-runs `createRuntimeServer` on every file save and
  * `AgentServer.close()` closed the runtime and the sockets and nothing else, so
  * each rebuild stranded a Postgres pool (2 connections, against a role limit of
  * 4 at the time — two saves that touched uploads exhausted it) and an undici
@@ -61,7 +61,7 @@ import {
  * on a shared pool (`host/app-db.ts`), which is what makes that rule survive the
  * sharing: releasing this one closes the pool only if nobody else holds one.
  *
- * Not exported from `/runtime`: `createServer` is the only caller and takes it
+ * Not exported from `/runtime`: `createRuntimeServer` is the only caller and takes it
  * by inference.
  *
  * @internal
@@ -109,7 +109,7 @@ export function installWorkflowSupport(opts: {
    * Base URL of a platform serving this agent's upload bytes, when there is one.
    *
    * Its PRESENCE selects the brokered byte path, which is the security boundary rather
-   * than a preference — see `resolveUploadBlobs`, and `ServerOptions.uploadBroker` for
+   * than a preference — see `resolveUploadBlobs`, and `RuntimeServerOptions.uploadBroker` for
    * why this is not `publicUrl`.
    */
   uploadBroker?: string | undefined;

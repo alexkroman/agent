@@ -34,7 +34,7 @@
  * `speech.started`/`reply.cancelled` ratio. Those are properties of the boundary
  * the fake stages remove, and no assertion driven through this can say anything
  * about one. Do not name or report an eval written here in a way that implies
- * they are covered; `eval/session.ts` and `eval/fake-speech.ts` repeat the
+ * they are covered; `eval/session.ts` and `eval/stub-speech.ts` repeat the
  * warning at the seams where it would be forgotten.
  *
  * `openEvalWorkflows` is the same idea for a `workflowApp()`, which has no
@@ -45,10 +45,10 @@
  * {@link openEvalSession}'s `workflows` option takes, which is what makes a
  * VOICE agent's run-starting tool executable in an eval.
  *
- * The assertion READERS ({@link saidIn}, {@link toolCallsIn}, {@link TURN_ENDS},
+ * The assertion READERS ({@link saidIn}, {@link toolCallsInEvents}, {@link TURN_ENDS},
  * {@link toolArgsIn}, {@link toolResultIn}, {@link toolResultsIn},
  * {@link lastStateIn}, {@link statesIn}, {@link customEventsIn},
- * {@link toolNames}, {@link callsIn}, {@link turnCalling},
+ * {@link toolNames}, {@link toolCallsInTurns}, {@link turnCalling},
  * {@link completedOutput}) are here rather than a vocabulary of matchers because
  * an eval already has a runner: `expect` in a vitest file is the simple case, and
  * a case that must PROFILE rather than bisect on the first failure wants a
@@ -92,25 +92,11 @@ export {
   statesIn,
   TURN_ENDS,
   toolArgsIn,
-  toolCallsIn,
+  toolCallsInEvents,
   toolNames,
   toolResultIn,
   toolResultsIn,
 } from "./eval/events.ts";
-// The fake speech stages, and the env var they resolve their unused credential
-// from. Public because the seam is the interesting part: they register through
-// `registerSttKind`/`registerTtsKind` like any provider, so a harness of your
-// own — one that paces real PCM, or scripts a provider failure — is written the
-// same way rather than against a private hook.
-export {
-  createStubSttOpener,
-  createStubTtsOpener,
-  STUB_SPEECH_API_KEY_ENV,
-  type StubSpeechProviders,
-  type StubSttSession,
-  type StubTtsSession,
-  installStubSpeechProviders,
-} from "./eval/fake-speech.ts";
 export {
   type EvalCredentials,
   type EvalSession,
@@ -129,13 +115,27 @@ export {
   type StubScript,
   type StubStep,
 } from "./eval/stub-llm.ts";
+// The fake speech stages, and the env var they resolve their unused credential
+// from. Public because the seam is the interesting part: they register through
+// `registerSttKind`/`registerTtsKind` like any provider, so a harness of your
+// own — one that paces real PCM, or scripts a provider failure — is written the
+// same way rather than against a private hook.
+export {
+  createStubSttOpener,
+  createStubTtsOpener,
+  installStubSpeechProviders,
+  STUB_SPEECH_API_KEY_ENV,
+  type StubSpeechProviders,
+  type StubSttSession,
+  type StubTtsSession,
+} from "./eval/stub-speech.ts";
 // Reading a CALL rather than one reply. Public because the claim they make is
 // the one a multi-turn case has to make and could not spell: the turn a
 // MECHANISM fired in, never turn number two — how many turns an agent takes to
 // get somewhere is the model's business and it measurably varies, so a case
 // pinned to an index is a flake with a misleading name. Three templates reached
 // that conclusion independently and wrote these three out under it.
-export { callsIn, describeTurn, turnCalling } from "./eval/turns.ts";
+export { describeTurn, toolCallsInTurns, turnCalling } from "./eval/turns.ts";
 // The `node:vm` `run_code` executor. Public because the `run_code` builtin
 // REFUSES without one off-platform (the Modal container is the security
 // boundary), so a case about an agent that answers by running code cannot assert

@@ -13,8 +13,8 @@
  */
 
 import {
+  createSttError,
   ELEVENLABS_API_KEY_ENV,
-  makeSttError,
   resolveElevenLabsSttSettings,
   type SttEvents,
   type SttOpener,
@@ -54,7 +54,9 @@ const AUDIO_FORMATS: Record<Pcm16Rate, AudioFormat> = {
 
 function audioFormatFor(sampleRate: number): AudioFormat {
   return AUDIO_FORMATS[
-    assertPcm16Rate(sampleRate, "ElevenLabs STT", (msg) => makeSttError("stt_connect_failed", msg))
+    assertPcm16Rate(sampleRate, "ElevenLabs STT", (msg) =>
+      createSttError("stt_connect_failed", msg),
+    )
   ];
 }
 
@@ -67,7 +69,7 @@ export function openElevenLabs(opts: ElevenLabsSttOptions = {}): SttOpener {
         openOpts.apiKey,
         ELEVENLABS_API_KEY_ENV,
         "ElevenLabs STT",
-        (msg) => makeSttError("stt_auth_failed", msg),
+        (msg) => createSttError("stt_auth_failed", msg),
       );
 
       const settings = resolveElevenLabsSttSettings(opts);
@@ -75,7 +77,7 @@ export function openElevenLabs(opts: ElevenLabsSttOptions = {}): SttOpener {
 
       const connection = await connectOrThrow(
         "ElevenLabs STT",
-        (msg) => makeSttError("stt_connect_failed", msg),
+        (msg) => createSttError("stt_connect_failed", msg),
         () =>
           client.speechToText.realtime.connect({
             modelId: settings.model,
@@ -116,7 +118,7 @@ export function openElevenLabs(opts: ElevenLabsSttOptions = {}): SttOpener {
       });
 
       connection.on(RealtimeEvents.AUTH_ERROR, (msg) => {
-        shell.emit("error", makeSttError("stt_auth_failed", msg.error));
+        shell.emit("error", createSttError("stt_auth_failed", msg.error));
       });
 
       closeOnAbort(openOpts.signal, shell.close);

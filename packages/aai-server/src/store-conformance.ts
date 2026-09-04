@@ -258,13 +258,13 @@ export const STORE_CONTRACTS = [
   },
   {
     // The SDK's byte seam, and the pair the platform's own arm is built ON:
-    // `createSupabaseUploadBytes` composes `createHttpUploadBlobs`, so the guest
+    // `createSupabaseUploadBytes` composes `createHttpUploadBackend`, so the guest
     // talking to a bucket directly under `aai dev` and the platform serving the
     // brokered route run the same code.
     //
     // The "packages/aai may import no sibling" half of this reason was stale for
-    // the same reason session-state's was — `createMemoryUploadBlobs` and
-    // `createHttpUploadBlobs` are both in `aai-runtime` (`_upload-blobs.ts`,
+    // the same reason session-state's was — `createMemoryUploadBackend` and
+    // `createHttpUploadBackend` are both in `aai-runtime` (`_upload-blobs.ts`,
     // `_upload-blobs-http.ts`) since the runtime split — so what is left is the
     // BUCKET, which is the operative half anyway and is shared with
     // `upload-bytes` above.
@@ -279,8 +279,8 @@ export const STORE_CONTRACTS = [
     // bucket, and a conformance table with one arm reports the same green as one
     // with two. Write it WITH the bucket, in the same change.
     contract: "upload-blobs",
-    memory: "createMemoryUploadBlobs",
-    pg: "createHttpUploadBlobs",
+    memory: "createMemoryUploadBackend",
+    pg: "createHttpUploadBackend",
     conformance: false,
     why: "its real arm needs a declared local storage bucket (supabase/config.toml); both factories live in aai-runtime, so this registry cannot pair them either",
   },

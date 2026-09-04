@@ -17,11 +17,11 @@
 import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { fakeFetch } from "./_test-utils.ts";
-import type { UploadBlobs } from "./_upload-blobs.ts";
+import type { UploadBackend } from "./_upload-blobs.ts";
 import { UPLOAD_WINDOW_CONCURRENCY } from "./_upload-store.ts";
 import { body, memoryStore, ramp, recordingDb } from "./_upload-store-test-utils.ts";
 import {
-  createMemoryUploadBlobs,
+  createMemoryUploadBackend,
   createUnavailableUploadStore,
   createUploadStore,
   UPLOADS_TABLE,
@@ -374,14 +374,14 @@ describe("a whole-file write", () => {
    */
   function gatedStore() {
     const recorder = recordingDb();
-    const inner = createMemoryUploadBlobs();
+    const inner = createMemoryUploadBackend();
     const gates: PromiseWithResolvers<void>[] = [];
     /** The offset each `put` named, in the order the puts STARTED. */
     const started: number[] = [];
     let live = 0;
     let peak = 0;
     let open = false;
-    const blobs: UploadBlobs = {
+    const blobs: UploadBackend = {
       ...inner,
       put: async (key, body, options) => {
         const gate = Promise.withResolvers<void>();
@@ -511,7 +511,7 @@ describe("where an upload's record lives", () => {
     const { fetch, methods } = platformFetch();
     const store = createUploadStore({
       db,
-      blobs: createMemoryUploadBlobs(),
+      blobs: createMemoryUploadBackend(),
       platform: { base: "https://aai.example/a", token: "t", fetch },
     });
     await store.create({ name: "clip.wav" }, body(ramp(4))).catch(() => undefined);
@@ -524,7 +524,7 @@ describe("where an upload's record lives", () => {
     // directory even though the platform was right there.
     const { fetch, methods } = platformFetch();
     const store = createUploadStore({
-      blobs: createMemoryUploadBlobs(),
+      blobs: createMemoryUploadBackend(),
       localDir: "/should/not/be/used",
       platform: { base: "https://aai.example/a", token: "t", fetch },
     });

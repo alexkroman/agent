@@ -86,7 +86,7 @@ const UPLOAD_ID = "upl_test";
 const STARTED_AT = 1_000_000;
 
 /**
- * Publish one in-memory upload, the way `createServer` publishes a real store.
+ * Publish one in-memory upload, the way `createRuntimeServer` publishes a real store.
  *
  * This is the seam that makes a step testable at all: `stepReadUpload` reads a
  * process-wide slot rather than dialling anything, so a spec supplies its own

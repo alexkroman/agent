@@ -188,7 +188,7 @@ export function concat(parts: readonly Uint8Array[], size: number): Uint8Array {
 /**
  * Drain a body into one buffer, refusing it the moment it passes `limit`.
  *
- * The three {@link UploadBlobs} implementations each open an object write by
+ * The three {@link UploadBackend} implementations each open an object write by
  * buffering — Storage has no append and no streaming PUT of unknown length, so
  * an object's bytes have to be in hand to write them — and each had written the
  * same accumulate-count-and-cap loop. The cap is what makes it safe: the size is

@@ -9,7 +9,7 @@
  * accidental safety regimes — one caught explicitly, three sat inside an `async`
  * router whose rejection is caught and answered 500, and **one was fully
  * synchronous** (`webhookToken` → `pickWorkflowHandler` → `handleWorkflowRequest`,
- * called from `createServer`'s `options.request?.(…)` hook with no `try`). That
+ * called from `createRuntimeServer`'s `options.request?.(…)` hook with no `try`). That
  * one reached the guest's `uncaughtException` guard and `process.exit(4)`,
  * unauthenticated, taking every concurrent voice session on the sandbox down
  * with it.

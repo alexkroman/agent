@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * {@link UploadBlobs} against a Supabase Storage bucket, with a service key.
+ * {@link UploadBackend} against a Supabase Storage bucket, with a service key.
  *
  * The implementation for `aai dev` and for a self-hosted server: the bucket is the
  * OPERATOR's, and the operator and the agent author are the same person, so there
@@ -37,11 +37,11 @@
 
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { blobFetch } from "./_egress-fetch.ts";
-import { contentLength, IDENTITY_ENCODING, type UploadBlobs } from "./_upload-blobs.ts";
+import { contentLength, IDENTITY_ENCODING, type UploadBackend } from "./_upload-blobs.ts";
 import { collectCapped } from "./_upload-byte-util.ts";
 import { UPLOAD_STORAGE_BUCKET_ENV, UPLOAD_STORAGE_URL_ENV } from "./_upload-env.ts";
 
-export type HttpUploadBlobsOptions = {
+export type HttpUploadBackendOptions = {
   /** Project URL (`https://<ref>.supabase.co`), or any Storage-compatible origin. */
   url: string;
   /** Service key. Reaches the bucket, so it never leaves the process holding it. */
@@ -59,8 +59,8 @@ export function storageEndpoint(url: string): string {
   return `${url.replace(/\/+$/, "")}/storage/v1`;
 }
 
-/** {@link UploadBlobs} over Supabase Storage's REST API. */
-export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs {
+/** {@link UploadBackend} over Supabase Storage's REST API. */
+export function createHttpUploadBackend(opts: HttpUploadBackendOptions): UploadBackend {
   const endpoint = storageEndpoint(opts.url);
   // See `_egress-fetch.ts`: the operator's own bucket is reached the same way the
   // platform is, several windows at a time, so it takes the same HTTP/1.1 pool.
@@ -109,7 +109,7 @@ export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs
         // Inclusive of its last byte, unlike every offset in this codebase.
         headers: { ...auth, Range: `bytes=${start}-${end - 1}` },
       });
-      // Clamped rather than refused — see `UploadBlobs.read`. 416 is what Storage
+      // Clamped rather than refused — see `UploadBackend.read`. 416 is what Storage
       // answers for a window starting past the object, which is the same "there is
       // less here than you asked for" a short 206 reports.
       if (res.status === 404 || res.status === 416) return new Uint8Array(0);
@@ -128,7 +128,7 @@ export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs
       if (res.status === 404) return undefined;
       if (!res.ok) throw await storageError("head", key, res);
       // A HEAD that answers 200 with no usable length is a store this cannot measure,
-      // and measuring is the whole point of the call — see `UploadBlobs.size`, whose
+      // and measuring is the whole point of the call — see `UploadBackend.size`, whose
       // contract is that it never over-reports. `contentLength` is what keeps "stated
       // no length" out of the zero case; this used to read the header itself and got
       // that wrong.

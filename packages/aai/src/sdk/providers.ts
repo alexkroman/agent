@@ -127,7 +127,7 @@ export interface SttError extends Error {
 }
 
 /** Build an {@link SttError} with a typed `code`. Zero-dep helper so both sdk/ and host/ can use it. */
-export function makeSttError(code: SttError["code"], message: string): SttError {
+export function createSttError(code: SttError["code"], message: string): SttError {
   return Object.assign(new Error(message), { code }) as SttError;
 }
 
@@ -243,8 +243,8 @@ export interface TtsError extends Error {
   readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
 }
 
-/** Build a {@link TtsError} with a typed `code`. Mirror of {@link makeSttError}. */
-export function makeTtsError(code: TtsError["code"], message: string): TtsError {
+/** Build a {@link TtsError} with a typed `code`. Mirror of {@link createSttError}. */
+export function createTtsError(code: TtsError["code"], message: string): TtsError {
   return Object.assign(new Error(message), { code }) as TtsError;
 }
 

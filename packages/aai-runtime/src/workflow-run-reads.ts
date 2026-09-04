@@ -62,7 +62,7 @@
  *
  * A deployed guest has TWO copies of this package (see "A deployed guest has
  * TWO copies of this package" in this package's guide), and the three loops are
- * split across them: `createServer` — hence the wait loop and the event stream
+ * split across them: `createRuntimeServer` — hence the wait loop and the event stream
  * — comes from the HARNESS's copy, while `createRunNotifier` is built by
  * `createRuntime` inside the BUNDLE's. Both hold the same `WorkflowClient`
  * OBJECT, so a per-reader registry unifies them — but a module-level registry

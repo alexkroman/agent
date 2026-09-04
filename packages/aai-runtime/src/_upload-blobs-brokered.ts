@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * {@link UploadBlobs} for a DEPLOYED guest: every byte operation is one request to
+ * {@link UploadBackend} for a DEPLOYED guest: every byte operation is one request to
  * the agent's own public platform surface, and the guest holds no credential.
  *
  * This is the half of `_upload-blobs.ts`'s "Signing is NOT here" that makes the
@@ -52,7 +52,7 @@ import { jitteredBackoff } from "@alexkroman1/aai/internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { blobFetch } from "./_egress-fetch.ts";
-import type { UploadBlobs } from "./_upload-blobs.ts";
+import type { UploadBackend } from "./_upload-blobs.ts";
 import { contentLength, IDENTITY_ENCODING } from "./_upload-blobs.ts";
 import { collectCapped } from "./_upload-byte-util.ts";
 
@@ -122,8 +122,8 @@ export type BrokeredUploadBlobsOptions = {
 /** Path the platform's byte route hangs off the agent's public base. */
 export const BROKERED_UPLOADS_PATH = "uploads";
 
-/** {@link UploadBlobs} brokered through the platform's own byte route. */
-export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): UploadBlobs {
+/** {@link UploadBackend} brokered through the platform's own byte route. */
+export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): UploadBackend {
   const base = opts.base.replace(/\/+$/, "");
   // `blobFetch`, NEVER `globalThis.fetch`: these are several concurrent requests
   // to one origin, some of them carrying megabytes, which is the exact shape undici
@@ -197,7 +197,7 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
           { method: "GET", headers: { Range: `bytes=${start}-${end - 1}` } },
           "read",
         );
-        // Clamped rather than refused — see `UploadBlobs.read`. The body is
+        // Clamped rather than refused — see `UploadBackend.read`. The body is
         // CANCELLED rather than abandoned: undici keeps a connection with an
         // unread response unusable until it is GC'd, out of the 64 the blob pool
         // allows per origin, and probing for absent windows is what the resume
@@ -220,7 +220,7 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
         const res = await send(key, { method: "HEAD", headers: { ...IDENTITY_ENCODING } }, "head");
         if (res.status === 404) return;
         if (!res.ok) throw await brokerError("head", key, res);
-        // Never guessed: `UploadBlobs.size` is what stops a part nobody uploaded being
+        // Never guessed: `UploadBackend.size` is what stops a part nobody uploaded being
         // recorded as present, so an unmeasurable answer has to read as absent — which
         // includes a response that stated no length at all. `contentLength` owns that
         // distinction, and carries what conflating the two cost.

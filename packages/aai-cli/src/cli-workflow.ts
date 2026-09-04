@@ -32,7 +32,7 @@ const workflowToken = {
  * and until this flag existed there was no way to say so: every verb resolved a
  * platform origin plus a PUBLISHED slug, so an undeployed project was told to
  * `aai publish` while the runs it asked about were answering on localhost. A
- * dev server also has no slug segment at all (`createServer` mounts the API on
+ * dev server also has no slug segment at all (`createRuntimeServer` mounts the API on
  * the origin), so a different `--server` could not express it either.
  *
  * Separate from `--server` rather than a mode of it, because the two carry

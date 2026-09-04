@@ -28,7 +28,7 @@ describe("with nothing published", () => {
 describe("with a reader published", () => {
   test("answers what the reader says, per call rather than once", () => {
     // A reader rather than a value, because the answer changes per step and per
-    // attempt while the slot is filled once at `createServer`.
+    // attempt while the slot is filled once at `createRuntimeServer`.
     let attempt = 1;
     publishStepInfoReader(() => ({
       name: "charge",

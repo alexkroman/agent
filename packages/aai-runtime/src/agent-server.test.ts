@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `createAgentServer` — the one-call front door over createRuntime +
- * createServer.
+ * createRuntimeServer.
  *
  * The case worth pinning is `/client-config`: the two-call form made callers
  * re-state `name` and `greeting` from the agent, and omitting `greeting`
@@ -11,7 +11,7 @@
  *
  * The forwarding tests below are the same class of bug one layer out: an
  * option this door does not carry is one nobody can reach, because the escape
- * hatch — dropping to `createRuntime` + `createServer` — means restating every
+ * hatch — dropping to `createRuntime` + `createRuntimeServer` — means restating every
  * field this function derives. `telephony` and `page` were both unreachable,
  * and both are asserted over the wire for the same reason `greeting` is: what
  * failed was a value not arriving, which an options-object assertion cannot

@@ -28,7 +28,7 @@ import type { UserActivity } from "./pipeline-user-speech.ts";
 import {
   type EmitError,
   type SendTtsText,
-  type SkipGreeting,
+  type SkipGreetingOption,
   shouldSkipGreeting,
   type TransportCallbacks,
 } from "./types.ts";
@@ -73,7 +73,7 @@ export interface PipelineLifecycleDeps {
   /** Session-lifetime abort — combined into every turn's own signal. */
   sessionAbort: AbortController;
   greeting: string | undefined;
-  skipGreeting: SkipGreeting | undefined;
+  skipGreeting: SkipGreetingOption | undefined;
 
   gate: TurnGate;
   turns: TurnMachine;

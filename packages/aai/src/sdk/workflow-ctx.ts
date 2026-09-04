@@ -417,7 +417,7 @@ export type WorkflowCtx = {
    * else somebody else decides.
    *
    * **The WEBHOOK route reaches this.** `ctx.workflows.publicWebhookUrl(token)`
-   * mints a URL that `createServer` serves, and a delivery to it resolves the
+   * mints a URL that `createRuntimeServer` serves, and a delivery to it resolves the
    * wait: the route calls `WorkflowClient.signal`, which writes the payload
    * against this hook's own journal row and re-walks the body. So a
    * payment-callback flow is a supported shape.

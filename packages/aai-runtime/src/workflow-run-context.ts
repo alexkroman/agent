@@ -94,7 +94,7 @@ export type RunContext = {
  * store per COPY of this package rather than one per process.
  *
  * **A deployed guest has two copies**, and that is by design rather than by
- * accident: the harness bundles its own `aai-runtime` and calls `createServer`
+ * accident: the harness bundles its own `aai-runtime` and calls `createRuntimeServer`
  * from it, while the agent's runtime is built by the BUNDLE's own
  * `__aaiCreateRuntime` so a deployed agent runs the SDK version it was tested
  * against (`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). So the

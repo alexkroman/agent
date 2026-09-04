@@ -353,7 +353,7 @@ caller to ask again.
 
 ## A phone call is an ordinary session
 
-`createServer` serves `WS /phone` by default, so `aai dev`, a self-hosted
+`createRuntimeServer` serves `WS /phone` by default, so `aai dev`, a self-hosted
 server and every published agent answer Twilio Media Streams and Telnyx
 media streaming with no per-agent configuration. Nothing below the carrier
 bridge knows a call is a phone call — it speaks the same client protocol the
@@ -419,7 +419,7 @@ runs — so a test reaches a tool by the name the model calls it by.
 Agents don't require the managed platform: `@alexkroman1/aai-runtime`
 exposes the same engine `aai dev` runs. Define an agent with `agent()`,
 build a runtime with `createRuntime()`, and serve voice sessions from your
-own Node process with `createServer()` — or wire `runtime.startSession(ws)`
+own Node process with `createRuntimeServer()` — or wire `runtime.startSession(ws)`
 into an existing WebSocket stack. See
 [examples/self-hosted-server](./examples/self-hosted-server) for a runnable
 ~70-line setup.

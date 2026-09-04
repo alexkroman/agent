@@ -28,7 +28,7 @@ import {
   defaultCreateHeaderWebSocket,
   type HeaderWebSocket,
 } from "./_ws.ts";
-import type { Logger, S2SConfig } from "./runtime-config.ts";
+import type { Logger, S2sConfig } from "./runtime-config.ts";
 import { consoleLogger, debugLoggingEnabled } from "./runtime-config.ts";
 
 /**
@@ -156,7 +156,7 @@ export type S2sHandle = {
 
 export type ConnectS2sOptions = {
   apiKey: string;
-  config: S2SConfig;
+  config: S2sConfig;
   createWebSocket: CreateS2sWebSocket;
   callbacks: S2sCallbacks;
   logger?: Logger;

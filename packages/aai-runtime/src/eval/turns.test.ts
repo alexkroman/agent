@@ -14,7 +14,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import type { EvalToolCall } from "./events.ts";
 import type { EvalTurn } from "./session.ts";
-import { callsIn, describeTurn, turnCalling } from "./turns.ts";
+import { describeTurn, toolCallsInTurns, turnCalling } from "./turns.ts";
 
 const call = (name: string, result?: string): EvalToolCall => ({
   toolCallId: `c-${name}`,
@@ -88,9 +88,9 @@ describe("describeTurn", () => {
   });
 });
 
-describe("callsIn", () => {
+describe("toolCallsInTurns", () => {
   test("flattens every call across the turns, in order", () => {
-    expect(callsIn(CALL).map((c) => c.name)).toEqual([
+    expect(toolCallsInTurns(CALL).map((c) => c.name)).toEqual([
       "find_user_id_by_email",
       "get_order_details",
       "cancel_pending_order",
@@ -99,7 +99,7 @@ describe("callsIn", () => {
   });
 
   test("is empty when no turns were driven", () => {
-    expect(callsIn([])).toEqual([]);
+    expect(toolCallsInTurns([])).toEqual([]);
   });
 });
 

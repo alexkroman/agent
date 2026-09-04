@@ -16,7 +16,7 @@
  * which is why every other signal said healthy.
  *
  * A deployed guest has two copies of this package by design: the harness bundles
- * its own and calls `createServer` from it, while the agent's runtime comes from
+ * its own and calls `createRuntimeServer` from it, while the agent's runtime comes from
  * the BUNDLE's `__aaiCreateRuntime` so a deployed agent runs the SDK version it
  * was tested against. `vi.resetModules()` is that, exactly — a second module
  * instance is a second copy — which is what makes this testable in one process.

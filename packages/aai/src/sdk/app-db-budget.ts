@@ -17,7 +17,7 @@
  * connection count.
  *
  * What is left is the half still true wherever a `DATABASE_URL` comes from, which on
- * the surviving paths is the AUTHOR's own secret: a self-hosted `createServer`, or
+ * the surviving paths is the AUTHOR's own secret: a self-hosted `createRuntimeServer`, or
  * `aai dev` against a project with one. These are pool SIZES, pinned because the
  * library defaults do not fit a database somebody else may also be using — and the
  * reasons below are measurements rather than preferences.

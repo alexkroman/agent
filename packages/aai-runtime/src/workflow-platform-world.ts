@@ -13,7 +13,7 @@
  *
  * ## Both keys or neither, and a HALF-configured environment is reported
  *
- * `aai dev`, host mode and a self-hosted `createServer` have neither; a deployed
+ * `aai dev`, host mode and a self-hosted `createRuntimeServer` have neither; a deployed
  * guest has both. One without the other is a platform that changed how it spawns,
  * and resolving it here — falling silently back to the in-process engine and the
  * memory journal — is precisely the durability failure
@@ -70,7 +70,7 @@ function dialBase(env: NodeJS.ProcessEnv): string | undefined {
  * The platform queue's configuration, or undefined when there is no platform.
  *
  * BOTH or neither, and the pairing is the whole check: `aai dev`, host mode and a
- * self-hosted `createServer` have neither, and a deployed guest has both. A guest
+ * self-hosted `createRuntimeServer` have neither, and a deployed guest has both. A guest
  * holding one and not the other is a platform that changed how it spawns, and
  * falling back silently to the in-guest queue would hide that behind a connection
  * bill nobody reads. So a HALF-configured environment is reported by the caller

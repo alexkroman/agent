@@ -31,7 +31,7 @@ import { safeSend } from "./ws-handler.ts";
  * reconnecting against a server that will never answer, with nothing in the
  * frame log explaining why.
  */
-export function decliningRuntime(message: string, logger: Logger = consoleLogger): SessionRuntime {
+export function rejectingRuntime(message: string, logger: Logger = consoleLogger): SessionRuntime {
   return {
     startSession: (ws) => declineSocket(ws, message, logger),
     shutdown: () => Promise.resolve(),
@@ -41,7 +41,7 @@ export function decliningRuntime(message: string, logger: Logger = consoleLogger
 /**
  * Tell an accepted socket why it is not being served, then close it.
  *
- * One spelling for the three refusals (`decliningRuntime`, a static agent's
+ * One spelling for the three refusals (`rejectingRuntime`, a static agent's
  * `/websocket`, host mode off), which had three copies of the same
  * stamp-serialize-send-close. The frame is STAMPED here rather than emitted:
  * these paths have no session, so there is nothing to record it in.

@@ -172,7 +172,7 @@ function dispatch(
 
 describe("handleStudioRequest dispatch", () => {
   test("claims only its own two URLs, so everything else can 404", () => {
-    // The harness wires this in as `createServer`'s `request` hook and answers
+    // The harness wires this in as `createRuntimeServer`'s `request` hook and answers
     // 404 on false, so claiming too widely would swallow the session surfaces.
     expect(dispatch("/health", "GET").claimed).toBe(false);
     expect(dispatch("/websocket", "GET").claimed).toBe(false);

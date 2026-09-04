@@ -5,7 +5,7 @@
  *
  * These carry what the deleted file backend's suite carried, and for the same reason
  * it was driven for real: the whole subject is byte offsets, which a fake would only
- * restate. What changed is which seam that argument applies to — `UploadBlobs` is a
+ * restate. What changed is which seam that argument applies to — `UploadBackend` is a
  * window read and a length, so the memory implementation is equivalent to a bucket by
  * construction, where the file backend was a second STORE and had to be kept in step
  * with a record contract it shared.
@@ -13,7 +13,7 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  createMemoryUploadBlobs,
+  createMemoryUploadBackend,
   partKey,
   partsCovering,
   partsOf,
@@ -29,20 +29,20 @@ async function* once(value: Uint8Array): AsyncGenerator<Uint8Array> {
 
 describe("the memory implementation", () => {
   test("stores an object and reads back the window it is asked for", async () => {
-    const blobs = createMemoryUploadBlobs();
+    const blobs = createMemoryUploadBackend();
     expect(await blobs.put("a/1/0", once(ramp(1000)))).toBe(1000);
     expect([...(await blobs.read("a/1/0", 10, 15))]).toEqual([...ramp(5, 10)]);
     expect(await blobs.size("a/1/0")).toBe(1000);
   });
 
   test("counts what ARRIVES, not what a header declared", async () => {
-    const blobs = createMemoryUploadBlobs();
+    const blobs = createMemoryUploadBackend();
     expect(await blobs.put("a/1/0", body(ramp(4), ramp(6, 4)))).toBe(10);
     expect([...(await blobs.read("a/1/0", 0, 10))]).toEqual([...ramp(10)]);
   });
 
   test("refuses a body past its limit AS IT ARRIVES", async () => {
-    const blobs = createMemoryUploadBlobs();
+    const blobs = createMemoryUploadBackend();
     await expect(blobs.put("a/1/0", body(ramp(40), ramp(40, 40)), { limit: 50 })).rejects.toThrow(
       UploadTooLargeError,
     );
@@ -52,7 +52,7 @@ describe("the memory implementation", () => {
     // The ordinary failure the parts path exists to survive is a connection dying
     // mid-flight, so a repeat has to be the same object rather than a second one —
     // which the offset in the key makes true by construction.
-    const blobs = createMemoryUploadBlobs();
+    const blobs = createMemoryUploadBackend();
     await blobs.put("a/1/0", once(ramp(10)));
     await blobs.put("a/1/0", once(ramp(10)));
     expect(await blobs.size("a/1/0")).toBe(10);
@@ -61,7 +61,7 @@ describe("the memory implementation", () => {
   test("answers SHORT rather than throwing when there is less than was asked for", async () => {
     // The clamp `stepReadUpload` has always applied: a plan computed from a header is
     // allowed to end one byte past the file.
-    const blobs = createMemoryUploadBlobs();
+    const blobs = createMemoryUploadBackend();
     await blobs.put("a/1/0", once(ramp(10)));
     expect([...(await blobs.read("a/1/0", 8, 100))]).toEqual([...ramp(2, 8)]);
     expect([...(await blobs.read("a/1/0", 50, 60))]).toEqual([]);
@@ -70,7 +70,7 @@ describe("the memory implementation", () => {
   test("answers undefined for a key nothing was written to", async () => {
     // The whole defence against a claimed part that is not there: `size` never
     // over-reports, so a hole cannot be recorded as a readable byte.
-    const blobs = createMemoryUploadBlobs();
+    const blobs = createMemoryUploadBackend();
     expect(await blobs.size("a/1/0")).toBeUndefined();
     expect([...(await blobs.read("a/1/0", 0, 10))]).toEqual([]);
   });

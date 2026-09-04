@@ -29,8 +29,8 @@
  * the Postgres one", which is what two implementations of one contract buy — and it
  * was the wrong axis. What a double has to stand in for here is BYTES, not records:
  * every rule below is about the record, and the record is Postgres either way. So
- * the seam moved one level down, to {@link UploadBlobs}, whose contract is a window
- * read and a length and is small enough that `createMemoryUploadBlobs` really is
+ * the seam moved one level down, to {@link UploadBackend}, whose contract is a window
+ * read and a length and is small enough that `createMemoryUploadBackend` really is
  * equivalent.
  *
  * ## Bytes are stored in WINDOWS, and read one window at a time

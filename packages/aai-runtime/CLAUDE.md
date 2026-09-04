@@ -86,7 +86,7 @@ that did keep a directory — `providers/`, `transports/`, `telephony/`.
 
 `WS /phone` (`telephony/`) runs a carrier's media stream — Twilio Media
 Streams, Telnyx media streaming — as an ordinary session, served by
-`createServer` with no per-agent configuration. **The whole account is in
+`createRuntimeServer` with no per-agent configuration. **The whole account is in
 `packages/aai-guest/CLAUDE.md`, "A phone call is an ordinary session"** — the
 shim design and the rule that no telephony branch may exist below the bridge,
 the four decisions above the bridge (pacing, LEARNED rates, low-pass before
@@ -147,9 +147,9 @@ name the entrypoint selects — so a signature change on `partKey` moves
 `uploads`'s hash and demands a classification whether or not any template
 mentions it. Classification coverage is every name; what the rest lack is a
 compile-time exercise. The gap is deliberate and per name:
-`createServer`/`createHostServer` are a different artifact from the bootstrap
+`createRuntimeServer`/`createHostServer` are a different artifact from the bootstrap
 (embedding into an existing runtime, and a multi-tenant host-mode server);
-`partKey`/`partsOf` would need a `delete` that `UploadBlobs` does not have;
+`partKey`/`partsOf` would need a `delete` that `UploadBackend` does not have;
 `telnyxCodec`/`twilioCodec` are the shipped carriers a third-carrier template
 exists to be an alternative to. Contorting a starter to touch all of them is how
 these files became catalogues the first time. Where a name's absence is a
@@ -187,7 +187,7 @@ honest, since they are the cross-package consumers the seam exists for.
 reached no published subpath at all while `resolveLlm`, the reader of the
 registry it writes, was contracted). Moving their parameter types
 (`SttOpener`, `SttOpenOptions`, `SttSession`, and the Tts twins) would make a
-custom provider — the documented use, and what `aai-evals/fake-speech.ts` really
+custom provider — the documented use, and what `aai-evals/stub-speech.ts` really
 does — import from two subpaths, one of them labelled not-semver-covered. The
 block's own comment already called those names one contract; the split respects
 it. Do not "tidy" them onto `/internal` later.
@@ -319,7 +319,7 @@ Two things the old wiring's failure taught, which still hold:
   `workflow-journal-postgres.ts`.
 
 **The other half is the delivery door.** `createAgentServer` composes
-`handleWorkflowRequest` into `createServer`'s `request` hook, so this door is
+`handleWorkflowRequest` into `createRuntimeServer`'s `request` hook, so this door is
 wired identically to `aai dev`'s and the harness's — but it supplies no
 `allowRemote`, so `POST /workflow-queue` answers 401. That is correct: a
 self-hosted server has no platform-owned queue to be vouched for by, and the
@@ -333,9 +333,9 @@ caller-supplied agents, which declare no workflows.
 
 A front door has a failure mode the pair underneath does not: an option it does
 not carry is unreachable, because dropping back to `createRuntime` +
-`createServer` to set one means restating by hand every field the wrapper
+`createRuntimeServer` to set one means restating by hand every field the wrapper
 derives — the silent drop the wrapper exists to prevent. `telephony` was the
-sharp instance. It defaults to `!isStatic` in `createServer`, `createAgentServer`
+sharp instance. It defaults to `!isStatic` in `createRuntimeServer`, `createAgentServer`
 did not forward it, so every server built through the documented door — the
 scaffold's `server.mjs` included — mounted an unauthenticated `WS /phone` with no
 way to switch it off. `page` was worse: the AGENT declares it, and nothing
@@ -344,10 +344,10 @@ surfaces and a voice `GET /client-config`. It is read off the agent now, beside
 `name` and `greeting`, with an explicit field still winning.
 
 **`env` was the third, and it is why "belongs to the other door" is not a safe
-reason to drop an option.** This guide used to call `ServerOptions.env` half of
+reason to drop an option.** This guide used to call `RuntimeServerOptions.env` half of
 "the host-mode pair" and leave it out on that ground: host mode is
 `createHostServer`'s business, so an env on this door looked like an option for
-a feature this door does not have. But `createServer` reads FOUR things out of
+a feature this door does not have. But `createRuntimeServer` reads FOUR things out of
 that record and only one of them is the host gate — `AAI_WORKFLOW_API_TOKEN`,
 documented in `workflow-api.ts` as what CLOSES `/workflows/*`;
 `AAI_SESSION_EVENTS_TOKEN`, the same shape one route over; and `DATABASE_URL`,
@@ -356,7 +356,7 @@ token was still serving the workflow API, and its upload WRITE routes, wide
 open, and an operator with a provisioned database still had uploads land in
 this process's temp directory and vanish before a resumed run could read them.
 The guest harness had the identical bug with the identical three symptoms — it
-called `createServer` with no `env` at all — which is the tell that the
+called `createRuntimeServer` with no `env` at all — which is the tell that the
 classification was wrong rather than the wiring.
 
 It is forwarded now, minus the gate, through `agentServerEnv` (`server-env.ts`,
@@ -365,7 +365,7 @@ supply its own agent definition and run it on the operator's credentials, so
 that key arriving with the other three would turn one secret into an
 unauthenticated surface. `hostBaseAgent` really does belong to the other door.
 **And the lesson for the next option is where the test went**: the token WAS
-covered, by a spec that called `createServer` directly, which is exactly why the
+covered, by a spec that called `createRuntimeServer` directly, which is exactly why the
 wrapper's version survived it. A forwarding spec has to take the door a caller
 takes.
 
@@ -373,7 +373,7 @@ takes.
 rule.** `RuntimeOptions.journal` takes a host-supplied `JournalStore` — the whole
 point being that a deployment which already owns a database keeps its durable
 runs there — and this door did not forward it, so the only way to supply one was
-to drop back to `createRuntime` + `createServer` and restate by hand every field
+to drop back to `createRuntime` + `createRuntimeServer` and restate by hand every field
 the wrapper derives. Found writing `contracts/compatibility/server/v8.ts`, which
 could not name `AgentServerOptions["journal"]` while the option was nonetheless
 IN this capability's report (the `agent: RuntimeOptions["agent"]` rollup).
@@ -962,7 +962,7 @@ verb asked. A well-formed id nothing stored is still a 404: "malformed" and
 "reclaimed" are different answers and a client acts differently on each.
 
 One store (`_upload-store-blobs.ts`) over two interfaces — `UploadRecords`
-for the record, `UploadBlobs` for one object per `UPLOAD_PART_BYTES` window — and
+for the record, `UploadBackend` for one object per `UPLOAD_PART_BYTES` window — and
 it names neither's home. It used to hold the bytes itself, a `bytea` row per
 megabyte or a file per upload under `aai dev`, and **`_upload-blobs.ts`
 carries the four costs that got them out of Postgres** — storage price, WAL and
@@ -1091,7 +1091,7 @@ Four things about the pool worth not rediscovering:
   number serve a JSON call and a 660 MiB upload alike — the constant carries the
   undici mechanics and the arithmetic.
 - **The `fetch?:` seam stays optional.** Only the DEFAULT was the bug, and making
-  it required is a breaking change: `createHttpUploadBlobs` is a published export
+  it required is a breaking change: `createHttpUploadBackend` is a published export
   a self-hoster calls.
 - **Bodies must be plain.** This goes through `pinnedFetch`, so `host/_undici.ts`'s
   rule applies — a `FormData`, `Blob`, `Headers` or `Request` from the GLOBAL
@@ -1129,7 +1129,7 @@ answers 503 with `Retry-After: 1`. Three properties are decisions:
 
 ## A deployed guest has TWO copies of this package
 
-The harness bundles its own `aai-runtime` and calls `createServer` from it; the
+The harness bundles its own `aai-runtime` and calls `createRuntimeServer` from it; the
 agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`, so a deployed
 agent runs the SDK version it was tested against
 (`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both are loaded in one
@@ -1168,7 +1168,7 @@ a second copy**, which is what makes this testable in one process —
 one is visible through the other. A/B'd: both cross-copy cases fail against the
 module-level form.
 
-## A callback URL comes from `publicWebhookUrl`, and the route is on `createServer`
+## A callback URL comes from `publicWebhookUrl`, and the route is on `createRuntimeServer`
 
 `ctx.workflows.publicWebhookUrl(token)` mints the one workflow URL that LEAVES
 the system — `RuntimeOptions.publicUrl` plus `WORKFLOW_WEBHOOK_PREFIX`, the same
@@ -1178,7 +1178,7 @@ composed from `getWorkflowMetadata().url`, i.e. `http://localhost:<port>` off
 the running process, which names the inside of a sandbox that has self-exited by
 the time a payment provider calls back.
 
-**The route is mounted in `createServer`, and that is a correction rather than a
+**The route is mounted in `createRuntimeServer`, and that is a correction rather than a
 detail.** It used to be mounted by `createWorkflowSurface`, which returns early
 unless the bundle carries both `workflowCode` and `stepCode` — the DevKit
 transform's output. When the replay engine replaced the DevKit those strings
@@ -1190,7 +1190,7 @@ is indistinguishable from a payer who never paid, so it reports as healthily
 suspended and the failure lands weeks later on somebody else's server, on a URL
 nobody can re-issue. Two properties keep it closed:
 
-- **It hangs off `createServer`**, which every front door goes through — `aai
+- **It hangs off `createRuntimeServer`**, which every front door goes through — `aai
   dev`, a self-hosted `server.mjs`, a deployed guest — so it cannot come to
   depend on a build artifact again.
 - **It reads `runtime.workflows` through a LAZY getter**, like the workflow API

@@ -47,7 +47,7 @@
  * spawned, and nothing inside the sandbox may make it.
  *
  * Which also bounds what it covers: only a DEPLOYED guest has the key. `aai dev`
- * and a self-hosted `createServer` have none, so their runs record no version
+ * and a self-hosted `createRuntimeServer` have none, so their runs record no version
  * and the divergence message keeps its original two-cause fork. That is the
  * honest answer there — a dev server's code changes on every file save.
  *

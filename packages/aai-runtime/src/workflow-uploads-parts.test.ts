@@ -11,7 +11,7 @@
 import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
 import { tick } from "./_test-utils.ts";
-import type { UploadBlobs } from "./_upload-blobs.ts";
+import type { UploadBackend } from "./_upload-blobs.ts";
 import { body, digest, memoryStore, ramp } from "./_upload-store-test-utils.ts";
 import {
   createUploadStore,
@@ -384,7 +384,7 @@ describe("a parts upload", () => {
   });
 
   test("refuses a window the bucket measures as EMPTY, rather than recording a hole", async () => {
-    // The production failure this guard was added for. `UploadBlobs.size` read a
+    // The production failure this guard was added for. `UploadBackend.size` read a
     // missing `Content-Length` as `0` (a proxy had zstd-encoded the body-less HEAD),
     // so every window of every parts upload on the platform was recorded as an empty
     // range: well formed, summing to a contiguous 0, and completely unreadable. A
@@ -436,7 +436,7 @@ describe("what a batched claim costs", () => {
   const TOTAL = UPLOAD_CHUNK_BYTES * 8;
 
   /** An upload with every window of `total` already in the bucket. */
-  async function landed(store: UploadStore, blobs: UploadBlobs, total: number) {
+  async function landed(store: UploadStore, blobs: UploadBackend, total: number) {
     await store.beginParts("abc", {}, total);
     const offsets = Array.from(
       { length: total / UPLOAD_CHUNK_BYTES },
@@ -486,7 +486,7 @@ describe("what a batched claim costs", () => {
     const offsets = await landed(store, blobs, TOTAL);
     let live = 0;
     let peak = 0;
-    const counting: UploadBlobs = {
+    const counting: UploadBackend = {
       ...blobs,
       size: async (key) => {
         live += 1;

@@ -25,11 +25,11 @@
  * per source and one reader, and the reason it is a named module rather than two
  * lines in `runtime.ts` is that the ORDER it depends on is invisible at the call
  * sites: the transport is built before either lookup runs, so the greeting has to
- * read this LATE (see `SkipGreeting` in `transports/types.ts`) or it reads
+ * read this LATE (see `SkipGreetingOption` in `transports/types.ts`) or it reads
  * `false` every time and the whole thing silently does nothing.
  */
 
-import { type SkipGreeting, shouldSkipGreeting } from "./transports/types.ts";
+import { type SkipGreetingOption, shouldSkipGreeting } from "./transports/types.ts";
 
 /** What a resume recovered, written by the lookups and read by the greeting. */
 export type ResumeFindings = {
@@ -78,13 +78,13 @@ export function createResumeFindings(): ResumeFindings {
  * - **It returns a THUNK, and must.** The transport is constructed before either
  *   lookup runs (both are inside the `session.start()` window), so a value
  *   computed here would read `false` every time and the whole mechanism would
- *   silently do nothing. See {@link SkipGreeting}.
+ *   silently do nothing. See {@link SkipGreetingOption}.
  *
  * @internal
  */
 export function resolveSkipGreeting(
   /** What the socket claimed — `?sessionId=` or `resume=1`. */
-  claimed: SkipGreeting | undefined,
+  claimed: SkipGreetingOption | undefined,
   /** Whether an ID was presented, i.e. whether there is a claim to CHECK. */
   resumed: boolean | undefined,
   findings: ResumeFindings,

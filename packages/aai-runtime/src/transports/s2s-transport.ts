@@ -2,7 +2,7 @@
 // S2S transport — wraps connectS2s and forwards typed callbacks into the SessionCore.
 
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger, S2SConfig } from "../runtime-config.ts";
+import type { Logger, S2sConfig } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import {
   type CreateS2sWebSocket,
@@ -25,7 +25,7 @@ export const _internals = { connectS2s };
  */
 export type S2sTransportOptions = {
   apiKey: string;
-  s2sConfig: S2SConfig;
+  s2sConfig: S2sConfig;
   sessionConfig: S2sSessionConfig;
   callbacks: TransportCallbacks;
   sid: string;

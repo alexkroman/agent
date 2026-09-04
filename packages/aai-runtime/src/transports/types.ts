@@ -241,16 +241,16 @@ export interface Transport {
  * See `host/session-resume-found.ts` for what the runtime's thunk reads, and why
  * a resume that found nothing has to greet.
  */
-export type SkipGreeting = boolean | (() => boolean);
+export type SkipGreetingOption = boolean | (() => boolean);
 
 /**
- * Resolve a {@link SkipGreeting} at the moment the greeting would fire.
+ * Resolve a {@link SkipGreetingOption} at the moment the greeting would fire.
  *
  * One spelling, because the alternative is `typeof x === "function" ? x() : x`
  * written at each read site — and a site that forgot the call would test a
  * FUNCTION for truthiness and suppress every greeting, which is a silent agent
  * rather than an error.
  */
-export function shouldSkipGreeting(skip: SkipGreeting | undefined): boolean {
+export function shouldSkipGreeting(skip: SkipGreetingOption | undefined): boolean {
   return typeof skip === "function" ? skip() : skip === true;
 }

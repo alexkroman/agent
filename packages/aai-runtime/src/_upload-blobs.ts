@@ -58,7 +58,7 @@
  *   `aai dev` and a self-hosted server. There the operator and the agent author are
  *   the same person and the bucket is theirs, so there is no boundary to cross.
  *
- * `createMemoryUploadBlobs` is the third, for specs.
+ * `createMemoryUploadBackend` is the third, for specs.
  */
 
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
@@ -81,7 +81,7 @@ export type UploadPart = {
  * its doc states the rule — anything wanting more should ask whether it really
  * wants a Postgres row.
  */
-export type UploadBlobs = {
+export type UploadBackend = {
   /**
    * Write one object from a stream, answering how many bytes it holds.
    *
@@ -123,14 +123,14 @@ export type UploadBlobs = {
 };
 
 /**
- * An in-memory {@link UploadBlobs}, for specs and for a platform with no bucket.
+ * An in-memory {@link UploadBackend}, for specs and for a platform with no bucket.
  *
  * A valid double for the real one because the CONTRACT here is small and entirely
  * about bytes: a window read, a length, an idempotent write. What it cannot stand
  * in for is durability, which is why nothing ships it as a deployment's answer —
  * `aai dev` resolves a real bucket or refuses uploads by name.
  */
-export function createMemoryUploadBlobs(): UploadBlobs {
+export function createMemoryUploadBackend(): UploadBackend {
   const objects = new Map<string, Uint8Array>();
   return {
     async put(key, body, opts): Promise<number> {
@@ -141,7 +141,7 @@ export function createMemoryUploadBlobs(): UploadBlobs {
     async read(key, start, end): Promise<Uint8Array> {
       const held = objects.get(key);
       if (!held) return new Uint8Array(0);
-      // Clamped rather than refused — see `UploadBlobs.read`.
+      // Clamped rather than refused — see `UploadBackend.read`.
       return held.subarray(Math.max(0, start), Math.min(end, held.length));
     },
     async size(key): Promise<number | undefined> {

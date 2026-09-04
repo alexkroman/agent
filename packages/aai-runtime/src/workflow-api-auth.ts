@@ -98,7 +98,7 @@ export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
  * open by accident.** `""` is not `undefined`, so it reached `bearerMatches`,
  * where `timingSafeEqual` on two empty buffers MATCHES — so `AAI_WORKFLOW_API_TOKEN=`
  * left every route here serving anyone while reading as closed. `bearerMatches`
- * refuses a blank secret now, so this gate answers 401 for one; `createServer`
+ * refuses a blank secret now, so this gate answers 401 for one; `createRuntimeServer`
  * reads the variable through `agentGateToken`, which reports a blank one as
  * absent and logs why, so the surface lands on the documented default rather
  * than 401ing `aai workflow` and the studio's runs card with no explanation.

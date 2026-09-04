@@ -364,7 +364,7 @@ it under `aai dev`** — with a `client.tsx`, Vite owns the port the user is tol
 to open and answers everything not in that table itself, with a bare 404
 carrying none of the agent server's headers. So the failure reads as a missing
 route, not a missing proxy entry, and it is invisible to every test that talks
-to the backend port directly. **A route added to `createServer` that a page
+to the backend port directly. **A route added to `createRuntimeServer` that a page
 fetches must be added there too.**
 
 `/workflows` is the case that proves the rule and the one it was learned from.
@@ -556,7 +556,7 @@ a mode whose whole job is to inject faults has to be shown to inject them.
 `packages/aai/src/host/_fault-socket.ts` is the sibling of this one: a TCP
 proxy that SEVERS live connections, for testing that a session continues
 across a disconnect. It sits in `aai` rather than here because what it faults —
-`createServer`, the WebSocket upgrade, session resume — lives there.
+`createRuntimeServer`, the WebSocket upgrade, session resume — lives there.
 
 Three things separate the two, and picking the wrong one measures nothing:
 
@@ -577,7 +577,7 @@ Three things separate the two, and picking the wrong one measures nothing:
   exactly that reason.
 - **It is a proxy for the same reason this one is a supervisor.** The sockets are
   server-side, so the obvious shape is an env-gated `ws.close()` inside
-  `createServer` — a fault injector in production code, able to fire in
+  `createRuntimeServer` — a fault injector in production code, able to fire in
   production. A proxy in front is test-only by construction.
 
 ## Bundling rules
@@ -867,13 +867,13 @@ guess is not trusted where egress is real.
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
-The SDK's `createServer` (`packages/aai/src/host/server.ts`) is what `aai dev` runs,
+The SDK's `createRuntimeServer` (`packages/aai/src/host/server.ts`) is what `aai dev` runs,
 and its defaults are documented here because this is the caller that owns
 `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`. The two fail-closed
 defaults are summarised in `packages/aai/CLAUDE.md`, "Self-hosted server
 defaults"; the argument is below.
 
-`createServer` has no request authentication of its own — it is the `aai dev`
+`createRuntimeServer` has no request authentication of its own — it is the `aai dev`
 backend, not the managed platform. Two defaults exist because of that, and
 both are fail-closed:
 

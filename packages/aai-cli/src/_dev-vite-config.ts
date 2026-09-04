@@ -101,7 +101,7 @@ function workflowPathServedByVite(base: string, rawUrl: string | undefined): str
  * with a `client.tsx` serves a page whose WebSocket never connects.
  *
  * **This table is the whole agent API as the browser can see it**, which is
- * the thing to hold in mind before adding a route to `createServer`. Vite owns
+ * the thing to hold in mind before adding a route to `createRuntimeServer`. Vite owns
  * the port the user is told to open and answers everything not listed here
  * itself — with a bare 404 carrying none of the agent server's headers, so the
  * failure looks like a missing route rather than a missing proxy entry.
@@ -135,7 +135,7 @@ function workflowPathServedByVite(base: string, rawUrl: string | undefined): str
  * `http://localhost:<port>` either way — a caller that resolves IPv4-only, or
  * dials the literal, gets a connection refused against a server that is up.
  *
- * The two halves of `aai dev` also disagreed: `createServer` binds
+ * The two halves of `aai dev` also disagreed: `createRuntimeServer` binds
  * {@link DEFAULT_LISTEN_HOST} explicitly, Vite took its own default, and only a
  * set `AAI_DEV_HOST` brought them back together. Taking the same constant is
  * what makes them agree by construction rather than by two matching literals.

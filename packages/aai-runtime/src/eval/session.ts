@@ -5,7 +5,7 @@
  * What is real here: `createRuntime`, the pipeline transport, the LLM (a live
  * provider on a live key), the tool executor, `ctx` and its slots, history
  * trimming, the step budget, and the session event stream the assertions read.
- * What is not: the two speech stages (see `fake-speech.ts`) and the client — a
+ * What is not: the two speech stages (see `stub-speech.ts`) and the client — a
  * recording {@link ClientSink} stands in for a browser.
  *
  * That is the whole point of the split. A voice agent's input is paced PCM, and
@@ -67,8 +67,8 @@ import { createRuntime } from "../runtime.ts";
 import { type Logger, silentLogger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { assertTurnMeasurable } from "./_turn-faults.ts";
-import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsIn } from "./events.ts";
-import { type StubSpeechProviders, installStubSpeechProviders } from "./fake-speech.ts";
+import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
+import { installStubSpeechProviders, type StubSpeechProviders } from "./stub-speech.ts";
 
 /** How long one turn may take before the harness gives up on it. */
 const DEFAULT_TURN_TIMEOUT_MS = 90_000;
@@ -175,7 +175,7 @@ export type EvalSession = {
    * and four across live runs. A case pinned to a turn index is a flake with a
    * misleading name.
    *
-   * `turnCalling`, `callsIn` and `describeTurn` (`eval/turns.ts`, published on
+   * `turnCalling`, `toolCallsInTurns` and `describeTurn` (`eval/turns.ts`, published on
    * the same subpath) are what read the result without pinning an index.
    *
    * Strictly sequential, like the caller it stands for: each line is committed
@@ -309,7 +309,10 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
   }
 }
 
-async function openWithFakes(opts: EvalSessionOptions, fake: StubSpeechProviders): Promise<EvalSession> {
+async function openWithFakes(
+  opts: EvalSessionOptions,
+  fake: StubSpeechProviders,
+): Promise<EvalSession> {
   const events: SessionEvent[] = [];
   const sink: ClientSink = {
     open: true,
@@ -445,7 +448,7 @@ async function openWithFakes(opts: EvalSessionOptions, fake: StubSpeechProviders
     return {
       text: saidIn(turn).join(" "),
       events: turn,
-      toolCalls: toolCallsIn(turn),
+      toolCalls: toolCallsInEvents(turn),
       completed: turn.some((e) => e.type === "reply.completed"),
     };
   };
@@ -454,7 +457,7 @@ async function openWithFakes(opts: EvalSessionOptions, fake: StubSpeechProviders
     id: sessionId,
     events: () => events,
     said: () => saidIn(events),
-    toolCalls: () => toolCallsIn(events),
+    toolCalls: () => toolCallsInEvents(events),
     say,
     async sayAll(lines) {
       const turns: EvalTurn[] = [];

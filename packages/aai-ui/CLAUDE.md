@@ -9,7 +9,7 @@ conventions and testing rules live in the root `CLAUDE.md`.
 - `./styles.css` — default styles
 - `./default-client/*` — prebuilt default client assets (`dist/default-client/`)
 - `./client-dir` — **Node only**: `defaultClientDir()`, the filesystem path of
-  those assets, for passing to `createServer`/`createAgentServer` as
+  those assets, for passing to `createRuntimeServer`/`createAgentServer` as
   `clientDir`. Its own subpath because it imports `node:module`/`node:path`,
   which must never reach the browser barrel. It is a FUNCTION, not a constant:
   resolution throws when the package is missing, and a module-level constant
@@ -654,7 +654,7 @@ the two, asserting every template's mount matches what its own `agent.ts`
 declares — konsistent cannot express "one of two imports", and a rule that
 merely accepted either would pass the mistake worth catching.
 
-**The declaration is not decoration on the server side either.** `createServer`
+**The declaration is not decoration on the server side either.** `createRuntimeServer`
 declines `/websocket` for a static agent — COMPLETED and then closed with a
 protocol error naming the reason, rather than dropped, because a bare socket
 drop leaves a client reconnecting against a server that will never answer — and
@@ -682,7 +682,7 @@ config reaches the deploy preflight the injection has already happened:
 "declared nothing" and "declared the default" are the same object there.
 Deferring rather than skipping keeps the honest error for the one path that
 can still open a session on a static agent — an embedder passing
-`createServer({ telephony: true })` — which resolves at session start and
+`createRuntimeServer({ telephony: true })` — which resolves at session start and
 reports the missing key by name.
 
 ### The API is `ctx.workflows` spelled over HTTP, and nothing more
@@ -816,7 +816,7 @@ rounds are where the history is worth seeing.
 
 `ctx.workflows.start()` only covers the case where a VOICE TURN starts a run; a
 page and a programmatic caller (`aai workflow`, a script, a cron job) had no
-surface at all. Mounted on `createServer`, so `aai dev`, a self-hosted server
+surface at all. Mounted on `createRuntimeServer`, so `aai dev`, a self-hosted server
 and every deployed agent serve it identically — the same reasoning `/phone` is
 mounted there rather than bolted onto the platform. On the platform the page's
 calls land on `/:slug/workflows/*` and are brokered (`aai-server/
@@ -878,7 +878,7 @@ envelope to parse and one chunk is in memory at a time. A step then reads what
 it needs with `stepReadUpload(id, { start, end })` (`@alexkroman1/aai/utils`), which
 is IN-PROCESS: the DevKit dispatches a step to the same server that stored the
 upload, so the store is handed over through a `Symbol.for` slot exactly as the
-agent env is (`publishUploadReader`, published by `createServer`). Sixty steps
+agent env is (`publishUploadReader`, published by `createRuntimeServer`). Sixty steps
 therefore move a recording once between them, and a resumed run re-reads only
 its own window.
 
@@ -1241,7 +1241,7 @@ was unanswerable without a browser open.
 One call reaches both readers. The stream half is unchanged (`getWritable()`,
 read back by `useWorkflowProgress`); the log half is a `logger.info` line on the
 same server. `host/workflow-report.ts` is the published half and
-`createServer` publishes it, so the two mechanisms have one wiring point — the
+`createRuntimeServer` publishes it, so the two mechanisms have one wiring point — the
 same slot trick uploads use, and for the same reason (`/utils` is on the CLI's
 zero-dependency startup path and may not import the DevKit).
 

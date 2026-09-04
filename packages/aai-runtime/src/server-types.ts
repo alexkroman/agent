@@ -14,7 +14,7 @@ import type { Logger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
 
 /**
- * The session-facing slice of a runtime — all {@link createServer} needs.
+ * The session-facing slice of a runtime — all {@link createRuntimeServer} needs.
  * A runtime built with `createRuntime` satisfies it directly.
  *
  * Narrowed to these members (rather than demanding a full `AgentRuntime`) so an
@@ -28,9 +28,9 @@ export type SessionRuntime = Pick<
   "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow"
 >;
 
-/** Configuration for {@link createServer}. */
+/** Configuration for {@link createRuntimeServer}. */
 /**
- * The options every front door over {@link createServer} passes straight
+ * The options every front door over {@link createRuntimeServer} passes straight
  * through — a logger and the two request hooks.
  *
  * Shared rather than restated because {@link createAgentServer} and
@@ -38,24 +38,24 @@ export type SessionRuntime = Pick<
  * to reach both, and three identically-documented fields copied into each is
  * how one of them silently stops offering it.
  *
- * Spreading a bag of these into {@link ServerOptions} is the point, and for a
+ * Spreading a bag of these into {@link RuntimeServerOptions} is the point, and for a
  * while it did not compile. An optional field spreads as `T | undefined`, so
- * the three matching fields on `ServerOptions` have to ACCEPT `undefined` or
+ * the three matching fields on `RuntimeServerOptions` have to ACCEPT `undefined` or
  * `exactOptionalPropertyTypes` rejects the whole object (TS2379) — which meant
  * the one bag that exists to reach all three front doors could not be handed to
  * any of them, and each wrapper forwarded the fields one at a time instead.
  * They carry `| undefined` now, on both sides; do not narrow either back.
  */
-export type PassthroughServerOptions = {
+export type SharedServerOptions = {
   /** Structured logger. Defaults to the console logger. */
   logger?: Logger | undefined;
-  /** First look at every WebSocket upgrade — see {@link ServerOptions.upgrade}. */
-  upgrade?: ServerOptions["upgrade"];
-  /** First look at every HTTP request — see {@link ServerOptions.request}. */
-  request?: ServerOptions["request"];
+  /** First look at every WebSocket upgrade — see {@link RuntimeServerOptions.upgrade}. */
+  upgrade?: RuntimeServerOptions["upgrade"];
+  /** First look at every HTTP request — see {@link RuntimeServerOptions.request}. */
+  request?: RuntimeServerOptions["request"];
 };
 
-export type ServerOptions = {
+export type RuntimeServerOptions = {
   /** The runtime sessions are started on — see `createRuntime`. */
   runtime: SessionRuntime;
   /** Display name served by `GET /client-config`. Defaults to `"agent"`. */
@@ -149,7 +149,7 @@ export type ServerOptions = {
   telephony?: boolean;
 };
 
-/** Handle returned by {@link createServer}. */
+/** Handle returned by {@link createRuntimeServer}. */
 export type AgentServer = {
   /**
    * Start listening. `host` defaults to {@link DEFAULT_LISTEN_HOST} (loopback)

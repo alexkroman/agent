@@ -38,7 +38,7 @@ import {
   type EvalToolCall,
   saidIn,
   TURN_ENDS,
-  toolCallsIn,
+  toolCallsInEvents,
   toolNames,
 } from "@alexkroman1/aai-runtime/eval";
 import type { EvalRecorder } from "./runner.ts";
@@ -248,9 +248,9 @@ export function eventScope(
   events: readonly SessionEvent[],
   prefix = "",
 ): EvalScope {
-  const calls = toolCallsIn(events);
+  const calls = toolCallsInEvents(events);
   // `toolNames` and `describeToolCalls` come from the same published module as
-  // `TURN_ENDS`, `saidIn` and `toolCallsIn`, on the same one-declaration rule —
+  // `TURN_ENDS`, `saidIn` and `toolCallsInEvents`, on the same one-declaration rule —
   // and the diagnostic earns it: it renders a call that NEVER COMPLETED as
   // `name (never completed)`, where the hand-rolled join printed it
   // identically to one that answered.

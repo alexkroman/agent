@@ -278,7 +278,7 @@ describe("installWorkflowSupport", () => {
   });
 
   test("hands back a close, because the pools it opens are the SERVER's to release", async () => {
-    // `aai dev` re-runs `createServer` on every save. Before this, each rebuild
+    // `aai dev` re-runs `createRuntimeServer` on every save. Before this, each rebuild
     // stranded an upload pool and an undici keep-alive pool — nothing anywhere
     // held a reference to close. Idempotent, since a server may close twice.
     const support = install();

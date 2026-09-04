@@ -30,7 +30,7 @@
  *
  * The same reason the step slots do (`sdk/step-uploads.ts`): a deployed agent's
  * bundle carries its OWN copy of this SDK, so the runtime's `createRuntime` and
- * the harness's `createServer` are two module instances in one realm. A
+ * the harness's `createRuntimeServer` are two module instances in one realm. A
  * module-level `Map` would be two maps and two pools. A `Symbol.for` key is one
  * registry for the process, whichever copy asks.
  *

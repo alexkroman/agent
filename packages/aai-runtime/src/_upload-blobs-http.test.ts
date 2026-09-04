@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the two real {@link UploadBlobs} implementations.
+ * Specs for the two real {@link UploadBackend} implementations.
  *
  * Both are one thin layer over `fetch` and the whole subject is the REQUEST each
  * operation composes — the `Range` header's inclusive last byte against every offset
@@ -15,7 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createBrokeredUploadBlobs } from "./_upload-blobs-brokered.ts";
-import { createHttpUploadBlobs, storageEndpoint } from "./_upload-blobs-http.ts";
+import { createHttpUploadBackend, storageEndpoint } from "./_upload-blobs-http.ts";
 import { UploadTooLargeError } from "./_upload-store.ts";
 
 /** One request the implementation made, reduced to what a spec asks about. */
@@ -59,7 +59,7 @@ describe("Storage over its REST API", () => {
     const script = scripted(answer);
     return {
       ...script,
-      blobs: createHttpUploadBlobs({
+      blobs: createHttpUploadBackend({
         url: "https://ref.supabase.co/",
         serviceKey: "sb_secret_x",
         bucket: "artifacts",

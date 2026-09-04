@@ -3,16 +3,16 @@
  * Multi-tenant host server — a voice pipeline that agents are handed to at
  * connect time, rather than one that ships with an agent of its own.
  *
- * {@link createHostServer} is {@link createServer} with the three things a
+ * {@link createHostServer} is {@link createRuntimeServer} with the three things a
  * host-only deployment always has to say said once, correctly:
  *
  * - **No agent.** A host server has nothing to serve until a tenant connects,
- *   so it takes no `agent`. `createServer` still needs a runtime for ordinary
+ *   so it takes no `agent`. `createRuntimeServer` still needs a runtime for ordinary
  *   `/websocket` sessions; this supplies one that declines them, instead of
  *   making every caller hand-roll the same facade around a placeholder agent
  *   whose prompt is never read.
  * - **No env gate.** Calling this function IS the opt-in, so `AAI_ALLOW_HOST`
- *   is set for you. On `createServer` the flag guards a mode you might not
+ *   is set for you. On `createRuntimeServer` the flag guards a mode you might not
  *   know you enabled; here it would guard the only thing the server does.
  * - **No credentials required.** `env` is optional and, left empty, every
  *   session runs on the key its caller sent — so an unauthenticated tenant has
@@ -26,9 +26,9 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { consoleLogger } from "./runtime-config.ts";
 import {
   type AgentServer,
-  createServer,
-  decliningRuntime,
-  type PassthroughServerOptions,
+  createRuntimeServer,
+  rejectingRuntime,
+  type SharedServerOptions,
 } from "./server.ts";
 
 /**
@@ -46,7 +46,7 @@ export type HostSessionDefaults = Omit<
 
 /** Configuration for {@link createHostServer}. */
 // An interface, not an intersection — see the note on `AgentServerOptions`.
-export interface HostServerOptions extends PassthroughServerOptions {
+export interface HostServerOptions extends SharedServerOptions {
   /**
    * What every tenant session inherits. Omit for the default all-AssemblyAI
    * pipeline — one caller-supplied `ASSEMBLYAI_API_KEY` then covers STT, the
@@ -97,8 +97,8 @@ const HOST_ONLY = "This server serves host-mode sessions only — connect with ?
  */
 export function createHostServer(options: HostServerOptions = {}): AgentServer {
   const { defaults, env, name = "host", logger = consoleLogger, upgrade, request } = options;
-  return createServer({
-    runtime: decliningRuntime(HOST_ONLY, logger),
+  return createRuntimeServer({
+    runtime: rejectingRuntime(HOST_ONLY, logger),
     name,
     logger,
     // The gate goes on LAST: calling this function is the opt-in, so an

@@ -131,7 +131,7 @@ async function file(topic: string) {
  *
  * It is not true any more. `createWebhookHandler` (aai-runtime's
  * `workflow-webhook.ts`) answers that path from `WorkflowClient.signal`, and
- * `createServer` mounts it — so `aai dev` serves it and this tier can reach it
+ * `createRuntimeServer` mounts it — so `aai dev` serves it and this tier can reach it
  * with a plain POST. Restoring a `waitFor` fixture and delivering to that URL is
  * the missing case, and it is the ONE thing in the durable path that no cheaper
  * tier can cover.

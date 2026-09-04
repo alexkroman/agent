@@ -48,7 +48,7 @@ import { ofetch } from "ofetch";
  * **There is no webhook flow.** It parked on `createWebhook()` and was resumed
  * by an HTTP delivery. It was dropped while the engine's equivalent —
  * `ctx.waitFor(token)`, ended by `ctx.workflows.signal` — had no route in front
- * of it; `createServer` mounts one now (`workflow-webhook.ts`), so the case is
+ * of it; `createRuntimeServer` mounts one now (`workflow-webhook.ts`), so the case is
  * writable again. See `dev-workflow.scenario.test.ts` for the same hole stated
  * at length.
  */

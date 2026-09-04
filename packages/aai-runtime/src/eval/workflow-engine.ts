@@ -20,7 +20,7 @@
  * run, in what order, what they ask a provider, what the run returns, and what it
  * narrated on the way. What it cannot measure is every property the word
  * "durable" refers to. Do not name or report a case here in a way that implies
- * one — the same rule `eval/fake-speech.ts` states at the audio boundary, for
+ * one — the same rule `eval/stub-speech.ts` states at the audio boundary, for
  * the same reason: the seam is where a reader forgets.
  *
  * The tier that DOES exercise the real thing end to end is `aai-cli`'s

@@ -62,7 +62,7 @@ function stageFaultsIn(turn: readonly SessionEvent[]): readonly string[] {
  * The tools `turn` asked for and the runtime never ran — a `tool.called` with
  * no `tool.completed`.
  *
- * `toolCallsIn` already reports such a call with `result: undefined`, on the
+ * `toolCallsInEvents` already reports such a call with `result: undefined`, on the
  * stated ground that "it called the tool and the tool never returned" is a
  * finding. It is, and nothing made the case look: `turn.toolCalls[0].result`
  * being permanently `undefined` surfaces as a chai type error four lines into an

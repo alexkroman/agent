@@ -4,7 +4,7 @@
  *
  * This suite used to compare two byte backends — chunk rows against files — and
  * every one of its assertions was about the `substring`/`bytea` SQL a range read was
- * written in. Both are gone: bytes are objects behind `UploadBlobs`
+ * written in. Both are gone: bytes are objects behind `UploadBackend`
  * (`aai/host/_upload-blobs.ts` carries why they left the database), and the memory
  * implementation is equivalent to a bucket by construction because that contract is a
  * window read and a length.
@@ -41,7 +41,7 @@
 
 import { createHash } from "node:crypto";
 import {
-  createMemoryUploadBlobs,
+  createMemoryUploadBackend,
   createPostgresDb,
   UPLOADS_TABLE,
   type UploadStore,
@@ -94,8 +94,8 @@ describeWithPg("the workflow upload store over a real Postgres", () => {
     // provisions an app role, so the store's unqualified SQL is exercised the way a
     // guest runs it.
     appDb = createPostgresDb({ url: `${pgUrl()}?options=-c%20search_path%3D${SCHEMA}` });
-    store = createUploadStore({ db: appDb, blobs: createMemoryUploadBlobs() });
-    rival = createUploadStore({ db: appDb, blobs: createMemoryUploadBlobs() });
+    store = createUploadStore({ db: appDb, blobs: createMemoryUploadBackend() });
+    rival = createUploadStore({ db: appDb, blobs: createMemoryUploadBackend() });
 
     wholeId = (await store.create({ name: "call.wav", type: "audio/wav" }, body(ramp(BODY_BYTES))))
       .id;

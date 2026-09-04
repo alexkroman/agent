@@ -306,7 +306,7 @@ type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadAccess };
 /**
  * Publish the upload store for this process's steps.
  *
- * `createServer` does this, which is what makes uploads work identically under
+ * `createRuntimeServer` does this, which is what makes uploads work identically under
  * `aai dev`, on a self-hosted server and in a deployed guest. Pass `undefined`
  * to unpublish.
  *
@@ -327,7 +327,7 @@ export function publishUploadReader(reader: UploadAccess | undefined): void {
  * @internal
  */
 export const UPLOADS_UNAVAILABLE_MESSAGE =
-  "No upload store in this process. Uploads are served by `createServer`, which every " +
+  "No upload store in this process. Uploads are served by `createRuntimeServer`, which every " +
   "deployed agent, every self-hosted server and `aai dev` go through. In a test, publish " +
   "a reader of your own with the `publishUploadReader` helper on the runtime subpath.";
 

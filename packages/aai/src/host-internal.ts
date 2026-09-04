@@ -227,8 +227,8 @@ export {
   resolveRimeTtsSettings,
 } from "./sdk/providers/tts/rime.ts";
 export {
-  makeSttError,
-  makeTtsError,
+  createSttError,
+  createTtsError,
   type SttError,
   type SttEvents,
   type SttOpener,
