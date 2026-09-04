@@ -16,6 +16,10 @@
  * - **`.env.example`**, which DECLARES which variables become `ctx.env`. Without
  *   it every tool sees an empty env while the platform has the values set.
  *
+ * A **`deno.json`** is written beside the entry as well — see
+ * {@link DENO_CONFIG_SOURCE} — so the directory describes how to run itself and
+ * no command against it has to re-supply `--entrypoint`.
+ *
  * **`.env` is deliberately absent**, the same rule the Vercel emit follows:
  * declarations ship, values come from `deno deploy env`.
  *
@@ -29,7 +33,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import { DENO_ENTRY_FILE, DENO_ENTRY_SOURCE, DENO_OUTPUT_DIR } from "./_build-target.ts";
+import {
+  DENO_CONFIG_FILE,
+  DENO_CONFIG_SOURCE,
+  DENO_ENTRY_FILE,
+  DENO_ENTRY_SOURCE,
+  DENO_OUTPUT_DIR,
+} from "./_build-target.ts";
 import { bundleTargetEntry, targetPathExists } from "./_target-bundle.ts";
 
 /** Files copied verbatim, each read at RUNTIME by a path no bundler can see. */
@@ -64,6 +74,10 @@ export async function emitDenoOutput(
   const bundle =
     options.bundle ?? ((dir: string) => bundleTargetEntry(dir, DENO_ENTRY_SOURCE, "deno"));
   await fs.writeFile(path.join(outputDir, DENO_ENTRY_FILE), await bundle(cwd), "utf-8");
+
+  // Beside the entry, never instead of it: `--entrypoint` still overrides, so
+  // this only removes the need to pass one.
+  await fs.writeFile(path.join(outputDir, DENO_CONFIG_FILE), DENO_CONFIG_SOURCE, "utf-8");
 
   for (const rel of RUNTIME_FILES) {
     const from = path.join(cwd, rel);

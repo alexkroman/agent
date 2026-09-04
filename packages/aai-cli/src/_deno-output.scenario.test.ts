@@ -21,12 +21,21 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, onTestFinished, test } from "vitest";
-import { DENO_ENTRY_FILE, DENO_ENTRY_SOURCE, DENO_OUTPUT_DIR } from "./_build-target.ts";
+import {
+  DENO_CONFIG_FILE,
+  DENO_ENTRY_FILE,
+  DENO_ENTRY_SOURCE,
+  DENO_OUTPUT_DIR,
+} from "./_build-target.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
 import { bundleTargetEntry } from "./_target-bundle.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 
 const run = promisify(execFile);
+
+/** Fence around the driver's JSON, so the server's startup banner cannot land inside it. */
+const PROBE_START = "<<<aai-probes";
+const PROBE_END = "aai-probes>>>";
 
 /**
  * Whether a `deno` binary is on PATH.
@@ -137,6 +146,13 @@ describeWithDeno("the emitted Deno output, run under Deno", () => {
         await builtProject(dir);
         await emitDenoOutput(dir);
 
+        // `deno task start` has to work in the directory that gets uploaded,
+        // which is the only reason the config is emitted at all.
+        const task = JSON.parse(
+          await fs.readFile(path.join(dir, DENO_OUTPUT_DIR, DENO_CONFIG_FILE), "utf-8"),
+        ) as { tasks?: Record<string, string> };
+        expect(task.tasks?.start).toContain(DENO_ENTRY_FILE);
+
         // A SIBLING of the project, never a child, and that is the whole
         // validity of this test. Copied to `<project>/deployed` it passed with
         // the client copy REMOVED — module resolution walks UP, so it found the
@@ -148,12 +164,25 @@ describeWithDeno("the emitted Deno output, run under Deno", () => {
           await fs.rm(deployed, { recursive: true, force: true });
         });
 
+        // Three routes rather than one, because BOOTING is not the claim —
+        // serving out of this layout is. `/health` was all this asserted, and
+        // it is the one route that reads nothing off disk, so the two failures
+        // the emit exists to prevent (a worker that did not travel, a client
+        // directory `defaultClientDir()` cannot resolve) were both invisible
+        // to it. Probed in one process so the cost stays one boot.
         const driver = path.join(deployed, "driver.mjs");
         await fs.writeFile(
           driver,
-          `const mod = await import("./${DENO_ENTRY_FILE}");
-const res = await fetch(\`http://127.0.0.1:\${globalThis.Deno.env.get("PORT")}/health\`);
-process.stdout.write(\`\${res.status} \${await res.text()}\`);
+          `const PROBE_START = ${JSON.stringify(PROBE_START)};
+const PROBE_END = ${JSON.stringify(PROBE_END)};
+await import("./${DENO_ENTRY_FILE}");
+const base = \`http://127.0.0.1:\${globalThis.Deno.env.get("PORT")}\`;
+const probes = [];
+for (const route of ["/health", "/client-config", "/"]) {
+  const res = await fetch(base + route);
+  probes.push({ route, status: res.status, body: (await res.text()).slice(0, 400) });
+}
+process.stdout.write(PROBE_START + JSON.stringify(probes) + PROBE_END);
 process.exit(0);
 `,
         );
@@ -162,8 +191,35 @@ process.exit(0);
           cwd: deployed,
           env: { ...process.env, PORT: "8791", ASSEMBLYAI_API_KEY: "scenario-test-key" },
         });
-        expect(stdout).toContain("200");
-        expect(stdout).toContain("Deno Probe");
+        // Fenced rather than parsed off raw stdout: booting the server writes a
+        // startup banner there, so `JSON.parse(stdout)` fails on it. The old
+        // assertion was `toContain("200")`, which tolerated the banner by
+        // checking almost nothing — the fence is what buys a real parse.
+        const fenced = new RegExp(`${PROBE_START}(.*)${PROBE_END}`, "s").exec(stdout);
+        if (fenced?.[1] === undefined) {
+          throw new Error(`driver printed no probe block:\n${stdout}`);
+        }
+        const probes = new Map(
+          (JSON.parse(fenced[1]) as { route: string; status: number; body: string }[]).map((p) => [
+            p.route,
+            p,
+          ]),
+        );
+
+        // The worker travelled and was LOADED: the name can only come from
+        // `.aai/worker.mjs`, which no bundler could have inlined.
+        expect(probes.get("/health")?.status).toBe(200);
+        expect(probes.get("/health")?.body).toContain("Deno Probe");
+
+        // What a browser reads before it dials.
+        expect(probes.get("/client-config")?.status).toBe(200);
+        expect(probes.get("/client-config")?.body).toContain("Deno Probe");
+
+        // The client is SERVED, not merely copied. `_deno-output.test.ts`
+        // asserts the directory was written; only this can say the server
+        // resolves it with no `node_modules` to answer `defaultClientDir()`.
+        expect(probes.get("/")?.status).toBe(200);
+        expect(probes.get("/")?.body).toContain("<html");
       }),
     );
   }, 120_000);

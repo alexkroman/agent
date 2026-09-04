@@ -54,17 +54,28 @@ export const DEFAULT_BUILD_TARGET: BuildTarget = "node";
  * container image is CI too and wants the default.
  *
  * `DENO_DEPLOY` and `DENO_DEPLOYMENT_ID` are both Deno Deploy's "you are
- * running here" variables, and BOTH are listed because either alone is half the
- * signal. `std-env` — the library Nitro detects providers with — treats the
- * pair as ONE test, and Nitro's own Deno preset reads `DENO_DEPLOYMENT_ID` for
- * its build manifest; that is the longer-documented of the two, and it was the
- * one missing here.
+ * running here" variables, and BOTH are listed because neither one covers both
+ * GENERATIONS of the platform. Deno Deploy Classic sets `DENO_DEPLOYMENT_ID`
+ * and `DENO_REGION` and no `DENO_DEPLOY` at all; the current platform sets
+ * both. So `DENO_DEPLOYMENT_ID` is the only marker present in either, and
+ * reading just `DENO_DEPLOY` — as this did — left Classic undetectable. That is
+ * why `std-env` (the library Nitro detects providers with) tests the pair as
+ * ONE signal, and why Nitro's Deno preset reads that one for its manifest.
  *
- * Two honest caveats, stated because a marker that never fires is dead config:
- * they are documented for the RUNTIME and this reads them at BUILD time, which
- * is unverified; and the ordinary Deno flow does not need either, since
- * `deno deploy` uploads a directory built on the developer's own machine. The
- * flag is the path that matters here — detection is the convenience.
+ * These are read at BUILD time, and that is reachable rather than theoretical:
+ * Deno Deploy's git integration runs the build on its OWN infrastructure with
+ * them set — its reference singles out `DENO_TIMELINE` as the one variable NOT
+ * set during a build — so `aai build` there resolves this target with no flag,
+ * the same zero-config property `VERCEL` gives.
+ *
+ * What detection cannot see is the documented LOCAL flow, and the reason is
+ * ORDERING rather than a missing marker: `aai build --target deno` then
+ * `deno deploy` from `.aai/deno/` finishes the build on the developer's own
+ * machine before the upload command runs at all, so there is no host
+ * environment left to advertise itself. Nitro has the identical hole and
+ * answers it the same way — its own docs pass `NITRO_PRESET=deno_deploy`
+ * explicitly. The flag is the path that matters; detection covers the host that
+ * builds FOR you.
  */
 export const TARGET_ENV_MARKERS: Readonly<Record<string, BuildTarget>> = {
   VERCEL: "vercel",
@@ -290,6 +301,34 @@ export const DENO_OUTPUT_DIR = path.join(".aai", "deno");
 
 /** The bundled entry inside {@link DENO_OUTPUT_DIR}, and Deploy's entrypoint. */
 export const DENO_ENTRY_FILE = "server.mjs";
+
+/** Deno's own project file inside {@link DENO_OUTPUT_DIR}. */
+export const DENO_CONFIG_FILE = "deno.json";
+
+/**
+ * The `deno.json` written beside the entry, so the output DESCRIBES how to run
+ * itself.
+ *
+ * Without it every command against this directory has to re-supply the
+ * entrypoint — `deno deploy --entrypoint server.mjs`, `deno run -A server.mjs`
+ * — which is a fact about the emit that the emit already knows and the user has
+ * to remember. Nitro's `deno-server` preset writes the same file for the same
+ * reason (its `compiled` hook, a `tasks.start`), and its own test suite then
+ * runs a bare `deno task start`.
+ *
+ * `-A` rather than a narrowed permission set, and that is deliberate: the
+ * server binds a port, reads the client directory and the worker off disk, and
+ * reads the environment, so an enumerated list here would be a second
+ * declaration of the runtime's needs that drifts the first time one changes.
+ * Deno Deploy grants its own permissions regardless; this file is what makes
+ * the directory runnable BY HAND, which is how a failed deployment gets
+ * diagnosed.
+ */
+export const DENO_CONFIG_SOURCE = `${JSON.stringify(
+  { tasks: { start: `deno run -A ./${DENO_ENTRY_FILE}` } },
+  null,
+  2,
+)}\n`;
 
 /**
  * The Deno entry, bundled into {@link DENO_ENTRY_FILE}.

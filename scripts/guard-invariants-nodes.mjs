@@ -55,6 +55,45 @@ export function unwrap(node) {
   return current;
 }
 
+/**
+ * Is `node` a boolean literal?
+ *
+ * Both spellings accepted by anticipation rather than injury: the parser emits
+ * `Literal` with a `value`, which `propertyName` below already relies on, and a
+ * `BooleanLiteral` shape would otherwise make the rule silently dead — the
+ * failure mode rule 31's own sample caught.
+ */
+export const isBooleanLiteral = (node) => {
+  const inner = unwrap(node);
+  return (
+    (inner?.type === "Literal" || inner?.type === "BooleanLiteral") &&
+    typeof inner.value === "boolean"
+  );
+};
+
+/**
+ * Is `node` an `expect(...)` / `expect.soft(...)` over a BOOLEAN LITERAL?
+ *
+ * Rule 33 — an assertion that cannot fail. Two deliberate narrowings:
+ *
+ *   - **The first argument only.** The matcher's argument is legitimately a
+ *     literal in every honest assertion (`.toBe(true)`), so comparing the two
+ *     sides would buy nothing and reading the matcher's would flag them all.
+ *   - **Boolean, not any literal.** `expect` is also a namespace, and
+ *     `expect.assertions(2)` reaches it through a member with a numeric literal
+ *     argument. Scoping to booleans excludes that family without an allowlist,
+ *     and the demonstrated anti-pattern is `expect.soft(true, "…")` anyway.
+ */
+export function isConstantAssertion(node) {
+  const call = unwrap(node);
+  if (call?.type !== "CallExpression") return false;
+  const callee = unwrap(call.callee);
+  // `expect(x)` and the modifier forms that still take the value first —
+  // `expect.soft(x, label)`. A member reaches `expect` as its object.
+  const reachesExpect = isIdent(callee, "expect") || isIdent(unwrap(callee)?.object, "expect");
+  return reachesExpect && isBooleanLiteral(call.arguments?.[0]);
+}
+
 /** Is `node` the identifier `name`? */
 export const isIdent = (node, name) => {
   const inner = unwrap(node);

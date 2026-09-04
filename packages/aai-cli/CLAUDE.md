@@ -194,6 +194,16 @@ directory whose build finished on your machine before the upload command ran.
 Nitro has the identical hole and answers it the same way, passing
 `NITRO_PRESET=deno_deploy` explicitly in its own docs.
 
+**The output also carries a `deno.json`** with a `start` task, so the directory
+describes how to run itself and no command against it has to re-supply
+`--entrypoint`. Nitro's `deno-server` preset writes the same file for the same
+reason, and its own suite then runs a bare `deno task start`. `-A` rather than an
+enumerated permission set: the server binds a port, reads the client and the
+worker off disk and reads the environment, so a list here would be a second
+declaration of the runtime's needs that drifts the first time one changes. Deno
+Deploy grants its own permissions regardless — this file is what makes the
+directory runnable BY HAND, which is how a failed deployment gets diagnosed.
+
 **Its scenario suite needs a real `deno`, so CI pins one.**
 `_deno-output.scenario.test.ts`'s portability case copies the output to a
 SIBLING directory and boots it — copied to a CHILD it passed with the client
@@ -210,6 +220,17 @@ enforcement would be silently inert. Same shape as `AAI_REQUIRE_REGISTRY`
 below. The runtime version is pinned EXACT (2.9.5, what the target was verified
 against) rather than to a range: a moving runtime turns somebody else's
 regression into a red required check on unrelated pull requests.
+
+**And it probes three routes, not one.** `/health` was the whole assertion, and
+it is the one route that reads NOTHING off disk — so both failures the emit
+exists to prevent were invisible to it. It now also fetches `/client-config`
+(what a browser reads before it dials) and `/` (the client SERVED, not merely
+copied — the unit test proves the directory was written, only this can say the
+server resolves it with no `node_modules` to answer `defaultClientDir()`).
+A/B'd: removing the client directory from the deployed copy fails the suite,
+where the `/health`-only version passed. The driver fences its JSON between
+sentinels because booting the server writes a banner to stdout — which is why
+the old assertion was a `toContain("200")` that a banner could satisfy.
 
 **`bin.mjs` is the bin in BOTH layouts** — the source checkout (where it loads
 `cli.ts`) and the published tarball (where only `dist/` ships, so it loads

@@ -1,5 +1,5 @@
 ---
-"@alexkroman1/aai-cli": patch
+"@alexkroman1/aai-cli": minor
 ---
 
-Detect Deno Deploy from `DENO_DEPLOYMENT_ID` as well as `DENO_DEPLOY`. Either marker alone is half the signal: `std-env` tests the pair as one, and Nitro's own Deno preset reads the second.
+Improve the Deno Deploy target. `aai build --target deno` now emits a `deno.json` with a `start` task, so the output directory describes how to run itself and no command against it has to re-supply `--entrypoint`. Auto-detection also reads `DENO_DEPLOYMENT_ID` alongside `DENO_DEPLOY`: neither marker covers both generations of the platform, since Deno Deploy Classic sets only the former, so reading just `DENO_DEPLOY` left Classic undetectable.

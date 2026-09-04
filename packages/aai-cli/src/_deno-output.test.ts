@@ -20,7 +20,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import { DENO_ENTRY_FILE, DENO_OUTPUT_DIR } from "./_build-target.ts";
+import { DENO_CONFIG_FILE, DENO_ENTRY_FILE, DENO_OUTPUT_DIR } from "./_build-target.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -115,6 +115,19 @@ describe("emitDenoOutput", () => {
       await emitDenoOutput(dir, { bundle: stubBundle });
       // The directory is uploaded wholesale, so anything left behind deploys.
       expect(await exists(stale)).toBe(false);
+    });
+  });
+
+  test("a `deno.json` describes how to run the directory", async () => {
+    await withTempDir(async (dir) => {
+      await project(dir);
+      await emitDenoOutput(dir, { bundle: stubBundle });
+      // The point is that no command against this directory has to re-supply
+      // the entrypoint, so the task has to NAME the entry this emit wrote —
+      // a `deno.json` pointing at a file that is not there is worse than none.
+      const config: unknown = JSON.parse(await read(out(dir, DENO_CONFIG_FILE)));
+      expect(config).toEqual({ tasks: { start: `deno run -A ./${DENO_ENTRY_FILE}` } });
+      expect(await exists(out(dir, DENO_ENTRY_FILE))).toBe(true);
     });
   });
 
