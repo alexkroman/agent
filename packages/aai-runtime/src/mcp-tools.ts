@@ -380,7 +380,7 @@ function acceptServer(
 /**
  * Connect every server the agent declares and attach what they publish.
  *
- * ```ts no-check
+ * ```ts
  * import { agent } from "@alexkroman1/aai";
  * import { createAgentServer, withMcpTools } from "@alexkroman1/aai-runtime";
  *
