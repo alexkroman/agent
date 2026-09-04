@@ -45,6 +45,19 @@
  * answered EARLY than asked is always legal; that is what makes the collapse
  * sound.
  *
+ * ## A run that settles HERE does not have to be waited for
+ *
+ * The three loops above are the only entry into a watch, and nothing told the
+ * watchers anything: a run that finished in THIS process was discovered by the
+ * next tick of a timer, so a synchronous `POST /workflows/runs?wait=` paid up to
+ * a whole 250 ms after the run was already over — on the one route whose caller
+ * is holding a request open. Measured on a deployed agent, a 5-step `wait=` run
+ * made 22 journal RPCs against 13 for the same run started without one.
+ *
+ * {@link signalRunSettled} closes that, and it pulls the pending waiters'
+ * DEADLINES forward rather than pushing an answer — which is what keeps the
+ * paragraph above true of it. Its own doc carries the argument.
+ *
  * ## It rendezvouses on `globalThis`, and it has to
  *
  * A deployed guest has TWO copies of this package (see "A deployed guest has
@@ -62,6 +75,7 @@
 import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
+import { getOrCreate } from "./_get-or-create.ts";
 
 /**
  * What a watcher needs to read. A slice of `WorkflowClient`, so a spec needs no
@@ -118,6 +132,73 @@ export function isRunWatchClosed(err: unknown): boolean {
   return isRecord(err) && err.runWatchClosed === true;
 }
 
+/**
+ * Every live watch's "read now", by run id — the other half of
+ * {@link signalRunSettled}.
+ *
+ * On `globalThis` for the reason the reader registry below is: a deployed guest
+ * has two copies of this package, and the process that WALKS a run (the bundle's
+ * engine) is not the one holding the `wait=` request (the harness's server). A
+ * module-level map would put the signal and every listener in separate halves of
+ * the same process, where the accelerator would be dead code that looks wired.
+ *
+ * A `Set` per run and not one entry, because those two copies each keep their
+ * own {@link RunReads} and both may be watching the same run.
+ */
+type SettleSlot = { [RUN_SETTLED_SLOT]?: Map<string, Set<() => void>> };
+const RUN_SETTLED_SLOT = Symbol.for("@alexkroman1/aai-runtime.workflowRunSettled");
+
+const settledSlot = globalThis as SettleSlot;
+settledSlot[RUN_SETTLED_SLOT] ??= new Map<string, Set<() => void>>();
+const settleListeners: Map<string, Set<() => void>> = settledSlot[RUN_SETTLED_SLOT];
+
+/**
+ * Hear about {@link signalRunSettled} for one run until the returned function is
+ * called.
+ *
+ * The removal is IDEMPOTENT, and that is what keeps this off `createOwnedMap`:
+ * the entry under a run id is never REPLACED — a second watcher joins the same
+ * `Set` — so the only way to evict a successor's entry is to run one listener's
+ * teardown twice, which the flag makes unreachable. The empty-set delete needs
+ * no identity check for the same reason nothing between the `delete` and the
+ * size test can interleave.
+ */
+function listenForSettle(runId: string, poke: () => void): () => void {
+  const listeners = getOrCreate(settleListeners, runId, () => new Set<() => void>());
+  listeners.add(poke);
+  let removed = false;
+  return () => {
+    if (removed) return;
+    removed = true;
+    listeners.delete(poke);
+    if (listeners.size === 0) settleListeners.delete(runId);
+  };
+}
+
+/**
+ * Tell every watcher of `runId` that its next read is worth taking NOW.
+ *
+ * Raised by the engine when a walk in THIS process writes a run's terminal
+ * status, which is the case the poll loops could only discover by waiting: the
+ * answer is already in the journal by the time this is called, so the read the
+ * signal brings forward is the one that would have been taken a tick later.
+ *
+ * It carries NO snapshot and resolves nobody — see "A run that settles HERE does
+ * not have to be waited for" in this module's header for why that is the whole
+ * safety argument. So it is safe to call for a run this process does not own,
+ * for a status that is not terminal, and for a run nobody is watching: the worst
+ * outcome in every case is one read a watcher had already asked for.
+ *
+ * @internal
+ */
+export function signalRunSettled(runId: string): void {
+  const listeners = settleListeners.get(runId);
+  if (!listeners) return;
+  // A COPY, because a listener runs `schedule`, which can fire a read
+  // synchronously, whose watcher may close and remove itself from this very set.
+  for (const poke of [...listeners]) poke();
+}
+
 /** One pending `next()`. */
 type Waiter = {
   /** When this caller wants an answer by. */
@@ -134,9 +215,39 @@ type Entry = {
   timer: ReturnType<typeof setTimeout> | undefined;
   /** When {@link Entry.timer} will fire, so a later deadline cannot replace an earlier one. */
   firesAt: number | undefined;
+  /**
+   * A {@link signalRunSettled} that has not been spent on a read yet.
+   *
+   * A FLAG rather than a straight re-schedule, because the signal routinely
+   * arrives while a read is already in flight — the waiters are batched and the
+   * set is empty, so there is nothing to bring forward — and that read may have
+   * STARTED before the status was written, which is precisely the tick the
+   * signal exists to save. Held until a read is really triggered, so the waiter
+   * that re-arms a microsecond later is answered immediately rather than at its
+   * own deadline.
+   */
+  urgent: boolean;
   /** This entry's claim on the map — see {@link createOwnedMap}. */
   release: () => boolean;
+  /** Stop listening for {@link signalRunSettled} — idempotent, called once. */
+  unlisten: () => void;
 };
+
+/**
+ * The soonest deadline among an entry's pending waiters, or `undefined` when
+ * nobody is waiting.
+ *
+ * Its own function so `schedule` stays under the complexity cap, and because it
+ * is the one place the "whoever asked soonest sets the pace" rule is computed —
+ * see this module's header.
+ */
+function earliestDue(entry: Entry): number | undefined {
+  let earliest: number | undefined;
+  for (const waiter of entry.waiters) {
+    if (earliest === undefined || waiter.dueAt < earliest) earliest = waiter.dueAt;
+  }
+  return earliest;
+}
 
 /**
  * Build the shared reads over one reader.
@@ -163,6 +274,11 @@ export function createRunReads(reader: RunReader): RunReads {
     const batch = [...entry.waiters];
     entry.waiters.clear();
     if (batch.length === 0) return;
+    // SPENT here rather than when the signal arrived: a signal with no waiter to
+    // hurry has bought nothing yet, and clearing it there would drop the hint on
+    // exactly the case it is for — the read already in flight, whose answer
+    // predates the status write.
+    entry.urgent = false;
     void entry.read
       .trigger()
       .then(
@@ -184,19 +300,19 @@ export function createRunReads(reader: RunReader): RunReads {
     // watcher left, or a successor claimed the key. `owns` is the answer to
     // both, and it is why the release is a claim rather than a delete.
     if (!entries.owns(runId, entry)) return;
-    let earliest: number | undefined;
-    for (const waiter of entry.waiters) {
-      if (earliest === undefined || waiter.dueAt < earliest) earliest = waiter.dueAt;
-    }
+    const earliest = earliestDue(entry);
     if (earliest === undefined) {
       // Nobody is waiting, so nothing is read. An entry with live watchers and
       // no pending `next()` is a loop between iterations, not a leak.
       cancel(entry);
       return;
     }
-    if (entry.firesAt !== undefined && entry.firesAt <= earliest) return;
+    if (!entry.urgent && entry.firesAt !== undefined && entry.firesAt <= earliest) return;
     cancel(entry);
-    const delay = earliest - Date.now();
+    // An unspent signal makes the earliest deadline NOW. Being answered sooner
+    // than asked is always legal — that is the same property the shared timer
+    // already rests on — so this needs no agreement from the watchers.
+    const delay = entry.urgent ? 0 : earliest - Date.now();
     if (delay <= 0) {
       // SYNCHRONOUSLY, not on a zero-delay timer: this is a joining watcher's
       // first look, and `waitForRun`'s whole value is that a fast run answers
@@ -228,9 +344,20 @@ export function createRunReads(reader: RunReader): RunReads {
           watchers: 0,
           timer: undefined,
           firesAt: undefined,
+          urgent: false,
           release: () => false,
+          unlisten: () => undefined,
         };
         created.release = entries.claim(runId, created);
+        created.unlisten = listenForSettle(runId, () => {
+          // The entry may already have been released — a listener is removed on
+          // the way out, but the signal is raised from another module and this
+          // is the cheap way to stay honest about it rather than the delicate
+          // one. `owns` is the same question `schedule` opens with.
+          if (!entries.owns(runId, created)) return;
+          created.urgent = true;
+          schedule(runId, created);
+        });
         entry = created;
       }
       const held = entry;
@@ -270,6 +397,7 @@ export function createRunReads(reader: RunReader): RunReads {
           held.watchers -= 1;
           if (held.watchers > 0) return;
           cancel(held);
+          held.unlisten();
           held.release();
         },
       };

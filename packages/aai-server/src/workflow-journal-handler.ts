@@ -1,10 +1,33 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `POST /:slug/workflow-journal` — the replay engine's journal for a deployed run.
+ * `POST /:slug/workflow-journal/:method` — the replay engine's journal for a
+ * deployed run.
  *
  * The shape is `session-state-handler.ts`'s, and for the same reason: twelve
  * methods behind one bearer check, because the alternative is twelve routes and
  * twelve places to restate the same scoping.
+ *
+ * ## The method is in the PATH, and it is still read from the body
+ *
+ * One handler either way — `:method` is a parameter, not fifteen registrations,
+ * so nothing about the paragraph above changes. What the path buys is the
+ * REQUEST LOG: Modal prints one line per request, and with fifteen methods on
+ * one path that line named the slug and never the operation, so the only way to
+ * read a run's RPC sequence out of production was to count requests and infer
+ * the order from the engine's source. `/workflow-journal/appendStep` decomposes
+ * that log per method at zero added volume.
+ *
+ * The body is still consulted, and {@link WORKFLOW_JOURNAL_ROUTE} is still
+ * registered without the segment, because the guest is deployed independently of
+ * this server: an agent bundle carries its own copy of `aai-runtime` (see "A
+ * deployed guest has TWO copies of this package" in that package's guide), so a
+ * bundle older than the path form goes on POSTing to the bare route with the
+ * method in the body. Dropping either half breaks one direction of a mixed
+ * deployment, and a journal call that 404s is a durable run that stops.
+ *
+ * The PATH WINS when both are present, so a request cannot be logged as one
+ * operation and executed as another. They disagree only if a caller makes them,
+ * which no shipped client does.
  *
  * ## What it closes
  *
@@ -61,6 +84,19 @@ const log = createLogger("workflow.journal");
  * the runtime can only report as `answered HTTP 404`.
  */
 export const WORKFLOW_JOURNAL_ROUTE = PLATFORM_ROUTES.workflowJournal;
+
+/** The path parameter {@link WORKFLOW_JOURNAL_METHOD_ROUTE} carries. */
+const METHOD_PARAM = "method";
+
+/**
+ * The same route with the method as a path parameter — what a current guest
+ * POSTs to, and the one that makes a request log readable.
+ *
+ * Both halves are DERIVED, so the registration cannot name a different path from
+ * the client's and the read cannot name a different parameter from the
+ * registration; `:` is Hono's parameter syntax.
+ */
+export const WORKFLOW_JOURNAL_METHOD_ROUTE = `${WORKFLOW_JOURNAL_ROUTE}/:${METHOD_PARAM}` as const;
 
 /**
  * Cap on a request body.
@@ -219,12 +255,16 @@ export function createWorkflowJournalHandler(
     if (!isRecord(fields)) {
       throw new HTTPException(400, { message: "body must be a JSON object" });
     }
-    if (!isMethod(fields.method)) {
+    // The PATH first, the body second. A guest current enough to send the segment
+    // sends both and they agree; one older than it sends only the body. See the
+    // module doc for why neither half may be dropped.
+    const named: unknown = c.req.param(METHOD_PARAM) ?? fields.method;
+    if (!isMethod(named)) {
       // The value is not echoed: it is caller-supplied and this reply is a
       // tenant's to read.
       throw new HTTPException(400, { message: "unknown workflow-journal method" });
     }
-    const method = fields.method;
+    const method = named;
     // Read BEFORE the reservation: a body this route is going to refuse must not
     // take an admin connection to be refused. See `PlatformCall`.
     const call = plan(method, slug, fields);

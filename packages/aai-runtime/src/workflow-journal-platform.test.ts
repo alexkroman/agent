@@ -228,6 +228,34 @@ describe("the wire", () => {
     const headers = calls[0]?.headers;
     expect(JSON.stringify(headers)).toContain("sandbox-token");
   });
+
+  test("names the METHOD in the path, which is what a request log can read", async () => {
+    // Fifteen methods on one path made the platform's per-request line — the only
+    // per-call record a deployed run leaves, the debug line in `platform-rpc.ts`
+    // being off unless `AAI_DEBUG=1` — say which run was talking and never what it
+    // said. Asserted per method rather than once, because the segment is built by
+    // one expression and a `label`/`pathSegment` mix-up would still contain
+    // `/workflow-journal`.
+    const { journal, urls } = journalOver([null, [], null]);
+    await journal.closeHook("wrun_1", "hook!0");
+    await journal.readSteps("wrun_1");
+    await journal.releaseAttempt("wrun_1", "step#0", "holder-1");
+    expect(urls).toEqual([
+      "https://platform.test/digest-desk/workflow-journal/closeHook",
+      "https://platform.test/digest-desk/workflow-journal/readSteps",
+      "https://platform.test/digest-desk/workflow-journal/releaseAttempt",
+    ]);
+  });
+
+  test("STILL sends the method in the body, so an older platform answers", async () => {
+    // The two ends of this wire are deployed independently — an agent bundle
+    // carries its own copy of this package — so dropping the body field would
+    // 404 every journal call a current guest makes against a platform that
+    // predates the path form, which is a durable run that stops.
+    const { journal, sent } = journalOver([null]);
+    await journal.closeHook("wrun_1", "hook!0");
+    expect(sent[0]?.body.method).toBe("closeHook");
+  });
 });
 
 describe("resumableRuns is deliberately NOT declared here", () => {

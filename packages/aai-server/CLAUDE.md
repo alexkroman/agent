@@ -1340,14 +1340,14 @@ connection the platform already holds — no hint contract, no per-tenant reads,
 no width bound.
 
 **Delivery is NOTIFY-driven now, with the interval as the timer for PARKED
-work** — `workflow-queue-sweep.ts`'s module doc owns the argument, including why
-the interval cannot be removed (a notification is dropped rather than queued,
-and cannot express "due at T", which is how `sleep()` works), why the coalescing
-runner sits behind the NOTIFY trigger, and why the listening connection is
-COUNTED in the budget. Two findings worth knowing before touching it: a delayed
-enqueue must NOT notify, and an absence-of-notification spec needs a barrier
-channel — a `vi.waitFor` on an exact count passes against an unconditional
-notify, verified by A/B.
+work** — `workflow-queue-sweep.ts`'s module doc owns the argument: why the
+interval cannot be removed (a notification is dropped rather than queued), why
+the coalescing runner sits behind the NOTIFY trigger, and why the listening
+connection is COUNTED in the budget. Two findings to keep: an enqueue
+delayed PAST one interval must not notify (a shorter park announces so the pass
+can read the deadline and arm one extra look; see `announce`), and an
+absence-of-notification spec needs a barrier channel: `vi.waitFor` on an exact
+count passes against an unconditional notify.
 
 **A failed delivery spends ONE OF TWO budgets, and which one is the sweep's
 decision.** `workflow-queue-failure.ts` owns both and carries the argument. The

@@ -19,6 +19,7 @@ import {
 } from "./workflow-in-process.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type { JournalStore } from "./workflow-journal-types.ts";
+import { watchRun } from "./workflow-run-reads.ts";
 
 /** An engine over an inspectable journal, with a real dispatcher. */
 function harness(
@@ -432,5 +433,78 @@ describe("a journal that cannot answer", () => {
         expect.objectContaining({ error: "the journal is gone" }),
       );
     });
+  });
+});
+/**
+ * The accelerator, wired. `workflow-run-reads.test.ts` states what the signal
+ * DOES; what only this file can see is whether the engine really raises it, on
+ * both writes that make a run terminal and on neither of the two that do not.
+ *
+ * Each case asserts on the READ being taken rather than on what it answered,
+ * which is the precise claim: the signal carries no snapshot, so what it can be
+ * observed to do is bring a watcher's next journal read forward.
+ */
+describe("a run that settles in this process", () => {
+  /**
+   * A watcher of `runId` whose read answers `undefined` and records that it ran.
+   *
+   * The deadline is deliberately far out: without the signal nothing takes this
+   * read inside the test's own budget, so a regression fails on the assertion
+   * rather than passing quietly.
+   */
+  function watching(runId: string) {
+    const reader = { get: vi.fn(async () => undefined) };
+    const watch = watchRun(reader, runId);
+    const pending = watch.next(60_000);
+    return { reader, watch, pending };
+  }
+
+  test("wakes a watcher when the walk COMPLETES it", async () => {
+    const { engine } = harness(() => "done");
+    const runId = await engine.start("digest", [{}]);
+    const { reader, watch, pending } = watching(runId);
+    await pending;
+    expect(reader.get).toHaveBeenCalledWith(runId);
+    watch.close();
+  });
+
+  test("wakes a watcher when a CANCEL ends it", async () => {
+    // The other terminal write, and the one easiest to forget: nothing about a
+    // cancel goes through the walk.
+    const { engine } = harness(async (_input, ctx: WorkflowCtx) => {
+      await ctx.sleep("hold", 60_000);
+      return "done";
+    });
+    const runId = await engine.start("digest", [{}]);
+    await vi.waitFor(async () => {
+      expect(await engine.getRun(runId)).toMatchObject({ status: "running" });
+    });
+    const { reader, watch, pending } = watching(runId);
+    expect(await engine.cancel(runId)).toBe(true);
+    await pending;
+    expect(reader.get).toHaveBeenCalledWith(runId);
+    watch.close();
+  });
+
+  test("does NOT wake one for a suspend, or for a cancel that ended nothing", async () => {
+    // A suspended run is still `running`, and a `false` from `cancel` moved
+    // nothing — so neither is a new answer, and hurrying a watcher toward one
+    // would spend a platform round trip per park.
+    const { engine } = harness(async (_input, ctx: WorkflowCtx) => {
+      await ctx.sleep("hold", 60_000);
+      return "done";
+    });
+    const runId = await engine.start("digest", [{}]);
+    await vi.waitFor(async () => {
+      expect(await engine.getRun(runId)).toMatchObject({ status: "running" });
+    });
+    const { reader, watch, pending } = watching(runId);
+    // `setStatus`'s `expect` refuses a cancel of a run that is not there, so
+    // nothing moved.
+    expect(await engine.cancel("wrun_nosuch")).toBe(false);
+    await tick();
+    expect(reader.get).not.toHaveBeenCalled();
+    watch.close();
+    await expect(pending).rejects.toThrow(/Run watch closed/);
   });
 });

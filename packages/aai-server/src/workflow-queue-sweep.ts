@@ -27,11 +27,19 @@
  *
  * The interval is NOT removed, and the reason is not caution. A notification is
  * dropped rather than queued when nothing is listening, so anything committed
- * while a listener reconnects is never announced; and it cannot express "due at
- * T", so a PARKED message — which is how `sleep()` is implemented — has no
- * arrival to announce. The interval therefore remains the mechanism that makes
- * delivery eventual, and the listener is a latency optimization on the common
- * path. Anything that treats the notification as the record of work is wrong.
+ * while a listener reconnects is never announced. The interval therefore remains
+ * the mechanism that makes delivery eventual, and everything faster is a latency
+ * optimization on the common path. Anything that treats the notification as the
+ * record of work is wrong.
+ *
+ * A notification also cannot express "due at T", which used to mean a PARKED
+ * message — how `sleep()` is implemented — had no arrival to announce, and so
+ * that the interval was the latency FLOOR of every sub-interval sleep whatever
+ * its duration. That is closed WITHOUT giving the notification a payload: a
+ * short park announces, the pass it wakes claims nothing and instead reads
+ * {@link msUntilNextDue}, and `startWorkflowQueueSweep` arms one extra look at
+ * the answer. `workflow-queue-store.ts`'s `announce` and `QUEUE_DUE_SOON_MS`
+ * carry the argument.
  *
  * ## NO LEADER LOCK, unlike the wake sweep this replaced
  *
@@ -48,6 +56,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { mapConcurrent } from "./_pool.ts";
 import { RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { envCount, envMs } from "./constants.ts";
@@ -59,7 +68,7 @@ import { claimDue } from "./workflow-queue-claim.ts";
 import { fail, failUnreachable, isGuestUnreachable } from "./workflow-queue-failure.ts";
 import type { ReconcilePass } from "./workflow-queue-reconcile.ts";
 import { reconcileStalledRuns, STALL_GRACE_MS } from "./workflow-queue-reconcile.ts";
-import { ack, type QueuedMessage, reschedule } from "./workflow-queue-store.ts";
+import { ack, msUntilNextDue, type QueuedMessage, reschedule } from "./workflow-queue-store.ts";
 
 const log = createLogger("workflow.queue.sweep");
 
@@ -163,6 +172,20 @@ export type SweepPass = {
   rescheduled: number;
   retried: number;
   dropped: number;
+  /**
+   * How long until the earliest PARKED message is due, when this pass got as far
+   * as asking — see `msUntilNextDue`.
+   *
+   * The interval is a latency FLOOR without it: a message parked for less than a
+   * tick has no arrival to announce, so every sub-interval `ctx.sleep` cost one
+   * full interval whatever its duration. {@link startWorkflowQueueSweep} turns
+   * this into ONE extra look; a pass driven directly by a test simply reads it.
+   *
+   * Absent when the pass returned before reserving a connection (draining, or
+   * the replica's deliveries saturated), which is why the reader must treat
+   * absence as "no new information" rather than as "nothing is parked".
+   */
+  nextDueInMs?: number | undefined;
 };
 
 export type QueueSweepOptions = {
@@ -197,7 +220,7 @@ export type QueueSweepOptions = {
 async function claimAndReconcile(
   adminDb: AdminDb,
   limit: number,
-): Promise<{ claimed: QueuedMessage[]; repaired: ReconcilePass }> {
+): Promise<{ claimed: QueuedMessage[]; repaired: ReconcilePass; nextDueInMs?: number }> {
   // A RESERVED connection for the claim, released before any delivery starts: a
   // delivery is an HTTP request into a guest and may take seconds, and holding a
   // pooled connection across it is how a slow guest becomes a connection
@@ -231,7 +254,13 @@ async function claimAndReconcile(
       claimed.length === 0
         ? await reconcileStalledRuns((q, p) => reserved.query(q, p))
         : { stalled: 0, skipped: 0, abandoned: 0 };
-    return { claimed, repaired };
+    // On the SAME reservation as the claim, for the reason the reconcile above
+    // rides it: `ADMIN_POOL_MAX` is 16 for the whole replica, so a tick that
+    // finds nothing must not cost the pool twice a second. One ordered index
+    // scan stopping at the first row — see `msUntilNextDue`, which carries why
+    // this is affordable per pass and what the sweep does with the answer.
+    const nextDueInMs = await msUntilNextDue((q, p) => reserved.query(q, p));
+    return { claimed, repaired, ...omitUndefined({ nextDueInMs }) };
   } finally {
     reserved.release();
   }
@@ -269,8 +298,9 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
 
   let claimed: QueuedMessage[];
   let repaired: ReconcilePass;
+  let nextDueInMs: number | undefined;
   try {
-    ({ claimed, repaired } = await claimAndReconcile(
+    ({ claimed, repaired, nextDueInMs } = await claimAndReconcile(
       adminDb,
       slots ? Math.min(maxPerTick, slots.length) : maxPerTick,
     ));
@@ -287,6 +317,10 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   for (const release of (slots ?? []).slice(claimed.length)) release();
   if (claimed.length === 0) {
     releaseAllSlots();
+    // NOT `empty`: this pass did reserve a connection and did ask, and an idle
+    // tick is exactly when the answer matters — a run that just parked for 100 ms
+    // claims nothing here and is the whole reason the extra look exists.
+    const idle: SweepPass = { ...empty, ...omitUndefined({ nextDueInMs }) };
     if (repaired.stalled > 0) {
       log.warn(
         `scheduled a re-walk for ${repaired.stalled} stalled run(s) — unfinished with nothing ` +
@@ -294,7 +328,7 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
         repaired,
       );
     }
-    return empty;
+    return idle;
   }
 
   // The settle statements take a connection PER STATEMENT, not one for the pass.
@@ -373,6 +407,11 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
     rescheduled: outcomes.filter((o) => o === "rescheduled").length,
     retried: outcomes.filter((o) => o === "retry").length,
     dropped: outcomes.filter((o) => o === "dropped").length,
+    // Read BEFORE these deliveries ran, so it cannot see a `sleep()` one of them
+    // just parked. That is the safe direction and needs no second query: the
+    // reschedule is an enqueue, so the next tick's own read sees it, and this
+    // answer only ever costs a look nobody needed.
+    ...omitUndefined({ nextDueInMs }),
   };
   // A pass that delivered everything is DEBUG; anything abandoned is a stalled
   // run and worth a line an operator sees.

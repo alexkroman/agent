@@ -75,6 +75,22 @@ function callRoute(
   });
 }
 
+/** The same call, addressed to the method-in-the-path form a current guest uses. */
+function callMethodRoute(
+  fetch: TestFetch,
+  slug: string,
+  method: string,
+  body: Record<string, unknown>,
+  bearer?: string,
+): Promise<Response> {
+  const authorization = bearer === undefined ? undefined : `Bearer ${bearer}`;
+  return fetch(`/${slug}/workflow-journal/${method}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...omitUndefined({ authorization }) },
+    body: JSON.stringify(body),
+  });
+}
+
 // At module scope, because `captureLogs` installs `beforeEach`/`afterEach` —
 // called inside a test body it registers its hooks too late to have recorded
 // anything.
@@ -449,5 +465,98 @@ describe("POST /:slug/workflow-journal", () => {
       await bearerFor(harness.store, MINE),
     );
     expect(res.status).toBe(501);
+  });
+  describe("the method in the path", () => {
+    // What the segment buys is the REQUEST LOG — fifteen methods on one path made
+    // Modal's per-request line name the slug and never the operation. What it must
+    // not cost is a mixed deployment: an agent bundle carries its own copy of
+    // `aai-runtime` and is deployed independently of this server, so BOTH forms
+    // have to answer, and a journal call that 404s is a durable run that stops.
+
+    test("runs the same statement as the body form", async () => {
+      const p = await platform();
+      const bearer = await bearerFor(p.store, MINE);
+      const viaPath = await callMethodRoute(
+        p.fetch,
+        MINE,
+        "readSteps",
+        { runId: "wrun_1" },
+        bearer,
+      );
+      const seenAfterPath = p.seen.length;
+      const viaBody = await callRoute(
+        p.fetch,
+        MINE,
+        { method: "readSteps", runId: "wrun_1" },
+        bearer,
+      );
+      expect([viaPath.status, viaBody.status]).toEqual([200, 200]);
+      // Identical statements and identical params, which is the whole claim: the
+      // segment changes where the method is READ and nothing about what runs.
+      expect(p.seen.slice(0, seenAfterPath)).toEqual(p.seen.slice(seenAfterPath));
+    });
+
+    test("the bare route still answers a bundle that sends the method in the body", async () => {
+      // The compatibility half, stated as its own case because deleting the legacy
+      // registration is a one-line edit that no other test here would notice.
+      const p = await platform();
+      const res = await callRoute(
+        p.fetch,
+        MINE,
+        { method: "readSteps", runId: "wrun_1" },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    test("the PATH wins over a disagreeing body", async () => {
+      // So a request cannot be LOGGED as one operation and EXECUTED as another,
+      // which would make the log actively misleading rather than merely coarse.
+      // No shipped client sends a disagreement; a caller can.
+      const p = await platform();
+      const res = await callMethodRoute(p.fetch, MINE, "readSleeps", {
+        method: "readSteps",
+        runId: "wrun_1",
+      });
+      expect(res.status).toBe(401);
+      const authed = await callMethodRoute(
+        p.fetch,
+        MINE,
+        "readSleeps",
+        { method: "readSteps", runId: "wrun_1" },
+        await bearerFor(p.store, MINE),
+      );
+      expect(authed.status).toBe(200);
+      expect(p.seen.at(-1)?.sql).toContain("aai_platform.workflow_sleeps");
+    });
+
+    test("refuses an unknown method in the path WITHOUT echoing it back", async () => {
+      // Same rule as the body form's: the segment is caller-supplied and this
+      // reply is a tenant's to read.
+      const p = await platform();
+      const res = await callMethodRoute(
+        p.fetch,
+        MINE,
+        "dropEverything",
+        { runId: "wrun_1" },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.text()).not.toContain("dropEverything");
+    });
+
+    test("takes the slug from the BEARER on this form too", async () => {
+      // The tenancy design is the bearer's slug in every statement, and a second
+      // registration is exactly where that could be forgotten.
+      const p = await platform();
+      const res = await callMethodRoute(
+        p.fetch,
+        MINE,
+        "readSteps",
+        { runId: "wrun_1" },
+        await bearerFor(p.store, THEIRS),
+      );
+      expect(res.status).toBe(401);
+    });
   });
 });

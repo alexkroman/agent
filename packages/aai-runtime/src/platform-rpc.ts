@@ -86,6 +86,27 @@ export type PlatformCall = {
    * none at all for the enqueue route, which has one operation).
    */
   label: string;
+  /**
+   * An extra path segment under {@link PlatformCall.route}, or `undefined` to
+   * post to the route itself.
+   *
+   * What it is FOR is the request LOG, and `platformUrl`'s own note carries the
+   * argument: a route serving a dozen methods behind a body field prints one line
+   * per call whatever the method was, so `POST /:slug/workflow-journal` had to be
+   * decomposed by counting requests. It is not how the SERVER decides what to do
+   * — the method stays in the body as well — because a guest and the platform it
+   * calls are deployed independently and a bundle older than this field must keep
+   * working. See `workflow-journal-handler.ts`, which reads the path first and
+   * falls back to the body.
+   *
+   * **It reaches the HTTP fallback ONLY.** A socket frame carries a `route` the
+   * platform checks against a closed set (`platform-socket-handler.ts`), so a
+   * segment appended there would 404 rather than decompose anything — and there
+   * is nothing to decompose either way, since that handler writes no per-frame
+   * line. Giving the socket path a per-call record of its own is a separate
+   * change to that handler, not a field on this one.
+   */
+  pathSegment?: string | undefined;
   /** How long the whole request may take, in milliseconds. */
   timeoutMs: number;
   /** The already-encoded request body — JSON for three routes, typed JSON for storage. */
@@ -217,7 +238,7 @@ async function send(
   // a reset taken by a claim's bucket probes failed the run-event reads in the same
   // instant, which is what made one transport fault read as three unrelated bugs.
   const fetchFn = opts.fetch ?? rpcFetch;
-  const res = await fetchFn(platformUrl(opts.base, call.route), {
+  const res = await fetchFn(platformUrl(opts.base, call.route, call.pathSegment), {
     method: "POST",
     headers: {
       ...platformBearer(opts.token),

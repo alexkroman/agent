@@ -64,9 +64,11 @@ import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts"
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import {
   isResumableJournal,
+  isTerminalStatus,
   type JournalStore,
   type ResumableJournal,
 } from "./workflow-journal-types.ts";
+import { signalRunSettled } from "./workflow-run-reads.ts";
 import { createMemoryStreams, type StreamStore } from "./workflow-streams.ts";
 
 /**
@@ -214,6 +216,61 @@ function startBootSweep(sweep: BootSweep): void {
 }
 
 /**
+ * The engine, plus a "this run is over" nudge to anything WATCHING it here.
+ *
+ * The three loops that watch a run — the synchronous `wait=`, the SSE stream,
+ * the notify watcher — discover a settled run by re-reading it on a timer, and
+ * nothing told them anything. So a run that finished in THIS process was found
+ * at the next tick: up to a whole `WORKFLOW_WAIT_POLL_MS` after the answer was
+ * already in the journal, on the one route whose caller is holding a request
+ * open. Measured on a deployed agent, a 5-step `wait=` run made 22 journal RPCs
+ * against 13 for the same run started without one.
+ *
+ * **The signal carries no snapshot and resolves nobody** — it only brings the
+ * watchers' next shared READ forward, so the answer still comes from the
+ * journal. That is the whole safety argument, and `workflow-run-reads.ts`'s
+ * header carries it: a run can be walked by another replica, so a value pushed
+ * from whichever process happened to finish a walk would be a cache that is
+ * right here and wrong there. A missed signal costs one tick and a spurious one
+ * costs a read somebody had already asked for, which is why this may be raised
+ * without knowing whether this process owns the run.
+ *
+ * ## Here, rather than at the two writes inside the engine
+ *
+ * `recordOutcome` and `cancel` are where a terminal status is really written,
+ * and this wrapper sits one frame out from both — close enough that it fires in
+ * the same microtask turn, and it is ONE place describing one thing ("the engine
+ * finished with this run") instead of two lines threaded through the walk.
+ *
+ * It also has to be OUTSIDE `createWorkflowEngine`'s result and INSIDE this
+ * module's late-bound `engine`, which is what makes it cover both dispatchers:
+ * `deliver` above calls `engine.execute`, so a wrapper applied only to the
+ * returned object would miss every delivery a local `aai dev` run makes.
+ *
+ * `execute` answers the run's status whether or not this delivery is what ended
+ * it — a duplicate delivery of a finished run answers the same terminal status —
+ * and that needs no filtering beyond {@link isTerminalStatus}: a spurious nudge
+ * is a read, and a suspended run answers `running`, which is not one.
+ */
+function withSettleSignal(inner: WorkflowEngine): WorkflowEngine {
+  return {
+    ...inner,
+    async execute(runId, signal) {
+      const status = await inner.execute(runId, signal);
+      if (status !== undefined && isTerminalStatus(status)) signalRunSettled(runId);
+      return status;
+    },
+    async cancel(runId) {
+      const ended = await inner.cancel(runId);
+      // Only when THIS call is what ended it: a `false` moved nothing, so there
+      // is no new answer for a watcher to be hurried toward.
+      if (ended) signalRunSettled(runId);
+      return ended;
+    },
+  };
+}
+
+/**
  * Build an engine that executes its own runs in this process.
  *
  * @internal
@@ -335,17 +392,19 @@ export function createInProcessWorkflowEngine(
     timers.add(timer);
   }
 
-  engine = createWorkflowEngine({
-    workflows,
-    journal,
-    streams,
-    dispatch: options.dispatch ?? schedule,
-    // `wrun_` + a uuid. Not sortable, and it does not need to be: `listRuns`
-    // orders by `createdAt` with the id only breaking a tie, so what the id owes
-    // is uniqueness and the grammar `_workflow-run-id.ts` will accept.
-    newRunId: () => `wrun_${randomUUID().replaceAll("-", "")}`,
-    logger,
-  });
+  engine = withSettleSignal(
+    createWorkflowEngine({
+      workflows,
+      journal,
+      streams,
+      dispatch: options.dispatch ?? schedule,
+      // `wrun_` + a uuid. Not sortable, and it does not need to be: `listRuns`
+      // orders by `createdAt` with the id only breaking a tie, so what the id
+      // owes is uniqueness and the grammar `_workflow-run-id.ts` will accept.
+      newRunId: () => `wrun_${randomUUID().replaceAll("-", "")}`,
+      logger,
+    }),
+  );
 
   // Only where the schedule is OURS — an injected dispatcher owns its own
   // recovery, and the platform's queue reconcile is that recovery.

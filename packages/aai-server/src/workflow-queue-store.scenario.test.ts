@@ -18,7 +18,7 @@
  * slug and the NOTIFY channel carries every tenant's enqueue. Each suite passed
  * alone and 20-odd tests failed with both present: a foreign slug's
  * rows arriving in an `toEqual([ids])`, and a sibling's `enqueue` incrementing the
- * notification count that "a DELAYED message does not notify" asserts is zero.
+ * notification count that "a LONG-delayed message does not notify" asserts is zero.
  * Per-suite slugs do not help — that isolates the ROWS a test writes, not the
  * claim that reads them.
  *
@@ -57,7 +57,14 @@ import {
 } from "./_workflow-queue-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { claimDue, WORKFLOW_QUEUE_STEPS_PER_RUN } from "./workflow-queue-claim.ts";
-import { ack, enqueue, envelopeBody, parseEnvelope, reschedule } from "./workflow-queue-store.ts";
+import {
+  ack,
+  enqueue,
+  envelopeBody,
+  parseEnvelope,
+  QUEUE_DUE_SOON_MS,
+  reschedule,
+} from "./workflow-queue-store.ts";
 import { runQueuePass } from "./workflow-queue-sweep.ts";
 
 describeWithPg("workflow queue store", () => {
@@ -604,31 +611,36 @@ describeWithPg("workflow queue store", () => {
   });
 
   /**
-   * A DELAYED message does NOT notify, and the absence is the assertion.
+   * A LONG-delayed message does NOT notify, and a SHORT one does. The boundary is
+   * `QUEUE_DUE_SOON_MS`, and each half is a different failure.
    *
-   * A notification says "look now" and there is nothing to find until
-   * `available_at` passes — so announcing a `sleep()` would wake every replica to
-   * run a query that returns nothing. A parked message is what the periodic pass
-   * exists for, and it is the one thing a notification cannot express.
+   * ANNOUNCING A LONG PARK is the original objection: a notification says "look
+   * now" and there is nothing to find until `available_at` passes, so announcing
+   * a 30-second sleep wakes every replica to run a query that returns nothing.
+   *
+   * NOT ANNOUNCING A SHORT ONE made the poll interval the latency FLOOR of every
+   * sub-interval `ctx.sleep`, whatever its duration — the pass a short park wakes
+   * claims nothing and instead reads the deadline out of the queue, which is the
+   * only way "due at T" is ever expressed. See `announce`.
    *
    * `notify.fence()` rather than a `waitFor` on the count, and its own doc
-   * carries why: the timeout version passes when the code is wrong.
+   * carries why: the timeout version passes when the code is wrong. The short
+   * park is also the POSITIVE CONTROL for the absence — without one this spec
+   * would pass on a listener that never works at all.
    */
-  test("enqueuing a DELAYED message does not notify", async () => {
+  test("a LONG-delayed message does not notify, and a SHORT park does", async () => {
     await withQueueNotifications(fx, async (notify) => {
       await enqueue(sql, { ...msg("m1", "r1"), delaySeconds: 30 });
       await notify.fence();
       expect(notify.count()).toBe(0);
 
-      // POSITIVE CONTROL, after the fact: without it this spec would pass on a
-      // listener that never works at all, which is the vacuous-absence shape.
-      await enqueue(sql, msg("m2", "r1"));
+      await enqueue(sql, { ...msg("m2", "r1"), delaySeconds: QUEUE_DUE_SOON_MS / 2000 });
       await vi.waitFor(() => expect(notify.count()).toBe(1));
     });
   });
 
   /**
-   * A ZERO-DELAY RE-PARK announces, and a real `sleep()` still does not.
+   * A ZERO-DELAY RE-PARK announces, and a LONG `sleep()` still does not.
    *
    * `reschedule` never announced at all, so a guest parking a busy walk with
    * `{"timeoutSeconds": 0}` — which is what a walk that has barely started asks
@@ -640,7 +652,7 @@ describeWithPg("workflow queue store", () => {
    * rule the case above asserts for `enqueue`: the test is the DELAY, not the
    * caller.
    */
-  test("a zero-delay re-park notifies; a real sleep does not", async () => {
+  test("a zero-delay re-park notifies; a long sleep does not", async () => {
     // Enqueued and claimed BEFORE the listener attaches, because `enqueue`
     // announces too and the subject here is `reschedule`.
     await enqueue(sql, msg("m1", "r1"));
