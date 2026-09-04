@@ -91,10 +91,13 @@ export default function QuoteCard() {
 }
 ```
 
-`useToolCallStart` is the same hook for the other end of the call, for a
-spinner rather than a value. Both take the tool's shape as a type argument:
-`useToolResult<InferToolOutput<typeof getQuote>>(…)` off a **type-only**
-import of the tool module pulls no server code into the bundle.
+`useToolCallStart` is the same hook for the other end of the call — the
+pending invocation and its arguments, for a spinner rather than a value.
+Either one takes the tool's own shape as a type argument, derived from the
+tool module by a **type-only** import that is erased and so pulls no server
+code into the bundle: `useToolResult<InferToolOutput<typeof getQuote>>(…)`
+for the result, `useToolCallStart<InferToolInput<typeof getQuote>>(…)` for
+the arguments.
 
 ### Client `client.tsx`
 
