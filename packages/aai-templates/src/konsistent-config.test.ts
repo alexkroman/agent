@@ -93,38 +93,26 @@ const raw = sole(
  * template-name segment, so one `.md` hit under `templates/` proves the whole
  * family's prefix.
  */
-const repoFiles = Object.keys({
-  ...import.meta.glob("../../../packages/*/src/*.{json,md}", { query: "?raw", eager: false }),
-  // Source lives under `src/` now, so the shallow code sample starts there.
-  ...import.meta.glob("../../../packages/*/src/*.{ts,tsx}", { query: "?raw", eager: false }),
-  ...import.meta.glob("../../../packages/*/src/*/*.{ts,tsx}", { query: "?raw", eager: false }),
-  // Both levels below `sdk/`, wildcarded rather than naming `providers/`: two
-  // convention families live down there now (the four provider stages, and
-  // `channels/`), and a glob naming one subtree by hand is the shape this very
-  // test exists to catch — the next family would go unmeasured while the check
-  // printed a pass. `*/*` reaches `sdk/channels/slack.ts`, `*/*/*` reaches
-  // `sdk/providers/llm/anthropic.ts` — both now under `src/`.
-  ...import.meta.glob("../../../packages/aai/src/sdk/*/*.ts", { query: "?raw", eager: false }),
-  ...import.meta.glob("../../../packages/aai/src/sdk/*/*/*.ts", { query: "?raw", eager: false }),
-  ...import.meta.glob("../templates/*/*.md", {
-    query: "?raw",
-    eager: false,
-  }),
-}).map(repoPathOf);
 
 /**
  * Everything a `paths` pattern could select, FILES and DIRECTORIES both.
  *
- * `repoFiles` above is a shallow sample, which is all a literal-prefix check
- * needs; resolving a whole pattern needs the deep tree — `packages/aai/src/host/**`
+ * ONE corpus, deep, because a shallow sample is NOT all a literal-prefix check
+ * needs: this used to be two, and the sample enumerated only the first and
+ * second levels under `src/`, plus deeper globs rooted at `sdk/` alone, so a
+ * prefix three levels down
+ * (`aai-runtime/src/providers/stt/`) matched nothing and the check reported a
+ * pattern as dead while it was resolving four real files. That is precisely the
+ * failure this test exists to catch, committed by the test itself — a corpus
+ * enumerated by DEPTH goes stale the first time a convention points deeper.
+ * Resolving a whole pattern needs the deep tree anyway — `packages/aai/src/host/**`
  * and `packages/aai-ui/src/worklets/**` are three and two levels down, and two
  * conventions (`workspace-package-layout`, `agent-templates`) point at
  * DIRECTORIES, which no file glob returns. Directories are derived from every
  * ancestor of every file rather than globbed for.
  *
  * The pattern is the one `guard-invariants-gate.test.ts` already uses for its
- * own `repoFiles`, so no new module edge reaches the templates tree — see the
- * knip note above, which is about the SHALLOW globs and stays true of them.
+ * own `repoFiles`, so no new module edge reaches the templates tree.
  */
 const repoPaths = (() => {
   // Two key shapes, exactly as the shallow globs above produce, and `repoPathOf`
@@ -345,7 +333,7 @@ describe("konsistent.json", () => {
         const prefix = literalPrefix(pattern);
         if (prefix === "") continue; // Pattern is magic from the first segment.
         expect(
-          repoFiles.some((file) => file.startsWith(prefix)),
+          [...repoPaths].some((path) => path.startsWith(prefix)),
           `${convention.name}: no file in the repo lives under "${prefix}" (from "${pattern}")`,
         ).toBe(true);
       }
