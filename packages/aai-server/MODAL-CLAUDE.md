@@ -157,14 +157,17 @@ reintroduce a host-managed pool to approximate it.
 
 ## Sandboxes are unpinned; the WEB service PREFERS the database's region
 
-**For a sandbox, capacity still beats locality.** `MODAL_SANDBOX_REGION`
-(comma-separated for multiple) pins SANDBOX placement via Modal's
-`regions` create param, but it is an operator override that production
-leaves unset; `build_image` (scripts/modal_image.py) deliberately bakes no
-value.
+**Both placement sites take the SAME list.** `modal_deploy.py` passes
+`region=REGIONS` to the web function AND exports it as `MODAL_SANDBOX_REGION`
+into the shared image (`",".join(REGIONS)`), which `modal-sandbox-env.ts`
+parses into Modal's `regions` create param for every guest spawn. It is
+DERIVED rather than written twice, because a second literal is one nothing
+compares: the host would keep preferring `us-east-2` while guests drifted, on
+a green deploy whose only symptom is latency. An operator can still override
+the variable per environment; empty or absent is unpinned, which is local dev.
 
-**The web service is the exception, and it is a LIST.** `modal_deploy.py`
-passes `region=REGIONS`, `["us-east-2", "us-east"]`. Read the two halves
+**It is a LIST at both sites, and that is the load-bearing half.**
+`["us-east-2", "us-east"]`. Read the two halves
 separately, because they answer to different failures: the PREFERENCE is
 earned by a measurement, and the FALLBACK is what keeps the outage below
 unreachable.
@@ -223,17 +226,24 @@ drifts keeps the risk and deletes the benefit), that every entry is one a
 deploy has accepted, and that the decorator really reads it; each is A/B'd
 against the corresponding regression.
 
-Guests were once pinned by exporting `MODAL_SANDBOX_REGION` too, so every
-guest was confined to one region's spare capacity. The failure that buys is a spawn
-Modal cannot schedule inside the ~50s `sandbox.tunnels()` waits, surfacing
-as `SandboxTimeoutError: Sandbox operation timed out` — the whole session
-fails, and the more regions are available the less often it happens.
+**The guest pin was removed once, and what it was removed for was the SINGLE
+region.** Exporting a bare `MODAL_SANDBOX_REGION=us-east-2` confined every
+guest to one region's spare capacity, and the failure that buys is a spawn
+Modal cannot schedule inside the ~50s `sandbox.tunnels()` waits, surfacing as
+`SandboxTimeoutError: Sandbox operation timed out` — the whole session fails,
+and the more regions are available the less often it happens. That is this
+section's zero-container outage one layer down, so it takes the same remedy
+rather than the opposite one: a spill entry, not no preference.
 
-The locality it bought was narrower than the note that justified it claimed:
-AGENT guests have no host channel at all, so a voice turn crosses that hop
-**zero** times and only the studio's control-channel RPCs pay it, outside any
-latency budget. Re-pin per environment if that stops being true; don't re-bake
-it into the shared image.
+The locality argument moved too. It was "AGENT guests have no host channel at
+all, so a voice turn crosses that hop **zero** times, and only the studio's
+control-channel RPCs pay it, outside any latency budget" — still true about
+voice, and it is not what decides this any more. A DURABLE RUN's journal calls
+are made by the GUEST, one platform round trip each, sequential by
+construction: **~24 ms an operation out of region against ~2 ms in it**, and a
+walk makes a dozen or more. So the guest→platform hop is inside a latency
+budget now in exactly the way the platform→Supabase hop is, and the thing that
+stops it being an availability risk is the fallback entry.
 
 ## Guest resources are a BURST RANGE
 

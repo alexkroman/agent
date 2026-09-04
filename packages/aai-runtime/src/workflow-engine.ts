@@ -317,7 +317,39 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
     },
 
     async execute(runId: string, signal?: AbortSignal): Promise<RunRecord["status"] | undefined> {
-      const record = await journal.getRun(runId);
+      // ONE round trip for the whole opening, and it used to be two. Nothing a
+      // delivery opens with depends on the record: the three reads are each a pure
+      // function of the run id and the compare-and-set carries its own guard, so
+      // all four are issued together and read in order below — one
+      // `POST /:slug/workflow-journal` of latency for four calls rather than one
+      // and then three, at ~840 ms each (see "A journal read is a round trip" in
+      // this package's guide). The no-op catches are only so an early return
+      // cannot leave a rejection unhandled.
+      const opening = journal.getRun(runId);
+      void opening.catch(() => undefined);
+      // The two the WALK itself opens with (`ReplayOptions.steps` / `.sleeps`).
+      // The wait snapshot costs a run with no waits one round trip per delivery,
+      // concurrent so free, and saves a polling run one per elapsed sleep per
+      // delivery — the term that grows.
+      const steps = journal.readSteps(runId);
+      void steps.catch(() => undefined);
+      const sleeps = journal.readSleeps(runId);
+      void sleeps.catch(() => undefined);
+      // Compare-and-set, so exactly one delivery announces the run as started. An
+      // overlapping delivery still wins it — `running` is in `expect` — so the only
+      // way to lose is a status this delivery may not run, the window a cancel
+      // arriving just before the walk lands in; the loser proceeds anyway, and this
+      // module's doc says why the journal and not a lock makes that safe. That same
+      // `expect` is what lets it be issued WITHOUT the record: a run this delivery
+      // may not walk answers `false` rather than moving, and a `failed` an abandon
+      // below wrote first is outside the set too, so neither order changes where
+      // the run ends up — at the cost of a transient `running` on a doomed run.
+      const announceStarted = (): Promise<boolean> =>
+        journal.setStatus(runId, "running", undefined, ["pending", "running"]);
+      const started = announceStarted();
+      void started.catch(() => undefined);
+
+      const record = await opening;
       if (!record) return undefined;
       // A terminal run is DONE, and a redelivery of one is ordinary rather than
       // an error: the platform's queue acks on a 200, so any delivery whose ack
@@ -344,30 +376,16 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
         );
       }
 
-      // Started BESIDE the compare-and-set below rather than after it. The walk
-      // opens with this read (`ReplayOptions.steps`) and nothing about it
-      // depends on the status write, so issuing them together takes a delivery
-      // from three sequential platform round trips to two — measured at ~840 ms
-      // each on a deployed run. A rejection belongs to whoever awaits it; the
-      // no-op catch is only so an early return below cannot leave one
-      // unhandled.
-      const steps = journal.readSteps(runId);
-      void steps.catch(() => undefined);
-      // And the WAIT snapshot, beside it. It costs a run with no waits one extra
-      // round trip per delivery — concurrent with the step read, so no extra
-      // latency — and saves a polling run one per elapsed sleep per delivery,
-      // which is the term that grows. See `ReplayOptions.sleeps`.
-      const sleeps = journal.readSleeps(runId);
-      void sleeps.catch(() => undefined);
-
-      // Compare-and-set, so exactly one delivery announces the run as started.
-      // An overlapping delivery still wins it — `running` is in `expect` — so the
-      // only way to lose is a status this delivery may not run: the run went
-      // TERMINAL between the read above and here, which is the window a cancel
-      // arriving a moment before the walk lands in. The loser of the ordinary
-      // race proceeds anyway; see this module's doc on why the journal and not a
-      // lock is what makes that safe.
-      if (!(await journal.setStatus(runId, "running", undefined, ["pending", "running"]))) {
+      // A LOST eager set is re-asked rather than believed, and that half cannot be
+      // skipped: issued beside the record read, it can reach the store ahead of
+      // the `createRun` a racing `start` has in flight and answer `false` for a
+      // run that exists by the time the record does. Believing it declines a LIVE
+      // run, and that delivery may be the last one anybody sends —
+      // `workflow-concurrent-delivery.test.ts` shrinks to exactly that. The
+      // re-ask is the original sequential set in its original position, so only a
+      // loser pays. What the run BECAME is then re-read rather than assumed, as
+      // `recordOutcome`'s suspend arm does.
+      if (!((await started) || (await announceStarted()))) {
         return (await journal.getRun(runId))?.status;
       }
 

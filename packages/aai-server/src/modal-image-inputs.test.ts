@@ -526,4 +526,16 @@ describe("modal web function region", () => {
     // an unread constant looks exactly like a configured one in a diff.
     expect(deployPy).toMatch(/^ +region=REGIONS,$/m);
   });
+
+  test("is exported to guest sandboxes DERIVED, never as a second literal", () => {
+    // Guests place against the same preference (modal-sandbox-env.ts parses
+    // `MODAL_SANDBOX_REGION`), and a run's journal calls are made BY THE GUEST
+    // — one platform round trip each, sequentially, ~24 ms out of region
+    // against ~2 ms in it. Written as its own string this would be the third
+    // copy of a region list in this repository and the one nothing compares:
+    // the host would keep preferring us-east-2 while guests drifted, with a
+    // green deploy and no symptom but latency. So the assertion is on the
+    // JOIN, not on the value.
+    expect(deployPy).toMatch(/^ +"MODAL_SANDBOX_REGION": ",".join\(REGIONS\),$/m);
+  });
 });

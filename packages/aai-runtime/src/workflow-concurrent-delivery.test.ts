@@ -281,7 +281,17 @@ describe("two deliveries of one run, overlapping inside the journal", () => {
     // Exactly one refusal per scenario, by construction, so there is no range to
     // record and nothing for a floor above zero to be measured against.
     expect(reached.startsRefused, "no colliding start was ever refused").toBeGreaterThan(0);
-    expect(reached.cancelsMidWalk, "no cancel landed with work still ahead").toBeGreaterThan(8); // 12-23
+    // Small by construction NOW, and it was not always: the floor was `> 8`
+    // against a measured 12-23, and the range fell to **3-9 over 20 runs** when
+    // `execute` stopped opening with a sequential record read. A cancel issued
+    // in the same burst as its deliveries used to land while they were still
+    // two round trips from running anything; against a one-round-trip opening
+    // it lands later in the body, and the scenarios where it lands after the
+    // last step no longer qualify — `noteScenario` counts one only while
+    // `run.total < oracle.total`. So this is `> 0`, the floor a state this
+    // narrow can carry: what it catches is a cancel that stopped being able to
+    // land mid-walk at all.
+    expect(reached.cancelsMidWalk, "no cancel landed with work still ahead").toBeGreaterThan(0); // 3-9 over 20 runs
     expect(reached.fanOuts, "no program fanned steps out").toBeGreaterThan(6); // 13-28
   }, 120_000);
 });
