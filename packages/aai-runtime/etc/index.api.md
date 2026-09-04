@@ -15,8 +15,10 @@ import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
+import type { JSONSchema7 } from 'json-schema';
 import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
+import type { McpServers } from '@alexkroman1/aai';
 import type { Message } from '@alexkroman1/aai';
 import { ModelMessage } from 'ai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
@@ -40,6 +42,7 @@ import { SttSession } from '@alexkroman1/aai/host-internal';
 import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
+import type { ToolInputSchema } from '@alexkroman1/aai';
 import { ToolRegistry } from '@alexkroman1/aai/manifest';
 import type { ToolSchema } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
@@ -384,6 +387,75 @@ export const MAX_WORKFLOW_FIND_LIMIT = 100;
 export const MAX_WORKFLOW_INPUT_BYTES: number;
 
 // @public
+export const MCP_CONNECT_TIMEOUT_MS = 10000;
+
+// @public
+export type McpCallResult = {
+    isError: boolean;
+    text: string;
+    structured?: Record<string, unknown>;
+    otherParts: readonly string[];
+};
+
+// @public
+export type McpConnectOptions = {
+    fetch?: typeof globalThis.fetch | undefined;
+    connectTimeoutMs?: number | undefined;
+};
+
+// @public
+export type McpDrift = {
+    added: readonly string[];
+    removed: readonly string[];
+    changed: readonly string[];
+};
+
+// @public
+export type McpInputSchema = ToolInputSchema & {
+    toJsonSchema(): JSONSchema7;
+};
+
+// @public
+export type McpServerStatus = {
+    key: string;
+    url: string;
+    tools: readonly string[];
+    fingerprints: Readonly<Record<string, string>>;
+    drift?: McpDrift;
+    unavailable?: string;
+};
+
+// @public
+export type McpSession = {
+    tools(): Promise<ToolSet>;
+    close(): Promise<void>;
+};
+
+// @public
+export type McpSessionOpener = (server: ResolvedMcpServer) => Promise<McpSession>;
+
+// @public
+export type McpToolsOptions = McpConnectOptions & {
+    env?: Readonly<Partial<Record<string, string>>> | undefined;
+    logger?: Logger | undefined;
+    openSession?: McpSessionOpener | undefined;
+};
+
+// @public
+export type McpToolSurface<D> = {
+    agent: D;
+    servers: readonly McpServerStatus[];
+    close(): Promise<void>;
+};
+
+// @public
+export type McpTrust = {
+    fingerprints: Readonly<Record<string, string>>;
+    drift?: McpDrift;
+    refused: ReadonlySet<string>;
+};
+
+// @public
 export type OpenerRegistryEntry<Opener> = {
     readonly envVar: string;
     readonly open: (descriptor: {
@@ -435,6 +507,13 @@ export function requiredProviderEnvVars(agent: {
 // @public
 export type ReservedDb = Db & {
     release(): void;
+};
+
+// @public
+export type ResolvedMcpServer = {
+    key: string;
+    url: string;
+    token?: string;
 };
 
 // @public
@@ -872,6 +951,12 @@ export type WdkStreamOptions = {
 
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
+
+// @public
+export function withMcpTools<D extends {
+    readonly tools: ToolRegistry;
+    readonly mcpServers?: McpServers | undefined;
+}>(def: D, options?: McpToolsOptions): Promise<McpToolSurface<D>>;
 
 // @public
 export function withToolsDir<D extends {

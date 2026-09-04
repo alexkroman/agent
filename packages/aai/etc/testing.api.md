@@ -14,6 +14,7 @@ interface AgentDef extends PipelineVoiceTuning {
     idleTimeoutMs?: number;
     llm?: LlmProvider;
     maxSteps: number;
+    mcpServers?: McpServers;
     name: string;
     page?: "voice" | "static";
     requiredEnv?: readonly string[];
@@ -136,6 +137,16 @@ type Literal<S extends string> = string extends S ? never : S;
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type McpServerConfig = {
+    url: string;
+    tokenEnv?: string;
+    pinnedTools?: Readonly<Record<string, string>>;
+};
+
+// @public
+type McpServers = Readonly<Record<string, McpServerConfig>>;
 
 // @public
 type Message = {

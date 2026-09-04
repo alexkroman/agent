@@ -3,6 +3,7 @@ packages:
   - docs
 
 catalog:
+  '@ai-sdk/mcp': ^2.0.43
   '@hono/zod-validator': ^0.9.1
   '@tailwindcss/vite': ^4.3.3
   '@testing-library/dom': ^10.4.1

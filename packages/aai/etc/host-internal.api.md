@@ -74,6 +74,11 @@ const AgentConfigSchema: z.ZodObject<{
         text: "text";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodURL;
+        tokenEnv: z.ZodOptional<z.ZodString>;
+        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    }, z.core.$strict>>>;
     page: z.ZodOptional<z.ZodEnum<{
         static: "static";
         voice: "voice";

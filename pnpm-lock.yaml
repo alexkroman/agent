@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@ai-sdk/mcp':
+      specifier: ^2.0.43
+      version: 2.0.43
     '@hono/zod-validator':
       specifier: ^0.9.1
       version: 0.9.1
@@ -429,6 +432,9 @@ importers:
       '@ai-sdk/groq':
         specifier: ^4.0.37
         version: 4.0.37(zod@4.5.4)
+      '@ai-sdk/mcp':
+        specifier: 'catalog:'
+        version: 2.0.43(zod@4.5.4)
       '@ai-sdk/mistral':
         specifier: ^4.0.39
         version: 4.0.39(zod@4.5.4)

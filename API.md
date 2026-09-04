@@ -360,6 +360,11 @@ const AgentConfigSchema: z.ZodObject<{
         text: "text";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodURL;
+        tokenEnv: z.ZodOptional<z.ZodString>;
+        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    }, z.core.$strict>>>;
     page: z.ZodOptional<z.ZodEnum<{
         static: "static";
         voice: "voice";
@@ -1902,6 +1907,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     idleTimeoutMs?: number;
     llm?: LlmProvider;
     maxSteps: number;
+    mcpServers?: McpServers;
     name: string;
     page?: "voice" | "static";
     requiredEnv?: readonly string[];
@@ -2188,6 +2194,28 @@ type Literal<S extends string> = string extends S ? never : S;
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
+
+// @public
+export const MCP_SERVER_KEY_RE: RegExp;
+
+// @public
+export const MCP_TOOL_NAME_MAX = 64;
+
+// @public
+export const MCP_TOOL_PREFIX = "mcp_";
+
+// @public
+export type McpServerConfig = {
+    url: string;
+    tokenEnv?: string;
+    pinnedTools?: Readonly<Record<string, string>>;
+};
+
+// @public
+export type McpServers = Readonly<Record<string, McpServerConfig>>;
+
+// @public
+export function mcpToolName(serverKey: string, remoteName: string): string;
 
 // @public
 export type Message = {
@@ -3549,6 +3577,11 @@ export const AgentConfigSchema: z.ZodObject<{
         text: "text";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodURL;
+        tokenEnv: z.ZodOptional<z.ZodString>;
+        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    }, z.core.$strict>>>;
     page: z.ZodOptional<z.ZodEnum<{
         static: "static";
         voice: "voice";
@@ -3576,6 +3609,7 @@ interface AgentDef extends PipelineVoiceTuning {
     idleTimeoutMs?: number;
     llm?: LlmProvider;
     maxSteps: number;
+    mcpServers?: McpServers;
     name: string;
     page?: "voice" | "static";
     requiredEnv?: readonly string[];
@@ -3683,6 +3717,16 @@ type Literal<S extends string> = string extends S ? never : S;
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type McpServerConfig = {
+    url: string;
+    tokenEnv?: string;
+    pinnedTools?: Readonly<Record<string, string>>;
+};
+
+// @public
+type McpServers = Readonly<Record<string, McpServerConfig>>;
 
 // @public
 type Message = {
@@ -5288,6 +5332,7 @@ interface AgentDef extends PipelineVoiceTuning {
     idleTimeoutMs?: number;
     llm?: LlmProvider;
     maxSteps: number;
+    mcpServers?: McpServers;
     name: string;
     page?: "voice" | "static";
     requiredEnv?: readonly string[];
@@ -5410,6 +5455,16 @@ type Literal<S extends string> = string extends S ? never : S;
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type McpServerConfig = {
+    url: string;
+    tokenEnv?: string;
+    pinnedTools?: Readonly<Record<string, string>>;
+};
+
+// @public
+type McpServers = Readonly<Record<string, McpServerConfig>>;
 
 // @public
 type Message = {
@@ -7790,8 +7845,10 @@ import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
+import type { JSONSchema7 } from 'json-schema';
 import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
+import type { McpServers } from '@alexkroman1/aai';
 import type { Message } from '@alexkroman1/aai';
 import { ModelMessage } from 'ai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
@@ -7815,6 +7872,7 @@ import { SttSession } from '@alexkroman1/aai/host-internal';
 import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
+import type { ToolInputSchema } from '@alexkroman1/aai';
 import { ToolRegistry } from '@alexkroman1/aai/manifest';
 import type { ToolSchema } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
@@ -8159,6 +8217,75 @@ export const MAX_WORKFLOW_FIND_LIMIT = 100;
 export const MAX_WORKFLOW_INPUT_BYTES: number;
 
 // @public
+export const MCP_CONNECT_TIMEOUT_MS = 10000;
+
+// @public
+export type McpCallResult = {
+    isError: boolean;
+    text: string;
+    structured?: Record<string, unknown>;
+    otherParts: readonly string[];
+};
+
+// @public
+export type McpConnectOptions = {
+    fetch?: typeof globalThis.fetch | undefined;
+    connectTimeoutMs?: number | undefined;
+};
+
+// @public
+export type McpDrift = {
+    added: readonly string[];
+    removed: readonly string[];
+    changed: readonly string[];
+};
+
+// @public
+export type McpInputSchema = ToolInputSchema & {
+    toJsonSchema(): JSONSchema7;
+};
+
+// @public
+export type McpServerStatus = {
+    key: string;
+    url: string;
+    tools: readonly string[];
+    fingerprints: Readonly<Record<string, string>>;
+    drift?: McpDrift;
+    unavailable?: string;
+};
+
+// @public
+export type McpSession = {
+    tools(): Promise<ToolSet>;
+    close(): Promise<void>;
+};
+
+// @public
+export type McpSessionOpener = (server: ResolvedMcpServer) => Promise<McpSession>;
+
+// @public
+export type McpToolsOptions = McpConnectOptions & {
+    env?: Readonly<Partial<Record<string, string>>> | undefined;
+    logger?: Logger | undefined;
+    openSession?: McpSessionOpener | undefined;
+};
+
+// @public
+export type McpToolSurface<D> = {
+    agent: D;
+    servers: readonly McpServerStatus[];
+    close(): Promise<void>;
+};
+
+// @public
+export type McpTrust = {
+    fingerprints: Readonly<Record<string, string>>;
+    drift?: McpDrift;
+    refused: ReadonlySet<string>;
+};
+
+// @public
 export type OpenerRegistryEntry<Opener> = {
     readonly envVar: string;
     readonly open: (descriptor: {
@@ -8210,6 +8337,13 @@ export function requiredProviderEnvVars(agent: {
 // @public
 export type ReservedDb = Db & {
     release(): void;
+};
+
+// @public
+export type ResolvedMcpServer = {
+    key: string;
+    url: string;
+    token?: string;
 };
 
 // @public
@@ -8647,6 +8781,12 @@ export type WdkStreamOptions = {
 
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
+
+// @public
+export function withMcpTools<D extends {
+    readonly tools: ToolRegistry;
+    readonly mcpServers?: McpServers | undefined;
+}>(def: D, options?: McpToolsOptions): Promise<McpToolSurface<D>>;
 
 // @public
 export function withToolsDir<D extends {

@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 16,
-    "supported": [16],
+    "current": 17,
+    "supported": [17],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -17,7 +17,8 @@
       "12": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "13": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "14": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
-      "15": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here."
+      "15": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
+      "16": "Additive: AgentDef gains one OPTIONAL field, mcpServers, and the capability gains six declaration-shaped exports (MCP_SERVER_KEY_RE, MCP_TOOL_NAME_MAX, MCP_TOOL_PREFIX, McpServerConfig, McpServers, mcpToolName). No caller must set the field and no existing declaration stops compiling, so epoch 16 would in fact still work. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ holds no agent template, matching every prior epoch entry here."
     }
   },
   "builtins": {
@@ -155,8 +156,8 @@
     }
   },
   "testing": {
-    "current": 18,
-    "supported": [18],
+    "current": 19,
+    "supported": [19],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -174,7 +175,8 @@
       "14": "WorkflowCtxOptions gains now/random/uuid overrides and WORKFLOW_CTX_NOW is added, both purely additive — and WorkflowCtx, which createWorkflowCtx returns, gains three methods, so a caller written against this epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "15": "createWorkflowCtx's ctx.sleep takes a label, and RecordedSleep carries it: a case asserting a schedule can now say WHICH wait the body reached.",
       "16": "stubStepInfo joins the capability: it is how a spec reaches a step body's retry branch, which stepInfo() answering undefined outside a run made unreachable.",
-      "17": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here."
+      "17": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
+      "18": "Collateral: this report names AgentDef through deployedAgent's ToolBearingAgent, and AgentDef gained one OPTIONAL field, mcpServers. Additive — no caller must set it and nothing in epoch 18 stops compiling. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ holds no testing template, matching every prior epoch entry here."
     }
   },
   "tool": {
