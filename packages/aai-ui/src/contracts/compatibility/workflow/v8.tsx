@@ -1,15 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-ui:workflow` epoch 7.
+ * Frozen authoring example: `aai-ui:workflow` epoch 8.
  *
  * The browser half of a clinic's intake app — the `client.tsx` a workflow app
  * ships: a form that starts a run and follows it, a recording upload that sends
  * its parts in parallel and can be paused, the run's own narration, and a
  * history pane that finds the runs this browser started even after a reload.
- * Written the way it was authored at epoch 7, and it must keep compiling for as
+ * Written the way it was authored at epoch 8, and it must keep compiling for as
  * long as that epoch is advertised as supported.
  *
- * ## What moved, and why epoch 7 survives it
+ * ## What moved, and why epoch 8 survives it
  *
  * Nothing this capability exports, and — unlike the five SDK capabilities
  * retained in the same change — nothing to do with a workflow BODY either. This
@@ -43,7 +43,7 @@
  * this browser started.
  *
  * Editing this file to make a future error go away defeats the mechanism: the
- * error IS the finding, and it means epoch 7 has to be dropped with a reason.
+ * error IS the finding, and it means epoch 8 has to be dropped with a reason.
  */
 
 import type { ToolInputSchema } from "@alexkroman1/aai";

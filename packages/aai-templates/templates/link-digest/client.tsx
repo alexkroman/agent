@@ -64,7 +64,7 @@
  * where a fan-out makes the history worth seeing.
  */
 
-import { BulletList, page, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
+import { BulletList, mountPage, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/

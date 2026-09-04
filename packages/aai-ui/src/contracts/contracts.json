@@ -1,10 +1,11 @@
 {
   "client": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
-      "1": "Reaches the same required `fatal` on SessionError through this capability's rollup — mountClient() surfaces the session error to a custom chrome. Constructing one stops compiling; reading one, which is what a client does, is unaffected.",
-      "2": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here."
+      "1": "Reaches the same required `fatal` on SessionError through this capability's rollup — client() surfaces the session error to a custom chrome. Constructing one stops compiling; reading one, which is what a client does, is unaffected.",
+      "2": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here.",
+      "3": "Renamed for naming consistency (API naming review): client -> mountClient. It resolves a DOM container, sets the document title, renders React and returns a live handle, so it is not the declarative bare-noun function its old name implied."
     }
   },
   "client-dir": {
@@ -20,10 +21,11 @@
     }
   },
   "forms": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here."
+      "1": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here.",
+      "2": "Renamed for naming consistency (API naming review): FileRead -> FileReadMode, a closed set of four modes named as if it were an event."
     }
   },
   "hooks": {
@@ -34,17 +36,20 @@
     }
   },
   "page": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Renamed for naming consistency (API naming review): page -> mountPage, for the same reason as client -> mountClient: it mounts rather than declares."
+    }
   },
   "session": {
-    "current": 4,
-    "supported": [4],
+    "current": 5,
+    "supported": [5],
     "dropped": {
       "1": "Pre-release: TRANSCRIBING_PLACEHOLDER moved to @alexkroman1/aai-ui/internal. It is a tuning constant referenced by no public signature and named by no file outside this package, so it sat in a client.tsx author's autocomplete beside useSession while being a framework decision with no field to set.",
       "2": "SessionError gained a required `fatal`, so anything CONSTRUCTING one stops compiling; reading one is unaffected, which is every client. The field was already on the wire and dropped one line before reaching the client, while this type's own doc described it as REQUIRED.",
-      "3": "Additive: `AGENT_STATE_LABELS`, `SessionActions`, `useSessionActions`, `useSessionError` and `useSessionStatus` are new names and `Session` is unchanged structurally (its picked method set simply has a name now), so epoch 3 would in fact still compile. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds."
+      "3": "Additive: `AGENT_STATE_LABELS`, `SessionActions`, `useSessionActions`, `useSessionError` and `useSessionStatus` are new names and `Session` is unchanged structurally (its picked method set simply has a name now), so epoch 3 would in fact still compile. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds.",
+      "4": "Renamed for naming consistency (API naming review): SessionCore -> BrowserSession and createSessionCore -> createBrowserSession, resolving the one cross-package collision on the published surface, where aai-runtime exported a SessionCore meaning the server session."
     }
   },
   "theme": {
@@ -53,8 +58,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 8,
-    "supported": [8],
+    "current": 9,
+    "supported": [8, 9],
     "dropped": {
       "1": "Pre-release: DEFAULT_PROGRESS_POLL_MS, DEFAULT_WORKFLOW_POLL_MS and MAX_MISSING_READS moved to @alexkroman1/aai-ui/internal. All three are tuning numbers referenced by no public signature and named by no file outside this package; the hooks that own them take the interval as an OPTION, which is the authoring surface for the same choice and stays public.",
       "2": "The workflow hooks' type parameter is the workflow DEFINITION, not its output type. Epoch 2's `useWorkflowSubmit<Digest>(\"digest\")` no longer compiles: the parameter is constrained to `AnyWorkflowDef`, deliberately, so passing an output type is a compile error rather than a silent loss of typing. What it buys is the other half of the contract — `submit(input)` was `unknown`, so `submit({ ur1: 42 })` compiled and arrived as a 400 in the browser while the same statement already derived the OUTPUT from the def. Migration is one token per call site: `<Digest>` becomes `<typeof digest>`, and the `WorkflowOutputOf` alias above it is deleted.",

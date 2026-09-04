@@ -74,8 +74,8 @@
  * and after `check:api-report`.
  */
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { authoringSurface, generateCapabilityReports, parseEntrypoint } from "./_api-contracts.mjs";
 import { classify, internalSurfaceSnapshot, runChecks } from "./_api-contracts-checks.mjs";
 import {
@@ -157,6 +157,26 @@ function scaffoldFixture(pkg, capability, version) {
       " */\n\nexport {};\n",
   );
   return path;
+}
+
+/**
+ * Every frozen-example file for one epoch, not just the canonical `v<N>.ts`.
+ *
+ * An example may be SPLIT across modules: `aai:testing` epoch 20 shipped as
+ * `v20.ts` plus `v20-slots.ts`, whose own header calls it "part of the SAME
+ * frozen example", split only because the pair outgrew the 500-line source cap.
+ * Removing the canonical path alone left that second half behind as evidence
+ * for a promise that had just been withdrawn — and nothing noticed, because no
+ * check ties an example file back to a live epoch. So a drop takes the whole
+ * set: `v<N>.ts`, `v<N>.tsx`, and any `v<N>-*.ts(x)` beside them.
+ */
+function fixtureFiles(pkg, capability, epoch) {
+  const dir = dirname(fixturePath(pkg, capability, epoch));
+  if (!existsSync(dir)) return [];
+  const re = new RegExp(`^v${epoch}(-[A-Za-z0-9-]+)?\\.tsx?$`);
+  return readdirSync(dir)
+    .filter((name) => re.test(name))
+    .map((name) => join(dir, name));
 }
 
 function init() {
@@ -266,9 +286,10 @@ function retire(target) {
   // Same argument as `bump`'s: a dropped epoch's example does not compile, and
   // it sits under the package tsconfig, so leaving it behind turns the
   // classification into a red `pnpm typecheck`. The epoch record keeps history.
-  const retired = fixturePath(pkg, capability, epoch);
-  const had = existsSync(retired);
-  if (had) rmSync(retired);
+  const files = fixtureFiles(pkg, capability, epoch);
+  const retired = files.join(", ") || fixturePath(pkg, capability, epoch);
+  const had = files.length > 0;
+  for (const f of files) rmSync(f);
   console.log(
     `api-contracts: "${id}" epoch ${epoch}: DROPPED — ${reason}\n` +
       `  still supported: ${table[capability].supported.join(", ") || "(none but current)"}\n` +
@@ -330,7 +351,7 @@ function bump(target) {
   // and keeps the record; the example was only ever the evidence for a promise
   // that is now withdrawn.
   const retired = fixturePath(pkg, capability, contract.current);
-  if (!retain && existsSync(retired)) rmSync(retired);
+  if (!retain) for (const f of fixtureFiles(pkg, capability, contract.current)) rmSync(f);
 
   const { added, removed, bump: suggested } = classify(committed.exports ?? [], generated.exports);
   console.log(

@@ -63,9 +63,6 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
 export const CHANNEL_POST_TIMEOUT_MS = 30000;
 
 // @public
-export function explainChannelFailure(channel: Channel, detail: string): string;
-
-// @public
 export class ChannelDeliveryError extends Error {
     constructor(message: string, init: {
         readonly channelKind: string;
@@ -125,6 +122,12 @@ export interface ChannelSection {
 export function escapeSlackMrkdwn(text: string): string;
 
 // @public
+export function explainChannelFailure(channel: Channel, detail: string): string;
+
+// @public
+export function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string;
+
+// @public
 export function isSlackWebhookUrl(value: string): boolean;
 
 // @public
@@ -162,9 +165,6 @@ export type SlackChannel = Channel & {
 
 // @public
 export function slackChannel(options: SlackChannelOptions): SlackChannel;
-
-// @public
-export function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string;
 
 // @public
 export interface SlackChannelOptions {
@@ -765,6 +765,12 @@ export function createEpoch(): Epoch;
 // @internal
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
 
+// @public
+export function createSttError(code: SttError["code"], message: string): SttError;
+
+// @public
+export function createTtsError(code: TtsError["code"], message: string): TtsError;
+
 // @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
@@ -1021,12 +1027,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
-
-// @public
-export function createSttError(code: SttError["code"], message: string): SttError;
-
-// @public
-export function createTtsError(code: TtsError["code"], message: string): TtsError;
 
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
@@ -4658,9 +4658,6 @@ export function slugifyName(input: string, maxLen: number): string;
 
 ```ts
 // @public
-export function emit<T>(namespace: string, chunk: T): Promise<void>;
-
-// @public
 export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
 
 // @public
@@ -4702,19 +4699,10 @@ export type PcmFormat = {
 };
 
 // @public
-export function stepReadUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
-
-// @public
 export type ReadUploadOptions = {
     start?: number | undefined;
     end?: number | undefined;
 };
-
-// @public
-export function stepReport(line: string): Promise<void>;
-
-// @public
-export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
 
 // @public
 export function requireStepEnv(name: string): string;
@@ -4782,6 +4770,9 @@ export const STEP_SPEAK_SAMPLE_RATE = 24000;
 export const STEP_SPEAK_TIMEOUT_MS = 120000;
 
 // @public
+export function stepEmit<T>(namespace: string, chunk: T): Promise<void>;
+
+// @public
 export function stepEnv(name: string): string | undefined;
 
 // @public
@@ -4843,6 +4834,15 @@ export type StepInfo = {
 export function stepInfo(): StepInfo | undefined;
 
 // @public
+export function stepReadUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+
+// @public
+export function stepReport(line: string): Promise<void>;
+
+// @public
+export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
+
+// @public
 export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public
@@ -4872,7 +4872,13 @@ export class StepTransportError extends Error {
 }
 
 // @public
+export function stepUploadInfo(id: string): Promise<UploadInfo>;
+
+// @public
 export function stepWebhookUrl(token: string): string;
+
+// @public
+export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
 
 // @public
 export function stripJsonFence(reply: string): string;
@@ -4969,9 +4975,6 @@ export type UploadInfo = {
 };
 
 // @public
-export function stepUploadInfo(id: string): Promise<UploadInfo>;
-
-// @public
 export type UploadRange = {
     start: number;
     end: number;
@@ -4990,9 +4993,6 @@ export const WAV_HEADER_BYTES = 44;
 
 // @public
 export function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<ArrayBuffer>;
-
-// @public
-export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
 
 // @public
 export type WriteUploadOptions = {
@@ -5110,15 +5110,12 @@ type StepFetchInit = {
 export function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
 
 // @public
-export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string>;
-
-// @public
-export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
-
-// @public
 type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
     schema: S;
 };
+
+// @public
+export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
 // @public
 type StepGenerateOptions = {
@@ -5130,6 +5127,9 @@ type StepGenerateOptions = {
     temperature?: number;
     maxTokens?: number;
 };
+
+// @public
+export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string>;
 
 // @public
 export function stepTranscribePollOrFail(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
@@ -5423,6 +5423,12 @@ interface DialogToolResult<R> extends DialogPosition {
 }
 
 // @public
+export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+
+// @public
+export function expectToolOk<T>(result: unknown): T;
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -5483,12 +5489,6 @@ type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
 };
-
-// @public
-export function ok<T>(result: unknown): T;
-
-// @public
-export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 
 // @public
 export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
@@ -6334,19 +6334,11 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 // @public
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
-// @internal
-type Literal<S extends string> = string extends S ? never : S;
-
 // @public
 export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
 
-// @public
-export type StubWorkflowsOptions = {
-    runs?: readonly WorkflowRunSnapshot[];
-    names?: readonly string[];
-    runId?: string;
-    lastLine?: unknown;
-};
+// @internal
+type Literal<S extends string> = string extends S ? never : S;
 
 // @public
 type SleepOptions = {
@@ -6540,6 +6532,14 @@ type StubUploadWrite = {
     name: string;
     type: string;
     bytes: Uint8Array;
+};
+
+// @public
+export type StubWorkflowsOptions = {
+    runs?: readonly WorkflowRunSnapshot[];
+    names?: readonly string[];
+    runId?: string;
+    lastLine?: unknown;
 };
 
 // @public
@@ -7095,7 +7095,7 @@ export type WorkflowApi = {
     }): AsyncIterable<unknown>;
     wake(runId: string, options?: WakeUpOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    stepUploadInfo(id: string): Promise<UploadInfo>;
+    uploadInfo(id: string): Promise<UploadInfo>;
     download(id: string, options?: {
         signal?: AbortSignal;
     }): Promise<Blob>;
@@ -7363,9 +7363,6 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolCall[];
-
-// @public
 export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
 
 // @public
@@ -7518,40 +7515,16 @@ export type EvalWorkflowsOptions = {
     readonly logger?: Logger | undefined;
 };
 
-// @public
-export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
-
-// @public
-export type StubSpeechProviders = {
-    readonly stt: SttProvider;
-    readonly tts: TtsProvider;
-    readonly env: Record<string, string>;
-    sttSession(): StubSttSession | undefined;
-    ttsSession(): StubTtsSession | undefined;
-    release(): void;
-};
-
-// @public
-export type StubSttSession = SttSession & {
-    partial(text: string): void;
-    commit(text: string): void;
-};
-
-// @public
-export type StubTtsSession = TtsSession & {
-    readonly spoken: readonly string[];
-};
-
 // @internal
 type HostGenerateFn = (options: GenerateOptions, callOpts?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
 // @public
-export function installStubSpeechProviders(): StubSpeechProviders;
+export function installStubLlm(script: StubScript): StubLlm;
 
 // @public
-export function installStubLlm(script: StubScript): StubLlm;
+export function installStubSpeechProviders(): StubSpeechProviders;
 
 // @public
 export function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
@@ -7594,6 +7567,9 @@ export { StepFetch }
 export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
 
 // @public
+export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+
+// @public
 export type StubLlm = {
     readonly llm: LlmProvider;
     readonly env: Record<string, string>;
@@ -7604,11 +7580,32 @@ export type StubLlm = {
 export type StubScript = string | readonly (string | StubStep)[];
 
 // @public
+export type StubSpeechProviders = {
+    readonly stt: SttProvider;
+    readonly tts: TtsProvider;
+    readonly env: Record<string, string>;
+    sttSession(): StubSttSession | undefined;
+    ttsSession(): StubTtsSession | undefined;
+    release(): void;
+};
+
+// @public
 export type StubStep = {
     readonly text: string;
 } | {
     readonly tool: string;
     readonly args?: Record<string, unknown>;
+};
+
+// @public
+export type StubSttSession = SttSession & {
+    partial(text: string): void;
+    commit(text: string): void;
+};
+
+// @public
+export type StubTtsSession = TtsSession & {
+    readonly spoken: readonly string[];
 };
 
 // @public
@@ -7619,6 +7616,9 @@ export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readon
 
 // @public
 export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
+
+// @public
+export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolCall[];
 
 // @public
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
@@ -8057,11 +8057,11 @@ export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 // @public
 export function createRuntime(opts: RuntimeOptions): Runtime;
 
+// @public
+export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+
 // @public (undocumented)
 type CreateS2sWebSocket = CreateHeaderWebSocket;
-
-// @public
-export function createRuntimeServer(options: ServerOptions): AgentServer;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
@@ -8071,9 +8071,6 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent;
 
 // @public
 export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
-
-// @public
-export function rejectingRuntime(message: string, logger?: Logger): SessionRuntime;
 
 // @public
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
@@ -8332,13 +8329,6 @@ export function partKey(prefix: string, id: string, at: number): string;
 // @public
 export function partsOf(value: unknown): UploadPart[];
 
-// @public
-export type SharedServerOptions = {
-    logger?: Logger | undefined;
-    upgrade?: ServerOptions["upgrade"];
-    request?: ServerOptions["request"];
-};
-
 export { ProviderEnv }
 
 // @public
@@ -8349,6 +8339,9 @@ export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpen
 
 // @public
 export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
+
+// @public
+export function rejectingRuntime(message: string, logger?: Logger): SessionRuntime;
 
 // @public
 export function requiredProviderEnvVars(agent: {
@@ -8456,18 +8449,8 @@ export type RuntimeOptions = {
     tts?: TtsProvider | undefined;
 };
 
-// @public
-export type S2sConfig = {
-    wssUrl: string;
-    inputSampleRate: number;
-    outputSampleRate: number;
-};
-
-// @public
-export function salvageJson(input: string): Promise<string | null>;
-
 // @public (undocumented)
-export type ServerOptions = {
+export type RuntimeServerOptions = {
     runtime: SessionRuntime;
     name?: string;
     clientDir?: string;
@@ -8483,7 +8466,14 @@ export type ServerOptions = {
 };
 
 // @public
-export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
+export type S2sConfig = {
+    wssUrl: string;
+    inputSampleRate: number;
+    outputSampleRate: number;
+};
+
+// @public
+export function salvageJson(input: string): Promise<string | null>;
 
 // @public
 export type ServerSession = {
@@ -8496,10 +8486,13 @@ export type ServerSession = {
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
-    stepReport(event: TransportEventBody): void;
+    report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
 };
+
+// @public
+export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
 
 // @public
 export type SessionEventPage = {
@@ -8576,6 +8569,13 @@ export type SessionWebSocket = {
     addEventListener(type: "error", listener: (event: {
         message?: string;
     }) => void): void;
+};
+
+// @public
+export type SharedServerOptions = {
+    logger?: Logger | undefined;
+    upgrade?: RuntimeServerOptions["upgrade"];
+    request?: RuntimeServerOptions["request"];
 };
 
 // @public
@@ -9299,12 +9299,6 @@ export type ServerRoute = {
 // @internal
 export type ServerRouteMatch = "exact" | "prefix";
 
-// @internal
-export const SESSION_EVENT_TABLE = "aai_session_events";
-
-// @internal
-export const SESSION_STATE_TABLE = "aai_session_state";
-
 // @public
 type ServerSession = {
     readonly id: string;
@@ -9316,10 +9310,16 @@ type ServerSession = {
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
-    stepReport(event: TransportEventBody): void;
+    report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
 };
+
+// @internal
+export const SESSION_EVENT_TABLE = "aai_session_events";
+
+// @internal
+export const SESSION_STATE_TABLE = "aai_session_state";
 
 // @public
 type SessionEventPage = {
@@ -9771,6 +9771,24 @@ export function AutoScroll(input: {
 }): ReactNode;
 
 // @public
+export type BrowserSession = {
+    getSnapshot(): SessionSnapshot;
+    subscribe(callback: () => void): () => void;
+    connect(options?: {
+        signal?: AbortSignal;
+    }): void;
+    cancel(): void;
+    resetState(): void;
+    reset(): void;
+    disconnect(): void;
+    start(): void;
+    toggle(): void;
+    end(): void;
+    restart(): void;
+    [Symbol.dispose](): void;
+};
+
+// @public
 export function BulletList(input: BulletListProps): ReactNode;
 
 // @public
@@ -9813,9 +9831,6 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export function mountClient(config: ClientConfig): ClientHandle;
-
-// @public
 export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
@@ -9835,7 +9850,7 @@ export { ClientConfigResponse }
 
 // @public
 export type ClientHandle = {
-    session: ServerSession;
+    session: BrowserSession;
     dispose(): void;
     [Symbol.dispose](): void;
 };
@@ -9881,7 +9896,7 @@ export type ConversationItem = {
 };
 
 // @public
-export function createBrowserSession(options: VoiceSessionOptions): ServerSession;
+export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
@@ -9972,10 +9987,13 @@ export type MessageListProps = {
 };
 
 // @public
-export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+export function mountClient(config: ClientConfig): ClientHandle;
 
 // @public
 export function mountPage(config: PageConfig): PageHandle;
+
+// @public
+export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
 export type PageConfig = {
@@ -10003,25 +10021,7 @@ export function SelectField(input: FieldShell & {
 export type Session = SessionSnapshot & SessionActions;
 
 // @public
-export type SessionActions = Pick<ServerSession, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
-
-// @public
-export type ServerSession = {
-    getSnapshot(): SessionSnapshot;
-    subscribe(callback: () => void): () => void;
-    connect(options?: {
-        signal?: AbortSignal;
-    }): void;
-    cancel(): void;
-    resetState(): void;
-    reset(): void;
-    disconnect(): void;
-    start(): void;
-    toggle(): void;
-    end(): void;
-    restart(): void;
-    [Symbol.dispose](): void;
-};
+export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
 
 // @public
 export type SessionError = {
@@ -10412,6 +10412,24 @@ export function ApiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
 
+// @public
+type BrowserSession = {
+    getSnapshot(): SessionSnapshot;
+    subscribe(callback: () => void): () => void;
+    connect(options?: {
+        signal?: AbortSignal;
+    }): void;
+    cancel(): void;
+    resetState(): void;
+    reset(): void;
+    disconnect(): void;
+    start(): void;
+    toggle(): void;
+    end(): void;
+    restart(): void;
+    [Symbol.dispose](): void;
+};
+
 // @internal
 export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
 
@@ -10444,24 +10462,6 @@ export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThi
 export const MAX_MISSING_READS = 3;
 
 // @public
-type ServerSession = {
-    getSnapshot(): SessionSnapshot;
-    subscribe(callback: () => void): () => void;
-    connect(options?: {
-        signal?: AbortSignal;
-    }): void;
-    cancel(): void;
-    resetState(): void;
-    reset(): void;
-    disconnect(): void;
-    start(): void;
-    toggle(): void;
-    end(): void;
-    restart(): void;
-    [Symbol.dispose](): void;
-};
-
-// @public
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -10470,9 +10470,9 @@ type SessionError = {
 
 // @internal
 export function SessionProvider(input: {
-    value: ServerSession;
+    value: BrowserSession;
     children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<ServerSession | null>>;
+}): FunctionComponentElement<ProviderProps<BrowserSession | null>>;
 
 // @public
 type SessionSnapshot = {

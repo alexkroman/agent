@@ -978,7 +978,7 @@ function stubReporter(): StubReporter;
 
 Capture what a step narrates and emits.
 
-`report()` and `emit()` both go through a published slot, and with nothing
+`stepReport()` and `stepEmit()` both go through a published slot, and with nothing
 published they fall back to the console — which is right for a step under test
 that nobody is asserting on, and useless the moment the narration IS the
 subject. It is for a step whose partial results are part of its contract: a

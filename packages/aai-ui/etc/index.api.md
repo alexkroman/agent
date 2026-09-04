@@ -55,6 +55,24 @@ export function AutoScroll(input: {
 }): ReactNode;
 
 // @public
+export type BrowserSession = {
+    getSnapshot(): SessionSnapshot;
+    subscribe(callback: () => void): () => void;
+    connect(options?: {
+        signal?: AbortSignal;
+    }): void;
+    cancel(): void;
+    resetState(): void;
+    reset(): void;
+    disconnect(): void;
+    start(): void;
+    toggle(): void;
+    end(): void;
+    restart(): void;
+    [Symbol.dispose](): void;
+};
+
+// @public
 export function BulletList(input: BulletListProps): ReactNode;
 
 // @public
@@ -95,9 +113,6 @@ export function ChatView(input: {
 
 // @public
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
-
-// @public
-export function mountClient(config: ClientConfig): ClientHandle;
 
 // @public
 export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
@@ -256,10 +271,13 @@ export type MessageListProps = {
 };
 
 // @public
-export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+export function mountClient(config: ClientConfig): ClientHandle;
 
 // @public
 export function mountPage(config: PageConfig): PageHandle;
+
+// @public
+export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
 export type PageConfig = {
@@ -288,24 +306,6 @@ export type Session = SessionSnapshot & SessionActions;
 
 // @public
 export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
-
-// @public
-export type BrowserSession = {
-    getSnapshot(): SessionSnapshot;
-    subscribe(callback: () => void): () => void;
-    connect(options?: {
-        signal?: AbortSignal;
-    }): void;
-    cancel(): void;
-    resetState(): void;
-    reset(): void;
-    disconnect(): void;
-    start(): void;
-    toggle(): void;
-    end(): void;
-    restart(): void;
-    [Symbol.dispose](): void;
-};
 
 // @public
 export type SessionError = {

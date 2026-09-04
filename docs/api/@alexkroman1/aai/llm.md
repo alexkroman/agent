@@ -304,12 +304,12 @@ host-side from the agent's env (`OPENAI_API_KEY`).
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { openaiLlm } from "@alexkroman1/aai/llm";
+import { openAILlm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  llm: openaiLlm({ model: "gpt-5.5" }),
+  llm: openAILlm({ model: "gpt-5.5" }),
 });
 ```
 
@@ -341,12 +341,12 @@ descriptor stays free of secrets and safe to serialize.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { openrouterLlm } from "@alexkroman1/aai/llm";
+import { openRouterLlm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  llm: openrouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" }),
+  llm: openRouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" }),
 });
 ```
 
@@ -378,12 +378,12 @@ resolved host-side from the agent's env (`XAI_API_KEY`).
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { xaiLlm } from "@alexkroman1/aai/llm";
+import { xAILlm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  llm: xaiLlm({ model: "grok-4" }),
+  llm: xAILlm({ model: "grok-4" }),
 });
 ```
 

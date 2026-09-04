@@ -100,12 +100,12 @@ export {
 } from "./context.ts";
 export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 // Entry
-export { client } from "./define-client.tsx";
+export { mountClient } from "./define-client.tsx";
 export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 // Workflow apps — the `workflowApp()` half of this package. `mountPage()`
 // is the mount (no session, no audio, no socket) and the two workflow exports
 // are what its component talks to the agent with, in place of `useSession()`.
-export { type PageConfig, type PageHandle, page } from "./page.tsx";
+export { type PageConfig, type PageHandle, mountPage } from "./page.tsx";
 // Session core (for advanced use)
 export { createBrowserSession } from "./session-core.ts";
 export type {
