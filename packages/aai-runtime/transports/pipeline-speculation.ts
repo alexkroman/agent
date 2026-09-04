@@ -58,6 +58,7 @@ import type { LanguageModel } from "ai";
 import type { Logger } from "../runtime-config.ts";
 import { toDeclaredTools } from "../to-vercel-tools.ts";
 import { createToolCallRepair } from "../tool-call-repair.ts";
+import type { ContextBudgetPreparer } from "./pipeline-context-budget.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";
 import type { AdoptedLlmStream } from "./pipeline-llm-stream.ts";
 import { type SpeculativeStream, startSpeculativeStream } from "./pipeline-speculative-stream.ts";
@@ -260,6 +261,17 @@ export function createPipelineSpeculation(deps: {
   systemPrompt: string;
   temperature: number | undefined;
   maxSteps: number;
+  /**
+   * The session's context-budget preparer — see `pipeline-context-budget.ts`.
+   *
+   * Passed through unchanged because request parity is what makes adopting a
+   * speculation into a real turn legitimate: a speculation that trimmed on a
+   * different rule would be adopted as a turn the model never saw the context
+   * of. Sharing one instance also shares what it has learned, and its prefix
+   * check is what keeps two concurrent streams from mis-calibrating each other
+   * (a mismatch skips the calibration rather than trusting it).
+   */
+  contextBudget: ContextBudgetPreparer | undefined;
   history: PipelineHistory;
   /**
    * Session-lifetime signal. Parents every speculative request (see
@@ -296,6 +308,7 @@ export function createPipelineSpeculation(deps: {
           // premise adoption rests on.
           repairToolCall: createToolCallRepair(deps.llm, deps.log, () => deps.sessionSignal),
           maxSteps: deps.maxSteps,
+          contextBudget: deps.contextBudget,
           log: deps.log,
           sid: deps.sid,
         },

@@ -1602,6 +1602,25 @@ makes yields look instant. A correct client's yield rate against the old code
 was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
 reverting the gate.
 
+## A step's REQUEST is bounded in tokens; the message cap only guards growth
+
+`DEFAULT_MAX_HISTORY` counts MESSAGES, which does not predict what a request
+costs: one `retail`-shaped tool result is ~106 KB, so 200 of them overflow any
+window and the request fails at the provider mid-call.
+`transports/pipeline-context-budget.ts` bounds it as a **`prepareStep`
+preparer** — the SDK's per-step hook, whose `messages` override is what the step
+SENDS — so `PipelineHistory` keeps everything (client replay, resume and
+`ctx.messages` read it) and only the request is trimmed. **That module's doc
+carries the argument**, and this guide is at its cap: the window comes from
+`ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`, an unknown
+one yields NO preparer rather than a guess, and the count is CALIBRATED against
+each step's reported `usage.inputTokens` (hence one budget per SESSION).
+
+**Two preparers now share the one slot, so they COMPOSE** (`_prepare-step.ts`,
+promoted out of `text-agent.ts`): the budget owns `messages`,
+`forceFinalAnswer` goes last and owns `toolChoice`. Writing either straight into
+the slot deletes the other, silently.
+
 ## A rollback at the cap used to cost a real turn
 
 `transports/pipeline-history.ts` keeps two capped views, and

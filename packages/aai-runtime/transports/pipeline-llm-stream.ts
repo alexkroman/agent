@@ -25,8 +25,10 @@ import {
   type ToolCallRepairFunction,
   type ToolSet,
 } from "ai";
+import { composePrepareStep, forceFinalAnswer } from "../_prepare-step.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createToolCallRepair } from "../tool-call-repair.ts";
+import type { ContextBudgetPreparer } from "./pipeline-context-budget.ts";
 import { drainEntries, partsAsEntries } from "./pipeline-llm-drain.ts";
 import { createTurnTrace } from "./pipeline-llm-trace.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
@@ -57,6 +59,16 @@ export interface ConsumeLlmStreamParams {
   repairToolCall: ToolCallRepairFunction<ToolSet>;
   /** Max LLM tool-call steps for this turn. */
   maxSteps: number;
+  /**
+   * Bounds what each step SENDS to the model — see `pipeline-context-budget.ts`.
+   *
+   * A `prepareStep` preparer, composed with `forceFinalAnswer` rather than
+   * replacing it (`composePrepareStep`), and `undefined` when the model's
+   * context window is not known, at which point nothing is trimmed. It is
+   * SESSION-scoped: the fixed cost it learns from one step's reported usage is
+   * the right number for the next turn's first step.
+   */
+  contextBudget?: ContextBudgetPreparer | undefined;
   /**
    * Forwards text to the active TTS session (no-op if none). `record: false`
    * marks dead-air filler: audible, but never part of the record.
@@ -185,6 +197,7 @@ export type LlmRequest = Pick<
   | "temperature"
   | "repairToolCall"
   | "maxSteps"
+  | "contextBudget"
   | "log"
   | "sid"
   | "signal"
@@ -220,7 +233,14 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // `maxSteps` bounds TOOL-CALLING steps; the budget is one larger so the
     // forced answer step below has somewhere to run. See forceFinalAnswer.
     stopWhen: stepCountIs(req.maxSteps + 1),
-    prepareStep: forceFinalAnswer(req.maxSteps, req.log, req.sid),
+    // ONE slot, TWO things to say — see `_prepare-step.ts`. The budget decides
+    // which messages this step may send and must keep them; `forceFinalAnswer`
+    // goes last and wins on `toolChoice`, the one key it sets. Writing either
+    // straight into the slot deletes the other, silently.
+    prepareStep: composePrepareStep(
+      req.contextBudget,
+      forceFinalAnswer(req.maxSteps, req.log, req.sid),
+    ),
     abortSignal: req.signal,
     onStepFinish: (step) => {
       collected.push(...step.response.messages);
@@ -250,38 +270,6 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     fullStream: result.fullStream as AsyncIterable<StreamPart>,
     steps: Promise.resolve(result.steps),
     collected,
-  };
-}
-
-/**
- * Spend the step after the tool budget on an answer the caller can hear.
- *
- * `stopWhen: stepCountIs(n)` alone stops the turn the moment the budget runs
- * out — including mid-chain, right after a tool result, with no text emitted.
- * Nothing downstream can repair that: the reply completes "successfully" with
- * an empty transcript, so `errorPhrase` does not fire either, and the caller
- * hears the agent simply stop. The lower the cap, the more often that happens,
- * which is why it and this function are one change (see DEFAULT_MAX_STEPS).
- *
- * So the budget passed to `stopWhen` is `maxSteps + 1`, and this forces
- * `toolChoice: "none"` on that extra step: the model still has every tool
- * result in context, but its only remaining move is to speak. Same shape as
- * LiveKit's behaviour on `max_tool_steps` since 1.4.5.
- *
- * It costs nothing in the ordinary case — p50 is one step, so a turn that
- * never approaches the cap never reaches this callback. The override also
- * wins over an agent-level `toolChoice: "required"`, which would otherwise
- * demand a tool call on the one step where tools are unavailable.
- */
-export function forceFinalAnswer(
-  maxSteps: number,
-  log: Logger,
-  sid: string,
-): (opts: { stepNumber: number }) => { toolChoice: "none" } | undefined {
-  return ({ stepNumber }) => {
-    if (stepNumber < maxSteps) return;
-    log.info("maxSteps reached; forcing a final answer with no tools", { maxSteps, sid });
-    return { toolChoice: "none" };
   };
 }
 

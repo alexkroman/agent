@@ -43,10 +43,10 @@ import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type LanguageModel, stepCountIs, ToolLoopAgent } from "ai";
 import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
+import { forceFinalAnswer } from "./_prepare-step.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { createToolDispatcher, executeToolCall, type SubagentRunner } from "./tool-executor.ts";
-import { forceFinalAnswer } from "./transports/pipeline-llm-stream.ts";
 
 /**
  * Options for {@link createSubagentRunner}.
