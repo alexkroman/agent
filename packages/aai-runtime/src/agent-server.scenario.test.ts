@@ -6,7 +6,8 @@
  * `agent-server.test.ts` keeps the other eleven and stays unit-tier: they speak
  * HTTP to a loopback port, which the tier permits. These two do not, and the
  * difference is not the route but what it starts. Opening `/websocket` or
- * `/phone` builds a live voice session, and the runtime is REAL here (that is
+ * `/phone` (for a carrier the agent declares) builds a live voice session, and
+ * the runtime is REAL here (that is
  * the claim the first one makes), so the STT opener genuinely dials AssemblyAI
  * and is genuinely told `Unauthorized Connection: Invalid API key` — the env is
  * a placeholder, deliberately (`AGENT_SERVER_ENV`).
@@ -65,14 +66,23 @@ describe("createAgentServer over a live session", () => {
     });
   });
 
-  test("a voice agent still mounts /phone by default", async () => {
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+  test("a declared carrier really opens a session on /phone", async () => {
+    // The DECLARATION is what mounts the route — `agent-server.test.ts` covers
+    // the refusals over HTTP, and this covers the accept, which is the half
+    // that starts a live session and so belongs in this tier. An agent
+    // declaring nothing is refused before any session exists, which is why the
+    // negative case costs no provider connect and stays a unit test.
+    const myAgent = agent({
+      name: "Support",
+      systemPrompt: "You are helpful.",
+      telephony: ["twilio"],
+    });
 
     await withServer({ agent: myAgent }, async (baseUrl) => {
       const socket = new NodeWebSocket(`${baseUrl.replace("http", "ws")}/phone`);
       await withDeadline(
         new Promise<void>((resolve) => socket.once("open", () => resolve())),
-        "the default /phone route did not accept a carrier socket",
+        "the declared /phone route did not accept a carrier socket",
       );
       expect(socket.readyState).toBe(NodeWebSocket.OPEN);
       socket.close();
