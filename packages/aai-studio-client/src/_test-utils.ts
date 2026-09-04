@@ -198,9 +198,10 @@ export function textarea(placeholder: string | RegExp): HTMLTextAreaElement {
 }
 
 /**
- * jsdom has no `ResizeObserver`, and `use-stick-to-bottom` — mounted with the
- * chat transcript — constructs one. Layout never changes here, so every method
- * is a no-op; what matters is that the constructor exists.
+ * jsdom has no `ResizeObserver`, and `aai-ui`'s `<AutoScroll>` — mounted by the
+ * chat transcript and the Logs pane — constructs one. Layout never changes
+ * here, so every method is a no-op; what matters is that the constructor
+ * exists.
  */
 export function installResizeObserver(): void {
   class ResizeObserverStub {

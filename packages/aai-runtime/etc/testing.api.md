@@ -4,7 +4,20 @@
 
 ```ts
 
+import type { AgentDef } from '@alexkroman1/aai';
+import type { AgentEnv } from '@alexkroman1/aai/host-internal';
+import type { Db } from '@alexkroman1/aai/internal';
+import { LanguageModel } from 'ai';
+import { ModelMessage } from 'ai';
+import { PrepareStepFunction } from 'ai';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import { StepResult } from 'ai';
+import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
+import { ToolSet } from 'ai';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
@@ -83,6 +96,14 @@ type RunRecord = {
 type RunStatus = WorkflowRunStatus;
 
 // @public
+export function runTextAgent(def: AgentDef, input: string | readonly ModelMessage[], options: RunTextAgentOptions): Promise<TextAgentTestRun>;
+
+// @public
+export type RunTextAgentOptions = Omit<TextAgentOptions, "agent" | "model"> & Pick<TextTurnOptions, "signal" | "systemPrompt" | "maxSteps" | "temperature" | "toolChoice"> & {
+    readonly script: readonly ScriptedTextStep[];
+};
+
+// @public
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
 
 // @public
@@ -92,6 +113,22 @@ export type RunWorkflowOptions = {
     logger?: Logger;
     crashAt?: string;
     maxDeliveries?: number;
+};
+
+// @public
+export function scriptedTextModel(steps: readonly ScriptedTextStep[]): LanguageModel;
+
+// @public
+export type ScriptedTextStep = {
+    readonly text?: string;
+    readonly toolCalls?: readonly ScriptedToolCall[];
+};
+
+// @public
+export type ScriptedToolCall = {
+    readonly name: string;
+    readonly input?: Record<string, unknown>;
+    readonly id?: string;
 };
 
 // @public
@@ -120,6 +157,55 @@ type StepEntry = {
     startedAt?: number | undefined;
     finishedAt: number;
 };
+
+// @public
+interface TextAgentOptions {
+    agent: AgentDef;
+    db?: Db | undefined;
+    env?: AgentEnv;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    model?: LanguageModel;
+    onEvent?: (event: SessionEvent) => void;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    sessionId?: string;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
+export type TextAgentTestRun = {
+    readonly text: string;
+    readonly texts: readonly string[];
+    readonly toolCalls: readonly TextAgentTestToolCall[];
+    readonly steps: readonly StepResult<ToolSet>[];
+    readonly messages: readonly ModelMessage[];
+    readonly events: readonly SessionEvent[];
+};
+
+// @public
+export type TextAgentTestToolCall = {
+    readonly name: string;
+    readonly id: string;
+    readonly args: unknown;
+    readonly result: unknown;
+};
+
+// @public
+interface TextTurnOptions {
+    maxSteps?: number;
+    messages: ModelMessage[];
+    onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
+    prepareStep?: PrepareStepFunction<ToolSet>;
+    signal?: AbortSignal;
+    stopWhen?: readonly ((options: {
+        steps: readonly StepResult<ToolSet>[];
+    }) => boolean | PromiseLike<boolean>)[];
+    systemPrompt?: string;
+    temperature?: number;
+    toolChoice?: ToolChoice;
+}
 
 // @public
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {

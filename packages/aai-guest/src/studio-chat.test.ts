@@ -20,7 +20,7 @@
 
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
-import type { LanguageModel } from "ai";
+import { scriptedTextModel } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test, vi } from "vitest";
 import { installFakeHostChannel } from "./_test-utils.ts";
 import { setHostSend } from "./harness-rpc.ts";
@@ -54,38 +54,14 @@ const session: StudioSession = {
 };
 
 /**
- * A model that replays one text step and stops. The cast is the AI SDK's shape
- * being wider than a fake needs — the same one the scenario file carries, and
- * the reason this file has any at all.
+ * A model that replays one text step and stops.
+ *
+ * The published harness, which is what removed this file's only cast: the
+ * provider shape was written out by hand here and again in the scenario file,
+ * each copy re-deriving the `finish` frame — the one whose bare-string
+ * `finishReason` silently stops every tool from running.
  */
-const scriptedModel = {
-  specificationVersion: "v3",
-  provider: "fake",
-  modelId: "fake-1",
-  supportedUrls: {},
-  doGenerate: () => Promise.reject(new Error("not implemented")),
-  doStream: () => {
-    const parts = [
-      { type: "stream-start", warnings: [] },
-      { type: "text-start", id: "t1" },
-      { type: "text-delta", id: "t1", delta: "Scripted reply." },
-      { type: "text-end", id: "t1" },
-      {
-        type: "finish",
-        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-        finishReason: { unified: "stop", raw: "stop" },
-      },
-    ];
-    return Promise.resolve({
-      stream: new ReadableStream({
-        start(controller) {
-          for (const part of parts) controller.enqueue(part);
-          controller.close();
-        },
-      }),
-    });
-  },
-} as unknown as LanguageModel;
+const scriptedModel = scriptedTextModel([{ text: "Scripted reply." }]);
 
 const deps: StudioChatDeps = {
   loadBundle: async () => ({ config: { name: "A", toolSchemas: [] } }),

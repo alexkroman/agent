@@ -30,8 +30,8 @@ function serve(pages: AgentLogsPage[]): { calls: string[] } {
 }
 
 beforeEach(() => {
-  // jsdom has no ResizeObserver, and `use-stick-to-bottom` — which owns this
-  // pane's follow-the-bottom behaviour — constructs one on mount.
+  // jsdom has no ResizeObserver, and `<AutoScroll>` — which owns this pane's
+  // follow-the-bottom behaviour — constructs one on mount.
   installResizeObserver();
 });
 
@@ -150,9 +150,9 @@ describe("following the bottom", () => {
   /*
    * This is WIRING, and deliberately not the behaviour.
    *
-   * Following the bottom belongs to `use-stick-to-bottom` now — the same
-   * component the chat transcript mounts — and that library is driven by a
-   * ResizeObserver over real boxes. jsdom computes no layout and its
+   * Following the bottom belongs to `aai-ui`'s `<AutoScroll>` now — the same
+   * component the chat transcript mounts — and the library under it is driven
+   * by a ResizeObserver over real boxes. jsdom computes no layout and its
    * ResizeObserver here is a stub, so nothing this suite can do makes content
    * grow in a way the library can see; an assertion about `scrollTop` would
    * pass or fail on the stub rather than on the pane.
@@ -169,8 +169,8 @@ describe("following the bottom", () => {
     serve([page({ lines: [line(0, "first")], cursor: 0 })]);
     render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
-    // `StickToBottom.Content` styles its `scrollRef` div inline and gives it no
-    // class, so those styles are the only handle on it — and asking from the
+    // `AutoScroll`'s inner scroller is styled inline by the library and carries
+    // only the class it is passed, so those styles are the handle — and asking from the
     // LINE outwards is the assertion that matters: a scroller mounted somewhere
     // the lines are not would follow an empty box.
     const written = await screen.findByText("first");

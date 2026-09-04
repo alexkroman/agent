@@ -27,8 +27,6 @@
     "packages/aai-cli/src/login.test.ts": 1,
     "packages/aai-guest/src/harness-manage.test.ts": 1,
     "packages/aai-guest/src/harness.test.ts": 1,
-    "packages/aai-guest/src/studio-chat.scenario.test.ts": 2,
-    "packages/aai-guest/src/studio-chat.test.ts": 1,
     "packages/aai-guest/src/studio-session-init.test.ts": 2,
     "packages/aai-guest/src/studio-turn-stream.test.ts": 2,
     "packages/aai-runtime/src/_fake-llm.ts": 1,

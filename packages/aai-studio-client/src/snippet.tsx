@@ -7,7 +7,7 @@
 // `settings-card.tsx` is: a second copy is how one of them ends up with a
 // different font size and no copy button.
 
-import { type Copier, useCopy } from "./use-copy.ts";
+import { type UseCopyResult, useCopy } from "@alexkroman1/aai-ui";
 
 export function Snippet({ code, label }: { code: string; label: string }) {
   const copier = useCopy();
@@ -38,7 +38,7 @@ export function Snippet({ code, label }: { code: string; label: string }) {
  * strings the reader wants to see whole. It was written out twice, in
  * cli-commands.tsx and phone-card.tsx, byte-identical apart from the aria-label.
  *
- * Takes the card's {@link Copier} rather than calling `useCopy` itself: the
+ * Takes the card's {@link UseCopyResult} rather than calling `useCopy` itself: the
  * flash is one-at-a-time per hook instance, so a per-row instance would change
  * what happens when a reader copies two rows in a row.
  */
@@ -50,7 +50,7 @@ export function CopyLine({
   text: string;
   /** What the copy button announces — the row's own name for the string. */
   label: string;
-  copier: Copier;
+  copier: UseCopyResult;
 }) {
   return (
     <div className="flex items-center gap-2">

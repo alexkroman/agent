@@ -42,10 +42,19 @@ import {
   toolNames,
 } from "@alexkroman1/aai-runtime/eval";
 import type { EvalRecorder } from "./runner.ts";
+// The tool half of this same vocabulary, spread into the scope below. A sibling
+// module because this file is at its 500-line cap, and `countVerdict` is shared
+// rather than copied: `event()` and `calledTool()` count the same way a result
+// claim does, and the first copy of that logic dropped the bound from its own
+// label.
+import { countVerdict, type ToolAssertions, toolAssertions } from "./tool-assertions.ts";
 
 // Re-exported from the SOURCE rather than import-then-export: a scope's
 // `toolCalls` is typed with it, so a reader of this vocabulary needs the name.
 export type { EvalToolCall } from "@alexkroman1/aai-runtime/eval";
+// Same rule one module over: `toolResultMatching`'s options are part of this
+// vocabulary's surface, so a case reads them from here.
+export type { ToolAssertions, ToolResultOptions } from "./tool-assertions.ts";
 
 /** What {@link EvalScope.calledTool} may claim beyond the name. */
 export type CalledToolOptions = {
@@ -60,17 +69,42 @@ export type CalledToolOptions = {
   readonly result?: string;
   /** Exactly this many calls to the tool, in this scope. */
   readonly count?: number;
+  /**
+   * At least / at most this many, when the exact number is the model's
+   * business but its ORDER of magnitude is not — a repair count is the case
+   * this exists for (`{ max: 2 }`: it may need a second attempt, not a fifth).
+   *
+   * The claim still requires the tool to have been called AT ALL, this arm
+   * being the positive one — `{ max: 0 }` fails on that first check rather
+   * than reading as "never", which is `notCalledTool`.
+   */
+  readonly min?: number;
+  readonly max?: number;
 };
 
-/** Bounds for {@link EvalScope.event}. */
+/**
+ * Bounds for {@link EvalScope.event}.
+ *
+ * Structurally `CountBounds` (`./tool-assertions.ts`), which is what
+ * `countVerdict` takes — declared here as well because this name is the one a
+ * case reads off this vocabulary, and the counting RULE is the thing that must
+ * not be written twice.
+ */
 export type EventCountOptions = {
   readonly count?: number;
   readonly min?: number;
   readonly max?: number;
 };
 
-/** The vocabulary, over one scope's events. */
-export type EvalScope = {
+/**
+ * The vocabulary, over one scope's events.
+ *
+ * {@link ToolAssertions} is part of it and lives in `./tool-assertions.ts` —
+ * the tool-RESULT and tool-SEQUENCE claims a verifying agent is graded on. It
+ * is an intersection rather than three restated signatures so the two halves
+ * cannot describe different methods.
+ */
+export type EvalScope = ToolAssertions & {
   /** The events this scope covers, in stream order. */
   readonly events: readonly SessionEvent[];
   /** The tool calls this scope covers, in call order. */
@@ -267,6 +301,9 @@ export function eventScope(
   };
 
   return {
+    // The tool-result and tool-sequence arms, built over the same calls and
+    // recording through the same prefixed `check`.
+    ...toolAssertions(check, calls),
     events,
     toolCalls: calls,
     said,
@@ -296,12 +333,14 @@ export function eventScope(
         return;
       }
       check(true, `calledTool(${name})`);
-      if (opts.count !== undefined) {
-        check(
-          matching.length === opts.count,
-          `calledTool(${name}) count=${opts.count}`,
-          `called ${matching.length}x`,
-        );
+      if (opts.count !== undefined || opts.min !== undefined || opts.max !== undefined) {
+        // Through the shared `countVerdict`, so a bound means the same thing
+        // here as on `event()` and on a result claim. The `count=` spelling is
+        // kept for the exact form, because that label is a key `unstable`
+        // reports and renaming it silently resets an assertion's flip history.
+        const verdict = countVerdict(matching.length, opts);
+        const asked = opts.count === undefined ? verdict.bound : ` count=${opts.count}`;
+        check(verdict.ok, `calledTool(${name})${asked}`, `called ${matching.length}x`);
       }
       if (opts.args !== undefined) {
         const wanted = opts.args;
@@ -366,17 +405,12 @@ export function eventScope(
 
     event(type, opts = {}) {
       const n = countOf(types, type);
-      const wanted = opts.count;
-      const min = wanted ?? opts.min ?? 1;
-      const max = wanted ?? opts.max ?? Number.POSITIVE_INFINITY;
-      // Spelled out rather than assembled by trimming a template: the previous
-      // form leaned on a leading space inside the `<=` branch plus a `.trim()`,
-      // so the separator lived in one branch and the fix-up in neither.
-      const bounds: string[] = [];
-      if (opts.min !== undefined) bounds.push(`>=${opts.min}`);
-      if (opts.max !== undefined) bounds.push(`<=${opts.max}`);
-      const bound = wanted === undefined ? bounds.join(" ") : `=${wanted}`;
-      check(n >= min && n <= max, `event(${type}${bound === "" ? "" : ` ${bound}`})`, `saw ${n}`);
+      // `countVerdict` carries the defaults (no bounds mean at least one; a
+      // `max` alone is a pure ceiling) and renders the bound with its own
+      // leading space, which is what the spelled-out version here kept getting
+      // wrong in one branch or the other.
+      const verdict = countVerdict(n, opts);
+      check(verdict.ok, `event(${type}${verdict.bound})`, `saw ${n}`);
     },
 
     notEvent(type) {

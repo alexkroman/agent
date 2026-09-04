@@ -14,18 +14,20 @@
     "dropped": {}
   },
   "components": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "Pre-release: ConsoleShellProps lost its `error` field. The announced role=\"alert\" banner is `<SessionErrorBanner>` now — its own export, COMPOSED inside ConsoleShell — so a full-bleed chrome can take the announced-error decision without taking the frame. Epoch 1's `<ConsoleShell error={session.error?.message} …>` no longer compiles; the migration is to delete that prop, since the shell renders the banner itself. `BulletList`, `Facts` and `SessionErrorBanner` join the capability in the same move."
-    }
-  },
-  "forms": {
     "current": 3,
     "supported": [3],
     "dropped": {
+      "1": "Pre-release: ConsoleShellProps lost its `error` field. The announced role=\"alert\" banner is `<SessionErrorBanner>` now — its own export, COMPOSED inside ConsoleShell — so a full-bleed chrome can take the announced-error decision without taking the frame. Epoch 1's `<ConsoleShell error={session.error?.message} …>` no longer compiles; the migration is to delete that prop, since the shell renders the banner itself. `BulletList`, `Facts` and `SessionErrorBanner` join the capability in the same move.",
+      "2": "Purely ADDITIVE: useFlash/useCopy and their named result types UseFlashResult/UseCopyResult join the capability, so every epoch-2 declaration compiles unchanged. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here. What moved: three hand-rolled copies of the one-live-timer, clear-on-unmount flash (the studio's editor save note, its copy buttons, and this package's own components/url-chips.tsx) became one primitive. The url-chips copy was the worst of the three — it ended `.catch(() => {})`, so on an insecure context or a denied permission the button visibly did nothing; a refusal reports \"Failed\" now. They are in components rather than hooks because that capability promises what a client reads off the AGENT, and these read nothing and render nothing — they are the same category as AutoScroll, a behaviour rule a custom chrome would otherwise re-derive."
+    }
+  },
+  "forms": {
+    "current": 4,
+    "supported": [4],
+    "dropped": {
       "1": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here.",
-      "2": "Renamed for naming consistency (API naming review): FileRead -> FileReadMode, a closed set of four modes named as if it were an event."
+      "2": "Renamed for naming consistency (API naming review): FileRead -> FileReadMode, a closed set of four modes named as if it were an event.",
+      "3": "Purely ADDITIVE: fieldKindFor and WorkflowFieldKind join the capability, so every epoch-3 declaration compiles unchanged. Dropped rather than retained for the reason every superseded epoch here is — this package retains none, a frozen example being a promise about a surface no external consumer holds. What moved: the control-selection rule was extracted out of SchemaField (components/workflow-fields.tsx) so there is ONE decision, and published because it is not derivable by inspection — an upload property IS a plain string in the schema, so the ORDER (upload, then enum, then type) is invisible to a reader. The studio's API pane was carrying a hand-kept mirror of that switch, with a comment admitting it and a test pinning the order to catch the drift; it reads the rule now, so a new control reaches its docs table as a widened union rather than as an edit somebody has to remember. It is in forms rather than components because what it names is a FIELD: adding a control to <WorkflowFields> widens WorkflowFieldKind, so the two move together and one epoch covers both halves."
     }
   },
   "hooks": {

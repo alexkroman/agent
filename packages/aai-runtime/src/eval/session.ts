@@ -421,7 +421,7 @@ async function openWithFakes(
       // The EARLIEST place a rejected credential is visible, and the cheapest to
       // read: a case that has not said anything yet cannot have written an
       // assertion this could be confused with.
-      assertTurnMeasurable("the greeting", events.slice(greetingFrom), toolNames);
+      assertTurnMeasurable("the greeting", events.slice(greetingFrom), toolNames, "voice");
     }
   } catch (err) {
     // The runtime is live from `createRuntime` onward and the caller never
@@ -449,7 +449,12 @@ async function openWithFakes(
     stt.commit(text);
     await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
     const turn = events.slice(from);
-    assertTurnMeasurable(`the reply to ${JSON.stringify(text.slice(0, 60))}`, turn, toolNames);
+    assertTurnMeasurable(
+      `the reply to ${JSON.stringify(text.slice(0, 60))}`,
+      turn,
+      toolNames,
+      "voice",
+    );
     return {
       text: saidIn(turn).join(" "),
       events: turn,

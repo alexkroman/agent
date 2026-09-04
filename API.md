@@ -7445,6 +7445,31 @@ export type EvalSleep = {
 };
 
 // @public
+export type EvalTextAgent = {
+    readonly id: string;
+    send(text: string): Promise<EvalTurn>;
+    sendAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public
+export type EvalTextAgentOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly llm?: LlmProvider;
+    readonly runCode?: RunCodeExecutor;
+    readonly fetch?: typeof globalThis.fetch;
+    readonly toolTimeoutMs?: number;
+    readonly workflows?: WorkflowClient | undefined;
+    readonly turnTimeoutMs?: number;
+    readonly logger?: Logger;
+};
+
+// @public
 export type EvalToolCall = {
     readonly toolCallId: string;
     readonly name: string;
@@ -7546,6 +7571,9 @@ type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
 export function openEvalSession(options: EvalSessionOptions): Promise<EvalSession>;
+
+// @public
+export function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTextAgent>;
 
 // @public
 export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
@@ -8670,6 +8698,7 @@ export interface TextAgentOptions {
     fetch?: typeof globalThis.fetch;
     logger?: Logger;
     model?: LanguageModel;
+    onEvent?: (event: SessionEvent) => void;
     providerEnv?: ProviderEnv;
     runCode?: RunCodeExecutor;
     sessionId?: string;
@@ -9551,7 +9580,20 @@ type WsSessionOptions = {
 ## `@alexkroman1/aai-runtime/testing`
 
 ```ts
+import type { AgentDef } from '@alexkroman1/aai';
+import type { AgentEnv } from '@alexkroman1/aai/host-internal';
+import type { Db } from '@alexkroman1/aai/internal';
+import { LanguageModel } from 'ai';
+import { ModelMessage } from 'ai';
+import { PrepareStepFunction } from 'ai';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import { StepResult } from 'ai';
+import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
+import { ToolSet } from 'ai';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
@@ -9630,6 +9672,14 @@ type RunRecord = {
 type RunStatus = WorkflowRunStatus;
 
 // @public
+export function runTextAgent(def: AgentDef, input: string | readonly ModelMessage[], options: RunTextAgentOptions): Promise<TextAgentTestRun>;
+
+// @public
+export type RunTextAgentOptions = Omit<TextAgentOptions, "agent" | "model"> & Pick<TextTurnOptions, "signal" | "systemPrompt" | "maxSteps" | "temperature" | "toolChoice"> & {
+    readonly script: readonly ScriptedTextStep[];
+};
+
+// @public
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
 
 // @public
@@ -9639,6 +9689,22 @@ export type RunWorkflowOptions = {
     logger?: Logger;
     crashAt?: string;
     maxDeliveries?: number;
+};
+
+// @public
+export function scriptedTextModel(steps: readonly ScriptedTextStep[]): LanguageModel;
+
+// @public
+export type ScriptedTextStep = {
+    readonly text?: string;
+    readonly toolCalls?: readonly ScriptedToolCall[];
+};
+
+// @public
+export type ScriptedToolCall = {
+    readonly name: string;
+    readonly input?: Record<string, unknown>;
+    readonly id?: string;
 };
 
 // @public
@@ -9667,6 +9733,55 @@ type StepEntry = {
     startedAt?: number | undefined;
     finishedAt: number;
 };
+
+// @public
+interface TextAgentOptions {
+    agent: AgentDef;
+    db?: Db | undefined;
+    env?: AgentEnv;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    model?: LanguageModel;
+    onEvent?: (event: SessionEvent) => void;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    sessionId?: string;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
+export type TextAgentTestRun = {
+    readonly text: string;
+    readonly texts: readonly string[];
+    readonly toolCalls: readonly TextAgentTestToolCall[];
+    readonly steps: readonly StepResult<ToolSet>[];
+    readonly messages: readonly ModelMessage[];
+    readonly events: readonly SessionEvent[];
+};
+
+// @public
+export type TextAgentTestToolCall = {
+    readonly name: string;
+    readonly id: string;
+    readonly args: unknown;
+    readonly result: unknown;
+};
+
+// @public
+interface TextTurnOptions {
+    maxSteps?: number;
+    messages: ModelMessage[];
+    onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
+    prepareStep?: PrepareStepFunction<ToolSet>;
+    signal?: AbortSignal;
+    stopWhen?: readonly ((options: {
+        steps: readonly StepResult<ToolSet>[];
+    }) => boolean | PromiseLike<boolean>)[];
+    systemPrompt?: string;
+    temperature?: number;
+    toolChoice?: ToolChoice;
+}
 
 // @public
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
@@ -9925,6 +10040,11 @@ export function Field(input: {
 }): JSX.Element;
 
 // @public
+export function fieldKindFor(schema: unknown, options?: {
+    upload?: boolean | undefined;
+}): WorkflowFieldKind;
+
+// @public
 export type FieldShell = {
     name: string;
     label?: string | undefined;
@@ -10166,6 +10286,16 @@ export type UseConversationResult = {
 };
 
 // @public
+export function useCopy(): UseCopyResult;
+
+// @public
+export type UseCopyResult = {
+    copy: (text: string) => void;
+    label: (text: string, idle?: string) => string;
+    didCopy: (text: string) => boolean;
+};
+
+// @public
 export function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
 
 // @public
@@ -10182,6 +10312,15 @@ export type UseDownloadUrlResult = {
 
 // @public
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
+
+// @public
+export function useFlash<T>(ms?: number): UseFlashResult<T>;
+
+// @public
+export type UseFlashResult<T> = {
+    readonly value: T | null;
+    readonly flash: (value: T) => void;
+};
 
 // @public
 export function useRunKey(options?: {
@@ -10339,6 +10478,9 @@ export type WorkflowApiOptions = {
     baseUrl?: string;
     token?: string;
 };
+
+// @public
+export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none";
 
 // @public
 export function WorkflowFields(input: {

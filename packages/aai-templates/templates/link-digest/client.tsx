@@ -62,9 +62,32 @@
  * what narrows it to the newest line, because on a page this small that is the
  * whole of what a status wants; `transcription-workflow` renders the full log,
  * where a fan-out makes the history worth seeing.
+ *
+ * ## Two things that are only ever true for a MOMENT
+ *
+ * The Copy button and the reply to "File it now" are both a word that appears
+ * and then goes away, and both used to be the sort of thing a page writes with
+ * a `useState` and a bare `setTimeout` — which gets two things wrong that only
+ * show up on the second click (a second flash has its window cut short by the
+ * first one's timer) and on unmount (a `setState` into a torn-down tree). They
+ * are `useCopy` and `useFlash` from `@alexkroman1/aai-ui`.
+ *
+ * Reach for `useCopy` when the moment is a clipboard write — it keys the flash
+ * by the copied TEXT, so on a page with several copy buttons only the one
+ * clicked lights up, and it reports a REFUSED write as `"Failed"` rather than
+ * doing nothing visible (there is no clipboard at all on an insecure origin).
+ * Reach for `useFlash` for any other transient word; here it carries what
+ * `wake()` answered, which is a number and not a failure at 0.
  */
 
-import { BulletList, mountPage, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
+import {
+  BulletList,
+  mountPage,
+  useCopy,
+  useFlash,
+  useWorkflowSubmit,
+  WorkflowProgress,
+} from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
@@ -90,8 +113,22 @@ function pendingNote(startedHere: boolean, found: boolean): string {
   return "Still working on the digest this tab started earlier. Reloading is safe.";
 }
 
+/** The digest as one pasteable block — a headline and its bullets. */
+function asText(headline: string, points: readonly string[]): string {
+  return [headline, ...points.map((point) => `- ${point}`)].join("\n");
+}
+
 export function App() {
   const [url, setUrl] = useState("");
+  // One copier for the page. It would be one per GROUP of copy buttons on a
+  // bigger page — the flash is shared, so clicking a second row clears the
+  // first row's "Copied", which is what stops two rows both claiming to be on
+  // the clipboard.
+  const copier = useCopy();
+  // `wake()` resolves with how many sleeps it ended, and 0 is an ANSWER (the
+  // run had already moved past its wait) rather than a failure — so the button
+  // says which happened, for a moment, and then goes back to being a button.
+  const woken = useFlash<string>();
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. `error` is the agent's own sentence for a
   // rejected input, which is better copy than anything this page could write, and
@@ -168,10 +205,14 @@ export function App() {
       {pending && (
         <button
           type="button"
-          onClick={() => void wake()}
+          onClick={() => {
+            void wake().then((count) =>
+              woken.flash(count > 0 ? "Filing it now" : "Already past its wait"),
+            );
+          }}
           className="self-start rounded-md border px-3 py-1 text-sm"
         >
-          File it now
+          {woken.value ?? "File it now"}
         </button>
       )}
 
@@ -189,6 +230,17 @@ export function App() {
           <h2 className="text-xl">{run.output.headline}</h2>
           <BulletList items={run.output.points} />
           <p className="text-sm opacity-70">Filed {run.output.filedAt}</p>
+          {/* The whole digest as plain text, which is what somebody pasting it
+              into a note wants. `copier.label` is the button's own text: it
+              reads "Copy" until it is clicked, then "Copied" — or "Failed",
+              which is the case a hand-rolled version silently drops. */}
+          <button
+            type="button"
+            onClick={() => copier.copy(asText(run.output.headline, run.output.points))}
+            className="self-start rounded-md border px-3 py-1 text-sm"
+          >
+            {copier.label(asText(run.output.headline, run.output.points))}
+          </button>
         </article>
       )}
     </main>

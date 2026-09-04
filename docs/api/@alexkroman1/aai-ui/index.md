@@ -703,6 +703,73 @@ function ColorForm() {
 
 ***
 
+### fieldKindFor()
+
+```ts
+function fieldKindFor(schema: unknown, options?: {
+  upload?: boolean;
+}): WorkflowFieldKind;
+```
+
+Which control `<WorkflowFields>` renders for one property of an input schema.
+
+#### Parameters
+
+##### schema
+
+`unknown`
+
+The property's JSON Schema, as `GET workflows` reports it.
+  Anything that is not an object reads as `"none"`.
+
+##### options?
+
+`upload` says the property is named in the workflow's own
+  `uploads` declaration, which is what step 1 above tests.
+
+###### upload?
+
+`boolean`
+
+#### Returns
+
+[`WorkflowFieldKind`](#workflowfieldkind)
+
+#### Remarks
+
+The ORDER is the contract, and it is the half a reader cannot infer:
+
+1. **A declared upload wins outright.** It is a plain `string` in the schema
+   — the id — so testing the type first would render a text box asking a
+   person to type an id no person has. The declaration is the workflow's
+   (`workflow({ uploads: [...] })`), not the schema's, precisely because a
+   marker inside the schema would only work for the library that carried it.
+2. **Then a non-empty `enum`**, before the type switch: an enum of strings
+   is a `string` too, and a select is the narrower, better control.
+3. **Then the type** — `boolean`, `number`/`integer`, `string`.
+4. **Anything else is `"none"`** rather than a guess. See
+   [WorkflowFieldKind](#workflowfieldkind).
+
+#### Example
+
+```ts
+import { fieldKindFor, type WorkflowFieldKind } from "@alexkroman1/aai-ui";
+import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
+
+function kindsOf(summary: WorkflowSummary): Record<string, WorkflowFieldKind> {
+  const uploads = new Set(summary.uploads ?? []);
+  const schema = summary.inputSchema as { properties?: Record<string, unknown> };
+  return Object.fromEntries(
+    Object.entries(schema.properties ?? {}).map(([name, property]) => [
+      name,
+      fieldKindFor(property, { upload: uploads.has(name) }),
+    ]),
+  );
+}
+```
+
+***
+
 ### FileField()
 
 ```ts
@@ -1707,6 +1774,53 @@ function Transcript() {
 
 ***
 
+### useCopy()
+
+```ts
+function useCopy(): UseCopyResult;
+```
+
+One copier for a group of copy buttons.
+
+#### Returns
+
+[`UseCopyResult`](#usecopyresult)
+
+#### Remarks
+
+Call it ONCE per group and pass the [UseCopyResult](#usecopyresult) down, rather than once per
+button: the flash is shared, so clicking a second row clears the first row's
+"Copied" — which is what makes a list of URLs readable, since two rows
+claiming to be on the clipboard is a lie about one of them.
+
+A chip whose idle text is its own name rather than the word "Copy" passes
+that name to [UseCopyResult.label](#label-1); the two outcome words are fixed, for the
+reason that member's own doc gives.
+
+#### Example
+
+```tsx
+import { useCopy } from "@alexkroman1/aai-ui";
+
+function UrlList({ urls }: { urls: readonly string[] }) {
+  const copier = useCopy();
+  return (
+    <ul>
+      {urls.map((url) => (
+        <li key={url}>
+          <code>{url}</code>
+          <button type="button" onClick={() => copier.copy(url)}>
+            {copier.label(url)}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+***
+
 ### useDownloadUrl()
 
 ```ts
@@ -1806,6 +1920,65 @@ function Cart() {
     setCart((cart) => [...cart, data]);
   });
   return <div>{cart.length} items</div>;
+}
+```
+
+***
+
+### useFlash()
+
+```ts
+function useFlash<T>(ms?: number): UseFlashResult<T>;
+```
+
+A transient value: set it, and it clears itself after `ms`.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+What is being flashed.
+
+#### Parameters
+
+##### ms?
+
+`number`
+
+How long the value stays up. Defaults to 1500ms, which is what
+  every caller wanted: long enough to read a word, short enough that the
+  control is back to its real label before the reader looks again.
+
+#### Returns
+
+[`UseFlashResult`](#useflashresult)\<`T`\>
+
+#### Remarks
+
+The two things this holds that a `useState` plus a `setTimeout` at the call
+site reliably gets wrong:
+
+- **At most ONE live timer.** A second flash while the first is still up
+  re-arms rather than stacking, so the new value gets its full window
+  instead of being cleared early by the previous click's timeout.
+- **Nothing fires after unmount.** The timer is cleared on teardown, so a
+  chip clicked and then scrolled out of the tree does not `setState` on a
+  component React has already thrown away.
+
+#### Example
+
+```tsx
+import { useFlash } from "@alexkroman1/aai-ui";
+
+function SaveNote({ onSave }: { onSave: () => Promise<void> }) {
+  const { value: note, flash } = useFlash<string>();
+  return (
+    <button type="button" onClick={() => void onSave().then(() => flash("Saved"))}>
+      {note ?? "Save"}
+    </button>
+  );
 }
 ```
 
@@ -4926,6 +5099,87 @@ in exactly one place.
 
 ***
 
+### UseCopyResult
+
+```ts
+type UseCopyResult = {
+  copy: (text: string) => void;
+  didCopy: (text: string) => boolean;
+  label: (text: string, idle?: string) => string;
+};
+```
+
+What [useCopy](#usecopy) hands back — the click handler and the two readings a
+button needs off one shared flash.
+
+#### Properties
+
+##### copy
+
+```ts
+copy: (text: string) => void;
+```
+
+Copy `text`, flashing the button that owns it.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+##### didCopy
+
+```ts
+didCopy: (text: string) => boolean;
+```
+
+True when `text` was the last thing copied, successfully.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`boolean`
+
+##### label
+
+```ts
+label: (text: string, idle?: string) => string;
+```
+
+The button label for `text` — `idle` until it is clicked, then `"Copied"`
+or `"Failed"` for the length of the flash.
+
+Only the idle word is the caller's: it is the button's NAME (`"Copy"`,
+`"UI"`, `"Webhook URL"`), where the other two are the OUTCOME and are the
+one bit of state a reader can see. A caller wanting other words for those
+reads [UseCopyResult.didCopy](#didcopy) and writes its own.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### idle?
+
+`string`
+
+###### Returns
+
+`string`
+
+***
+
 ### UseDownloadUrlOptions
 
 ```ts
@@ -4991,6 +5245,56 @@ optional url?: string;
 An object URL for the stored bytes, once they are here. Valid until the id
 changes or the component unmounts — do not stash it anywhere that outlives
 the render that read it.
+
+***
+
+### UseFlashResult
+
+```ts
+type UseFlashResult<T> = {
+  flash: (value: T) => void;
+  value: T | null;
+};
+```
+
+What [useFlash](#useflash) hands back.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+What is being flashed. A `string` for a label; a record for a
+  flash that has to say WHICH thing it belongs to, as `useCopy` does.
+
+#### Properties
+
+##### flash
+
+```ts
+readonly flash: (value: T) => void;
+```
+
+Show `value` for the hook's duration, replacing any flash already up.
+
+###### Parameters
+
+###### value
+
+`T`
+
+###### Returns
+
+`void`
+
+##### value
+
+```ts
+readonly value: T | null;
+```
+
+What is being shown right now, or `null` between flashes.
 
 ***
 
@@ -6164,6 +6468,28 @@ Bearer for an agent whose operator set `AAI_WORKFLOW_API_TOKEN`. A page
 served to the public has nothing to put here (and should not — it would be
 readable in the bundle); this exists for a programmatic caller written
 against the same client.
+
+***
+
+### WorkflowFieldKind
+
+```ts
+type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none";
+```
+
+The control a schema property renders as inside `<WorkflowFields>`.
+
+`"none"` is not a control: it is the shape the generated form declines to
+guess at — a nested object, an array — because every choice (a JSON
+textarea, a repeater, a comma-separated string) is a guess about what the
+author meant, and a guess producing a value the schema then rejects is worse
+than no field. The API takes those shapes perfectly well; only the generated
+form has nothing honest to draw, so the field is written by hand and
+composes with the generated ones inside the same `<Form>`.
+
+There is deliberately no `"textarea"` member. A textarea is a string like a
+text field is — the same value over the wire — so it is a hand-written swap
+rather than a shape the schema can ask for.
 
 ***
 

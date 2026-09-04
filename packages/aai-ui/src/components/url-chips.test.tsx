@@ -54,14 +54,22 @@ describe("UrlChip copy feedback", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  test("clipboard failure leaves the chip usable", async () => {
+  /*
+   * This test used to assert the label stayed "UI" — it PINNED the swallowed
+   * failure. A rejected write happens for real (an insecure context, a denied
+   * permission) and a button that changes nothing when clicked reads as a
+   * broken page rather than a blocked capability, so the outcome is reported.
+   * The URL is still on screen either way, which is what "usable" meant.
+   */
+  test("a REFUSED clipboard write is reported, not swallowed", async () => {
     installClipboard(() => Promise.reject(new Error("denied")));
     render(<UiUrlChip />);
     fireEvent.click(screen.getByTestId("ui-url-chip"));
     await act(async () => {
       /* flush the clipboard promise */
     });
-    expect(screen.getByText("UI")).toBeDefined();
+    expect(screen.getByText("Failed")).toBeDefined();
+    expect(screen.getByTestId("ui-url-chip-url").textContent).not.toBe("");
   });
 });
 

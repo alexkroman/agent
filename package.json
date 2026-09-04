@@ -39,6 +39,7 @@
     "check:local": "node scripts/check.mjs --local",
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude' '#.superpowers'",
     "check:migration-order": "node scripts/check-migration-order.mjs",
+    "check:module-tests": "node scripts/check-module-tests.mjs",
     "check:package-layout": "node scripts/check-package-layout.mjs",
     "check:property-floors": "node scripts/check-property-floors.mjs",
     "check:publint": "turbo run check:publint",

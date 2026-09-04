@@ -37,6 +37,14 @@
  * they are covered; `eval/session.ts` and `eval/stub-speech.ts` repeat the
  * warning at the seams where it would be forgotten.
  *
+ * {@link openEvalTextAgent} is the same question asked of a TEXT agent, and it
+ * is a second harness rather than an option on the first because
+ * `createRuntime` REFUSES `text: true`: a text agent fills no pipeline stages,
+ * so there is nothing for the fake speech pair to stand between. Everything
+ * above the model is shared — `send()` is `say()`, the turn record is the same
+ * {@link EvalTurn}, and the readers below take a text turn unchanged, because a
+ * text agent emits this same event union narrowed to what it can fill honestly.
+ *
  * `openEvalWorkflows` is the same idea for a `workflowApp()`, which has no
  * session at all: it starts a real run of the real body over an in-process
  * engine. **That engine is not durable** — see `eval/workflow-engine.ts`, which
@@ -129,6 +137,19 @@ export {
   type StubSttSession,
   type StubTtsSession,
 } from "./eval/stub-speech.ts";
+// Driving a TEXT agent, which the session harness structurally cannot:
+// `createRuntime` refuses `text: true` by name, so there is no session to fake
+// the two speech stages of. Public for the same reason `openEvalSession` is —
+// a text agent's whole observable behaviour is the same `SessionEvent` stream,
+// and a host embedding one (the studio's coding agent is the shipped example)
+// had no published way to ask "given this message, did the agent do the right
+// thing". It hands back the same `EvalTurn`, so every reader and every
+// assertion above them is shared rather than reimplemented.
+export {
+  type EvalTextAgent,
+  type EvalTextAgentOptions,
+  openEvalTextAgent,
+} from "./eval/text-agent.ts";
 // Reading a CALL rather than one reply. Public because the claim they make is
 // the one a multi-turn case has to make and could not spell: the turn a
 // MECHANISM fired in, never turn number two — how many turns an agent takes to

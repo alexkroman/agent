@@ -19,11 +19,11 @@
 // value, and getting any of the three wrong produces a number that answers
 // and then hangs up.
 
+import { useCopy } from "@alexkroman1/aai-ui";
 import { agentBase } from "./docs-content.ts";
 import { platformOrigin } from "./platform-origin.ts";
 import { Card } from "./settings-card.tsx";
 import { CopyLine } from "./snippet.tsx";
-import { useCopy } from "./use-copy.ts";
 
 /** A carrier the platform can emit a media-stream document for. */
 type Carrier = {

@@ -5,12 +5,14 @@
 // Two things here are wrong in a way no screenshot shows, which is why they are
 // asserted directly rather than through a render.
 //
-// **The classification is a COPY of `<WorkflowFields>`'s.** That component
-// (aai-ui/components/workflow-fields.tsx) picks a control per property in a
-// fixed order, and a copy that drifted would name a control the reader cannot
-// find on their own page — the ORDER especially, since an upload property is a
-// plain string in the schema and reads as a text box unless the upload
-// declaration is tested first.
+// **The classification is `<WorkflowFields>`'s own, asked rather than copied.**
+// `classify` is an adapter over `fieldKindFor` (`@alexkroman1/aai-ui`), so what
+// is left to assert here is the ADAPTATION — that a property named in the
+// workflow's `uploads` array reaches the rule as an upload — plus a few
+// end-to-end cases, kept because they are what a reader of this pane checks
+// and they cost nothing. The ORDER is specced beside the rule
+// (`aai-ui/src/workflow-field-kind.test.ts`), which is where it belongs now:
+// this file used to pin it because a drifting copy lived here.
 //
 // **And a table that quietly lost a row still renders.** Every control has to
 // be on it whether or not this agent declares one, so the count is pinned: a
@@ -53,18 +55,20 @@ describe("classify", () => {
     expect(classify("ratio", { type: "number" }, [])).toBe("number");
     expect(classify("draft", { type: "boolean" }, [])).toBe("checkbox");
     expect(classify("tone", { enum: ["formal", "casual"] }, [])).toBe("select");
-    expect(classify("tags", { type: "array" }, [])).toBe("other");
-    expect(classify("meta", { type: "object" }, [])).toBe("other");
+    expect(classify("tags", { type: "array" }, [])).toBe("none");
+    expect(classify("meta", { type: "object" }, [])).toBe("none");
   });
 
-  test("tests the UPLOAD declaration first, because the schema says `string`", () => {
-    // The one ordering that matters. An upload property is a string carrying an
-    // id, so a classifier that read the type first would call it a text field —
-    // and the pane would document typing an id no caller can produce, which is
-    // exactly the inference this whole card exists to correct.
+  test("passes the UPLOAD declaration through, from the array it walks", () => {
+    // This is the adaptation, and the whole of what this module adds: the rule
+    // takes a boolean, the pane holds the workflow's `uploads` LIST, and a
+    // property missing from it must not reach the rule as an upload. Reading
+    // the type instead would call an upload property a text field — the pane
+    // would document typing an id no caller can produce, which is exactly the
+    // inference this card exists to correct.
     expect(classify("cover", { type: "string" }, ["cover"])).toBe("file");
-    // Even against an enum, which is tested second for the same reason.
-    expect(classify("cover", { enum: ["a", "b"] }, ["cover"])).toBe("file");
+    expect(classify("cover", { type: "string" }, ["other"])).toBe("text");
+    expect(classify("cover", { type: "string" }, [])).toBe("text");
   });
 
   test("prefers an enum to the type, and takes the first non-null of a union", () => {
@@ -76,12 +80,12 @@ describe("classify", () => {
     expect(classify("tone", { type: "string", enum: ["formal"] }, [])).toBe("select");
   });
 
-  test("and anything it cannot read is `other` rather than a guess", () => {
-    // `other` means "no generated control", which the pane says out loud. A
+  test("and anything it cannot read is `none` rather than a guess", () => {
+    // `none` means "no generated control", which the pane says out loud. A
     // guess here would render a box whose value the schema then rejects.
-    expect(classify("mystery", undefined, [])).toBe("other");
-    expect(classify("mystery", {}, [])).toBe("other");
-    expect(classify("mystery", { enum: [] }, [])).toBe("other");
+    expect(classify("mystery", undefined, [])).toBe("none");
+    expect(classify("mystery", {}, [])).toBe("none");
+    expect(classify("mystery", { enum: [] }, [])).toBe("none");
   });
 });
 
@@ -96,8 +100,8 @@ describe("classifiedFields", () => {
       ["ratio", "number"],
       ["tone", "select"],
       ["draft", "checkbox"],
-      ["tags", "other"],
-      ["meta", "other"],
+      ["tags", "none"],
+      ["meta", "none"],
       ["cover", "file"],
     ]);
     const values = Object.fromEntries(
@@ -137,7 +141,7 @@ describe("formElements", () => {
       "select",
       "checkbox",
       "file",
-      "other",
+      "none",
     ]);
     // Every row carries all three columns and the caller-facing note.
     for (const row of rows) {

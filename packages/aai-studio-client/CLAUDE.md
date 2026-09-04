@@ -555,8 +555,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
     from an agent that went quiet, which is the one thing a log must never be
     ambiguous about.
   - **It follows the bottom only while the reader is there**, and that is
-    `use-stick-to-bottom`'s job — the same component the chat transcript mounts,
-    already a dependency of this package — rather than the pane's. Scrolling up
+    `<AutoScroll>`'s job — `@alexkroman1/aai-ui`'s one owner of the effect, and
+    the same component the chat transcript mounts — rather than the pane's.
+    Scrolling up
     to read something is exactly when a forced scroll is worst, and the
     hand-rolled version this replaced got the second half wrong: it re-pinned
     only when a LINE arrived, so a line that wrapped, or a monospace font that
@@ -940,6 +941,21 @@ so every piece of per-project state resets on a switch with no effect to do it.
   comes from the other end — the server pings, a dead connection surfaces as the
   read ending, and that reaches `onDown` → backoff resubscribe.
 
+  **The FRAMING is the SDK's, and only the policy is ours.** `api-events.ts`
+  carried its own `drainEventStream` — the third copy of that parser in the
+  repo, and the one `sdk/event-stream.ts`'s doc names as such; aai-ui's
+  `_sse.ts` was deleted rather than kept when the reader moved into the SDK,
+  and this is the same deletion. What stays here is the studio's own stream
+  policy (the `auth`/`transport` taxonomy, the abort handle, `onOpen`, the
+  `ApiError` mapping). Two consequences: the SDK's reader hands back `data`
+  already JSON-parsed, so the three `JSON.parse(frame.data) as T` casts in
+  `api.ts` are gone and each frame is narrowed by a real guard instead
+  (`isProjectData`/`isChatMessages`/`isProjectNames`, in `api-types.ts`, which
+  is also where the line between what they check and what they leave to the AI
+  SDK's own readers is argued); and a frame that fails a guard is DROPPED rather
+  than tearing the stream down, which is the right answer where every frame
+  carries a whole snapshot.
+
 - **A rejected bearer is REFRESHED, never signed out on** (`auth-recovery.ts`).
   There were three call sites and two opposite conclusions. supabase-js runs its
   refresh ticker only on FOCUSED tabs, so a studio tab left in the background for
@@ -977,6 +993,39 @@ so every piece of per-project state resets on a switch with no effect to do it.
   server already unhealthy enough to be dropping streams — the transport-side
   twin of the 401 storm the module header describes. A stream that stayed up
   10s still resets, so the promptness the reset exists for is intact.
+
+## Reach for `aai-ui` when it carries a RULE, not a look
+
+This package imports very little from `@alexkroman1/aai-ui`, and most of that
+restraint is correct: that package's components are driven by a theme OBJECT
+(`useTheme`, the `--aai-*` custom properties) because they ship into end-user
+agent apps, while the studio is a Tailwind app on its own tokens (`bg-panel`,
+`text-muted`, `border-line`, `bg-indigo`). A themed component cannot cross that
+line without dragging a second design system in behind it.
+
+**The test is whether the export carries a LOOK or a RULE.** A rule crosses; a
+look does not. Three things cross today and each was a duplicate before it did:
+
+- `Markdown` and `ToolCallRow` — a parse and a disclosure shape.
+- `AutoScroll` (`chat-transcript.tsx`, `logs-view.tsx`) — pin to the bottom,
+  release when the reader scrolls up, re-engage at the bottom, driven by a
+  `ResizeObserver` rather than a `messages` dependency. Both panes reached past
+  it straight to `use-stick-to-bottom`, which is the library `AutoScroll`
+  exists to have ONE owner of; the dependency is gone from this package's
+  manifest with them. It is not themed — `className`, `contentClassName`,
+  `scrollClassName`, composed with `clsx` — and it forwards `initial`/`resize`,
+  so neither pane gave anything up: the chat keeps `instant`/`smooth` and the
+  Logs tail keeps `instant`/`instant`. Both pass `scrollClassName="overflow-y-auto"`,
+  because the default hides the scrollbar and these panes show a native one.
+- `useCopy` / `useFlash` (`phone-card.tsx`, `cli-commands.tsx`) — they were
+  EXTRACTED here and have moved INTO `aai-ui`, which had a third copy of the
+  flash inside its own URL chips. See "The flash primitive is `aai-ui`'s" in
+  `packages/aai-ui/CLAUDE.md`.
+
+The direction that is never right is the other one: `aai-ui` may not import
+this package or anything platform-side (`browser-package-boundary` in
+`konsistent.json`), so a shared primitive MOVES down rather than being reached
+up for.
 
 ## Testing this package
 

@@ -12,13 +12,18 @@
 // mapping, and the one place inference fails is the FileField — its property is
 // a plain string in the schema, so the body reads as "type the recording here".
 //
-// **The mapping is `<WorkflowFields>`'s, not a second opinion.** That component
-// (aai-ui/components/workflow-fields.tsx) picks a control per property in a
-// fixed order — a declared upload beats everything, then `enum`, then
-// `boolean`, then `number`/`integer`, then `string`, and anything else gets no
-// control at all — and {@link classify} below is that order, so the table on
-// the pane says what the deployed page really renders. A copy that drifted
-// would be worse than nothing: it would name a control the reader cannot find.
+// **The mapping is `<WorkflowFields>`'s, and this pane now ASKS it.**
+// `fieldKindFor` (`@alexkroman1/aai-ui`) is the rule that component itself
+// runs — a declared upload beats everything, then `enum`, then the type — and
+// {@link FormElementKind} is built on its {@link WorkflowFieldKind}, so the
+// table says what the deployed page really renders because it is reading the
+// same decision rather than restating it. A hand-kept mirror stood here and
+// the module doc said so; a mirror that drifted would be worse than nothing,
+// naming a control the reader cannot find on their own page. Publishing the
+// classifier is the same conclusion `studio-sdk-exports.ts` reached about the
+// SDK's subpath list: a copy "would just move the drift somewhere new". A new
+// control in aai-ui therefore widens the union here, and the type — plus
+// `formElements`'s own row-per-kind test — is what asks for its row.
 //
 // **Every kind is listed, whether or not this agent declares one.** The pane's
 // standing rule is to show only what is true for the agent in front of you, and
@@ -31,26 +36,25 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
+import { fieldKindFor, type WorkflowFieldKind } from "@alexkroman1/aai-ui";
 import { sampleInput } from "./docs-content.ts";
 
 /**
  * The controls a form is built from, as the API sees them.
  *
- * `"other"` is not a control — it is the shape `<WorkflowFields>` declines to
+ * The published {@link WorkflowFieldKind} plus one row this pane owns.
+ * `"none"` is not a control — it is the shape `<WorkflowFields>` declines to
  * guess at (a nested object, an array), which the API takes perfectly well and
  * a page needs a hand-written field for. It is on the table because "the
  * generated form has no box for this" and "the API will not accept this" are
  * very different sentences, and the reader is otherwise left to assume the
  * second.
+ *
+ * `"textarea"` is the addition, and it is DOCUMENTATION rather than a
+ * classification: it is a string like a text field is, so no schema can ask
+ * for it and {@link classify} never returns it — see `formElements`.
  */
-export type FormElementKind =
-  | "text"
-  | "textarea"
-  | "number"
-  | "select"
-  | "checkbox"
-  | "file"
-  | "other";
+export type FormElementKind = WorkflowFieldKind | "textarea";
 
 /** One row of the pane's form-field table. */
 export type FormElementDoc = {
@@ -146,7 +150,7 @@ const VOCABULARY: readonly Omit<FormElementDoc, "declared" | "workflow">[] = [
     note: "The only control whose value is not the thing you have: POST the bytes to /workflows/uploads first, then send the id it answers with here. A run input is journaled and replayed, so bytes cannot travel in it.",
   },
   {
-    kind: "other",
+    kind: "none",
     element: "hand-written — no generated control",
     schema: `{ "type": "object" } or { "type": "array" }`,
     property: "items",
@@ -165,32 +169,19 @@ function schemaProperties(workflow: WorkflowSummary): readonly [string, unknown]
 /**
  * Which control one declared property renders as.
  *
- * The ORDER is the contract — it mirrors `SchemaField` in aai-ui, where a
- * declared upload is tested before the enum and the type switch precisely
- * because an upload property IS a string in the schema and would otherwise
- * render as a text box asking a person to type an id no person has.
+ * A thin adapter over `fieldKindFor`, which is `<WorkflowFields>`'s own
+ * decision — the ORDER (a declared upload before the enum, the enum before the
+ * type) lives with the component that runs it and is documented there. What
+ * this adds is the shape THIS module walks in: the pane iterates a schema's
+ * properties against the workflow's `uploads` list, so it has a name and an
+ * array where the rule wants a boolean.
  */
 export function classify(
   name: string,
   schema: unknown,
   uploads: readonly string[],
 ): FormElementKind {
-  if (uploads.includes(name)) return "file";
-  if (!isRecord(schema)) return "other";
-  const { enum: choices } = schema;
-  if (Array.isArray(choices) && choices.length > 0) return "select";
-  const type = Array.isArray(schema.type) ? schema.type.find((one) => one !== "null") : schema.type;
-  switch (type) {
-    case "boolean":
-      return "checkbox";
-    case "number":
-    case "integer":
-      return "number";
-    case "string":
-      return "text";
-    default:
-      return "other";
-  }
+  return fieldKindFor(schema, { upload: uploads.includes(name) });
 }
 
 /** One declared property, classified, with the value the run body sends for it. */

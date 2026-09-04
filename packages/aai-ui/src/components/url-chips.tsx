@@ -3,9 +3,9 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
 import { pageBaseUrl } from "../_utils.ts";
 import { useSessionSelector, useTheme } from "../context.ts";
+import { useCopy } from "../use-copy.ts";
 import {
   FOCUS_RING,
   focusRingStyle,
@@ -15,14 +15,15 @@ import {
   inkTint,
 } from "./_colors.ts";
 
-/** How long the "Copied" confirmation replaces the label after a click. */
-const COPIED_FEEDBACK_MS = 1500;
-
 /**
  * A compact labeled chip showing a URL. Click to copy.
  *
  * The label is what makes a pair of these readable — on its own a bare URL
- * leaves you guessing whether it's the page or the socket.
+ * leaves you guessing whether it's the page or the socket. It also carries the
+ * copy OUTCOME, which is the whole reason the flash is `useCopy`'s rather than
+ * this file's: the hand-rolled version swallowed a rejected write, so on an
+ * insecure context or a denied permission the chip changed nothing at all and
+ * read as a dead button.
  *
  * @internal
  */
@@ -40,29 +41,14 @@ function UrlChip({
   className?: string | undefined;
 }) {
   const theme = useTheme();
-  const [copied, setCopied] = useState(false);
-  // The feedback timer must not outlive the chip — a setState after unmount
-  // is a leak (and a React warning). Re-clicking also resets the countdown.
-  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timerRef.current), []);
-
-  function copy(): void {
-    navigator.clipboard
-      ?.writeText(url)
-      .then(() => {
-        setCopied(true);
-        clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
-      })
-      .catch(() => {
-        /* clipboard unavailable (permissions/insecure context) — chip still shows the URL */
-      });
-  }
+  // One copier per chip: each renders a single URL, so there is no sibling
+  // whose "Copied" this one has to clear.
+  const copier = useCopy();
 
   return (
     <button
       type="button"
-      onClick={copy}
+      onClick={() => copier.copy(url)}
       title={`${hint} (click to copy)\n${url}`}
       className={clsx(
         "flex items-center gap-1.5 min-w-0 appearance-none m-0 px-2 py-1 rounded-aai border cursor-pointer text-[11px] leading-none font-aai-mono",
@@ -81,7 +67,7 @@ function UrlChip({
         className="uppercase tracking-wide shrink-0"
         style={{ color: inkTint(theme.text, theme.surface, INK_MUTED_PCT) }}
       >
-        {copied ? "Copied" : label}
+        {copier.label(url, label)}
       </span>
       <span className="truncate" data-testid={`${testId}-url`}>
         {url}

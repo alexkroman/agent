@@ -1,0 +1,22 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing",
+  "epoch": 7,
+  "sha256": "b8dabc19853a844f23d8dbbd21b2927e6da858578d552ce1b7791069eebc7dbb",
+  "exports": [
+    "DEFAULT_MAX_DELIVERIES",
+    "RunTextAgentOptions",
+    "RunWorkflowOptions",
+    "ScriptedTextStep",
+    "ScriptedToolCall",
+    "TextAgentTestRun",
+    "TextAgentTestToolCall",
+    "WorkflowTestHandle",
+    "WorkflowTestRead",
+    "WorkflowTestRun",
+    "WorkflowTestStep",
+    "runTextAgent",
+    "runWorkflow",
+    "scriptedTextModel"
+  ]
+}

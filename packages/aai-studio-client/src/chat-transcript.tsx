@@ -6,10 +6,9 @@
 // Sharing the layout is what makes that swap invisible; two hand-matched copies
 // would shift the messages under the reader at the exact moment they land.
 
-import { Markdown } from "@alexkroman1/aai-ui";
+import { AutoScroll, Markdown } from "@alexkroman1/aai-ui";
 import type { UIMessage } from "ai";
 import { memo, type ReactNode } from "react";
-import { StickToBottom } from "use-stick-to-bottom";
 import type { StudioStatus } from "./api.ts";
 import { ChatStatusNote } from "./chat-status-note.tsx";
 import { ToolRow, toBlocks } from "./tool-row.tsx";
@@ -85,19 +84,28 @@ type TranscriptProps = {
 /**
  * The scrolling message list.
  *
- * StickToBottom follows streamed output but releases when the user scrolls up
- * to read, re-engaging once they return to the bottom.
+ * `AutoScroll` follows streamed output but releases when the user scrolls up to
+ * read, re-engaging once they return to the bottom. It is `aai-ui`'s wrapper
+ * over `use-stick-to-bottom` and is exported for exactly this caller — a chrome
+ * that renders its own bubbles instead of `<MessageList>`. Reaching for the
+ * library directly meant two owners of one effect and a second copy of the
+ * bounded-height constraint; `scrollClassName` is passed because the default
+ * hides the scrollbar and this pane shows a native one.
  */
 export function Transcript({ messages, busy = false, labels, lead, footer }: TranscriptProps) {
   return (
-    <StickToBottom className="min-h-0 flex-1" initial="instant" resize="smooth">
-      <StickToBottom.Content className="flex flex-col gap-4 px-6 py-5">
-        {lead}
-        {messages.map((message) => (
-          <MessageView key={message.id} message={message} busy={busy} labels={labels} />
-        ))}
-        {footer}
-      </StickToBottom.Content>
-    </StickToBottom>
+    <AutoScroll
+      className="min-h-0 flex-1"
+      contentClassName="flex flex-col gap-4 px-6 py-5"
+      scrollClassName="overflow-y-auto"
+      initial="instant"
+      resize="smooth"
+    >
+      {lead}
+      {messages.map((message) => (
+        <MessageView key={message.id} message={message} busy={busy} labels={labels} />
+      ))}
+      {footer}
+    </AutoScroll>
   );
 }

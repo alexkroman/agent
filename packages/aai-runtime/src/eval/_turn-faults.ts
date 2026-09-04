@@ -21,12 +21,53 @@
  *   `tools/`.
  *
  * Split out of `eval/session.ts` for the line cap; the argument for each
- * decision sits on the function that makes it.
+ * decision sits on the function that makes it. BOTH harnesses ask it —
+ * `openEvalSession`'s `say()` and `openEvalTextAgent`'s `send()` — because
+ * which faults make a turn unreadable is a property of the shared event stream
+ * rather than of either mode. See {@link TurnMode} for the one thing that is
+ * not shared.
  *
  * @module
  */
 
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
+
+/**
+ * Which harness is asking — the two differ only in the sentence that says WHY
+ * an unmeasurable turn passes.
+ *
+ * REQUIRED at the call site rather than defaulted: there are two callers, and a
+ * default would hand a third one the other mode's explanation silently, which
+ * is the failure this whole module exists to refuse.
+ *
+ * A parameter rather than a second copy of this module, because WHICH faults
+ * make a turn unreadable is a property of the event stream and identical in
+ * both modes: the two harnesses emit the same union, and a second copy is how
+ * one of them comes to stop refusing a rejected credential. What is not shared
+ * is the mechanism a reader has to be told about — a voice turn the pipeline
+ * failed is SPOKEN as `errorPhrase`, where a text turn commits no transcript at
+ * all (`text-agent-events.ts`: "an ABORTED or FAILED turn commits no
+ * transcript"). Both leave every negative claim holding vacuously, which is the
+ * shared conclusion, and a reader chasing one is looking for different text on
+ * their screen.
+ */
+export type TurnMode = "voice" | "text";
+
+/** What the harness calls itself in a message, so a reader can grep it. */
+const LABEL: Record<TurnMode, string> = { voice: "session", text: "text agent" };
+
+/** Why a turn nothing can be read off would otherwise have PASSED. */
+const WHY_IT_PASSES: Record<TurnMode, string> = {
+  voice:
+    "A turn the pipeline failed is answered with the agent's `errorPhrase` " +
+    '("Sorry, I had a problem just then. Could you say that again?"), so every ' +
+    "assertion about what was said passes for the wrong reason — a refusal or " +
+    "`not.toMatch` claim most of all.",
+  text:
+    "A text turn that failed commits NO transcript, so it said nothing at all — " +
+    "every assertion about what was said passes for the wrong reason, a refusal " +
+    "or `not.toMatch` claim most of all.",
+};
 
 /**
  * The `error.reported` events in `turn` that mean the reply was the RUNTIME's
@@ -96,6 +137,9 @@ function unexecutedToolsIn(turn: readonly SessionEvent[]): readonly string[] {
  * `undefined` — with the tool body never entering, though "your tools run" is
  * what the authoring guide promises about a scripted run.
  *
+ * `mode` decides only the sentence explaining why such a turn would otherwise
+ * have passed; the faults themselves are the same in both.
+ *
  * A throw rather than a field on {@link EvalTurn}: a field is something a case
  * has to remember to read, and every case in the corpus that would have needed
  * it is one that already passed without it. It also composes — `sayAll` stops on
@@ -107,19 +151,17 @@ export function assertTurnMeasurable(
   what: string,
   turn: readonly SessionEvent[],
   toolNames: readonly string[],
+  mode: TurnMode,
 ): void {
   const faults = stageFaultsIn(turn);
   if (faults.length > 0) {
     throw new Error(
-      `eval session: ${what} did not come from the agent — the runtime reported ` +
+      `eval ${LABEL[mode]}: ${what} did not come from the agent — the runtime reported ` +
         // On its own line, and with no punctuation of ours after it: a provider
         // message routinely ends in a full stop of its own, and "…for
         // errors.. A turn" reads as a formatting bug in the harness.
         `${faults.join("; ")}\n` +
-        "A turn the pipeline failed is answered with the agent's " +
-        '`errorPhrase` ("Sorry, I had a problem just then. Could you say that again?"), so ' +
-        "every assertion about what was said passes for the wrong reason — a refusal or " +
-        "`not.toMatch` claim most of all. A rejected or expired provider credential is the " +
+        `${WHY_IT_PASSES[mode]} A rejected or expired provider credential is the ` +
         "usual cause.",
     );
   }
@@ -130,7 +172,7 @@ export function assertTurnMeasurable(
   const missing = unexecutedToolsIn(turn);
   if (missing.length === 0) return;
   throw new Error(
-    `eval session: ${what} asked for ${missing.map((name) => JSON.stringify(name)).join(", ")} ` +
+    `eval ${LABEL[mode]}: ${what} asked for ${missing.map((name) => JSON.stringify(name)).join(", ")} ` +
       `and the runtime never ran ${missing.length === 1 ? "it" : "them"}. A \`tool.called\` ` +
       "with no `tool.completed` means there was no such tool to execute, so its `result` is " +
       "undefined and any claim about what it answered holds vacuously. This agent's tools: " +

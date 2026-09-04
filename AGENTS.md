@@ -284,7 +284,7 @@ changed since the default branch (also `test:coverage`, same reason);
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run
-eleven **gates** (all also runnable standalone) that hold the line on technical
+twelve **gates** (all also runnable standalone) that hold the line on technical
 debt. Two compare against a COMMITTED PER-FILE BASELINE
 (`check:hatches`, `check:invariants`); the rest are absolute. They must stay
 wired into BOTH: for a long time they lived only in `check.mjs`, which CI never
@@ -493,6 +493,8 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   so `--update` refuses to lower an entry and never creates one; `--seed` is the
   bootstrap, opened at 15 files. Runs per package in CI's coverage matrix
   (`--package`). The script's own doc carries the rest.
+
+- **`pnpm check:module-tests`** — a co-located test per module; read the script.
 
 - **`pnpm check:konsistent`** ([konsistent], config in root `konsistent.json`)
   — enforces **structural** conventions: the shapes that are wrong only in

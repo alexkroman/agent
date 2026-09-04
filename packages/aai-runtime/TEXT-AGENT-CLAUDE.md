@@ -49,6 +49,95 @@ Four decisions worth not relitigating:
   there is no text seam to drive, and silently running it as a pipeline agent
   would evaluate a configuration nobody deployed.
 
+### A text agent's turns are the SAME event stream, narrowed
+
+`createTextAgent({ onEvent })` reports a turn as `SessionEvent`s — the union a
+voice session emits — so `saidIn`, `toolCallsInEvents`, `toolArgsIn`,
+`toolResultIn`, `customEventsIn`, `describeToolCalls` and `TURN_ENDS` all take a
+text turn with no second implementation, and `runTextAgent` hands the recorded
+list back as `TextAgentTestRun.events`.
+
+**The argument, the emitted set, and the eleven refusals live in
+`src/text-agent-events.ts`'s module doc** — this guide is REFERENCE and that
+file is where the reasoning has to be read from. Four things worth knowing
+before touching either:
+
+- **It is one union, not two.** A `TextAgentEvent` vocabulary of its own would
+  mean a second set of readers and a second set of assertions above them, and
+  the one thing worse than an ungradeable agent is two vocabularies that
+  disagree about what a tool call is. The measured cost of having neither is
+  `aai-evals/src/studio-target.ts`, which grades an `agent({ text: true })`
+  definition with five REGEXES over tool-output text.
+- **`session.configured` is refused for want of an honest field**, and it is the
+  only member refused on those grounds: it requires `audioFormat`, `sampleRate`
+  and `ttsSampleRate`, `0` fails the schema, and any real number is a lie a
+  client would negotiate against. A synthesized field is worse than an absent
+  event, because an assertion will believe it.
+- **The terminator is derived from the stream's own terminal part** — `finish`,
+  `abort` or `error`, all through one `onChunk` — and guarded, first one wins.
+  A/B'd: removing the guard fails seven specs, because the SDK's flush fires the
+  backstop `onEnd` on an ordinary turn as well.
+- **It is ADDITIVE.** `TextTurnResult` is still the vendor's own
+  `StreamTextResult` for the reason `text-agent.ts` argues, and a text agent
+  with no `onEvent` installs no per-part callback at all.
+
+### A TEXT agent is evaluated by `openEvalTextAgent`, its own harness
+
+`@alexkroman1/aai-runtime/eval` carries both, and there are two because
+`createRuntime` REFUSES `text: true` by name: a text agent fills no pipeline
+stages and resolves no transport, so there is nothing for the fake speech pair
+to stand between and `openEvalSession` structurally cannot serve one. Everything
+a case can SEE is the same — `send()` is `say()`, it hands back the same
+`EvalTurn`, `events()`/`said()`/`toolCalls()` read the same, and every reader
+and every `aai-evals` assertion above them applies unchanged, because a text
+agent emits the same `SessionEvent` union (see the section above).
+
+**The argument for every decision is in `src/eval/text-agent.ts`'s module doc**
+— this guide is REFERENCE. Four things worth knowing before touching either
+harness:
+
+- **The turn wait is STRUCTURAL here, not a poll.** The voice harness polls the
+  event list for a `TURN_ENDS` member anchored to its own
+  `user-transcript.committed`, because the session runs on its own clock. This
+  harness owns the stream, so `await result.consumeStream()` IS the wait: the
+  terminator is a synchronous consequence of the stream's terminal part, so a
+  turn with none is a HARNESS fault reported as such rather than waited out. A
+  deadline (`turnTimeoutMs`, 90s as in the voice harness) is still armed for the
+  one case the harness cannot resolve — a provider that never answers — and it
+  is an `AbortSignal.timeout` handed to the turn, so it CANCELS rather than
+  abandoning a stream that keeps spending tokens.
+- **One agent per conversation, which `runTextAgent` deliberately is not.** That
+  helper builds a fresh agent per call and mandates a script (right for a spec);
+  an eval's `sendAll` is one conversation, so this builds ONE `createTextAgent`
+  and streams each turn on it — which is what makes `ctx.state` slots and the
+  model's own view of the history mean across turns what they mean in a session.
+  The harness accumulates the `ModelMessage` list itself, so a case says lines.
+- **The keyless fallback is `installStubLlm`, never `scriptedTextModel`.** The
+  option is an `LlmProvider` DESCRIPTOR and it rides on the agent DEFINITION, so
+  a scripted run resolves through `registerLlmKind` with a real env var exactly
+  as a live one does — and `ctx.generate` is scripted with it. A
+  `scriptedTextModel` passed as `createTextAgent({ model })` would leave
+  `ctx.generate` resolving the agent's own descriptor and 401ing three layers
+  down inside a tool, which is the hole `EvalCaseOptions.stubGenerate` exists to
+  close; its answer-an-empty-step-past-the-end rule is also wrong for a harness
+  that cannot know how many model calls a turn will make. The MODE decision and
+  the announce stay with whoever owns the policy (`describeEval`, or
+  `aai-evals`' `_gate.ts`), as they do for `openEvalSession` — with no
+  credential and no `llm` this throws from `resolveLlm` at open time naming the
+  env var.
+- **`evalCredentials` over-asks for a text agent.** It answers "can this machine
+  run this AGENT", and its no-complete-pipeline branch adds the default
+  AssemblyAI STT key — so a text agent declaring `anthropic()` is reported as
+  needing `ASSEMBLYAI_API_KEY` it will never read. A text agent resolves exactly
+  one provider credential, its LLM's. There is no `describeTextEval` yet: a
+  suite drives `openEvalTextAgent` under its own gate.
+
+Two differences a case author meets, both properties of the MODE: there is no
+greeting turn (`createTextAgent` drops the definition's `greeting`, which
+`agent()` defaults for every agent), so `said()` opens empty rather than with a
+line; and a text turn commits its reply ONCE, joined across steps, where a voice
+session commits per utterance.
+
 ### A template eval imports from `/eval` and `/eval/vitest`, and NOWHERE else
 
 **That is konsistent's `template-eval-runtime-subpaths`** — the root barrel and

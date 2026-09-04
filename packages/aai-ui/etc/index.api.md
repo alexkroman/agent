@@ -209,6 +209,11 @@ export function Field(input: {
 }): JSX.Element;
 
 // @public
+export function fieldKindFor(schema: unknown, options?: {
+    upload?: boolean | undefined;
+}): WorkflowFieldKind;
+
+// @public
 export type FieldShell = {
     name: string;
     label?: string | undefined;
@@ -450,6 +455,16 @@ export type UseConversationResult = {
 };
 
 // @public
+export function useCopy(): UseCopyResult;
+
+// @public
+export type UseCopyResult = {
+    copy: (text: string) => void;
+    label: (text: string, idle?: string) => string;
+    didCopy: (text: string) => boolean;
+};
+
+// @public
 export function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
 
 // @public
@@ -466,6 +481,15 @@ export type UseDownloadUrlResult = {
 
 // @public
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
+
+// @public
+export function useFlash<T>(ms?: number): UseFlashResult<T>;
+
+// @public
+export type UseFlashResult<T> = {
+    readonly value: T | null;
+    readonly flash: (value: T) => void;
+};
 
 // @public
 export function useRunKey(options?: {
@@ -623,6 +647,9 @@ export type WorkflowApiOptions = {
     baseUrl?: string;
     token?: string;
 };
+
+// @public
+export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none";
 
 // @public
 export function WorkflowFields(input: {
