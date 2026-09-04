@@ -1,12 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The two hooks a FORM needs, as against the one a status view does.
+ * The hook a FORM needs, as against the one a status view does.
  *
  * `useWorkflowRun` (`workflow-client.ts`) watches a run you already have.
- * These two are what comes before it: `useWorkflows` reads the declared
- * workflows so `<WorkflowFields>` can render a form from a schema, and
- * `useWorkflowSubmit` starts a run and hands the id straight to
- * `useWorkflowRun`.
+ * This is what comes before it: `useWorkflowSubmit` starts a run and hands the
+ * id straight to `useWorkflowRun`. Its sibling `useWorkflows` — the listing
+ * `<WorkflowFields>` renders a form from — is `use-workflows.ts`.
  *
  * ## `useWorkflowSubmit` — a form's two halves in one hook
  *
@@ -41,122 +40,18 @@ import type {
   UploadParallel,
   UploadProgress,
   WorkflowOutputOf,
-  WorkflowSummary,
 } from "@alexkroman1/aai/workflow-api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRecoveredRun } from "./_recover-run.ts";
 import { useRunControls } from "./_run-controls.ts";
 import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
 import { useUploadPause } from "./_upload-pause.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { FormValues } from "./components/form-types.ts";
+import { useDefaultRunKey } from "./use-run-key.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 import type { SubmitInputOf } from "./workflow-def-types.ts";
-
-/** Options for {@link useWorkflows}. */
-export type UseWorkflowsOptions = {
-  /** The client to read the listing with. Defaults to one for the page's own agent. */
-  api?: WorkflowApi;
-  /**
-   * Skip the lookup entirely, reporting an empty listing that is not loading.
-   *
-   * For a caller that may or may not need the listing and cannot decide with a
-   * conditional hook — `<WorkflowFields>` handed a summary rather than a name is
-   * the one in this package. It reports `loading: false`, because a skipped
-   * lookup is finished rather than pending.
-   */
-  skip?: boolean;
-};
-
-/** What {@link useWorkflows} reports. */
-export type UseWorkflowsResult = {
-  /** The agent's declared workflows, each with the JSON Schema of its input. */
-  workflows: WorkflowSummary[];
-  /** True until the listing lands, so a form can hold its fields back. */
-  loading: boolean;
-  /** The lookup's failure. Set alongside an EMPTY list, which is why it exists. */
-  error: string | undefined;
-};
-
-/**
- * Read the agent's declared workflows.
- *
- * What `<WorkflowFields>` renders a form FROM: each summary carries the JSON
- * Schema of that workflow's input, converted server-side precisely so a browser
- * can read it.
- *
- * The failure is reported rather than swallowed, because the alternative is an
- * empty list — which renders as a form with no fields and reads as "this agent
- * declares no workflows" about an agent that was merely unreachable.
- *
- * @example
- * ```tsx
- * import { useWorkflows } from "@alexkroman1/aai-ui";
- *
- * // A page rendering its own chrome from the listing — a picker, say. A form
- * // for ONE workflow wants `<WorkflowFields workflow="name" />` instead,
- * // which does this lookup itself.
- * function WorkflowPicker({ onPick }: { onPick: (name: string) => void }) {
- *   const { workflows, loading, error } = useWorkflows();
- *   if (loading) return <p>Loading…</p>;
- *   if (error !== undefined) return <p role="alert">{error}</p>;
- *   return (
- *     <ul>
- *       {workflows.map((summary) => (
- *         <li key={summary.name}>
- *           <button type="button" onClick={() => onPick(summary.name)}>
- *             {summary.description ?? summary.name}
- *           </button>
- *         </li>
- *       ))}
- *     </ul>
- *   );
- * }
- * ```
- *
- * @param opts - See {@link UseWorkflowsOptions}.
- * @returns The listing, its loading flag and its failure — see
- * {@link UseWorkflowsResult}.
- *
- * @public
- */
-export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult {
-  const { api, skip = false } = opts;
-  const [state, setState] = useState<UseWorkflowsResult>({
-    workflows: [],
-    // A skipped lookup is not a pending one: `loading: true` forever would hold
-    // back a form that is waiting on it.
-    loading: !skip,
-    error: undefined,
-  });
-
-  // The client through a ref — see `_workflow-api-ref.ts`.
-  const getClient = useWorkflowApiRef(api);
-
-  useEffect(() => {
-    if (skip) return;
-    let cancelled = false;
-    getClient()
-      .list()
-      .then((workflows) => {
-        if (!cancelled) setState({ workflows, loading: false, error: undefined });
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setState({
-          workflows: [],
-          loading: false,
-          error: errorMessage(err),
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [skip, getClient]);
-
-  return state;
-}
 
 /**
  * What {@link WorkflowSubmission.upload} reports while the bytes are going.
@@ -287,29 +182,37 @@ export type WorkflowSubmission<R = unknown, I = unknown> = {
 export type UseWorkflowSubmitOptions = {
   /** The client to start runs with. Defaults to one for the page's own agent. */
   api?: WorkflowApi;
-  /** Correlation key recorded with the run, for finding it again without the id. */
+  /**
+   * Correlation key recorded with the run, for finding it again without the id.
+   *
+   * **Defaulted**, to an opaque per-page key in `sessionStorage` that the next
+   * load produces again — `useRunKey()`'s, minted by the hook. Pass one to
+   * scope runs to something the page knows better: an ACCOUNT's own id, which
+   * is what makes a run follow the person to a new device, or
+   * `useRunKey({ storage: "local" })` for a run that outlives the tab by
+   * design. The key is a lookup CAPABILITY (there is no per-user filtering
+   * behind `find`), it must fit the route's 256-character bound, and anything
+   * derived from a person's own input both collides and carries what they
+   * typed — `use-run-key.ts` argues every alternative.
+   */
   key?: string;
   /**
    * On mount, adopt the newest run this `key` already has.
    *
-   * **This is what makes a reload survivable.** The run id is this hook's own
-   * state, so a refresh loses it while the run carries on — and a page that
-   * cannot name a run cannot show it, cancel it or wake it. With a `key` and
-   * this flag the hook asks `find(workflow, key)` once as it mounts and follows
-   * whatever comes back, so the answer, the progress and the controls are all
-   * there again.
+   * **This is what makes a reload survivable, and it is ON.** The run id is
+   * this hook's own state, so a refresh loses it while the run carries on — and
+   * a page that cannot name a run cannot show it, cancel it or wake it. The
+   * hook asks `find(workflow, key)` once as it mounts and follows whatever
+   * comes back, so the answer, the progress and the controls are all there
+   * again.
    *
-   * Inert without a `key`, because the key IS the lookup. Opt-in because a
-   * `key` on its own means only "record this with the run", which is what a
-   * page passing an account id may well want; adopting a run is a decision
-   * about the page.
-   *
-   * The key has to be one the next load can produce, and choosing it is the
-   * caller's: it is a lookup CAPABILITY (there is no per-user filtering behind
-   * `find`), it must fit the route's 256-character bound, and anything derived
-   * from a person's own input both collides and carries what they typed.
-   * `useRunKey()` is that key, and its module argues every alternative; a page
-   * with accounts passes the account's own id instead.
+   * It used to be opt-in, on the argument that a `key` alone means only "record
+   * this with the run" — true of `ctx.workflows.start({ key })`, where there is
+   * no page to put a run back on, and not of a form: six of six page templates
+   * passed `useRunKey()` and `recover: true` together, which is a default in
+   * the wrong place. `false` is the opt-out, and what it buys is a form that
+   * always opens empty — no lookup on mount, and a live run reachable only by
+   * an id the page has already lost.
    */
   recover?: boolean;
   /**
@@ -372,7 +275,12 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
   opts: UseWorkflowSubmitOptions = {},
 ): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
-  const { api, key, recover = false, wait, intervalMs, parallel } = opts;
+  const { api, recover = true, wait, intervalMs, parallel } = opts;
+  // The key the runs are recorded under: the caller's, or the per-page one this
+  // hook mints and stores for itself. Minted even when `recover` is off, so
+  // opting out of the LOOKUP still leaves the run findable — by the next load
+  // that turns recovery back on, and by anything else holding the key.
+  const key = useDefaultRunKey(opts.key);
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);

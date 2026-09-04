@@ -1635,8 +1635,7 @@ function useRunKey(options?: {
 }): string;
 ```
 
-A lookup key for `useWorkflowSubmit({ key, recover: true })`, stable across
-reloads.
+A lookup key for `useWorkflowSubmit({ key })`, stable across reloads.
 
 #### Parameters
 
@@ -4709,7 +4708,10 @@ input names an upload id it did not mint and is not filling — so the run
 would sit waiting for bytes nobody is sending until its own abandonment
 bound. That is the same reason `_upload-recall.ts` deliberately does not
 recall for this hook, one layer up: here the id is part of a run's INPUT.
-`key` itself still works, and still makes the run findable.
+`key` itself still works, and still makes the run findable — but it is NOT
+defaulted here the way `useWorkflowSubmit` defaults it, because the whole
+value of that default is the lookup this hook refuses, and minting a key
+nothing will ever read back is a slot left in storage for no one.
 
 `parallel` COMPOSES with what this hook is for rather than competing with it.
 The run still starts before the bytes, and the store still publishes how far
@@ -4760,6 +4762,16 @@ optional key?: string;
 
 Correlation key recorded with the run, for finding it again without the id.
 
+**Defaulted**, to an opaque per-page key in `sessionStorage` that the next
+load produces again — `useRunKey()`'s, minted by the hook. Pass one to
+scope runs to something the page knows better: an ACCOUNT's own id, which
+is what makes a run follow the person to a new device, or
+`useRunKey({ storage: "local" })` for a run that outlives the tab by
+design. The key is a lookup CAPABILITY (there is no per-user filtering
+behind `find`), it must fit the route's 256-character bound, and anything
+derived from a person's own input both collides and carries what they
+typed — `use-run-key.ts` argues every alternative.
+
 ##### parallel?
 
 ```ts
@@ -4785,24 +4797,20 @@ optional recover?: boolean;
 
 On mount, adopt the newest run this `key` already has.
 
-**This is what makes a reload survivable.** The run id is this hook's own
-state, so a refresh loses it while the run carries on — and a page that
-cannot name a run cannot show it, cancel it or wake it. With a `key` and
-this flag the hook asks `find(workflow, key)` once as it mounts and follows
-whatever comes back, so the answer, the progress and the controls are all
-there again.
+**This is what makes a reload survivable, and it is ON.** The run id is
+this hook's own state, so a refresh loses it while the run carries on — and
+a page that cannot name a run cannot show it, cancel it or wake it. The
+hook asks `find(workflow, key)` once as it mounts and follows whatever
+comes back, so the answer, the progress and the controls are all there
+again.
 
-Inert without a `key`, because the key IS the lookup. Opt-in because a
-`key` on its own means only "record this with the run", which is what a
-page passing an account id may well want; adopting a run is a decision
-about the page.
-
-The key has to be one the next load can produce, and choosing it is the
-caller's: it is a lookup CAPABILITY (there is no per-user filtering behind
-`find`), it must fit the route's 256-character bound, and anything derived
-from a person's own input both collides and carries what they typed.
-`useRunKey()` is that key, and its module argues every alternative; a page
-with accounts passes the account's own id instead.
+It used to be opt-in, on the argument that a `key` alone means only "record
+this with the run" — true of `ctx.workflows.start({ key })`, where there is
+no page to put a run back on, and not of a form: six of six page templates
+passed `useRunKey()` and `recover: true` together, which is a default in
+the wrong place. `false` is the opt-out, and what it buys is a form that
+always opens empty — no lookup on mount, and a live run reachable only by
+an id the page has already lost.
 
 ##### wait?
 

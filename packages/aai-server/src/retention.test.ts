@@ -48,7 +48,7 @@ import { SESSION_STATE_RETENTION } from "./platform-session-state.ts";
 import { UPLOAD_RECORD_RETENTION } from "./platform-uploads.ts";
 import { STALL_GRACE_MS } from "./workflow-queue-reconcile.ts";
 
-const repoRoot = path.resolve(import.meta.dirname, "../..");
+const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const migrationsDir = path.join(repoRoot, "supabase/migrations");
 
 /**

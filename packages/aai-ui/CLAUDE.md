@@ -1187,6 +1187,23 @@ clear `sessionStorage` between specs — the hook half of this lives in
 so reusing one across a reload would start a second run against the first run's
 upload. Its pause and its outage resume are unchanged.
 
+### And the RUN is picked back up too, by default
+
+The other half of that reload. `useWorkflowSubmit` mints an opaque per-page
+correlation key into `sessionStorage` (`use-run-key.ts`), records every run
+under it, and asks `find(workflow, key)` once as it mounts — so a refresh comes
+back to the same result, progress log and controls rather than an empty form
+beside a live run nothing can name. It was `key` + `recover: true` at the call
+site, and six of six page templates wrote both: the same "default in the wrong
+place" `session-resume-store.ts` names on the voice side, which is why the two
+now make the same promise with nothing written.
+
+`key` still overrides — an ACCOUNT's id, so a run follows the person to another
+device; `useRunKey({ storage: "local" })` for a run that outlives the tab, which
+is `podcast-digest` and the only template that still names the hook. `recover:
+false` opts the LOOKUP out and keeps the key. `useWorkflowStream` has neither,
+for the reason above: its key would be read back by nobody.
+
 ### The run a page just started, and the ones before it
 
 `useWorkflowRun` watches ONE run by id, which is right for the run a form just

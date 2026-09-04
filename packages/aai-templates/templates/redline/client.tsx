@@ -31,11 +31,13 @@
  * in React state — so a refresh lost it while the loop carried on writing,
  * grading and revising without anywhere to report to. On a desk whose whole
  * subject is a loop that runs several long-form model calls, that is the one
- * failure worth two lines of wiring: `key` is the handle that survives a reload
- * and `recover` is what reads it back, so the draft, the critique trail and the
- * Clear button are all there again.
+ * failure the hook now covers on its own: `useWorkflowSubmit` records every run
+ * under a correlation KEY it mints for this page and asks for that key's newest
+ * run as it mounts, so the draft, the critique trail and the Clear button are
+ * all there again with nothing written here.
  *
- * **The key is opaque and lives in `sessionStorage`, and the brief is why.** A
+ * **The key it mints is opaque and lives in `sessionStorage`, and the brief is
+ * why this page wants exactly that one.** A
  * `?key=` parameter in the page's own URL would survive more — a new tab, a
  * bookmark, a link sent to the person who asked for the piece — and that is
  * exactly what it must not do here. There is no per-user filtering behind
@@ -48,7 +50,9 @@
  *
  * Deriving the key from the brief is worse again: two people briefing the same
  * thing would recover each other's runs, and the key would then carry what they
- * typed into a lookup token the platform deliberately stopped logging.
+ * typed into a lookup token the platform deliberately stopped logging. Both are
+ * things a page could still ask for by passing its own `key`, and this one has
+ * no reason to.
  */
 
 import "@alexkroman1/aai-ui/styles.css";
@@ -60,7 +64,6 @@ import {
   page,
   SubmitButton,
   TextAreaField,
-  useRunKey,
   useWorkflowSubmit,
   WORKFLOW_STATUS_LABELS,
   WorkflowFields,
@@ -121,19 +124,13 @@ export function toInput(values: FormValues): WorkflowInputOf<typeof redline> {
 }
 
 function RedlineDesk() {
-  // This tab's handle on its own drafts — opaque, short, and remembered for the
-  // next load, which is what `recover` produces to find the run again.
-  const key = useRunKey();
   // Did THIS load start the run? A reload cannot have, and that is the only way
   // the page can tell "writing what you just briefed" from "picking up where
   // you left off" — the hook reports the run, not who asked for it.
   const [startedHere, setStartedHere] = useState(false);
-  const { submit, run, pending, error, reset } = useWorkflowSubmit<typeof redline>(WORKFLOW, {
-    // Neither half is useful alone: without the key there is nothing to find
-    // the run by, and without `recover` the key is only ever written.
-    key,
-    recover: true,
-  });
+  // The reload is covered by the hook's own key — see the module doc for why
+  // this desk wants the tab-scoped one it mints rather than a key of its own.
+  const { submit, run, pending, error, reset } = useWorkflowSubmit<typeof redline>(WORKFLOW);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-8">

@@ -78,7 +78,13 @@ describe("a reload resumes the upload rather than restarting it", () => {
       expect.any(File),
       expect.objectContaining({ resume: true }),
     );
-    expect(api.start).toHaveBeenCalledWith("digest", { recording: "upl_from_the_last_load" }, {});
+    expect(api.start).toHaveBeenCalledWith(
+      "digest",
+      { recording: "upl_from_the_last_load" },
+      // The submit hook records every run under a key of its own — see
+      // `use-workflow-form-recover.test.ts`. It is not what this file is about.
+      { key: expect.any(String) },
+    );
   });
 
   test("an upload that already finished is not sent again at all", async () => {
@@ -93,7 +99,11 @@ describe("a reload resumes the upload rather than restarting it", () => {
     await act(() => result.current.submit({ recording: pick() }));
 
     expect(api.uploadStream).not.toHaveBeenCalled();
-    expect(api.start).toHaveBeenCalledWith("digest", { recording: "upl_all_in" }, {});
+    expect(api.start).toHaveBeenCalledWith(
+      "digest",
+      { recording: "upl_all_in" },
+      { key: expect.any(String) },
+    );
   });
 
   test("a swept id is forgotten and the file gets a fresh one", async () => {
