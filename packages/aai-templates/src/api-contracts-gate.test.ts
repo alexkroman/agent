@@ -199,10 +199,36 @@ const packages = Object.entries(tables)
           version: Number(basename(path).slice(1)),
           record: JSON.parse(source_) as Epoch,
         })),
-      /** Either extension, so a JSX-free capability may keep a `.ts` example. */
-      fixture: (capability: string, version: number): string | undefined =>
-        fixtures[`../../${pkg}/src/contracts/compatibility/${capability}/v${version}.ts`] ??
-        fixtures[`../../${pkg}/src/contracts/compatibility/${capability}/v${version}.tsx`],
+      /**
+       * One epoch's example, which may be SEVERAL FILES.
+       *
+       * `v<N>.ts` (or `.tsx`, so a JSX-free capability may keep a `.ts`
+       * example) is the entry point and the only name `fixturePath` in
+       * `scripts/_api-contracts-tree.mjs` resolves — but an example for a wide
+       * capability outgrows the 500-line source cap, and `aai:testing` epoch 19
+       * did: it froze 29 published names across five sections. So any
+       * `v<N>-*.ts(x)` beside it is part of the SAME example, and this reads
+       * them together.
+       *
+       * Concatenated rather than merged per file, because every assertion below
+       * asks a question about the epoch and not about a file — which names it
+       * imports, whether it imports anything at all, whether it is still a
+       * placeholder. A split example that the resolver could not see would fail
+       * the coverage case on every name in the half it missed, which is a
+       * finding about the reader rather than about the promise.
+       */
+      fixture: (capability: string, version: number): string | undefined => {
+        const dir = `../../${pkg}/src/contracts/compatibility/${capability}/`;
+        const parts = Object.entries(fixtures)
+          .filter(([path]) => {
+            if (!path.startsWith(dir)) return false;
+            const name = path.slice(dir.length).replace(/\.tsx?$/, "");
+            return name === `v${version}` || name.startsWith(`v${version}-`);
+          })
+          .sort(([a], [b]) => byCodeUnit(a, b))
+          .map(([, text]) => text);
+        return parts.length === 0 ? undefined : parts.join("\n");
+      },
     };
   })
   .sort((a, b) => byCodeUnit(a.pkg, b.pkg));

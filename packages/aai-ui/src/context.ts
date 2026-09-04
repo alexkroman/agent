@@ -92,7 +92,8 @@ export function useSessionCore(): SessionCore {
  *
  * This is the narrow half of {@link useSession}, and it is the half a custom
  * chrome could not reach. `<Controls>` and `<StartScreen>` in this package pair
- * a one-field `useSessionSelector` with {@link useSessionCore}; a `client.tsx`
+ * a one-field `useSessionSelector` with this package's own `useSessionCore`
+ * (`context.ts`, unpublished); a `client.tsx`
  * could not, because that hook is not published — so a footer needing `start`
  * and `toggle` held a WHOLE-SNAPSHOT `useSession()`, and `session-core.ts`
  * rebuilds the snapshot object on every change. Measured consequence: four
@@ -102,7 +103,7 @@ export function useSessionCore(): SessionCore {
  * from the snapshot at all and subscribes to all of it for `session.start`.
  *
  * **Why publishing this does not reopen what `/internal` closed.**
- * {@link useSessionCore} hands back the STORE — `subscribe`, `getSnapshot`,
+ * `useSessionCore` hands back the STORE — `subscribe`, `getSnapshot`,
  * `connect`, `Symbol.dispose` — which is the framework's own plumbing, the same
  * category as the providers and `buildAgentUrl` that live on
  * `@alexkroman1/aai-ui/internal`. A client that holds it can subscribe out of

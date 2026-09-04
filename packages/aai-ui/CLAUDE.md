@@ -274,10 +274,10 @@ actually needed was the `role="alert"` banner INSIDE it, and that is
 `<SessionErrorBanner>` now — its own export, COMPOSED here (so the shell takes
 no `error` prop), so a full-bleed chrome takes the announced-error decision
 without the frame. The three copies had already drifted, one dropping
-`error.code`. By the coverage gate's own rule `ConsoleShell`/`ConsoleShellProps` are either missing their
-example or should not be public, and on this evidence it is the second — worth
-revisiting before the release rather than leaving as an allowlist entry nobody
-reads.
+`error.code`. By the coverage gate's own rule `ConsoleShell` and
+`ConsoleShellProps` are either missing their example or should not be public,
+and on this evidence it is the second — worth revisiting before the release
+rather than leaving as an allowlist entry nobody reads.
 
 ## `AutoScroll` is the only scroll-pinning implementation
 

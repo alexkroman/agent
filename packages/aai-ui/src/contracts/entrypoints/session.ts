@@ -13,12 +13,14 @@
  */
 
 export {
+  AGENT_STATE_LABELS,
   type AgentCustomEvent,
   type AgentState,
   type ChatMessage,
   type ConversationItem,
   createSessionCore,
   type Session,
+  type SessionActions,
   type SessionCore,
   type SessionError,
   type SessionErrorCode,
@@ -27,7 +29,10 @@ export {
   type UseUserTranscriptResult,
   useConversation,
   useSession,
+  useSessionActions,
+  useSessionError,
   useSessionSelector,
+  useSessionStatus,
   useUserTranscript,
   type VoiceSessionOptions,
   type WebSocketConstructor,

@@ -8,7 +8,7 @@ Publish the four seams a custom chrome kept rebuilding.
 
 `useSessionStatus()` / `useSessionError()` are the only two snapshot fields more than one chrome ever selects, written inline eight times — including in `ConsoleShell`'s own `@example`, which taught the inline form. Their selectors are module scope, because `useSyncExternalStoreWithSelector` keys its selection memo on the selector.
 
-`<SessionErrorBanner>` is the announced `role="alert"` banner without the frame around it, composed into `ConsoleShell` (which therefore no longer takes an `error` prop) so a full-bleed chrome can take the announced-error decision on its own. The three hand-rolled copies had already drifted, one of them dropping `error.code`.
+`<SessionErrorBanner>` is the announced `role="alert"` banner without the frame around it, composed into `ConsoleShell` (which therefore no longer takes an `error` prop — the one breaking edge here, and the migration is to delete that prop, since the shell renders the banner itself) so a full-bleed chrome can take the announced-error decision on its own. The three hand-rolled copies had already drifted, one of them dropping `error.code`.
 
 `AGENT_STATE_LABELS` is the `Record<AgentState, string>` four pages spelled as a ternary chain, so a new state is a compile error rather than a silent fall-through to whichever word each chain ended on.
 

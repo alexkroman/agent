@@ -81,6 +81,65 @@ whole difference.
 
 ## Functions
 
+### ffmpegBaseArgs()
+
+```ts
+function ffmpegBaseArgs(options?: {
+  loglevel?: string;
+}): string[];
+```
+
+The standing flags every ffmpeg invocation in a guest wants, before anything
+the caller is actually asking for.
+
+Five spellings of this existed — four in templates, one here in
+[transcodeToWav](#transcodetowav) — and they disagreed on the two that matter:
+
+- **`-nostats` is not cosmetic.** A failing run is diagnosed from the stderr
+  this package captures, and it keeps only the last
+  `FFMPEG_STDERR_TAIL_CHARS` of it. ffmpeg writes a progress line several
+  times a second, so on anything long the progress spam is what survives and
+  the error that explains the failure is what gets evicted. Only one of the
+  five passed it.
+- **`-nostdin` is about the runtime, not the job.** In a guest there is no
+  terminal, and an ffmpeg that decides to read stdin is a process that never
+  exits. That is a fact about where this SDK runs, so it belongs here rather
+  than in each caller's argv.
+
+`-y` overwrites the output without asking, which is right for both shapes a
+step uses — a temp file it just named, or `pipe:1`.
+
+`loglevel` defaults to `"error"`. Pass `"info"` for a filter that reports
+through the LOG rather than to a file — `loudnorm`'s `print_format=json` is
+the case, and at `error` that pass runs, succeeds, and prints nothing.
+
+**ffprobe takes none of this.** It rejects `-nostdin` and `-nostats`
+outright, so [probeMedia](#probemedia) builds its own argv and this helper is for
+ffmpeg only.
+
+#### Parameters
+
+##### options?
+
+###### loglevel?
+
+`string`
+
+#### Returns
+
+`string`[]
+
+#### Example
+
+```ts
+import { ffmpegBaseArgs, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+
+await runFfmpeg([...ffmpegBaseArgs(), "-i", "/tmp/in.m4a", "/tmp/out.wav"]);
+await runFfmpeg([...ffmpegBaseArgs({ loglevel: "info" }), "-i", "/tmp/in.wav", "-f", "null", "-"]);
+```
+
+***
+
 ### isFfmpegError()
 
 ```ts
@@ -167,11 +226,11 @@ readonly `string`[]
 #### Example
 
 ```ts
-import { runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+import { ffmpegBaseArgs, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
 
 // File to file: nothing is buffered, so this is the shape for long media.
 await runFfmpeg([
-  "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+  ...ffmpegBaseArgs(),
   "-i", "/tmp/in.m4a",
   "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
   "/tmp/out.wav",
