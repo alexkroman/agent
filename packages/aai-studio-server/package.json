@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=26"
+    "node": ">=24"
   },
   "exports": {
     ".": {
@@ -17,7 +17,7 @@
     "check:scenario": "pnpm run test:scenario",
     "dev": "node ../../scripts/dev-server.mjs node --conditions=@dev/source src/index.ts",
     "lint": "biome check .",
-    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 26) { console.error('Node >=26 required (got ' + process.version + '). Run: fnm use 26'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs && node ../../scripts/ensure-guest-image.mjs && pnpm --filter aai-studio-client build",
+    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 24) { console.error('Node >=24 required (got ' + process.version + '). Run: fnm use 24'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs && node ../../scripts/ensure-guest-image.mjs && pnpm --filter aai-studio-client build",
     "start": "node dist/index.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
