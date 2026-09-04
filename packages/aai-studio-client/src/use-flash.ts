@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /** How long a flashed value stays up. The one duration both callers used. */
-export const FLASH_MS = 1500;
+const FLASH_MS = 1500;
 
 export type Flash<T> = {
   /** What is being shown right now, or `null` between flashes. */

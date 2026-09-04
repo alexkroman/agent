@@ -180,13 +180,9 @@ export function ProjectView(props: ProjectViewProps) {
 
   const files = workspace.data?.files ?? EMPTY_FILES;
   const deployedSlug = workspace.data?.deployedSlug;
-  // No gate: every pane is offered from the moment a project exists. There used
-  // to be one — `shownTab` fell back to Settings when a selected pane stopped
-  // being offered, because Database and Workflows could vanish under a selection
-  // when someone turned the database off in another tab. Nothing can vanish now,
-  // so the user's pick IS the pane; `top-bar.tsx` carries the argument and the
-  // shape to copy if a gate ever comes back.
-  const tab = selectedTab;
+  // No pane is gated, so the user's pick IS the pane — there is nothing to
+  // derive. The gate that used to sit here, and the shape to copy if one ever
+  // comes back, are in this package's CLAUDE.md.
   // "Publish unlocks after your first build" — there must be an agent to ship.
   const hasBuild = "agent.ts" in files;
 
@@ -260,7 +256,7 @@ export function ProjectView(props: ProjectViewProps) {
     <>
       <TopBar
         project={project}
-        tab={tab}
+        tab={selectedTab}
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
         chatBusy={chatBusy}
@@ -322,7 +318,7 @@ export function ProjectView(props: ProjectViewProps) {
           onWorkspaceChanged={invalidateWorkspace}
           onBusyChange={setChatBusy}
         />
-        {tab === "preview" && (
+        {selectedTab === "preview" && (
           <PreviewPane
             previewSlug={workspace.data?.previewSlug}
             previewVersion={workspace.data?.previewVersion}
@@ -336,7 +332,7 @@ export function ProjectView(props: ProjectViewProps) {
             onPreviewMissing={wakePreview}
           />
         )}
-        {tab === "docs" && (
+        {selectedTab === "docs" && (
           <DocsPane
             bearer={bearer}
             project={project}
@@ -344,10 +340,10 @@ export function ProjectView(props: ProjectViewProps) {
             previewSlug={workspace.data?.previewSlug}
           />
         )}
-        {tab === "workflows" && (
+        {selectedTab === "workflows" && (
           <WorkflowsPane deployedSlug={deployedSlug} previewSlug={workspace.data?.previewSlug} />
         )}
-        {tab === "code" && (
+        {selectedTab === "code" && (
           <Suspense
             fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
           >
@@ -364,15 +360,15 @@ export function ProjectView(props: ProjectViewProps) {
             />
           </Suspense>
         )}
-        {tab === "logs" && (
+        {selectedTab === "logs" && (
           <LogsView
             bearer={bearer}
             previewSlug={workspace.data?.previewSlug}
             deployedSlug={deployedSlug}
           />
         )}
-        {tab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
-        {tab === "settings" && (
+        {selectedTab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
+        {selectedTab === "settings" && (
           <SettingsPane
             bearer={bearer}
             data={workspace.data}

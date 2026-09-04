@@ -25,7 +25,6 @@ export const queryKeys = {
   chatSessions: ["chat-session"] as const,
   toolLabels: (url: string | undefined) => ["tool-labels", url] as const,
   secrets: (project: string) => ["secrets", project] as const,
-  database: (project: string) => ["database", project] as const,
   /**
    * Recent workflow runs, keyed by the SLUG they were read from — the deployed
    * agent's, or the preview's before a first publish. Not by project: those two
@@ -45,27 +44,9 @@ export const queryKeys = {
    */
   workflowDeclarations: (slug: string) => ["workflow-declarations", slug] as const,
   /**
-   * The Database pane's reads, keyed by PROJECT and environment.
-   *
-   * By project rather than by slug, unlike the workflow keys above: these go
-   * through a studio route that resolves the environment to a slug itself, so
-   * the project and the environment are the whole of what the request says —
-   * a slug in the key would be a second name for the same thing, read from a
-   * payload that may not have arrived yet.
-   */
-  /**
    * One agent's `GET /:slug/client-config` — what it says it IS. Keyed by
    * slug, like the workflow declarations: production and preview can be at
    * different versions and so can disagree about the answer.
    */
   clientConfig: (slug: string) => ["client-config", slug] as const,
-  tables: (project: string, environment: string) => ["tables", project, environment] as const,
-  /** One page of one table. The OFFSET is in the key: each page is its own read. */
-  tableRows: (
-    project: string,
-    environment: string,
-    schema: string,
-    table: string,
-    offset: number,
-  ) => ["table-rows", project, environment, schema, table, offset] as const,
 };

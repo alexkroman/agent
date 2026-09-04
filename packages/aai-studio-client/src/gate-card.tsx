@@ -155,7 +155,7 @@ export type GateQueryState = {
  * attempt — which is exactly how the studio sat on "Loading…" through the
  * whole backoff and then some, with a failing server behind it.
  */
-export function queryFailure(query: Pick<GateQueryState, "error" | "failureReason">): unknown {
+function queryFailure(query: Pick<GateQueryState, "error" | "failureReason">): unknown {
   return query.error ?? query.failureReason;
 }
 

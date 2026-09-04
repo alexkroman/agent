@@ -24,7 +24,7 @@ import { useEffect, useRef } from "react";
 import { ApiError } from "./api-error.ts";
 
 /** Is this the server refusing the caller's bearer, rather than anything else? */
-export function isAuthRejection(err: unknown): boolean {
+function isAuthRejection(err: unknown): boolean {
   return err instanceof ApiError && err.status === 401;
 }
 

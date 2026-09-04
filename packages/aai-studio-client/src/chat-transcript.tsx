@@ -17,7 +17,7 @@ import { ToolRow, toBlocks } from "./tool-row.tsx";
 // Memoized: while a turn streams, useChat updates dozens of times a second
 // but only the streaming message's identity changes — settled messages must
 // not re-run their markdown parse on every chunk.
-export const MessageView = memo(function MessageView({
+const MessageView = memo(function MessageView({
   message,
   busy = false,
   labels,

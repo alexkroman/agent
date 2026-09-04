@@ -173,6 +173,20 @@ export function uploadLines(workflow: WorkflowSummary): string[] {
 }
 
 /**
+ * The arguments a `start`/`startAndWait` call takes: the workflow name, and the
+ * input literal when the workflow declares a schema.
+ *
+ * Shared by {@link sdkStart} and {@link sdkUploadStream}, which differ only in
+ * how an upload property renders — hence the optional `render`, which is the
+ * argument {@link sdkInputLiteral} already takes.
+ */
+function startArgs(workflow: WorkflowSummary, render?: (property: string) => string): string {
+  const input = sdkInputLiteral(workflow, render);
+  const name = JSON.stringify(workflow.name);
+  return input === undefined ? name : `${name}, ${input}`;
+}
+
+/**
  * Starting a run and waiting for it, through the SDK.
  *
  * `startAndWait` is the default rather than `start`, and it is not a
@@ -183,11 +197,7 @@ export function uploadLines(workflow: WorkflowSummary): string[] {
  * the read-it-back snippet is for.
  */
 export function sdkStart(base: string, workflow: WorkflowSummary, token: boolean): string {
-  const input = sdkInputLiteral(workflow);
-  const args =
-    input === undefined
-      ? JSON.stringify(workflow.name)
-      : `${JSON.stringify(workflow.name)}, ${input}`;
+  const args = startArgs(workflow);
   return sdkSnippet(
     base,
     token,
@@ -247,6 +257,13 @@ export function sdkFollowOutput(base: string, token: boolean): string {
 }
 
 /**
+ * The header itself, in one place: the two helpers below differ only in which
+ * side the shell's line-continuation backslash falls on, and two spellings of
+ * one header is how they drift.
+ */
+const AUTH_HEADER = `-H "Authorization: Bearer $${WORKFLOW_API_TOKEN_SECRET}"`;
+
+/**
  * The `Authorization` header line a `curl` needs, or nothing.
  *
  * The workflow API is OPEN unless the agent's env sets
@@ -255,12 +272,12 @@ export function sdkFollowOutput(base: string, token: boolean): string {
  * reader to work out.
  */
 function authLine(token: boolean): string {
-  return token ? `\n  -H "Authorization: Bearer $${WORKFLOW_API_TOKEN_SECRET}" \\` : "";
+  return token ? `\n  ${AUTH_HEADER} \\` : "";
 }
 
 /** The `Authorization` line a GET carries, as a trailing continuation. */
 function getAuth(token: boolean): string {
-  return token ? ` \\\n  -H "Authorization: Bearer $${WORKFLOW_API_TOKEN_SECRET}"` : "";
+  return token ? ` \\\n  ${AUTH_HEADER}` : "";
 }
 
 /**
@@ -395,11 +412,7 @@ export function curlUpload(base: string, token: boolean): string {
  */
 export function sdkUploadStream(base: string, workflow: WorkflowSummary, token: boolean): string {
   const uploads = workflow.uploads ?? [];
-  const input = sdkInputLiteral(workflow, uploadIdVar);
-  const args =
-    input === undefined
-      ? JSON.stringify(workflow.name)
-      : `${JSON.stringify(workflow.name)}, ${input}`;
+  const args = startArgs(workflow, uploadIdVar);
   return sdkSnippet(
     base,
     token,

@@ -8,7 +8,7 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse } from "./_test-utils.ts";
+import { jsonResponse, stubFetch } from "./_test-utils.ts";
 import {
   PROBE_FAILURES_BEFORE_WAKE,
   PROBE_RETRY_MS,
@@ -51,17 +51,13 @@ function expectedProbes(ms: number): number {
  * everything else 404s the way an agent the platform doesn't know does.
  */
 function stubHealth(served: string[]) {
-  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+  return stubFetch((input) => {
     const { pathname } = new URL(String(input), "http://studio.test");
     const slug = pathname.replace(/^\/|\/health$/g, "");
-    return Promise.resolve(
-      served.includes(slug)
-        ? jsonResponse({ status: "ok", slug })
-        : jsonResponse({ error: "Not found" }, 404),
-    );
+    return served.includes(slug)
+      ? jsonResponse({ status: "ok", slug })
+      : jsonResponse({ error: "Not found" }, 404);
   });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
 }
 
 function frame(container: HTMLElement): HTMLIFrameElement {

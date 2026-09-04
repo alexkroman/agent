@@ -34,15 +34,14 @@ import {
   type WorkflowSummary,
 } from "@alexkroman1/aai/workflow-api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AGENT_READ_TIMEOUT_MS } from "./api-timeouts.ts";
+import { agentBase, NO_WORKFLOWS_DECLARED, workflowReadFailure } from "./docs-content.ts";
 import { platformOrigin } from "./platform-origin.ts";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
 
 /** Recent runs shown per workflow. Enough to see a pattern, short enough to scan. */
 const RUNS_PER_WORKFLOW = 5;
-
-/** Deadline on each request — see {@link clientFor} for why it is this generous. */
-const WORKFLOW_READ_TIMEOUT_MS = 20_000;
 
 /**
  * One run, as `GET /workflows/runs` reports it — the SDK's own type, not a
@@ -88,8 +87,8 @@ type WorkflowsCardProps = {
  */
 function clientFor(origin: string, slug: string): WorkflowApi {
   return createWorkflowApiClient({
-    baseUrl: `${origin}/${slug}`,
-    timeoutMs: WORKFLOW_READ_TIMEOUT_MS,
+    baseUrl: agentBase(origin, slug),
+    timeoutMs: AGENT_READ_TIMEOUT_MS,
   });
 }
 
@@ -224,20 +223,12 @@ function AgentWorkflows({
         </p>
       )}
 
-      {/* A failure here is usually the agent, not the studio: a 503 while its
-          sandbox boots, or a 404 for a workflow API an agent that declares none
-          does not serve. Quoted verbatim, because that text is the difference. */}
       {query.isError && (
-        <p className="m-0 text-[13px] text-err">
-          Could not read the workflows: {query.error.message}
-        </p>
+        <p className="m-0 text-[13px] text-err">{workflowReadFailure(query.error.message)}</p>
       )}
 
       {query.data?.length === 0 && (
-        <p className="m-0 text-[13px] leading-5 text-muted">
-          This project declares no workflows. A voice agent does not need any — they are for work
-          that has to outlive the call that started it.
-        </p>
+        <p className="m-0 text-[13px] leading-5 text-muted">{NO_WORKFLOWS_DECLARED}</p>
       )}
 
       {query.data && query.data.length > 0 && (

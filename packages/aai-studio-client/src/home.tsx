@@ -9,6 +9,7 @@ import clsx from "clsx";
 import { useState } from "react";
 import type { ProjectKind, StudioStatus } from "./api.ts";
 import { ChatStatusNote } from "./chat-status-note.tsx";
+import { SEG_GROUP, segItemClass } from "./segmented.ts";
 import { isEnterSubmit, SendButton } from "./send-button.tsx";
 import { STARTERS, sampleStarters } from "./starters.ts";
 
@@ -173,15 +174,14 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           revealing a panel, and it is a `fieldset` so the grouping and the
           accessible name come from the markup. Each option is a real radio —
           arrow keys move between them — with the segmented look on its label. */}
-      <fieldset className="m-0 flex flex-none overflow-hidden rounded-sm border border-line p-0">
+      <fieldset className={clsx("m-0 flex-none p-0", SEG_GROUP)}>
         <legend className="sr-only">What to build</legend>
         {KIND_ORDER.map((id, i) => (
           <label
             key={id}
             className={clsx(
               "seg flex cursor-pointer items-center",
-              i > 0 && "border-l border-line",
-              kind === id ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg",
+              segItemClass(kind === id, i),
               creating && "cursor-not-allowed opacity-60",
             )}
           >

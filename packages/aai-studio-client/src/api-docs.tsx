@@ -48,12 +48,15 @@ import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { createAgentClient } from "@alexkroman1/aai/workflow-api";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { AGENT_READ_TIMEOUT_MS } from "./api-timeouts.ts";
 import {
   agentBase,
   type DocEndpoint,
   endpointUrl,
   frontDoorEndpoints,
+  NO_WORKFLOWS_DECLARED,
   WORKFLOW_ENDPOINTS,
+  workflowReadFailure,
 } from "./docs-content.ts";
 import { Examples, FollowUp } from "./docs-examples.tsx";
 import { FormFieldsApi } from "./docs-forms.tsx";
@@ -76,9 +79,6 @@ import { platformOrigin } from "./platform-origin.ts";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
 import { Snippet } from "./snippet.tsx";
-
-/** Deadline on the listing read — generous because it may be waiting out a boot. */
-const LISTING_TIMEOUT_MS = 20_000;
 
 /**
  * One route table: method, absolute URL, what it does, and the SDK call for it.
@@ -264,17 +264,11 @@ function WorkflowApi({
           Reading this agent's workflows…
         </p>
       )}
-      {/* Quoted verbatim: a 503 while a sandbox boots and a 404 for an agent
-          that serves no workflow API read very differently, and that text is
-          the whole difference. */}
       {error !== undefined && (
-        <p className="m-0 text-[13px] text-err">Could not read the workflows: {error}</p>
+        <p className="m-0 text-[13px] text-err">{workflowReadFailure(error)}</p>
       )}
       {declared?.length === 0 && (
-        <p className="m-0 text-[13px] leading-5 text-muted">
-          This project declares no workflows. A voice agent does not need any — they are for work
-          that has to outlive the call that started it.
-        </p>
+        <p className="m-0 text-[13px] leading-5 text-muted">{NO_WORKFLOWS_DECLARED}</p>
       )}
     </Card>
   );
@@ -349,7 +343,7 @@ export function AgentApiDocs({
   // `createAgentClient` covers the listing and the front-door config, so this
   // component is one worked example of the thing it documents rather than a
   // second, hand-rolled way of asking the same two questions.
-  const agent = createAgentClient({ baseUrl: base, timeoutMs: LISTING_TIMEOUT_MS });
+  const agent = createAgentClient({ baseUrl: base, timeoutMs: AGENT_READ_TIMEOUT_MS });
 
   // The declared workflows, from the agent itself. `staleTime: Infinity` and no
   // retry: this read can boot a sandbox, so it happens once per pane open, and

@@ -122,8 +122,11 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [bulk, setBulk] = useState("");
-  /** What the LAST local refusal was — a managed name, or an illegal one. */
-  const [refusal, setRefusal] = useState<string | null>(null);
+  // A refusal per FORM, for the same reason there are two mutations: each is
+  // rendered under the control that produced it, and a paste naming a managed
+  // key must not print its reason under the Add card.
+  const [addRefusal, setAddRefusal] = useState<string | null>(null);
+  const [pasteRefusal, setPasteRefusal] = useState<string | null>(null);
 
   const secrets = useQuery({
     queryKey: queryKeys.secrets(project),
@@ -147,21 +150,23 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
     const key = normalizeName(name);
     if (key === "" || value === "" || add.isPending) return;
     if (!VALID_NAME.test(key)) {
-      setRefusal(`"${key}" isn't a valid environment variable name — letters, digits and _ only.`);
+      setAddRefusal(
+        `"${key}" isn't a valid environment variable name — letters, digits and _ only.`,
+      );
       return;
     }
     const { updates, managed } = splitManaged({ [key]: value });
     if (managed.length > 0) {
-      setRefusal(managedRefusal(managed));
+      setAddRefusal(managedRefusal(managed));
       return;
     }
-    setRefusal(null);
+    setAddRefusal(null);
     add.mutate(updates);
   };
 
   const submitBulk = () => {
     const { updates, managed } = splitManaged(parseSecrets(bulk));
-    setRefusal(managed.length > 0 ? managedRefusal(managed) : null);
+    setPasteRefusal(managed.length > 0 ? managedRefusal(managed) : null);
     if (Object.keys(updates).length === 0 || paste.isPending) return;
     paste.mutate(updates);
   };
@@ -211,7 +216,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
-                setRefusal(null);
+                setAddRefusal(null);
               }}
               onKeyDown={(e) => {
                 if (isEnterSubmit(e)) submitOne();
@@ -229,7 +234,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
               value={value}
               onChange={(e) => {
                 setValue(e.target.value);
-                setRefusal(null);
+                setAddRefusal(null);
               }}
               onKeyDown={(e) => {
                 if (isEnterSubmit(e)) submitOne();
@@ -248,7 +253,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
         >
           {add.isPending ? "Saving…" : "Add secret"}
         </button>
-        {refusal && <p className="m-0 text-xs text-err">{refusal}</p>}
+        {addRefusal && <p className="m-0 text-xs text-err">{addRefusal}</p>}
         {errorText(add.error) && <p className="m-0 text-xs text-err">{errorText(add.error)}</p>}
       </Card>
 
@@ -316,7 +321,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
           value={bulk}
           onChange={(e) => {
             setBulk(e.target.value);
-            setRefusal(null);
+            setPasteRefusal(null);
           }}
           placeholder="OPENAI_API_KEY=..."
           spellCheck={false}
@@ -329,6 +334,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
         >
           {paste.isPending ? "Saving…" : "Save secrets"}
         </button>
+        {pasteRefusal && <p className="m-0 text-xs text-err">{pasteRefusal}</p>}
         {errorText(paste.error) && <p className="m-0 text-xs text-err">{errorText(paste.error)}</p>}
       </Card>
     </PaneShell>
