@@ -15,17 +15,20 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   STATUS_ATTEMPT_TIMEOUT_MS,
 } from "./api-timeouts.ts";
-import type {
-  Account,
-  AgentLogsPage,
-  AuthConfig,
-  ChatSession,
-  GithubRepo,
-  GithubStatus,
-  GithubSyncResult,
-  ProjectData,
-  ProjectKind,
-  StudioStatus,
+import {
+  type Account,
+  type AgentLogsPage,
+  type AuthConfig,
+  type ChatSession,
+  type GithubRepo,
+  type GithubStatus,
+  type GithubSyncResult,
+  isChatMessages,
+  isProjectData,
+  isProjectNames,
+  type ProjectData,
+  type ProjectKind,
+  type StudioStatus,
 } from "./api-types.ts";
 
 // Re-exported for the same reason the types above are: one import per pane.
@@ -349,8 +352,12 @@ export const api = {
   ): (() => void) =>
     watchEventStream(key, `/studio${projectPath(project, "/events")}`, {
       onFrame: (frame) => {
-        if (frame.event === "project") handlers.onData(JSON.parse(frame.data) as ProjectData);
-        if (frame.event === "chat") handlers.onChat?.(JSON.parse(frame.data) as UIMessage[]);
+        // Guarded rather than cast: `frame.data` is `unknown` (the SDK's reader
+        // parses the JSON and claims nothing about it), and a frame that is not
+        // the shape this build expects is DROPPED — every frame here carries a
+        // whole snapshot, so the next one restates the same state.
+        if (frame.event === "project" && isProjectData(frame.data)) handlers.onData(frame.data);
+        if (frame.event === "chat" && isChatMessages(frame.data)) handlers.onChat?.(frame.data);
       },
       ...omitUndefined({ onOpen: handlers.onOpen }),
       onDown: handlers.onDown,
@@ -371,7 +378,7 @@ export const api = {
   ): (() => void) =>
     watchEventStream(key, "/studio/events", {
       onFrame: (frame) => {
-        if (frame.event === "projects") handlers.onData(JSON.parse(frame.data) as string[]);
+        if (frame.event === "projects" && isProjectNames(frame.data)) handlers.onData(frame.data);
       },
       ...omitUndefined({ onOpen: handlers.onOpen }),
       onDown: handlers.onDown,

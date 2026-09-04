@@ -8,39 +8,30 @@
  * this is the one stateful thing in that surface (a long-lived body, a
  * cancelation handle, and a reason taxonomy the caller's backoff depends on).
  * The routes themselves stay on `api` — see `watchProject`/`watchProjects`.
+ *
+ * **The FRAMING is the SDK's** (`readEventStream` from
+ * `@alexkroman1/aai/workflow-api`), and what is left here is the studio's own
+ * stream POLICY. This module used to hold a `drainEventStream` of its own —
+ * the third copy of that parser in the repo, and the one the SDK module's doc
+ * names as such; aai-ui's `_sse.ts` was deleted rather than kept when the
+ * reader moved into the SDK, and this is the same deletion. A stream parser is
+ * duplication that goes wrong quietly: the spec corners it gets right (`\r\n`
+ * and lone-`\r` delimiters, multi-line `data:`, a field split across two
+ * chunk boundaries by a re-chunking proxy) are invisible until a proxy in
+ * front of one deployment starts exercising them.
+ *
+ * Two consequences of adopting it, both wanted. The SDK's reader hands back
+ * `data` already JSON-parsed, so this package no longer casts a `JSON.parse`
+ * into shape at the three dispatch sites — a frame is narrowed by a real guard
+ * instead (`isProjectData` and friends in `api-types.ts`). And a frame with no
+ * `event:` name is dropped by the reader rather than here; the heartbeats this
+ * server sends are NAMED (`event: ping`) and reach `onFrame` with an
+ * `undefined` payload, which every dispatch ignores because it keys off the
+ * name it wants.
  */
 
-import { createParser } from "eventsource-parser";
+import { type EventStreamFrame, readEventStream } from "@alexkroman1/aai/workflow-api";
 import { ApiError } from "./api-error.ts";
-
-export type SseFrame = { event: string; data: string };
-
-/**
- * Read the stream to its end, delivering each complete named frame.
- * Parsing is `eventsource-parser` (the incremental parser the AI SDK
- * ecosystem runs on) rather than hand-rolled line splitting, so spec
- * corners — comments, CR line endings, multi-line data, fields split
- * across chunk boundaries by a re-chunking proxy — are its problem, not
- * ours. Unnamed or empty events (pings) are dropped; callers dispatch on
- * the event name.
- */
-async function drainEventStream(
-  body: ReadableStream<Uint8Array>,
-  onFrame: (frame: SseFrame) => void,
-): Promise<void> {
-  const parser = createParser({
-    onEvent: (message) => {
-      if (message.event && message.data) onFrame({ event: message.event, data: message.data });
-    },
-  });
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return;
-    parser.feed(decoder.decode(value, { stream: true }));
-  }
-}
 
 /**
  * Why an event stream went down. The distinction is load-bearing: a
@@ -62,7 +53,7 @@ export function watchEventStream(
   key: string,
   path: string,
   handlers: {
-    onFrame: (frame: SseFrame) => void;
+    onFrame: (frame: EventStreamFrame) => void;
     onOpen?: () => void;
     onDown: (reason: StreamDownReason) => void;
   },
@@ -81,7 +72,12 @@ export function watchEventStream(
       if (res.status === 401 || res.status === 403) reason = "auth";
       if (!(res.ok && res.body)) throw new ApiError(res.status, "Event stream unavailable");
       handlers.onOpen?.();
-      await drainEventStream(res.body, handlers.onFrame);
+      // The signal is passed as well as being the `fetch`'s: aborting the
+      // request already ends the read, but it lets the reader stop between
+      // frames rather than inside a `read()` that has to reject first.
+      for await (const frame of readEventStream(res.body, controller.signal)) {
+        handlers.onFrame(frame);
+      }
     } catch {
       // Aborted (caller unsubscribed) or failed — the finally decides.
     } finally {

@@ -1,0 +1,25 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "forms",
+  "epoch": 4,
+  "sha256": "ff4b507104721db7c0c0422a1fdf401bf7d91d7ade486ba5557c91cc52e2dc21",
+  "exports": [
+    "CheckboxField",
+    "Field",
+    "FieldShell",
+    "FileField",
+    "FileReadMode",
+    "FileValue",
+    "Form",
+    "FormProps",
+    "FormValues",
+    "NumberField",
+    "SelectField",
+    "SubmitButton",
+    "TextAreaField",
+    "TextField",
+    "WorkflowFieldKind",
+    "WorkflowFields",
+    "fieldKindFor"
+  ]
+}

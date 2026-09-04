@@ -16,9 +16,9 @@
 //   line of its own, because a tail that silently skips is indistinguishable
 //   from an agent that went quiet.
 
+import { AutoScroll } from "@alexkroman1/aai-ui";
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { StickToBottom } from "use-stick-to-bottom";
 import { type AgentLogLine, type AgentLogsPage, api } from "./api.ts";
 import { errorText } from "./api-error.ts";
 import { SEG_GROUP, segItemClass } from "./segmented.ts";
@@ -167,20 +167,27 @@ export function LogsView(props: LogsViewProps) {
       {/*
        * Follow the bottom, but only while the reader is there: scrolling up to
        * read something is exactly when a forced scroll is most annoying. That
-       * is `use-stick-to-bottom`'s job — the same component the chat transcript
-       * mounts — rather than this pane's, and the difference is a ResizeObserver
-       * it owns: the hand-rolled version re-pinned only when a LINE arrived, so
-       * a line that wrapped, or a monospace font that finished loading, grew the
-       * content under a pane that thought it was already at the bottom.
+       * is `<AutoScroll>`'s job — `aai-ui`'s one owner of the effect, and the
+       * same component the chat transcript mounts — rather than this pane's,
+       * and the difference is a ResizeObserver it owns: the hand-rolled version
+       * re-pinned only when a LINE arrived, so a line that wrapped, or a
+       * monospace font that finished loading, grew the content under a pane
+       * that thought it was already at the bottom.
        *
        * `instant` at both ends because this is a tail: a spring animation on a
-       * log that appends every second never settles.
+       * log that appends every second never settles. `scrollClassName` is
+       * passed because the default hides the scrollbar, and a reader scrolling
+       * back through 5000 lines wants to see where they are.
        */}
-      <StickToBottom className="min-h-0 flex-1" initial="instant" resize="instant">
-        <StickToBottom.Content className="px-4 py-3 font-mono text-[11px] leading-[1.6]">
-          <LogsBody slug={slug} target={target} rows={rows} running={running} />
-        </StickToBottom.Content>
-      </StickToBottom>
+      <AutoScroll
+        className="min-h-0 flex-1"
+        contentClassName="px-4 py-3 font-mono text-[11px] leading-[1.6]"
+        scrollClassName="overflow-y-auto"
+        initial="instant"
+        resize="instant"
+      >
+        <LogsBody slug={slug} target={target} rows={rows} running={running} />
+      </AutoScroll>
 
       <footer className="flex-none border-t border-line bg-panel px-4 py-1.5 text-[10px] text-subtle">
         Recent output only — an agent's log lives in its sandbox and goes when the sandbox does.

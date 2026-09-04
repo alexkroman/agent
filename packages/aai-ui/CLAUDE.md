@@ -268,6 +268,25 @@ without the frame. The three copies had already drifted, one dropping
 and on this evidence it is the second — worth revisiting before the release
 rather than leaving as an allowlist entry nobody reads.
 
+## Three exports whose consumer is a TOOL, not an agent page
+
+`useFlash`, `useCopy` and `fieldKindFor` were each published because the studio
+front-end had the duplicate: two hand-rolled flashes plus the one inside
+`components/url-chips.tsx` (which swallowed a refused clipboard write, so the
+chip did nothing visible), and a hand-kept mirror of `SchemaField`'s
+control-selection switch. Each module doc carries its own argument; the
+capability choice is argued in the entrypoint that took it — `components` for
+the two hooks (they render nothing and read nothing off the agent, so `hooks` is
+the wrong promise), `forms` for the classifier (what it names is a FIELD).
+
+**Their unexercised names are in `template-api-allowlist.json` on purpose.**
+`UseCopyResult` and `UseFlashResult` are return types a page gets by inference
+— only a component taking one as a PROP names it. `fieldKindFor` and
+`WorkflowFieldKind` are exercised by NO template and should not be: a page
+renders `<WorkflowFields>`, which applies the rule for it. Their reader is a
+tool that DOCUMENTS a form — the studio's API pane — which is a case that gate's
+own dichotomy has no room for.
+
 ## `AutoScroll` is the only scroll-pinning implementation
 
 `components/auto-scroll.tsx` wraps `use-stick-to-bottom` (pin to the bottom as

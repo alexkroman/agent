@@ -25,6 +25,7 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { useWorkflows } from "../use-workflows.ts";
+import { fieldKindFor, schemaTypeOf } from "../workflow-field-kind.ts";
 import { useDeclareFieldsPending } from "./_form-readiness.ts";
 import { CheckboxField, FileField, NumberField, SelectField, TextField } from "./form.tsx";
 
@@ -143,29 +144,25 @@ function SchemaField({
   const hint = property.description === undefined ? {} : { hint: property.description };
   const defaults = property.default === undefined ? {} : { defaultValue: String(property.default) };
 
-  // Before the enum and the type switch, because an upload property is a plain
-  // string in the schema and would otherwise render as a text box asking a
-  // person to type an id no person has.
-  if (upload) {
-    return <FileField name={name} label={label} required={required} upload {...hint} />;
-  }
-
-  if (Array.isArray(property.enum) && property.enum.length > 0) {
-    return (
-      <SelectField
-        name={name}
-        label={label}
-        required={required}
-        options={property.enum.map((value) => String(value))}
-        {...hint}
-        {...defaults}
-      />
-    );
-  }
-
-  const type = typeOf(property);
-  switch (type) {
-    case "boolean":
+  // WHICH control is `fieldKindFor`'s decision, published so the studio's API
+  // pane documents this exact rule rather than a hand-kept mirror of it — the
+  // ordering argument (an upload before the type; an enum before it too) lives
+  // there, in one place. What stays here is how each kind is DRAWN.
+  switch (fieldKindFor(property, { upload })) {
+    case "file":
+      return <FileField name={name} label={label} required={required} upload {...hint} />;
+    case "select":
+      return (
+        <SelectField
+          name={name}
+          label={label}
+          required={required}
+          options={(property.enum ?? []).map((value) => String(value))}
+          {...hint}
+          {...defaults}
+        />
+      );
+    case "checkbox":
       return (
         <CheckboxField
           name={name}
@@ -175,32 +172,24 @@ function SchemaField({
         />
       );
     case "number":
-    case "integer":
       return (
         <NumberField
           name={name}
           label={label}
           required={required}
-          step={type === "integer" ? 1 : "any"}
+          // The one detail past the kind: integer and number are one control,
+          // and only the step differs.
+          step={schemaTypeOf(property) === "integer" ? 1 : "any"}
           {...hint}
           {...defaults}
         />
       );
-    case "string":
+    case "text":
       return <TextField name={name} label={label} required={required} {...hint} {...defaults} />;
     default:
       // See the module doc: no honest control, so no control.
       return null;
   }
-}
-
-/** A property's type, taking the first non-null member of a union. */
-function typeOf(property: JsonSchemaProperty): string | undefined {
-  const { type } = property;
-  if (typeof type === "string") return type;
-  // `["string", "null"]` is how an optional-and-nullable field converts; the
-  // control is the same one the non-null half wants.
-  return Array.isArray(type) ? type.find((member) => member !== "null") : undefined;
 }
 
 /** The listing's `unknown` schema as the object shape this reads, when it is one. */

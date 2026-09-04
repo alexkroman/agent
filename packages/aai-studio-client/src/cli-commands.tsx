@@ -4,8 +4,8 @@
 // the CLI round-trip is not discoverable from the UI otherwise, so the
 // commands are spelled out with the project name already filled in.
 
+import { useCopy } from "@alexkroman1/aai-ui";
 import { CopyLine } from "./snippet.tsx";
-import { useCopy } from "./use-copy.ts";
 
 const CLI_PACKAGE = "@alexkroman1/aai-cli";
 

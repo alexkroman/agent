@@ -5,12 +5,12 @@
 // scroll.) Server refreshes (agent edits) update the buffer unless the
 // user has unsaved changes.
 
+import { useFlash } from "@alexkroman1/aai-ui";
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
 import clsx from "clsx";
 import { errorText } from "./api-error.ts";
 import type { FileBufferState } from "./file-drafts.ts";
-import { useFlash } from "./use-flash.ts";
 
 const extensions = [javascript({ typescript: true })];
 

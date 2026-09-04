@@ -133,6 +133,11 @@ export {
   type UseConversationResult,
   useConversation,
 } from "./use-conversation.ts";
+// A clipboard write that reports a REFUSED one instead of doing nothing
+// visible, keyed by the copied text so one row's "Copied" does not light up
+// every button. Built on `useFlash` below; three hand-rolled copies preceded
+// the pair, this package's own URL chips among them.
+export { type UseCopyResult, useCopy } from "./use-copy.ts";
 // An upload id a run PRODUCED, as a URL a DOM element accepts — with the
 // object-URL revoke and the stale-run guard that two templates had each
 // re-derived.
@@ -141,6 +146,10 @@ export {
   type UseDownloadUrlResult,
   useDownloadUrl,
 } from "./use-download-url.ts";
+// A value that shows itself for a moment and clears itself — one live timer,
+// none after unmount. The primitive under `useCopy`, public in its own right
+// for the "Saved" note a chrome writes beside an editor.
+export { type UseFlashResult, useFlash } from "./use-flash.ts";
 // The opaque, storage-backed key `useWorkflowSubmit` looks a run up by. It
 // mints one of these for itself now, so this is for the page that wants a
 // different one — an account's id, or a key that outlives the tab.
@@ -195,6 +204,10 @@ export {
 // input schema. It is in the rendered signature of both submit hooks, so it is
 // a name a page can read rather than one it has to re-derive.
 export type { SubmitInputOf } from "./workflow-def-types.ts";
+// The control-selection rule `<WorkflowFields>` itself runs, published so a
+// reader documenting the form-to-JSON correspondence asks the component's own
+// decision rather than mirroring the switch by hand.
+export { fieldKindFor, type WorkflowFieldKind } from "./workflow-field-kind.ts";
 // The five default status lines, so a page overrides the one word it has a
 // better term for instead of restating the union.
 export { WORKFLOW_STATUS_LABELS } from "./workflow-status-labels.ts";

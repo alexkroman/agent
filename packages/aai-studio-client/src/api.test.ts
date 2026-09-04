@@ -354,6 +354,48 @@ describe("api.watchProject", () => {
     ]);
   });
 
+  test("a frame that is not the shape this build expects is DROPPED, stream intact", async () => {
+    // The three casts this dispatch used to make (`JSON.parse(frame.data) as
+    // ProjectData`) asserted a shape nothing had checked, so a malformed or
+    // wrong-shaped payload reached the panes as one — `files` undefined, and a
+    // Code pane that renders nothing. Guarded, the frame is ignored and the
+    // NEXT one still arrives, which is what a stream of whole snapshots can do
+    // and a torn-down connection cannot.
+    stubFetch(() =>
+      sseResponse([
+        // Unparsable JSON: the SDK's reader yields `data: undefined`.
+        "event: project\ndata: {oops\n\n",
+        // Parsable, wrong shape — `files` is not a record of strings.
+        'event: project\ndata: {"files":"nope"}\n\n',
+        'event: project\ndata: {"files":{},"previewStale":true}\n\n',
+      ]),
+    );
+    const seen: unknown[] = [];
+    const down = vi.fn();
+    api.watchProject("k", "proj", { onData: (d) => seen.push(d), onDown: down });
+    await vi.waitFor(() => expect(down).toHaveBeenCalledOnce());
+    expect(seen).toEqual([{ files: {}, previewStale: true }]);
+  });
+
+  test("a chat frame that is not a message list is dropped", async () => {
+    stubFetch(() =>
+      sseResponse([
+        // A message with no `id` — the key React would render it under.
+        'event: chat\ndata: [{"role":"user","parts":[]}]\n\n',
+        'event: chat\ndata: [{"id":"m1","role":"user","parts":[]}]\n\n',
+      ]),
+    );
+    const chats: unknown[] = [];
+    const down = vi.fn();
+    api.watchProject("k", "proj", {
+      onData: () => undefined,
+      onChat: (m) => chats.push(m),
+      onDown: down,
+    });
+    await vi.waitFor(() => expect(down).toHaveBeenCalledOnce());
+    expect(chats).toEqual([[{ id: "m1", role: "user", parts: [] }]]);
+  });
+
   test("chat frames reach onChat", async () => {
     stubFetch(() =>
       sseResponse([
@@ -442,5 +484,17 @@ describe("api.watchProjects", () => {
     // The closed stream reporting down is what says every frame was read.
     await vi.waitFor(() => expect(down).toHaveBeenCalledOnce());
     expect(lists).toEqual([["a"], ["a", "b"]]);
+  });
+
+  test("a list that is not names is dropped", async () => {
+    // Fully checkable, unlike the two shapes above — so it is fully checked.
+    stubFetch(() =>
+      sseResponse(["event: projects\ndata: [1,2]\n\n", 'event: projects\ndata: ["a"]\n\n']),
+    );
+    const lists: string[][] = [];
+    const down = vi.fn();
+    api.watchProjects("k", { onData: (names) => lists.push(names), onDown: down });
+    await vi.waitFor(() => expect(down).toHaveBeenCalledOnce());
+    expect(lists).toEqual([["a"]]);
   });
 });

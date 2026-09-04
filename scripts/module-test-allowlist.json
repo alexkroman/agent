@@ -198,8 +198,6 @@
     "packages/aai-studio-client/src/send-button.tsx": 1,
     "packages/aai-studio-client/src/settings-card.tsx": 1,
     "packages/aai-studio-client/src/snippet.tsx": 1,
-    "packages/aai-studio-client/src/use-copy.ts": 1,
-    "packages/aai-studio-client/src/use-flash.ts": 1,
     "packages/aai-studio-client/src/use-message-queue.ts": 1,
     "packages/aai-studio-server/src/_test-combined.ts": 1,
     "packages/aai-studio-server/src/studio-context.ts": 1,
