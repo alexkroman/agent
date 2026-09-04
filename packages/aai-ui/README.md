@@ -191,10 +191,10 @@ bundle.
 The [API reference](https://alexkroman.github.io/agent/) groups by TypeScript
 kind. This is the same surface grouped by what it is for.
 
-**Mounts** — `mountClient()`, `mountPage()`, the config each takes and the handle each
-returns (`ClientConfig`, `ClientHandle`, `PageConfig`, `PageHandle`).
-`fetchClientConfig()` reads the agent's declared `name`/`greeting` on a page,
-which `mountClient()` does for itself.
+**Mounts** — `mountClient()`, `mountPage()`, the config each takes and the
+handle each returns (`ClientConfig`, `ClientHandle`, `PageConfig`,
+`PageHandle`). `fetchClientConfig()` reads the agent's declared
+`name`/`greeting` on a page, which `mountClient()` does for itself.
 
 **The live call** — `useSession()` for the whole snapshot plus the controls
 (`start`, `toggle`, `cancel`, `reset`, `resetState`, `restart`, `disconnect`,
