@@ -195,9 +195,8 @@ and the section above admits how it gets made: a judgement from memory, where a
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.mjs` and in the CI check job) closes that.
 The **capabilities** — named slices of the authoring API, each
-declared by a file under `<package>/contracts/entrypoints/` that may contain
-nothing but
-`export { … } from "<a published subpath>"` — get a report of their own, and what
+declared by a file under `<package>/contracts/entrypoints/` re-exporting
+from a published subpath — get a report of their own, and what
 is committed is that report's hash plus its export list, at
 `contracts/epochs/<capability>/v<N>.json`. When a capability's shape moves the
 hash stops matching and the change cannot land without being CLASSIFIED:

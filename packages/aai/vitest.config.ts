@@ -16,7 +16,7 @@ export default defineConfig({
     // also exclude (pentest, run-code-sandbox, integration.test.ts) had all been
     // deleted, and nothing noticed — which is the failure mode a convention avoids.
     exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
-    setupFiles: [...sharedSetupFiles, "./src/sdk/_test-matchers.ts"],
+    setupFiles: [...sharedSetupFiles, "./src/host/_test-matchers.ts"],
     coverage: {
       // `contracts/` is neither production source nor test infrastructure: the
       // capability roots are pure re-export lists and the compatibility

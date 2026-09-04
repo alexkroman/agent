@@ -226,7 +226,13 @@
                   "node:trace_events": "Not available in Firecracker guest VMs.",
                   "node:v8": "Not available in Firecracker guest VMs.",
                   "node:wasi": "Not available in Firecracker guest VMs."
-                }
+                },
+                "patterns": [
+                  {
+                    "group": ["node:*"],
+                    "message": "sdk/ must have zero node: imports \u2014 a Node builtin belongs in host/. The named-path list below cannot state this: it enumerated eleven builtins while node:fs, node:path, node:util, node:url and node:crypto were all reachable, which is how _test-matchers.ts sat here importing node:util."
+                  }
+                ]
               }
             }
           }
