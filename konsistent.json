@@ -29,7 +29,7 @@
     },
     {
       "name": "package-vitest-config",
-      "description": "Each package's vitest.config.ts spreads the shared config rather than re-declaring it: writing test:{} without ...sharedConfig.test REPLACES the shared object, which is how every package silently lost `reporters`.",
+      "description": "Each package's vitest.config.ts spreads the shared config rather than re-declaring it: writing test:{} without ...sharedConfig.test REPLACES the shared object, which is how every package silently lost `reporters`. `sharedCoverageExclude` is required for the same reason one level down: it is the list that keeps test INFRASTRUCTURE — `_test-utils.ts`, mocks, fixtures, setup files — out of the measurement, so a package that forgets it counts its own harness as production source, and the number it reports is part code and part scaffolding. That is worse than a wrong number, because the per-package coverage FLOOR is ratcheted up against the measured actual: a config missing this import inflates the floor it is then gated on, and the only symptom is a percentage that still looks plausible. All ten configs import it today.",
       "paths": "packages/{packageName}/vitest.config.ts",
       "must": {
         "import": [
@@ -40,13 +40,17 @@
           {
             "name": "sharedConfig",
             "from": "../../vitest.shared.ts"
+          },
+          {
+            "name": "sharedCoverageExclude",
+            "from": "../../vitest.shared.ts"
           }
         ]
       }
     },
     {
       "name": "publishable-package-layout",
-      "description": "The four published packages additionally carry a README (npm's landing page), a tsconfig.build.json (the declaration emit, and the only program that rejects a cross-package relative import) and a tsdown.config.ts.",
+      "description": "The four published packages additionally carry a README (npm's landing page), a tsconfig.build.json (the declaration emit, and the only program that rejects a cross-package relative import) and a tsdown.config.ts. LICENSE is here because npm packs only the license file in the PACKAGE's own directory and never an ancestor's, so a published package without its own copy ships declaring no terms at all — which registries and license scanners read as all-rights-reserved — and `npm publish` only WARNS. CHANGELOG.md is what changesets writes on every release, so its absence means a package is being versioned while its history stays behind in the repo. `scripts/check-publish-names.mjs` keeps the half no predicate can state — the `license` FIELD and the `sideEffects` CLAIM, whose wrong value breaks a consumer rather than our publish — and the two are deliberately not merged: whether a file exists is a path check, whether a field says the right thing is not.",
       "paths": [
         "packages/aai",
         "packages/aai-ui",
@@ -58,7 +62,9 @@
         "haveFiles": [
           "README.md",
           "tsconfig.build.json",
-          "tsdown.config.ts"
+          "tsdown.config.ts",
+          "LICENSE",
+          "CHANGELOG.md"
         ]
       }
     },
@@ -75,7 +81,7 @@
     },
     {
       "name": "core-package-boundary",
-      "description": "packages/aai is the base of the dependency graph \u2014 every other package depends on it and it depends on none of them.",
+      "description": "packages/aai is the base of the dependency graph — every other package depends on it and it depends on none of them. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": [
         "packages/aai/src/*.ts",
         "packages/aai/src/**/*.ts"
@@ -88,6 +94,8 @@
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-runtime",
           "@alexkroman1/aai-runtime/*",
+          "aai-evals",
+          "aai-evals/*",
           "aai-guest",
           "aai-guest/*",
           "aai-server",
@@ -95,16 +103,23 @@
           "aai-studio-client",
           "aai-studio-client/*",
           "aai-studio-server",
-          "aai-studio-server/*"
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
         ]
       }
     },
     {
       "name": "cli-package-boundary",
-      "description": "The CLI must never import from the server or the guest. The one edge between them runs the other way (aai-guest imports the CLI's public build-hook subpaths), and it is a hard boundary because the CLI ships to users while the server and guest are private platform code.",
-      "paths": ["packages/aai-cli/src/*.ts", "packages/aai-cli/src/**/*.ts"],
+      "description": "The CLI must never import from the server or the guest. The one edge between them runs the other way (aai-guest imports the CLI's public build-hook subpaths), and it is a hard boundary because the CLI ships to users while the server and guest are private platform code. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
+      "paths": [
+        "packages/aai-cli/src/*.ts",
+        "packages/aai-cli/src/**/*.ts"
+      ],
       "mustNot": {
         "importFrom": [
+          "aai-evals",
+          "aai-evals/*",
           "aai-guest",
           "aai-guest/*",
           "aai-server",
@@ -112,28 +127,40 @@
           "aai-studio-client",
           "aai-studio-client/*",
           "aai-studio-server",
-          "aai-studio-server/*"
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
         ]
       }
     },
     {
       "name": "guest-package-boundary",
-      "description": "The guest never imports server code \u2014 that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source.",
-      "paths": ["packages/aai-guest/src/*.ts", "packages/aai-guest/src/**/*.ts"],
+      "description": "The guest never imports server code — that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source. The BARE `@alexkroman1/aai-cli` specifier is denied and its subpaths are not, which is the one asymmetric entry in this matrix: the guest may use the CLI's four public build-hook subpaths (`/worker-bundler`, `/client-bundler`, `/typecheck`, `/project-config`) and nothing else, and konsistent has no allow-list form to say so — a deny of the bare name is the strongest half of that rule it can express. Two things follow. Every real call site is a DYNAMIC `await import()`, which konsistent cannot see at all, so what this entry actually buys is keeping a new STATIC bare import out; and the four-subpath allow-list belongs in a `scripts/guard-invariants-rules-*.mjs` rule, where a pattern can say which subpaths are in. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
+      "paths": [
+        "packages/aai-guest/src/*.ts",
+        "packages/aai-guest/src/**/*.ts"
+      ],
       "mustNot": {
         "importFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-evals",
+          "aai-evals/*",
           "aai-server",
           "aai-server/*",
           "aai-studio-client",
           "aai-studio-client/*",
           "aai-studio-server",
-          "aai-studio-server/*"
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
         ]
       }
     },
     {
       "name": "browser-package-boundary",
-      "description": "aai-ui is a browser client. It may depend on the core SDK and nothing else in the workspace \u2014 a platform or CLI import here would pull server code into a browser bundle.",
+      "description": "aai-ui is a browser client. It may depend on the core SDK and nothing else in the workspace — a platform or CLI import here would pull server code into a browser bundle. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": [
         "packages/aai-ui/src/*.ts",
         "packages/aai-ui/src/*.tsx",
@@ -146,6 +173,8 @@
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-runtime",
           "@alexkroman1/aai-runtime/*",
+          "aai-evals",
+          "aai-evals/*",
           "aai-guest",
           "aai-guest/*",
           "aai-server",
@@ -153,13 +182,15 @@
           "aai-studio-client",
           "aai-studio-client/*",
           "aai-studio-server",
-          "aai-studio-server/*"
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
         ]
       }
     },
     {
       "name": "runtime-package-boundary",
-      "description": "aai-runtime is the published Node host runtime. It sits one level above the core SDK and below everything else: it may import @alexkroman1/aai and nothing else in the workspace. The CLI, the guest and the platform all depend on it, so an import in this direction would close a cycle \u2014 and it ships to users, so a private-package import here would be unresolvable in a consumer's install.",
+      "description": "aai-runtime is the published Node host runtime. It sits one level above the core SDK and below everything else: it may import @alexkroman1/aai and nothing else in the workspace. The CLI, the guest and the platform all depend on it, so an import in this direction would close a cycle — and it ships to users, so a private-package import here would be unresolvable in a consumer's install. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": [
         "packages/aai-runtime/src/*.ts",
         "packages/aai-runtime/src/**/*.ts"
@@ -170,6 +201,8 @@
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-ui",
           "@alexkroman1/aai-ui/*",
+          "aai-evals",
+          "aai-evals/*",
           "aai-guest",
           "aai-guest/*",
           "aai-server",
@@ -177,24 +210,39 @@
           "aai-studio-client",
           "aai-studio-client/*",
           "aai-studio-server",
-          "aai-studio-server/*"
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
         ]
       }
     },
     {
       "name": "server-package-boundary",
-      "description": "aai-server resolves aai-guest's BUILT ARTIFACT (aai-guest/harness, via createRequire().resolve) and must never import guest source. That is the other half of guest-package-boundary, and it was the half nothing checked: the guest is its own package precisely so the two cannot share modules, and a source import here would make the sandbox harness a library the server links against rather than an artifact it launches.",
-      "paths": ["packages/aai-server/src/*.ts", "packages/aai-server/src/**/*.ts"],
+      "description": "aai-server resolves aai-guest's BUILT ARTIFACT (aai-guest/harness, via createRequire().resolve) and must never import guest source. That is the other half of guest-package-boundary, and it was the half nothing checked: the guest is its own package precisely so the two cannot share modules, and a source import here would make the sandbox harness a library the server links against rather than an artifact it launches. The rest of the list is the same boundary from the other three sides: the CLI ships to users and reaches the platform only by calling its HTTP API, aai-studio-client is a browser bundle whose modules assume a DOM, and aai-studio-server sits ABOVE this package (158 import sites, every one of them a subpath of `aai-server`) so an import in this direction would close a cycle between the two halves of one deployment. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
+      "paths": [
+        "packages/aai-server/src/*.ts",
+        "packages/aai-server/src/**/*.ts"
+      ],
       "mustNot": {
         "importFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "aai-evals",
+          "aai-evals/*",
           "aai-guest",
-          "aai-guest/*"
+          "aai-guest/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
         ]
       }
     },
     {
       "name": "studio-browser-boundary",
-      "description": "aai-studio-client is a browser bundle. It may import the core SDK and aai-ui; a platform, CLI or host-runtime import here would pull server code \u2014 and server credentials handling \u2014 into a bundle served to browsers. Same hazard as browser-package-boundary, for the repo's other front-end.",
+      "description": "aai-studio-client is a browser bundle. It may import the core SDK and aai-ui; a platform, CLI or host-runtime import here would pull server code — and server credentials handling — into a bundle served to browsers. Same hazard as browser-package-boundary, for the repo's other front-end. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": [
         "packages/aai-studio-client/src/*.ts",
         "packages/aai-studio-client/src/*.tsx",
@@ -207,18 +255,116 @@
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-runtime",
           "@alexkroman1/aai-runtime/*",
+          "aai-evals",
+          "aai-evals/*",
           "aai-guest",
           "aai-guest/*",
           "aai-server",
           "aai-server/*",
           "aai-studio-server",
-          "aai-studio-server/*"
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ]
+      }
+    },
+    {
+      "name": "studio-server-package-boundary",
+      "description": "aai-studio-server had NO convention at all, which made it the largest unguarded package in the repo: it is the composition root every deployment runs, so an import it should not have is the one that reaches production. Its one legitimate workspace edge downward is aai-server — the repo's biggest, 158 import sites across all 36 of that package's subpath exports — plus the SDK, the host runtime and aai-ui. Everything else is denied for a reason of its own: aai-guest is the sandbox harness, which this package must LAUNCH as a built artifact and never link against (the same rule server-package-boundary states from the other side, and the reason the guest is its own package); aai-studio-client is a browser bundle whose modules assume a DOM and whose `dist/` this package serves rather than imports; the CLI ships to users, and the studio reaches its build hooks through the GUEST, which is where that edge is declared; and aai-templates is shipped product source a user scaffolds, not a library — the studio materializes a template by writing files, so an import would make a user’s starting point a runtime dependency of the platform. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
+      "paths": [
+        "packages/aai-studio-server/src/*.ts",
+        "packages/aai-studio-server/src/**/*.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-templates",
+          "aai-templates/*"
+        ]
+      }
+    },
+    {
+      "name": "evals-package-boundary",
+      "description": "aai-evals is the behaviour eval tier: it drives a real agent through the published surface and grades what comes back, which is only evidence about what a USER gets if it reaches the agent the way a user does. Its legitimate edges are the SDK, `@alexkroman1/aai-runtime/eval`, and `aai-studio-client/starters` — the starter list the studio itself ships, so the starter evals grade the same set the product offers rather than a copy that drifts. Everything else is denied because reaching past the published surface is how an eval starts passing for the wrong reason: importing aai-server or aai-studio-server would let it assert against platform internals no agent author can see, aai-guest would have it inspect the sandbox rather than the session, and the CLI would let it drive a build instead of an agent. The bare `aai-studio-client` specifier is denied while its subpaths are not, the same asymmetry guest-package-boundary carries and for the same reason: the edge is ONE subpath, konsistent has no allow-list form, and denying the bare name is the strongest half of that available here. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
+      "paths": [
+        "packages/aai-evals/src/*.ts",
+        "packages/aai-evals/src/**/*.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ]
+      }
+    },
+    {
+      "name": "sdk-host-boundary",
+      "description": "`packages/aai/src/sdk/` is the AUTHORING half of the SDK and `host/` is the runtime half, and the one-way dependency between them is the reason a user's `agent.ts` can import `@alexkroman1/aai` without pulling a Node host into a browser bundle. AGENTS.md and the package guide both state the boundary; nothing structural held it — biome's rule there is a `node:` DENY LIST, which catches a builtin and not a relative import of a module that happens to use one. sdk SOURCE is already clean: the only files reaching across are four SPECS (`_map-stream.test.ts`, `map-concurrent.test.ts`, `step-errors.test.ts`, `system-prompt.test.ts`), which take `tick`, `makeConfig` and an ffmpeg error type from the host side, and a test importing a test helper is not the hazard — hence the two `*.test.ts` exclusions. `../internal.ts` is deliberately NOT on the deny list: `sdk/protocol-commands.ts` takes `capToolResult` from it, so denying it would report a legitimate import as a violation, and `internal.ts` is the package's own internal barrel rather than the host runtime. What is denied is the host tree at every depth sdk reaches from, plus `host-internal.ts`, the barrel that re-exports it — an author who cannot reach `host/` directly should not get there through the aggregate either.",
+      "paths": [
+        "packages/aai/src/sdk/*.ts",
+        "packages/aai/src/sdk/**/*.ts",
+        "!packages/aai/src/sdk/*.test.ts",
+        "!packages/aai/src/sdk/**/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../host/*",
+          "../../host/*",
+          "../../../host/*",
+          "../host-internal.ts",
+          "../../host-internal.ts"
+        ]
+      }
+    },
+    {
+      "name": "template-authoring-boundary",
+      "description": "A template is not repo source — it is shipped product a user scaffolds into their own project, so every import in one has to resolve in an install that holds the four published packages and nothing else. Two failure classes follow, and neither is visible to the gates that already read this tree. An INTERNAL subpath (`@alexkroman1/aai/internal`, `/host-internal`, `@alexkroman1/aai-runtime/internal`, `@alexkroman1/aai-ui/internal`) resolves perfectly — it is a real export of a real dependency — so `check:template-types` compiles the template clean while the example now depends on a surface that sits outside EVERY epoch contract, i.e. one that may change shape in a patch and break the user who copied it. A PRIVATE package (aai-server, aai-guest, aai-studio-*, aai-templates, aai-evals) resolves here in the workspace, through pnpm's links, and is simply absent from a user's install — the same green-locally/red-for-the-user asymmetry, one step further along. The SCAFFOLD is deliberately out of scope, and not as an exemption: it ships no authoring source to hold to the rule. Its `agent.ts` is materialized from a TEMPLATE by `aai init` and is not in the tree, so the only TypeScript there is `global.d.ts` and two build configs — a pattern over it matches three files and has no SUBJECT, which is the shape that reads as enforced while checking nothing. Two mechanical notes from getting it wrong. konsistent globs and git pathspecs disagree about `**`: `scaffold/**/*.ts` matched those three under konsistent and ZERO under `git ls-files`, because a pathspec is fnmatch without FNM_PATHNAME and the literal slash makes a subdirectory mandatory — the trap AGENTS.md records against `check:file-length`'s `scripts/` glob, so run a glob rather than reading it, and run it with the tool that will consume it. And `konsistent-config.test.ts`'s prefix check reads a SHALLOW file sample that starts at `packages/*/src/`, so a `paths` entry pointing anywhere else fails there whether or not konsistent resolves it.",
+      "paths": [
+        "packages/aai-templates/templates/**/*.ts",
+        "packages/aai-templates/templates/**/*.tsx"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai/internal",
+          "@alexkroman1/aai/host-internal",
+          "@alexkroman1/aai-runtime/internal",
+          "@alexkroman1/aai-ui/internal",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
         ]
       }
     },
     {
       "name": "llm-providers",
-      "description": "Every LLM provider module exports the same three-symbol shape: a kind tag, the env var its key is read from, and the factory. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
+      "description": "Every LLM provider module exports the same three-symbol shape: a kind tag, the env var its key is read from, and the factory. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols — factory, options interface and resolve*Settings helper all carry the stage — so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage — which is why its modules are still excluded from the constant templates here. The factory signature, the options `extend`, the descriptor-purity check and the declaration order carry the same argument as `stt-providers` — read it there; what differs here is the stage in the templates, and that the options interface extends `ModelOptions` rather than `ProviderCredentialOptions` directly: this stage is reached by naming one model id, so `ModelOptions` is the shared `model` field ON TOP of the credential options, and a vendor that extended the credential type alone would silently lose it. There is no resolve*Settings helper on this stage — an LLM descriptor is handed to the Vercel AI SDK whole, with no host-side defaults to fold in.",
       "paths": [
         "packages/aai/src/sdk/providers/llm/{providerId}.ts",
         "!packages/aai/src/sdk/providers/llm/assemblyai.ts",
@@ -233,16 +379,32 @@
           "${providerId.toConstantCase()}_API_KEY_ENV"
         ],
         "exportFunctions": [
-          "${providerId.toCamelCase()}Llm"
+          {
+            "name": "${providerId.toCamelCase()}Llm",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}LlmOptions"
+            ],
+            "returnValueOfType": "LlmProvider"
+          }
         ],
         "exportInterfaces": [
-          "${providerId.toPascalCase()}LlmOptions"
+          {
+            "name": "${providerId.toPascalCase()}LlmOptions",
+            "extend": "ModelOptions"
+          }
+        ],
+        "importFromExternals": false,
+        "useDeclarationOrder": [
+          "${providerId.toConstantCase()}_KIND",
+          "${providerId.toConstantCase()}_API_KEY_ENV",
+          "${providerId.toPascalCase()}LlmOptions",
+          "${providerId.toCamelCase()}Llm"
         ]
       }
     },
     {
       "name": "stt-providers",
-      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
+      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols — factory, options interface and resolve*Settings helper all carry the stage — so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage — which is why its modules are still excluded from the constant templates here. The factory's SIGNATURE is checked, not just its name. A descriptor factory that took the wrong options type, or returned something other than the stage type, would still export the right symbol — and the whole value of the shape is that the four stages are interchangeable at the seam a user writes against, which a name alone does not buy. `resolve*SttSettings` is checked on its PARAMETER only: it returns an inline object of that stage's own filled-in defaults, so there is no shared name to require and pinning one would mean inventing a type per vendor to satisfy a gate. The options interface must `extend ProviderCredentialOptions` — that is where `apiKey` and `apiKeyEnv` live, so an interface redeclaring them by hand takes a vendor out of the one credential story every stage shares, and does it invisibly, because the fields are still THERE. `importFromExternals: false` is the check behind this module family's own claim that a descriptor \"flows through the bundle → server → runtime pipeline without importing the vendor SDK\": the reason a factory returns a descriptor at all is that a user's agent bundle must not drag `@deepgram/sdk` into the guest sandbox, and the day someone reaches for the vendor client here it will work locally and grow the bundle for everyone. Note honestly what it does NOT see: TYPE-ONLY imports. `import type { ZodType } from \"zod\"` in a provider module produces no diagnostic, because konsistent's import predicates ignore type imports — which is defensible (a type import leaves no bytes in the bundle) and means biome's `noUndeclaredDependencies` stays the backstop for a vendor package that is not a dependency at all. `useDeclarationOrder` fixes the reading order every one of these modules already follows — kind tag, env var, options, factory, resolver — so a reader who has read one has read them all, and a new vendor cannot arrive with its factory above the options it takes. The interleaved `*_DEFAULT_*` constants are deliberately absent from the list and therefore unconstrained: each sits beside the option it defaults, which is where it is useful, and listing them would be a rule about a placement no reader benefits from.",
       "paths": [
         "packages/aai/src/sdk/providers/stt/{providerId}.ts",
         "!packages/aai/src/sdk/providers/stt/assemblyai.ts",
@@ -255,9 +417,31 @@
           "${providerId.toConstantCase()}_DEFAULT_MODEL"
         ],
         "exportInterfaces": [
-          "${providerId.toPascalCase()}SttOptions"
+          {
+            "name": "${providerId.toPascalCase()}SttOptions",
+            "extend": "ProviderCredentialOptions"
+          }
         ],
         "exportFunctions": [
+          {
+            "name": "${providerId.toCamelCase()}Stt",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}SttOptions"
+            ],
+            "returnValueOfType": "SttProvider"
+          },
+          {
+            "name": "resolve${providerId.toPascalCase()}SttSettings",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}SttOptions"
+            ]
+          }
+        ],
+        "importFromExternals": false,
+        "useDeclarationOrder": [
+          "${providerId.toConstantCase()}_KIND",
+          "${providerId.toConstantCase()}_API_KEY_ENV",
+          "${providerId.toPascalCase()}SttOptions",
           "${providerId.toCamelCase()}Stt",
           "resolve${providerId.toPascalCase()}SttSettings"
         ]
@@ -265,7 +449,7 @@
     },
     {
       "name": "tts-providers",
-      "description": "Every TTS provider module exports the STT shape plus a default voice \u2014 the one setting a TTS provider cannot infer. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
+      "description": "Every TTS provider module exports the STT shape plus a default voice — the one setting a TTS provider cannot infer. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols — factory, options interface and resolve*Settings helper all carry the stage — so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage — which is why its modules are still excluded from the constant templates here. The factory signature, the options `extend`, the descriptor-purity check and the declaration order carry the same argument as `stt-providers` — read it there; what differs here is the stage in the templates, and that `*_DEFAULT_VOICE` sits above the options interface in both vendors here — it is required but left out of the order list, for the same reason the other `*_DEFAULT_*` constants are.",
       "paths": [
         "packages/aai/src/sdk/providers/tts/{providerId}.ts",
         "!packages/aai/src/sdk/providers/tts/assemblyai.ts",
@@ -279,9 +463,31 @@
           "${providerId.toConstantCase()}_DEFAULT_VOICE"
         ],
         "exportInterfaces": [
-          "${providerId.toPascalCase()}TtsOptions"
+          {
+            "name": "${providerId.toPascalCase()}TtsOptions",
+            "extend": "ProviderCredentialOptions"
+          }
         ],
         "exportFunctions": [
+          {
+            "name": "${providerId.toCamelCase()}Tts",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}TtsOptions"
+            ],
+            "returnValueOfType": "TtsProvider"
+          },
+          {
+            "name": "resolve${providerId.toPascalCase()}TtsSettings",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}TtsOptions"
+            ]
+          }
+        ],
+        "importFromExternals": false,
+        "useDeclarationOrder": [
+          "${providerId.toConstantCase()}_KIND",
+          "${providerId.toConstantCase()}_API_KEY_ENV",
+          "${providerId.toPascalCase()}TtsOptions",
           "${providerId.toCamelCase()}Tts",
           "resolve${providerId.toPascalCase()}TtsSettings"
         ]
@@ -289,7 +495,7 @@
     },
     {
       "name": "s2s-providers",
-      "description": "S2S providers take the same kind/env-var pair as the pipeline providers, and declare Options as an interface like the other three stages. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here. The kind/env constants ARE stage-qualified on this stage, because both vendors here also occupy another one: `openai` is an LLM module too, so an unqualified OPENAI_KIND would collide across the two.",
+      "description": "S2S providers take the same kind/env-var pair as the pipeline providers, and declare Options as an interface like the other three stages. Every vendor here is stage-qualified on its authoring symbols — factory, options interface and resolve*Settings helper all carry the stage — so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage — which is why its modules are still excluded from the constant templates here. The kind/env constants ARE stage-qualified on this stage, because both vendors here also occupy another one: `openai` is an LLM module too, so an unqualified OPENAI_KIND would collide across the two. The factory signature, the options `extend`, the descriptor-purity check and the declaration order carry the same argument as `stt-providers` — read it there; what differs here is the stage in the templates, and that there is no resolve*Settings helper: an S2S provider owns the whole turn, so there are no per-stage settings for the pipeline transport to fold together.",
       "paths": [
         "packages/aai/src/sdk/providers/s2s/{providerId}.ts",
         "!packages/aai/src/sdk/providers/s2s/*.test.ts"
@@ -300,16 +506,32 @@
           "${providerId.toConstantCase()}_S2S_API_KEY_ENV"
         ],
         "exportFunctions": [
-          "${providerId.toCamelCase()}S2s"
+          {
+            "name": "${providerId.toCamelCase()}S2s",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}S2sOptions"
+            ],
+            "returnValueOfType": "S2sProvider"
+          }
         ],
         "exportInterfaces": [
-          "${providerId.toPascalCase()}S2sOptions"
+          {
+            "name": "${providerId.toPascalCase()}S2sOptions",
+            "extend": "ProviderCredentialOptions"
+          }
+        ],
+        "importFromExternals": false,
+        "useDeclarationOrder": [
+          "${providerId.toConstantCase()}_S2S_KIND",
+          "${providerId.toConstantCase()}_S2S_API_KEY_ENV",
+          "${providerId.toPascalCase()}S2sOptions",
+          "${providerId.toCamelCase()}S2s"
         ]
       }
     },
     {
       "name": "channels",
-      "description": "Every channel module exports the same four-symbol shape: a kind tag, the options interface a factory takes, the factory itself, and the `ChannelHandler` VALUE that `sendToChannel` dispatches to. The handler value is what makes a channel a self-contained unit \u2014 `send.ts` imports that one name rather than a render function, an advice function and an options type, so adding a channel touches no shared file. A channel is a serializable DESTINATION descriptor, so the pattern mirrors the four provider stages \u2014 and the reason it is checked here rather than left to review is the reason it is checked there: the shape is repeated BY CONSTRUCTION, so the second one drifts from the first in a way no per-file tool can see. Unlike a provider there is no *_API_KEY_ENV: a channel's credential is the destination itself and is passed in, never read from the agent env, so there is no variable name to publish. The factory carries the `Channel` suffix every other symbol here already carried: a channel is outbound-only by construction, so an inbound Slack surface would be a different concept and `slack()` is the name it would want \u2014 the same collision that made `elevenlabs()` into `elevenLabsStt()`, settled before it costs anything.",
+      "description": "Every channel module exports the same four-symbol shape: a kind tag, the options interface a factory takes, the factory itself, and the `ChannelHandler` VALUE that `sendToChannel` dispatches to. The handler value is what makes a channel a self-contained unit — `send.ts` imports that one name rather than a render function, an advice function and an options type, so adding a channel touches no shared file. A channel is a serializable DESTINATION descriptor, so the pattern mirrors the four provider stages — and the reason it is checked here rather than left to review is the reason it is checked there: the shape is repeated BY CONSTRUCTION, so the second one drifts from the first in a way no per-file tool can see. Unlike a provider there is no *_API_KEY_ENV: a channel's credential is the destination itself and is passed in, never read from the agent env, so there is no variable name to publish. The factory carries the `Channel` suffix every other symbol here already carried: a channel is outbound-only by construction, so an inbound Slack surface would be a different concept and `slack()` is the name it would want — the same collision that made `elevenlabs()` into `elevenLabsStt()`, settled before it costs anything. `importFromExternals: false` is the provider conventions' descriptor-purity check, and a channel needs it for the same reason and one more: a channel descriptor is SERIALIZED into the agent config and sent to the platform, so a module that reached for `@slack/web-api` here would put a vendor client on the authoring side of a wire that only carries data. The same caveat applies — the predicate ignores TYPE-ONLY imports, so a `import type` from a vendor package is invisible to it and biome's `noUndeclaredDependencies` is the backstop.",
       "paths": [
         "packages/aai/src/sdk/channels/{channelId}.ts",
         "!packages/aai/src/sdk/channels/channel-types.ts",
@@ -326,12 +548,13 @@
         ],
         "exportFunctions": [
           "${channelId.toCamelCase()}Channel"
-        ]
+        ],
+        "importFromExternals": false
       }
     },
     {
       "name": "agent-templates",
-      "description": "Every template is a complete agent project a user can scaffold: agent.ts is its entry, client.tsx (when present) is the browser half, and each tools/ file is one tool.",
+      "description": "Every template is a complete agent project a user can scaffold: agent.ts is its entry, client.tsx (when present) is the browser half, and each tools/ file is one tool. The SPEC is required too, and in the UNIT tier specifically: four templates shipped an agent.eval.test.ts and nothing else, so their only coverage was a tier that reports rather than gates — and `aai build` runs a project's tests before it bundles, so agent.test.ts is also what a user's first customization is checked against. The tools/ rule is the DEFAULT EXPORT, which is what discovery reads: a file there IS the tool, named by its own filename and registered by no one, so an export under any other name is a tool that silently does not exist. It is also why nothing in tools/ may be a re-export — konsistent cannot see `default` through `export { x as default } from`, and biome's noExportedImports prescribes exactly that form, so the three files this rule caught were rewritten to default-export the RESULT of a factory call, the shape the four delegation files beside them already had. Do not settle a future conflict here by excluding a file: an exclusion in this convention is a tool whose discoverability nothing checks.",
       "paths": "packages/aai-templates/templates/{templateName}",
       "must": [
         {
@@ -339,7 +562,8 @@
           "must": {
             "haveType": "directory",
             "haveFiles": [
-              "agent.ts"
+              "agent.ts",
+              "agent.test.ts"
             ]
           }
         },
@@ -347,6 +571,17 @@
           "name": "agent-default-export",
           "for": {
             "files": "agent.ts"
+          },
+          "must": {
+            "export": [
+              "default"
+            ]
+          }
+        },
+        {
+          "name": "template-tool-default-export",
+          "for": {
+            "files": "tools/*.ts"
           },
           "must": {
             "export": [
@@ -372,25 +607,28 @@
     },
     {
       "name": "workflow-journal-backends",
-      "description": "A `workflow-journal-<backend>.ts` file IS a journal backend, and it exports `create<Backend>Journal`. There are three \u2014 memory (the reference), postgres (a self-hoster's own DATABASE_URL) and platform (HTTP to aai-server) \u2014 one interface, and a review of the branch that added the third found five drifts between them, every one an edge case about ABSENCE. So the shape is checked here for the reason the provider and channel shapes are: it is repeated BY CONSTRUCTION, so the next one drifts from the first in a way no per-file tool can see. What this convention buys beyond naming is DISCOVERY \u2014 it makes a backend's factory name derivable from its filename, which is what lets `journal-conformance.test.ts` enumerate the backends out of the tree and fail when one is missing from `JOURNAL_BACKENDS`. Konsistent can state the shape and cannot state that set comparison, which is why the registration rule is the two together. The exclusions are the modules whose names match the glob and are NOT backends \u2014 the interface, its DDL, the five RECORDS it is an interface over, the `JournalConflictError` three of them raise (declared beside the contract rather than in it, for the file-length reason its own module doc gives), and the step CEILING, which is a policy over a journal's SIZE rather than a place to keep one. Note the sibling scan in `journal-conformance.test.ts` needs no such exclusion: it discovers a backend by looking for a `create*Journal` export, so a non-backend matching the glob is already invisible to it, and this rule is the only one reading the filename alone.",
+      "description": "A `workflow-journal-<backend>.ts` file IS a journal backend, and it exports `create<Backend>Journal`. There are three — memory (the reference), postgres (a self-hoster's own DATABASE_URL) and platform (HTTP to aai-server) — one interface, and a review of the branch that added the third found five drifts between them, every one an edge case about ABSENCE. So the shape is checked here for the reason the provider and channel shapes are: it is repeated BY CONSTRUCTION, so the next one drifts from the first in a way no per-file tool can see. What this convention buys beyond naming is DISCOVERY — it makes a backend's factory name derivable from its filename, which is what lets `journal-conformance.test.ts` enumerate the backends out of the tree and fail when one is missing from `JOURNAL_BACKENDS`. Konsistent can state the shape and cannot state that set comparison, which is why the registration rule is the two together. The exclusions are the modules whose names match the glob and are NOT backends — the interface, its DDL, the five RECORDS it is an interface over, the `JournalConflictError` three of them raise (declared beside the contract rather than in it, for the file-length reason its own module doc gives), and the step CEILING, which is a policy over a journal's SIZE rather than a place to keep one. Note the sibling scan in `journal-conformance.test.ts` needs no such exclusion: it discovers a backend by looking for a `create*Journal` export, so a non-backend matching the glob is already invisible to it, and this rule is the only one reading the filename alone. The factory's RETURN TYPE is checked with its name, and that is the half a name scan cannot reach: the conformance suites enumerate these implementations out of the tree by factory name and then run one shared case list against each, so a factory that kept the name and returned a wider or narrower object would be discovered, registered, and exercised against a contract it does not implement. Naming the interface here is what makes the registry's claim — that every backend it found IS one — true by construction rather than by the next reviewer noticing.",
       "paths": [
         "packages/aai-runtime/src/workflow-journal-{backendId}.ts",
         "!packages/aai-runtime/src/workflow-journal-types.ts",
         "!packages/aai-runtime/src/workflow-journal-schema.ts",
         "!packages/aai-runtime/src/workflow-journal-conflict.ts",
         "!packages/aai-runtime/src/workflow-journal-records.ts",
-      "!packages/aai-runtime/src/workflow-journal-bound.ts",
+        "!packages/aai-runtime/src/workflow-journal-bound.ts",
         "!packages/aai-runtime/src/workflow-journal-*.test.ts"
       ],
       "must": {
         "exportFunctions": [
-          "create${backendId.toPascalCase()}Journal"
+          {
+            "name": "create${backendId.toPascalCase()}Journal",
+            "returnValueOfType": "JournalStore"
+          }
         ]
       }
     },
     {
       "name": "session-state-backends",
-      "description": "A `session-state-<backend>.ts` file IS a session-state backend, and it exports `create<Backend>StateBackend`. There are three — memory (the reference), postgres (a self-hoster's own DATABASE_URL) and platform (HTTP to aai-server) — one interface with six methods, and the requirement that they AGREE was written down twice in prose, as a claim between implementations, while nothing compared them: the postgres spec is an SQL-text recorder, the platform spec an HTTP recorder, and the semantics were asserted for memory only, through the store above it. `session-state-conformance.ts` is the shared case list that closed that, and what this convention buys beyond naming is DISCOVERY for its registry: `session-state-conformance.test.ts` enumerates the backends out of the tree by FACTORY NAME (a name scan rather than the journal's filename scan, because the memory factory is re-exported from the module declaring the interface), so this rule is what keeps a fourth backend's factory name recognisable to that scan. Konsistent can state the shape and cannot state that set comparison, which is why the registration rule is the two together. The exclusions are the modules whose names match the glob and are not backends — the interface and its store, the grace-window sweep scheduler, and the conformance table's own case modules.",
+      "description": "A `session-state-<backend>.ts` file IS a session-state backend, and it exports `create<Backend>StateBackend`. There are three — memory (the reference), postgres (a self-hoster's own DATABASE_URL) and platform (HTTP to aai-server) — one interface with six methods, and the requirement that they AGREE was written down twice in prose, as a claim between implementations, while nothing compared them: the postgres spec is an SQL-text recorder, the platform spec an HTTP recorder, and the semantics were asserted for memory only, through the store above it. `session-state-conformance.ts` is the shared case list that closed that, and what this convention buys beyond naming is DISCOVERY for its registry: `session-state-conformance.test.ts` enumerates the backends out of the tree by FACTORY NAME (a name scan rather than the journal's filename scan, because the memory factory is re-exported from the module declaring the interface), so this rule is what keeps a fourth backend's factory name recognisable to that scan. Konsistent can state the shape and cannot state that set comparison, which is why the registration rule is the two together. The exclusions are the modules whose names match the glob and are not backends — the interface and its store, the grace-window sweep scheduler, and the conformance table's own case modules. The factory's RETURN TYPE is checked with its name, and that is the half a name scan cannot reach: the conformance suites enumerate these implementations out of the tree by factory name and then run one shared case list against each, so a factory that kept the name and returned a wider or narrower object would be discovered, registered, and exercised against a contract it does not implement. Naming the interface here is what makes the registry's claim — that every backend it found IS one — true by construction rather than by the next reviewer noticing.",
       "paths": [
         "packages/aai-runtime/src/session-state-{backendId}.ts",
         "!packages/aai-runtime/src/session-state-store.ts",
@@ -400,7 +638,10 @@
       ],
       "must": {
         "exportFunctions": [
-          "create${backendId.toPascalCase()}StateBackend"
+          {
+            "name": "create${backendId.toPascalCase()}StateBackend",
+            "returnValueOfType": "SessionStateBackend"
+          }
         ]
       }
     },
@@ -412,8 +653,1468 @@
       ],
       "must": {
         "exportFunctions": [
-          "createMemoryKeyStore",
-          "createPostgresKeyStore"
+          {
+            "name": "createMemoryKeyStore",
+            "returnValueOfType": "WorkflowKeyStore"
+          },
+          {
+            "name": "createPostgresKeyStore",
+            "returnValueOfType": "WorkflowKeyStore"
+          }
+        ]
+      }
+    },
+    {
+      "name": "platform-key-store",
+      "description": "The THIRD implementation of the correlation-key index lives in its own file, and until now it was checked by nothing. `workflow-key-stores` next door pins the two factories that share `workflow-keys.ts` by naming that file literally, so the platform store — the one every deployed agent actually runs, HTTP to aai-server — fell outside it purely because it is in a different module, while the journal and session-state families cover all three of their backends through a filename grammar. A rule per file is the cost of there being no grammar to state: a `workflow-keys-{storeId}.ts` pattern would also match the conformance table's own modules, i.e. a convention whose only matches are its exclusions. What this buys is what the other two registration rules buy — `workflow-keys-conformance.test.ts` enumerates the stores by FACTORY NAME and fails when one is missing from `WORKFLOW_KEY_STORES`, and this keeps the name that scan looks for present, returning the interface that registry claims every entry implements.",
+      "paths": [
+        "packages/aai-runtime/src/workflow-keys-platform.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "createPlatformKeyStore",
+            "returnValueOfType": "WorkflowKeyStore"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test-helper-modules",
+      "description": "Each package's test-helper module is its OWN and they are not interchangeable: the helpers are named for that package's domain, so a spec reaches for the module beside it rather than importing another package's. This pins where each one lives and the roster it owes. That roster used to be a hand-kept list in the root AGENTS.md and had gone stale in four places, which is the argument for checking it: flush() had moved from aai/src/host/_test-utils.ts to aai-runtime/src/_test-utils.ts while the guide still named the former; sleep() was attributed to that host module too, though it is a published SDK export (sdk/sleep.ts) and never lived there; makeTool()/makeAgent() had left the host module for the runtime one and silenceSteps() had stopped being exported at all; and aai-runtime's module, the largest in the repo, was absent from the list entirely. A rename or a move now fails the gate instead of quietly making a guide wrong. The rosters: aai/src/host/_test-utils.ts - tick() (a full macrotask yield), createMockToolContext(), makeConfig(), fakeFetch(). aai-runtime/src/_test-utils.ts - flush() (MICROTASK-only; the one to reach for instead of `await new Promise(r => setTimeout(r, 0))`), tick(), makeTool(), makeAgent(), makeConfig(), loadFixture() (fixture replay, incl. S2S mocking). aai-cli/src/_test-utils.ts - withTempDir() (temp dir + cleanup), silenced(), makeBundle(); the dev-server specs additionally share their fake chokidar and runtime/server mocks via _dev-server-test-utils.ts, and a _test-setup.ts setup file points AAI_CONFIG_DIR at a per-run temp dir so a CLI spec can never touch the developer's real ~/.config/aai/config.json (API key + approved servers). aai-ui/src/_react-test-utils.ts - createMockSessionCore(), installAudioMocks(), and the MockAudioContext class. aai-studio-client/src/_test-utils.ts - stubFetch() and its readers, renderWithClient(), the button/input/textarea element seams, installResizeObserver(). aai-server/src/test-utils.ts (no underscore) - createTestStore() (in-memory BundleStore), createTestOrchestrator(), authHeaders()/authFetch()/deploy()/deployAgent()/deployPayload()/deployBody(), makeSlot(), captureLogs(). Build a platform request with authFetch/deploy, never a header literal - see \"Building a platform request in a test\" in packages/aai-server/CLAUDE.md for the ~47 converted sites and the three shapes that deliberately stay raw. Each roster is a FLOOR: a module may export more, and several do.",
+      "paths": "packages",
+      "must": [
+        {
+          "name": "core-host-helpers",
+          "for": {
+            "files": "aai/src/host/_test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "tick",
+              "createMockToolContext",
+              "makeConfig",
+              "fakeFetch"
+            ]
+          }
+        },
+        {
+          "name": "runtime-helpers",
+          "for": {
+            "files": "aai-runtime/src/_test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "flush",
+              "tick",
+              "makeTool",
+              "makeAgent",
+              "makeConfig",
+              "loadFixture"
+            ]
+          }
+        },
+        {
+          "name": "cli-helpers",
+          "for": {
+            "files": "aai-cli/src/_test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "withTempDir",
+              "silenced",
+              "makeBundle"
+            ]
+          }
+        },
+        {
+          "name": "browser-helpers",
+          "for": {
+            "files": "aai-ui/src/_react-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createMockSessionCore",
+              "installAudioMocks"
+            ],
+            "exportClasses": [
+              "MockAudioContext"
+            ]
+          }
+        },
+        {
+          "name": "studio-client-helpers",
+          "for": {
+            "files": "aai-studio-client/src/_test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "stubFetch",
+              "renderWithClient",
+              "button",
+              "input",
+              "textarea",
+              "installResizeObserver"
+            ]
+          }
+        },
+        {
+          "name": "server-helpers",
+          "for": {
+            "files": "aai-server/src/test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createTestStore",
+              "createTestOrchestrator",
+              "authHeaders",
+              "authFetch",
+              "deploy",
+              "deployAgent",
+              "deployPayload",
+              "deployBody",
+              "makeSlot",
+              "captureLogs"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "published-testing-split",
+      "description": "@alexkroman1/aai/testing and @alexkroman1/aai/testing/vitest are PUBLISHED, so a user's agent project imports them, and the split between the two has a RULE rather than a precedent: anything that INSTALLS, and anything that RESTORES, is /testing/vitest. Every fake filling a published slot hands back a `restore` the caller owns, and owning it means a `const restores: (() => void)[]` plus an afterEach that splices it - written out template after template, three times in one file. install* is that fake plus onTestFinished(restore). A fake with no lifetime (stubGenerate, createToolContext) gets no wrapper and stays in testing.ts. Both halves are checked here. sdk/testing.ts may not import vitest AT ALL: that is what keeps the framework-agnostic entry point usable by a project on another runner, and one stray `vi`/`onTestFinished` import there would silently make vitest a hard dependency of the whole subpath - a break that appears in a user's install, not in this repo, where vitest is always present. sdk/testing-vitest.ts must import vitest (onTestFinished specifically, the thing the wrapper exists for) and must carry the whole install* family, so an installer written into the framework-agnostic file fails here rather than shipping. The inventory and the rest of the argument - what each fake fills, why the defaults are inert, why each call is a distinct session - are in the subpath table in packages/aai/CLAUDE.md.",
+      "paths": "packages/aai/src/sdk",
+      "must": [
+        {
+          "name": "framework-agnostic",
+          "for": {
+            "files": "testing.ts"
+          },
+          "mustNot": {
+            "importFrom": "vitest"
+          }
+        },
+        {
+          "name": "installers-need-the-runner",
+          "for": {
+            "files": "testing-vitest.ts"
+          },
+          "must": {
+            "importFrom": "vitest",
+            "import": [
+              {
+                "name": "onTestFinished",
+                "from": "vitest"
+              }
+            ],
+            "exportFunctions": [
+              "installStubGateway",
+              "installStubUploads",
+              "installStubStepFetch",
+              "installStubReporter",
+              "installStubSpeech",
+              "installStubTranscribe",
+              "installStubWorkflows"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "type-level-tests",
+      "description": "A *.test-d.ts file is a TYPE-level test: checked by tsc, never executed at runtime, and its assertions are expectTypeOf from vitest. Requiring that import is what makes the extension mean something - a .test-d.ts with no expectTypeOf is a file nothing runs and nothing checks, and it would look exactly like coverage. Note what actually GATES these files: not the aai-types / aai-ui-types vitest projects, which are declared only in the root vitest.config.ts that nothing in the repo or in CI evaluates, but `turbo run typecheck` - every package tsconfig includes its test files, so a mismatched expectTypeOf is a hard compile error (injecting expectTypeOf<string>().toEqualTypeOf<number>() fails tsc -p packages/aai with TS2344). A new .test-d.ts is therefore covered on creation, but only in a package whose tsconfig includes it and only if it really asserts, which is the half this convention holds. The first .test-d.ts in a package also needs a knip.json entry (\"**/*.test-d.ts\"): a type test is imported by nothing, so knip reports the file itself as unused.",
+      "paths": [
+        "packages/*/src/*.test-d.ts",
+        "packages/*/src/**/*.test-d.ts"
+      ],
+      "must": {
+        "import": [
+          {
+            "name": "expectTypeOf",
+            "from": "vitest"
+          }
+        ]
+      }
+    },
+    {
+      "name": "concurrency-primitives",
+      "description": "The repo's recurring async-coordination patterns are reified as small primitives, and this pins each one's HOME so the roster cannot go stale and a call site can be checked against it. Almost all are packages/aai exports; createTurnMachine() is the one that lives in aai-runtime (transports/pipeline-turn-state.ts). The catalogue: createEpoch() (sdk/epoch.ts), createOwnedMap() (sdk/owned-map.ts), createCoalescingRunner() (sdk/coalescing-runner.ts), createKeyedLock()/withLock() (sdk/keyed-lock.ts - withLock is a const arrow, not a function declaration, which is why it is asserted as a constant), sleep(ms, { signal?, unref? }) (sdk/sleep.ts - the ONE wait, and NOT a test helper, which the root guide used to imply; guard-invariants rule 19 keeps the seventh hand-rolled spelling out), jitteredBackoff(attempt, ...) (sdk/jittered-backoff.ts - rule 31 keeps the fourth copy out; the JITTER is the half a copy gets wrong), sessionSlot() (sdk/session-slot.ts), ToolFailure/toolFailure()/isToolFailure()/pushCapped() (sdk/utils.ts), resolveOne() (sdk/spoken.ts), omitUndefined() (sdk/omit-undefined.ts - rules 2 and 22 are its enforcement half), isRecord() (sdk/is-record.ts). What this convention deliberately cannot do is see a hand-rolled copy at a call site: that is inside a function body, hence guard-invariants (rules 2, 3, 4, 19, 21, 22, 23, 31). It covers the other direction - a primitive renamed, moved or deleted out from under those rules, which would leave every one of them matching nothing while printing the same checkmark as a rule upheld. Two repo-wide members are absent because they are not ours to export: p-timeout for timeouts (never a hand-rolled Promise.race with a timer) and native AbortSignal.any([...]) for combining signals; both stay as prose in AGENTS.md. packages/aai/CLAUDE.md, \"Concurrency primitives\", carries the argument behind each primitive.",
+      "paths": "packages",
+      "must": [
+        {
+          "name": "epoch",
+          "for": {
+            "files": "aai/src/sdk/epoch.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createEpoch"
+            ]
+          }
+        },
+        {
+          "name": "owned-map",
+          "for": {
+            "files": "aai/src/sdk/owned-map.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createOwnedMap"
+            ]
+          }
+        },
+        {
+          "name": "coalescing-runner",
+          "for": {
+            "files": "aai/src/sdk/coalescing-runner.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createCoalescingRunner"
+            ]
+          }
+        },
+        {
+          "name": "keyed-lock",
+          "for": {
+            "files": "aai/src/sdk/keyed-lock.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createKeyedLock"
+            ],
+            "exportConstants": [
+              "withLock"
+            ]
+          }
+        },
+        {
+          "name": "one-wait",
+          "for": {
+            "files": "aai/src/sdk/sleep.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "sleep"
+            ]
+          }
+        },
+        {
+          "name": "jittered-backoff",
+          "for": {
+            "files": "aai/src/sdk/jittered-backoff.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "jitteredBackoff"
+            ]
+          }
+        },
+        {
+          "name": "session-slot",
+          "for": {
+            "files": "aai/src/sdk/session-slot.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "sessionSlot"
+            ]
+          }
+        },
+        {
+          "name": "tool-failure",
+          "for": {
+            "files": "aai/src/sdk/utils.ts"
+          },
+          "must": {
+            "exportTypes": [
+              "ToolFailure"
+            ],
+            "exportFunctions": [
+              "toolFailure",
+              "isToolFailure",
+              "pushCapped"
+            ]
+          }
+        },
+        {
+          "name": "resolve-one",
+          "for": {
+            "files": "aai/src/sdk/spoken.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "resolveOne"
+            ]
+          }
+        },
+        {
+          "name": "omit-undefined",
+          "for": {
+            "files": "aai/src/sdk/omit-undefined.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "omitUndefined"
+            ]
+          }
+        },
+        {
+          "name": "is-record",
+          "for": {
+            "files": "aai/src/sdk/is-record.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "isRecord"
+            ]
+          }
+        },
+        {
+          "name": "turn-machine",
+          "for": {
+            "files": "aai-runtime/src/transports/pipeline-turn-state.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createTurnMachine"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "guest-route-exposure",
+      "description": "`aai dev` serves the guest's own routes directly, so a feature is developed against a server where the guest's dispatch table is the whole API. Deployed, almost nothing works that way - the platform decides how each guest route is reachable - and the gap is invisible in a diff and to the feature's own tests. It has landed twice. GUEST_ROUTES and GUEST_ROUTE_EXPOSURE in packages/aai-server/src/guest-routes.ts are what close it: every guest route is declared in the first and given one of four exposure kinds in the second, so a new route cannot reach main without somebody writing down how the platform serves it. This convention pins those two constants plus the two types read off them (GuestRoute, GuestRouteExposure). They are the names a spec and guard-invariants rule 12 both address BY NAME, and renaming either in one commit would leave both gates matching nothing while still printing success - the failure shape this repo keeps paying for. It cannot check the table's CONTENTS (that a new route was given an exposure); that is rule 12's half plus the aai-server spec's. See \"A new guest route must declare how the PLATFORM exposes it\" in packages/aai-server/CLAUDE.md for the four exposure kinds, which half is a test and which is the rule, and why exposure is decided by who CALLS a route.",
+      "paths": "packages/aai-server/src/guest-routes.ts",
+      "must": {
+        "exportConstants": [
+          "GUEST_ROUTES",
+          "GUEST_ROUTE_EXPOSURE"
+        ],
+        "exportTypes": [
+          "GuestRoute",
+          "GuestRouteExposure"
+        ]
+      }
+    },
+    {
+      "name": "runtime-stt-openers",
+      "description": "A `providers/stt/<provider>.ts` file in aai-runtime IS the HOST half of that provider, and it exports `open<Provider>(opts: <Provider>SttOptions): SttOpener`. This is the other end of the line the package split was cut along, and only this end was checked. The SDK side already had `stt-providers` next door — a factory returning a pure DESCRIPTOR (`{ kind, options }`) and importing no vendor SDK — while the resolver that turns that descriptor into an open socket, which is why `@deepgram/sdk`, `assemblyai`, `@elevenlabs/elevenlabs-js` and `ws` are dependencies of THIS package and not of the authoring install, had no shape stated anywhere. Four modules, one interface, and every one of them is reached the same way: `registerSttKind` writes the kind into the opener registry and `resolveLlm`'s siblings read it, so a fifth provider that named its factory anything else, or returned something wider or narrower than `SttOpener`, would register and then be dialled against a contract it does not implement. All three halves are checked because each fails differently. The NAME is what makes the opener derivable from the filename, which is what a registration site can be read against. The RETURN TYPE is the half a name scan cannot reach — `SttOpener` is a function type whose session contract every transport depends on, and a factory that kept the name and widened the return is discovered, registered and exercised anyway. And the PARAMETER type has to be the SDK's own `<Provider>SttOptions`, imported from `@alexkroman1/aai/stt`: that is the descriptor's `options` payload arriving here, so an opener declaring its own option bag is a second spelling of one type across a published package boundary, where the two drift silently and only a user's agent notices. `assemblyai` resolves through `kebabToPascalMap` to `openAssemblyAI`; note the map is consulted for the WHOLE captured value and not per segment, which is why a multi-segment provider id would get plain PascalCase.",
+      "paths": [
+        "packages/aai-runtime/src/providers/stt/{providerId}.ts",
+        "!packages/aai-runtime/src/providers/stt/_*.ts",
+        "!packages/aai-runtime/src/providers/stt/*.test.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "open${providerId.toPascalCase()}",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}SttOptions"
+            ],
+            "returnValueOfType": "SttOpener"
+          }
+        ],
+        "importTypes": [
+          {
+            "name": "${providerId.toPascalCase()}SttOptions",
+            "from": "@alexkroman1/aai/stt"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-tts-openers",
+      "description": "The TTS twin of `runtime-stt-openers`: a `providers/tts/<provider>.ts` file exports `open<Provider>(opts: <Provider>TtsOptions): TtsOpener`, with the option type imported from `@alexkroman1/aai/tts`. Read that convention for the argument — one interface, N implementations, registered by `registerTtsKind` and dialled by every transport, so a factory that keeps the name and changes the shape is discovered and exercised against a contract it does not implement. Two things are specific to this directory. `assemblyai.ts` is deliberately NOT matched here and has its own rule (`runtime-assemblyai-tts-opener`) because its factory is `openAssemblyAITts` rather than `openAssemblyAI`: the STT opener already owns that name and both land on the same registry, so the suffix is a collision fix rather than drift, and a grammar cannot state one file's exception. And the `assemblyai-*.ts` neighbours — the cancel barrier, the frame reader, the segment splitter, the turn tracker and the word timeline — match `{providerId}.ts` while being pieces of ONE provider rather than providers, which is why they are excluded by prefix rather than one at a time: the exclusion is what keeps a new helper beside them from having to be added here.",
+      "paths": [
+        "packages/aai-runtime/src/providers/tts/{providerId}.ts",
+        "!packages/aai-runtime/src/providers/tts/_*.ts",
+        "!packages/aai-runtime/src/providers/tts/*.test.ts",
+        "!packages/aai-runtime/src/providers/tts/assemblyai*.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "open${providerId.toPascalCase()}",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}TtsOptions"
+            ],
+            "returnValueOfType": "TtsOpener"
+          }
+        ],
+        "importTypes": [
+          {
+            "name": "${providerId.toPascalCase()}TtsOptions",
+            "from": "@alexkroman1/aai/tts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-assemblyai-tts-opener",
+      "description": "The AssemblyAI TTS opener, checked by a rule of its own because its name breaks the grammar `runtime-tts-openers` states. It is `openAssemblyAITts` and not `openAssemblyAI` — the STT opener beside it already holds that name, and both are re-exported toward one registry, so the `Tts` suffix is disambiguation rather than drift. A rule per file is what there is to state when a family has one exception: folding it into the grammar would mean weakening the grammar for the other two, and leaving it out means the provider that ships the most audio in this repo is the one file in `providers/` whose factory name and return type are checked by nothing. The remaining halves are identical to the family's and carry the same argument: `TtsOpener` as the return type, because the conformance the transports depend on is the session contract rather than the name, and `AssemblyAITtsOptions` imported from `@alexkroman1/aai/tts`, because the option bag is the SDK descriptor's own payload arriving here and a second spelling of it drifts across a published package boundary in silence.",
+      "paths": [
+        "packages/aai-runtime/src/providers/tts/assemblyai.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "openAssemblyAITts",
+            "receiveParamsOfTypes": [
+              "AssemblyAITtsOptions"
+            ],
+            "returnValueOfType": "TtsOpener"
+          }
+        ],
+        "importTypes": [
+          {
+            "name": "AssemblyAITtsOptions",
+            "from": "@alexkroman1/aai/tts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-transports",
+      "description": "A `transports/<name>-transport.ts` file IS a transport, and it exports `create<Name>Transport(opts: <Name>TransportOptions): Transport`. Three of them — pipeline (STT → LLM → TTS, assembled here), s2s (AssemblyAI's speech-to-speech) and openai-realtime — one interface (`transports/types.ts`), and the session core is written against that interface and nothing else. That is the property worth stating mechanically, because the guide's rule for this seam is a NEGATIVE one no per-file tool can see: the session takes two vocabularies rather than nineteen callbacks, so a `Transport` is the whole inbound surface plus the two audio paths, and every divergence between the three implementations has cost something (`speech_started` derived from a partial in pipeline mode against a real yield in S2S; `reply.completed` being the provider's claim rather than the turn's end). The RETURN TYPE is what this convention actually buys: a factory that kept its name and returned a structural near-miss of `Transport` still compiles at every call site that only reads part of it, and the divergence surfaces as one transport behaving differently on a live call. The parameter type is checked with it so a transport's options stay one named type rather than an inline bag that cannot be referenced from a host's own wiring. Note the filename grammar is what makes a fourth transport's factory name derivable — and that `openai-realtime` resolves to `OpenaiRealtime` rather than `OpenAIRealtime`, because `kebabToPascalMap` is consulted for the whole captured value and not per segment.",
+      "paths": [
+        "packages/aai-runtime/src/transports/{transportId}-transport.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "create${transportId.toPascalCase()}Transport",
+            "receiveParamsOfTypes": [
+              "${transportId.toPascalCase()}TransportOptions"
+            ],
+            "returnValueOfType": "Transport"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-carrier-codecs",
+      "description": "`telephony/carriers.ts` declares every carrier shim, and this pins their names, the interface they implement, and the lookup that resolves one. A phone call is an ordinary session here: the whole point of the design is that no telephony branch may exist below the bridge, which means every carrier difference — Twilio Media Streams against Telnyx media streaming — is squeezed into a `CarrierCodec` and nothing downstream may ever ask which carrier is on the wire. So the codecs are the entire surface over which a third carrier can be added, and a shipped one is what a template for adding a third is written against. It is a literal path rather than a filename grammar for the reason `workflow-keys.ts` next door is: two implementations share one module, so there is no segment to capture, and a `carriers-{name}.ts` pattern would match no file that exists. What each half catches: `CarrierCodec` staying EXPORTED is what lets a third carrier be written outside this file at all; `twilioCodec` and `telnyxCodec` are the two names the bridge's own tests and the codec table are written against; `CARRIER_CODECS` is the table `CarrierName` is derived from with `keyof typeof`, so a codec silently absent from it is a carrier that resolves to null on a real call rather than failing here; and `carrierByName` returning `CarrierCodec | null` is the refusal being part of the contract — a lookup widened to `CarrierCodec` would push an unknown carrier's failure past the bridge and into the branch-free path below it.",
+      "paths": [
+        "packages/aai-runtime/src/telephony/carriers.ts"
+      ],
+      "must": {
+        "exportTypes": [
+          "CarrierCodec"
+        ],
+        "exportConstants": [
+          "twilioCodec",
+          "telnyxCodec",
+          "CARRIER_CODECS"
+        ],
+        "exportFunctions": [
+          {
+            "name": "carrierByName",
+            "returnValueOfType": "CarrierCodec | null"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-workflow-interleavings",
+      "description": "A file under `workflow-interleavings/` IS one frozen counterexample, and it exports a single const named after its own filename, typed by the shared `Interleaving` declared beside them. These are the shrunk orderings a `fc.schedulerFor` property found and a human then pinned: each names the engine guard whose removal it catches, so the directory is the durable half of a fuzz harness — the part that keeps working after the generator that found it has been rewritten. Two things make them worth a convention rather than a paragraph. Their whole value is DISCOVERY: the suite enumerates the directory, so an interleaving whose const is named something the enumeration does not reach is a regression test that exists in the tree and runs nowhere, and nothing fails — the suite reports the cases it did find, which is the shape of failure this repo keeps paying for. Deriving the const name from the filename is what makes that enumeration honest. And the `importTypes` half pins the TYPE, which the const name cannot: `exportConstants`' schema field understands only scalars, arrays and object literals, so a named-type annotation is unreachable there, and a case that declared its own local `Interleaving` shape — dropping the journal defect, or the arm, or the program the ordering is played against — would satisfy a name check while asserting a different thing. Requiring the import from `./interleaving.ts` is what keeps all five cases answering to one contract. `interleaving.ts` itself is excluded: it declares the type rather than a case.",
+      "paths": [
+        "packages/aai-runtime/src/workflow-interleavings/{caseName}.ts",
+        "!packages/aai-runtime/src/workflow-interleavings/interleaving.ts"
+      ],
+      "must": {
+        "exportConstants": [
+          "${caseName.toCamelCase()}"
+        ],
+        "importTypes": [
+          {
+            "name": "Interleaving",
+            "from": "./interleaving.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-opener-contract-on-root-barrel",
+      "description": "The 17-name OPENER CONTRACT deliberately stays on `@alexkroman1/aai-runtime`'s ROOT barrel, and this is what refuses the tidy-up. `registerSttKind`/`registerTtsKind`/`registerLlmKind` live there — all three are `registerKind` under three names, which is why the LLM one joined them: it reached no published subpath at all while `resolveLlm`, the reader of the registry it writes, was already contracted. Moving their parameter types (`SttOpener`, `SttOpenOptions`, `SttSession`, and the Tts twins) onto `@alexkroman1/aai-runtime/internal` would make a custom provider — the documented use, and what `aai-evals/stub-speech.ts` really does — import from two subpaths, one of them labelled not-semver-covered, i.e. it would move half of one contract off every epoch this package has. The pull toward doing it is real and structural, which is why prose was not enough: those six types are re-exports of `@alexkroman1/aai/host-internal`, and fifty OTHER re-exports of that same module were correctly moved off this barrel for exactly the reason that would appear to apply here. The block's own comment already called these names one contract; this makes the claim checkable. Both halves matter and fail differently. The `from` on each entry is load-bearing rather than decoration: it is what catches the names being kept on the barrel while their SOURCE changes underneath, which is how a re-export quietly stops being the same symbol. And `resolveLlm` is checked beside the three registrars because it is the registry's reader — a writer published without its reader is a seam a host can fill and not use.",
+      "paths": [
+        "packages/aai-runtime/src/runtime-barrel.ts"
+      ],
+      "must": {
+        "exportTypes": [
+          {
+            "name": "SttOpener",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "SttOpenOptions",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "SttSession",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "TtsOpener",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "TtsOpenOptions",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "TtsSession",
+            "from": "@alexkroman1/aai/host-internal"
+          }
+        ],
+        "export": [
+          {
+            "name": "registerSttKind",
+            "from": "./providers/resolve.ts"
+          },
+          {
+            "name": "registerTtsKind",
+            "from": "./providers/resolve.ts"
+          },
+          {
+            "name": "registerLlmKind",
+            "from": "./providers/resolve.ts"
+          },
+          {
+            "name": "resolveLlm",
+            "from": "./providers/resolve.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-runner-free-subpaths",
+      "description": "`vitest` is an OPTIONAL peer of `@alexkroman1/aai-runtime`, so exactly one published subpath may pull it — `/eval/vitest` — and the four barrels behind every other subpath may not import it at all. This is not hygiene; it is a shipped-runtime failure with a consumer behind it. `@alexkroman1/aai-cli`'s published `dist` imports a VALUE from `@alexkroman1/aai-runtime/internal` (`consoleLogger`, in `_dev-env.ts`) with every bare specifier external, so a static `vitest` clause anywhere on that barrel's own module makes `aai dev` unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` raised from inside a published package, in a user's project, and invisible to `publint` and to `attw` because both ask whether the declared exports RESOLVE rather than what they then require at run time. The same argument covers the other three: `/` is what an embedder installs, `/testing` is runner-agnostic by construction so it works from any harness, and `/eval` is the driving half a template imports without committing to a runner. What this convention checks is the DIRECT clause, which is the form a refactor actually writes. It cannot see the transitive route — a static re-export of a module that itself imports the runner, which is the shape the journal conformance case list arrived in and why `loadJournalConformance()` reaches those modules through a dynamic `import()`; dynamic imports are outside what konsistent reads, so that half stays argued in `JOURNAL-CLAUDE.md` where the measurement of `dist/internal.js` lives. `eval-vitest-barrel.ts` is absent from these paths deliberately: it is the one subpath whose whole job is to pull the runner.",
+      "paths": [
+        "packages/aai-runtime/src/runtime-barrel.ts",
+        "packages/aai-runtime/src/eval-barrel.ts",
+        "packages/aai-runtime/src/testing-barrel.ts",
+        "packages/aai-runtime/src/internal.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "vitest",
+          "vitest/*"
+        ]
+      }
+    },
+    {
+      "name": "template-eval-runtime-subpaths",
+      "description": "A template's eval imports from `@alexkroman1/aai-runtime/eval` and `/eval/vitest`, and from no other subpath of that package. The root barrel is the one that bites: it reaches `agent-server.ts` → `server.ts` → `workflow-install.ts` → `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program — three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` re-exports that type rather than letting a template reach past it. `/testing` is forbidden HERE and not in templates generally: eight template `agent.test.ts` files legitimately use `runWorkflow` from it, but an eval driving a real session has no business starting a durable run through a second door, and the two subpaths gate on different credentials. `/internal` is already refused for every template file by `template-authoring-boundary`, so this list plus that one is TOTAL over the package's export map — an allow-list spelled as a complete deny-list, which is the only form konsistent has. It was written down before only inside a JSDoc block copied verbatim into four template evals, and deduplicating those onto `createVmRunCode` is what left it with no home — the general hazard in a dedupe being that the copies carry prose as well as code, and the prose is the half a diff does not miss.",
+      "paths": [
+        "packages/aai-templates/templates/**/*.eval.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/testing"
+        ]
+      }
+    },
+    {
+      "name": "platform-store-arms",
+      "description": "Every store contract on the PLATFORM declares BOTH of its arms in one module, and each factory returns the interface the contract is. This is the root guide's \"each store factory returning the interface it implements\" house rule reaching the package that has the most of them: seven contracts here, and until now the only conventions of this shape were aai-runtime's three. What it buys is what it buys there — DISCOVERY. `store-conformance.ts`'s `STORE_CONTRACTS` names each pair by FACTORY NAME and `store-conformance-registry.test.ts` scans the repo's source for `createPg*`/`createMemory*` and refuses an unregistered pair, a registered name that does not exist, or a conformable contract not invoked from BOTH a unit and a scenario file. That guard matches on a NAME, so this rule is what keeps the names it scans for present in the modules that declare them: a rename now fails HERE, naming the file, rather than as a registry entry that silently stops matching. The RETURN TYPE is the half a name scan cannot reach, and it is the half that matters most for this family — the conformance table enumerates the arms and then runs ONE shared case list against each, so a factory that kept its name and returned a wider or narrower object would be discovered, registered, and exercised against a contract it does not implement. Naming the interface here is what makes the registry's claim — that both arms of a contract really are two implementations of one thing — true by construction rather than by the next reviewer noticing. Two shapes worth knowing before extending it. The pair's names are NOT derivable from the filename (`agent-store.ts` declares `createPgAgentRows`, `secret-store.ts` declares `createVaultSecretStore`, and the memory rate limiter is the unprefixed `createRateLimiter`), which is why this is a block per module rather than a filename grammar — the family is defined by \"something really runs on both arms\", never by a name. And an arm whose factory returned an inline INTERSECTION could not be checked for its type at all — konsistent matches the written annotation, so `SandboxDirectory & { setPeer }` is not `SandboxDirectory`. Two arms were written that way and both are FIXED rather than exempted: the memory sandbox directory here, and `MemoryPreviewQueue` over in `studio-store-arms`. Each is now a declared interface EXTENDING its contract, which this rule pins from both sides — the interface extends the contract, and the factory returns the interface. That is strictly stronger than the intersection was, because the relationship is written down where a reader and a gate can both see it, and the test seam each one exists for (inject a peer; read what was archived) is untouched. The sandbox directory is also the one contract here that `store-conformance.ts` cannot see at all: its arms are memory and MODAL rather than a `createPg*`/`createMemory*` pair, so the registry guard's name scan has never reached it and this is its only structural check.",
+      "paths": "packages/aai-server/src",
+      "must": [
+        {
+          "name": "workspace",
+          "for": {
+            "files": "workspace-store.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgWorkspaceStore",
+                "returnValueOfType": "WorkspaceStore"
+              },
+              {
+                "name": "createMemoryWorkspaceStore",
+                "returnValueOfType": "WorkspaceStore"
+              }
+            ]
+          }
+        },
+        {
+          "name": "chat",
+          "for": {
+            "files": "chat-store.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgChatStore",
+                "returnValueOfType": "ChatStore"
+              },
+              {
+                "name": "createMemoryChatStore",
+                "returnValueOfType": "ChatStore"
+              }
+            ]
+          }
+        },
+        {
+          "name": "agents",
+          "for": {
+            "files": "agent-store.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgAgentRows",
+                "returnValueOfType": "AgentRows"
+              },
+              {
+                "name": "createMemoryAgentRows",
+                "returnValueOfType": "AgentRows"
+              }
+            ]
+          }
+        },
+        {
+          "name": "secrets",
+          "for": {
+            "files": "secret-store.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createVaultSecretStore",
+                "returnValueOfType": "SecretStore"
+              },
+              {
+                "name": "createMemorySecretStore",
+                "returnValueOfType": "SecretStore"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rate-limit",
+          "for": {
+            "files": "rate-limit.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgRateLimiter",
+                "returnValueOfType": "RateLimiter"
+              },
+              {
+                "name": "createRateLimiter",
+                "returnValueOfType": "RateLimiter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "blob-storage",
+          "for": {
+            "files": "blob-storage.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createSupabaseBlobStorage",
+                "returnValueOfType": "BlobStorage"
+              },
+              {
+                "name": "createMemoryBlobStorage",
+                "returnValueOfType": "BlobStorage"
+              }
+            ]
+          }
+        },
+        {
+          "name": "upload-bytes",
+          "for": {
+            "files": "upload-bytes.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createSupabaseUploadBytes",
+                "returnValueOfType": "UploadBytes"
+              },
+              {
+                "name": "createMemoryUploadBytes",
+                "returnValueOfType": "UploadBytes"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sandbox-directory",
+          "for": {
+            "files": "sandbox-directory.ts"
+          },
+          "must": {
+            "exportInterfaces": [
+              {
+                "name": "MemorySandboxDirectory",
+                "extend": "SandboxDirectory"
+              }
+            ],
+            "exportFunctions": [
+              {
+                "name": "createMemorySandboxDirectory",
+                "returnValueOfType": "MemorySandboxDirectory"
+              }
+            ]
+          }
+        },
+        {
+          "name": "modal-sandbox-directory",
+          "for": {
+            "files": "modal-sandbox-directory.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createModalSandboxDirectory",
+                "returnValueOfType": "SandboxDirectory"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "studio-store-arms",
+      "description": "The studio surface's two store contracts, same rule and same argument as `platform-store-arms` beside it — they are a separate convention only because they are in a separate package, and they were the two the boundary hid: `STORE_CONTRACTS` lives in `aai-server` and names `createPgStudioSessionRegistry` / `createMemoryPreviewQueue` as strings, so the registry guard scans for factory names it cannot see the declarations of. Both contracts are cross-replica state whose two arms are not interchangeable in the way a cache's would be — the session registry is what makes a project's coding-agent sandbox ONE fleet-wide instead of one per replica, and the preview queue is pgmq in production against a Map in dev, i.e. a real visibility timeout against a modelled one — so a drift between arms shows up as a second sandbox billed, or a preview deploy delivered twice, on production only. The memory arm needed a code fix before this rule could state anything about its TYPE, and it got one rather than an exemption. It returned `PreviewQueue & { readonly archived: ClaimedPreviewJob[] }` — the intersection carrying the seam four specs and the concurrency fuzz harness read, archiving being the one queue outcome with no other observable — and konsistent matches the written annotation rather than resolving an intersection, so `returnValueOfType: \"PreviewQueue\"` failed on it (verified before the fix). That shape is now the declared `MemoryPreviewQueue extends PreviewQueue`, and this rule pins BOTH halves: the interface extends the contract, and the factory returns the interface. Nothing about the seam changed; what changed is that the arm's relationship to its contract is written down instead of inlined, which is the difference between a gate that can read it and one that has to take the name on trust. `platform-store-arms` carries the same fix for the memory sandbox directory.",
+      "paths": "packages/aai-studio-server/src",
+      "must": [
+        {
+          "name": "session-registry",
+          "for": {
+            "files": "studio-session-registry.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgStudioSessionRegistry",
+                "returnValueOfType": "StudioSessionRegistry"
+              },
+              {
+                "name": "createMemoryStudioSessionRegistry",
+                "returnValueOfType": "StudioSessionRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "preview-queue",
+          "for": {
+            "files": "studio-preview-queue.ts"
+          },
+          "must": {
+            "exportInterfaces": [
+              {
+                "name": "MemoryPreviewQueue",
+                "extend": "PreviewQueue"
+              }
+            ],
+            "exportFunctions": [
+              {
+                "name": "createPgPreviewQueue",
+                "returnValueOfType": "PreviewQueue"
+              },
+              {
+                "name": "createMemoryPreviewQueue",
+                "returnValueOfType": "MemoryPreviewQueue"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "guest-called-platform-routes",
+      "description": "The five routes a deployed GUEST calls the platform on — session state, upload records, the replay engine's journal, its correlation-key index, and an enqueue — and the two imports each of them owes. There is no filename grammar for this family and there must not be: what puts a route in it is WHO CALLS IT, so the paths are named one at a time, the same reason `guest-routes.ts` exists a file over. `PLATFORM_ROUTES` comes from `@alexkroman1/aai-runtime/internal` because the guest client that CALLS each route reads the same constant, and the dependency runs one way (aai-server imports the runtime; the runtime may not import the server), so the path is declared once on the guest's side and both ends read it. Spelled as a literal here instead, a rename is a two-package edit whose failure mode is a 404 the runtime reports as `answered HTTP 404` — a rejected `hydrate`, i.e. a failed session start, with nothing naming the path. `withReserved` and `guestSlug` from `./_platform-route.ts` are the other half: each of these routes runs its work on a RESERVATION held for the whole request, which is why `ADMIN_POOL_MAX` is a concurrency limit and not merely a connection budget, and `withReserved` is also the one place the taxonomy lives — it logs the wait and then `workMs` under one trace id, and it maps every plain `Error` to a retryable 503 that the guest's clients already read. A route reaching the admin pool without it would be a guest call the replica's in-flight bound cannot see and an error the guest cannot classify, and nothing about either is visible in a diff. Note the count: the platform guide said FOUR of these for as long as the paragraph existed, having been written before `workflow-keys` split off the journal, which is exactly the drift a hand-kept enumeration in prose has and a matched path list does not.",
+      "paths": [
+        "packages/aai-server/src/session-state-handler.ts",
+        "packages/aai-server/src/uploads-handler.ts",
+        "packages/aai-server/src/workflow-journal-handler.ts",
+        "packages/aai-server/src/workflow-keys-handler.ts",
+        "packages/aai-server/src/workflow-enqueue-handler.ts"
+      ],
+      "must": {
+        "import": [
+          {
+            "name": "PLATFORM_ROUTES",
+            "from": "@alexkroman1/aai-runtime/internal"
+          },
+          {
+            "name": "withReserved",
+            "from": "./_platform-route.ts"
+          },
+          {
+            "name": "guestSlug",
+            "from": "./_platform-route.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "platform-socket-handler",
+      "description": "The platform's end of the guest→platform WebSocket, and the three things it must not re-derive. `parsePlatformFrame` from `@alexkroman1/aai-runtime/internal` is the frame grammar: four frames declared ONCE, in `aai-runtime/platform-socket-frames.ts`, and parsed on both ends — two parsers of one wire is the bug, and a build that does not recognise a frame must DROP it rather than close, which is how a newer peer adds one without an outage on every guest. `PLATFORM_ROUTES` is a BOUNDARY rather than a validation: a frame's `route` is concatenated into a URL, so an unchecked `/../elsewhere/session-state` normalizes away from its own slug, and paths outside `/:slug` are not gated by the guest bearer at all. `guestBearerRefusal` from `./guest-bearer.ts` is the tenant gate, and importing it is the whole claim: it is the same policy every guest-called route runs, split out of `assertGuestBearer` precisely so the HANDSHAKE cannot check a credential differently from the rooms behind it. A socket that authenticated its upgrade by hand would be one credential check nobody compares against the five it stands in front of — and it holds a Modal input for the life of the guest, so getting it wrong is not one request's worth of exposure. Konsistent can say these three arrive from the modules that own them; it cannot say the frame loop dispatches under the slug the upgrade named, which is `platform-socket-handler.test.ts` against a real Hono app, or that the two ends are wired to each other at all, which only `platform-socket.scenario.test.ts` over a real port can see.",
+      "paths": "packages/aai-server/src/platform-socket-handler.ts",
+      "must": {
+        "import": [
+          {
+            "name": "parsePlatformFrame",
+            "from": "@alexkroman1/aai-runtime/internal"
+          },
+          {
+            "name": "PLATFORM_ROUTES",
+            "from": "@alexkroman1/aai-runtime/internal"
+          },
+          {
+            "name": "guestBearerRefusal",
+            "from": "./guest-bearer.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "platform-app-composition",
+      "description": "The two Hono apps composed into the one deployment must both take their base middleware from `app-middleware.ts`, and this is the rule that used to be a sentence in the studio guide: shared base middleware lives there SO THE TWO APPS CANNOT DRIFT on CORS and framing policy. The drift is not hypothetical and not symmetrical in cost — agent pages are served `X-Frame-Options: SAMEORIGIN`, which is what keeps the studio's preview iframe working at all, and both surfaces are same-origin by construction with cross-origin callers coming from `AAI_ALLOWED_ORIGINS` (unset meaning NONE). An app that composed its own middleware would answer one of those questions differently while every test on either side kept passing, because each app's specs exercise its own app. `addHealthRoute` and `bindFetchEnv` are in the list for the same reason rather than as decoration: `/health` is dispatched to the AGENT orchestrator by the studio entry (which is the only entry any deployment runs, `pnpm dev:aai-server` included), so the two must agree on what it is, and `bindFetchEnv` is what puts the per-request env on the context every downstream reader assumes is there. The names are checked without a source, deliberately: `orchestrator.ts` reaches them as `./app-middleware.ts` and `studio-app.ts` as the `aai-server/app-middleware` subpath — one of the 31 entries `platform-surface.test.ts` holds that map to — so pinning a specifier would break on the boundary rather than on the rule.",
+      "paths": [
+        "packages/aai-server/src/orchestrator.ts",
+        "packages/aai-studio-server/src/studio-app.ts"
+      ],
+      "must": {
+        "import": [
+          "applyPlatformMiddleware",
+          "addHealthRoute",
+          "bindFetchEnv"
+        ]
+      }
+    },
+    {
+      "name": "tracing-propagator-is-ours",
+      "description": "The traceparent propagator is OURS, deliberately, and this convention is both halves of that sentence. It is built on the runtime's own `parseTraceparent` (`@alexkroman1/aai-runtime/internal`) and it may not import `W3CTraceContextPropagator`. Two parsers of one header is the bug: ours pins version `00` and rejects all-zero ids, so a header the two read differently would put a DIFFERENT trace id on the span than on the log line — and a span that silently disagrees with the log it should join is worse than no span, because the disagreement is invisible from either side. One grammar, one parse. Reaching for the OTel package's own propagator is the specific mistake worth forbidding rather than a general third-party ban: it is the obvious thing to do, it is already in the dependency tree of everything else the tracing graph imports, and it would look like deleting a wheel we reinvented. The rest of what makes tracing safe here is not structural and stays in TRACING-CLAUDE.md — that spans carry NO conversation content because attributes are built from an allow-list of NAMES (`recordInputs` / `recordOutputs` are advisory fields passed through to the integration, not filters, and every AI SDK event carries the transcript regardless), and that the whole graph is behind a dynamic `import()` inside the configured branch, which konsistent does not see at all.",
+      "paths": "packages/aai-server/src/tracing-propagator.ts",
+      "must": {
+        "import": [
+          {
+            "name": "parseTraceparent",
+            "from": "@alexkroman1/aai-runtime/internal"
+          }
+        ]
+      },
+      "mustNot": {
+        "import": [
+          "W3CTraceContextPropagator"
+        ]
+      }
+    },
+    {
+      "name": "platform-logger",
+      "description": "This package's one way to write a log line, and the claim that it is not a SECOND interface. `createLogger` returns the `Logger` that `@alexkroman1/aai-runtime` publishes and that the runtime inside every guest already logs through, and the sink default is that package's own `consoleLogger`. A local interface here would mean the platform and the agents it hosts describe a log line two ways, and any future sink would have to satisfy both — so what this module is allowed to add is a NAMESPACE and a process-wide swap, and nothing else. The return type is the load-bearing predicate: a `createLogger` that kept its name and widened its result is how the second interface actually arrives, one convenience method at a time, and every one of this package's ~28 log sites is a module-level `const log = createLogger(…)` that would keep compiling. What konsistent CANNOT state is the other half of the section this came from — that nothing here writes to `console.*`. A `console.log` is a function call, not an import, so no structural predicate reaches it; it wants a `console\\.(log|warn|error)` line rule in `guard-invariants` over this package's source, and until then it rests on `captureLogs()` (`test-utils.ts`) being the only way a spec keeps output quiet.",
+      "paths": "packages/aai-server/src/logger.ts",
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "createLogger",
+            "returnValueOfType": "Logger"
+          }
+        ],
+        "importTypes": [
+          {
+            "name": "Logger",
+            "from": "@alexkroman1/aai-runtime"
+          }
+        ],
+        "import": [
+          {
+            "name": "consoleLogger",
+            "from": "@alexkroman1/aai-runtime/internal"
+          }
+        ]
+      }
+    },
+    {
+      "name": "guest-route-table",
+      "description": "`guest-routes.ts` declares the guest harness's surface twice over — `GUEST_ROUTES` (the paths) and `GUEST_ROUTE_EXPOSURE` (how the PLATFORM exposes each one) — and two thirds of the first table is IMPORTED rather than transcribed. This convention pins exactly that, and it is worth stating what it does and does not cover, because the guarantee is three mechanisms and only one of them is here. The IMPORTS are the structural half: ten of the routes are served by `@alexkroman1/aai-runtime` — six by `createRuntimeServer`, four by `handleWorkflowRequest` — and they arrive as `SERVER_ROUTES` and `WORKFLOW_CALLBACK_ROUTES`, so a rename there is a compile error here rather than a 404 a client reads as a dead sandbox and re-brokers against forever. Transcribing them instead would compile and pass every test. The two EXPORT names are pinned because the other two mechanisms read them: `guest-routes.test.ts` introspects the real orchestrator app to prove every `proxied` method is registered under `/:slug` and that no stale `direct-dial` sits beside a route that does forward, and `guard-invariants` rule 12 reads this tree and the guest's dispatch as TEXT — which is how it respects the boundary that aai-server may not import guest source, and also what makes it silent if either table is renamed out from under it. What is NOT expressible here is the completeness question the section exists for: whether `GUEST_ROUTES` still describes the guest. That list is transcribed by hand and cannot be derived, it has already drifted once (`GET /studio/tools` was a real guest route in neither table, and the `satisfies` cannot catch it — that compile error fires for a KEY with no exposure entry, never for a route nobody wrote down), and rule 12 plus the test are the answer. Konsistent holds the names those two depend on.",
+      "paths": "packages/aai-server/src/guest-routes.ts",
+      "must": {
+        "exportConstants": [
+          "GUEST_ROUTES",
+          "GUEST_ROUTE_EXPOSURE"
+        ],
+        "import": [
+          {
+            "name": "SERVER_ROUTES",
+            "from": "@alexkroman1/aai-runtime/internal"
+          },
+          {
+            "name": "WORKFLOW_CALLBACK_ROUTES",
+            "from": "@alexkroman1/aai-runtime/internal"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sdk-provider-descriptors-are-pure-data",
+      "description": "A `sdk/providers/**` module is DATA about a provider, never a client of one. The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`, `@ai-sdk/*`) are regular dependencies of `@alexkroman1/aai` and are imported ONLY by the host-side openers and resolvers, which live in aai-runtime; a vendor import on this side would put a provider SDK into every agent bundle and therefore inside every guest sandbox, for a module whose whole content is a serializable `{ kind, options }` record. That cost is invisible in review and at runtime — the descriptor still compiles, the session still works, and what changed is the size of the bundle the platform ships and what it can reach. The four stage families (`llm-providers`, `stt-providers`, `tts-providers`, `s2s-providers`) already assert `importFromExternals: false` on the vendor modules they match; what this adds is the TWELVE that their exclusion lists put beyond reach — the four stage barrels, `assemblyai-pipeline.ts`, `_default-providers.ts`, the AssemblyAI descriptors for stt/tts/llm, `llm/from-string.ts`, `llm/gateway-models.ts` and `llm/model-options.ts` — which is to say the modules a family rule was relaxed for, exactly where a relaxation is least visible. It also refuses a `node:` builtin, which biome's `noRestrictedImports` deny list for `sdk/` cannot: that list enumerates eleven builtins and `node:fs`, `node:path` and `node:util` are not among them.",
+      "paths": [
+        "packages/aai/src/sdk/providers/*.ts",
+        "packages/aai/src/sdk/providers/**/*.ts",
+        "!packages/aai/src/sdk/providers/*.test.ts",
+        "!packages/aai/src/sdk/providers/**/*.test.ts",
+        "!packages/aai/src/sdk/providers/**/*.test-d.ts"
+      ],
+      "must": {
+        "importFromExternals": false
+      }
+    },
+    {
+      "name": "sdk-modules-do-not-import-the-test-runner",
+      "description": "`sdk/` is the half of the SDK that rides a browser bundle, a Deno process and every agent bundle the platform ships, and `vitest` is an OPTIONAL PEER dependency of `@alexkroman1/aai` — so a runner import anywhere in this tree is an unresolvable peer in a consumer's install, for code they reached from a page or a tool body rather than from a test. The rule is invisible from inside this repo, which is what makes it worth a convention: vitest is a devDependency here and every spec resolves it, so a `vi.fn()` reached for inside `testing-gateway.ts` type-checks, the suite stays green, and the break lands in somebody else's `pnpm install`. The published `@alexkroman1/aai/testing` subpath is where this bites hardest and where it was previously held by prose alone: that module is publishable precisely because it INSTALLS nothing — every fake returns a `restore` the caller owns — so it carries no test-runner dependency and a project on another runner can still build a `ToolContext`. `testing-vitest.ts` is the single exclusion and the one place the coupling is allowed: it is `@alexkroman1/aai/testing/vitest`, importing it is what pulls the peer, importing `/testing` is not, and it is therefore what a helper moves INTO once its remaining content is the installation. The `*-test-utils.ts` grammar is excluded for the reason `sharedCoverageExclude` in `vitest.shared.ts` excludes it — a file named that way is test infrastructure rather than a shipped module — which keeps the exception principled instead of a list of the files that happen to violate the rule today (verified: dropping both exclusions reports `testing-vitest.ts` and `_upload-parts-test-utils.ts` and nothing else, so the pattern really does reach them). Two things konsistent cannot state here. The NAMING half of the same rule — anything called `install*`, and anything handing back a `restore`, lives only in `testing-vitest.ts` — needs a prefix match, where export predicates take names; it stays prose in `packages/aai/CLAUDE.md`. And the deny list has to spell `vitest/*` beside `vitest`, because a trailing-`/*` entry deliberately does not match the root.",
+      "paths": [
+        "packages/aai/src/sdk/*.ts",
+        "packages/aai/src/sdk/**/*.ts",
+        "!packages/aai/src/sdk/testing-vitest.ts",
+        "!packages/aai/src/sdk/*.test.ts",
+        "!packages/aai/src/sdk/**/*.test.ts",
+        "!packages/aai/src/sdk/*.test-d.ts",
+        "!packages/aai/src/sdk/*-test-utils.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "vitest",
+          "vitest/*"
+        ]
+      }
+    },
+    {
+      "name": "sdk-step-vocabulary-carries-no-dependency",
+      "description": "`@alexkroman1/aai/step` is the vocabulary a durable workflow body is written against, and its zero-dependency budget is a fact about WHERE the barrel runs rather than a preference: a `workflows/*.ts` step and the `client.tsx` that renders the same run reach for the same names, so this graph rides a BROWSER bundle. A zod import here drags the whole authoring graph in behind it — the startup cost `/utils` exists to keep off the CLI's path — and a `node:` builtin makes the page fail to bundle at all, on a module whose author never asked for Node. The budget was stated in the subpath table as prose and held by nothing that can see this: `sdk/tsconfig.json`'s `types: []` makes a Node TYPE a compile error and says nothing about `import { readFileSync } from \"node:fs\"`, and biome's `noRestrictedImports` deny list for `sdk/` enumerates eleven builtins, neither `node:fs` nor `node:util` among them. Measured before landing: all twenty-one of these modules import nothing but relative siblings, so `importFromExternals: false` is a truer statement of the budget than a zod deny list — and it is the one that also catches the builtin (verified both ways: a `zod` import into `step-fetch.ts` and a `node:fs` import into `wav.ts` each report here and nowhere else). `map-concurrent.ts`, `wav.ts` and `_transcribe-shared.ts` are named alongside the `step*` grammar because the barrel re-exports them; a module that joins that barrel belongs on this list.",
+      "paths": [
+        "packages/aai/src/sdk/step*.ts",
+        "packages/aai/src/sdk/map-concurrent.ts",
+        "packages/aai/src/sdk/wav.ts",
+        "packages/aai/src/sdk/_transcribe-shared.ts",
+        "!packages/aai/src/sdk/*.test.ts",
+        "!packages/aai/src/sdk/*.test-d.ts"
+      ],
+      "must": {
+        "importFromExternals": false
+      }
+    },
+    {
+      "name": "workflow-api-client-is-zod-free",
+      "description": "`@alexkroman1/aai/workflow-api` is the CLIENT of everything a deployed agent answers — the surface a caller OUTSIDE the agent writes against, and in practice that caller is a `workflowApp()` page, which BUNDLES it. So this graph is zod-free, for the reason `/step` next door carries no dependency at all: zod's module graph is the largest thing on the SDK's import surface, and a page that reaches `createAgentClient` to poll a run has no use for a schema library. The budget is zod alone rather than `importFromExternals: false` here, and the difference is load-bearing — `event-stream.ts` legitimately carries `eventsource-parser`, so the stricter predicate would report a dependency this subpath is meant to have. Sixteen modules, measured: none imports zod today, and the one that would break the rule invisibly is a schema helper reached for while validating a workflow input, since the authoring side of the same package is full of them and the import would look ordinary. `sdk/client-config-path.ts` exists precisely so this graph can read a config path without the zod-carrying `sdk/client-config.ts`, and it is named here so the split cannot be undone by an import.",
+      "paths": [
+        "packages/aai/src/sdk/workflow*.ts",
+        "packages/aai/src/sdk/agent-client.ts",
+        "packages/aai/src/sdk/event-stream.ts",
+        "packages/aai/src/sdk/client-config-path.ts",
+        "!packages/aai/src/sdk/*.test.ts",
+        "!packages/aai/src/sdk/*.test-d.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "zod",
+          "zod/*"
+        ]
+      }
+    },
+    {
+      "name": "capability-contract-roots-are-re-export-only",
+      "description": "A file under `<package>/src/contracts/entrypoints/` IS a capability: `pnpm check:api-contracts` rolls up a report for exactly the names that file selects, hashes the report body and holds the hash to a committed epoch, so what it re-exports is the promise the package has made about that slice of its authoring surface. A local declaration in one silently WIDENS that promise with a symbol that exists nowhere else — it lands in the rollup, it lands in the hash, and it demands an epoch classification for a name no consumer can import and no frozen compatibility example can exercise. Nothing was checking for it: `api-contracts-gate.test.ts` reads these files as text and asserts the NAMES agree with the epoch, which is a different question, and the script's own AST walk collects export clauses rather than rejecting statements that are not one — so both halves of the gate-and-guard pair would carry a `const` without comment. Fifty roots — 26 in `aai`, 9 in `aai-ui`, 15 in `aai-runtime` — discovered by the same rule the script uses (a package opts in by creating the directory), so a fourth contract package is covered on arrival. This SUPERSEDES `runtime-capability-entrypoints`, which states the identical predicate over `packages/aai-runtime/src/contracts/entrypoints/*.ts` alone: the fifteen roots it holds are a third of the tree, and the two packages it leaves out are the ones whose capability roots an agent AUTHOR's build depends on. Delete that convention when this lands rather than keeping both — a narrower duplicate of a live rule reads as a deliberate scope decision. This is the rule `*-barrel.ts` files are held to, for the same reason stated there: a symbol declared inside a re-export surface has no home module.",
+      "paths": [
+        "packages/*/src/contracts/entrypoints/*.ts"
+      ],
+      "must": {
+        "areBarrelFiles": true
+      }
+    },
+    {
+      "name": "ui-hook-result-type",
+      "description": "A hook module in aai-ui is `use-<thing>.ts`, and it exports `use<Thing>` returning a NAMED, exported `Use<Thing>Result`. The name is what makes the published reference readable: an inferred return type renders as one flattened type expression with every field's doc comment dropped (the same typedoc-plugin-markdown behaviour the memoized components pay for — see `ui-memoized-component-props`), so a hook whose result is an inline object literal documents none of its fields, and a caller destructuring `{ items, streaming, transcript, thinking }` has nowhere to read what they mean. Exporting it is also what lets a page annotate its own state with the hook's shape rather than restating it. Three modules are deliberately outside this: `use-run-key.ts` returns a bare `string`, and `use-workflow-form.ts` / `use-workflow-stream.ts` export `useWorkflowSubmit` / `useWorkflowStream` returning the shared `WorkflowSubmission` shape (one submission type for two hooks, so the run-and-stream pair stay interchangeable at a call site). All three names are on the published surface pinned by `etc/index.api.md`, `API-EXPORTS.json` and the `aai-ui:workflow` epochs, so they are exceptions rather than debt — renaming one is an api-report plus an epoch bump, not a tidy-up.",
+      "paths": [
+        "packages/aai-ui/src/use-{hookName}.ts",
+        "!packages/aai-ui/src/use-run-key.ts",
+        "!packages/aai-ui/src/use-workflow-form.ts",
+        "!packages/aai-ui/src/use-workflow-stream.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "use${hookName.toPascalCase()}",
+            "returnValueOfType": "Use${hookName.toPascalCase()}Result"
+          }
+        ],
+        "exportTypes": [
+          "Use${hookName.toPascalCase()}Result"
+        ]
+      }
+    },
+    {
+      "name": "ui-component-module-name",
+      "description": "A module under aai-ui's `components/` exports the component its filename names — `console-shell.tsx` exports `ConsoleShell`. The root barrel re-exports every one of them by explicit name (`index.ts` carries no `export *`), so filename and export are the two halves of one lookup: a component whose file says one thing and whose export says another is findable only by grep, and a reader following an import back from a template's `client.tsx` lands in the wrong file. Three modules are plural by construction and named for the family rather than for one component: `form-fields.tsx` (the seven `Field` / `TextField` / `SelectField` / … controls a `<Form>` is assembled from), `url-chips.tsx` (`ApiUrlChip`, `UiUrlChip`, `SessionUrlChips`), and `upload-progress.tsx` (`UploadProgressBar` — the file could be renamed to match, but the name is on the published surface and the path is keyed in `scripts/no-check-baseline.json`, so it is left alone).",
+      "paths": [
+        "packages/aai-ui/src/components/{componentName}.tsx",
+        "!packages/aai-ui/src/components/form-fields.tsx",
+        "!packages/aai-ui/src/components/upload-progress.tsx",
+        "!packages/aai-ui/src/components/url-chips.tsx"
+      ],
+      "excludeFiles": [
+        "**/*.test.tsx"
+      ],
+      "must": {
+        "export": [
+          "${componentName.toPascalCase()}"
+        ]
+      }
+    },
+    {
+      "name": "ui-memoized-component-props",
+      "description": "The three memoized components (`Markdown`, `Controls`, `MessageList`) are `export const X = memo(fn)`, and each must carry an explicit `MemoExoticComponent<FunctionComponent<XProps>>` annotation written from NAMED react type imports, with `XProps` exported. For as long as that type was inferred the published reference described all three as taking nothing — `const Markdown: MemoExoticComponent;` was the entire declaration, so `text`, a REQUIRED prop, was named nowhere a reader could find it. The cause is neither `memo` nor the props being inline: it is the shape tsc emits for an inferred type, `import(\"react\").MemoExoticComponent<…>`, whose type ARGUMENTS typedoc-plugin-markdown drops. Measured against the plugin directly, the same declaration written from a named import renders its arguments in full, in every combination. So the annotation is what tsc then emits verbatim, and the props type is exported because `treatWarningsAsErrors` refuses a named-but-unexported type on a public signature. The two react type imports are the load-bearing half a checker can see: drop the annotation and both imports go unused, so requiring them is what fails a regression back to the inferred form.",
+      "paths": "packages/aai-ui/src/components/{componentName:matches(^(markdown|controls|message-list)$)}.tsx",
+      "must": {
+        "importTypes": [
+          {
+            "name": "MemoExoticComponent",
+            "from": "react"
+          },
+          {
+            "name": "FunctionComponent",
+            "from": "react"
+          }
+        ],
+        "exportTypes": [
+          "${componentName.toPascalCase()}Props"
+        ],
+        "exportConstants": [
+          "${componentName.toPascalCase()}"
+        ]
+      }
+    },
+    {
+      "name": "ui-worklet-blob-url",
+      "description": "An AudioWorklet processor module in aai-ui is `worklets/<name>-processor.ts`; it exports its raw source as `<name>ProcessorSource` and loads it through `workletModuleUrl` from `./_module-url.ts`. The helper exists because the choice inside it is not discoverable from a call site: the agent page's CSP allows `script-src blob:` and NOT `data:`, so a data-URI module fails `addModule` with the opaque \"Unable to load a worklet's module\" — a failure that names neither the CSP nor the URI scheme. Hand-rolling `URL.createObjectURL(new Blob([...]))` at a second call site works today and is one CSP edit away from being the same bug in two places. The exported source constant is the other half: the processor body is a template STRING, invisible to tsc, so `capture-processor.test.ts` and `playback-processor.test.ts` evaluate it directly — un-exporting it silently removes the only coverage those processors have. NOTE what is deliberately NOT asserted here: `importFromParents: false` is red and should stay red, because both processors import tuning constants (`MIC_BUFFER_SECONDS`, `MIC_SILENCE_PROBE_MS`, the playback figures) from `../types.ts` and interpolate them into the source string, which is exactly right — one declaration, read by the host and baked into the worklet.",
+      "paths": "packages/aai-ui/src/worklets/{worklet}-processor.ts",
+      "excludeFiles": [
+        "**/*.test.ts"
+      ],
+      "must": {
+        "exportConstants": [
+          "${worklet.toCamelCase()}ProcessorSource"
+        ],
+        "import": [
+          {
+            "name": "workletModuleUrl",
+            "from": "./_module-url.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ui-workflow-hook-api-ref",
+      "description": "Every aai-ui hook that talks to the workflow HTTP API takes the caller's client through `useWorkflowApiRef(api)` (`_workflow-api-ref.ts`), never as an effect dependency. The natural spelling passes a new object every render, and as a dependency that is an unbounded request loop against the agent — which BROKERS, so it also boots sandboxes — with `error` wiped before anything can read it. It presents as \"the page polls forever\" rather than as a mistake at the call site, which is why a per-hook comment was not enough: the preamble had been written out five times with four copies of the same paragraph, and a sixth hook would have copied whichever one it read. The helper holds the ref, the lazily-built default client behind it, and one copy of the argument, and returns a STABLE getter read per request — so a caller swapping clients mid-watch (a token arriving after login) is picked up without the watch restarting.",
+      "paths": "packages/aai-ui/src/use-{hook:matches(^(workflow|download-url))}.ts",
+      "excludeFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "must": {
+        "import": [
+          {
+            "name": "useWorkflowApiRef",
+            "from": "./_workflow-api-ref.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ui-browser-barrel-has-no-node-module",
+      "description": "aai-ui's root barrel is a BROWSER entry point, so it may not reach the two modules in this package that import node builtins. `client-dir.ts` (`defaultClientDir()`, `node:module` + `node:path`) has its own `./client-dir` subpath for exactly this reason, and `build-default-client.ts` (`node:path` + `node:url`) is a build step. A node builtin on the root barrel is not a type error and not a lint error — it fails at bundle time in a USER's project, or worse resolves to a browser shim and fails at runtime, and the import that caused it can be four modules deep. Enumerating the specifiers rather than banning the `node:` prefix is a konsistent limitation, not a choice: `importFrom`'s wildcard needs a `/` after the prefix, so `node:*` is unreachable. A blanket prefix ban belongs in biome's `noRestrictedImports` `patterns` group, scoped to this package minus those two files.",
+      "paths": "packages/aai-ui/src/index.ts",
+      "mustNot": {
+        "importFrom": [
+          "./client-dir.ts",
+          "./build-default-client.ts",
+          "node:module",
+          "node:path",
+          "node:url",
+          "node:fs"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-pane-modules",
+      "description": "The studio front-end's panes are one module each, and this is the list. It exists because the prose inventory in `packages/aai-studio-client/CLAUDE.md` went stale in both directions at once: it named a `database.tsx` that had been deleted with the Database pane, omitted `logs-view.tsx` entirely, and then said \"the six page-shaped ones\" under a list of seven. `top-bar.tsx`'s `StudioTab` union is the real roster (`preview`, `docs`, `workflows`, `code`, `logs`, `secrets`, `settings`) and `top-bar.test.tsx` pins the rendered label sequence — but nothing tied either to the modules that render them, so a deleted pane left a documented file that was not there and an added one left a file no document mentioned. konsistent cannot read the union, so this asserts the module set from the filesystem side: existence only, which is what catches the deletion. `chat.tsx` (the pane outside the switcher), `pane-shell.tsx` (shared by the page-shaped ones), `public-api.tsx` (the one page outside the shell, chosen before the auth gate) and the two shells `app.tsx` / `project-view.tsx` are here for the same reason.",
+      "paths": "packages/aai-studio-client/src",
+      "must": {
+        "haveType": "directory",
+        "haveFiles": [
+          "chat.tsx",
+          "preview.tsx",
+          "docs.tsx",
+          "workflows.tsx",
+          "code-view.tsx",
+          "logs-view.tsx",
+          "secrets.tsx",
+          "settings.tsx",
+          "pane-shell.tsx",
+          "public-api.tsx",
+          "top-bar.tsx",
+          "project-view.tsx",
+          "app.tsx"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-pane-export",
+      "description": "A studio pane module whose filename IS its tab id exports `<Tab>Pane` — `secrets.tsx` exports `SecretsPane`. `project-view.tsx` renders the panes from a chain of `selectedTab === \"…\"` comparisons against `top-bar.tsx`'s `StudioTab` union, so the tab id is the one string that links the union, the switcher's label table, the selection state and the module — and the export name is what makes that chain greppable from either end. The two panes with a layout of their own are named for what they are rather than for their tab (`code-view.tsx` → `CodeView` for tab `code`, `logs-view.tsx` → `LogsView` for tab `logs`), and `chat.tsx` exports `ChatPanel` because it is not in the switcher at all; those three are outside the pattern by design, so the rule is scoped to the five whose filename and tab id already agree.",
+      "paths": "packages/aai-studio-client/src/{pane:matches(^(preview|docs|workflows|secrets|settings)$)}.tsx",
+      "must": {
+        "exportFunctions": [
+          "${pane.toPascalCase()}Pane"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-test-seam",
+      "description": "`src/_test-utils.ts` is this package's one test seam, and these are the helpers it owes. Each replaced a shape that had been rebuilt per suite — the QueryClient pair in five files, the `ResizeObserver` stub in two, and 21 `as HTML*Element` casts, a cast that also silently answers `undefined === true` when the query resolves to something with no `.disabled`. The inventory is asserted rather than described because the guide's copy of it is the thing that rots: a helper renamed or folded into a call site leaves a documented seam that is not there, and the next suite rebuilds the shape instead of importing it. Existence only — konsistent cannot see that a suite reached PAST the seam, which stays a review question.",
+      "paths": "packages/aai-studio-client/src/_test-utils.ts",
+      "must": {
+        "exportFunctions": [
+          "stubFetch",
+          "fakeFetch",
+          "jsonResponse",
+          "sseResponse",
+          "settle",
+          "fetchCall",
+          "fetchLines",
+          "renderWithClient",
+          "button",
+          "input",
+          "textarea",
+          "installResizeObserver"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-cleanup-is-setup",
+      "description": "No suite in this package imports Testing Library's `cleanup`: `afterEach(cleanup)` is registered once, in `src/_test-setup.ts`. Testing Library registers its own automatic cleanup only when the runner exposes globals, and this package deliberately does not set `globals: true` — so before the setup file, sixteen suites hand-wrote the hook and the seventeenth (`use-event-stream.test.ts`) leaned on a per-test `unmount()`, which an assertion failing above that line SKIPS: the hook stays mounted holding a pending fake timer into the next test, and the failure surfaces in an unrelated suite. Registering it centrally is the only version a new suite cannot forget, and it runs last (vitest stacks `afterEach` hooks outermost-last), which is what a suite restoring timers or globals in its own hook wants. A `cleanup` import is therefore always one of two mistakes — a re-registered hook, or a mid-test call standing in for a second test case. `github-card.test.tsx` had the second and was split into two cases rather than exempted.",
+      "paths": [
+        "packages/aai-studio-client/src/{suite}.test.tsx",
+        "packages/aai-studio-client/src/{suite}.test.ts"
+      ],
+      "mustNot": {
+        "import": [
+          {
+            "name": "cleanup",
+            "from": "@testing-library/react"
+          }
+        ]
+      }
+    },
+    {
+      "name": "studio-client-probe-cadence",
+      "description": "`preview.tsx` exports the four constants that set the preview-probe cadence (`PROBE_RETRY_MS`, `PROBE_SLOW_AFTER`, `PROBE_SLOW_RETRY_MS`, `PROBE_FAILURES_BEFORE_WAKE`). They are exported for the test rather than for a caller: the probe suite used to copy the numbers, so halving the source cadence would have loosened the very bound written to catch it. Un-exporting one sends the suite straight back to a mirrored literal, which is why this is asserted here and paired with `studio-client-probe-cadence-imported`.",
+      "paths": "packages/aai-studio-client/src/preview.tsx",
+      "must": {
+        "exportConstants": [
+          "PROBE_RETRY_MS",
+          "PROBE_SLOW_AFTER",
+          "PROBE_SLOW_RETRY_MS",
+          "PROBE_FAILURES_BEFORE_WAKE"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-probe-cadence-imported",
+      "description": "The other half: `preview.test.tsx` IMPORTS all four probe constants from `./preview.tsx` rather than mirroring their values. A mirrored constant makes the assertion agree with itself instead of with the source — halve `PROBE_RETRY_MS` in `preview.tsx` and a suite carrying its own `3000` still passes, having loosened the bound it exists to hold. The bound is also EXACT rather than an upper one, because a capped-only assertion is satisfied by a poll loop that STOPS, which is the failure the module's own docblock names — and an exact bound over a mirrored number is the worst of both.",
+      "paths": "packages/aai-studio-client/src/preview.test.tsx",
+      "must": {
+        "import": [
+          {
+            "name": "PROBE_RETRY_MS",
+            "from": "./preview.tsx"
+          },
+          {
+            "name": "PROBE_SLOW_AFTER",
+            "from": "./preview.tsx"
+          },
+          {
+            "name": "PROBE_SLOW_RETRY_MS",
+            "from": "./preview.tsx"
+          },
+          {
+            "name": "PROBE_FAILURES_BEFORE_WAKE",
+            "from": "./preview.tsx"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cli-vite-build-preserves-node-env",
+      "description": "A CLI bundler module (`packages/aai-cli/src/*-bundler.ts`) invokes Vite's `build()` and must take it through `withPreservedNodeEnv` (`./_vite-env.ts`). Vite's `build()` sets `NODE_ENV=production` when it is unset — a permanent, global side effect on the CALLING process, not on the build. `aai dev` rebuilds on every file change, so without the wrapper the first rebuild flips the dev server itself to production for the rest of its life, and nothing reports it. The wrapper snapshots and restores the variable around the build. konsistent can only reach the two modules named `*-bundler.ts`; a Vite invocation added under some other filename is outside it and would want a `guard-invariants` node rule (a `build` import from `\"vite\"` in a module that does not also import the wrapper).",
+      "paths": "packages/aai-cli/src/{kind}-bundler.ts",
+      "excludeFiles": [
+        "**/*.test.ts"
+      ],
+      "must": {
+        "import": [
+          {
+            "name": "build",
+            "from": "vite"
+          },
+          {
+            "name": "withPreservedNodeEnv",
+            "from": "./_vite-env.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cli-command-result-shape",
+      "description": "A single-command module in the CLI is `<command>.ts` exporting `execute<Command>` that returns `Promise<CommandResult<<Command>Data>>`. The envelope is the CLI's contract with scripts: `runCommand` renders `CommandResult` as either the human output or the `--json` object, so an executor that returns a bare payload prints nothing a `jq` pipeline can read and reports failure through an exception instead of an exit-coded result. Naming the data type after the command is what keeps `{\"ok\":true,\"data\":{…}}` documentable per command rather than as one union. Only the commands whose module holds exactly one executor are in scope; `studio.ts` (list/pull/push/publish), `workflow.ts` (list/runs/show/cancel) and `secret.ts` (put/delete/list) each hold a family and are named per operation, and `init.ts` / `login.ts` return a payload type that is not `<Command>Data`.",
+      "paths": "packages/aai-cli/src/{cmd:matches(^(build|delete|deploy|dev|eval|logs|test)$)}.ts",
+      "excludeFiles": [
+        "**/*.test.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "execute${cmd.toPascalCase()}",
+            "returnValueOfType": "Promise<CommandResult<${cmd.toPascalCase()}Data>>"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cli-test-data-carries-the-set",
+      "description": "`aai test`'s result carries the SET it covered, not just a boolean. `passed` alone made a narrowed run indistinguishable from a complete one in a script — `jq -e .data.passed` was true either way — while the command printed a green summary over 211 unrun tests, which is what the scaffold wires into CI. So `ran` (what vitest was pointed at), `unrun` (what it was not) and `complete` (the one field a CI job needs to read) are REQUIRED on `TestData`, and `additionalProperties: false` keeps the shape from growing a second answer to the same question. Making `complete` optional is the exact regression this catches: it type-checks at every call site that reads it and silently answers `undefined` — falsy, so a job gating on it fails closed, and a job gating on `passed` is back where it started.",
+      "paths": "packages/aai-cli/src/test.ts",
+      "must": {
+        "declareTypes": [
+          {
+            "name": "TestData",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "skipped": {
+                  "type": "boolean"
+                },
+                "ran": {},
+                "unrun": {},
+                "complete": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "passed",
+                "ran",
+                "unrun",
+                "complete"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "cli-eval-data-carries-the-set",
+      "description": "`aai eval` names its `ran` set for the same reason `aai test` does (see `cli-test-data-carries-the-set`): a boolean verdict over an unknown set of cases is not a verdict. It carries no `unrun`/`complete` deliberately — the eval tier is one file (`agent.eval.test.ts`), so there is no narrowing to report, and inventing the two fields here would imply a completeness question this command does not have.",
+      "paths": "packages/aai-cli/src/eval.ts",
+      "must": {
+        "declareTypes": [
+          {
+            "name": "EvalData",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "skipped": {
+                  "type": "boolean"
+                },
+                "ran": {}
+              },
+              "required": [
+                "passed",
+                "ran"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "eval-case-registration",
+      "description": "Every eval file registers its cases through `registerEvalCases` from `./_register.ts`, and that indirection is MECHANICAL rather than stylistic. Biome's `noMisplacedAssertion` accepts an `expect` only inside a literal `test(` call, so a case reached through an alias — `const run = matches ? test : test.skip`, or `test.skipIf(…)(…)`, which is exactly what a tier that skips without a live key needs — is a lint error at every assertion in the file. `_register.ts` holds that alias once, so a case body keeps its `expect`s. The selection logic rides along and has to: `AAI_EVAL_ONLY` is ONE variable across the whole tier, and a file it selects nothing from must WARN (naming what it could have matched) rather than fail, because each eval file sees only its own cases in its own vitest worker — so a second copy of that rule would answer the same filter differently in one file than in the next, which reads as the filter working.",
+      "paths": "packages/aai-evals/src/*.eval.test.ts",
+      "must": {
+        "import": [
+          {
+            "name": "registerEvalCases",
+            "from": "./_register.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "eval-turn-terminators",
+      "description": "What ENDS a reply is declared ONCE — `TURN_ENDS` in `@alexkroman1/aai-runtime/eval` — and `assertions.ts` imports it rather than restating it, along with `saidIn` and `toolCallsInEvents`, the two event readers it partitions a run into turns with. It WAS written out in both places, and the two must agree by construction: `openEvalSession`'s `say()` waits on that set to decide a reply has ended, and these assertions use the same set to decide which turn a tool call was in. A third terminator added to one copy makes `say()` return mid-reply while the assertions still think the turn is open — which reads as the agent misbehaving rather than as a harness bug, and is the exact shape of one of the two harness bugs this tier's first live run found (`say()` settled on the PREVIOUS reply's cancel, so a case recorded \"called no tools\" against a working agent, i.e. a green harness reporting a broken agent). The declaration now crosses a package boundary, the level-1 target having been published so a template can drive its own agent from text, which is what makes an import the only honest spelling of the rule.",
+      "paths": "packages/aai-evals/src/assertions.ts",
+      "must": {
+        "import": [
+          {
+            "name": "TURN_ENDS",
+            "from": "@alexkroman1/aai-runtime/eval"
+          },
+          {
+            "name": "saidIn",
+            "from": "@alexkroman1/aai-runtime/eval"
+          },
+          {
+            "name": "toolCallsInEvents",
+            "from": "@alexkroman1/aai-runtime/eval"
+          }
+        ]
+      }
+    },
+    {
+      "name": "eval-gate-is-not-unit-tier",
+      "description": "`_gate.ts` may not be imported by anything the UNIT tier loads. Importing it RESOLVES a credential and ANNOUNCES at import time — or, under `AAI_REQUIRE_EVAL`, throws — so a unit-tested module reading one setting from there fails its whole file on any machine with that variable set and no key. Verified before it landed, and it is why the tier's side-effect-free settings live in `_env.ts` (`envValue` / `envFlag` / `envInt`, plus `evalStepCapHint`) while `_gate.ts` keeps only the POLICY: which precondition a tier has, what a missing one means, and when a skip becomes a failure. The two files that may import it are the two the unit tier never loads — an `*.eval.test.ts`, excluded by this package's `vitest.config.ts` and selected only by `test:eval`, and `_register.ts`, which nothing but those files imports. That pair is also why neither has a co-located spec; see `eval-module-has-unit-test`. Note konsistent sees a STATIC import only, so a module reaching the gate through `await import(\"./_gate.ts\")` is invisible here — which is a reason not to write one, since the announce happens on evaluation either way.",
+      "paths": [
+        "packages/aai-evals/src/*.ts",
+        "!packages/aai-evals/src/*.eval.test.ts",
+        "!packages/aai-evals/src/_gate.ts",
+        "!packages/aai-evals/src/_register.ts"
+      ],
+      "mustNot": {
+        "importFrom": "./_gate.ts"
+      }
+    },
+    {
+      "name": "eval-module-has-unit-test",
+      "description": "Every module in this package has a co-located `*.test.ts`, because the one that did not was the one deciding what all the others MEANT. `gradeStarter` — which chooses which expectation functions run, under what label, and holds the failure taxonomy — sat in `starter.eval.test.ts`, a file `vitest.config.ts` excludes, so every function it called was unit-tested while the thing calling them was not. The labels are the load-bearing part: they are the keys `EvalReport.unstable` reports and the strings `AAI_EVAL_ONLY` matches, so renaming one silently resets an assertion's flip history with nothing red. The same shape one level down is why the corpus moved INTO the package: as `scripts/starter-eval/expectations.mjs` its eval-only half (`parseLoadedConfig`, `checkMode`, `checkWorkflowShape`, `checkUi`) was in no coverage report at all, exercised only by a run that needed a live key AND a live studio, and it cost the package `allowJs` plus two `turbo.json` input overrides to hash a corpus living outside the package that read it. `_gate.ts` and `_register.ts` are the two exceptions, and they are really one: a spec for either would import `_gate.ts`, which is what `eval-gate-is-not-unit-tier` forbids the unit tier to load. Note this asserts the FILE exists, not that it tests anything — `check:test-assertions` owns the assertion floor and `check:coverage-per-file` the coverage one.",
+      "paths": [
+        "packages/aai-evals/src/{mod}.ts",
+        "!packages/aai-evals/src/*.test.ts",
+        "!packages/aai-evals/src/_gate.ts",
+        "!packages/aai-evals/src/_register.ts"
+      ],
+      "must": {
+        "haveType": "file",
+        "haveFiles": [
+          "${mod}.test.ts"
+        ]
+      }
+    },
+    {
+      "name": "template-eval-spec",
+      "description": "Every template ships an `agent.eval.test.ts`, run by `aai eval` and gated in CI against a SCRIPTED model, and it drives the agent the way a DEPLOYED one is assembled rather than the way the directory reads. Each of the four blocks below replaced a hand-kept count or an unstated habit.",
+      "paths": "packages/aai-templates/templates/{templateName}",
+      "must": [
+        {
+          "name": "eval-present",
+          "description": "The FILE. A template with no eval has coverage only from `agent.test.ts`, which drives its tools and cannot ask the question an eval exists for — did the MODEL choose this tool, with these arguments, in this order. `briefing-desk` shipped exactly that way while the guide said \"25 of them\": a count in prose goes stale on the day a template lands, where a convention fails in the diff that lands it. The eval tier does not gate a merge (it is noisy by construction and needs a live key), but `AAI_EVAL_STUB=1` runs every case's script through the real runtime, transport and tool executor, so the file is also the only thing checking that a template's `agent.ts` still boots and its tools still resolve.",
+          "must": {
+            "haveType": "directory",
+            "haveFiles": [
+              "agent.eval.test.ts"
+            ]
+          }
+        },
+        {
+          "name": "eval-harness",
+          "description": "The HARNESS is `@alexkroman1/aai-runtime/eval/vitest` — `describeEval`, which owns the two modes, the announce line, and the per-case `live` / `scripted` markers. It is also what makes the file PORTABLE, which is the property `aai-evals`' template contract rests on: `use_template` copies the eval verbatim into a studio workspace, `contractWorkspace` overwrites it with the canonical copy, and a plain `npx vitest` then runs it there — which resolves only because everything the file imports is a PUBLISHED package. A local harness, or a helper reached through a repo-relative path, would make that whole non-gameability argument unavailable, and would break a scaffolded project besides (`guard-invariants` rule 13 is the general form).",
+          "if": {
+            "hasFile": "agent.eval.test.ts"
+          },
+          "for": {
+            "files": "agent.eval.test.ts"
+          },
+          "must": {
+            "importFrom": "@alexkroman1/aai-runtime/eval/vitest"
+          }
+        },
+        {
+          "name": "eval-drives-the-discovered-agent",
+          "description": "A template whose agent is DISCOVERED drives `virtual:aai/agent`, never `./agent.ts`. Two things are discovered and this block is gated on the first of them: a `tools/` directory (a tool is a FILE nothing imports, enumerated where the bundle is assembled) — `eval-drives-the-discovered-prompt` covers the second. `agent.ts` is the AUTHORED def, so its raw default export is an agent with NO tools and the FRAMEWORK-DEFAULT prompt; an eval driving it measures a different agent than the one that deploys, and every tool-choice claim in the file then passes or fails for the wrong reason. That has really happened: a spec that lowered the tools and forgot the prompt measured the framework default and reported green, which is why `withDiscoveredTools` is not exported and the two halves are one call. `aaiAgentPlugin()` (`@alexkroman1/aai/testing/vite`, registered in this package's `vitest.config.ts` and in every scaffolded project's) expands the glob against the IMPORTING file's own directory, so the spec needs no glob and no shared helper — and dropping the file into a materialized workspace drives THAT workspace's agent, which is what the template contract needs. The `./agent.ts` ban also catches a TYPE-only import, which konsistent cannot tell apart; that is the right answer here rather than a limitation, because the value a discovered template's spec would want the type of is a workflow definition, and those belong in `shared.ts` — where both workflow-and-tools templates put theirs, so a tool file and a spec can name the def without either importing the agent.",
+          "if": {
+            "hasFile": "tools"
+          },
+          "for": {
+            "files": "agent.eval.test.ts"
+          },
+          "must": {
+            "importFrom": "virtual:aai/agent"
+          },
+          "mustNot": {
+            "importFrom": "./agent.ts"
+          }
+        },
+        {
+          "name": "eval-drives-the-discovered-prompt",
+          "description": "The second half of `eval-drives-the-discovered-agent`, and the reason that rule cannot be gated on `tools/` alone: a `system-prompt.md` is discovered too. `withSystemPrompt` resolves it at BUILD time, so a def whose prompt is the framework default gets the file's text and a def that already contains it is left alone — which means the authored export of a prompt-only template (`code-interpreter`, `math-buddy`, `personal-finance`, `web-researcher` have no tools at all) is an agent that has never read its own rules. Those rules are usually the eval's entire subject: `web-researcher`'s cases are about a prompt that says cite what you read, `math-buddy`'s about one that forbids giving the answer away. An eval driving `./agent.ts` there measures the framework default and reads as a template whose prompt does nothing. The eight templates matched by neither block are the workflow apps and the two minimal starters — nothing to discover, and their evals import `./agent.ts` deliberately, for the workflow definition's type — so the partition is exact and neither block needs an exclusion.",
+          "if": {
+            "hasFile": "system-prompt.md"
+          },
+          "for": {
+            "files": "agent.eval.test.ts"
+          },
+          "must": {
+            "importFrom": "virtual:aai/agent"
+          }
+        }
+      ]
+    },
+    {
+      "name": "template-tools-not-imported",
+      "description": "A `tools/` file IS the tool: it default-exports it, and NOTHING in the template imports it. `agent-templates` owns the default-export half; this is the other one. Discovery happens where the bundle is assembled (`aai-cli/worker-bundler.ts` enumerates `tools/*.ts` and emits static imports, because the guest sandbox is handed one ESM string and has no directory to scan) and, with no bundler in the path, in `aaiAgentPlugin()`'s expansion of `virtual:aai/agent` — so a tool reaches the model by being a file in that directory and by nothing else, and `agent()` refuses a `tools` field outright. An import from `agent.ts` or `shared.ts` therefore buys nothing and costs the thing the layout exists for: it is the first step back toward the 62 map entries whose entire content was `snake_case_name: camelCaseImport`, and whose failure mode is the silent one — add `tools/incident_close.ts`, forget the map line, and the file compiles, lint passes, every gate is green, and the tool never reaches the model. SPECS are excluded and are the deliberate exception: four of them import tool files directly to drive one in isolation, which is a spec's business and not the agent's.",
+      "paths": [
+        "packages/aai-templates/templates/**/*.ts",
+        "packages/aai-templates/templates/**/*.tsx",
+        "!packages/aai-templates/templates/**/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "./tools/*",
+          "../tools/*"
+        ]
+      }
+    },
+    {
+      "name": "template-tool-owns-no-sibling",
+      "description": "And a tool may not import a SIBLING tool. Module state two tools share belongs in a module of its own — `health-assistant`'s `fda.ts` for the memoizing FDA-label cache its two tools read, `embedded-assets`'s search index, `infocom-adventure`'s `REPORTED_HISTORY` — and reaching it through another tool FILE is the version that goes wrong quietly: the importing tool gets the same module instance today, so nothing breaks, while the layout now says one of the two tools owns the other's cache. It also puts a tool one edge away from being un-discoverable, since the rule that makes a `tools/` file a tool is that it is a file in that directory whose default export IS the tool, not a module that also happens to define one. Every tool in the tree reaches what it needs through `../shared.ts` or a named module beside it, which is the shape to copy. konsistent's `importFromCurrentDir` ignores TYPE-only imports, so a sibling's exported type would pass this — no tool wants one (a tool's input shape is its own zod schema), and if one ever does, that is the signal the type belongs in the module the state does.",
+      "paths": "packages/aai-templates/templates/*/tools/*.ts",
+      "mustNot": {
+        "importFromCurrentDir": true
+      }
+    },
+    {
+      "name": "guest-embeds-no-runtime",
+      "description": "The harness embeds NO agent runtime, so no file here may import `createRuntime`. Every worker bundle ships its own: `buildWorker`'s generated wrapper entry exports `__aaiCreateRuntime`, a factory over the USER'S installed SDK's `createRuntime` bundled in with the provider SDKs, and the harness builds every session through that. What the rule buys is that platform SDK drift can never break a deployed agent — it runs exactly the runtime version it was built and tested against, the same one `aai dev` ran — and it is why a bundle WITHOUT the factory is rejected at load (\"rebuild with a current @alexkroman1/aai-cli\") rather than falling back to an embedded copy. A static `createRuntime` here is what such a fallback would be built out of, and the failure it produces is the one no test can see: a deployed agent that boots fine on a runtime nobody deployed it against, in a sandbox whose whole contract is frozen per deploy by the harness image pin. `createRuntimeServer` is deliberately NOT covered — that is the HTTP/session shell (health, `/client-config`, `/websocket`), the same one `aai dev` runs, and the lazy facade around it is what hands the bundle's runtime a session. Nor is `createTextAgent`: the studio's in-guest coding agent is the harness's own agent rather than a user's, and running it on the platform's SDK is correct.",
+      "paths": [
+        "packages/aai-guest/src/*.ts",
+        "packages/aai-guest/src/**/*.ts"
+      ],
+      "mustNot": {
+        "import": [
+          {
+            "name": "createRuntime",
+            "from": "@alexkroman1/aai-runtime"
+          }
         ]
       }
     }

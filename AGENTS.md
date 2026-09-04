@@ -498,36 +498,53 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   — enforces **structural** conventions: the shapes that are wrong only in
   relation to their siblings, which is why no per-file tool can see them.
   Biome lints statements and tsc type-checks a program; neither can say "every
-  module in this directory must look like the others." The seventeen
-  conventions cover the four things this repo restates by hand — the
+  module in this directory must look like the others." Their count is not
+  written here — a hand-kept one went stale twice. They cover the four things
+  this repo restates by hand — the
   per-package file set (`package.json`, `tsconfig.json`, `vitest.config.ts`,
   `CLAUDE.md`, plus README/`tsconfig.build.json`/`tsdown.config.ts` on the
   four published ones) and each `vitest.config.ts` importing `sharedConfig`;
   `*-barrel.ts` files being pure re-export surfaces; the **dependency-graph
   boundaries** under "Dependency flow" (aai imports no sibling, aai-runtime
   imports only aai, the CLI imports neither server nor guest, the guest imports
-  no server code, the SERVER imports no guest source, and neither browser bundle
-  — aai-ui, the studio client — imports platform or runtime code); and the
-  repeated-by-construction shapes — every
+  no server code, the SERVER imports no guest source, neither browser bundle
+  — aai-ui, the studio client — imports platform or runtime code, the studio
+  server and the evals keep one legitimate edge each, `sdk/` reaches no `host/`
+  module, and a TEMPLATE imports no internal subpath and no private package —
+  shipped product, so an import that resolves here is absent from a user's
+  install and `check:template-types` compiles it clean);
+  and the repeated-by-construction shapes — every
   STT/TTS/LLM/S2S provider module's `*_KIND` / `*_API_KEY_ENV` / `*Options` /
-  `*Provider` / factory / `resolve*Settings` set, every CHANNEL module's
-  `*_CHANNEL_KIND` / `*ChannelOptions` / factory set (no `*_API_KEY_ENV`: a
-  channel's credential is its destination and is passed in, never read from the
-  agent env), and every template's `agent.ts` + `client.tsx`.
+  factory / `resolve*Settings` set, checked by SIGNATURE (its own Options in,
+  the stage type out) and for importing no vendor SDK,
+  every CHANNEL module's `*_CHANNEL_KIND` / `*ChannelOptions` / factory set (no
+  `*_API_KEY_ENV`: a channel's credential is its destination and is passed in,
+  never read from the agent env), each store factory returning the interface it
+  implements, and every template's `agent.ts` + `agent.test.ts` + `client.tsx` +
+  `tools/` default exports.
+  Four more were prose in this file until a roster in one of them went stale:
+  `test-helper-modules`, `published-testing-split`, `concurrency-primitives`
+  and `guest-route-exposure`, plus `type-level-tests` (a `.test-d.ts` really
+  asserts with `expectTypeOf`), which was never enforced at all. Each carries
+  its deleted paragraph as its `description` — that field is where the argument
+  goes, so a violation explains itself and a reviewer never re-explains it.
   `pnpm check:konsistent-config` (`konsistent validate`) checks the config
   against its schema without touching the tree.
 
-  It used to be fourteen: `template-tools` checked an export NAME that no longer
-  exists. A tool is now DISCOVERED — a file in `tools/` is the tool, named by its
-  own filename, registered by no one — so there is nothing per-file left to
-  assert. See "A `tools/` file IS the tool" in `packages/aai-templates/CLAUDE.md`.
+  `template-tools` was once retired on the ground that a DISCOVERED tool leaves
+  nothing per-file to assert. The DEFAULT EXPORT is what discovery reads, so
+  that is what it asserts now. See "A `tools/` file IS the tool" in
+  `packages/aai-templates/CLAUDE.md`.
 
   Two things to know before editing `konsistent.json`. **A convention that
   matches nothing passes** — a typo'd `paths` glob checks zero files and prints
   the same "No violations found" as a healthy run, with no error anywhere, so
   `packages/aai-templates/src/konsistent-config.test.ts` asserts every pattern's
   literal prefix exists (plus that each convention is named, described, and
-  declares at least one predicate). And **the case maps compose**:
+  declares at least one predicate). **A deny list also goes stale by SILENCE**,
+  there being no allow-list form, so that test derives the package set from the
+  manifests and asserts the boundary matrix is TOTAL. And **the case maps
+  compose**:
   `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
   declaring `openai: OpenAI` for the type names also makes the factory
   `openAILlm`. That is the wanted derivation; the identity entries that used to
@@ -535,12 +552,8 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   lowercase spellings they kept alive. `elevenlabs: elevenLabs` stays, being a
   real override rather than an identity.
 
-  The version is pinned **exactly** (`1.0.0-beta.4`, the registry's `latest`)
-  rather than caret-ranged: a `^` range over a prerelease drifts onto
-  `1.0.0-beta.6`, which renames the predicates (`export` → `exportValues`,
-  `import` → `importValues`, `importFrom` → `importValuesFrom`). Read the
-  predicate catalog from `node_modules/konsistent/docs/`, not the GitHub README,
-  until that pin moves; the two disagree.
+  The exact version pin, and the predicate-catalog trap that comes with it, are
+  in `packages/aai-templates/CLAUDE.md`.
 
   [konsistent]: https://github.com/vercel-labs/konsistent
 
@@ -944,43 +957,16 @@ would match nothing and pass.
 
 ### `_test-utils.ts` per package (not interchangeable)
 
-Each package has distinct test helpers tailored to its domain:
-
-- **`aai/src/sdk/testing.ts`** and **`aai/src/sdk/testing-vitest.ts`** — the ones
-  that are PUBLISHED (`@alexkroman1/aai/testing` and `/testing/vitest`, so a
-  user's agent project can import them). **The subpath table in
-  `packages/aai/CLAUDE.md` carries the inventory and the argument** — what each
-  fake fills, why the defaults are inert, why each call is a distinct session,
-  and why `/testing` stays framework-agnostic while importing `/testing/vitest`
-  is what pulls the runner.
-  **The split has a RULE rather than a precedent: anything that INSTALLS, and
-  anything that RESTORES, is `/testing/vitest`.** Every fake filling a
-  published slot hands back a `restore` the caller owns, and owning it means a
-  `const restores: (() => void)[]` plus an `afterEach` that splices it — written
-  out template after template, three times in one file. `install*` is that fake
-  plus `onTestFinished(restore)`. A fake with no lifetime (`stubGenerate`,
-  `createToolContext`) gets no wrapper.
-- **`aai/host/_test-utils.ts`** — `flush()` (microtask yield), `makeTool()`,
-  `makeAgent()`, `makeConfig()`, fixture replay helpers for S2S mocking
-- **`aai-cli/_test-utils.ts`** — `withTempDir()` (temp dir + cleanup),
-  `silenceSteps()`, `silenced()`, `makeBundle()`. The dev-server specs share
-  their mock scaffolding (fake chokidar, runtime/server mocks) via
-  `_dev-server-test-utils.ts`. A `_test-setup.ts` setup file points
-  `AAI_CONFIG_DIR` at a per-run temp dir so tests can never touch the
-  developer's real `~/.config/aai/config.json` (API key + approved servers).
-- **`aai-ui/_react-test-utils.ts`** — `createMockSessionCore()`,
-  `MockAudioContext`, `installAudioMocks()`
-- **`aai-studio-client/src/_test-utils.ts`** — typed `fetch` stubs plus their
-  readers, `renderWithClient()`, the `button`/`input`/`textarea` element seams,
-  and `installResizeObserver()`.
-- **`aai-server/test-utils.ts`** — (no underscore) `createTestStore()`
-  (in-memory BundleStore), `createTestOrchestrator()`, `authHeaders()` /
-  `authFetch()` / `deploy()` / `deployAgent()` / `deployPayload()` /
-  `deployBody()`, `makeSlot()`.
-
-  **Build a request with `authFetch`/`deploy`, not a header literal**, and
-  see `packages/aai-server/CLAUDE.md`, "Building a platform request in a test",
-  for the ~47 converted sites and the three shapes that deliberately stay raw.
+Each package's helper module is its own, named for that package's domain, and a
+spec reaches for the one beside it rather than importing another package's. The
+paths and the roster each module owes are the **`test-helper-modules`**
+konsistent convention now — a hand-kept copy lived here and had gone stale in
+four places (`flush()` had moved packages, `sleep()` was never a test helper at
+all, and the largest module in the repo was missing from the list). The
+published pair, `@alexkroman1/aai/testing` and `/testing/vitest`, is
+**`published-testing-split`**: anything that INSTALLS or RESTORES is
+`/testing/vitest`, and `testing.ts` may not import `vitest` at all.
+`packages/aai/CLAUDE.md`'s subpath table carries the inventory and the argument.
 
 ### `@dev/source` custom export condition
 
@@ -1048,17 +1034,12 @@ collision; `packages/aai-ui/CLAUDE.md` tells them apart.
 ### Concurrency primitives (use these, don't hand-roll)
 
 The repo's recurring async-coordination patterns are reified as small
-primitives. Almost all of them are `packages/aai` exports, so **the catalogue
-and the argument behind each one live in `packages/aai/CLAUDE.md`,
-"Concurrency primitives"** — go there before re-inventing one at a call site.
-The roster, so a call site can be grepped
-against it: `createEpoch()`, `createOwnedMap()`, `createCoalescingRunner()`,
-`createTurnMachine()`, `createKeyedLock()` / `withLock()`,
-`sleep(ms, { signal?, unref? })` (the ONE wait — `guard-invariants` rule 19
-keeps the seventh spelling out), `jitteredBackoff(attempt, …)` (rule 31 keeps
-the fourth copy out; the JITTER is the half a copy gets wrong),
-`sessionSlot()`, `ToolFailure` / `isToolFailure()` / `toolFailure()`,
-`pushCapped()`, `resolveOne()`, `omitUndefined()`, `isRecord()`.
+primitives. **The catalogue — every primitive, its home module and the argument
+for it — is the `concurrency-primitives` konsistent convention**, which pins
+each one's location so the roster cannot go stale, plus
+`packages/aai/CLAUDE.md`, "Concurrency primitives". Go there before
+re-inventing one at a call site; `guard-invariants` rules 2, 3, 4, 19, 21, 22,
+23 and 31 are what catch a hand-rolled copy in a function body.
 
 Two are repo-wide rather than this SDK's, and stay here:
 
@@ -1467,8 +1448,9 @@ header carries the account; the rule is the gate's.
   green no-op.
 - In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks — and note
-  `flush()` is MICROTASK-only. For a full macrotask yield use `tick()`, and for
-  real elapsed time `sleep(ms)`, both from `aai/host/_test-utils.ts`; several
+  `flush()` is MICROTASK-only. For a full macrotask yield use `tick()`, from
+  the same module; for real elapsed time `sleep(ms)` is a published SDK export
+  (see the `concurrency-primitives` convention), not a test helper. Several
   specs used to define a *local* `flush` as `setTimeout(r, 0)`, shadowing the
   export so one name meant two different waits.
 - Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
@@ -1887,14 +1869,13 @@ catches the most common issues that historically required follow-up commits:
 ## A new guest route must declare how the PLATFORM exposes it
 
 `aai dev` serves the guest's own routes directly, so a feature is developed
-against a server where the guest's dispatch table is the whole API. Deployed,
-almost nothing works that way, and the gap is invisible in a diff and to the
-feature's own tests — it has landed twice. `GUEST_ROUTE_EXPOSURE` and
-`GUEST_ROUTES` (`packages/aai-server/src/guest-routes.ts`) are what close it.
-**See "A new guest route must declare how the PLATFORM exposes it" in
-`packages/aai-server/CLAUDE.md`** for the four exposure kinds, which half is a
-test and which is `guard-invariants` rule 12, and why exposure is decided by
-who CALLS a route.
+against a server where the guest's dispatch table is the whole API; deployed,
+almost nothing works that way, and it has landed twice. The two declarations
+that close it are pinned by the **`guest-route-exposure`** konsistent
+convention, whose description carries the argument. **See "A new guest route
+must declare how the PLATFORM exposes it" in `packages/aai-server/CLAUDE.md`**
+for the four exposure kinds, which half is a test and which is
+`guard-invariants` rule 12, and why exposure is decided by who CALLS a route.
 
 ## Security architecture
 

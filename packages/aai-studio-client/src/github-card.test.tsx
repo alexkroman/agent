@@ -8,7 +8,7 @@
 // self-hosted deploy exactly as it was, and it is invisible in a diff — a card
 // that renders an explanatory row instead would still look correct here.
 
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   button,
@@ -306,18 +306,23 @@ describe("GithubCard", () => {
     expect(await screen.findByText("Grant it Contents: read and write.")).toBeTruthy();
   });
 
-  test("an organization is offered repository creation; a personal account is not", async () => {
-    // Absent rather than disabled: GitHub does not permit an App to create a
-    // repository in a personal account at all, so a greyed-out field would
-    // promise something no permission grant can unlock.
+  // The pair below is one contrast, split across two cases so the reporter
+  // names which half failed — and so neither needs a mid-test `cleanup()`,
+  // which the package setup file owns (see "afterEach(cleanup) lives in
+  // src/_test-setup.ts" in this package's guide).
+  test("an organization is offered repository creation", async () => {
     stubFetch({
       "/studio/github": () => jsonResponse(CONNECTED),
       "/studio/github/repos": () => jsonResponse(REPOS),
     });
     renderCard();
     expect(await screen.findByText("Or create a new one")).toBeTruthy();
-    cleanup();
+  });
 
+  test("a personal account is not offered repository creation", async () => {
+    // Absent rather than disabled: GitHub does not permit an App to create a
+    // repository in a personal account at all, so a greyed-out field would
+    // promise something no permission grant can unlock.
     stubFetch({
       "/studio/github": () => jsonResponse({ ...CONNECTED, accountType: "User" }),
       "/studio/github/repos": () => jsonResponse(REPOS),

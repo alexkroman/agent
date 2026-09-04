@@ -51,16 +51,12 @@ Four decisions worth not relitigating:
 
 ### A template eval imports from `/eval` and `/eval/vitest`, and NOWHERE else
 
-The root `@alexkroman1/aai-runtime` barrel drags this runtime's node-reaching
-module graph into the template's own TypeScript program — three errors in
-runtime files no eval ever calls. So `/eval` re-exports what an eval needs to
-name, `RunCodeExecutor` among them, rather than letting a template reach past
-it for a type.
-
-That rule used to be written down only inside a JSDoc block copied verbatim into
-four template evals, and deduplicating those onto `createVmRunCode` is
-what left it with no home. Which is the general hazard in a dedupe: the copies
-carry prose as well as code, and the prose is the half a diff does not miss.
+**That is konsistent's `template-eval-runtime-subpaths`** — the root barrel and
+`/testing` refused for `templates/**/*.eval.test.ts`, `/internal` already
+refused for every template file by `template-authoring-boundary`, which is a
+complete deny-list over this package's export map. Its description carries the
+argument, including why `/eval` re-exports `RunCodeExecutor` rather than letting
+a template reach past it for a type.
 
 ### A workflow app is evaluated by RUNNING it
 

@@ -12,14 +12,18 @@ workspace package built into its `dist/` by
 over HTTP/SSE (no code imports in either direction); aai-server serves
 the built artifact, resolved via `require.resolve` in
 `studio-static.ts` the same way aai-ui's `dist/default-client` is.
-Panes: `chat.tsx` (chat + composer), and the seven the top bar's
-segmented control switches between — `preview.tsx` (labelled **UI**),
-`docs.tsx` (**API**), `workflows.tsx`, `database.tsx`, `code-view.tsx`,
-`secrets.tsx`, `settings.tsx`. The six page-shaped ones share
-`pane-shell.tsx`; only the UI and Code panes have layouts of their own. One
-page lives OUTSIDE that shell — `public-api.tsx` at `/studio/api/<slug>`, which
-needs no session and is chosen before the auth gate (see "The same
-documentation is served PUBLICLY" below).
+Panes: `chat.tsx` (chat + composer), plus the seven the top bar's segmented
+control switches between. **Which modules those are is
+`studio-client-pane-modules` and `studio-client-pane-export` in
+`konsistent.json`, not a list here** — the list that used to be here named a
+pane that had been deleted and omitted one that had been added, which is what
+those two conventions exist to stop. `top-bar.tsx`'s `StudioTab` union is the
+roster and `top-bar.test.tsx` pins the label each id renders under (**UI** for
+`preview`, **API** for `docs`). The page-shaped panes share `pane-shell.tsx`;
+only the UI and Code panes have layouts of their own. One page lives OUTSIDE
+that shell — `public-api.tsx` at `/studio/api/<slug>`, which needs no session
+and is chosen before the auth gate (see "The same documentation is served
+PUBLICLY" below).
 
 **The shell splits on whether a project is open**, and the split is what makes
 `project` a `string` rather than a `string | null` everywhere below it.
@@ -976,41 +980,35 @@ so every piece of per-project state resets on a switch with no effect to do it.
 
 ## Testing this package
 
-**node is the default and jsdom is a per-file pragma.** 18 of the 26 suites
-carry `// @vitest-environment jsdom` on line 1; the other eight are pure logic
-(`file-drafts`, `chat-queue`, `stale-build`, the `api` reads) plus
-`chat.test.tsx`, which asserts markup through `react-dom/server` and says so.
+**node is the default and jsdom is a per-file pragma.** Most suites here carry
+`// @vitest-environment jsdom` on line 1; the ones that do not are pure logic
+(`file-drafts`, `chat-queue`, `stale-build`, `starters`, `project-route`, the
+`api` and `docs-*` reads) plus `chat.test.tsx`, which asserts markup through
+`react-dom/server` and says so. A count used to stand here ("18 of the 26")
+and was wrong in both halves within a release — nothing measures it, so read
+the pragmas.
 Interaction behaviour — clicks, effects, timers, `beforeunload`, clipboard,
 fake-timer poll loops — belongs in a pragma'd file. The split costs nothing in
 coverage: a `.tsx` test that forgets the pragma fails loudly on `document is
 not defined`, never silently.
 
 **`src/_test-utils.ts` is the shared seam, and reaching past it is the smell.**
-It holds the fetch stubs (`stubFetch`, `fakeFetch`, `jsonResponse`,
-`sseResponse`, `settle`), the readers over a recorded request (`fetchCall`,
-`fetchLines`), the TanStack wrapper (`renderWithClient` — one client per
-render, `retry: false`), the typed DOM seams (`button`, `input`, `textarea`)
-and `installResizeObserver()`. Each replaced a shape that had been rebuilt per
-suite: the QueryClient pair in five files, the `ResizeObserver` stub in two,
-and 21 `as HTML*Element` casts — a cast that also silently answers `undefined
-=== true` when the query resolves to something with no `.disabled`.
+What it owes is `studio-client-test-seam` in `konsistent.json` rather than a
+list here; a suite that rebuilds one of those shapes instead of importing it is
+the half konsistent cannot see, and stays a review question.
 
-**`afterEach(cleanup)` lives in `src/_test-setup.ts`, not in the suites.**
-Testing Library registers its own only under `globals: true`, which this
-package does not set, so sixteen files hand-wrote it and the seventeenth
-(`use-event-stream.test.ts`) relied on a per-test `unmount()` that an earlier
-assertion failure skips. The setup file also raises Testing Library's async
-ceiling to 10s — which `vitest.config.ts` has to back with a matching
-`testTimeout` (20s), or the 5000ms default aborts the wait first and throws
-away the message.
+**`afterEach(cleanup)` lives in `src/_test-setup.ts`, not in the suites** —
+`studio-client-cleanup-is-setup` forbids the import outright, and its
+description carries the leaked-fake-timer failure that bought the rule. The
+setup file also raises Testing Library's async ceiling to 10s, which
+`vitest.config.ts` has to back with a matching `testTimeout` (20s), or the
+5000ms default aborts the wait first and throws away the message.
 
-**Constants a test asserts a cadence against are IMPORTED, never mirrored.**
-`preview.tsx` exports `PROBE_RETRY_MS`, `PROBE_SLOW_AFTER`,
-`PROBE_SLOW_RETRY_MS` and `PROBE_FAILURES_BEFORE_WAKE` for that reason: the
-probe test used to copy them, so halving the source cadence would have
-loosened the very bound written to catch it. The bound is also EXACT rather
-than an upper one — a capped-only assertion is satisfied by a poll loop that
-STOPS, which is the failure the module's own docblock names.
+**Constants a test asserts a cadence against are IMPORTED, never mirrored** —
+`studio-client-probe-cadence` and `studio-client-probe-cadence-imported` are the
+two halves of that for `preview.tsx`'s four `PROBE_*` figures, and the second
+one's description says why an exact bound over a mirrored number is the worst
+of both.
 
 ## Surviving a platform deploy (`stale-build.ts`)
 

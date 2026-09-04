@@ -106,10 +106,9 @@ one tenant queueing the pool every other tenant reads through.
 
 ## The tenant boundary
 
-- The upgrade path names the slug, and the bearer is checked against it by
-  `guestBearerRefusal` — the same policy every guest-called route runs, split out
-  of `assertGuestBearer` so the handshake cannot check a credential differently
-  from the rooms behind it.
+- The upgrade path names the slug, and the bearer is checked against it with the
+  same policy every guest-called route runs — `konsistent.json`'s
+  `platform-socket-handler`.
 - Every frame is dispatched under THAT slug. A frame names a route, never an
   agent, so it cannot reach another tenant's rows.
 - `route` is checked against `PLATFORM_ROUTES` before a `Request` is built. This

@@ -6,7 +6,10 @@
  * `activeAssistant`, `applyPending`, `note`. Each is NAMED by a file under
  * `tools/`, which is what registers it: a tool's name is its file name, so
  * `tools/to_flight_assistant.ts` is one line handing {@link delegationTool} an
- * id, and `tools/confirm_action.ts` re-exports {@link confirmAction}.
+ * id, and `tools/confirm_action.ts` one line calling {@link confirmActionTool}.
+ * Every file in `tools/` therefore default-exports the RESULT of a call: a
+ * factory per tool rather than a shared const, so nothing here is a re-export
+ * — which is what `noExportedImports` would otherwise have to be told to allow.
  *
  * The delegation four are still generated rather than written out. The notebook
  * declares `ToFlightBookingAssistant`, `ToHotelBookingAssistant`,
@@ -77,33 +80,35 @@ export function delegationTool(id: SpecialistId): ToolDef {
  * a `done` tool will keep trying to answer things the desk has no tools for.
  * The `reason` is what the concierge is handed on the way back up.
  */
-export const completeOrEscalate = tripSlot.updateTool({
-  description:
-    "Hand the call back to the main concierge. Use this when the current desk's " +
-    "work is finished, when the caller changes the subject to something this " +
-    "desk does not handle, or when they change their mind.",
-  inputSchema: z.object({
-    reason: z
-      .string()
-      .max(300)
-      .describe("Why the call is going back — what is done, or what the caller now wants"),
-  }),
-  execute(args, trip) {
-    const left = activeAssistant(trip);
-    // `primary` stays at the bottom — the slot's `after` hook restores it if a
-    // pop ever empties the stack.
-    if (trip.dialogState.length > 1) trip.dialogState.pop();
-    note(trip, `← back to concierge: ${args.reason}`);
-    return {
-      returnedFrom: left === "primary" ? "concierge" : SPECIALISTS[left].title,
-      nowHandling: "concierge",
-      reason: args.reason,
-      instructions:
-        "You are the main concierge again. Pick up what the caller asked for; " +
-        "delegate again if it belongs to another desk.",
-    };
-  },
-});
+export function completeOrEscalateTool(): ToolDef {
+  return tripSlot.updateTool({
+    description:
+      "Hand the call back to the main concierge. Use this when the current desk's " +
+      "work is finished, when the caller changes the subject to something this " +
+      "desk does not handle, or when they change their mind.",
+    inputSchema: z.object({
+      reason: z
+        .string()
+        .max(300)
+        .describe("Why the call is going back — what is done, or what the caller now wants"),
+    }),
+    execute(args, trip) {
+      const left = activeAssistant(trip);
+      // `primary` stays at the bottom — the slot's `after` hook restores it if a
+      // pop ever empties the stack.
+      if (trip.dialogState.length > 1) trip.dialogState.pop();
+      note(trip, `← back to concierge: ${args.reason}`);
+      return {
+        returnedFrom: left === "primary" ? "concierge" : SPECIALISTS[left].title,
+        nowHandling: "concierge",
+        reason: args.reason,
+        instructions:
+          "You are the main concierge again. Pick up what the caller asked for; " +
+          "delegate again if it belongs to another desk.",
+      };
+    },
+  });
+}
 
 /**
  * `confirm_action` — the caller said yes.
@@ -121,14 +126,16 @@ export const completeOrEscalate = tripSlot.updateTool({
  * the body did NOT answer with a {@link ToolFailure}, so an application that
  * failed leaves the change staged and the caller still being asked.
  */
-export const confirmAction = gateFlow.tool({
-  description:
-    "Apply the change the caller has just confirmed out loud. Only call this " +
-    "after you have read the change back and heard a clear yes.",
-  when: "awaitingConfirmation",
-  send: { type: "SETTLED" },
-  execute: (_args, ctx) => tripSlot.update(ctx, (trip) => applyPending(trip)),
-});
+export function confirmActionTool(): ToolDef {
+  return gateFlow.tool({
+    description:
+      "Apply the change the caller has just confirmed out loud. Only call this " +
+      "after you have read the change back and heard a clear yes.",
+    when: "awaitingConfirmation",
+    send: { type: "SETTLED" },
+    execute: (_args, ctx) => tripSlot.update(ctx, (trip) => applyPending(trip)),
+  });
+}
 
 /**
  * `cancel_action` — the caller said no. Drops the staged action, changes nothing.
@@ -136,22 +143,24 @@ export const confirmAction = gateFlow.tool({
  * Gated for the same reason as `confirm_action`, and its own "nothing was
  * waiting" arm is gone with the same argument.
  */
-export const cancelAction = gateFlow.tool({
-  description:
-    "Discard the change the caller just declined. Call this when they say no, " +
-    "or when they want to change the details before confirming.",
-  when: "awaitingConfirmation",
-  send: { type: "SETTLED" },
-  execute: (_args, ctx) =>
-    tripSlot.update(ctx, (trip) => {
-      const action = trip.pending;
-      // Reachable only if the position and the payload disagree; see
-      // `applyPending`. Reported rather than thrown, mid-call.
-      if (!action) return { discarded: null, message: "Nothing was staged after all." };
-      trip.pending = null;
-      const described = describeAction(action);
-      const summary = typeof described === "string" ? described : action.kind;
-      note(trip, `Declined: ${summary}`);
-      return { discarded: summary, message: "Nothing was changed." };
-    }),
-});
+export function cancelActionTool(): ToolDef {
+  return gateFlow.tool({
+    description:
+      "Discard the change the caller just declined. Call this when they say no, " +
+      "or when they want to change the details before confirming.",
+    when: "awaitingConfirmation",
+    send: { type: "SETTLED" },
+    execute: (_args, ctx) =>
+      tripSlot.update(ctx, (trip) => {
+        const action = trip.pending;
+        // Reachable only if the position and the payload disagree; see
+        // `applyPending`. Reported rather than thrown, mid-call.
+        if (!action) return { discarded: null, message: "Nothing was staged after all." };
+        trip.pending = null;
+        const described = describeAction(action);
+        const summary = typeof described === "string" ? described : action.kind;
+        note(trip, `Declined: ${summary}`);
+        return { discarded: summary, message: "Nothing was changed." };
+      }),
+  });
+}

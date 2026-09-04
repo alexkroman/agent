@@ -30,8 +30,9 @@
  *
  * ## This file is a BARREL, and what the split is by
  *
- * It reached 649 lines against a 500-line source cap. The five modules under it
- * are cut by SUBJECT rather than by size:
+ * It reached 649 lines against a 500-line source cap. The seven modules under
+ * it are cut by SUBJECT rather than by size — count the table, which has grown
+ * twice since this line first said "five":
  *
  * | module | holds |
  * | --- | --- |
