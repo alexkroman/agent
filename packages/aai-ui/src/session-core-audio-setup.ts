@@ -86,7 +86,7 @@ export async function initAudioCapture(
     // server frame is allowed to recover this banner. See
     // `session-core-state.ts`.
     deps.updateState({
-      ...deps.agentState.apply({ type: "FAILED", error: { code: "audio", message } }),
+      ...deps.agentState.apply({ type: "FAILED", error: { code: "audio", message, fatal: false } }),
       running: false,
       recording: false,
     });

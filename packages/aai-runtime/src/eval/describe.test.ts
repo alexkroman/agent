@@ -293,7 +293,11 @@ describeEval(withTools(agent({ name: "Stub Suite" }), { judge }), (test) => {
       // shape: `judge` is what called `generate`.
       const turn = await session.say("what do you make of it?");
       expect(toolResultIn(turn.toolCalls, "judge", z.object({ error: z.string() })).error).toMatch(
-        /stubGenerate answered something the call's own schema rejects/,
+        // Both halves matter, and they come from different layers now: the
+        // rejection is `createGenerateFn`'s (so a LIVE model is caught too),
+        // and the script-blaming sentence is the eval harness re-attributing
+        // it — "the model" being the case author's own script here.
+        /stubGenerate answered something the call's own schema rejects.*measuring the script/s,
       );
     },
     {

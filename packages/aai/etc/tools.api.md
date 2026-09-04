@@ -4,16 +4,17 @@
 
 ```ts
 
-// @public
+// @public (undocumented)
 export type CallOptions = {
     fetch?: typeof globalThis.fetch;
+    signal?: AbortSignal;
 };
 
 // @public
 type DefaultToolResult = any;
 
 // @public
-export function fetchJson<T = DefaultToolResult>(url: string | ({
+export function fetchJson<T = UntypedJsonBody>(url: string | ({
     url: string;
     headers?: Record<string, string>;
 } & CallOptions), options?: {
@@ -26,12 +27,15 @@ type ToolFailure = {
 };
 
 // @public
-export function visitWebpage<T = DefaultToolResult>(url: string | ({
+export type UntypedJsonBody = Record<string, DefaultToolResult>;
+
+// @public
+export function visitWebpage<T = UntypedJsonBody>(url: string | ({
     url: string;
 } & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
 
 // @public
-export function webSearch<T = DefaultToolResult>(query: string | ({
+export function webSearch<T = UntypedJsonBody>(query: string | ({
     query: string;
     maxResults?: number;
 } & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;

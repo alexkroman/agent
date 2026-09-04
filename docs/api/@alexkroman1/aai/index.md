@@ -4275,6 +4275,9 @@ type GenerateOptions = {
 
 Options for one LLM generation call.
 
+No `signal`: the call is already bound to `ctx.signal` by the runtime — see
+the module doc for why a field here would be a second, competing one.
+
 #### Properties
 
 ##### llm?

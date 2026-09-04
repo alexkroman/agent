@@ -394,7 +394,11 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
         const closed =
           failure === null
             ? agentState.apply({ type: "CLOSED" })
-            : agentState.apply({ type: "FAILED", error: { code: "connection", message: failure } });
+            : // `FAILED`, so not fatal — see HANDSHAKE_ERROR for the same call.
+              agentState.apply({
+                type: "FAILED",
+                error: { code: "connection", message: failure, fatal: false },
+              });
         updateState({ ...closed, running: false, recording: false });
       },
       { signal: sig },

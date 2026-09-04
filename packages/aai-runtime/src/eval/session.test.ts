@@ -233,7 +233,12 @@ describe("a turn nothing can be read off", () => {
       providerEnv,
     });
     try {
-      await expect(session.say("hello?")).rejects.toThrow(/llm: \(no message\)/);
+      // `.*` because the placeholder is no longer the whole of it: `errorMessage`
+      // now names the error's CLASS before falling back to `(no message)`, so
+      // this reads `llm: AI_StreamProviderError (no message)`. That is strictly
+      // more than this test asks for — it wants a blank never forwarded — and
+      // `_turn-faults.ts`'s placeholder stays as the belt-and-braces it became.
+      await expect(session.say("hello?")).rejects.toThrow(/llm: .*\(no message\)/);
     } finally {
       await session.close();
       release();

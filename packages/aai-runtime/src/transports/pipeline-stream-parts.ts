@@ -111,6 +111,51 @@ export function llmErrorDetails(error: unknown): Record<string, unknown> {
   };
 }
 
+/**
+ * The one sentence a failed LLM call reaches the CALLER as — `error.reported`'s
+ * `message`, which a browser client renders verbatim.
+ *
+ * The sibling of {@link llmErrorDetails}, and split from it along the line
+ * between a log line and a banner: that one returns fields for an operator
+ * reading a log, this one a sentence for whoever is looking at the screen. Both
+ * unwrap a `RetryError` the same way, so the two never disagree about which
+ * attempt they are describing.
+ *
+ * Two things it adds to {@link errorMessage}, which already refuses to answer
+ * with an empty string and already names the status and the host:
+ *
+ * - **A rejected credential says so.** `401`/`403` is the single most likely
+ *   first-run failure — a key that is wrong, expired, or never set — and it is
+ *   the one that explains itself least: the provider's own body says "Invalid
+ *   API key" without saying whose, and the status is a number. Naming the act
+ *   ("rejected the API key") is what turns the banner into an instruction.
+ * - **The provider is named by the HOST that answered** (via `errorMessage`),
+ *   which is as specific as this layer can be honest about: the credential's
+ *   ENV VAR name is known only at provider-resolution time
+ *   (`providers/_llm-registry.ts`), and the transport is handed a built
+ *   `LanguageModel`, not the descriptor it came from.
+ *
+ * One more rule belongs with it, and it is the reason a caller still saw
+ * nothing useful after `errorMessage` stopped answering blank: **a refused call
+ * is reported ONCE.** It arrives twice — as the `error` part handled below, and
+ * then as a throw, because the AI SDK's `steps` promise rejects with "No output
+ * generated. Check the stream for errors." once the stream ends having produced
+ * none. The second names no cause, and arriving last it is the sentence a
+ * client's banner is LEFT showing. `consumeLlmStream` therefore reports from its
+ * catch only when nothing reported from the stream ({@link StreamPartHandler.errored}).
+ * Verified against a live 401 through the real gateway client: both frames
+ * arrive, in that order.
+ *
+ * @internal
+ */
+export function llmErrorSentence(error: unknown): string {
+  const call = (RetryError.isInstance(error) ? error.lastError : error) ?? error;
+  const described = errorMessage(call);
+  if (!APICallError.isInstance(call)) return described;
+  if (call.statusCode !== 401 && call.statusCode !== 403) return described;
+  return `The LLM provider rejected this agent's API key: ${described}. Check the API key in the agent's environment.`;
+}
+
 /** Stateful per-turn stream-part handler — see {@link createStreamPartHandler}. */
 export type StreamPartHandler = {
   /** Interpret one `fullStream` part. */
@@ -353,7 +398,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         return;
       case "error": {
         errored = true;
-        const msg = errorMessage(part.error);
+        const msg = llmErrorSentence(part.error);
         log.error("LLM stream error", { message: msg, sid, ...llmErrorDetails(part.error) });
         // NON-fatal: `errored` above ends this TURN (the outcome speaks
         // `errorPhrase`), and the session keeps taking turns after it.

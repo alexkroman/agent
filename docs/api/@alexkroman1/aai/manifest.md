@@ -412,6 +412,7 @@ would put top-level `await` in a bundle the guest loads.
 
 ```ts
 function withTools<D extends {
+  builtinTools?: readonly string[];
   tools: ToolRegistry;
 }>(def: D, registry: ToolRegistry): D;
 ```
@@ -436,15 +437,29 @@ unreachable — it returns an empty table and refuses a `tools` argument — so
 what this catches is a hand-written `export default { … tools: {…} }` that
 skipped `agent()`, and a second `withTools` over a def that already has one.
 
+**A name the def declared as a BUILTIN is an error too, and that one an
+author can reach.** `builtinTools: ["calculate"]` beside `tools/calculate.ts`
+is one file name away at all times, filenames being the only thing here a
+user picks freely — and it built clean: the runtime's merge drops the
+colliding builtin (`mergeBuiltinSurface`), so the entry the author wrote did
+nothing and the only trace was one `info` line in a session log, minted at the
+first call rather than at the build. That is the same silence discovery was
+introduced to kill ("forgetting one line was silent"), reached by the other
+route, and it is the one collision where BOTH halves were declared on purpose
+— so it is a contradiction to report rather than a precedence to apply.
+
 Structural rather than `AgentDef`, and it hands back what it was given: a
 caller keeps whatever else its def carries, and nothing this returns is
-described by a type the caller did not already name.
+described by a type the caller did not already name. `builtinTools` joins the
+constraint as optional and widened to `readonly string[]`, so a def that
+carries none still passes and this module still names no builtin catalog.
 
 #### Type Parameters
 
 ##### D
 
 `D` *extends* \{
+  `builtinTools?`: readonly `string`[];
   `tools`: [`ToolRegistry`](#toolregistry);
 \}
 

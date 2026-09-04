@@ -39,18 +39,44 @@ test("useToolResult passes the caller's type through both overloads", () => {
   });
 });
 
-test("an un-parameterized tool result stays `any`, deliberately", () => {
-  // This is the assertion most likely to be "improved" away, so it is the one
-  // most worth having. `DefaultToolResult` is `any` on purpose (see its
-  // @remarks in aai/sdk/types.ts): a tool result is the author's own return
-  // value round-tripped through JSON, so the framework cannot know its shape,
-  // and the strict default made reading one field a compile error in a client
-  // that runs correctly — which `aai build`'s typecheck then refused to
-  // publish. Tightening it to `unknown` is a breaking change for every
-  // untyped client, and would fail here rather than in a user's build.
+/**
+ * This pin USED to read "an un-parameterized tool result stays `any`,
+ * deliberately", and it is deliberately inverted rather than deleted.
+ *
+ * The `DefaultToolResult` half is unchanged and still pinned below: a tool
+ * result at REST is the author's own return value round-tripped through JSON,
+ * the framework cannot know its shape, and a strict type there made reading
+ * one field a compile error in a client that runs correctly — which
+ * `aai build`'s typecheck then refused to publish. That argument is about the
+ * SDK's type and it still holds.
+ *
+ * What it never covered is this hook's DEFAULT. The return type is inferred
+ * exactly once, at `tool()`, and `useToolResult` is the single place a client
+ * reads it — so defaulting to `any` threw the inference away at the one call
+ * site that wanted it, and `useToolResult("get_order", (r) => r.a.b.c.d.e)`
+ * reported nothing at all. The default is `unknown` now. An untyped read is a
+ * compile error, which is the point; the two ways to fix it are a hand-written
+ * shape (`useToolResult<Quote>`) or the tool's own, reached through a
+ * TYPE-ONLY import so the browser bundle is untouched
+ * (`useToolResult<InferToolOutput<typeof getOrder>>`).
+ *
+ * Cost, measured before landing: zero template clients call this hook, and the
+ * two doc examples in `hooks.ts` both survive (`JSON.stringify` takes
+ * `unknown`).
+ */
+test("an un-parameterized tool result is `unknown`, not `any`", () => {
+  // The SDK's type is untouched — this is the half of the old pin that still
+  // says what it said.
   expectTypeOf<DefaultToolResult>().toBeAny();
+
   useToolResult("get_quote", (result) => {
-    expectTypeOf(result).toBeAny();
+    expectTypeOf(result).toEqualTypeOf<unknown>();
+    expectTypeOf(result).not.toBeAny();
+  });
+  useToolResult((name, result) => {
+    expectTypeOf(name).toEqualTypeOf<string>();
+    expectTypeOf(result).toEqualTypeOf<unknown>();
+    expectTypeOf(result).not.toBeAny();
   });
 });
 
@@ -97,19 +123,52 @@ test("useEvent types the event payload, defaulting to unknown", () => {
 });
 
 test("useToolCallStart carries the call through both overloads", () => {
+  // The parameter is no longer spelled `ToolCallInfo` — it is that type with
+  // `args` swapped for the hook's own type parameter — so the pin is on the
+  // fields rather than on the whole type. Everything a caller reads off a
+  // pending call is still there and still says what it said.
   useToolCallStart("get_quote", (toolCall) => {
-    expectTypeOf(toolCall).toEqualTypeOf<ToolCallInfo>();
+    expectTypeOf(toolCall).toExtend<ToolCallInfo>();
+    expectTypeOf(toolCall.callId).toEqualTypeOf<string>();
+    expectTypeOf(toolCall.status).toEqualTypeOf<"pending" | "done">();
+    expectTypeOf(toolCall.seq).toEqualTypeOf<number>();
+    expectTypeOf(toolCall.afterMessageId).toEqualTypeOf<number>();
   });
   useToolCallStart((toolCall) => {
-    expectTypeOf(toolCall).toEqualTypeOf<ToolCallInfo>();
+    expectTypeOf(toolCall).toExtend<ToolCallInfo>();
+    expectTypeOf(toolCall.name).toEqualTypeOf<string>();
   });
 });
 
-test("a tool call's args are `any`, for the same reason results are", () => {
+/**
+ * The DEFAULT is still `any`, and that half of the old pin is unchanged — it
+ * is `ToolCallInfo["args"]`, i.e. `Record<string, any>`, which is a property
+ * of that type rather than a choice this hook makes. Tightening it belongs in
+ * `types.ts` and is breaking for every untyped client (`night-owl`'s
+ * `String(tc.args.mood)` is the in-repo instance).
+ *
+ * What changed is that there is now a way to opt IN. `useToolCallStart` had no
+ * type parameter at all, so `c.args.totally_made_up_field.nested.deeper`
+ * type-checked and nothing a client could write would have caught it. The
+ * escape hatch `ToolCallInfo.args` recommends in its own doc — `args as
+ * { url: string }` — is what this replaces.
+ */
+test("a tool call's args are `any` by default and typed on request", () => {
   useToolCallStart("fetch_json", (toolCall) => {
     expectTypeOf(toolCall.args.url).toBeAny();
+  });
+
+  useToolCallStart<{ url: string; retries?: number }>("fetch_json", (toolCall) => {
+    expectTypeOf(toolCall.args.url).toEqualTypeOf<string>();
+    expectTypeOf(toolCall.args.retries).toEqualTypeOf<number | undefined>();
+    // The rest of the call is untouched by the type argument.
     expectTypeOf(toolCall.callId).toEqualTypeOf<string>();
     expectTypeOf(toolCall.name).toEqualTypeOf<string>();
+  });
+
+  // Unfiltered too, for a page that switches on `name` and narrows itself.
+  useToolCallStart<{ query: string }>((toolCall) => {
+    expectTypeOf(toolCall.args.query).toEqualTypeOf<string>();
   });
 });
 

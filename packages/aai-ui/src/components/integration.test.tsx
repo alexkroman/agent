@@ -405,7 +405,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     act(() =>
       core.update({
         state: "disconnected",
-        error: { code: "connection", message: "Lost connection" },
+        error: { code: "connection", message: "Lost connection", fatal: false },
         running: false,
       }),
     );
@@ -425,7 +425,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     act(() =>
       core.update({
         state: "error",
-        error: { code: "tts", message: "Cartesia TTS: missing API key." },
+        error: { code: "tts", message: "Cartesia TTS: missing API key.", fatal: true },
       }),
     );
     expect(screen.getByRole("alert").textContent).toBe("Cartesia TTS: missing API key.");

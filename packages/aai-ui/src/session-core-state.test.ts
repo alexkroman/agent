@@ -13,8 +13,16 @@ import { describe, expect, it } from "vitest";
 import { createSessionStateMachine } from "./session-core-state.ts";
 import type { SessionError } from "./types.ts";
 
-const FATAL: SessionError = { code: "internal", message: "Cartesia TTS: missing API key." };
-const TURN: SessionError = { code: "internal", message: "one upload failed to transcribe" };
+const FATAL: SessionError = {
+  code: "internal",
+  message: "Cartesia TTS: missing API key.",
+  fatal: true,
+};
+const TURN: SessionError = {
+  code: "internal",
+  message: "one upload failed to transcribe",
+  fatal: false,
+};
 
 /** A session that has reached `listening` the way a real one does. */
 function live() {

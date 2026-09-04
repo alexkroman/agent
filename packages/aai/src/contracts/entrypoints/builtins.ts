@@ -13,6 +13,7 @@
 export {
   type CallOptions,
   fetchJson,
+  type UntypedJsonBody,
   visitWebpage,
   webSearch,
 } from "../../host/agent-tools.ts";

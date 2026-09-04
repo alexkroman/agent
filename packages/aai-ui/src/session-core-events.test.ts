@@ -192,7 +192,11 @@ describe("session-core server events", () => {
         message: "one turn failed",
         fatal: false,
       });
-      expect(core.getSnapshot().error).toEqual({ code: "llm", message: "one turn failed" });
+      expect(core.getSnapshot().error).toEqual({
+        code: "llm",
+        message: "one turn failed",
+        fatal: false,
+      });
       // The session kept running, so any later activity clears the banner.
       expect(core.getSnapshot().state).not.toBe("error");
 

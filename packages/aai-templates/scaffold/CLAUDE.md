@@ -77,7 +77,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    you stopped talking, barge-in, two sentences merging into one turn. Those
    need `pnpm dev` and your own voice.
 4. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
-   type-checks, and validates the manifest. Catches issues `dev` won't.
+   type-checks, validates the manifest, and runs the WHOLE spec suite first.
+   Catches issues `dev` won't.
 5. **Make small, focused changes** — verify each one before stacking the
    next.
 6. **Look at templates before writing custom code** — the CLI ships working
@@ -109,6 +110,7 @@ npx @alexkroman1/aai-cli init             # Scaffold a new agent
 npx @alexkroman1/aai-cli templates        # List available templates
 npx @alexkroman1/aai-cli dev              # Start local dev server
 npx @alexkroman1/aai-cli test             # Run agent.test.ts via vitest
+npx @alexkroman1/aai-cli test --all       # ...or every spec in the project
 npx @alexkroman1/aai-cli eval             # Run agent.eval.test.ts against a model
 npx @alexkroman1/aai-cli build            # Bundle and validate
 npx @alexkroman1/aai-cli deploy           # Deploy to production
@@ -121,6 +123,13 @@ npx @alexkroman1/aai-cli secret list
 The scaffold's `package.json` exposes `dev`, `build`, `test`, `eval` and
 `deploy` as `pnpm <name>` shortcuts. Other commands (`init`, `templates`,
 `delete`, `secret`) are CLI-only.
+
+**`aai test` targets `agent.test.ts` and nothing else**, which `--all` widens.
+What matters is that a narrowed run does not report itself as a pass: when the
+project holds spec files the run did not cover, it FAILS and names them rather
+than printing a green line that says nothing about `tools/*.test.ts`. `pnpm
+test` (the scaffold's own script) already runs the whole suite, and so does the
+gate in front of `aai build`.
 
 ## Running it yourself (`npm start`)
 

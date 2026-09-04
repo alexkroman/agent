@@ -36,6 +36,7 @@ import { createTtsTextCoalescer } from "./pipeline-stream.ts";
 import {
   createStreamPartHandler,
   llmErrorDetails,
+  llmErrorSentence,
   type StreamPart,
   type StreamPartHandler,
 } from "./pipeline-stream-parts.ts";
@@ -468,13 +469,15 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // Flush buffered TTS text so speech matches the transcript already
     // accumulated via onDelta for the pre-error portion of the turn.
     ttsText.flush();
-    const msg = errorMessage(err);
+    const msg = llmErrorSentence(err);
     log.error("LLM streamText failed", { error: msg, sid, ...llmErrorDetails(err) });
+    // ONE failure, reported ONCE — the part-level report already named the cause
+    // and this throw does not; {@link llmErrorSentence} carries the argument.
     // NON-fatal: this turn is over, the session is not. The caller returns
     // `failed: true`, which speaks `errorPhrase` — "Sorry, I had a problem just
     // then. Could you say that again?" — so reporting the session dead here asked
     // the user to repeat themselves into a released microphone.
-    emitError("llm", msg, { fatal: false });
+    if (handler?.errored() !== true) emitError("llm", msg, { fatal: false });
     return { messages: collected, failed: true };
   } finally {
     // The turn is over on every path (completed, aborted, errored) — no

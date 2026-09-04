@@ -28,11 +28,10 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
-import { formatSchemaIssues, isConvertibleSchema } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, test } from "vitest";
-import { createGenerateFn, type HostGenerateFn } from "../generate.ts";
+import { createGenerateFn, GenerateSchemaMismatchError, type HostGenerateFn } from "../generate.ts";
 import {
   announceEvalCoverage,
   announceEvalMode,
@@ -376,49 +375,39 @@ function hasWorkflows(agent: AgentDef): boolean {
 }
 
 /**
- * A scripted `ctx.generate` that cannot answer with a TYPED LIE.
+ * Re-attribute a schema rejection from THE MODEL to THE SCRIPT.
  *
- * `ctx.generate({ schema })` is `generateText` + `Output.object` over
- * `jsonSchema(...)`, and an `ai` JSON schema built that way carries no
- * validator — so the object handed back is whatever parsed, typed as whatever
- * the schema said. Measured: a script of `{"issues":"not-an-array"}` against
- * `z.object({ issues: z.array(z.string()) })` resolves, `answer.object.issues`
- * is the string, and a case asserting on `issues.length` reads `13`.
+ * `ctx.generate({ schema })` used to hand back whatever parsed, typed as
+ * whatever the schema said — a script of `{"issues":"not-an-array"}` against
+ * `z.object({ issues: z.array(z.string()) })` resolved, and a case asserting on
+ * `issues.length` read `13`. This wrapper caught that, and its own doc said the
+ * real fix belonged in `ctx.generate`. It now lives there
+ * ({@link GenerateSchemaMismatchError}), so the checking half of this is gone.
  *
- * That is a live defect in `ctx.generate` itself and the fix belongs there; what
- * belongs HERE is that the harness must not be the thing that plants it. A
- * script is written by the case author, against a schema the tool declares one
- * file away, and a stub that quietly satisfies neither is a case measuring its
- * own typo. A live model's invalid output is a finding about the model; a
- * SCRIPT's is a finding about the script, which is why this wrapper is only ever
- * put on `stubGenerate`.
+ * What is left is the half only the harness can do. `createGenerateFn`'s message
+ * blames "the model", which is right in production and wrong here: an eval's
+ * model is a script the case author wrote, against a schema the tool declares
+ * one file away, so the actionable sentence names the script rather than the
+ * agent. A live model's invalid output is a finding about the model; a SCRIPT's
+ * is a finding about the script — which is why this is only ever put on
+ * `stubGenerate`.
  *
- * A plain JSON-Schema object passes through unchecked — there is nothing to
- * validate WITH, `isConvertibleSchema` being the test for a Standard Schema. So
- * is an async validator, for the reason `eval/events.ts` gives at every reader
- * that takes a schema: a promise is truthy, so probing it for `.issues` would
- * pass every case rather than none.
+ * It no longer quotes the script back: the throw now happens inside `generate`,
+ * so there is no answer to read `text` off. The issues themselves ride along in
+ * the cause's message, which is the part that says what to change.
  */
 function checkedGenerate(generate: HostGenerateFn): HostGenerateFn {
   return async (options, callOpts) => {
-    const answer = await generate(options, callOpts);
-    const schema = options.schema;
-    if (schema === undefined || !isConvertibleSchema(schema)) return answer;
-    const result = schema["~standard"].validate(answer.object);
-    if (result instanceof Promise) {
-      throw new TypeError(
-        "stubGenerate needs a synchronous schema — this one validates async, so the " +
-          "scripted answer cannot be checked against it",
-      );
-    }
-    if (result.issues) {
+    try {
+      return await generate(options, callOpts);
+    } catch (cause) {
+      if (!(cause instanceof GenerateSchemaMismatchError)) throw cause;
       throw new Error(
-        "stubGenerate answered something the call's own schema rejects: " +
-          `${formatSchemaIssues(result.issues)}. The script is ${JSON.stringify(answer.text)} — ` +
-          "write it as the JSON the model would have returned, matching the schema the tool " +
-          "declares, or the case is measuring the script rather than the agent.",
+        `stubGenerate answered something the call's own schema rejects. ${cause.message} — ` +
+          "write the script as the JSON the model would have returned, matching the schema " +
+          "the tool declares, or the case is measuring the script rather than the agent.",
+        { cause },
       );
     }
-    return answer;
   };
 }

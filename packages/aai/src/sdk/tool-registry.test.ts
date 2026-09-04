@@ -143,4 +143,33 @@ describe("withTools", () => {
     const base = agent({ name: "a", greeting: "hi" });
     expect(withTools(base, { echo })).toMatchObject({ name: "a", greeting: "hi" });
   });
+
+  test("refuses a file that shadows a builtin the def enables", () => {
+    // `builtinTools: ["calculate"]` beside `tools/calculate.ts` BUILT — the
+    // runtime drops the colliding builtin at the first call and logs one info
+    // line, so an author debugging "why is my calculator not the built-in one"
+    // had nothing at build time. Both halves were declared on purpose, so it is
+    // a contradiction to report rather than a precedence to apply.
+    const base = agent({ name: "a", builtinTools: ["calculate"] });
+    expect(() => withTools(base, { calculate: echo })).toThrow(
+      /tools\/calculate\.ts shadows the builtin "calculate"/,
+    );
+  });
+
+  test("names both remedies, since either half may be the one the author meant", () => {
+    const base = agent({ name: "a", builtinTools: ["calculate"] });
+    expect(() => withTools(base, { calculate: echo })).toThrow(/rename the file/);
+  });
+
+  test("says nothing about a builtin no file shadows", () => {
+    const base = agent({ name: "a", builtinTools: ["calculate", "think"] });
+    expect(withTools(base, { echo }).tools).toEqual({ echo });
+  });
+
+  test("a def declaring no builtins still passes", () => {
+    // The constraint takes `builtinTools` as optional and widened to
+    // `readonly string[]`, so this module names no builtin catalog and a def
+    // that carries none is untouched.
+    expect(withTools({ tools: {} }, { echo }).tools).toEqual({ echo });
+  });
 });

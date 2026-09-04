@@ -647,6 +647,7 @@ export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
 // @public
 export function withTools<D extends {
     readonly tools: ToolRegistry;
+    readonly builtinTools?: readonly string[] | undefined;
 }>(def: D, registry: ToolRegistry): D;
 
 // @public

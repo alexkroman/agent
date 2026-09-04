@@ -122,6 +122,71 @@ function resolveClientDir() {
   return defaultClientDir();
 }
 
+/**
+ * The error classes that mean a DEFECT in this code rather than a mistake in
+ * the configuration.
+ *
+ * Everything below turns a boot failure into two lines and a non-zero exit,
+ * which is right for "ASSEMBLYAI_API_KEY is not set" and wrong for a
+ * `TypeError`, where the traceback is the only thing that can locate the bug.
+ * Those are re-thrown untouched.
+ */
+const BUG_ERRORS = [TypeError, ReferenceError, RangeError, SyntaxError];
+
+/**
+ * Every distinct message on an error and its `cause` chain, outermost first.
+ *
+ * A driver failure states the useful half one hop down — `connect to database
+ * failed: getaddrinfo ENOTFOUND db` — so printing only the top message is how a
+ * tidy envelope ends up less informative than the stack it replaced.
+ *
+ * @param {unknown} err
+ * @returns {string}
+ */
+function errorText(err) {
+  /** @type {string[]} */
+  const messages = [];
+  /** @type {unknown} */
+  let cursor = err;
+  while (cursor instanceof Error) {
+    if (cursor.message !== "" && !messages.includes(cursor.message)) messages.push(cursor.message);
+    cursor = cursor.cause;
+  }
+  return messages.length > 0 ? messages.join(": ") : String(err);
+}
+
+/**
+ * Run one step of BOOT, and answer a failure the way this file already answers
+ * a missing build artifact: what is wrong, then what to do, then exit 1.
+ *
+ * Without this, a missing provider key — the commonest way a first `npm start`
+ * fails — killed the process with a ten-frame traceback pointing into
+ * `node_modules/@alexkroman1/aai-runtime/dist/host-env-*.js`. The MESSAGE was
+ * already good ("AssemblyAI LLM: missing API key. Set ASSEMBLYAI_API_KEY in the
+ * agent env."); what it arrived wrapped in was a crash report about somebody
+ * else's bundle, in a container that then restarted and did it again.
+ *
+ * Exiting is deliberate rather than binding anyway and serving an unhealthy
+ * `/health`: a process that stays up tells an orchestrator it started, and a
+ * misconfigured deployment that reports itself healthy is worse than one that
+ * refuses to run. The non-zero exit is what a supervisor, a `docker run`, and
+ * CI all already read.
+ *
+ * @template T
+ * @param {string} fix - What the operator should change, in one sentence.
+ * @param {() => T | Promise<T>} work
+ * @returns {Promise<T>}
+ */
+async function bootOrExit(fix, work) {
+  try {
+    return await work();
+  } catch (err) {
+    if (BUG_ERRORS.some((kind) => err instanceof kind)) throw err;
+    console.error(`Cannot start the agent: ${errorText(err)}\n${fix}`);
+    process.exit(1);
+  }
+}
+
 const env = await resolveAgentEnv();
 
 /**
@@ -152,38 +217,77 @@ const publicUrl = process.env.PUBLIC_URL?.trim();
  * Best-effort: if a real migration already created them and this role may not
  * CREATE, it warns and the server starts anyway.
  */
-if (env.DATABASE_URL) {
-  await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: console });
-  // And the durable-run journal's, which is a separate set of tables owned by
-  // the same deployment. Without it a project with a `DATABASE_URL` boots
-  // claiming durable runs and fails on the first one.
-  await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: console });
+// Read into a const: `env.DATABASE_URL` is a record lookup, so its narrowing
+// does not survive into the callback below.
+const databaseUrl = env.DATABASE_URL;
+if (databaseUrl) {
+  await bootOrExit(
+    "Check DATABASE_URL: this server has to reach that database at boot to create the tables it owns.",
+    async () => {
+      await ensureSessionStateSchema({ url: databaseUrl, logger: console });
+      // And the durable-run journal's, which is a separate set of tables owned
+      // by the same deployment. Without it a project with a `DATABASE_URL`
+      // boots claiming durable runs and fails on the first one.
+      await ensureWorkflowJournalSchema({ url: databaseUrl, logger: console });
+    },
+  );
+} else {
+  /**
+   * Say that this process is the only place the state lives, because the next
+   * thing an operator does with a container is run two of them.
+   *
+   * Session state (slots, the event log) is keyed by session id and held in
+   * memory here — the boot line below reports it as `sessionState: { backend:
+   * 'memory', durable: false }`, which is true and easy to read as being about
+   * restarts alone. It is also about REPLICAS: the browser reconnects with
+   * `?sessionId=<id>`, so a reconnect that lands on a different process resumes
+   * a session that process has never heard of and the agent's context is gone
+   * mid-call. One replica has no such problem, which is exactly why nothing
+   * catches this until the deployment grows a second one.
+   */
+  console.warn(
+    "No DATABASE_URL: session state and durable runs live in THIS process's memory.\n" +
+      "One replica is fine. Behind a load balancer, enable sticky sessions so a reconnect " +
+      "(the client re-dials with ?sessionId=) reaches the same process — or set DATABASE_URL " +
+      "and let every replica share the state.",
+  );
 }
 
-const server = createAgentServer({
-  agent,
-  env,
-  // Provider credentials may ALSO arrive straight from the environment without
-  // being declared, and without becoming ctx.env — the ordinary way to hand
-  // ASSEMBLYAI_API_KEY to a container. Anything in `env` still wins.
-  providerEnv: withHostCredentialFallback(env),
-  clientDir: resolveClientDir(),
-  ...(publicUrl ? { publicUrl } : {}),
-  // Durable workflows need nothing passed here. A `DATABASE_URL` in `env` puts
-  // the runs in Postgres and they survive a restart; without one they live in a
-  // per-process directory and do not, which is the same trade `aai dev` makes.
-  //
-  // Two options used to sit here — the compiled workflow surface, carried on the
-  // bundle as `__aaiWorkflowCode`/`__aaiStepCode` because a `"use workflow"` body
-  // had to go through a compiler at BUILD time. The engine reads the agent's own
-  // `workflows` declaration instead, so there is no artifact to hand over.
-});
+const server = await bootOrExit(
+  // The commonest first-run failure, and the one whose stack this replaces: a
+  // provider credential that is not there. `.env` is what `aai dev` reads too,
+  // so the fix is the same one in both places.
+  "Set the missing value in .env, or pass it as a real environment variable (`docker run -e NAME=value`), then start again.",
+  () =>
+    createAgentServer({
+      agent,
+      env,
+      // Provider credentials may ALSO arrive straight from the environment without
+      // being declared, and without becoming ctx.env — the ordinary way to hand
+      // ASSEMBLYAI_API_KEY to a container. Anything in `env` still wins.
+      providerEnv: withHostCredentialFallback(env),
+      clientDir: resolveClientDir(),
+      ...(publicUrl ? { publicUrl } : {}),
+      // Durable workflows need nothing passed here. A `DATABASE_URL` in `env` puts
+      // the runs in Postgres and they survive a restart; without one they live in a
+      // per-process directory and do not, which is the same trade `aai dev` makes.
+      //
+      // Two options used to sit here — the compiled workflow surface, carried on the
+      // bundle as `__aaiWorkflowCode`/`__aaiStepCode` because a `"use workflow"` body
+      // had to go through a compiler at BUILD time. The engine reads the agent's own
+      // `workflows` declaration instead, so there is no artifact to hand over.
+    }),
+);
 
 // Loopback by default: this server has no request authentication of its own,
 // so exposing it is a deliberate act. Set HOST=0.0.0.0 to bind every interface
 // behind your own proxy or auth. An empty HOST means unset, not "everything".
 const host = process.env.HOST?.trim() || undefined;
-await server.listen(Number(process.env.PORT ?? 3000), host);
+const port = Number(process.env.PORT ?? 3000);
+await bootOrExit(
+  `Nothing is listening yet — port ${port} is in use, or this process may not bind it. Set PORT to a free one.`,
+  () => server.listen(port, host),
+);
 console.log(`${agent.name} listening on http://${host ?? "127.0.0.1"}:${server.port}`);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

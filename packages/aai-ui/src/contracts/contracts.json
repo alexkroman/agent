@@ -1,8 +1,10 @@
 {
   "client": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Reaches the same required `fatal` on SessionError through this capability's rollup — client() surfaces the session error to a custom chrome. Constructing one stops compiling; reading one, which is what a client does, is unaffected."
+    }
   },
   "client-dir": {
     "current": 1,
@@ -20,9 +22,11 @@
     "dropped": {}
   },
   "hooks": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "useToolResult's result generic defaults to unknown instead of any, so an epoch-1 caller reading a field off an un-parameterized result stops compiling — which is the point: the tool's return type is inferred at tool() and was being discarded at the one call site whose job is to name it. useToolCallStart gained a type parameter whose default preserves its old behaviour."
+    }
   },
   "page": {
     "current": 1,
@@ -30,10 +34,11 @@
     "dropped": {}
   },
   "session": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: TRANSCRIBING_PLACEHOLDER moved to @alexkroman1/aai-ui/internal. It is a tuning constant referenced by no public signature and named by no file outside this package, so it sat in a client.tsx author's autocomplete beside useSession while being a framework decision with no field to set."
+      "1": "Pre-release: TRANSCRIBING_PLACEHOLDER moved to @alexkroman1/aai-ui/internal. It is a tuning constant referenced by no public signature and named by no file outside this package, so it sat in a client.tsx author's autocomplete beside useSession while being a framework decision with no field to set.",
+      "2": "SessionError gained a required `fatal`, so anything CONSTRUCTING one stops compiling; reading one is unaffected, which is every client. The field was already on the wire and dropped one line before reaching the client, while this type's own doc described it as REQUIRED."
     }
   },
   "theme": {

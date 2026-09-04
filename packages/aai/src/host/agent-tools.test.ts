@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
+import type { DefaultToolResult } from "../sdk/types.ts";
 import { isToolFailure, type ToolFailure } from "../sdk/utils.ts";
 import { fetchJson, visitWebpage, webSearch } from "./agent-tools.ts";
 
@@ -92,12 +93,20 @@ describe("callable builtins", () => {
     expect(third?.headers?.Accept).toBe("from/object");
   });
 
-  test("the result needs no cast", async () => {
+  test("the result needs no cast, once the failure arm is out of the way", async () => {
     // `Promise<unknown>` made every real call site write `as any` — the same
-    // defect useToolResult had. Reading a field must just compile.
+    // defect useToolResult had. Reading a field must just compile, and it does:
+    // past the narrowing the field is `any`, so nothing here is annotated and
+    // nothing is cast.
     const fetch = vi.fn(async () => new Response(JSON.stringify({ price: 1 }), { status: 200 }));
     const quote = await fetchJson("https://api.example.com/q", { fetch });
-    expect(quote.price).toBe(1);
+    if (isToolFailure(quote)) expect.fail(`unexpected failure: ${quote.error}`);
+    const price: number = quote.price;
+    expect(price).toBe(1);
+    // Any depth, still no cast. Asserted on the TYPE and not on a value:
+    // `expectTypeOf` evaluates its argument, so reading two levels into a shape
+    // this test never staged is a runtime error rather than a type one.
+    expectTypeOf<typeof quote>().toEqualTypeOf<Record<string, DefaultToolResult>>();
     // And a type argument still gives real checking when you want it — including
     // the failure arm, which is the whole point: naming a shape is what makes the
     // compiler ask about `{ error }`.
@@ -124,14 +133,75 @@ describe("callable builtins", () => {
     expectTypeOf<Awaited<ReturnType<typeof visitWebpage<string>>>>().toEqualTypeOf<
       string | ToolFailure
     >();
-    // Unnamed stays loose, so the permissive-return-type decision is preserved:
-    // `DefaultToolResult` is `any`, and `any | ToolFailure` is `any` — so reading
-    // a field off an untyped call still compiles with no narrowing and no cast,
-    // which is what the module's permissive-return note promises. Asserted
-    // through a real call, because that is where the default is applied.
+    // And an UNNAMED call is the case that used to escape entirely: `T`
+    // defaulted to `DefaultToolResult`, which is `any`, and `any | ToolFailure`
+    // is `any` — so the union above was erased for exactly the callers that had
+    // not thought about failure. `const a = await fetchJson(url);
+    // a.no.such.field` was zero errors. Asserted through a real call, because
+    // that is where the default is applied.
     const fetch = vi.fn(async () => new Response(JSON.stringify({ price: 1 }), { status: 200 }));
     const loose = await fetchJson("https://api.example.com/q", { fetch });
-    expectTypeOf(loose).toBeAny();
-    expect(loose.price).toBe(1);
+    expectTypeOf(loose).not.toBeAny();
+    expectTypeOf(loose).toEqualTypeOf<Record<string, DefaultToolResult> | ToolFailure>();
+    // What that buys, stated as the property rather than as a suppressed error:
+    // the only field the union agrees on is `error`, so `loose.price` before the
+    // narrowing does not compile and the message names `ToolFailure`.
+    expectTypeOf(loose).toHaveProperty("error");
+    expectTypeOf(loose).not.toHaveProperty("price");
+    // The value is still there for a caller that does narrow.
+    expect(isToolFailure(loose) ? undefined : loose.price).toBe(1);
+  });
+
+  test("a signal reaches the fetch, combined with the builtin's own deadline", async () => {
+    // Without this the only way to abort a page read was a raw `fetch` — i.e.
+    // giving up the screening, the header stripping and the size caps to comply
+    // with "pass ctx.signal to anything slow".
+    const seen: (AbortSignal | null | undefined)[] = [];
+    const fetch = vi.fn(async (_url: unknown, init?: { signal?: AbortSignal | null }) => {
+      seen.push(init?.signal);
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+    const controller = new AbortController();
+    await fetchJson("https://api.example.com/q", { fetch, signal: controller.signal });
+    // `fetchCappedText` always sets its own FETCH_TIMEOUT_MS deadline, so what
+    // arrives is the COMBINATION rather than the caller's signal — the point
+    // being that aborting the caller's still aborts the request.
+    const combined = seen[0];
+    expect(combined).toBeInstanceOf(AbortSignal);
+    expect(combined?.aborted).toBe(false);
+    controller.abort();
+    expect(combined?.aborted).toBe(true);
+  });
+
+  test("an abort REJECTS rather than answering a ToolFailure", async () => {
+    // A cancelled turn has no model left to tell, and the tool's own await is
+    // being unwound — same shape as the per-request timeout, which has always
+    // thrown.
+    const fetch = vi.fn(
+      (_url: unknown, init?: { signal?: AbortSignal | null }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const controller = new AbortController();
+    const pending = visitWebpage({ url: "https://example.com", fetch, signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow("aborted");
+  });
+
+  test("the signal rides the bag form of all three", async () => {
+    // The bag is the shape agents reach for first, so an option only the
+    // trailing argument accepts is an option half the callers cannot find.
+    const seen: (AbortSignal | null | undefined)[] = [];
+    const fetch = vi.fn(async (_url: unknown, init?: { signal?: AbortSignal | null }) => {
+      seen.push(init?.signal);
+      return new Response("<html>ok</html>", { status: 200 });
+    });
+    const { signal } = new AbortController();
+    await webSearch({ query: "x", fetch, signal });
+    await visitWebpage({ url: "https://example.com", fetch, signal });
+    await fetchJson({ url: "https://example.com", fetch, signal });
+    expect(seen.length).toBeGreaterThanOrEqual(3);
+    expect(seen.every((s) => s instanceof AbortSignal)).toBe(true);
   });
 });

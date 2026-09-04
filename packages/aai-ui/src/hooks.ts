@@ -145,15 +145,26 @@ function useToolCallEffect(
  * }
  * ```
  *
- * @typeParam R - The result shape. Defaults to {@link DefaultToolResult}
- *   (`any`) so the ordinary untyped spelling compiles; pass the shape —
- *   `useToolResult<Quote>(…)` — for real checking.
+ * @typeParam R - The result shape. Defaults to `unknown`, NOT to
+ *   {@link DefaultToolResult} (`any`): the return type is inferred perfectly
+ *   at `tool()` and this hook is the one place a client reads it, so an `any`
+ *   default threw the whole inference away exactly where it was wanted —
+ *   `useToolResult("get_order", (r) => r.a.b.c.d.e)` reported nothing. It is
+ *   the tool's own shape that belongs here, and the spelling that costs a
+ *   browser bundle nothing is a TYPE-ONLY import of the tool module:
+ *   `import type getOrder from "./tools/get_order.ts"` is erased, so
+ *   `useToolResult<InferToolOutput<typeof getOrder>>(…)` pulls no host code
+ *   into the client graph. `useToolResult<Quote>(…)` against a hand-written
+ *   shape is the other spelling. {@link DefaultToolResult} itself stays `any`
+ *   — see `ToolCallInfo.args` for why a value the framework cannot see is
+ *   typed that way at REST; the argument does not extend to a call site whose
+ *   whole job is to name the shape.
  * @param toolName - Only calls of this tool fire the callback.
  * @param callback - Called with the parsed result and the call itself.
  *
  * @public
  */
-export function useToolResult<R = DefaultToolResult>(
+export function useToolResult<R = unknown>(
   toolName: string,
   callback: (result: R, toolCall: ToolCallInfo) => void,
 ): void;
@@ -178,13 +189,16 @@ export function useToolResult<R = DefaultToolResult>(
  * }
  * ```
  *
- * @typeParam R - The result shape. Defaults to {@link DefaultToolResult}.
+ * @typeParam R - The result shape. Defaults to `unknown`, for the reason the
+ *   filtered overload's `@typeParam` gives. A log renderer is the one caller
+ *   that legitimately wants no shape, and `unknown` is what it should say:
+ *   `JSON.stringify(result)` takes it unchanged.
  * @param callback - Called with the tool's name, the parsed result, and the
  * call itself.
  *
  * @public
  */
-export function useToolResult<R = DefaultToolResult>(
+export function useToolResult<R = unknown>(
   callback: (name: string, result: R, toolCall: ToolCallInfo) => void,
 ): void;
 export function useToolResult(...args: unknown[]): void {
@@ -378,14 +392,28 @@ export function useEvent<T = unknown>(event: string, callback: (data: T) => void
  * }
  * ```
  *
+ * @typeParam A - The tool's ARGUMENT shape. Defaults to
+ *   `ToolCallInfo["args"]`, which is `Record<string, any>` — so an
+ *   un-parameterized call behaves exactly as it always has, and
+ *   `toolCall.args.totally_made_up_field` still compiles. That default is a
+ *   property of {@link ToolCallInfo} rather than a choice made here (its doc
+ *   carries the argument, and the escape hatch it recommends —
+ *   `args as { url: string }` — is what this type parameter replaces); until
+ *   that field is tightened there is nothing stricter for this hook to fall
+ *   back to. What was missing was any way to opt IN: there was no type
+ *   parameter at all, so a custom client could not check args even when it
+ *   knew the shape. Name it — `useToolCallStart<{ query: string }>(…)` — or
+ *   derive it from the tool with a TYPE-ONLY import, which is erased and so
+ *   pulls no host code into the browser graph:
+ *   `useToolCallStart<InferToolInput<typeof search>>("search", …)`.
  * @param toolName - Only calls of this tool fire the callback.
  * @param callback - Called with the pending call.
  *
  * @public
  */
-export function useToolCallStart(
+export function useToolCallStart<A = ToolCallInfo["args"]>(
   toolName: string,
-  callback: (toolCall: ToolCallInfo) => void,
+  callback: (toolCall: Omit<ToolCallInfo, "args"> & { args: A }) => void,
 ): void;
 /**
  * Fire a callback when ANY tool call starts — read the tool's name off the
@@ -403,11 +431,17 @@ export function useToolCallStart(
  * }
  * ```
  *
+ * @typeParam A - The tool's ARGUMENT shape; see the filtered overload. On the
+ *   unfiltered form every tool's call arrives, so naming one shape here is
+ *   only right for a page that switches on `toolCall.name` and narrows it
+ *   itself — the default is the honest answer for a log renderer.
  * @param callback - Called with the pending call.
  *
  * @public
  */
-export function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
+export function useToolCallStart<A = ToolCallInfo["args"]>(
+  callback: (toolCall: Omit<ToolCallInfo, "args"> & { args: A }) => void,
+): void;
 export function useToolCallStart(...args: unknown[]): void {
   useToolCallEffect("pending", args, (callback, tc) => {
     (callback as (tc: ToolCallInfo) => void)(tc);

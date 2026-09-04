@@ -177,6 +177,21 @@ export type SessionError = {
   readonly code: SessionErrorCode;
   /** A human-readable description of the error. */
   readonly message: string;
+  /**
+   * Whether the session is OVER.
+   *
+   * `false` means surface the message and keep the session interactive — a
+   * turn-level failure over a server that kept running. `true` means the call
+   * is dead and the microphone has been released.
+   *
+   * Required rather than optional, because the wire always carries it
+   * (`error.reported` declares `fatal: z.boolean()`) and a client that cannot
+   * tell the two apart has to guess which banner to render. It was dropped one
+   * line before reaching here for long enough that this type's own doc, and
+   * the reference page generated from it, described a field that did not
+   * exist.
+   */
+  readonly fatal: boolean;
 };
 
 /**

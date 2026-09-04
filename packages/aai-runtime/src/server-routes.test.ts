@@ -83,6 +83,15 @@ describe("routeMatches", () => {
     expect(routeMatches(SERVER_ROUTES.session, "/other")).toBe(false);
   });
 
+  test("health answers HEAD as well as GET", () => {
+    // A load balancer's default probe is often HEAD, and a 404 to it pulls the
+    // deployment out of rotation while `GET /health` reports ok. Asserted on
+    // the TABLE rather than on one door, because `createServer` is what `aai
+    // dev`, the guest harness and `createHostServer` each call directly.
+    expect(routeMatches(SERVER_ROUTES.health, HEALTH_PATH, "GET")).toBe(true);
+    expect(routeMatches(SERVER_ROUTES.health, HEALTH_PATH, "HEAD")).toBe(true);
+  });
+
   test("a method the route does not answer does not match", () => {
     expect(routeMatches(SERVER_ROUTES.health, HEALTH_PATH, "POST")).toBe(false);
     expect(
