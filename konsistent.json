@@ -657,6 +657,325 @@
           }
         ]
       }
+    },
+    {
+      "name": "test-helper-modules",
+      "description": "Each package's test-helper module is its OWN and they are not interchangeable: the helpers are named for that package's domain, so a spec reaches for the module beside it rather than importing another package's. This pins where each one lives and the roster it owes. That roster used to be a hand-kept list in the root AGENTS.md and had gone stale in four places, which is the argument for checking it: flush() had moved from aai/src/host/_test-utils.ts to aai-runtime/src/_test-utils.ts while the guide still named the former; sleep() was attributed to that host module too, though it is a published SDK export (sdk/sleep.ts) and never lived there; makeTool()/makeAgent() had left the host module for the runtime one and silenceSteps() had stopped being exported at all; and aai-runtime's module, the largest in the repo, was absent from the list entirely. A rename or a move now fails the gate instead of quietly making a guide wrong. The rosters: aai/src/host/_test-utils.ts - tick() (a full macrotask yield), createMockToolContext(), makeConfig(), fakeFetch(). aai-runtime/src/_test-utils.ts - flush() (MICROTASK-only; the one to reach for instead of `await new Promise(r => setTimeout(r, 0))`), tick(), makeTool(), makeAgent(), makeConfig(), loadFixture() (fixture replay, incl. S2S mocking). aai-cli/src/_test-utils.ts - withTempDir() (temp dir + cleanup), silenced(), makeBundle(); the dev-server specs additionally share their fake chokidar and runtime/server mocks via _dev-server-test-utils.ts, and a _test-setup.ts setup file points AAI_CONFIG_DIR at a per-run temp dir so a CLI spec can never touch the developer's real ~/.config/aai/config.json (API key + approved servers). aai-ui/src/_react-test-utils.ts - createMockSessionCore(), installAudioMocks(), and the MockAudioContext class. aai-studio-client/src/_test-utils.ts - stubFetch() and its readers, renderWithClient(), the button/input/textarea element seams, installResizeObserver(). aai-server/src/test-utils.ts (no underscore) - createTestStore() (in-memory BundleStore), createTestOrchestrator(), authHeaders()/authFetch()/deploy()/deployAgent()/deployPayload()/deployBody(), makeSlot(), captureLogs(). Build a platform request with authFetch/deploy, never a header literal - see \"Building a platform request in a test\" in packages/aai-server/CLAUDE.md for the ~47 converted sites and the three shapes that deliberately stay raw. Each roster is a FLOOR: a module may export more, and several do.",
+      "paths": "packages",
+      "must": [
+        {
+          "name": "core-host-helpers",
+          "for": {
+            "files": "aai/src/host/_test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "tick",
+              "createMockToolContext",
+              "makeConfig",
+              "fakeFetch"
+            ]
+          }
+        },
+        {
+          "name": "runtime-helpers",
+          "for": {
+            "files": "aai-runtime/src/_test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "flush",
+              "tick",
+              "makeTool",
+              "makeAgent",
+              "makeConfig",
+              "loadFixture"
+            ]
+          }
+        },
+        {
+          "name": "cli-helpers",
+          "for": {
+            "files": "aai-cli/src/_test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "withTempDir",
+              "silenced",
+              "makeBundle"
+            ]
+          }
+        },
+        {
+          "name": "browser-helpers",
+          "for": {
+            "files": "aai-ui/src/_react-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createMockSessionCore",
+              "installAudioMocks"
+            ],
+            "exportClasses": [
+              "MockAudioContext"
+            ]
+          }
+        },
+        {
+          "name": "studio-client-helpers",
+          "for": {
+            "files": "aai-studio-client/src/_test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "stubFetch",
+              "renderWithClient",
+              "button",
+              "input",
+              "textarea",
+              "installResizeObserver"
+            ]
+          }
+        },
+        {
+          "name": "server-helpers",
+          "for": {
+            "files": "aai-server/src/test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createTestStore",
+              "createTestOrchestrator",
+              "authHeaders",
+              "authFetch",
+              "deploy",
+              "deployAgent",
+              "deployPayload",
+              "deployBody",
+              "makeSlot",
+              "captureLogs"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "published-testing-split",
+      "description": "@alexkroman1/aai/testing and @alexkroman1/aai/testing/vitest are PUBLISHED, so a user's agent project imports them, and the split between the two has a RULE rather than a precedent: anything that INSTALLS, and anything that RESTORES, is /testing/vitest. Every fake filling a published slot hands back a `restore` the caller owns, and owning it means a `const restores: (() => void)[]` plus an afterEach that splices it - written out template after template, three times in one file. install* is that fake plus onTestFinished(restore). A fake with no lifetime (stubGenerate, createToolContext) gets no wrapper and stays in testing.ts. Both halves are checked here. sdk/testing.ts may not import vitest AT ALL: that is what keeps the framework-agnostic entry point usable by a project on another runner, and one stray `vi`/`onTestFinished` import there would silently make vitest a hard dependency of the whole subpath - a break that appears in a user's install, not in this repo, where vitest is always present. sdk/testing-vitest.ts must import vitest (onTestFinished specifically, the thing the wrapper exists for) and must carry the whole install* family, so an installer written into the framework-agnostic file fails here rather than shipping. The inventory and the rest of the argument - what each fake fills, why the defaults are inert, why each call is a distinct session - are in the subpath table in packages/aai/CLAUDE.md.",
+      "paths": "packages/aai/src/sdk",
+      "must": [
+        {
+          "name": "framework-agnostic",
+          "for": {
+            "files": "testing.ts"
+          },
+          "mustNot": {
+            "importFrom": "vitest"
+          }
+        },
+        {
+          "name": "installers-need-the-runner",
+          "for": {
+            "files": "testing-vitest.ts"
+          },
+          "must": {
+            "importFrom": "vitest",
+            "import": [
+              {
+                "name": "onTestFinished",
+                "from": "vitest"
+              }
+            ],
+            "exportFunctions": [
+              "installStubGateway",
+              "installStubUploads",
+              "installStubStepFetch",
+              "installStubReporter",
+              "installStubSpeech",
+              "installStubTranscribe",
+              "installStubWorkflows"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "type-level-tests",
+      "description": "A *.test-d.ts file is a TYPE-level test: checked by tsc, never executed at runtime, and its assertions are expectTypeOf from vitest. Requiring that import is what makes the extension mean something - a .test-d.ts with no expectTypeOf is a file nothing runs and nothing checks, and it would look exactly like coverage. Note what actually GATES these files: not the aai-types / aai-ui-types vitest projects, which are declared only in the root vitest.config.ts that nothing in the repo or in CI evaluates, but `turbo run typecheck` - every package tsconfig includes its test files, so a mismatched expectTypeOf is a hard compile error (injecting expectTypeOf<string>().toEqualTypeOf<number>() fails tsc -p packages/aai with TS2344). A new .test-d.ts is therefore covered on creation, but only in a package whose tsconfig includes it and only if it really asserts, which is the half this convention holds. The first .test-d.ts in a package also needs a knip.json entry (\"**/*.test-d.ts\"): a type test is imported by nothing, so knip reports the file itself as unused.",
+      "paths": [
+        "packages/*/src/*.test-d.ts",
+        "packages/*/src/**/*.test-d.ts"
+      ],
+      "must": {
+        "import": [
+          {
+            "name": "expectTypeOf",
+            "from": "vitest"
+          }
+        ]
+      }
+    },
+    {
+      "name": "concurrency-primitives",
+      "description": "The repo's recurring async-coordination patterns are reified as small primitives, and this pins each one's HOME so the roster cannot go stale and a call site can be checked against it. Almost all are packages/aai exports; createTurnMachine() is the one that lives in aai-runtime (transports/pipeline-turn-state.ts). The catalogue: createEpoch() (sdk/epoch.ts), createOwnedMap() (sdk/owned-map.ts), createCoalescingRunner() (sdk/coalescing-runner.ts), createKeyedLock()/withLock() (sdk/keyed-lock.ts - withLock is a const arrow, not a function declaration, which is why it is asserted as a constant), sleep(ms, { signal?, unref? }) (sdk/sleep.ts - the ONE wait, and NOT a test helper, which the root guide used to imply; guard-invariants rule 19 keeps the seventh hand-rolled spelling out), jitteredBackoff(attempt, ...) (sdk/jittered-backoff.ts - rule 31 keeps the fourth copy out; the JITTER is the half a copy gets wrong), sessionSlot() (sdk/session-slot.ts), ToolFailure/toolFailure()/isToolFailure()/pushCapped() (sdk/utils.ts), resolveOne() (sdk/spoken.ts), omitUndefined() (sdk/omit-undefined.ts - rules 2 and 22 are its enforcement half), isRecord() (sdk/is-record.ts). What this convention deliberately cannot do is see a hand-rolled copy at a call site: that is inside a function body, hence guard-invariants (rules 2, 3, 4, 19, 21, 22, 23, 31). It covers the other direction - a primitive renamed, moved or deleted out from under those rules, which would leave every one of them matching nothing while printing the same checkmark as a rule upheld. Two repo-wide members are absent because they are not ours to export: p-timeout for timeouts (never a hand-rolled Promise.race with a timer) and native AbortSignal.any([...]) for combining signals; both stay as prose in AGENTS.md. packages/aai/CLAUDE.md, \"Concurrency primitives\", carries the argument behind each primitive.",
+      "paths": "packages",
+      "must": [
+        {
+          "name": "epoch",
+          "for": {
+            "files": "aai/src/sdk/epoch.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createEpoch"
+            ]
+          }
+        },
+        {
+          "name": "owned-map",
+          "for": {
+            "files": "aai/src/sdk/owned-map.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createOwnedMap"
+            ]
+          }
+        },
+        {
+          "name": "coalescing-runner",
+          "for": {
+            "files": "aai/src/sdk/coalescing-runner.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createCoalescingRunner"
+            ]
+          }
+        },
+        {
+          "name": "keyed-lock",
+          "for": {
+            "files": "aai/src/sdk/keyed-lock.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createKeyedLock"
+            ],
+            "exportConstants": [
+              "withLock"
+            ]
+          }
+        },
+        {
+          "name": "one-wait",
+          "for": {
+            "files": "aai/src/sdk/sleep.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "sleep"
+            ]
+          }
+        },
+        {
+          "name": "jittered-backoff",
+          "for": {
+            "files": "aai/src/sdk/jittered-backoff.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "jitteredBackoff"
+            ]
+          }
+        },
+        {
+          "name": "session-slot",
+          "for": {
+            "files": "aai/src/sdk/session-slot.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "sessionSlot"
+            ]
+          }
+        },
+        {
+          "name": "tool-failure",
+          "for": {
+            "files": "aai/src/sdk/utils.ts"
+          },
+          "must": {
+            "exportTypes": [
+              "ToolFailure"
+            ],
+            "exportFunctions": [
+              "toolFailure",
+              "isToolFailure",
+              "pushCapped"
+            ]
+          }
+        },
+        {
+          "name": "resolve-one",
+          "for": {
+            "files": "aai/src/sdk/spoken.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "resolveOne"
+            ]
+          }
+        },
+        {
+          "name": "omit-undefined",
+          "for": {
+            "files": "aai/src/sdk/omit-undefined.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "omitUndefined"
+            ]
+          }
+        },
+        {
+          "name": "is-record",
+          "for": {
+            "files": "aai/src/sdk/is-record.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "isRecord"
+            ]
+          }
+        },
+        {
+          "name": "turn-machine",
+          "for": {
+            "files": "aai-runtime/src/transports/pipeline-turn-state.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              "createTurnMachine"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "guest-route-exposure",
+      "description": "`aai dev` serves the guest's own routes directly, so a feature is developed against a server where the guest's dispatch table is the whole API. Deployed, almost nothing works that way - the platform decides how each guest route is reachable - and the gap is invisible in a diff and to the feature's own tests. It has landed twice. GUEST_ROUTES and GUEST_ROUTE_EXPOSURE in packages/aai-server/src/guest-routes.ts are what close it: every guest route is declared in the first and given one of four exposure kinds in the second, so a new route cannot reach main without somebody writing down how the platform serves it. This convention pins those two constants plus the two types read off them (GuestRoute, GuestRouteExposure). They are the names a spec and guard-invariants rule 12 both address BY NAME, and renaming either in one commit would leave both gates matching nothing while still printing success - the failure shape this repo keeps paying for. It cannot check the table's CONTENTS (that a new route was given an exposure); that is rule 12's half plus the aai-server spec's. See \"A new guest route must declare how the PLATFORM exposes it\" in packages/aai-server/CLAUDE.md for the four exposure kinds, which half is a test and which is the rule, and why exposure is decided by who CALLS a route.",
+      "paths": "packages/aai-server/src/guest-routes.ts",
+      "must": {
+        "exportConstants": [
+          "GUEST_ROUTES",
+          "GUEST_ROUTE_EXPOSURE"
+        ],
+        "exportTypes": [
+          "GuestRoute",
+          "GuestRouteExposure"
+        ]
+      }
     }
   ]
 }

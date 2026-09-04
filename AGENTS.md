@@ -522,6 +522,12 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   never read from the agent env), each store factory returning the interface it
   implements, and every template's `agent.ts` + `agent.test.ts` + `client.tsx` +
   `tools/` default exports.
+  Four more were prose in this file until a roster in one of them went stale:
+  `test-helper-modules`, `published-testing-split`, `concurrency-primitives`
+  and `guest-route-exposure`, plus `type-level-tests` (a `.test-d.ts` really
+  asserts with `expectTypeOf`), which was never enforced at all. Each carries
+  its deleted paragraph as its `description` — that field is where the argument
+  goes, so a violation explains itself and a reviewer never re-explains it.
   `pnpm check:konsistent-config` (`konsistent validate`) checks the config
   against its schema without touching the tree.
 
@@ -951,43 +957,16 @@ would match nothing and pass.
 
 ### `_test-utils.ts` per package (not interchangeable)
 
-Each package has distinct test helpers tailored to its domain:
-
-- **`aai/src/sdk/testing.ts`** and **`aai/src/sdk/testing-vitest.ts`** — the ones
-  that are PUBLISHED (`@alexkroman1/aai/testing` and `/testing/vitest`, so a
-  user's agent project can import them). **The subpath table in
-  `packages/aai/CLAUDE.md` carries the inventory and the argument** — what each
-  fake fills, why the defaults are inert, why each call is a distinct session,
-  and why `/testing` stays framework-agnostic while importing `/testing/vitest`
-  is what pulls the runner.
-  **The split has a RULE rather than a precedent: anything that INSTALLS, and
-  anything that RESTORES, is `/testing/vitest`.** Every fake filling a
-  published slot hands back a `restore` the caller owns, and owning it means a
-  `const restores: (() => void)[]` plus an `afterEach` that splices it — written
-  out template after template, three times in one file. `install*` is that fake
-  plus `onTestFinished(restore)`. A fake with no lifetime (`stubGenerate`,
-  `createToolContext`) gets no wrapper.
-- **`aai/host/_test-utils.ts`** — `flush()` (microtask yield), `makeTool()`,
-  `makeAgent()`, `makeConfig()`, fixture replay helpers for S2S mocking
-- **`aai-cli/_test-utils.ts`** — `withTempDir()` (temp dir + cleanup),
-  `silenceSteps()`, `silenced()`, `makeBundle()`. The dev-server specs share
-  their mock scaffolding (fake chokidar, runtime/server mocks) via
-  `_dev-server-test-utils.ts`. A `_test-setup.ts` setup file points
-  `AAI_CONFIG_DIR` at a per-run temp dir so tests can never touch the
-  developer's real `~/.config/aai/config.json` (API key + approved servers).
-- **`aai-ui/_react-test-utils.ts`** — `createMockSessionCore()`,
-  `MockAudioContext`, `installAudioMocks()`
-- **`aai-studio-client/src/_test-utils.ts`** — typed `fetch` stubs plus their
-  readers, `renderWithClient()`, the `button`/`input`/`textarea` element seams,
-  and `installResizeObserver()`.
-- **`aai-server/test-utils.ts`** — (no underscore) `createTestStore()`
-  (in-memory BundleStore), `createTestOrchestrator()`, `authHeaders()` /
-  `authFetch()` / `deploy()` / `deployAgent()` / `deployPayload()` /
-  `deployBody()`, `makeSlot()`.
-
-  **Build a request with `authFetch`/`deploy`, not a header literal**, and
-  see `packages/aai-server/CLAUDE.md`, "Building a platform request in a test",
-  for the ~47 converted sites and the three shapes that deliberately stay raw.
+Each package's helper module is its own, named for that package's domain, and a
+spec reaches for the one beside it rather than importing another package's. The
+paths and the roster each module owes are the **`test-helper-modules`**
+konsistent convention now — a hand-kept copy lived here and had gone stale in
+four places (`flush()` had moved packages, `sleep()` was never a test helper at
+all, and the largest module in the repo was missing from the list). The
+published pair, `@alexkroman1/aai/testing` and `/testing/vitest`, is
+**`published-testing-split`**: anything that INSTALLS or RESTORES is
+`/testing/vitest`, and `testing.ts` may not import `vitest` at all.
+`packages/aai/CLAUDE.md`'s subpath table carries the inventory and the argument.
 
 ### `@dev/source` custom export condition
 
@@ -1055,17 +1034,12 @@ collision; `packages/aai-ui/CLAUDE.md` tells them apart.
 ### Concurrency primitives (use these, don't hand-roll)
 
 The repo's recurring async-coordination patterns are reified as small
-primitives. Almost all of them are `packages/aai` exports, so **the catalogue
-and the argument behind each one live in `packages/aai/CLAUDE.md`,
-"Concurrency primitives"** — go there before re-inventing one at a call site.
-The roster, so a call site can be grepped
-against it: `createEpoch()`, `createOwnedMap()`, `createCoalescingRunner()`,
-`createTurnMachine()`, `createKeyedLock()` / `withLock()`,
-`sleep(ms, { signal?, unref? })` (the ONE wait — `guard-invariants` rule 19
-keeps the seventh spelling out), `jitteredBackoff(attempt, …)` (rule 31 keeps
-the fourth copy out; the JITTER is the half a copy gets wrong),
-`sessionSlot()`, `ToolFailure` / `isToolFailure()` / `toolFailure()`,
-`pushCapped()`, `resolveOne()`, `omitUndefined()`, `isRecord()`.
+primitives. **The catalogue — every primitive, its home module and the argument
+for it — is the `concurrency-primitives` konsistent convention**, which pins
+each one's location so the roster cannot go stale, plus
+`packages/aai/CLAUDE.md`, "Concurrency primitives". Go there before
+re-inventing one at a call site; `guard-invariants` rules 2, 3, 4, 19, 21, 22,
+23 and 31 are what catch a hand-rolled copy in a function body.
 
 Two are repo-wide rather than this SDK's, and stay here:
 
@@ -1474,8 +1448,9 @@ header carries the account; the rule is the gate's.
   green no-op.
 - In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks — and note
-  `flush()` is MICROTASK-only. For a full macrotask yield use `tick()`, and for
-  real elapsed time `sleep(ms)`, both from `aai/host/_test-utils.ts`; several
+  `flush()` is MICROTASK-only. For a full macrotask yield use `tick()`, from
+  the same module; for real elapsed time `sleep(ms)` is a published SDK export
+  (see the `concurrency-primitives` convention), not a test helper. Several
   specs used to define a *local* `flush` as `setTimeout(r, 0)`, shadowing the
   export so one name meant two different waits.
 - Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
@@ -1894,14 +1869,13 @@ catches the most common issues that historically required follow-up commits:
 ## A new guest route must declare how the PLATFORM exposes it
 
 `aai dev` serves the guest's own routes directly, so a feature is developed
-against a server where the guest's dispatch table is the whole API. Deployed,
-almost nothing works that way, and the gap is invisible in a diff and to the
-feature's own tests — it has landed twice. `GUEST_ROUTE_EXPOSURE` and
-`GUEST_ROUTES` (`packages/aai-server/src/guest-routes.ts`) are what close it.
-**See "A new guest route must declare how the PLATFORM exposes it" in
-`packages/aai-server/CLAUDE.md`** for the four exposure kinds, which half is a
-test and which is `guard-invariants` rule 12, and why exposure is decided by
-who CALLS a route.
+against a server where the guest's dispatch table is the whole API; deployed,
+almost nothing works that way, and it has landed twice. The two declarations
+that close it are pinned by the **`guest-route-exposure`** konsistent
+convention, whose description carries the argument. **See "A new guest route
+must declare how the PLATFORM exposes it" in `packages/aai-server/CLAUDE.md`**
+for the four exposure kinds, which half is a test and which is
+`guard-invariants` rule 12, and why exposure is decided by who CALLS a route.
 
 ## Security architecture
 
