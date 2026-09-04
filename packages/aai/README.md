@@ -361,11 +361,11 @@ lands — an ordinary interruptible turn, only if the caller is still on the lin
 If they've hung up, the run completes anyway and the next call finds it by `key`.
 
 ```ts
-import { tool, workflow, type WorkflowCtx } from "@alexkroman1/aai";
+import { tool, workflow, type WorkflowContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
 // workflows/research.ts — an ordinary async function of its input and a ctx.
-export async function researchFlow({ topic }: { topic: string }, ctx: WorkflowCtx) {
+export async function researchFlow({ topic }: { topic: string }, ctx: WorkflowContext) {
   // `ctx.step` runs once and journals what it returned; a replay never re-runs
   // it. The body itself makes no undurable decision — no Date.now(), no fetch.
   const findings = await ctx.step("gather", () => gather(topic));
@@ -427,7 +427,7 @@ export default agent({ name: "Storefront", syncState: cartProjection });
 
 ```tsx
 import { sessionSlot } from "@alexkroman1/aai";
-import { client, useAgentState } from "@alexkroman1/aai-ui";
+import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 
 // client.tsx — in a project this is `import { cartProjection } from "./shared.ts"`,
 // the same value the agent declared, so the two ends cannot name different views.
@@ -448,7 +448,7 @@ function App() {
   );
 }
 
-client({ component: App });
+mountClient({ component: App });
 ```
 
 The projection runs after every tool call and is sent only when the result
