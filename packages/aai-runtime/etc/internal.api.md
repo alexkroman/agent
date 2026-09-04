@@ -274,6 +274,9 @@ export function parseBearer(header: string | null | undefined): string;
 export function parsePlatformFrame<T>(schema: z.ZodType<T>, text: string): T | undefined;
 
 // @internal
+export function parseTraceparent(header: string | null | undefined): TraceParent | undefined;
+
+// @internal
 export function payloadRunId(message: unknown): string | undefined;
 
 // @internal
@@ -601,6 +604,13 @@ type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
 
 // @internal
 export function traceIdOf(header: string | null | undefined): string | undefined;
+
+// @internal
+export type TraceParent = {
+    traceId: string;
+    spanId: string;
+    flags: number;
+};
 
 // @public
 type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;

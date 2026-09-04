@@ -96,8 +96,14 @@ export { EGRESS_KEEP_ALIVE_MS } from "./_egress-fetch.ts";
  * that emits it — a second regex in the server would be the drift that makes a
  * correlation key silently stop correlating. `_trace-context.ts` carries the
  * argument.
+ *
+ * {@link parseTraceparent} is the same parse with the SPAN id and the flags
+ * kept, which is what it takes to make the caller's span a real parent rather
+ * than merely a matching string — `aai-server/tracing-propagator.ts` is its one
+ * consumer, and it is on this seam rather than beside it so the exported span
+ * and the log line cannot come to disagree about what a header means.
  */
-export { traceIdOf } from "./_trace-context.ts";
+export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.ts";
 // Parsing an `Authorization: Bearer <token>` header. Here because FOUR
 // byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
 // `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's

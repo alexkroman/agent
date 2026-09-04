@@ -74,6 +74,11 @@ const AgentConfigSchema: z.ZodObject<{
         text: "text";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodURL;
+        tokenEnv: z.ZodOptional<z.ZodString>;
+        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    }, z.core.$strict>>>;
     page: z.ZodOptional<z.ZodEnum<{
         static: "static";
         voice: "voice";
@@ -1094,6 +1099,7 @@ export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof gl
 // @public
 export interface StandardSchemaIssue {
     readonly errors?: unknown;
+    readonly issues?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)

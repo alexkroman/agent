@@ -72,12 +72,14 @@ import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
 import { createServer } from "@alexkroman1/aai-runtime";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
+import { startGuestTracingDetached } from "./guest-tracing.ts";
 import { mainAgent } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
 import { emptyHarnessState, type HarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
 import { installLeakWatch } from "./harness-leak-watch.ts";
 import { captureGuestOutput } from "./harness-logs.ts";
+import { resolveGuestPort } from "./harness-port.ts";
 import {
   handleHostResponse,
   rejectAllPendingHostRequests,
@@ -209,7 +211,7 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
 
 // ---- Servers -------------------------------------------------------------
 
-function main(): void {
+export function main(): void {
   installCrashGuards();
   // After the crash guards and before the capture: Node warns about a listener
   // leak exactly ONCE per emitter and then never again, so this is what turns
@@ -227,19 +229,24 @@ function main(): void {
     console.error("harness warm-up complete");
     process.exit(0);
   }
+  // Span export, if an operator configured a collector — a no-op that imports
+  // NOTHING otherwise. Detached rather than awaited, and the whole reason it is
+  // ONE call is in `guest-tracing.ts`: boot latency is what this file is most
+  // careful about, and `main` is synchronous.
+  startGuestTracingDetached();
   const token = process.env.AAI_GUEST_TOKEN;
   if (!token) {
     console.error("AAI_GUEST_TOKEN is required");
     process.exit(1);
   }
-  // Validated up front: an unparseable AAI_GUEST_PORT would otherwise reach
-  // listen(NaN), which binds an EPHEMERAL port — the guest looks healthy
-  // while the host dials the tunnel for the published port until its
-  // deadline, and the spawn fails blaming the dial, not the config.
-  const rawPort = process.env.AAI_GUEST_PORT ?? "8080";
-  const port = Number(rawPort);
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    console.error(`Invalid AAI_GUEST_PORT "${rawPort}" — expected an integer port`);
+  // Validated up front, in `harness-port.ts` so the rule has a test: an
+  // unparseable AAI_GUEST_PORT would otherwise reach listen(NaN), which binds
+  // an EPHEMERAL port — the guest looks healthy while the host dials the tunnel
+  // for the published port until its deadline, and the spawn fails blaming the
+  // dial, not the config.
+  const port = resolveGuestPort(process.env.AAI_GUEST_PORT);
+  if (typeof port === "string") {
+    console.error(port);
     process.exit(1);
   }
   // Modal gives the guest its own network namespace, so binding every

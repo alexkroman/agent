@@ -4,6 +4,7 @@
  */
 
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+import type { McpServers } from "./mcp-config.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type { SessionEventHandlers } from "./session-events.ts";
@@ -77,6 +78,16 @@ export type Message = {
 };
 
 export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+// The MCP declaration an `agent.ts` writes. The client that reads it is
+// `withMcpTools` on `@alexkroman1/aai-runtime` — this package opens no sockets.
+export {
+  MCP_SERVER_KEY_RE,
+  MCP_TOOL_NAME_MAX,
+  MCP_TOOL_PREFIX,
+  type McpServerConfig,
+  type McpServers,
+  mcpToolName,
+} from "./mcp-config.ts";
 /**
  * The one default constant still on the root barrel, and the only one that
  * passes its membership test: `agent({ systemPrompt })` REPLACES the whole
@@ -452,6 +463,32 @@ export interface AgentDef extends PipelineVoiceTuning {
    * `@alexkroman1/aai/step`, which resolve the same record.
    */
   requiredEnv?: readonly string[];
+  /**
+   * MCP servers whose tools the model may call alongside this agent's own.
+   *
+   * Each key names one server and prefixes every tool it contributes, so a
+   * `docs` server's `search` arrives as `mcp_docs_search` — a third party's
+   * tool can never stand where one of yours stood. HTTP(S) only.
+   *
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   *
+   * export default agent({
+   *   name: "Support",
+   *   mcpServers: {
+   *     docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" },
+   *   },
+   *   requiredEnv: ["DOCS_MCP_TOKEN"],
+   * });
+   * ```
+   *
+   * Declaring servers is not enough on its own: a host connects them with
+   * `withMcpTools` from `@alexkroman1/aai-runtime` before building the runtime,
+   * because discovery is a network round trip and `createRuntime` is
+   * synchronous. A server that is down, slow, or missing its token costs its
+   * own tools and nothing else — never the session.
+   */
+  mcpServers?: McpServers;
 }
 
 // The zod schemas for `BuiltinTool` and `ToolChoice` used to be re-exported

@@ -26,6 +26,7 @@ import pTimeout from "p-timeout";
 import { SHUTDOWN_CLOSE_FALLBACK_MS, SHUTDOWN_TEARDOWN_TIMEOUT_MS } from "./constants.ts";
 import { endLiveStreams } from "./live-streams.ts";
 import { createLogger } from "./logger.ts";
+import { startTracing } from "./tracing.ts";
 
 const log = createLogger("serve");
 
@@ -194,6 +195,13 @@ export type StartServiceOptions = {
 
 /** Start the HTTP server and wire signal-driven shutdown. Resolves once listening. */
 export async function startService(opts: StartServiceOptions): Promise<void> {
+  // The handle, so shutdown can flush what is buffered. Usually the provider is
+  // already up — `applyPlatformMiddleware` starts it while the app is being
+  // built, which is before this — and `startTracing` is idempotent, so this
+  // asks for the same one rather than installing a second. A no-op returning
+  // `undefined` unless a collector is configured: nothing is constructed,
+  // nothing is registered, no timer is armed.
+  const tracing = startTracing();
   const serveImpl = opts.serveImpl ?? (serve as unknown as NonNullable<typeof opts.serveImpl>);
   const server = serveImpl({ fetch: opts.fetch, port: opts.port });
   // BEFORE `listening`, so no connection is ever served under the defaults.
@@ -216,7 +224,19 @@ export async function startService(opts: StartServiceOptions): Promise<void> {
   log.info(`${opts.label} listening on http://localhost:${opts.port}`);
 
   const shutdown = createShutdownHandler({
-    onShutdown: opts.onShutdown,
+    onShutdown: async () => {
+      // The service's own teardown first, so anything it reports is in the
+      // buffer this flush drains. `Tracing.shutdown` never rejects and is
+      // bounded by `TRACING_DRAIN_TIMEOUT_MS`, so it can neither fail the
+      // teardown nor spend the deadline `createShutdownHandler` puts on it —
+      // a collector that has gone away must not turn a graceful stop into a
+      // SIGKILL.
+      try {
+        await opts.onShutdown();
+      } finally {
+        await tracing?.shutdown();
+      }
+    },
     closeServer: (cb) => server.close(cb),
   });
   process.on("SIGINT", () => void shutdown());

@@ -10,6 +10,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "interruptionMinDurationMs",
   "llm",
   "maxSteps",
+  "mcpServers",
   "minBargeInWords",
   "mode",
   "name",

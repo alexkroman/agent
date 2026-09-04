@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { newTraceparent, traceIdOf } from "./_trace-context.ts";
+import { newTraceparent, parseTraceparent, traceIdOf } from "./_trace-context.ts";
 
 describe("newTraceparent", () => {
   test("is a header the parser accepts, which is the only contract that matters", () => {
@@ -68,5 +68,45 @@ describe("traceIdOf", () => {
     ["a whole other header's value", "Bearer abc"],
   ] as const)("refuses %s rather than repairing it", (_label, header) => {
     expect(traceIdOf(header)).toBeUndefined();
+  });
+});
+
+describe("parseTraceparent", () => {
+  test("keeps the span id and the flags, which is what a PARENT needs", () => {
+    // `traceIdOf` answers the log field. A span needs the CALLER's span id too,
+    // or the exported span carries a matching string rather than being a real
+    // child of the request that produced it.
+    expect(parseTraceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")).toEqual({
+      traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+      spanId: "00f067aa0ba902b7",
+      flags: 1,
+    });
+  });
+
+  test("reads the flags BYTE rather than assuming the sampled bit", () => {
+    const flagsOf = (byte: string) =>
+      parseTraceparent(`00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-${byte}`)?.flags;
+    expect(flagsOf("00")).toBe(0);
+    expect(flagsOf("ff")).toBe(255);
+  });
+
+  test("agrees with `traceIdOf` on every header, which is the whole point", () => {
+    // ONE parser, so a log line and an exported span can never name two
+    // different traces for one request — see `aai-server/tracing-propagator.ts`.
+    for (const header of [
+      newTraceparent(),
+      "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+      "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+      "01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+      "Bearer abc",
+      "",
+    ]) {
+      expect.soft(parseTraceparent(header)?.traceId, header).toBe(traceIdOf(header));
+    }
+  });
+
+  test("refuses a null or absent header, as the log field does", () => {
+    expect(parseTraceparent(null)).toBeUndefined();
+    expect(parseTraceparent(undefined)).toBeUndefined();
   });
 });

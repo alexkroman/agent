@@ -23,6 +23,7 @@ import {
   assertSamplingScope,
   assertSilencePolicy,
 } from "./config-rules.ts";
+import { MCP_SERVER_KEY_RE } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
@@ -98,6 +99,58 @@ const EnvVarName = z.string().refine((name) => name.trim() !== "" && !/[\s=]/.te
 });
 
 /**
+ * One declared MCP server, on the wire.
+ *
+ * `.strict()` because this is the one config object whose keys name a REMOTE
+ * system: a misspelled `tokenEnv` would otherwise deploy a server that silently
+ * connects unauthenticated, and the 401 arrives per session rather than at the
+ * boundary that could name the key.
+ *
+ * `tokenEnv` reuses {@link EnvVarName} rather than restating the rule — it is
+ * the same claim `requiredEnv` makes, that the string is a variable NAME, and a
+ * second copy is how the two come to disagree about what a name may hold.
+ */
+const McpServerConfigSchema = z
+  .object({
+    url: z.url().refine(
+      (value) => {
+        // `URL.parse` rather than `new URL`: zod runs every check and collects
+        // the issues, so a refinement here still sees a value `z.url()` already
+        // rejected — and a constructor THROWS out of the parse, turning a
+        // "that is not a URL" into an unhandled TypeError several layers up.
+        const protocol = URL.parse(value)?.protocol;
+        return protocol === "http:" || protocol === "https:";
+      },
+      {
+        error:
+          "an MCP server URL must be http(s) — stdio and other transports are not supported (see sdk/mcp-config.ts)",
+      },
+    ),
+    tokenEnv: EnvVarName.optional(),
+    // The reviewed tool baseline: remote tool name → fingerprint. Opaque here
+    // on purpose — the digest is `fingerprintTools`' to define, and a shape
+    // rule restated in this schema is one that can disagree with it.
+    pinnedTools: z.record(z.string().min(1), z.string().min(1)).optional(),
+  })
+  .strict();
+
+/**
+ * The `mcpServers` record, keyed by {@link MCP_SERVER_KEY_RE}.
+ *
+ * The key is checked HERE, at the config boundary, rather than when the client
+ * connects: it becomes part of the tool name the model is shown, so a key a
+ * provider would reject has to fail where the author can still see their own
+ * `agent.ts` — not per session, in a vendor message naming neither.
+ */
+const McpServersSchema = z.record(
+  z.string().regex(MCP_SERVER_KEY_RE, {
+    error:
+      'an mcpServers key becomes part of the tool name the model calls: lowercase, starting with a letter, words joined by "_", at most 24 characters',
+  }),
+  McpServerConfigSchema,
+);
+
+/**
  * Zod schema for {@link AgentConfig} — the JSON-safe subset of the agent
  * definition, transmitted between worker and host via structured clone.
  *
@@ -139,6 +192,13 @@ export const AgentConfigSchema = z.object({
   text: z.literal(true).optional(),
   mode: z.enum(["s2s", "pipeline", "text"]).optional(),
   requiredEnv: z.array(EnvVarName).readonly().optional(),
+  /**
+   * MCP servers whose tools join the agent's own. Serializable, like every
+   * other declaration here: the runtime that connects may be in a guest
+   * sandbox, so the record has to survive CLI → server → runtime like `stt`
+   * does. The `mcp-config.ts` doc carries what the shape is and is not.
+   */
+  mcpServers: McpServersSchema.optional(),
   // Serializable rather than host-only: it is a DECLARATION about the agent's
   // surface, exactly like `name` and `greeting`, and every consumer of a
   // serialized config wants it — the browser (does this page open a mic?), the

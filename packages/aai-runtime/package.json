@@ -83,18 +83,24 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@ai-sdk/mcp": "catalog:",
     "@types/escape-html": "^1.0.4",
     "@types/json-schema": "catalog:",
     "@types/mime-types": "catalog:",
     "@types/ws": "catalog:",
     "fast-check": "catalog:",
+    "tokenx": "catalog:",
     "tsdown": "catalog:",
     "vitest": "catalog:"
   },
   "peerDependencies": {
+    "@ai-sdk/mcp": "^2.0.43",
     "vitest": ">=3"
   },
   "peerDependenciesMeta": {
+    "@ai-sdk/mcp": {
+      "optional": true
+    },
     "vitest": {
       "optional": true
     }

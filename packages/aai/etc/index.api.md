@@ -21,6 +21,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     idleTimeoutMs?: number;
     llm?: LlmProvider;
     maxSteps: number;
+    mcpServers?: McpServers;
     name: string;
     page?: "voice" | "static";
     requiredEnv?: readonly string[];
@@ -307,6 +308,28 @@ type Literal<S extends string> = string extends S ? never : S;
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
+
+// @public
+export const MCP_SERVER_KEY_RE: RegExp;
+
+// @public
+export const MCP_TOOL_NAME_MAX = 64;
+
+// @public
+export const MCP_TOOL_PREFIX = "mcp_";
+
+// @public
+export type McpServerConfig = {
+    url: string;
+    tokenEnv?: string;
+    pinnedTools?: Readonly<Record<string, string>>;
+};
+
+// @public
+export type McpServers = Readonly<Record<string, McpServerConfig>>;
+
+// @public
+export function mcpToolName(serverKey: string, remoteName: string): string;
 
 // @public
 export type Message = {
@@ -718,6 +741,7 @@ export function spokenOrdinal(spoken: string): number | undefined;
 // @public
 interface StandardSchemaIssue {
     readonly errors?: unknown;
+    readonly issues?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)

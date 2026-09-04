@@ -156,6 +156,43 @@ describe("agentBootEnv", () => {
     expect(env.AAI_BUNDLE_SHA256).toBe("abc");
   });
 
+  // Span export is armed by an ENDPOINT, so every other OTel key is dead
+  // weight without one — and a key that is present and useless is the shape a
+  // misconfiguration takes (the reason the three URL keys are omitted rather
+  // than set blank).
+  it("forwards the collector configuration only when an endpoint names one", () => {
+    expect(agentBootEnv(boot, { OTEL_SERVICE_NAME: "agent-eu" })).not.toHaveProperty(
+      "OTEL_SERVICE_NAME",
+    );
+    expect(
+      agentBootEnv(boot, {
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318",
+        OTEL_EXPORTER_OTLP_HEADERS: "api-key=secret",
+        OTEL_SERVICE_NAME: "agent-eu",
+      }),
+    ).toMatchObject({
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318",
+      OTEL_EXPORTER_OTLP_HEADERS: "api-key=secret",
+      OTEL_SERVICE_NAME: "agent-eu",
+    });
+  });
+
+  // The signal-specific endpoint arms it on its own: an operator who points
+  // only traces at a collector must not get a guest that exports nothing.
+  it("is armed by the traces-specific endpoint too", () => {
+    expect(
+      agentBootEnv(boot, { OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://c:4318/v1/traces" }),
+    ).toMatchObject({ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://c:4318/v1/traces" });
+  });
+
+  // The pairing with the guest's own reader is asserted only by these literals
+  // and its own, because this package may not import guest source — the
+  // boundary `konsistent` enforces. That is a weaker guarantee than the two
+  // lists compared against each other, and it is acceptable HERE only because
+  // the names are OpenTelemetry's rather than ours: neither side is free to
+  // rename one. A key of our own spelling crossing this hop would owe the
+  // text-scan treatment `guard-invariants` rule 12 gives `GUEST_ROUTES`.
+
   // The guest documents AAI_GUEST_IDLE_EXIT_MS as its idle-exit override, but
   // reads it from `process.env` — and only Modal guests have an ambient
   // environment to read. The subprocess backend builds a minimal env by

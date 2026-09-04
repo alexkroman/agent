@@ -12,6 +12,7 @@ import type { Message } from "@alexkroman1/aai";
 import { normalizeSpeechText } from "@alexkroman1/aai/internal";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
+import { createContextBudget } from "./pipeline-context-budget.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
@@ -107,6 +108,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
   const history = createPipelineHistory(sessionConfig.history);
+  // Bounds what each STEP sends the model, and learns the request's fixed cost
+  // (system prompt + tool declarations) from the provider's own reported usage.
+  // Built once per SESSION, deliberately: neither of those changes between
+  // turns, so what one turn's last step measured is the right number for the
+  // next turn's first step — the step that would otherwise be estimated blind,
+  // and the only step most turns have. `undefined` for a model whose context
+  // window this repo does not know, which trims nothing and leaves the session
+  // on the message cap alone. It bounds the REQUEST and never `history`, which
+  // the client, resume and `ctx.messages` all read. See
+  // pipeline-context-budget.ts.
+  const contextBudget = createContextBudget({ llm: opts.llm, log, sid: opts.sid });
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
   const turnChain = createTurnChain({ gate, isTerminated: () => terminated });
   // What the caller has actually HEARD of the current reply: the barge-in
@@ -131,6 +143,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     systemPrompt,
     temperature: opts.temperature,
     maxSteps,
+    // The SAME preparer the real turn gets: a speculation is adopted into a
+    // turn, and request parity is the premise adoption rests on.
+    contextBudget,
     history,
     sessionSignal: sessionAbort.signal,
     // "The floor is free": no turn running and nothing still playing out.
@@ -275,6 +290,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     toolChoice,
     temperature: opts.temperature,
     maxSteps,
+    contextBudget,
     deadAirCoverMs,
     // An open speech edge means an utterance is in progress (0 when not).
     callerSpeaking: () => speechEdges.durationMs() > 0,

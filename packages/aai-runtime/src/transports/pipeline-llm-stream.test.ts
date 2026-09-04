@@ -4,10 +4,13 @@
 //
 // Moved here with the code out of pipeline-stream.test.ts.
 
-import { APICallError, RetryError } from "ai";
+import { APICallError, type ModelMessage, RetryError, tool } from "ai";
 import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
+import type { FakeLanguageModel, ScriptedPart } from "../_fake-llm.ts";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { createContextBudget } from "./pipeline-context-budget.ts";
 import { type AdoptedLlmStream, consumeLlmStream, type TapeEntry } from "./pipeline-llm-stream.ts";
 import { createStreamPartHandler, type StreamPart } from "./pipeline-stream-parts.ts";
 
@@ -307,5 +310,95 @@ describe("preemptive generation: poison arriving AFTER adoption", () => {
     expect(spoken.join("")).toContain("adopted reply");
     expect(spoken.join("")).not.toContain("restarted reply");
     expect(result.failed).toBe(false);
+  });
+});
+
+// `streamText` takes ONE `prepareStep`, and this call site has TWO things to
+// say — the context budget's `messages` and `forceFinalAnswer`'s `toolChoice`.
+// These drive the real assembler so a composition that silently dropped either
+// one fails here rather than in production. See _prepare-step.ts.
+describe("the context budget and forceFinalAnswer share the prepareStep slot", () => {
+  /** The catalog's SMALLEST advertised window (32k), so a case can overflow it. */
+  const SMALL_WINDOW_MODEL = "qwen3.5-4b-32k-experimental";
+
+  /** A fake model answering `script`, presenting as a real gateway model id. */
+  function modelFor(steps: ScriptedPart[][]): FakeLanguageModel {
+    return Object.assign(createFakeLanguageModel({ steps }), { modelId: SMALL_WINDOW_MODEL });
+  }
+
+  /** Messages far past the 24,576-token budget that window leaves. */
+  function overflowingHistory(): ModelMessage[] {
+    return Array.from({ length: 6 }, (_, i) => ({
+      role: "user" as const,
+      content: `turn ${i} ${"payload ".repeat(10_000)}`,
+    }));
+  }
+
+  /** How many messages the model was handed on `call`, system message excluded. */
+  function promptSize(model: FakeLanguageModel, call: number): number {
+    const prompt = model.calls[call]?.prompt;
+    // A throw rather than `expect.fail`: this is a HELPER, and biome's
+    // `noMisplacedAssertion` reads an assertion outside a test body as a bug.
+    if (!Array.isArray(prompt)) throw new Error(`call ${call} sent no prompt array`);
+    return prompt.filter((m) => (m as { role?: string }).role !== "system").length;
+  }
+
+  test("the request is trimmed and the caller's history is NOT touched", async () => {
+    const llm = modelFor([[{ type: "text", text: "ok" }]]);
+    const messages = overflowingHistory();
+    await consume({
+      llm,
+      sid: "budget-1",
+      messages,
+      contextBudget: createContextBudget({ llm, log: silentLogger, sid: "budget-1" }),
+    });
+    // Trimmed on the way out…
+    expect(promptSize(llm, 0)).toBeLessThan(messages.length);
+    expect(promptSize(llm, 0)).toBeGreaterThan(0);
+    // …and the array the transport owns — which is also what the client
+    // replays, what resume persists and what `ctx.messages` hands a tool — is
+    // exactly as it was. This is the whole reason the trim lives here.
+    expect(messages).toHaveLength(6);
+    expect(messages[0]?.content).toContain("turn 0");
+  });
+
+  test("nothing is trimmed when the model's window is unknown", async () => {
+    // `createContextBudget` answers `undefined`, so `composePrepareStep` skips
+    // it and the request carries the whole history — the documented fallback.
+    const llm = createFakeLanguageModel({ steps: [[{ type: "text", text: "ok" }]] });
+    const messages = overflowingHistory();
+    await consume({
+      llm,
+      sid: "budget-2",
+      messages,
+      contextBudget: createContextBudget({ llm, log: silentLogger, sid: "budget-2" }),
+    });
+    expect(promptSize(llm, 0)).toBe(messages.length);
+  });
+
+  test("the forced final answer still fires on a step the budget also trimmed", async () => {
+    // Both effects on ONE step: writing either preparer straight into the slot
+    // deletes the other, and neither loss has a symptom until a turn stops
+    // mid-chain with an empty transcript or a request overflows the window.
+    const llm = modelFor([
+      [{ type: "tool-call", toolCallId: "c1", toolName: "noop", input: "{}" }],
+      [{ type: "text", text: "wrapped up" }],
+    ]);
+    const messages = overflowingHistory();
+    await consume({
+      llm,
+      sid: "budget-3",
+      messages,
+      maxSteps: 1,
+      tools: {
+        noop: tool({ description: "Nothing", inputSchema: z.object({}), execute: () => "ok" }),
+      },
+      contextBudget: createContextBudget({ llm, log: silentLogger, sid: "budget-3" }),
+    });
+    expect(llm.calls).toHaveLength(2);
+    // forceFinalAnswer's key, on the step the budget reserved…
+    expect(llm.calls[1]?.toolChoice).toMatchObject({ type: "none" });
+    // …and the budget's, on the same step.
+    expect(promptSize(llm, 1)).toBeLessThan(messages.length);
   });
 });

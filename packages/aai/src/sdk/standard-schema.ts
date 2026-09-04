@@ -65,6 +65,22 @@ export interface StandardSchemaIssue {
    * requires a vendor to supply it, and no caller should produce it.
    */
   readonly errors?: unknown;
+  /**
+   * The issues a vendor nested inside this one as its CAUSE — a second
+   * off-spec extension, typed `unknown` for the same reason as `errors`.
+   *
+   * Zod 4 wraps a record's failed KEY this way: the outer issue is
+   * `invalid_key` carrying the generic `"Invalid key in record"`, and the key
+   * schema's own issues — including any custom `error` its author wrote — sit
+   * here. Without reading it, a message written FOR an author is replaced by
+   * one that does not say what is wrong: `mcpServers.my-docs` reported
+   * `Invalid key in record` while `agent-config.ts` had spelled out the key
+   * grammar and the reason for it.
+   *
+   * Unlike `errors` these are not alternatives, so {@link formatSchemaIssues}
+   * APPENDS rather than replaces — see `renderIssue`.
+   */
+  readonly issues?: unknown;
 }
 
 /** The output (validated) type of a Standard Schema. */
@@ -99,6 +115,9 @@ function renderIssue(issue: StandardSchemaIssue, parentPath: PathSegments, depth
   // A nested issue's path is RELATIVE to the union that holds it, so a branch
   // renders `llm.model` only if the parent's own path is carried down.
   const path: PathSegments = [...parentPath, ...(issue.path ?? [])];
+  const label = path
+    .map((seg) => String(typeof seg === "object" && seg !== null ? seg.key : seg))
+    .join(".");
   if (depth < MAX_ISSUE_DEPTH) {
     const branches = unionBranches(issue);
     if (branches) {
@@ -107,10 +126,21 @@ function renderIssue(issue: StandardSchemaIssue, parentPath: PathSegments, depth
       const rendered = new Set(branches.map((branch) => renderIssues(branch, path, depth + 1)));
       return [...rendered].join(" or ");
     }
+    const cause = wrappedCause(issue);
+    if (cause) {
+      // APPENDED, where a union branch REPLACES, and the difference is what the
+      // parent message is worth. A union's is the placeholder `"Invalid input"`;
+      // a wrapper's says which half of the entry failed — `"Invalid key in
+      // record"` is the only thing that distinguishes a bad KEY from a bad
+      // value, since both sit at the same path. So both halves are kept.
+      //
+      // Rendered against an EMPTY path: the cause is at its parent's location,
+      // and carrying `path` down would print the label twice.
+      const detail = renderIssues(cause, [], depth + 1);
+      const message = detail ? `${issue.message} — ${detail}` : issue.message;
+      return label ? `${label}: ${message}` : message;
+    }
   }
-  const label = path
-    .map((seg) => String(typeof seg === "object" && seg !== null ? seg.key : seg))
-    .join(".");
   return label ? `${label}: ${issue.message}` : issue.message;
 }
 
@@ -135,6 +165,24 @@ function unionBranches(issue: StandardSchemaIssue): readonly StandardSchemaIssue
     if (branch.length > 0) branches.push(branch);
   }
   return branches.length > 0 ? branches : undefined;
+}
+
+/**
+ * The issues a vendor nested inside one issue as its cause, or `undefined`.
+ *
+ * A FLAT list, where {@link unionBranches} is a list of lists — which is the
+ * whole reason this is a second reader rather than a widened one: a shape test
+ * that accepted both could not tell one branch of alternatives from one cause.
+ * Structural and degrading for the same reason as that function: the nesting is
+ * a vendor extension with no contract.
+ */
+function wrappedCause(issue: StandardSchemaIssue): readonly StandardSchemaIssue[] | undefined {
+  if (!Array.isArray(issue.issues)) return undefined;
+  // Widened away immediately, like `unionBranches` above: `Array.isArray`
+  // narrows to `any[]`, and no `any` may reach the filter.
+  const raw: readonly unknown[] = issue.issues;
+  const nested = raw.filter(isIssue);
+  return nested.length > 0 ? nested : undefined;
 }
 
 /** Whether a vendor-supplied value carries the one field a render needs. */
