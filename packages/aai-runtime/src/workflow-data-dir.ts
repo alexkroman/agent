@@ -24,10 +24,9 @@
  * while there was none at all — the rename shipped with the reader and without
  * the writer, so every `aai dev` upload silently took the per-process default
  * and the non-default arm of `installWorkflowSupport`'s boot line was
- * unreachable. That writer currently duplicates the string below rather than
- * importing {@link WORKFLOW_DATA_DIR_ENV}, because this module reaches no
- * barrel; publishing it on `@alexkroman1/aai-runtime/internal` is what retires
- * the copy.
+ * unreachable. That writer imports {@link WORKFLOW_DATA_DIR_ENV} now — the name
+ * is on `@alexkroman1/aai-runtime/internal`, so the two ends of one variable
+ * cannot disagree about its spelling.
  *
  * @internal
  */

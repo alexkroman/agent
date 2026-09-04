@@ -13,7 +13,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { type Mock, vi } from "vitest";
 import { createRuntime } from "./runtime.ts";
-import type { LogFn, Logger, LogLevel } from "./runtime-config.ts";
+import { type LogFn, type Logger, type LogLevel, silentLogger } from "./runtime-config.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
 import {
@@ -231,21 +231,20 @@ export function makeClientSink(overrides?: Partial<ClientSink>): ClientSink {
  * A logger that discards. Shared by 26 suites purely to keep test output
  * quiet — it is NOT for asserting on.
  *
- * Plain no-ops rather than `vi.fn()`, which is the point: as spies these were
- * a module singleton whose call history accumulated across every test in a
- * file (`restoreMocks` restores spies, it does not clear a `vi.fn()`'s call
- * log), so `expect(silentLogger.error).toHaveBeenCalled()` could be satisfied
- * by an error some earlier test logged. Two suites were asserting on it. The
- * comment warning against that had been here all along and is what a reader
- * has to notice; no-ops make the mistake impossible instead — `toHaveBeenCalled`
- * on a non-mock fails loudly and names the reason.
+ * Re-exported rather than declared: `runtime-config.ts` owns the one silent
+ * logger now, beside `consoleLogger`, because the fuzz harnesses need the same
+ * value and may not import this file (its vitest-backed helpers are not
+ * declaration-portable). Kept under this name so the 26 suites already
+ * importing it do not all have to move.
+ *
+ * The value is plain no-ops rather than `vi.fn()`, which is the point and is
+ * argued at the declaration: as spies these were a module singleton whose call
+ * history accumulated across every test in a file (`restoreMocks` restores
+ * spies, it does not clear a `vi.fn()`'s call log), so
+ * `expect(silentLogger.error).toHaveBeenCalled()` could be satisfied by an
+ * error some earlier test logged. Two suites were asserting on it.
  */
-export const silentLogger = {
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-  debug: () => undefined,
-};
+export { silentLogger } from "./runtime-config.ts";
 
 /**
  * Narrow a test double to `fetch`'s type, in ONE place.

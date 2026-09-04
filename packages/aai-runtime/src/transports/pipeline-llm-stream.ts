@@ -183,8 +183,6 @@ export interface StartedLlmStream {
   fullStream: AsyncIterable<StreamPart>;
   /** Settles with every step of the turn, after the stream ends. */
   steps: Promise<readonly StepResult[]>;
-  /** Response messages of steps that COMPLETED, pushed as they finish. */
-  collected: ModelMessage[];
 }
 
 /** The request half of {@link ConsumeLlmStreamParams} — see {@link startLlmStream}. */
@@ -217,9 +215,6 @@ export type LlmRequest = Pick<
  * — see the request-parity spec in `pipeline-llm-stream.test.ts`.
  */
 export function startLlmStream(req: LlmRequest): StartedLlmStream {
-  // Response messages of completed steps, collected incrementally so an
-  // aborted turn still returns everything that finished before the abort.
-  const collected: ModelMessage[] = [];
   const result = streamText({
     model: req.llm,
     system: req.systemPrompt,
@@ -244,7 +239,10 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     ),
     abortSignal: req.signal,
     onStepFinish: (step) => {
-      collected.push(...step.response.messages);
+      // `onStep` is the ONLY way out: each consumer keeps the copy it needs
+      // (`consumeLlmStream`'s own array, the speculation's tape), and a second
+      // accumulator here was write-only — two collections of one thing, with
+      // nothing telling a reader which one a caller holds.
       req.onStep?.(step.response.messages);
     },
     // Every `error` part is delivered to `onError` and to `fullStream` alike, so
@@ -270,7 +268,6 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
   return {
     fullStream: result.fullStream as AsyncIterable<StreamPart>,
     steps: Promise.resolve(result.steps),
-    collected,
   };
 }
 

@@ -69,7 +69,7 @@
 
 import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
-import type { Logger } from "../runtime-config.ts";
+import { type Logger, silentLogger } from "../runtime-config.ts";
 import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,
@@ -95,19 +95,6 @@ import type {
  * @public
  */
 export const DEFAULT_MAX_DELIVERIES = 50;
-
-/**
- * Nothing, at every level.
- *
- * `Logger` requires all four, so the no-ops are spelled out. A spec that wants
- * to read the engine's own lines — a retry, an abandoned run — passes its own.
- */
-const SILENT: Logger = {
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-};
 
 /** One queued delivery, as the injected dispatcher receives it. */
 type Queued = { runId: string; at: number | undefined };
@@ -160,7 +147,7 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
   options: RunWorkflowOptions = {},
 ): Promise<WorkflowTestHandle<R>> {
   const name = options.name ?? "workflow";
-  const logger = options.logger ?? SILENT;
+  const logger = options.logger ?? silentLogger;
   const maxDeliveries = options.maxDeliveries ?? DEFAULT_MAX_DELIVERIES;
   const validated = def.input
     ? await parseSchemaInput<Record<string, unknown>>(def.input, input, `workflow ${name}`)

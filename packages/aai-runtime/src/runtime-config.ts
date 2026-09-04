@@ -121,6 +121,33 @@ export function createConsoleLogger(debug: boolean = debugLoggingEnabled): Logge
 export const consoleLogger: Logger = createConsoleLogger();
 
 /**
+ * A logger that drops every line.
+ *
+ * Beside {@link consoleLogger} because the harnesses, the eval session and the
+ * published `/testing` runner all need one and there were SEVEN copies of these
+ * four lines — one of which already carried the comment "one silent logger
+ * rather than the second copy of six lines".
+ *
+ * Here rather than in `_test-utils.ts`, which is the version several of those
+ * copies deliberately refused: the fuzz harnesses are not `.test.ts` files, so
+ * `tsconfig.build.json` compiles them, and importing the vitest-backed helpers
+ * drags `@vitest/spy` types into the published `.d.ts` graph and fails the build.
+ *
+ * NO-OPS rather than spies, which is the other reason a copy existed: a shared
+ * mock would carry call history across tests, so `expect(logger.error)
+ * .toHaveBeenCalled()` could be satisfied by a line some earlier test logged.
+ * Against a non-mock that assertion fails loudly and names the reason instead.
+ *
+ * @internal
+ */
+export const silentLogger: Logger = {
+  debug: noopLog,
+  info: noopLog,
+  warn: noopLog,
+  error: noopLog,
+};
+
+/**
  * Speech-to-Speech (S2S) endpoint configuration.
  *
  * Controls which AssemblyAI real-time WebSocket endpoint to connect to and

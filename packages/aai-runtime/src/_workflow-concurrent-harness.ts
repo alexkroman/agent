@@ -45,7 +45,7 @@ import type fc from "fast-check";
 import { type JournalWrite, recordJournal } from "./_workflow-journal-log.ts";
 import { COLLIDING_STARTS } from "./_workflow-laws-harness.ts";
 import { measure, type Stats } from "./_workflow-reach-harness.ts";
-import { silent } from "./_workflow-resume-harness.ts";
+
 import { type Program, type Recorder, runProgram, tokensOf } from "./_workflow-resume-program.ts";
 import {
   type Arm,
@@ -54,7 +54,13 @@ import {
   type Ev,
   scheduleJournal,
 } from "./_workflow-schedule-harness.ts";
-import { byCodeUnit, createTally, journalOutcome } from "./_workflow-tally-harness.ts";
+import {
+  byCodeUnit,
+  createTally,
+  type JournalOutcome,
+  journalOutcome,
+} from "./_workflow-tally-harness.ts";
+import { silentLogger } from "./runtime-config.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore, type RunStatus } from "./workflow-journal-types.ts";
@@ -121,7 +127,7 @@ export type ConcurrentOptions = {
 };
 
 /** What one concurrent scenario did. */
-export type ConcurrentScenario = {
+export type ConcurrentScenario = JournalOutcome & {
   /**
    * The PRIMARY run's id.
    *
@@ -132,14 +138,6 @@ export type ConcurrentScenario = {
    * found when it landed.
    */
   runId: string;
-  status: RunStatus | undefined;
-  output: unknown;
-  error: string | undefined;
-  /** Journal keys, sorted, so two runs compare as sets. */
-  keys: string[];
-  /** Step NAME to how many times its body really ran. */
-  counts: Record<string, number>;
-  total: number;
   rounds: number;
   /** Every walk that ran the body to an answer, in completion order. */
   walkOutputs: unknown[][];
@@ -345,7 +343,7 @@ export async function runConcurrentScenario(
     dispatch: () => undefined,
     newRunId: () => minting,
     stepConcurrency: options.stepConcurrency,
-    logger: silent,
+    logger: silentLogger,
   });
 
   const startsWon = await raceStarts(engine, who, options.scheduler, "p");

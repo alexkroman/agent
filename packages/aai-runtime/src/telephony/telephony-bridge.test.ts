@@ -1,4 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
+import { readFile } from "node:fs/promises";
 import type { SessionErrorCode, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "../_mock-ws.ts";
@@ -6,7 +7,7 @@ import { makeLogger } from "../_test-utils.ts";
 import type { SessionRuntime } from "../server.ts";
 import { telnyxCodec, twilioCodec } from "./carriers.ts";
 import { mulawToPcm16, pcm16ToMulaw, TELEPHONY_SAMPLE_RATE } from "./mulaw.ts";
-import { createTelephonyBridge } from "./telephony-bridge.ts";
+import { ACTED_ON_EVENTS, createTelephonyBridge } from "./telephony-bridge.ts";
 import { startTelephonySession } from "./telephony-server.ts";
 
 const SESSION_RATE = 16_000;
@@ -340,5 +341,46 @@ describe("startTelephonySession", () => {
     expect(startSession.mock.calls[0]?.[1]).toEqual({
       logContext: { transport: "phone", carrier: "twilio" },
     });
+  });
+});
+
+describe("ACTED_ON_EVENTS", () => {
+  test("names exactly the event types the bridge branches on", async () => {
+    // The prefilter is an optimization that can only ever be WRONG by being too
+    // narrow, and a frame it wrongly drops is silent — the carrier simply never
+    // hears about a reset, a cancel, or a fatal error. So the pair is asserted
+    // against the source rather than restated: every `type === "…"` literal in
+    // the module has to be one the scan admits.
+    const source = await readFile(new URL("./telephony-bridge.ts", import.meta.url), "utf8");
+    // Scoped to the one function, because the module also adapts a socket's
+    // `addEventListener` and branches on `"message"` / `"open"` / `"close"`
+    // there — unrelated names that a whole-file scan reads as session events.
+    // The body ends at the first closing brace back at its own indent.
+    const opens = source.indexOf("function handleSessionEvent(");
+    expect(opens, "handleSessionEvent was renamed").toBeGreaterThan(-1);
+    const body = source.slice(opens, source.indexOf("\n  }\n", opens));
+    const branched = [...body.matchAll(/type === "([^"]+)"/g)].map((m) => m[1] as string);
+
+    expect(branched.length, "the branch literals stopped being recognizable").toBeGreaterThan(0);
+    for (const type of branched) {
+      expect(ACTED_ON_EVENTS.test(`"${type}"`), `${type} is branched on but never parsed`).toBe(
+        true,
+      );
+    }
+  });
+
+  test("rejects the frames the bridge has no use for", () => {
+    // The bulk of a session's ~50 events a turn, and the reason the scan pays:
+    // a transcript frame carries the reply's cumulative text and is the largest
+    // thing on the wire.
+    for (const type of [
+      "user-transcript.updated",
+      "agent-transcript.committed",
+      "tool.called",
+      "turn.ended",
+      "state.updated",
+    ]) {
+      expect(ACTED_ON_EVENTS.test(JSON.stringify({ type })), type).toBe(false);
+    }
   });
 });

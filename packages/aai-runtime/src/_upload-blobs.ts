@@ -61,7 +61,7 @@
  * `createMemoryUploadBlobs` is the third, for specs.
  */
 
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { collectCapped } from "./_upload-byte-util.ts";
 import type { ByteRange } from "./_upload-store.ts";
 
@@ -183,18 +183,9 @@ export function createMemoryUploadBlobs(): UploadBlobs {
  * have a read ask for a window before the file starts.
  */
 export function partsOf(value: unknown): UploadPart[] {
-  const raw = typeof value === "string" ? tryParse(value) : value;
+  const raw = typeof value === "string" ? safeJsonParse(value) : value;
   if (!Array.isArray(raw)) return [];
   return raw.filter(isPart);
-}
-
-/** JSON, or nothing — a column this cannot parse is a column with nothing usable in it. */
-function tryParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
 }
 
 /** Whether one entry really describes a window. */

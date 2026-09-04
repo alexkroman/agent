@@ -258,18 +258,24 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
     ...agent.tools,
   };
 
-  const generate = createGenerateFn({
-    llm: agent.llm ?? assemblyAILlm(),
-    env: opts.providerEnv ?? opts.env ?? {},
-  });
+  // Derived ONCE and shared by both, rather than the same two expressions
+  // written out three times across this factory (`resolveModel` is the third).
+  // They have to agree by construction: `ctx.generate` and `ctx.delegate` are
+  // documented as running on the same descriptor and the same credential as the
+  // turns do, and three independent spellings is three chances at a text agent
+  // whose tools quietly dial a different provider than its replies.
+  const toolLlm: LlmProvider = agent.llm ?? assemblyAILlm();
+  const toolEnv = opts.providerEnv ?? opts.env ?? {};
+
+  const generate = createGenerateFn({ llm: toolLlm, env: toolEnv });
 
   /**
    * `ctx.delegate`, on the same descriptor and the same credential env as
    * `generate` — a text agent's tools delegate exactly as a voice agent's do.
    */
   const subagents = createSubagentRunner({
-    llm: agent.llm ?? assemblyAILlm(),
-    env: opts.providerEnv ?? opts.env ?? {},
+    llm: toolLlm,
+    env: toolEnv,
     ...omitUndefined({ fetch: opts.fetch }),
     ...omitUndefined({ runCode: opts.runCode }),
     logger,

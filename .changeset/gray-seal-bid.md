@@ -1,0 +1,11 @@
+---
+"@alexkroman1/aai-runtime": patch
+---
+
+Cut duplicated logic and wasted work across the host runtime.
+
+Seven near-copies collapsed onto the helper that already owned each rule: `publicWebhookUrl` composes its URL through `workflowWebhookUrl` (base, prefix and token encoding are three independently-wrong-able parts, and a webhook URL that does not match the path parsing it 404s weeks later on somebody else's server); the five spellings of "a descriptor's `apiKeyEnv` beats the registry default" become one `envVarOf`, the omission of which had already made a preflight demand a variable the session does not read; three cycle-safe `cause` walks in the error classifier become one, where the file's own doc claimed there was already only one; and `safeJsonParse`, `errorMessage`, `pushCapped`, `codeUnit` and `shell.streamError` replace hand-rolled copies. Seven separate silent `Logger` objects become one `silentLogger` beside `consoleLogger` — placed there rather than in the test utils because the fuzz harnesses are compiled by the declaration build and may not import a vitest-backed module.
+
+Wasted work removed on four hot paths: the telephony bridge scans a session frame before parsing it (it acts on four event types out of the ~50 a turn emits, and the transcript frames it discards are the largest on the wire); the OpenAI SSE repair transform encodes and enqueues once per network chunk instead of once per line, on the time-to-first-token path of every turn; gateway tool schemas are pruned once per schema object instead of once per LLM request; and two regexes that were being allocated once per CHARACTER — on every STT partial, and on every barge-in alignment — are hoisted to module scope. A brokered blob read now cancels the response body on 404/416, which was leaving a pooled connection unusable until GC.
+
+Also: the telephony bridge's PCM16-to-bytes view goes through `pcm16ToBytes`, restoring the endianness check that module exists to own; two harness outcome types are derived from `JournalOutcome` rather than re-declaring its six fields, so widening the shared reader cannot leave a property law silently unable to see the new one; a write-only step accumulator, two dead eval symbols and a dead fuzz type are deleted; and three doc blocks that described deleted mechanisms are corrected.

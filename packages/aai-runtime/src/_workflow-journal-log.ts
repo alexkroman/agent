@@ -39,6 +39,7 @@
  * silently unrecorded effect.
  */
 
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type {
   HookRecord,
@@ -130,7 +131,7 @@ export function recordJournal(inner: JournalStore = createMemoryJournal()): Reco
       writes.push(made(answer));
       return answer;
     } catch (err: unknown) {
-      writes.push({ ...made(undefined), threw: err instanceof Error ? err.message : String(err) });
+      writes.push({ ...made(undefined), threw: errorMessage(err) });
       throw err;
     }
   }

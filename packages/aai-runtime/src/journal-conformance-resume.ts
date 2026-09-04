@@ -36,6 +36,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { codeUnit } from "./_workflow-journal-order.ts";
 import { type JournalArm, keysFor, runOf } from "./journal-conformance-cases.ts";
 import {
   isResumableJournal,
@@ -81,16 +82,6 @@ function resumableOf(arm: JournalArm): ResumableJournal {
     );
   }
   return journal;
-}
-
-/**
- * Code-unit order, and never `localeCompare`, for the reason `newestFirst` in the
- * memory journal gives: with no explicit locale that answers to the runtime's ICU
- * default, so two ids would order differently on two machines.
- */
-function codeUnit(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
 }
 
 /**

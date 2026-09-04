@@ -64,7 +64,7 @@ import type { HostGenerateFn } from "../generate.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntime } from "../runtime.ts";
-import type { Logger } from "../runtime-config.ts";
+import { type Logger, silentLogger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { assertTurnMeasurable } from "./_turn-faults.ts";
 import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsIn } from "./events.ts";
@@ -74,22 +74,6 @@ import { type FakeSpeech, installFakeSpeech } from "./fake-speech.ts";
 const DEFAULT_TURN_TIMEOUT_MS = 90_000;
 /** How often the turn wait re-reads the event list. */
 const POLL_MS = 25;
-
-const dropLine = (): undefined => undefined;
-
-/**
- * A logger that says nothing — the default, so a report stays readable.
- *
- * Exported for `eval/workflows.ts`, which owes the same default for the same
- * reason and is not on the barrel: one silent logger rather than the second copy
- * of six lines.
- */
-export const silentLogger: Logger = {
-  debug: dropLine,
-  info: dropLine,
-  warn: dropLine,
-  error: dropLine,
-};
 
 /** What {@link evalCredentials} found on this machine. */
 export type EvalCredentials = {

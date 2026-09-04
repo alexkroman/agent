@@ -24,7 +24,7 @@ import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
-import type { Logger } from "../runtime-config.ts";
+import { silentLogger } from "../runtime-config.ts";
 import { createSessionCore, type SessionCore } from "../session-core.ts";
 import { createSessionEmitter } from "../session-emitter.ts";
 import { createSessionEventStream } from "../session-event-stream.ts";
@@ -32,17 +32,6 @@ import { createMemoryStateBackend } from "../session-state-store.ts";
 import { createS2sTransport } from "../transports/s2s-transport.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
 import { createFakeS2sLink, type FakeS2sLink } from "./_s2s-fuzz-model.ts";
-
-/**
- * Deliberately NOT `_test-utils.ts`'s `silentLogger`. These modules are not
- * `.test.ts` files, so the declaration build (`tsconfig.build.json` excludes
- * `_test-*.ts`, not this) compiles them — and importing the vitest-backed
- * helpers from here drags `@vitest/spy` types into the published `.d.ts` graph
- * and fails the build. `_pipeline-fuzz-model.ts` is self-contained for the same
- * reason.
- */
-const noop = (): void => undefined;
-const silentLogger: Logger = { info: noop, warn: noop, error: noop, debug: noop };
 
 /** Idle reaping is a timer, not an interleaving: it would only add nondeterminism. */
 const AGENT_CONFIG: AgentConfig = {

@@ -91,10 +91,7 @@ function handleRimeMessage(
     return;
   }
   if (msg.type === "error") {
-    shell.emit(
-      "error",
-      makeTtsError("tts_stream_error", `Rime TTS: ${msg.message ?? "unknown error"}`),
-    );
+    shell.streamError(`Rime TTS: ${msg.message ?? "unknown error"}`);
   }
 }
 

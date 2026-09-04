@@ -211,16 +211,7 @@ export function lastStateIn<T>(
   if (last === undefined) return undefined;
   const state = last.state;
   if (schema === undefined) return state;
-  const result = schema["~standard"].validate(state);
-  if (result instanceof Promise) {
-    throw new TypeError("lastStateIn needs a synchronous schema — this one validates async");
-  }
-  if (result.issues) {
-    throw new Error(
-      `the last state frame does not match the schema: ${formatSchemaIssues(result.issues)}`,
-    );
-  }
-  return result.value;
+  return validate(schema, state, "the last state frame");
 }
 
 /**
@@ -282,16 +273,7 @@ export function toolResultIn<T = unknown>(
   if (call?.result === undefined) throw new Error(`the call to "${name}" never completed`);
   const parsed = parseToolResult(call.result, name, 0, schema !== undefined);
   if (schema === undefined) return parsed as T;
-  const result = schema["~standard"].validate(parsed);
-  if (result instanceof Promise) {
-    throw new TypeError("toolResultIn needs a synchronous schema — this one validates async");
-  }
-  if (result.issues) {
-    throw new Error(
-      `"${name}"'s result does not match the schema: ${formatSchemaIssues(result.issues)}`,
-    );
-  }
-  return result.value;
+  return validate(schema, parsed, `"${name}"'s result`);
 }
 
 /**

@@ -9,17 +9,12 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
-import type { Logger } from "../runtime-config.ts";
+import { silentLogger } from "../runtime-config.ts";
 import { makeCallbacks, type RecordingCallbacks } from "./_transport-recorder.ts";
 import type { PipelineTransportOptions } from "./pipeline-transport.ts";
 
 export type SttFake = ReturnType<typeof createFakeSttProvider>;
 export type TtsFake = ReturnType<typeof createFakeTtsProvider>;
-
-// Inline no-op logger (not imported from _test-utils, whose vitest-spy-typed
-// export is excluded from the package build and isn't declaration-portable).
-const noop = (): void => undefined;
-const silentLogger: Logger = { info: noop, warn: noop, error: noop, debug: noop };
 
 /**
  * The recorded calls of a {@link createFakeLanguageModel} passed through

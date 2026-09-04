@@ -78,12 +78,12 @@ import type {
 import pTimeout from "p-timeout";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
-import type { Logger } from "../runtime-config.ts";
+import { type Logger, silentLogger } from "../runtime-config.ts";
 import { createWorkflowClient } from "../workflow-client.ts";
 import { createMemoryKeyStore } from "../workflow-keys.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { releaseQuietly, settleAllRuns, warnOnAbandonedRuns } from "./_workflow-drain.ts";
-import { type EvalCredentials, silentLogger } from "./session.ts";
+import type { EvalCredentials } from "./session.ts";
 import {
   createEvalWorkflowEngine,
   type EvalEmitted,

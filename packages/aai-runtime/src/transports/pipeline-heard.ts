@@ -151,11 +151,21 @@ function createPlaybackClock(sampleRateHz: number, now: () => number): PlaybackC
  */
 const MAX_SPEECH_CHARS_PER_MS = 18 / 1000;
 
+/**
+ * One lowercase ASCII letter or digit.
+ *
+ * Module scope for the reason `normalizeUtterance` hoists its own: {@link normChar}
+ * is called once per character of both sides of `alignWords`, a few thousand times
+ * per barge-in, and a literal in the body is a fresh `RegExp` each time. No `g`
+ * flag, so there is no `lastIndex` to share.
+ */
+const ASCII_ALPHANUMERIC = /[a-z0-9]/;
+
 /** Lowercased alphanumeric projection of one character, or `undefined`. */
 function normChar(c: string | undefined): string | undefined {
   if (c === undefined) return;
   const lower = c.toLowerCase();
-  return /[a-z0-9]/.test(lower) ? lower : undefined;
+  return ASCII_ALPHANUMERIC.test(lower) ? lower : undefined;
 }
 
 /** Alphanumeric-only, casefolded projection of a word. */
