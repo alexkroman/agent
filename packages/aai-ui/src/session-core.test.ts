@@ -421,7 +421,7 @@ describe("createSessionCore", () => {
       );
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
-      expect(snap.error).toEqual({ code: "internal", message: "Something broke" });
+      expect(snap.error).toEqual({ code: "internal", message: "Something broke", fatal: true });
       expect(snap.running).toBe(false);
     });
 
@@ -447,7 +447,7 @@ describe("createSessionCore", () => {
       lastSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
-      expect(snap.error).toEqual({ code: "internal", message: "fail" });
+      expect(snap.error).toEqual({ code: "internal", message: "fail", fatal: true });
     });
   });
 

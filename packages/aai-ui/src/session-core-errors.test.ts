@@ -55,7 +55,12 @@ describe("session-core error handling", () => {
       lastSocket?.simulateClose();
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
-      expect(snap.error).toEqual({ code: "connection", message: "WebSocket connection error" });
+      expect(snap.error).toEqual({
+        code: "connection",
+        message: "WebSocket connection error",
+        // `FAILED`: a dropped socket is retried, so the latch stays clear.
+        fatal: false,
+      });
       expect(snap.running).toBe(false);
     });
 
@@ -120,7 +125,7 @@ describe("session-core error handling", () => {
       // Not downgraded to "disconnected" — the user must still see why the
       // session ended.
       expect(snap.state).toBe("error");
-      expect(snap.error).toEqual({ code: "internal", message: "provider died" });
+      expect(snap.error).toEqual({ code: "internal", message: "provider died", fatal: true });
       expect(snap.running).toBe(false);
     });
 
@@ -246,7 +251,7 @@ describe("session-core error handling", () => {
     );
     const snap = core.getSnapshot();
     expect(snap.state).toBe("error");
-    expect(snap.error).toEqual({ code: "internal", message: "provider died" });
+    expect(snap.error).toEqual({ code: "internal", message: "provider died", fatal: true });
   });
 
   it("a server event after a NON-fatal error still retires its banner", () => {

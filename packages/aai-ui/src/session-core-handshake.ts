@@ -28,6 +28,10 @@ import type { SessionError } from "./types.ts";
 export const HANDSHAKE_ERROR: SessionError = {
   code: "connection",
   message: "Agent did not complete the session handshake",
+  // Not fatal on the statechart's own authority: this dispatches `FAILED`,
+  // whose doc records that "the `fatal` latch stays clear, so a later
+  // non-error frame recovers". Only `handleErrorEvent`'s else-branch is fatal.
+  fatal: false,
 };
 
 /** How long an OPEN socket may go without a `config` frame. */

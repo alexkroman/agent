@@ -16,6 +16,7 @@ import { lenientParse, type SessionEvent, SessionEventSchema } from "@alexkroman
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { SessionStateMachine } from "./session-core-state.ts";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
+import type { SessionError } from "./types.ts";
 
 /** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
 const MAX_CUSTOM_EVENTS = 200;
@@ -216,7 +217,10 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
 
   function handleErrorEvent(e: Extract<SessionEvent, { type: "error.reported" }>): void {
     console.error("Agent error:", e.message);
-    const error = { code: e.code, message: e.message };
+    // `!== false` rather than a bare read, keeping the defensiveness the branch
+    // below already had: an `error.reported` from an older guest that predates
+    // the field is treated as fatal, which is the safe direction.
+    const error: SessionError = { code: e.code, message: e.message, fatal: e.fatal !== false };
     if (e.fatal === false) {
       // Turn-level failure (e.g. one upload's transcription failed): show
       // the banner but keep the session usable — the server kept running.

@@ -68,6 +68,11 @@ describe("audio bring-up failures", () => {
     expect(snap.error).toEqual({
       code: "audio",
       message: expect.stringContaining("Microphone access failed"),
+      // NOT the fatal latch, despite this test's name — which predates the
+      // field and meant "the session is in `error` with the mic released".
+      // `reportAudioFailure` dispatches `FAILED` on purpose: the socket may
+      // well still be fine, so a later server frame may clear this banner.
+      fatal: false,
     });
     expect(snap.error?.message).toContain("Permission denied");
     expect(snap.running).toBe(false);
