@@ -132,7 +132,7 @@ describe("the endpoint tables", () => {
   });
 
   test("a workflow app's front door is the page and its config, with no phone", () => {
-    // `page: "static"` declines `/websocket` and defaults telephony OFF, so
+    // `page: "static"` declines `/websocket` and cannot declare a carrier, so
     // the carrier webhook would be a URL that answers a call and hangs up.
     const paths = frontDoorEndpoints("static").map((row) => row.path);
     expect(paths).toEqual(["", "client-config"]);

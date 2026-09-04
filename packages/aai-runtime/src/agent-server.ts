@@ -25,10 +25,12 @@
  * failure mode a front door has and a two-call pair does not: dropping back to
  * `createRuntime` + `createRuntimeServer` to set one option means restating by hand
  * every field this function derives, i.e. re-opening the silent drop above.
- * `telephony` was the sharp instance — off by default only for a static agent,
- * and unreachable from here, so every server built through this door mounted an
- * unauthenticated `WS /phone`. Its neighbour `page` was worse: the agent
- * DECLARES it and nothing carried the declaration through. Both are here now.
+ * `telephony` was the sharp instance — on by default for any voice agent, and
+ * unreachable from here, so every server built through this door mounted a
+ * `WS /phone` nobody had asked for and nobody could switch off. Its neighbour
+ * `page` was worse: the agent DECLARES it and nothing carried the declaration
+ * through. Both are here now, and telephony is a declaration too: the default
+ * is what the agent says, which is nothing unless it names a carrier.
  *
  * What deliberately stays out is `createRuntimeServer`'s host-mode pair (`env`,
  * `hostBaseAgent`) — a server whose sessions run agents their callers supply is
@@ -40,6 +42,7 @@
  */
 
 import type http from "node:http";
+import type { TelephonyAccess } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
@@ -49,6 +52,7 @@ import { consoleLogger } from "./runtime-config.ts";
 import { type AgentServer, createRuntimeServer, type SharedServerOptions } from "./server.ts";
 import { agentServerEnv } from "./server-env.ts";
 import { routeMatches, SERVER_ROUTES, type ServerRoute } from "./server-routes.ts";
+import { enabledCarriers } from "./telephony/telephony-server.ts";
 import { handleWorkflowRequest } from "./workflow-serve.ts";
 
 /**
@@ -156,16 +160,16 @@ export interface AgentServerOptions extends SharedServerOptions {
    */
   page?: "voice" | "static" | undefined;
   /**
-   * Serve carrier media streams on `WS /phone` — see `RuntimeServerOptions.telephony`.
-   * Defaults to true for a voice agent and false for a static one.
+   * Which phone carriers may open a media stream on `WS /phone` — see
+   * `AgentDef.telephony`. Defaults to the agent's own declaration, so
+   * `agent({ telephony: ["twilio"] })` is enough and an agent that declares
+   * nothing serves no carrier.
    *
-   * Forwarded rather than left to the pair underneath because it is the one
-   * option here that ADDS an unauthenticated surface: reaching `false` used to
-   * mean abandoning this function for `createRuntime` + `createRuntimeServer` and
-   * restating every field it derives, which is the silent-drop bug this wrapper
-   * exists to prevent.
+   * Read off the agent for the same reason `page` is, and set here only to
+   * override what the agent says — an operator who wants the surface gone from
+   * one deployment of an agent that does declare a carrier passes `false`.
    */
-  telephony?: boolean | undefined;
+  telephony?: TelephonyAccess | undefined;
   /**
    * Base URL of a PLATFORM that serves this agent's upload bytes for it — see
    * `RuntimeServerOptions.uploadBroker`. Absent, this process talks to a bucket
@@ -241,7 +245,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
    */
   const effectivePage = page ?? agent.page;
   const isStatic = effectivePage === "static";
-  const servesTelephony = telephony ?? !isStatic;
+  const servesCarriers = enabledCarriers(telephony ?? agent.telephony);
   const servesWorkflows = Object.keys(agent.workflows ?? {}).length > 0;
 
   /**
@@ -286,7 +290,12 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // agent does not have.
     if (servesWorkflows) httpRoutes.push(`${SERVER_ROUTES.workflows.path}/*`);
     const wsRoutes: string[] = isStatic ? [] : [SERVER_ROUTES.session.path];
-    if (servesTelephony) wsRoutes.push(`${SERVER_ROUTES.phone.path}?carrier=<name>`);
+    // Named one carrier per line rather than `?carrier=<name>`, because the set
+    // is now the agent's own declaration: a Twilio-only agent that prints
+    // `<name>` advertises a Telnyx door it will refuse.
+    for (const carrier of servesCarriers) {
+      wsRoutes.push(`${SERVER_ROUTES.phone.path}?carrier=${carrier}`);
+    }
     return { http: httpRoutes, ws: wsRoutes };
   }
 
@@ -301,10 +310,10 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // specific statement, the same rule `telephony` follows in `createRuntimeServer`.
     name: agent.name,
     // Resolved above rather than left to the layer underneath — see
-    // `servedRoutes`. `telephony` is no longer `omitUndefined`'d: it is always a
-    // boolean by the time it gets here, and the value passed is the one the boot
-    // line names.
-    telephony: servesTelephony,
+    // `servedRoutes`. `telephony` is no longer `omitUndefined`'d: it is a
+    // resolved carrier LIST by the time it gets here, and the list passed is
+    // exactly the one the boot line names.
+    telephony: servesCarriers,
     ...omitUndefined({
       greeting: agent.greeting,
       page: effectivePage,

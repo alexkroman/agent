@@ -257,8 +257,14 @@ export async function mainAgent(port: number, host: string, token: string): Prom
       name: state.agent?.name,
       greeting: state.agent?.greeting,
       // The workflow-app declaration, honoured identically to `aai dev`: the
-      // voice surfaces are declined with a reason and telephony defaults off.
+      // voice surfaces are declined with a reason.
       page: state.agent?.page,
+      // And the phone declaration beside it. A deployed agent serves `WS /phone`
+      // only for the carriers its own definition names — the platform's TwiML
+      // webhook hands a carrier this sandbox's URL, and an agent that declares
+      // none refuses the upgrade rather than answering a call it never asked
+      // for.
+      telephony: state.agent?.telephony,
     }),
     request: createAgentRequestHandler({
       manage: {

@@ -23,6 +23,7 @@
  * reason to read.
  */
 
+import type { TelephonyCarrier } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 
 /** One inbound carrier frame, reduced to what a session needs. */
@@ -170,11 +171,25 @@ export const telnyxCodec: CarrierCodec = {
   clear: () => ({ event: "clear" }),
 };
 
-/** Every carrier this build can serve, keyed by its `?carrier=` value. */
+/**
+ * Every carrier this build can serve, keyed by its `?carrier=` value.
+ *
+ * `satisfies Record<TelephonyCarrier, CarrierCodec>` rather than
+ * `Record<string, …>`, which is what ties this table to the vocabulary an agent
+ * DECLARES in `agent({ telephony: [...] })`: the SDK owns the names, this owns
+ * the framing, and the two must not be able to disagree. A name added to
+ * `TELEPHONY_CARRIERS` with no codec here fails this package's build instead of
+ * shipping a carrier an author can enable and nothing can answer.
+ */
 export const CARRIER_CODECS = {
-  [twilioCodec.name]: twilioCodec,
-  [telnyxCodec.name]: telnyxCodec,
-} as const satisfies Record<string, CarrierCodec>;
+  // Literal keys rather than `[twilioCodec.name]`: a computed key is `string`
+  // (a `CarrierCodec`'s `name` is deliberately wide, so an embedder can write
+  // a codec for a carrier this build has never heard of), which widens the
+  // whole table and takes the `satisfies` below with it. `carriers.test.ts`
+  // asserts each key still equals the codec's own name.
+  twilio: twilioCodec,
+  telnyx: telnyxCodec,
+} as const satisfies Record<TelephonyCarrier, CarrierCodec>;
 
 /** A carrier name this build can serve. */
 export type CarrierName = keyof typeof CARRIER_CODECS;

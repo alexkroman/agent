@@ -25,6 +25,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
@@ -759,6 +760,12 @@ interface SubagentToolCall {
     input: unknown;
     name: string;
 }
+
+// @public
+type TelephonyAccess = boolean | readonly TelephonyCarrier[];
+
+// @public
+type TelephonyCarrier = "twilio" | "telnyx";
 
 // @public
 export type TestToolContext = ToolContext & {

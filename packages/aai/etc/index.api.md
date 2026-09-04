@@ -32,6 +32,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
@@ -847,7 +848,13 @@ export interface SubagentToolCall {
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
-export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
+export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
+
+// @public
+export type TelephonyCarrier = "twilio" | "telnyx";
+
+// @public
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
     text: true;
     llm?: LlmProvider | string;
     stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
@@ -857,6 +864,7 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
     minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
     maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
     sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+    telephony?: "`telephony` admits a phone call, which is audio — a text agent has no audio path; remove it or remove `text`";
     page?: "voice" | StaticFrontDoorMisuse;
 } & {
     [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text">;
@@ -941,7 +949,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;

@@ -14,6 +14,7 @@ import {
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
+import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
 import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
 
@@ -378,6 +379,15 @@ test("a workflow app accepts only the fields a workflow app has", () => {
   // would serve a form whose every submit is a 400.
   expectTypeOf<{ name: string; page: "static" }>().not.toExtend<AgentParams>();
 
+  // And nothing answers a phone: a carrier's media stream needs the session a
+  // workflow app does not have.
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    telephony: true;
+  }>().not.toExtend<AgentParams>();
+
   // Nothing runs a model.
   expectTypeOf<{
     name: string;
@@ -491,4 +501,36 @@ test('workflowApp() keeps the sentence — it is where `page: "static"` is not a
     | `\`maxSteps\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`
     | undefined
   >();
+});
+
+/**
+ * The phone declaration, on the three arms that can and the two that cannot.
+ *
+ * It is what MOUNTS `WS /phone`, so the type is the first thing that decides
+ * whether an agent can have the surface at all — and the two refusals are the
+ * agents with no audio path to put on a call.
+ */
+test("telephony is declarable on a voice agent and refused where there is no call", () => {
+  expectTypeOf<{ name: string; telephony: true }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; telephony: false }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; telephony: readonly ["twilio"] }>().toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    telephony: readonly ["twilio", "telnyx"];
+  }>().toExtend<AgentParams>();
+  // An S2S agent takes calls like any other voice agent — the bridge is below
+  // the session, so the mode it runs in never reaches it.
+  expectTypeOf<{ name: string; s2s: S2sProvider; telephony: true }>().toExtend<AgentParams>();
+
+  // The vocabulary and the list of it are the same set. `TELEPHONY_CARRIERS` is
+  // what the config schema validates against and what the runtime resolves a
+  // declaration through, and it is written out rather than derived from the
+  // type (see its own doc), so nothing but this stops a carrier being added to
+  // one and not the other.
+  expectTypeOf<(typeof TELEPHONY_CARRIERS)[number]>().toEqualTypeOf<TelephonyCarrier>();
+
+  // A carrier this build ships no codec for is not a declaration.
+  expectTypeOf<{ name: string; telephony: readonly ["vonage"] }>().not.toExtend<AgentParams>();
+  // A text agent has no audio path, so a phone call has nothing to reach.
+  expectTypeOf<{ name: string; text: true; telephony: true }>().not.toExtend<AgentParams>();
 });

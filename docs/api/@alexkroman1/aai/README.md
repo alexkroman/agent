@@ -457,9 +457,22 @@ state; `@alexkroman1/aai-ui` has the hooks and components.
 
 ## One agent, every line
 
-A deployed voice agent already serves carrier media streams — there is nothing
-to switch on and nothing in `agent.ts` changes. Point a number's voice webhook
-at the agent and answer with a media stream:
+Name the carriers your number is with, and the agent answers calls on the same
+session it answers a browser with:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Support",
+  // `true` admits every carrier this build decodes; omit it and the phone
+  // route is not served at all.
+  telephony: ["twilio"],
+});
+```
+
+Then point the number's voice webhook at the agent and answer with a media
+stream:
 
 ```text
 wss://<your-agent-url>/phone?carrier=twilio

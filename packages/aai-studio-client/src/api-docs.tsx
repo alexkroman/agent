@@ -20,7 +20,7 @@
 //
 // **Each half is offered only to the agents it is TRUE for.** A workflow app is
 // not shown the carrier webhook — `page: "static"` declines `/websocket` and
-// defaults telephony off, so a number pointed at one answers and hangs up — and
+// cannot declare a carrier, so a number pointed at one answers and hangs up — and
 // an agent that declares no workflow is not shown the workflow routes, which
 // the platform proxies for every agent and which need a `workflow` name it has
 // none of. Both are read off the AGENT rather than the project's stored kind,
@@ -296,9 +296,10 @@ export type AgentApiDocsProps = {
    * The studio pane passes its carrier-webhook card here. A slot rather than a
    * flag because the card reads the project's secrets, which this component
    * neither has nor should: gating it on `page === "voice"` is the part both
-   * callers share, and the part a second copy would get wrong (telephony
-   * defaults OFF for `page: "static"`, so a number pointed at a workflow app
-   * answers and hangs up).
+   * callers share, and the part a second copy would get wrong (a workflow app
+   * cannot declare a carrier at all, so a number pointed at one answers and
+   * hangs up). A VOICE agent still has to declare one — `page` is the coarser
+   * question, and the card's own copy carries the finer one.
    */
   voiceOnly?: ReactNode;
   /**

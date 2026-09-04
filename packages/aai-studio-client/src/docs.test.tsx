@@ -222,7 +222,7 @@ describe("DocsPane", () => {
   });
 
   test("a workflow app is not offered the carrier webhook", async () => {
-    // `page: "static"` declines `/websocket` and defaults telephony OFF, so
+    // `page: "static"` declines `/websocket` and cannot declare a carrier, so
     // the whole phone integration is a URL that answers a call and hangs up.
     // Twilio and Telnyx are the two the platform emits documents for, so
     // neither carrier's name belongs on a workflow app's pane.

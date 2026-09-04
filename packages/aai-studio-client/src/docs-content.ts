@@ -102,7 +102,7 @@ export const VOICE_ENDPOINTS: readonly DocEndpoint[] = [
  * it IS (`ClientConfigResponse.page`, absent reading as `"voice"`).
  *
  * **A workflow app is not offered the carrier webhook.** `page: "static"`
- * declines `/websocket` with a reason and defaults telephony OFF (see
+ * declines `/websocket` with a reason and cannot declare a carrier at all (see
  * `AgentDef.page`), so a phone number pointed at one answers and hangs up —
  * documenting the route would be an invitation to spend an afternoon in a
  * carrier console over a call that cannot connect. The page and its config

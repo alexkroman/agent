@@ -1210,11 +1210,23 @@ statement about pipeline mode, not about the SDK.
 
 ### Answering a phone call
 
-A deployed voice agent already serves carrier media streams — there is nothing
-to switch on. `createRuntimeServer` mounts `WS /phone` whenever the agent is a voice
-agent (`telephony` defaults to `true`, and to `false` for a `page: "static"`
-workflow app, which has no stages to put on a call). Point the carrier at it
-with a `carrier` query parameter naming who is dialling:
+**Say which carriers may call, and `WS /phone` is served for exactly those.**
+`telephony` is an allow-list on `agent()`, and it is the whole of the wiring:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Support",
+  greeting: "Support line — what's happened?",
+  // The carrier this agent's number is with. `true` admits every carrier this
+  // build decodes; omit the field and `/phone` is not served at all.
+  telephony: ["twilio"],
+});
+```
+
+Point the carrier at the deployed agent with a `carrier` query parameter naming
+who is dialling:
 
 ```text
 wss://<your-agent-url>/phone?carrier=twilio
@@ -1222,15 +1234,25 @@ wss://<your-agent-url>/phone?carrier=telnyx
 ```
 
 Twilio and Telnyx are the two carriers this build decodes (`CARRIER_CODECS`);
-an unknown `carrier` is declined at the upgrade. Both speak 8 kHz mu-law, which
-the bridge transcodes in both directions, so the agent, its tools and its slots
+an unknown `carrier` is declined at the upgrade with a `400`, and a real one
+this agent did not declare with a `404`. Both speak 8 kHz mu-law, which the
+bridge transcodes in both directions, so the agent, its tools and its slots
 behave exactly as they do in the browser — a phone call is a transport, not a
-mode. Nothing about `agent.ts` changes to support one.
+mode. Nothing else about `agent.ts` changes to support one.
 
-Turn the route off with `telephony: false` on `createRuntimeServer`. If you are
-embedding the runtime yourself rather than deploying, the pieces are
-`createTelephonyBridge`, `startTelephonySession`, `TELEPHONY_PATH` and
-`carrierByName`, all on `@alexkroman1/aai-runtime`.
+**An agent that declares nothing answers no carrier**, which is a change from
+earlier releases: every voice agent used to serve both carriers' framing from
+the moment it booted, whether or not it had a phone number. `/phone` is the one
+door dialled from OUTSIDE your deployment, by a carrier following a number, so
+it is opened by a sentence in `agent.ts` rather than inherited. `aai dev` and a
+deployed sandbox honour the same declaration, so a call refused after a deploy
+is refused on your laptop too.
+
+`telephony: false` is the same refusal stated out loud, and an operator can pass
+`telephony` to `createAgentServer` to override one deployment of an agent that
+does declare a carrier. If you are embedding the runtime yourself rather than
+deploying, the pieces are `createTelephonyBridge`, `startTelephonySession`,
+`TELEPHONY_PATH` and `carrierByName`, all on `@alexkroman1/aai-runtime`.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.

@@ -86,8 +86,46 @@ describe("createAgentServer", () => {
     );
   }
 
-  test("telephony: false removes /phone, which nothing here could reach before", async () => {
+  test("a voice agent that declares no carrier serves no /phone", async () => {
+    // The default, and the whole change: this agent is an ordinary voice agent
+    // with a full pipeline, and it still answers no carrier. `telephony` used
+    // to default ON here, so every server built through this door mounted the
+    // route whether or not the agent had a phone number.
     const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer({ agent: myAgent }, async (baseUrl) => {
+      expect((await phoneRefusal(baseUrl)).message).toContain("404");
+    });
+  });
+
+  test("the agent's own declaration is what mounts it", async () => {
+    const myAgent = agent({
+      name: "Support",
+      systemPrompt: "You are helpful.",
+      telephony: ["twilio"],
+    });
+
+    await withServer({ agent: myAgent }, async (baseUrl) => {
+      // Mounted: a bare `/phone` resolves to Twilio, which this agent declares,
+      // so the refusal is no longer the route's — see `phoneRefusalMessage`.
+      const url = `${baseUrl.replace("http", "ws")}/phone?carrier=telnyx`;
+      const undeclared = await new Promise<Error>((resolve) =>
+        new NodeWebSocket(url).once("error", resolve),
+      );
+      // Twilio is declared and Telnyx is not, on one server: the list is the
+      // statement, not the boolean.
+      expect(undeclared.message).toContain("404");
+    });
+  });
+
+  test("an explicit telephony option overrides the agent's declaration", async () => {
+    // The direction that matters for an operator: one deployment of an agent
+    // that does declare a carrier, with the surface taken off.
+    const myAgent = agent({
+      name: "Support",
+      systemPrompt: "You are helpful.",
+      telephony: true,
+    });
 
     await withServer({ agent: myAgent, telephony: false }, async (baseUrl) => {
       expect((await phoneRefusal(baseUrl)).message).toContain("404");
@@ -104,8 +142,9 @@ describe("createAgentServer", () => {
         name: "Digest",
         page: "static",
       });
-      // And a static agent has no pipeline to put on a call, so the carrier
-      // route follows the declaration rather than being switched off by hand.
+      // And a static agent has no pipeline to put on a call. It could not
+      // declare one either — `telephony` is a compile error on `workflowApp()`
+      // — so the route is absent by construction rather than switched off.
       expect((await phoneRefusal(baseUrl)).message).toContain("404");
     });
   });
@@ -330,7 +369,13 @@ describe("the boot line names what this door mounts", () => {
 
   test("a voice agent: health answers both verbs, and /phone is mounted", async () => {
     const capture = servingCapture();
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({
+      name: "Support",
+      systemPrompt: "You are helpful.",
+      // Declared, because the route is not mounted otherwise — which is what
+      // the spec below this one asserts from the other side.
+      telephony: true,
+    });
 
     await withServer({ agent: myAgent, logger: capture.logger }, async (baseUrl) => {
       expect(capture.http()).toEqual([
@@ -339,7 +384,14 @@ describe("the boot line names what this door mounts", () => {
         "GET /",
         // No workflow is declared, so `/workflows/*` is not advertised.
       ]);
-      expect(capture.ws()).toEqual(["/websocket", "/phone?carrier=<name>"]);
+      // One line per DECLARED carrier: the line names the doors this deployment
+      // has, so a Twilio-only agent may not advertise a `<name>` placeholder
+      // covering a carrier it would refuse.
+      expect(capture.ws()).toEqual([
+        "/websocket",
+        "/phone?carrier=twilio",
+        "/phone?carrier=telnyx",
+      ]);
 
       // Every HTTP route the line names, answered.
       expect((await fetch(`${baseUrl}/health`, { method: "HEAD" })).status).toBe(200);
@@ -376,19 +428,34 @@ describe("the boot line names what this door mounts", () => {
     });
   });
 
-  test("telephony: false takes /phone off the line as well as off the port", async () => {
-    // The pair the line exists to keep together: the option is resolved here and
-    // forwarded, so the log cannot report a route the mount does not make.
+  test("an undeclared agent has /phone on neither the line nor the port", async () => {
+    // The pair the line exists to keep together: the declaration is resolved
+    // here and forwarded, so the log cannot report a route the mount does not
+    // make. This is now the DEFAULT case rather than an opt-out.
     const capture = servingCapture();
     const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
 
-    await withServer(
-      { agent: myAgent, telephony: false, logger: capture.logger },
-      async (baseUrl) => {
-        expect(capture.ws()).toEqual(["/websocket"]);
-        expect(await phoneRefusalMessage(baseUrl)).toContain("404");
-      },
-    );
+    await withServer({ agent: myAgent, logger: capture.logger }, async (baseUrl) => {
+      expect(capture.ws()).toEqual(["/websocket"]);
+      expect(await phoneRefusalMessage(baseUrl)).toContain("404");
+    });
+  });
+
+  test("a carrier list puts exactly that carrier on the line", async () => {
+    const capture = servingCapture();
+    const myAgent = agent({
+      name: "Support",
+      systemPrompt: "You are helpful.",
+      telephony: ["telnyx"],
+    });
+
+    await withServer({ agent: myAgent, logger: capture.logger }, async (baseUrl) => {
+      expect(capture.ws()).toEqual(["/websocket", "/phone?carrier=telnyx"]);
+      // Mounted, so an unparseable carrier is the route's 400 rather than the
+      // 404 an unmounted route gives — the two statuses are what make this a
+      // probe of MOUNTING (see `phoneRefusalMessage`).
+      expect(await phoneRefusalMessage(baseUrl)).toContain("400");
+    });
   });
 
   test("a declared workflow puts /workflows on the line, and it answers", async () => {

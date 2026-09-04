@@ -57,6 +57,10 @@ export type WorkflowAppOnlyField =
   // to observe. A workflow app's own narration is `stepReport()` from a step.
   | "events"
   | "idleTimeoutMs"
+  // A workflow app has no session for a carrier to talk to, so the phone
+  // declaration is the same silent no-op the rest of this list is: `WS /phone`
+  // would mount and every call would reach a server that opens no session.
+  | "telephony"
   | "voice";
 
 /** The message a {@link WorkflowAppOnlyField} carries. */

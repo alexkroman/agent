@@ -100,3 +100,16 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["e
  * @public
  */
 export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
+
+/**
+ * How the LLM should select tools during a turn. Mirrors the Vercel AI
+ * SDK's `toolChoice`.
+ *
+ * - `"auto"` — The model decides whether to call a tool (default).
+ * - `"required"` — The model must call at least one tool each step.
+ * - `"none"` — The model may not call tools this session.
+ * - `{ type: "tool", toolName }` — The model must call the named tool.
+ *
+ * @public
+ */
+export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };

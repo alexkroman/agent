@@ -79,6 +79,10 @@ export const AgentConfigSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        telnyx: "telnyx";
+        twilio: "twilio";
+    }>>>]>>;
 }, z.core.$strip>;
 
 // @public
@@ -113,6 +117,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
@@ -562,6 +567,12 @@ interface SubagentToolCall {
     input: unknown;
     name: string;
 }
+
+// @public
+type TelephonyAccess = boolean | readonly TelephonyCarrier[];
+
+// @public
+type TelephonyCarrier = "twilio" | "telnyx";
 
 // @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;

@@ -40,6 +40,7 @@ import { SttOpenOptions } from '@alexkroman1/aai/host-internal';
 import type { SttProvider } from '@alexkroman1/aai/stt';
 import { SttSession } from '@alexkroman1/aai/host-internal';
 import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
+import type { TelephonyAccess } from '@alexkroman1/aai';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
@@ -90,14 +91,14 @@ export interface AgentServerOptions extends SharedServerOptions {
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
-    telephony?: boolean | undefined;
+    telephony?: TelephonyAccess | undefined;
     uploadBroker?: string | undefined;
 }
 
 // @public
 export const CARRIER_CODECS: {
-    readonly [twilioCodec.name]: CarrierCodec;
-    readonly [telnyxCodec.name]: CarrierCodec;
+    readonly twilio: CarrierCodec;
+    readonly telnyx: CarrierCodec;
 };
 
 // @public
@@ -599,7 +600,7 @@ export type RuntimeServerOptions = {
     upgrade?: ((req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean) | undefined;
     request?: ((req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean) | undefined;
     page?: "voice" | "static";
-    telephony?: boolean;
+    telephony?: TelephonyAccess;
 };
 
 // @public
