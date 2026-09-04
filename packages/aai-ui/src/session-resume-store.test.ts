@@ -12,7 +12,7 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
+import { createBrowserSession } from "./session-core.ts";
 import {
   clearStoredSessionId,
   readStoredSessionId,
@@ -94,7 +94,7 @@ describe("a reload resumes", () => {
   /** A fresh core for the same agent — what a page reload constructs. */
   function reload() {
     resetLastSocket();
-    return createSessionCore({ platformUrl: AGENT, WebSocket: MockWebSocketConstructor });
+    return createBrowserSession({ platformUrl: AGENT, WebSocket: MockWebSocketConstructor });
   }
 
   it("presents the id the previous load was given", () => {
@@ -115,7 +115,7 @@ describe("a reload resumes", () => {
     // must not be second-guessed.
     writeStoredSessionId(AGENT, "sess-stored");
     resetLastSocket();
-    const core = createSessionCore({
+    const core = createBrowserSession({
       platformUrl: AGENT,
       WebSocket: MockWebSocketConstructor,
       resumeSessionId: "sess-explicit",

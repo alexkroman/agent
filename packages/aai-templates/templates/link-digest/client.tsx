@@ -2,7 +2,7 @@
 /**
  * The browser half of a workflow app.
  *
- * Mounted with `page()` rather than `client()`: there is no session to build, so
+ * Mounted with `mountPage()` rather than `mountClient()`: there is no session to build, so
  * there is no socket, no audio graph, and no microphone request. Everything else
  * is the same — the same `client.tsx` filename, React, Tailwind, and the same
  * theme tokens the voice components read.
@@ -195,4 +195,4 @@ export function App() {
   );
 }
 
-page({ name: "Link Digest", component: App });
+mountPage({ name: "Link Digest", component: App });

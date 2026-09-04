@@ -73,7 +73,7 @@ import {
   createWorkflowApi,
   Facts,
   Form,
-  page,
+  mountPage,
   SubmitButton,
   UploadProgressBar,
   useDownloadUrl,
@@ -237,4 +237,4 @@ export function App() {
   );
 }
 
-page({ name: "Spoken Summary", component: App });
+mountPage({ name: "Spoken Summary", component: App });

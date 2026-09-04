@@ -80,7 +80,7 @@ import {
   createWorkflowApi,
   Facts,
   Form,
-  page,
+  mountPage,
   SubmitButton,
   UploadProgressBar,
   useDownloadUrl,
@@ -258,4 +258,4 @@ export function App() {
   );
 }
 
-page({ name: "Call Audit", component: App });
+mountPage({ name: "Call Audit", component: App });

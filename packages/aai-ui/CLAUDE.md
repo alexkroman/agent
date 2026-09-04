@@ -30,9 +30,9 @@ new one fails `pnpm check:api-contracts` until it joins one:
 
 | Capability | What it promises |
 | --- | --- |
-| `client` | the voice mount — `client()`, the one flat `ClientConfig` it takes, the handle |
-| `page` | the workflow-app mount — `page()`, with no session under it, plus `fetchClientConfig()`: the lookup `client()` does for itself and a page must ask for |
-| `session` | the live call: `SessionCore`, the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors |
+| `client` | the voice mount — `mountClient()`, the one flat `ClientConfig` it takes, the handle |
+| `page` | the workflow-app mount — `mountPage()`, with no session under it, plus `fetchClientConfig()`: the lookup `mountClient()` does for itself and a page must ask for |
+| `session` | the live call: `BrowserSession`, the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors |
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from, `ConsoleShell` included. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
@@ -85,8 +85,8 @@ it off. It stood at eight — `SessionProvider`, `ThemeProvider`,
 `ToolConfigContext`, the three URL chips (`ApiUrlChip`, `UiUrlChip`,
 `SessionUrlChips`) and two thirds of the client-config trio (`buildAgentUrl`,
 `loadClientConfig`) — every one importable from the root and sitting in a
-client author's autocomplete beside `client()`, `<Form>` and `useWorkflowRun`
-while no capability contract covered it. `client()` and the default client
+client author's autocomplete beside `mountClient()`, `<Form>` and `useWorkflowRun`
+while no capability contract covered it. `mountClient()` and the default client
 install all eight, so deleting them was never the option; the tag was the only
 thing marking them, and a tag is not a boundary.
 
@@ -126,7 +126,7 @@ tagged `@internal` while a `@public` doc comment in the SDK
 wants `name`/`greeting` calls `fetchClientConfig()` itself" — so the published
 reference instructed a reader to use a symbol it excluded, and its return type
 `ClientConfigResponse` was a contracted public type no public signature could
-produce. It is `@public` now and belongs to the `page` capability, `page()`
+produce. It is `@public` now and belongs to the `page` capability, `mountPage()`
 being the mount that makes the lookup a caller's job — which is the first half
 of the rule above, applied before there was a subpath to apply the second half
 to. The other two stay internal and are on `/internal`:
@@ -135,8 +135,9 @@ detail, and `buildAgentUrl` is a two-line path join.
 
 **`SessionCoreOptions` is gone**, and epoch 1 of `session` went with it. It was
 an exact alias of `VoiceSessionOptions` with one referent —
-`createSessionCore`'s parameter, which names `VoiceSessionOptions` directly now
-— and `client()` never took it, so the "two names, one type" note the alias
+`createBrowserSession`'s parameter, which names `VoiceSessionOptions` directly
+now
+— and `mountClient()` never took it, so the "two names, one type" note the alias
 carried was an argument for having one.
 
 ## A memoized component must NAME its props type
@@ -182,17 +183,17 @@ Two consequences worth knowing before adding a component here:
 ## Key files
 
 - `index.ts` — main exports, React UI component
-- `internal.ts` — the `/internal` subpath: the eight names `client()` installs
+- `internal.ts` — the `/internal` subpath: the eight names `mountClient()` installs
   for itself, kept off the root barrel so the contracted surface and the
   importable one are the same list. See "The `@internal` ratchet" above
 - `session-core.ts` — WebSocket session management + reactive snapshot
-  (`createSessionCore`); split across `session-core-messages.ts`
+  (`createBrowserSession`); split across `session-core-messages.ts`
   (message/history handling) and `session-core-types.ts`
 - `context.ts` — SessionProvider, useSession, useSessionCore,
   useSessionSelector, ThemeProvider, useTheme
 - `hooks.ts` — useToolResult, useToolCallStart, useEvent
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
-- `define-client.tsx` — client mount helper, and the two pieces `page()` shares
+- `define-client.tsx` — client mount helper, and the two pieces `mountPage()` shares
   with it: `resolveContainer` (the default `#app` selector and its error
   sentence) and `mountRoot` (the root, the `flushSync`, and the disposable
   handle). Both mounts were written out in full, comments included; what
@@ -412,7 +413,7 @@ Four things to keep:
   found across five templates is `scrollbar-color`, which takes TWO values and
   has no utility: `infocom-adventure`'s transcript reads `theme.primary` and
   `theme.surface` for it rather than re-pinning the two hex codes its own
-  `client({ theme })` block already declares.
+  `mountClient({ theme })` block already declares.
 - **The page background is still painted imperatively on `html` AND `body`.** A
   variable only paints where some rule consumes it, and those two elements are
   the ones nothing in this package renders — that is the letterboxing bug
@@ -428,10 +429,10 @@ Four things to keep:
 accept: `StartScreen` takes `icon`, `subtitle`, `buttonText`; `SidebarLayout`
 takes `sidebarPosition`; none of the four was on `ClientConfig`. So `solo-rpg`
 wanted all four, could say none in config, and dropped to the `component:` tier
-for a 27-line wrapper whose only job was to re-say what `client()` already knows
-how to say — and which dragged `useAgentState` up a level so its `Sidebar` had
-to take the projection as a PROP. All four are `ClientConfig` fields now, the
-wrapper is deleted and the `Sidebar` subscribes itself.
+for a 27-line wrapper whose only job was to re-say what `mountClient()`
+already knows how to say — and which dragged `useAgentState` up a level so its
+`Sidebar` had to take the projection as a PROP. All four are `ClientConfig`
+fields now, the wrapper is deleted and the `Sidebar` subscribes itself.
 
 `sidebarPosition` routes through the same `rootFor` branch that already builds a
 `SidebarLayout` beside a `component`, for the reason `sidebar` itself does: the
@@ -593,7 +594,7 @@ product so far. `"static"` declares a **workflow app**: an ordinary web page
 over the workflow HTTP API, with no session, no WebSocket and no audio.
 
 This section covers the surface end to end because the author-facing half is
-here — `page()`, `createWorkflowApi()`, `useWorkflowRun()` — and
+here — `mountPage()`, `createWorkflowApi()`, `useWorkflowRun()` — and
 `packages/aai/CLAUDE.md` is at its size cap. The routes themselves are served by
 `aai/host/workflow-api.ts`, whose module doc is the authoritative table.
 
@@ -629,9 +630,9 @@ above it claimed `GET /client-config` served it; that endpoint serves `name`,
 templates are now three lines and every one of them does something.
 
 `greeting` survives as declarable because it is the one client-config field a
-workflow app can still use — but note `page()` does not fetch the endpoint the
-way `client()` does, so a page that wants `name`/`greeting` from the agent calls
-`fetchClientConfig()` itself rather than receiving them.
+workflow app can still use — but note `mountPage()` does not fetch the
+endpoint the way `mountClient()` does, so a page that wants `name`/`greeting`
+from the agent calls `fetchClientConfig()` itself rather than receiving them.
 
 ### Three factories, and the `Client` suffix is what tells them apart
 
@@ -642,9 +643,10 @@ is why they get read as one: **`createAgentClient`**
 SDK factory it wraps; **`createWorkflowApi`** is this package's wrapper over that
 narrow one. The SDK's names carry the `Client` suffix; the bare one is ours.
 
-### `page()` is a second mount, not a flag on `client()`
+### `mountPage()` is a second mount, not a flag on `mountClient()`
 
-`client()` unavoidably constructs a `SessionCore`, which owns a WebSocket URL
+`mountClient()` unavoidably constructs a `BrowserSession`, which owns a WebSocket
+URL
 provider, an audio graph and a microphone request. A flag would have to make all
 of that conditional, and every session hook would then have to answer "what does
 this mean with no session?" — so the honest split is two mounts. Authoring is
@@ -661,7 +663,7 @@ drop leaves a client reconnecting against a server that will never answer — an
 telephony defaults OFF, since an agent with no `stt`/`llm`/`tts` has nothing to
 put on a call. It is reported in `GET /client-config` so a browser knows before
 it dials, and `aai dev` and the deployed guest honour it identically: a page
-mounted with `client()` by mistake fails locally, not after a deploy.
+mounted with `mountClient()` by mistake fails locally, not after a deploy.
 
 **A workflow app therefore needs NO provider credential, and two places had to
 learn that separately.** An agent declaring no `stt`/`llm`/`tts` gets the
@@ -1545,7 +1547,8 @@ the default client's pre-connection name/greeting render.
 ## A FATAL error must survive the frames that follow it
 
 **A live socket is not a live session, and every fatal path EMITS on its way
-down.** `SessionCore` had two independent rules that both read a later frame
+down.** `BrowserSession` had two independent rules that both read a later
+frame
 as evidence the failure had been survived: `clearRecoveredError` recovered an
 errored session to `listening` on any non-error event, and `reply_done` /
 `cancelled` / `reset` each wrote `state: "listening"` unconditionally. The
@@ -1890,12 +1893,12 @@ runaway loop is a named failure rather than a hang, and
 How the browser client reads `GET /client-config`. The endpoint itself is
 the SDK's — see "Pre-connection client config" in `packages/aai/CLAUDE.md`.
 
-`client()`'s config tier renders `DefaultRoot`, which fetches the config
+`mountClient()`'s config tier renders `DefaultRoot`, which fetches the config
 (any failure degrades to the empty default, so older servers keep working)
 and mounts the chat shell; the shell uses the server-declared `name` unless
-`client({ name })` overrides it. A custom `component` ignores all of it.
+`mountClient({ name })` overrides it. A custom `component` ignores all of it.
 
-**It skips the lookup entirely when `client({ name })` named the agent**, because
+**It skips the lookup entirely when `mountClient({ name })` named the agent**, because
 the response's only consumer there is that fallback — and on the platform this
 endpoint is the BROKER, so the discarded request is one that can boot a sandbox.
 The SESSION's lookup is a separate question and is deliberately left as it is:

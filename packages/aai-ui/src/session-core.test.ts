@@ -11,17 +11,17 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import { createBrowserSession } from "./session-core.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("createSessionCore", () => {
-  let core: SessionCore;
+describe("createBrowserSession", () => {
+  let core: BrowserSession;
 
   beforeEach(() => {
     resetLastSocket();
-    core = createSessionCore({
+    core = createBrowserSession({
       platformUrl: "ws://localhost:3000",
       WebSocket: MockWebSocketConstructor,
     });

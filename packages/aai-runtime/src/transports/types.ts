@@ -7,7 +7,7 @@
  *
  * This type used to carry one method per thing a transport observes — sixteen of
  * them, and its own comment said as much: "one per event the transport produces".
- * `SessionCore` then declared the same sixteen, `runtime-session-callbacks.ts`
+ * `ServerSession` then declared the same sixteen, `runtime-session-callbacks.ts`
  * forwarded each to its twin, and four test harnesses stubbed the whole set. So a
  * seventeenth thing worth observing cost a declaration in three places and a stub
  * in four, none of which DECIDED anything: the transport already knew what
@@ -51,7 +51,7 @@ type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody,
  * the events only the session itself can be the source of.
  *
  * The five it excludes are excluded for a reason each, not by omission:
- * `session.configured` is the handshake (`SessionCore.configure`),
+ * `session.configured` is the handshake (`ServerSession.configure`),
  * `session.reset` and `session.timed-out` come from the client and the idle
  * watchdog, `custom.emitted` is `ctx.send`, and `state.updated` is a `syncState`
  * projection. A transport reporting any of them would be describing a decision
@@ -213,7 +213,7 @@ export interface Transport {
    * with nothing to inject, and OpenAI Realtime's `response.create` would speak
    * without the service's conversation ever holding the instruction. A caller
    * therefore has to treat "not supported" as an answer — see
-   * `SessionCore.announce`, which reports it rather than pretending.
+   * `ServerSession.announce`, which reports it rather than pretending.
    */
   injectTurn?(instruction: string): void;
   /**

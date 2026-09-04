@@ -17,7 +17,7 @@ export {
   Field,
   type FieldShell,
   FileField,
-  type FileRead,
+  type FileReadMode,
   type FileValue,
   Form,
   type FormProps,

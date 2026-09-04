@@ -193,7 +193,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import {
   Form,
   isTerminal,
-  page,
+  mountPage,
   SubmitButton,
   UploadProgressBar,
   useWorkflowRuns,
@@ -501,4 +501,4 @@ function UploadPicker({
   );
 }
 
-page({ name: "Transcription Desk", component: TranscriptionDesk });
+mountPage({ name: "Transcription Desk", component: TranscriptionDesk });

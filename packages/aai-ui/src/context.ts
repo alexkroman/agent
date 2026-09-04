@@ -12,12 +12,12 @@ import {
 // The non-shim entry point delegates to React's native useSyncExternalStore
 // (guaranteed by the React 18+ peer) instead of bundling the userland shim.
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
-import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, SessionSnapshot } from "./session-core-types.ts";
 import type { AgentState, ClientTheme, SessionError } from "./types.ts";
 
 // AssemblyAI design system ("website refresh"): warm cream surface, deep
 // indigo primary, warm-ink text, taupe borders. Overridable per client via
-// `client({ theme })`.
+// `mountClient({ theme })`.
 const DEFAULT_THEME: Required<ClientTheme> = {
   bg: "#FBF8F2",
   primary: "#3F2BC1",
@@ -26,16 +26,16 @@ const DEFAULT_THEME: Required<ClientTheme> = {
   border: "#DCD7CC",
 };
 
-const SessionCtx = createContext<SessionCore | null>(null);
+const SessionCtx = createContext<BrowserSession | null>(null);
 
 /**
- * Provides the {@link SessionCore} the session hooks read. `client()`
+ * Provides the {@link BrowserSession} the session hooks read. `mountClient()`
  * installs it automatically; a custom tree only needs it when bypassing
- * `client()` and mounting React itself.
+ * `mountClient()` and mounting React itself.
  *
  * @internal
  */
-export function SessionProvider({ value, children }: { value: SessionCore; children?: ReactNode }) {
+export function SessionProvider({ value, children }: { value: BrowserSession; children?: ReactNode }) {
   return createElement(SessionCtx.Provider, { value }, children);
 }
 
@@ -47,12 +47,12 @@ export function SessionProvider({ value, children }: { value: SessionCore; child
  * places: the two lists have to be the same list, and a member added to one and
  * not the other is a hook that cannot do what `useSession()` can.
  *
- * Method signatures come from {@link SessionCore} — one source of truth.
+ * Method signatures come from {@link BrowserSession} — one source of truth.
  *
  * @public
  */
 export type SessionActions = Pick<
-  SessionCore,
+  BrowserSession,
   "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end"
 >;
 
@@ -71,7 +71,7 @@ export type SessionActions = Pick<
 export type Session = SessionSnapshot & SessionActions;
 
 /**
- * Return the raw {@link SessionCore} from context without subscribing to
+ * Return the raw {@link BrowserSession} from context without subscribing to
  * snapshot changes. Useful for accessing stable methods (`start`, `toggle`,
  * `reset`, …) from components that select narrow state via
  * {@link useSessionSelector}.
@@ -79,7 +79,7 @@ export type Session = SessionSnapshot & SessionActions;
  * Not part of the package's public export surface — internal to aai-ui
  * components.
  */
-export function useSessionCore(): SessionCore {
+export function useSessionCore(): BrowserSession {
   const core = useContext(SessionCtx);
   if (!core) throw new Error("Session hooks must be used within <SessionProvider>");
   return core;
@@ -118,7 +118,7 @@ export function useSessionCore(): SessionCore {
  * `memo()` child's props: the methods are closures created once by
  * `createSessionCore`, and the object wrapping them is memoized on the core.
  *
- * Throws outside the provider `client()` installs, like every session hook.
+ * Throws outside the provider `mountClient()` installs, like every session hook.
  *
  * @example A footer that acts on the session without re-rendering with it
  * ```tsx
@@ -168,9 +168,9 @@ export function useSessionActions(): SessionActions {
  * control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
  * `cancel`, `end`).
  *
- * Throws if used outside the provider `client()` installs (the error names
+ * Throws if used outside the provider `mountClient()` installs (the error names
  * `<SessionProvider>` — you only mount that yourself when bypassing
- * `client()`). Re-renders the component on *every* snapshot change; for a
+ * `mountClient()`). Re-renders the component on *every* snapshot change; for a
  * component that reads one field, prefer {@link useSessionSelector} for a
  * targeted subscription.
  *
@@ -326,9 +326,9 @@ export function useSessionError(): SessionError | null {
 const ThemeCtx = createContext<Required<ClientTheme>>(DEFAULT_THEME);
 
 /**
- * Provides the theme the components read via `useTheme`. `client()` installs
+ * Provides the theme the components read via `useTheme`. `mountClient()` installs
  * it automatically (from `ClientConfig.theme`); a custom tree only needs it
- * when bypassing `client()` and mounting React itself.
+ * when bypassing `mountClient()` and mounting React itself.
  *
  * @internal
  */
@@ -431,7 +431,7 @@ function useThemeStyles(theme: Required<ClientTheme>): void {
  * provider is present, so components can call it unconditionally.
  *
  * This is how a custom component stays on the agent's palette: a
- * `client({ theme })` override reaches it here, where a hardcoded colour or a
+ * `mountClient({ theme })` override reaches it here, where a hardcoded colour or a
  * Tailwind class cannot see it.
  *
  * @example

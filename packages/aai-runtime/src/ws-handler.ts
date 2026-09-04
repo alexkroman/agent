@@ -26,7 +26,7 @@ import pTimeout from "p-timeout";
 
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createClientSink } from "./ws-client-sink.ts";
 import type { SessionWebSocket } from "./ws-frames.ts";
@@ -37,9 +37,9 @@ export { asSessionWebSocket, type SessionWebSocket, safeSend } from "./ws-frames
 /** Options for wiring a WebSocket to a session. */
 type WsSessionOptions = {
   /** Map of active sessions (claimed on open, released on close). */
-  sessions: OwnedMap<string, SessionCore>;
+  sessions: OwnedMap<string, ServerSession>;
   /** Factory function to create a session for a given ID and client sink. */
-  createSession: (sessionId: string, client: ClientSink) => SessionCore;
+  createSession: (sessionId: string, client: ClientSink) => ServerSession;
   /** Protocol config sent to the client immediately on connect. */
   readyConfig: ReadyConfig;
   /** Additional key-value pairs included in log messages. */
@@ -85,9 +85,9 @@ const WS_CLOSE_INTERNAL = 1011;
  * id whose previous session is still registered) can close the superseded
  * connection. Weak: entries die with their sessions.
  */
-const sinkBySession = new WeakMap<SessionCore, ClientSink>();
+const sinkBySession = new WeakMap<ServerSession, ClientSink>();
 
-function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: string): void {
+function dispatchMessage(data: unknown, session: ServerSession, log: Logger, sid: string): void {
   if (data instanceof Uint8Array) {
     // A zero-length frame carries no samples, so it is not audio, and
     // treating it as audio was wrong twice over. It went to the transport,
@@ -152,7 +152,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
    * yet", "the close handler already ran" and "start() failed" depending on
    * where it was read. `lifecycle` below answers that question instead.
    */
-  let session: SessionCore | null = null;
+  let session: ServerSession | null = null;
   /** Release for this socket's claim on `sessions[sessionId]` — a no-op once
    *  a reconnect with ?sessionId=<same id> (resumeFrom) re-claims the key
    *  while the old session's async stop() drains (see endSession). */
@@ -205,7 +205,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
    * try/catch boundary; a throw escaping a ws 'message' handler would be an
    * uncaughtException that takes down the host. Log-and-drop instead.
    */
-  function dispatchSafely(data: unknown, s: SessionCore): void {
+  function dispatchSafely(data: unknown, s: ServerSession): void {
     try {
       dispatchMessage(data, s, log, sid);
     } catch (err) {
@@ -224,7 +224,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   }
 
   /** Stop a session and run end-of-session cleanup exactly once. */
-  function endSession(s: SessionCore): void {
+  function endSession(s: ServerSession): void {
     s.stop()
       .catch((err: unknown) => {
         log.error("Session stop failed", { ...ctx, sid, error: errorDetail(err) });
@@ -293,7 +293,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       // could never speak, announced as ready, with the two lines in the order
       // that makes the second one look like the outcome.
       //
-      // The session still starts (see `SessionCore.faultCode`: the transport
+      // The session still starts (see `ServerSession.faultCode`: the transport
       // owns that policy, not this log line). What changes is that the line
       // stops claiming otherwise, and names the code so the pair reads as one
       // event.
@@ -392,7 +392,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // Announce the session immediately — zero RTT. The frame carries the session
     // id, so the client can reconnect with ?sessionId=<id> to resume; the session
     // owns the send because the frame is an ordinary recorded event now (see
-    // `SessionCore.configure`).
+    // `ServerSession.configure`).
     session.configure(opts.readyConfig);
 
     // Every branch the continuation used to carry is a transition now: the

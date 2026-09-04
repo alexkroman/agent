@@ -63,7 +63,7 @@ import {
   Facts,
   Form,
   type FormValues,
-  page,
+  mountPage,
   SubmitButton,
   TextAreaField,
   useWorkflowSubmit,
@@ -265,4 +265,4 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => 
  */
 const STATUS_LINE = { ...WORKFLOW_STATUS_LABELS, running: "Writing…" };
 
-page({ name: "Redline", component: RedlineDesk });
+mountPage({ name: "Redline", component: RedlineDesk });

@@ -53,9 +53,9 @@ This is the API reference for the two published SDK packages:
   for the keyless network helpers callable from tool code, and `runtime`
   for self-hosting.
 - **`@alexkroman1/aai-ui`** — the browser client for custom UIs:
-  `client()`, the session hooks (`useSession`, `useAgentState`,
+  `mountClient()`, the session hooks (`useSession`, `useAgentState`,
   `useToolResult`, `useEvent`), and the framework-agnostic
-  `createSessionCore()`.
+  `createBrowserSession()`.
 
 The `aai` CLI (`@alexkroman1/aai-cli`) is documented in its
 [README](https://github.com/alexkroman/agent/tree/main/packages/aai-cli#readme)

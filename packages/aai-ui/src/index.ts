@@ -5,8 +5,8 @@
 // and same argument as `WORKFLOW_STATUS_LABELS` below.
 export { AGENT_STATE_LABELS } from "./agent-state-labels.ts";
 // Pre-connection client-config lookup (name + greeting). `fetchClientConfig`
-// is the PUBLIC half — a workflow app's replacement for the lookup `client()`
-// makes for itself, since `page()` makes none. The default client's and the
+// is the PUBLIC half — a workflow app's replacement for the lookup `mountClient()`
+// makes for itself, since `mountPage()` makes none. The default client's and the
 // session's own plumbing (`buildAgentUrl`, `loadClientConfig`) is on
 // `@alexkroman1/aai-ui/internal`.
 export {
@@ -37,7 +37,7 @@ export {
   Field,
   type FieldShell,
   FileField,
-  type FileRead,
+  type FileReadMode,
   type FileValue,
   Form,
   type FormProps,
@@ -69,7 +69,7 @@ export {
   type ToolCallRowVariant,
 } from "./components/tool-call-row.tsx";
 // The value type a caller names to write `ClientConfig.tools`. The CONTEXT
-// `client()` installs it into is internal — see `internal.ts`.
+// `mountClient()` installs it into is internal — see `internal.ts`.
 export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // The bar over the one wait a run cannot describe — storing a form's files, which
 // happens BEFORE the run that carries their ids exists.
@@ -80,7 +80,7 @@ export { WorkflowFields } from "./components/workflow-fields.tsx";
 // where it has got to.
 export { WorkflowProgress } from "./components/workflow-progress.tsx";
 export type { Session, SessionActions } from "./context.ts";
-// Context & hooks. The two PROVIDERS `client()` mounts around the tree
+// Context & hooks. The two PROVIDERS `mountClient()` mounts around the tree
 // (`SessionProvider`, `ThemeProvider`) are on `@alexkroman1/aai-ui/internal`.
 //
 // The three NARROW hooks beside `useSession` are what this package's own
@@ -102,15 +102,15 @@ export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 // Entry
 export { client } from "./define-client.tsx";
 export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
-// Workflow apps — the `workflowApp()` half of this package. `page()`
+// Workflow apps — the `workflowApp()` half of this package. `mountPage()`
 // is the mount (no session, no audio, no socket) and the two workflow exports
 // are what its component talks to the agent with, in place of `useSession()`.
 export { type PageConfig, type PageHandle, page } from "./page.tsx";
 // Session core (for advanced use)
-export { createSessionCore } from "./session-core.ts";
+export { createBrowserSession } from "./session-core.ts";
 export type {
   AgentCustomEvent,
-  SessionCore,
+  BrowserSession,
   SessionSnapshot,
 } from "./session-core-types.ts";
 // Types

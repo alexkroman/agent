@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, client, useAgentState } from "@alexkroman1/aai-ui";
+import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import { planProjection } from "./shared.ts";
 
 /**
@@ -90,7 +90,7 @@ function PlanSidebar() {
   );
 }
 
-client({
+mountClient({
   name: "Planning Desk",
   sidebar: PlanSidebar,
   theme: {

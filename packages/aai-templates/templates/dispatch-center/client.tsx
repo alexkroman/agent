@@ -4,7 +4,7 @@ import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
 import {
   AGENT_STATE_LABELS,
   AutoScroll,
-  client,
+  mountClient,
   SessionErrorBanner,
   useAgentState,
   useConversation,
@@ -516,7 +516,7 @@ function App() {
   );
 }
 
-client({
+mountClient({
   component: App,
   theme: {
     bg: "#0a0a0f",

@@ -15,7 +15,7 @@ import { type Mock, vi } from "vitest";
 import { createRuntime } from "./runtime.ts";
 import { type LogFn, type Logger, type LogLevel, silentLogger } from "./runtime-config.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import {
   createSessionEmitter,
   type SessionEmitter,
@@ -141,18 +141,18 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   };
 }
 
-// ─── SessionCore mock ───────────────────────────────────────────────────────
+// ─── ServerSession mock ───────────────────────────────────────────────────────
 
 /**
- * Create a SessionCore-shaped mock with all methods as vi.fn() spies.
+ * Create a ServerSession-shaped mock with all methods as vi.fn() spies.
  *
  * Nine spies, where there were twenty-four. The session's inbound surface is two
  * vocabularies plus two audio paths now (see `session-core.ts`), so this stub
  * cannot go stale against an added command or event the way a per-name one did —
- * which is the whole reason a double cast to `SessionCore` was tempting here, and
+ * which is the whole reason a double cast to `ServerSession` was tempting here, and
  * a cast is exactly what stops reporting when a field is ADDED.
  */
-export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
+export function makeMockCore(overrides?: Partial<ServerSession>): ServerSession {
   return {
     id: "test",
     // A healthy session by default, so an override is what opts a spec into the

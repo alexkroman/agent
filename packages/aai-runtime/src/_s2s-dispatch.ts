@@ -74,7 +74,7 @@ function dispatchReplyDone(
   state: DispatchState,
   ctx: DispatchContext,
 ): void {
-  // Logged before the client-facing dedup in SessionCore, so a stalled session
+  // Logged before the client-facing dedup in ServerSession, so a stalled session
   // can be checked against the raw arrivals.
   const audit = replyAuditFields(state.reply);
   ctx.log.info("S2S << reply.done", { ...sidFields(ctx), status, ...audit });

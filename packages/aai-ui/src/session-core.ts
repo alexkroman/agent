@@ -29,7 +29,7 @@ import { createSessionStateMachine } from "./session-core-state.ts";
 import {
   bargeIn,
   type ConnState,
-  type SessionCore,
+  type BrowserSession,
   type SessionSnapshot,
   STOPPED,
 } from "./session-core-types.ts";
@@ -45,27 +45,27 @@ import { MIC_SEND_MAX_BUFFERED_BYTES, type VoiceSessionOptions } from "./types.t
  * Uses a subscribe/getSnapshot pattern for state management, compatible with
  * React's `useSyncExternalStore` and other external store integrations.
  *
- * Most clients never call this: `client()` creates a core and installs it in
+ * Most clients never call this: `mountClient()` creates a core and installs it in
  * React context for the hooks. Reach for it directly when building a
  * non-React UI (or wiring the session into another framework's store).
  *
  * @example
  * ```ts
- * import { createSessionCore, type SessionSnapshot } from "@alexkroman1/aai-ui";
+ * import { createBrowserSession, type SessionSnapshot } from "@alexkroman1/aai-ui";
  *
  * declare function render(snapshot: SessionSnapshot): void;
  *
- * const session = createSessionCore({ platformUrl: "https://host/my-agent/" });
+ * const session = createBrowserSession({ platformUrl: "https://host/my-agent/" });
  * session.subscribe(() => render(session.getSnapshot()));
  * session.start();
  * ```
  *
  * @param options - Session configuration including the platform server URL.
- * @returns A {@link SessionCore} handle for controlling the session.
+ * @returns A {@link BrowserSession} handle for controlling the session.
  *
  * @public
  */
-export function createSessionCore(options: VoiceSessionOptions): SessionCore {
+export function createBrowserSession(options: VoiceSessionOptions): BrowserSession {
   // ─── Internal state ─────────────────────────────────────────────────────
 
   let currentSnapshot: SessionSnapshot = {

@@ -197,7 +197,7 @@ const s2sLifecycleMachine = setup({
         reason: event.reason,
         prevSessionId: context.providerSessionId,
       });
-      // The in-flight reply is gone; unblock SessionCore's turn promise.
+      // The in-flight reply is gone; unblock ServerSession's turn promise.
       context.effects.cancelInFlightReply();
     },
     /** The replacement socket closed before it reported ready. */
@@ -219,7 +219,7 @@ const s2sLifecycleMachine = setup({
     // Root-level, because both are facts about the connection rather than about
     // any one position in its life. A `STOP` in `closed` re-enters it, which is
     // harmless — every teardown effect is idempotent — and cheaper than a guard
-    // whose only job is to describe a call SessionCore makes once.
+    // whose only job is to describe a call ServerSession makes once.
     PROGRESS: { actions: "resetResumeBudget" },
     STOP: { target: ".closed" },
   },

@@ -133,7 +133,7 @@ function mustBeAnswered(call: CallRecord, h: Harness, linkReady: boolean): boole
   if (h.declaredDead !== null) return skip("retired"); // no session left to answer on
   if (!linkReady) return skip("linkNotReady"); // nothing to send it on yet
   if (!h.settled.has(call.callId)) return skip("toolNotSettled"); // no result exists yet
-  // Results flush per REPLY, as a batch: `SessionCore.onReplyDone` awaits the
+  // Results flush per REPLY, as a batch: `ServerSession.onReplyDone` awaits the
   // whole turn promise (every tool the reply issued) before sending any of them.
   // So a settled call whose SIBLING is still running is a turn in progress, not
   // a stall — demanding an answer there is the oracle being wrong about the
@@ -349,7 +349,7 @@ describe("S2S stack — property test over event orderings", () => {
       } finally {
         // Teardown in a `finally`, never on the happy path only. The streaming
         // oracles throw from INSIDE event delivery, so a hit used to skip
-        // `stop()` altogether and leave that run's SessionCore, transport and
+        // `stop()` altogether and leave that run's ServerSession, transport and
         // sockets live for the whole of shrinking — dozens of leaked sessions
         // racing the re-runs, which is the leak AGENTS.md names as converging
         // the shrinker on the wrong counterexample. A teardown that throws is

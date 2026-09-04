@@ -5,7 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";
 import { simulateBinaryFrame } from "./_ws-handler-test-utils.ts";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
@@ -18,9 +18,9 @@ function makeOpenWs(): MockWebSocket {
 
 function wire(
   ws: MockWebSocket,
-  core: SessionCore,
-  sessions: OwnedMap<string, SessionCore> = createOwnedMap(),
-): OwnedMap<string, SessionCore> {
+  core: ServerSession,
+  sessions: OwnedMap<string, ServerSession> = createOwnedMap(),
+): OwnedMap<string, ServerSession> {
   wireSessionSocket(ws, {
     sessions,
     createSession: () => core,

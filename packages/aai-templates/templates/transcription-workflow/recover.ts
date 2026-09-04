@@ -14,7 +14,7 @@
  * `client.tsx` down to the page's shape:
  *
  * - **A template's spec is what makes its exemplar code true**, and none of this
- *   can be tested from a `client.tsx`. That file ends in a `page()` call and
+ *   can be tested from a `client.tsx`. That file ends in a `mountPage()` call and
  *   imports a stylesheet, and this package's suites have no DOM at all: the
  *   vitest `include` matches `.test.ts` and not `.test.tsx`, and the scaffold
  *   declares no React testing library — so a `client.test.tsx` would be

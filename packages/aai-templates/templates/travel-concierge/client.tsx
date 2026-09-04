@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, client, useAgentState } from "@alexkroman1/aai-ui";
+import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import type { TripView } from "./shared.ts";
 import { SPECIALIST_IDS, SPECIALISTS, tripProjection } from "./shared.ts";
 
@@ -118,7 +118,7 @@ function ItinerarySidebar() {
   );
 }
 
-client({
+mountClient({
   name: "Swiss Air Concierge",
   sidebar: ItinerarySidebar,
   theme: {

@@ -8,12 +8,12 @@ import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 describe("wireSessionSocket resume", () => {
   test("resumeFrom reuses old session ID instead of generating new UUID", () => {
-    const sessions = createOwnedMap<string, SessionCore>();
+    const sessions = createOwnedMap<string, ServerSession>();
     const ws = openSocket();
     let capturedId: string | undefined;
 
@@ -47,14 +47,14 @@ describe("wireSessionSocket resume", () => {
       resumeFrom: "resume-id-123",
     });
 
-    // `session.configured` carries `sessionId: opts.id` (see `SessionCore.configure`),
+    // `session.configured` carries `sessionId: opts.id` (see `ServerSession.configure`),
     // so asserting the id the session was BUILT with is the same claim without
     // reaching through a mock core to the socket.
     expect(capturedId).toBe("resume-id-123");
   });
 
   test("old session's delayed stop does not evict a resumed session with the same id", async () => {
-    const sessions = createOwnedMap<string, SessionCore>();
+    const sessions = createOwnedMap<string, ServerSession>();
     const onSessionEnd = vi.fn();
     const stopGate = Promise.withResolvers<void>();
     const oldCore = makeMockCore({ stop: vi.fn(() => stopGate.promise) });
@@ -102,7 +102,7 @@ describe("wireSessionSocket resume", () => {
     // and a replayed id can land at any time. Left running, the old session
     // would share tool state concurrently with the new one and escape
     // runtime.shutdown() once the claim replacement orphans it.
-    const sessions = createOwnedMap<string, SessionCore>();
+    const sessions = createOwnedMap<string, ServerSession>();
     const oldCore = makeMockCore({ stop: vi.fn(() => Promise.resolve()) });
     const oldWs = openSocket();
     wireSessionSocket(oldWs, {
@@ -151,7 +151,7 @@ describe("wireSessionSocket resume", () => {
     // `onSessionEnd`, which the old connection's cleanup fires last.
     vi.useFakeTimers();
     try {
-      const sessions = createOwnedMap<string, SessionCore>();
+      const sessions = createOwnedMap<string, ServerSession>();
       const logger = makeLogger();
       const onSessionEnd = vi.fn();
       const stopGate = Promise.withResolvers<void>();

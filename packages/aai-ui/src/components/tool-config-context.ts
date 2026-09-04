@@ -10,7 +10,7 @@ import { createContext, useContext } from "react";
 export type ToolDisplayConfig = Record<string, { icon?: string; label?: string }>;
 
 /**
- * Context for tool display configuration. Installed by `client()` from
+ * Context for tool display configuration. Installed by `mountClient()` from
  * `ClientConfig.tools`; the built-in components read it via `useToolConfig`.
  *
  * @internal

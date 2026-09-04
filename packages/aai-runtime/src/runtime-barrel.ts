@@ -194,7 +194,7 @@ export {
   type SessionRuntime,
   type SharedServerOptions,
 } from "./server.ts";
-export type { SessionCore } from "./session-core.ts";
+export type { ServerSession } from "./session-core.ts";
 export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
 // reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:

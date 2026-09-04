@@ -16,9 +16,9 @@ import {
   makeConfig,
   recordingWebSocketClass,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
+import { createBrowserSession } from "./session-core.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 
 /** `navigator.mediaDevices`, which installAudioMocks patches in place. */
 function mediaDevices(): { getUserMedia: unknown } {
@@ -45,8 +45,8 @@ describe("audio bring-up failures", () => {
   });
 
   /** Start a session and deliver the config frame that kicks off audio init. */
-  function connected(): SessionCore {
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+  function connected(): BrowserSession {
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     core.start();
     socket?.simulateOpen();
     socket?.simulateMessage(makeConfig());
@@ -172,7 +172,7 @@ describe("buffered greeting replay", () => {
     // are enqueued on the new worklet, and the recorded done is replayed as a
     // drain wait rather than dropped, so a greeting shorter than the jitter
     // buffer still plays out.
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     core.start();
     socket?.simulateOpen();
     socket?.simulateMessage(makeConfig());
@@ -199,7 +199,7 @@ describe("buffered greeting replay", () => {
   });
 
   it("goes straight to listening when nothing was buffered", async () => {
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     core.start();
     socket?.simulateOpen();
     socket?.simulateMessage(makeConfig());

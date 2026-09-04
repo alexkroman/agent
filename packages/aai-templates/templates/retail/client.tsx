@@ -3,7 +3,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
-  client,
+  mountClient,
   SessionErrorBanner,
   useAgentState,
   useConversation,
@@ -631,7 +631,7 @@ function App() {
   );
 }
 
-client({
+mountClient({
   component: App,
   theme: {
     bg: "#f4f4f5",

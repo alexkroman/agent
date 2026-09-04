@@ -192,26 +192,35 @@ does — import from two subpaths, one of them labelled not-semver-covered. The
 block's own comment already called those names one contract; the split respects
 it. Do not "tidy" them onto `/internal` later.
 
-### `SessionCore` collides with `aai-ui`, and renaming is this package's call
+### `ServerSession` is what `SessionCore` became, and the collision is closed
 
-Root `AGENTS.md`'s "Disambiguating cross-package names" records one live
+Root `AGENTS.md`'s "Disambiguating cross-package names" used to record one live
 collision — `SessionCore`, one word for the two sides of one wire: here the
 SERVER session bridging a `Transport` to the client protocol, in `aai-ui` the
-BROWSER session (socket + audio + state). Neither reference page names the
-other. That table used to carry four rows, and what the `/internal` split
+BROWSER session (socket + audio + state). Neither reference page named the
+other, and both were even declared in a file called `session-core-types.ts`. It
+is `ServerSession` here and `BrowserSession` there now, so each reference page
+says which side of the wire it describes without the reader having to know which
+package they landed in.
+
+That table used to carry four rows, and what the `/internal` split
 resolved was never written down: `createSessionCore`, `createWorkflowApi` and
 `WorkflowApiOptions` went to `@alexkroman1/aai-runtime/internal` — a public name
 against an `/internal` one is not a collision, it is what `/internal` is for —
 and then off the published surface entirely, under that subpath's "a name is
-here because something IMPORTS it" rule. They are relative-import internals now,
-so `API-EXPORTS.json` shows all three on `aai-ui` alone.
+here because something IMPORTS it" rule. They are relative-import internals
+now, so `API-EXPORTS.json` shows only `aai-ui`'s counterparts — and after the
+rename those do not even share a word with these: `createBrowserSession`
+against this package's `createSessionCore`, which keeps its name precisely
+because nothing publishes it.
 
-**Which INVERTS the old "do not rename either half" advice for those three.** It
-held while both sides were contracted; an unpublished name has no epoch, no
-frozen example and no semver promise, so renaming the runtime halves costs a
-sweep rather than an epoch a side — and is worth doing, since they still occur
-in ten-odd files here each and every reader disambiguates by package before
-reading. Recommended, not done.
+**Which is why the rename was affordable at all**, and it INVERTS the old "do not
+rename either half" advice. That advice held while both sides were contracted; an
+unpublished name has no epoch, no frozen example and no semver promise, so
+renaming the runtime halves cost a sweep rather than an epoch a side. The one
+name that IS contracted here is `ServerSession` itself, on the `session`
+capability, so that half went through the epoch mechanism like any other
+signature move.
 
 ### The root barrel is the CONTRACTED surface, and nothing else
 
@@ -253,7 +262,7 @@ to 0.
   arriving here now owes an importer.
 
 Where a capability's TYPE is contracted and its CONSTRUCTOR is not, the two are
-deliberately on different pages and each clause says so: `SessionCore` on the
+deliberately on different pages and each clause says so: `ServerSession` on the
 barrel and `createSessionCore` on `/internal`, `SessionStateBackend` against
 `createPostgresStateBackend`, `UploadStore` against `createUploadStore`,
 `WorkflowClientOptions` against `createWorkflowClient`. (There was a fourth,
@@ -1370,7 +1379,7 @@ lands in the store; what it loses is the commit.
 
 ## The session takes two VOCABULARIES, not nineteen callbacks
 
-`SessionCore` takes a `command(cmd)` — one `SessionCommand`, what the CLIENT asks
+`ServerSession` takes a `command(cmd)` — one `SessionCommand`, what the CLIENT asks
 for — and a `report(event)` — one `TransportEventBody`, what the TRANSPORT
 observed. `TransportCallbacks` is the same `report` from the other side. That is
 the whole inbound surface, plus the two audio paths. It used to be one method per

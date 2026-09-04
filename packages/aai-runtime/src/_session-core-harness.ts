@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The `SessionCore` test harness — one sink, one transport, one core.
+ * The `ServerSession` test harness — one sink, one transport, one core.
  *
  * Its own module because TWO suites need it (`session-core.test.ts` and
  * `session-core-history.test.ts`, split when the first crossed the 700-line test
@@ -16,7 +16,7 @@ import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { vi } from "vitest";
 import { makeEmitter } from "./_test-utils.ts";
-import type { SessionCore, SessionCoreOptions } from "./session-core.ts";
+import type { ServerSession, ServerSessionOptions } from "./session-core.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
 import type { Transport } from "./transports/types.ts";
@@ -67,8 +67,8 @@ export function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConf
   return { name: "test", systemPrompt: DEFAULT_SYSTEM_PROMPT, greeting: "", ...overrides };
 }
 
-export function makeCore(overrides: Partial<SessionCoreOptions> = {}): {
-  core: SessionCore;
+export function makeCore(overrides: Partial<ServerSessionOptions> = {}): {
+  core: ServerSession;
   sink: ReturnType<typeof makeSink>;
   transport: ReturnType<typeof makeTransport>;
   stream: SessionEventStream;

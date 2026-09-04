@@ -26,7 +26,7 @@
 
 import { SESSION_EVENT_READ_LIMIT } from "@alexkroman1/aai/host-internal";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import { historyFromEvents } from "./session-event-history.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
 import type { ResumeFindings } from "./session-resume-found.ts";
@@ -65,7 +65,7 @@ export async function readAllEvents(
  * @internal
  */
 export function attachSessionStream(
-  core: SessionCore,
+  core: ServerSession,
   opts: {
     stream: SessionEventStream;
     sessionId: string;

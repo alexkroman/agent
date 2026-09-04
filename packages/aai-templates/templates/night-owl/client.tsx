@@ -14,7 +14,13 @@ import "@alexkroman1/aai-ui/styles.css";
  * reconnect is nagging. `useToolCallStart` and `useEvent` are for exactly this —
  * they fire once, carry no history, and drive throwaway `useState`.
  */
-import { Button, client, useAgentState, useEvent, useToolCallStart } from "@alexkroman1/aai-ui";
+import {
+  Button,
+  mountClient,
+  useAgentState,
+  useEvent,
+  useToolCallStart,
+} from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
 import { MOODS, nightProjection } from "./shared.ts";
 
@@ -111,7 +117,7 @@ function RecSidebar() {
   );
 }
 
-client({
+mountClient({
   name: "Night Owl",
   icon: "\u{1F989}",
   subtitle: "A cozy companion for the small hours",

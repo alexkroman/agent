@@ -209,7 +209,7 @@ node scripts/api-contracts.mjs --bump aai:tool --drop "<reason>"  # and why not
 
 **Three packages carry contracts — `aai`, `aai-ui` and `aai-runtime` — and a
 capability is therefore QUALIFIED.** `@alexkroman1/aai-ui` is authored code in
-exactly the same sense as the SDK — a `client.tsx` names `client()`,
+exactly the same sense as the SDK — a `client.tsx` names `mountClient()`,
 `useAgentState`, `<Form>` and `useWorkflowRun` the way an `agent.ts` names
 `agent()` and `tool()`, and a signature change there breaks a user's page — so
 its nine capabilities are versioned the same way (its own guide's section of

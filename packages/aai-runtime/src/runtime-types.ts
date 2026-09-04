@@ -18,7 +18,7 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger, S2sConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
@@ -349,5 +349,5 @@ export type Runtime = AgentRuntime & {
     agent: string;
     client: ClientSink;
     skipGreeting?: boolean;
-  }): SessionCore;
+  }): ServerSession;
 };

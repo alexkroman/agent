@@ -848,7 +848,7 @@ rather than here:
 | Guide | Covers |
 | --- | --- |
 | `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.generate`, what persistence a tool gets, the concurrency primitives, session slots, the canonical agent-config schema, data flow, the defaults/magic-numbers table |
-| `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses, **workflow apps** (`page()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP API the SDK serves) |
+| `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses, **workflow apps** (`mountPage()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP API the SDK serves) |
 | `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations, `aai dev`'s server and host mode, self-hosting (`npm start`) |
 | `packages/aai-runtime/CLAUDE.md` | The host runtime: why it is its own package, the one-way dependency on the SDK, the fifteen `host/` modules that stayed, and the `host-internal` seam |
 | `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers, guest network access + SSRF, credential separation |
@@ -1024,15 +1024,23 @@ collision: `ClientConfigResponse` and `SessionErrorCode` (`/protocol`; the
 latter's union is eight wire codes), plus `WorkflowApi`, `WorkflowSummary`,
 `WorkflowOutputOf`, `WorkflowRunStatus` and `isTerminal` (`/workflow-api`).
 
-**Exactly one real COLLISION is left** — one word for the two sides of one
-wire, neither reference page naming the other:
+**No real COLLISION is left, and the last one is worth remembering.** It was
+`SessionCore` — one word for the two sides of one wire, neither reference page
+naming the other, and both halves declared in a file called
+`session-core-types.ts`:
 
 | Name | `aai-runtime` (root) | `aai-ui` (root) |
 | --- | --- | --- |
-| `SessionCore` | `session-core-types.ts` — the SERVER session, bridging a `Transport` to the client protocol | `session-core-types.ts` — the BROWSER session (socket + audio + state) |
+| `SessionCore` (was) | the SERVER session, bridging a `Transport` to the client protocol — now `ServerSession` | the BROWSER session (socket + audio + state) — now `BrowserSession` |
 
-It carried four rows; what the `/internal` split resolved, and why renaming the
-runtime halves is now recommended, is in `packages/aai-runtime/CLAUDE.md`.
+That is the shape to watch for rather than the outcome: two packages naming the
+same concept from opposite ends, so the word is right in each file and useless
+in an autocomplete list spanning both. Each name says which side of the wire it
+is now, and neither reader has to know which package they landed in.
+
+The table carried four rows before that; what the `/internal` split resolved,
+and why renaming the runtime halves was affordable at all, is in
+`packages/aai-runtime/CLAUDE.md`.
 
 The near-miss an AUTHOR meets is three workflow-client factories, none of them a
 collision; `packages/aai-ui/CLAUDE.md` tells them apart.

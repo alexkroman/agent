@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { DeepReadonly } from "@alexkroman1/aai";
-import { client, useAgentState } from "@alexkroman1/aai-ui";
+import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
 import {
   type Clock,
@@ -782,7 +782,7 @@ function Sidebar() {
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
-client({
+mountClient({
   name: "Solo RPG",
   icon: (
     <span style={{ fontSize: "28px", color: C.accent }}>
@@ -805,7 +805,7 @@ client({
 });
 
 // No `onSessionId`/`resumeSessionId` here any more, and their removal is a FIX
-// rather than a simplification. `createSessionCore` remembers the id in
+// rather than a simplification. `createBrowserSession` remembers the id in
 // `sessionStorage` by default now — see `session-resume-store.ts`, whose doc
 // names this template as the one client of fourteen that had wired it by hand.
 // What it had wired was `localStorage`, which is the wrong store for a pointer

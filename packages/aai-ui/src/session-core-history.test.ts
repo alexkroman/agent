@@ -21,18 +21,18 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import { createBrowserSession } from "./session-core.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 
-describe("createSessionCore", () => {
-  let core: SessionCore;
+describe("createBrowserSession", () => {
+  let core: BrowserSession;
 
   beforeEach(() => {
     resetLastSocket();
     // Each test is a fresh TAB: a stored session id survives a reload, which
     // inside one jsdom document means it survives between tests.
     sessionStorage.clear();
-    core = createSessionCore({
+    core = createBrowserSession({
       platformUrl: "ws://localhost:3000",
       WebSocket: MockWebSocketConstructor,
     });

@@ -38,9 +38,9 @@ import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installAudioMocks } from "./_react-test-utils.ts";
 import { MockWebSocket, makeConfig } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
+import { createBrowserSession } from "./session-core.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 
 function noop(): void {
   /* expected console output */
@@ -164,7 +164,7 @@ const reached: Reached = {
 
 /** One run's mutable state. */
 type Run = {
-  core: SessionCore;
+  core: BrowserSession;
   log: string[];
   outcome: ConfigOutcome;
   fetchLog: ConfigOutcome[];
@@ -280,7 +280,7 @@ async function checkBrokerLatch(run: Run): Promise<void> {
 async function runScript(steps: readonly ReconnectStep[]): Promise<void> {
   created = [];
   const run: Run = {
-    core: createSessionCore({ platformUrl: PLATFORM_URL }),
+    core: createBrowserSession({ platformUrl: PLATFORM_URL }),
     log: [],
     outcome: "broker",
     fetchLog: [],

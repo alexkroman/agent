@@ -72,7 +72,8 @@ export type WorkflowAppMisuse<K extends string> =
  *
  * What it keeps is the surface a page and a deploy actually read: `name` and
  * `greeting` (both served by `GET /client-config`, so a page can render its
- * shell from the agent — `page()` does not fetch it the way `client()` does, so
+ * shell from the agent — `mountPage()` does not fetch it the way `mountClient()`
+ * does, so
  * a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
  * `requiredEnv` (a step reads keys with `stepEnv` from
  * `@alexkroman1/aai/step`, and a deploy still checks they are present).

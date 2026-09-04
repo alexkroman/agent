@@ -81,7 +81,7 @@ export type ConsoleShellProps = {
  * `<ChatView>` when both are ours. Reach for `<SessionErrorBanner>` alone when
  * neither is.
  *
- * Must be rendered inside the providers `client()` installs.
+ * Must be rendered inside the providers `mountClient()` installs.
  *
  * @example A custom conversation in the stock chrome
  * ```tsx

@@ -2,12 +2,12 @@
 /**
  * Capability contract: `page`.
  *
- * The workflow-app mount: `page()`, for an `agent({ page: "static" })` front
+ * The workflow-app mount: `mountPage()`, for an `agent({ page: "static" })` front
  * door with no session, no socket and no audio. A second mount rather than a
- * flag on `client()` — see "Workflow apps" in `packages/aai-ui/CLAUDE.md`.
+ * flag on `mountClient()` — see "Workflow apps" in `packages/aai-ui/CLAUDE.md`.
  *
  * `fetchClientConfig` belongs here for the same reason: it is the page's
- * replacement for the `GET client-config` lookup `client()` performs on its own
+ * replacement for the `GET client-config` lookup `mountClient()` performs on its own
  * behalf. A page that wants the agent's declared `name` or `greeting` has no
  * other way to read them.
  *
@@ -17,4 +17,4 @@
  * `scripts/api-contracts.mjs`.
  */
 
-export { fetchClientConfig, type PageConfig, type PageHandle, page } from "../../index.ts";
+export { fetchClientConfig, mountPage, type PageConfig, type PageHandle } from "../../index.ts";

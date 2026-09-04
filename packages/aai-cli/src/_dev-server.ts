@@ -376,8 +376,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // A workflow app's declaration, honoured by the dev server exactly as the
       // deployed guest honours it: `/websocket` is declined with a reason and
       // telephony defaults off. Parity matters more here than usual, because a
-      // page mounted with `client()` by mistake fails identically in both places
-      // instead of only after a deploy.
+      // page mounted with `mountClient()` by mistake fails identically in both
+      // places instead of only after a deploy.
       ...omitUndefined({ page: agentDef.page }),
       // The PLATFORM's delivery door, and `aai dev` deliberately supplies no
       // `allowRemote`, so it answers 401. That is correct rather than an

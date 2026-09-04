@@ -5,10 +5,10 @@
  * its `agent.ts` calls, and the mount its `client.tsx` uses.
  *
  * There are two of each and the agent's own `page` field decides which. A VOICE
- * agent is declared with `agent()` and mounts with `client()`, which builds a
- * `SessionCore` — a WebSocket URL provider, an audio graph and a microphone
- * request. A WORKFLOW APP (`page: "static"`) is declared with `workflowApp()`
- * and mounts with `page()`, which builds none of them.
+ * agent is declared with `agent()` and mounts with `mountClient()`, which
+ * builds a `BrowserSession` — a WebSocket URL provider, an audio graph and a
+ * microphone request. A WORKFLOW APP (`page: "static"`) is declared with
+ * `workflowApp()` and mounts with `mountPage()`, which builds none of them.
  *
  * **konsistent cannot express either half**, which is why both checks live
  * here. `agent-default-export` used to require an `agent` import from every
@@ -23,8 +23,8 @@
  * mistake worth catching.
  *
  * That mistake is silent in the direction that matters. A static agent whose
- * page mounts with `client()` renders fine and then opens a `/websocket` the
- * server declines with a protocol error, so the failure is a dead start screen
+ * page mounts with `mountClient()` renders fine and then opens a `/websocket`
+ * the server declines with a protocol error, so the failure is a dead start screen
  * rather than a build error — and it reproduces identically under `aai dev` and
  * in production, which is the only good news about it.
  */
@@ -118,7 +118,7 @@ function importsFrom(source: string, spec: string): string[] {
 /** Which mount does this source name in its `@alexkroman1/aai-ui` import? */
 function mountsWith(source: string): { client: boolean; page: boolean } {
   const imports = importsFrom(source, "@alexkroman1/aai-ui");
-  return { client: imports.includes("client"), page: imports.includes("page") };
+  return { client: imports.includes("mountClient"), page: imports.includes("mountPage") };
 }
 
 /**
@@ -189,17 +189,21 @@ describe("template client mounts", () => {
     expect(clients.length).toBeGreaterThan(0);
   });
 
-  test.each(clients)("$name: mounts with exactly one of client() and page()", ({ source }) => {
-    const { client, page } = mountsWith(source);
-    expect(client || page, "imports neither client nor page from @alexkroman1/aai-ui").toBe(true);
-    expect(client && page, "imports both mounts; a client.tsx mounts once").toBe(false);
-  });
+  test.each(clients)(
+    "$name: mounts with exactly one of mountClient() and mountPage()",
+    ({ source }) => {
+      const { client, page } = mountsWith(source);
+      expect(client || page, "imports neither client nor page from @alexkroman1/aai-ui").toBe(true);
+      expect(client && page, "imports both mounts; a client.tsx mounts once").toBe(false);
+    },
+  );
 
   test.each(clients)("$name: the mount matches what agent.ts declares", ({ source, agentPath }) => {
     const isStatic = pageOf(agentPath) === "static";
-    expect(mountsWith(source).page, isStatic ? "expected page()" : "expected client()").toBe(
-      isStatic,
-    );
+    expect(
+      mountsWith(source).page,
+      isStatic ? "expected mountPage()" : "expected mountClient()",
+    ).toBe(isStatic);
   });
 });
 

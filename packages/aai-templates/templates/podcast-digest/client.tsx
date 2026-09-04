@@ -3,7 +3,7 @@
  * The browser half — a form that starts a run, and a panel that watches one
  * that may outlive the browser by a week.
  *
- * Mounted with `page()` rather than `client()`: there is no session to build, so
+ * Mounted with `mountPage()` rather than `mountClient()`: there is no session to build, so
  * no socket, no audio graph, no microphone request. `useWorkflowSubmit()` starts
  * the run, follows its STATUS, and hands back the controls bound to it.
  *
@@ -88,7 +88,7 @@
 import {
   BulletList,
   Form,
-  page,
+  mountPage,
   SubmitButton,
   useRunKey,
   useWorkflowSubmit,
@@ -220,4 +220,4 @@ export function App() {
   );
 }
 
-page({ name: "Podcast Digest", component: App });
+mountPage({ name: "Podcast Digest", component: App });

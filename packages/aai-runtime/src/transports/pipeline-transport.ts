@@ -3,7 +3,7 @@
 //
 // Pipeline mode executes tools inline via streamText's `tools.execute`.
 // A `tool.called` report is observability-only here; runtime.ts routes it to
-// `client.toolCall` directly (bypassing SessionCore's tool-dispatch path,
+// `client.toolCall` directly (bypassing ServerSession's tool-dispatch path,
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
@@ -104,7 +104,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // — the turn draining its TTS, and the turn being a false-interruption resume
   // — for the reason the module doc gives.
   const turns = createTurnMachine();
-  // Pipeline transport owns its conversation memory (SessionCore does not in
+  // Pipeline transport owns its conversation memory (ServerSession does not in
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
   const history = createPipelineHistory(sessionConfig.history);

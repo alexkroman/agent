@@ -1047,12 +1047,13 @@ naming a shape is what asks the compiler to make you handle the failure.
 
 ### The page
 
-A workflow app's `client.tsx` mounts with `page()` rather than `client()` —
-there is no session to build, so no socket, no audio graph and no microphone
-request. Everything else is the same file, React and Tailwind included.
+A workflow app's `client.tsx` mounts with `mountPage()` rather than
+`mountClient()` — there is no session to build, so no socket, no audio graph
+and no microphone request. Everything else is the same file, React and
+Tailwind included.
 
 ```tsx no-check
-import { createWorkflowApi, page, useWorkflowRun } from "@alexkroman1/aai-ui";
+import { createWorkflowApi, mountPage, useWorkflowRun } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import { useState } from "react";
@@ -1080,7 +1081,7 @@ export function App() {
   );
 }
 
-page({ name: "Link Digest", component: App });
+mountPage({ name: "Link Digest", component: App });
 ```
 
 `api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that
@@ -1974,7 +1975,7 @@ Those three cover almost everything an agent wants. A database is for data that
 must outlive a session AND be queryable: a ledger, filed records, cross-session
 saves.
 
-## Custom UI — `client()`
+## Custom UI — `mountClient()`
 
 File: `client.tsx` alongside `agent.ts`. Uses **React** (not Preact).
 Always import `"@alexkroman1/aai-ui/styles.css"` first.
@@ -1984,9 +1985,9 @@ Always import `"@alexkroman1/aai-ui/styles.css"` first.
 ```tsx
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
-import { client } from "@alexkroman1/aai-ui";
+import { mountClient } from "@alexkroman1/aai-ui";
 
-client({ name: "My Agent" });
+mountClient({ name: "My Agent" });
 ```
 
 ### Tier 1 with sidebar
@@ -1994,7 +1995,7 @@ client({ name: "My Agent" });
 ```tsx
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
-import { client, useEvent } from "@alexkroman1/aai-ui";
+import { mountClient, useEvent } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 
 function Sidebar() {
@@ -2009,7 +2010,7 @@ function Sidebar() {
   );
 }
 
-client({ name: "My Agent", sidebar: Sidebar });
+mountClient({ name: "My Agent", sidebar: Sidebar });
 ```
 
 ### Tier 2 — full custom component
@@ -2017,7 +2018,7 @@ client({ name: "My Agent", sidebar: Sidebar });
 ```tsx
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
-import { client, useSession } from "@alexkroman1/aai-ui";
+import { mountClient, useSession } from "@alexkroman1/aai-ui";
 
 function MyApp() {
   const { messages, userTranscript, started, running, start, toggle, end } =
@@ -2038,10 +2039,10 @@ function MyApp() {
   );
 }
 
-client({ component: MyApp });
+mountClient({ component: MyApp });
 ```
 
-### `client()` config
+### `mountClient()` config
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2199,7 +2200,7 @@ Property 'children' is missing` build error:
 ```tsx
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
-import { ChatView, client, StartScreen } from "@alexkroman1/aai-ui";
+import { ChatView, mountClient, StartScreen } from "@alexkroman1/aai-ui";
 
 function PizzaApp() {
   return (
@@ -2209,7 +2210,7 @@ function PizzaApp() {
   );
 }
 
-client({ component: PizzaApp });
+mountClient({ component: PizzaApp });
 ```
 
 ## Styling
@@ -2217,7 +2218,7 @@ client({ component: PizzaApp });
 - **Tailwind CSS v4** — compiled at bundle time, configured via CSS.
   Do NOT create `tailwind.config.js` — it will be ignored.
 - Use Tailwind classes for layout, `useTheme()` for dynamic colors.
-- Set theme: `client({ theme: { bg, primary, text, surface, border } })`.
+- Set theme: `mountClient({ theme: { bg, primary, text, surface, border } })`.
 - Override CSS custom properties for extra tokens:
   `--color-aai-*`, `--radius-aai`, `--font-aai`.
 - Always import `"@alexkroman1/aai-ui/styles.css"` at the top of `client.tsx`.

@@ -2,7 +2,7 @@
 /**
  * Capability contract: `client`.
  *
- * The voice mount: `client()`, the config it accepts, and the handle it hands
+ * The voice mount: `mountClient()`, the config it accepts, and the handle it hands
  * back. This is the first line of every `client.tsx`.
  *
  * Re-exported from `@alexkroman1/aai-ui`. This file is not shipped and nothing
@@ -15,6 +15,6 @@ export {
   type ClientConfig,
   type ClientConfigResponse,
   type ClientHandle,
-  client,
+  mountClient,
   type ToolDisplayConfig,
 } from "../../index.ts";

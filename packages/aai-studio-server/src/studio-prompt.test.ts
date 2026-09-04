@@ -170,9 +170,9 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("Default to a STATIC workflow app");
     expect(prompt).toContain("Start from the `transcription-workflow` template");
     expect(prompt).toContain("use_template");
-    // Mounted with page(), never client() — a static page opened as a session
-    // dials a /websocket the server declines.
-    expect(prompt).toContain("page({ name, component })");
+    // Mounted with mountPage(), never mountClient() — a static page opened as
+    // a session dials a /websocket the server declines.
+    expect(prompt).toContain("mountPage({ name, component })");
     // The escape hatch it must NOT take: workflowApp() is that declaration
     // with the discriminant already set, and the fields it refuses are refused
     // on purpose.

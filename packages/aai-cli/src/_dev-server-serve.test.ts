@@ -95,8 +95,8 @@ describe("viteDevConfig", () => {
   test("proxies the workflow API, the whole front door of a static app", () => {
     const config = viteDevConfig("/proj", 3000, 3001);
     const proxy = config.server?.proxy as Record<string, unknown>;
-    // A `page: "static"` agent has no socket: `page()` renders a form and every
-    // call it makes is a same-origin fetch under this prefix. Unproxied, Vite
+    // A `page: "static"` agent has no socket: `mountPage()` renders a form and
+    // every call it makes is a same-origin fetch under this prefix. Unproxied, Vite
     // answers its own 404 and submitting the form fails with `Workflow API 404`
     // while the backend serves the API correctly one port over.
     expect(proxy["/workflows"]).toMatchObject({ target: "http://127.0.0.1:3001" });

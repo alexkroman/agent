@@ -15,13 +15,13 @@ import { Profiler, type ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 import { createMockSessionCore } from "../_react-test-utils.ts";
 import { SessionProvider, ThemeProvider } from "../context.ts";
-import type { SessionCore } from "../session-core-types.ts";
+import type { BrowserSession } from "../session-core-types.ts";
 import { ChatView } from "./chat-view.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
 import { StartScreen } from "./start-screen.tsx";
 
-function renderWithProvider(children: ReactNode, session: SessionCore) {
+function renderWithProvider(children: ReactNode, session: BrowserSession) {
   return render(
     <ThemeProvider>
       <SessionProvider value={session}>{children}</SessionProvider>

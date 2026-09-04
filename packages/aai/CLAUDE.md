@@ -1197,8 +1197,8 @@ turns one into a tool result.
 
 ## The session takes two VOCABULARIES, not nineteen callbacks
 
-`SessionCore` takes a `command(cmd)` and a `report(event)` — the whole inbound
-surface, plus the two audio paths, where there used to be 157 `on*`
+`ServerSession` takes a `command(cmd)` and a `report(event)` — the whole
+inbound surface, plus the two audio paths, where there used to be 157 `on*`
 declarations. `guard-invariants` rule 16 keeps it that way. The three rules, and
 what a callback has to be worth to survive, are in
 `packages/aai-runtime/CLAUDE.md`.

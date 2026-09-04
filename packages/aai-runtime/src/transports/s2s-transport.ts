@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-// S2S transport — wraps connectS2s and forwards typed callbacks into the SessionCore.
+// S2S transport — wraps connectS2s and forwards typed callbacks into the ServerSession.
 
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger, S2sConfig } from "../runtime-config.ts";

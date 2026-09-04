@@ -171,7 +171,7 @@ export type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" |
  * the compile error for `agent({ s2s: ..., deadAirCoverMs: 5000 })` reads
  * *"Type 'number' is not assignable to type '`deadAirCoverMs` is pipeline-mode
  * only …'"* instead of the bare `undefined` mismatch that explains nothing
- * (the lesson `client()`'s ComponentTier already recorded).
+ * (the lesson `mountClient()`'s ComponentTier already recorded).
  *
  * `M` names the mode the author is actually in, so the remedy the message
  * gives ("remove `s2s`" / "remove `text`") is the one that applies to the

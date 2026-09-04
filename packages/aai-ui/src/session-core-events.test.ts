@@ -18,19 +18,19 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import { createBrowserSession } from "./session-core.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 
 /** Mirrors the module-private caps in session-core-messages.ts. */
 const MAX_CUSTOM_EVENTS = 200;
 const MAX_PREINIT_AUDIO_CHUNKS = 100;
 
 describe("session-core server events", () => {
-  let core: SessionCore;
+  let core: BrowserSession;
 
   beforeEach(() => {
     resetLastSocket();
-    core = createSessionCore({
+    core = createBrowserSession({
       platformUrl: "ws://localhost:3000",
       WebSocket: MockWebSocketConstructor,
     });

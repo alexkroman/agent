@@ -265,7 +265,8 @@ export interface AgentDef extends PipelineVoiceTuning {
    * `"static"` declares a WORKFLOW APP: an ordinary web page over the workflow
    * HTTP API (`/workflows/*`), with no microphone, no WebSocket and no session.
    * The page is still a `client.tsx`, still React, still Tailwind — it just
-   * mounts with `page()` instead of `client()` and reaches the agent through
+   * mounts with `mountPage()` instead of `mountClient()` and reaches the agent
+   * through
    * `createWorkflowApi()` / `useWorkflowRun()` instead of `useSession()`.
    *
    * Declaring it is not decoration. `createRuntimeServer` refuses the voice surfaces

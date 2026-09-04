@@ -40,7 +40,7 @@ export interface PipelineTransportOptions {
   llm: LanguageModel;
   /** TTS opener (resolved from a TtsProvider descriptor). */
   tts: TtsOpener;
-  /** Transport-level callbacks into SessionCore. */
+  /** Transport-level callbacks into ServerSession. */
   callbacks: TransportCallbacks;
   /** Session config: systemPrompt, greeting, tools, history. */
   sessionConfig: TransportSessionConfig;

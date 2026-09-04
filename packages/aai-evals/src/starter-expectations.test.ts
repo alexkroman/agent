@@ -195,7 +195,7 @@ describe("reading a built agent", () => {
     const complete = {
       "agent.ts": "export default workflowApp({ name: 'W' })",
       "workflows/main.ts": "export default async function run() {}",
-      "client.tsx": "export default page(() => null)",
+      "client.tsx": "export default mountPage(() => null)",
     };
 
     test("all four pieces present is the passing shape", () => {
@@ -216,8 +216,8 @@ describe("reading a built agent", () => {
         { "agent.ts": complete["agent.ts"], "workflows/main.ts": "x" },
       ],
       [
-        "client.tsx does not mount with page()",
-        { ...complete, "client.tsx": "export default client(() => null)" },
+        "client.tsx does not mount with mountPage()",
+        { ...complete, "client.tsx": "export default mountClient(() => null)" },
       ],
     ])("names the missing piece: %s", (problem, files) => {
       const result = checkWorkflowShape(files);

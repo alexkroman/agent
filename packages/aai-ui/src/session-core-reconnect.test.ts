@@ -18,8 +18,8 @@ import {
   installAudioMocks,
 } from "./_react-test-utils.ts";
 import { MockWebSocket, makeConfig, resetLastSocket } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import { createBrowserSession } from "./session-core.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 
 /** Every socket partysocket constructed, in order. */
 let created: MockWebSocket[] = [];
@@ -49,14 +49,14 @@ async function waitForNextSocket(prevCount: number): Promise<MockWebSocket> {
 }
 
 describe("session-core automatic reconnection (partysocket)", () => {
-  let core: SessionCore;
+  let core: BrowserSession;
 
   beforeEach(() => {
     vi.useFakeTimers();
     resetLastSocket();
     created = [];
     vi.stubGlobal("WebSocket", TrackingWebSocket);
-    core = createSessionCore({ platformUrl: "ws://localhost:3000" });
+    core = createBrowserSession({ platformUrl: "ws://localhost:3000" });
   });
 
   afterEach(() => {
@@ -269,7 +269,7 @@ describe("session-core automatic reconnection (partysocket)", () => {
 // live indicator the UI paints for "listening" — and stayed there forever,
 // with no mic (no `config` means no initAudioCapture), no error and no retry.
 describe("session-core handshake deadline", () => {
-  let core: SessionCore;
+  let core: BrowserSession;
   let audio: ReturnType<typeof installAudioMocks>;
 
   beforeEach(() => {
@@ -281,7 +281,7 @@ describe("session-core handshake deadline", () => {
     // reason that has nothing to do with the handshake.
     audio = installAudioMocks();
     vi.stubGlobal("WebSocket", TrackingWebSocket);
-    core = createSessionCore({ platformUrl: "ws://localhost:3000" });
+    core = createBrowserSession({ platformUrl: "ws://localhost:3000" });
   });
 
   afterEach(() => {

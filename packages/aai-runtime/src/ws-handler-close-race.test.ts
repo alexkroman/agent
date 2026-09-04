@@ -6,7 +6,7 @@ import { createOwnedMap } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeMockCore, silentLogger, tick } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 describe("wireSessionSocket — close during start()", () => {
@@ -14,7 +14,7 @@ describe("wireSessionSocket — close during start()", () => {
     const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
-    const sessions = createOwnedMap<string, SessionCore>();
+    const sessions = createOwnedMap<string, ServerSession>();
 
     wireSessionSocket(ws, {
       sessions,
@@ -45,7 +45,7 @@ describe("wireSessionSocket — close during start()", () => {
     const onSessionEnd = vi.fn();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap<string, SessionCore>(),
+      sessions: createOwnedMap<string, ServerSession>(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -66,7 +66,7 @@ describe("wireSessionSocket — close during start()", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap<string, SessionCore>(),
+      sessions: createOwnedMap<string, ServerSession>(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * FUZZ HARNESS: randomized interleavings of server frames, client
- * control calls, and socket lifecycle events against `createSessionCore`,
+ * control calls, and socket lifecycle events against `createBrowserSession`,
  * checking snapshot invariants after every step.
  *
  * Driven by fast-check over a generated op script, so a failure shrinks to the
@@ -23,16 +23,16 @@ import {
   makeConfig,
   recordingWebSocketClass,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
+import { createBrowserSession } from "./session-core.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
-import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, SessionSnapshot } from "./session-core-types.ts";
 
 function noop(): void {
   /* expected console output */
 }
 
 type Ctx = {
-  core: SessionCore;
+  core: BrowserSession;
   socket: () => MockWebSocket | null;
   log: string[];
 };
@@ -392,7 +392,7 @@ describe("fuzz: session-core interleavings", () => {
       socket = s;
     });
 
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     const log: string[] = [];
     const ctx: Ctx = { core, socket: () => socket, log };
 

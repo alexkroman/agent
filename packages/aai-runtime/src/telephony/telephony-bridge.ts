@@ -3,7 +3,7 @@
  * A phone call, presented to the runtime as an ordinary session socket.
  *
  * **The session stack is not changed by telephony, and that is the design.**
- * `SessionCore` talks to a `ClientSink`, `wireSessionSocket` talks to a
+ * `ServerSession` talks to a `ClientSink`, `wireSessionSocket` talks to a
  * `SessionWebSocket`, and neither knows what is on the far end. So a
  * carrier's media stream does not need a second session implementation, a
  * second pacer, or a second lifecycle — it needs a socket-shaped adapter that

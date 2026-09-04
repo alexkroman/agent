@@ -12,7 +12,7 @@
  */
 
 export type {
-  SessionCore,
+  ServerSession,
   SessionEventPage,
   SessionEventStream,
   SessionWebSocket,

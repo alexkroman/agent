@@ -365,7 +365,7 @@ Every agent gets a voice UI for free. Add a `client.tsx` and you get the
 same shell with your own panel, or the whole page:
 
 ```tsx
-import { client, useAgentState } from "@alexkroman1/aai-ui";
+import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 
 type CartView = { items: string[]; total: string };
@@ -386,7 +386,7 @@ function CartPanel() {
   );
 }
 
-client({ sidebar: CartPanel });
+mountClient({ sidebar: CartPanel });
 ```
 
 `useSession()` exposes connection state and the transcript,
@@ -394,7 +394,7 @@ client({ sidebar: CartPanel });
 (a live caption is a beat late if you collapse them), `useToolResult(name,
 cb)` renders a card per tool call, and `useEvent(name, cb)` receives whatever
 a tool pushed with `ctx.send`. For a non-React client,
-`createSessionCore()` is the same session as a plain store.
+`createBrowserSession()` is the same session as a plain store.
 
 ## Test it like code
 

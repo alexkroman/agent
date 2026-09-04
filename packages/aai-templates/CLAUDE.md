@@ -204,7 +204,7 @@ once, and the templates are now their reference use:
 | `procedure()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
 | `subagent()` + `ctx.delegate` | `briefing-desk` ONLY, and it exists for this: two subagents with different tool surfaces, models and budgets, angles fanned out with `Promise.allSettled`, `stubDelegate` driving its spec. Argued in `packages/aai-runtime/CLAUDE.md`, "Subagents" — this guide is at its cap |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-workflow` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `recap-workflow` is the same shape with `cancel` and a live-run check on top |
-| `page()` + `useWorkflowSubmit` | `link-digest` — the WORKFLOW APP whose FORM is still hand-written and its own `useState`, which is the point of it and what its module doc now says specifically. **`useWorkflowRun` is exercised by no template at all** since `link-digest` and `podcast-digest` moved to `useWorkflowSubmit`; it is an allowlist entry, and see "The last remover pays" below |
+| `mountPage()` + `useWorkflowSubmit` | `link-digest` — the WORKFLOW APP whose FORM is still hand-written and its own `useState`, which is the point of it and what its module doc now says specifically. **`useWorkflowRun` is exercised by no template at all** since `link-digest` and `podcast-digest` moved to `useWorkflowSubmit`; it is an allowlist entry, and see "The last remover pays" below |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-workflow` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
 | `TextAreaField` beside `<WorkflowFields>` | `redline` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
 | `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-workflow` and `link-digest` for the HTTP classification each had hand-written identically, `research-workflow`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-workflow` for the two `catch`-block fatals, `recap-workflow` for both halves of a provider call it also polls, `podcast-digest` for `sendToChannelOrFail` (the 4xx `FatalError` its Slack step used to raise by hand, from a body it had read itself) |
@@ -1259,7 +1259,7 @@ that separates both of these from `research-workflow`.** That one is a voice age
 that HANDS OFF to a run (a caller is on the line, so a tool starts one and
 answers the turn); `link-digest` and `transcription-workflow` are declared with
 `workflowApp()` and the workflow IS the product — no `stt`/`llm`/`tts`, no
-tools, and a `client.tsx` that mounts with `page()` rather than `client()`.
+tools, and a `client.tsx` that mounts with `mountPage()` rather than `mountClient()`.
 Those fields are not merely omitted there: `StaticAgentParams` refuses them, so
 a `systemPrompt` addressed to a model that never runs — which `link-digest`
 shipped — no longer type-checks.
@@ -1288,12 +1288,12 @@ declares no providers and so nothing else in its config names a credential.
 
 **`template-page-mount.test.ts` correlates BOTH ends of the front door with the
 agent that declares it** — the helper (`agent()` vs `workflowApp()`) and the
-mount (`client()` vs `page()`). konsistent asserts only what every template
+mount (`mountClient()` vs `mountPage()`). konsistent asserts only what every template
 shares (a default export from `agent.ts`, the stylesheet import in
 `client.tsx`): its predicates are "must import X" with no "one of", and no way
 to read a value out of a SIBLING file to decide which — and a rule that merely
 accepted either would pass the exact mistake worth catching, since a static
-agent mounted with `client()` renders fine and then opens a `/websocket` the
+agent mounted with `mountClient()` renders fine and then opens a `/websocket` the
 server declines. `agent-default-export` used to require an `agent` import for
 that reason and no longer can, the workflow-app templates calling `workflowApp`
 instead.

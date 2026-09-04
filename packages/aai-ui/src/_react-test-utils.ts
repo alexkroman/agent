@@ -8,19 +8,19 @@
 import { act } from "react";
 import { vi } from "vitest";
 import { CLEARED_SESSION_STATE } from "./session-core-messages.ts";
-import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, SessionSnapshot } from "./session-core-types.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /**
- * Create a mock SessionCore for React component tests.
+ * Create a mock BrowserSession for React component tests.
  *
- * Returns a `SessionCore`-compatible object with mutable snapshot. Call
+ * Returns a `BrowserSession`-compatible object with mutable snapshot. Call
  * `core.update(partial)` to mutate the snapshot and notify subscribers,
  * triggering React re-renders.
  */
 export function createMockSessionCore(
   overrides?: Partial<SessionSnapshot>,
-): SessionCore & { update(partial: Partial<SessionSnapshot>): void } {
+): BrowserSession & { update(partial: Partial<SessionSnapshot>): void } {
   let snapshot: SessionSnapshot = {
     state: "disconnected",
     contentVersion: 0,
@@ -41,7 +41,7 @@ export function createMockSessionCore(
     for (const sub of subscribers) sub();
   }
 
-  const core: SessionCore & { update(partial: Partial<SessionSnapshot>): void } = {
+  const core: BrowserSession & { update(partial: Partial<SessionSnapshot>): void } = {
     getSnapshot() {
       return snapshot;
     },

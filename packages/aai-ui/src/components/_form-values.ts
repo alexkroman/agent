@@ -10,7 +10,7 @@
  * See `form.tsx`'s module doc for why the values come off the DOM at all.
  */
 
-import type { FileRead, FileValue, FormValues } from "./form-types.ts";
+import type { FileReadMode, FileValue, FormValues } from "./form-types.ts";
 
 /**
  * Read one `<form>`'s named controls into a plain object.
@@ -96,18 +96,18 @@ async function readInput(input: HTMLInputElement, values: FormValues): Promise<v
  * the bytes is the upload request `useWorkflowSubmit` makes — which streams the
  * same `File` object straight to the agent.
  */
-function readFiles(files: readonly File[], read: FileRead): Promise<(File | FileValue)[]> {
+function readFiles(files: readonly File[], read: FileReadMode): Promise<(File | FileValue)[]> {
   if (read === "upload") return Promise.resolve([...files]);
   return Promise.all(files.map((file) => describeFile(file, read)));
 }
 
-/** The `data-aai-read` attribute as a {@link FileRead}, defaulting to `"none"`. */
-function readMode(raw: string | undefined): FileRead {
+/** The `data-aai-read` attribute as a {@link FileReadMode}, defaulting to `"none"`. */
+function readMode(raw: string | undefined): FileReadMode {
   return raw === "text" || raw === "dataUrl" || raw === "upload" ? raw : "none";
 }
 
 /** One chosen file as a {@link FileValue}. */
-async function describeFile(file: File, read: FileRead): Promise<FileValue> {
+async function describeFile(file: File, read: FileReadMode): Promise<FileValue> {
   const described: FileValue = {
     name: file.name,
     size: file.size,

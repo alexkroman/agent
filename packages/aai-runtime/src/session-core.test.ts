@@ -4,7 +4,7 @@ import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { makeAgentConfig, makeCore, makeSink } from "./_session-core-harness.ts";
 import { flush, makeEmitter, makeLogger } from "./_test-utils.ts";
-import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createSessionCore, type ServerSession } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
 
 describe("createSessionCore — lifecycle", () => {
@@ -415,20 +415,20 @@ describe("createSessionCore — idle timeout", () => {
   // the signal — and a client cannot fake it: to make STT report speech it
   // has to send audio that really contains some.
   test.each([
-    ["speech the transport detected", (c: SessionCore) => c.report({ type: "speech.started" })],
+    ["speech the transport detected", (c: ServerSession) => c.report({ type: "speech.started" })],
     [
       "an interim user transcript",
-      (c: SessionCore) => c.report({ type: "user-transcript.updated", text: "hel" }),
+      (c: ServerSession) => c.report({ type: "user-transcript.updated", text: "hel" }),
     ],
     [
       "a committed user turn",
-      (c: SessionCore) => c.report({ type: "user-transcript.committed", text: "hello" }),
+      (c: ServerSession) => c.report({ type: "user-transcript.committed", text: "hello" }),
     ],
-    ["the agent replying", (c: SessionCore) => c.onReplyStarted("r1")],
-    ["agent audio", (c: SessionCore) => c.onAudioChunk(new Uint8Array([1]))],
+    ["the agent replying", (c: ServerSession) => c.onReplyStarted("r1")],
+    ["agent audio", (c: ServerSession) => c.onAudioChunk(new Uint8Array([1]))],
     [
       "a tool call",
-      (c: SessionCore) =>
+      (c: ServerSession) =>
         c.report({ type: "tool.called", toolCallId: "c1", toolName: "t", args: {} }),
     ],
   ])("%s resets the idle timer", async (_label, act) => {

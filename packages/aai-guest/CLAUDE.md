@@ -482,7 +482,7 @@ per-agent configuration — the platform route above is only what points a carri
 at it.
 
 **Nothing in the session stack knows about telephony, and that is the whole
-design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
+design.** `ServerSession` talks to a `ClientSink`; `wireSessionSocket` talks to
 a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
 (`createTelephonyBridge`) that speaks the client protocol on one side and the
 carrier's JSON framing on the other, handed straight to

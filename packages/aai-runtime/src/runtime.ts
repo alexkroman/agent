@@ -32,7 +32,7 @@ import {
   usesAssemblyS2s,
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
-import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createSessionCore, type ServerSession } from "./session-core.ts";
 import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
 import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
 import { platformGuestOptions } from "./workflow-platform-world.ts";
@@ -160,7 +160,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // same session id re-claims the key while the old session's stop() drains,
   // and release-by-claim is what keeps that drain from evicting the
   // successor's entry (see sdk/owned-map.ts).
-  const sessions = createOwnedMap<string, SessionCore>();
+  const sessions = createOwnedMap<string, ServerSession>();
   const sinkMap = createOwnedMap<string, ClientSink>();
   // What `ctx.send` and a `syncState` push resolve through, for the same resume
   // reason as the sink map beside it — see `liveEmitter` in `runtime-tools.ts`.
@@ -263,7 +263,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     return promptCache.text;
   }
 
-  function createSession(sessionOpts: TransportSessionOpts): SessionCore {
+  function createSession(sessionOpts: TransportSessionOpts): ServerSession {
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
     sessionState.sweeps.cancel(sessionOpts.id);
@@ -306,10 +306,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     const isRelay = Boolean(opts.onToolResult);
     const systemPrompt = systemPromptForToday();
 
-    // Late-bound reference: callbacks are constructed before SessionCore exists,
+    // Late-bound reference: callbacks are constructed before ServerSession exists,
     // so we capture a reference and fill it in below.
-    let core: SessionCore | null = null;
-    function bindCore(): SessionCore {
+    let core: ServerSession | null = null;
+    function bindCore(): ServerSession {
       // An invariant rather than a validation: `core` is this closure's own
       // local, filled in below and readable by nobody else, so a null here is a
       // mis-ordering in THIS function and never anything a caller did.
