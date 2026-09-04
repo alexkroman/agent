@@ -3,7 +3,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=26 <27"
+    "node": ">=24 <27"
   },
   "scripts": {
     "aai": "node packages/aai-cli/cli.ts",
