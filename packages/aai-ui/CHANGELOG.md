@@ -1,5 +1,47 @@
 # @alexkroman1/aai-ui
 
+## 14.0.0
+
+### Major Changes
+
+- 292ae33: useToolResult defaults its result to `unknown` rather than `any`, and useToolCallStart takes a type parameter for the tool's args. The result type is inferred at `tool()` and this hook is the one place a client reads it, so an `any` default discarded the inference exactly where it was wanted; the start hook had no type parameter at all, so args could not be checked even by a client that knew the shape.
+
+### Minor Changes
+
+- 79e3ea6: Publish seven more seams the templates had each re-derived: `formatMoney` (`@alexkroman1/aai/utils`), `ffmpegBaseArgs` (`/ffmpeg`), `routeStepFetch` (`/testing`), and `Session.restart()`, `WorkflowSubmission.startedHere`, `<BulletList>` and `<Facts>` (`@alexkroman1/aai-ui`).
+  
+  Two are behaviour fixes rather than de-duplication. `Controls`' "New Conversation" button called `reset()`, which reconnects carrying the same session id — so on any agent with a `sessionSlot` the caller got a blank transcript in front of their old state; it calls `restart()` now. And `transcodeToWav` did not pass `-nostats`, so ffmpeg's progress output could evict the error explaining a failure out of the captured stderr tail.
+  
+  `startedHere` is the fact only the hook can know — six pages kept a `useState(false)` beside it, set in their own `onSubmit` and mirrored in their `onClear`, to tell a run this page started from one the mount-time lookup adopted after a reload.
+  
+  The published stylesheet now honours `prefers-reduced-motion: reduce`, which appeared nowhere in the repository before: roughly nineteen infinite animations ship in an aai app, and the universal selector is the only thing that reaches the keyframes a template declares in its own `<style>` block.
+- 79e3ea6: Publish the four seams a custom chrome kept rebuilding.
+  
+  `useSessionActions()` is `useSessionCore` narrowed to the eight control methods, with no snapshot subscription. `<Controls>` and `<StartScreen>` pair a one-field selector with the core; a template could not, so four components across three templates held a WHOLE-SNAPSHOT `useSession()` purely to reach `start`/`toggle` — and the snapshot object is rebuilt on every change, so those rows re-rendered on every STT partial. `Session` is now `SessionSnapshot & SessionActions`, so the member list is one list.
+  
+  `useSessionStatus()` / `useSessionError()` are the only two snapshot fields more than one chrome ever selects, written inline eight times — including in `ConsoleShell`'s own `@example`, which taught the inline form. Their selectors are module scope, because `useSyncExternalStoreWithSelector` keys its selection memo on the selector.
+  
+  `<SessionErrorBanner>` is the announced `role="alert"` banner without the frame around it, composed into `ConsoleShell` (which therefore no longer takes an `error` prop — the one breaking edge here, and the migration is to delete that prop, since the shell renders the banner itself) so a full-bleed chrome can take the announced-error decision on its own. The three hand-rolled copies had already drifted, one of them dropping `error.code`.
+  
+  `AGENT_STATE_LABELS` is the `Record<AgentState, string>` four pages spelled as a ternary chain, so a new state is a compile error rather than a silent fall-through to whichever word each chain ended on.
+  
+  The three custom chromes that had each rebuilt these — `retail`, `dispatch-center` and `infocom-adventure` — now take them: no whole-snapshot `useSession()` left in any of the three, and `infocom-adventure`'s banner reports the error code it had dropped.
+
+### Patch Changes
+
+- a1a4e1e: Refresh the aai-ui README as an end-to-end UI integration walkthrough: one labelled file per step (agent, tool, tool-result component, client), a compiling workflow-app example, and a corrected export tour.
+- 79e3ea6: Cut duplication and wasted render work in the browser client: one guarded web-storage helper behind the three stores, a shared submission scaffold for the two workflow form hooks, coalesced upload progress reports, and lazy tool-call result formatting.
+- Updated dependencies [b5beca2]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [292ae33]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [a9c1577]
+- Updated dependencies [ef096bb]
+  - @alexkroman1/aai@14.0.0
+
 ## 13.3.0
 
 ### Minor Changes

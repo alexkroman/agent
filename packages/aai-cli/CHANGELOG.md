@@ -1,5 +1,35 @@
 # @alexkroman1/aai-cli
 
+## 14.0.0
+
+### Patch Changes
+
+- 79e3ea6: Collapse duplicated seams in the CLI: one command-tree walk behind both pre-parse guards, shared trailing-slash/capped-list/comparator/pluralization helpers, the platform arg group, and a resolve-once target for polling commands.
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [b5beca2]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [a9c1577]
+- Updated dependencies [a1a4e1e]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [1a093ea]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [5fc40e3]
+- Updated dependencies [a9c1577]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [ef096bb]
+  - @alexkroman1/aai-runtime@14.0.0
+  - @alexkroman1/aai@14.0.0
+  - @alexkroman1/aai-ui@14.0.0
+
 ## 13.3.0
 
 ### Patch Changes

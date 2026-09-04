@@ -1,5 +1,88 @@
 # @alexkroman1/aai-server
 
+## 5.3.0
+
+### Minor Changes
+
+- a9c1577: Export OTLP spans, off unless an operator sets `OTEL_EXPORTER_OTLP_ENDPOINT`
+  (or the traces-specific one).
+  
+  The platform exports one server span per HTTP request, adopting the
+  `traceparent` a guest already sends so the trace id on a span is the same id
+  `withReserved` puts on its log lines. The guest bridges the AI SDK's own
+  telemetry — `registerTelemetry`, not hand-instrumented spans — into the same
+  exporter, covering model calls, steps and tool executions for both the voice
+  pipeline and the studio coding agent.
+  
+  Guest spans carry METADATA ONLY: latency, token counts, model id, step number,
+  tool names, finish reason, outcome. Prompts, completions, transcripts, tool
+  arguments and tool results are never recorded, and there is no switch that
+  records them — attributes are built from an allow-list, so content is absent
+  because no code path reads it.
+  
+  With no collector configured nothing is constructed on either side: no
+  exporter, no provider, no processor, no timer, and in the guest the OTel module
+  graph is never imported (measured: 0.1 ms unconfigured against ~390 ms to stand
+  the exporter up).
+
+### Patch Changes
+
+- b5beca2: Track the SDK export renames through the platform.
+  
+  The API naming review renamed 63 SDK exports, and platform source consumes them: the guest harness, the sandbox and upload paths in aai-server, and the studio prompts in aai-studio-server all name renamed symbols. Two of the edits are load-bearing rather than cosmetic — `store-conformance.ts`'s registered factory names are asserted to resolve to real exports, and the studio prompt text tells the coding agent which functions to write.
+  
+  Naming a carrier deliberately, so the platform ships with the SDK release rather than lagging it: an SDK-only changeset would bump the carriers as dependents, which the deploy-changeset gate treats as not enough.
+- 5fc40e3: Cut three sources of durable-workflow latency, and make a run's journal RPCs
+  readable in production logs.
+  
+  - **A run that settles in this process wakes its watchers immediately.** The
+    synchronous `wait=`, the SSE stream and the notify watcher discovered a
+    finished run on their own timer, so a run that completed here was reported up
+    to a full poll interval later. The engine now signals the shared reads, which
+    brings their next journal READ forward — no snapshot is pushed and nothing is
+    resolved from it, so a run walked by another replica is unaffected.
+  - **A sleep shorter than the queue's poll interval no longer costs a whole
+    one.** A short park is announced, and the pass it wakes reads the deadline out
+    of the queue and arms one extra look at it — which is how "due at T" gets
+    expressed without giving the notification a payload. A long park still
+    announces nothing.
+  - **The journal method rides the path** (`/:slug/workflow-journal/<method>`), so
+    a per-request log line decomposes per operation at zero added volume. The
+    method is still sent in the body and the bare route still answers it, because
+    a deployed agent bundle carries its own copy of the runtime.
+- 79e3ea6: Guest harness cleanup: one JSON responder, one glob matcher, one child-env picker; drop the TOOL_TIMEOUT_MS mirror and dead turn-budget/connect state; parallelize template reads and dedupe export hints.
+- 79e3ea6: Drop the platform DB budget's dead DevKit-world terms, delete the callerless interval sweep, and route AssemblyAI key-verification failures through the shared 503 taxonomy.
+  
+  `platformDbConnectionsPerReplica` still counted a `pg.Pool` of 4 plus a dedicated `LISTEN` client for the DevKit's Postgres world — 5 per replica, 15 of the fleet budget — for something that opens no connection at all: the replay engine replaced that world with HTTP clients, and neither aai-server nor aai-runtime depends on `pg`, `graphile-worker` or `world-postgres`. `MAX_PLATFORM_DB_CONNECTIONS` is 15, so `platform-db-capacity.ts` stops subtracting 15 from the headroom it reports at boot.
+  
+  Also: `_interval-sweep.ts` had no production caller (the queue scheduler needs overlapping ticks, the one policy it cannot express) and is deleted with its spec; the AssemblyAI verifier now throws `PlatformServiceUnavailableError` instead of a bespoke `HTTPException(503)`, so the platform's third HTTP dependency reaches `createErrorHandler`'s single 503 branch and logs the `service` field an operator routes on; `WorkspaceConflictError` is classified 409 at the boundary rather than only by three `instanceof` chains in aai-studio-server; the gzip middleware stops making a second full copy of an inflated deploy body; and the public-origin middleware is registered only in local dev, where it is the only place it can assign.
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [b5beca2]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [a9c1577]
+- Updated dependencies [a1a4e1e]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [1a093ea]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [5fc40e3]
+- Updated dependencies [a9c1577]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [ef096bb]
+  - @alexkroman1/aai-runtime@14.0.0
+  - @alexkroman1/aai@14.0.0
+  - @alexkroman1/aai-ui@14.0.0
+  - aai-guest@0.6.0
+
 ## 5.2.0
 
 ### Minor Changes

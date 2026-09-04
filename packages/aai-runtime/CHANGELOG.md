@@ -1,5 +1,57 @@
 # @alexkroman1/aai-runtime
 
+## 14.0.0
+
+### Minor Changes
+
+- a9c1577: Bound what a pipeline step SENDS the model by tokens rather than by message count. A `prepareStep` preparer trims the request to the model's advertised context window less an explicit 25% reserve for the system prompt, the tool declarations and the reply, calibrating its estimate against each completed step's reported `usage.inputTokens`; conversation history itself is untouched, so the client replay, resume and `ctx.messages` still see everything and `DEFAULT_MAX_HISTORY` stays as the guard on unbounded growth. Tool-call/result pairs trim together, and a model whose context window this SDK does not know is left entirely alone rather than trimmed against a guessed window.
+- a9c1577: `parseTraceparent` keeps the caller's span id and flags beside the trace id
+  `traceIdOf` already answered, and is published on
+  `@alexkroman1/aai-runtime/internal`. One parser, so a log line and an exported
+  span can never name two different traces for one request.
+
+### Patch Changes
+
+- 292ae33: createAgentServer answers HEAD /health (the verb a load-balancer check sends by default, which fell through to a 404) and logs a Serving line naming the routes it mounts. The scaffold's server.mjs now reports a boot configuration failure — a missing provider key, an unreachable DATABASE_URL, a port in use — as a message plus the fix and a non-zero exit, instead of a traceback into bundled dist internals, and warns that a databaseless deployment needs sticky sessions behind a load balancer.
+- 79e3ea6: Cut duplicated logic and wasted work across the host runtime.
+  
+  Seven near-copies collapsed onto the helper that already owned each rule: `publicWebhookUrl` composes its URL through `workflowWebhookUrl` (base, prefix and token encoding are three independently-wrong-able parts, and a webhook URL that does not match the path parsing it 404s weeks later on somebody else's server); the five spellings of "a descriptor's `apiKeyEnv` beats the registry default" become one `envVarOf`, the omission of which had already made a preflight demand a variable the session does not read; three cycle-safe `cause` walks in the error classifier become one, where the file's own doc claimed there was already only one; and `safeJsonParse`, `errorMessage`, `pushCapped`, `codeUnit` and `shell.streamError` replace hand-rolled copies. Seven separate silent `Logger` objects become one `silentLogger` beside `consoleLogger` — placed there rather than in the test utils because the fuzz harnesses are compiled by the declaration build and may not import a vitest-backed module.
+  
+  Wasted work removed on four hot paths: the telephony bridge scans a session frame before parsing it (it acts on four event types out of the ~50 a turn emits, and the transcript frames it discards are the largest on the wire); the OpenAI SSE repair transform encodes and enqueues once per network chunk instead of once per line, on the time-to-first-token path of every turn; gateway tool schemas are pruned once per schema object instead of once per LLM request; and two regexes that were being allocated once per CHARACTER — on every STT partial, and on every barge-in alignment — are hoisted to module scope. A brokered blob read now cancels the response body on 404/416, which was leaving a pooled connection unusable until GC.
+  
+  Also: the telephony bridge's PCM16-to-bytes view goes through `pcm16ToBytes`, restoring the endianness check that module exists to own; two harness outcome types are derived from `JournalOutcome` rather than re-declaring its six fields, so widening the shared reader cannot leave a property law silently unable to see the new one; a write-only step accumulator, two dead eval symbols and a dead fuzz type are deleted; and three doc blocks that described deleted mechanisms are corrected.
+- 1a093ea: Document how to build a server in the aai-runtime README: the three shapes from examples/ (self-hosted single agent via createAgentServer + withToolsDir, multi-tenant createHostServer, and embedding via createRuntime), each with a compiling example and links to the runnable example.
+- 5fc40e3: Cut three sources of durable-workflow latency, and make a run's journal RPCs
+  readable in production logs.
+  
+  - **A run that settles in this process wakes its watchers immediately.** The
+    synchronous `wait=`, the SSE stream and the notify watcher discovered a
+    finished run on their own timer, so a run that completed here was reported up
+    to a full poll interval later. The engine now signals the shared reads, which
+    brings their next journal READ forward — no snapshot is pushed and nothing is
+    resolved from it, so a run walked by another replica is unaffected.
+  - **A sleep shorter than the queue's poll interval no longer costs a whole
+    one.** A short park is announced, and the pass it wakes reads the deadline out
+    of the queue and arms one extra look at it — which is how "due at T" gets
+    expressed without giving the notification a payload. A long park still
+    announces nothing.
+  - **The journal method rides the path** (`/:slug/workflow-journal/<method>`), so
+    a per-request log line decomposes per operation at zero added volume. The
+    method is still sent in the body and the bare route still answers it, because
+    a deployed agent bundle carries its own copy of the runtime.
+- a9c1577: Generalize the gateway tool-schema prune into a provider-compat layer: the verified $schema/propertyNames removal still runs for every model, and a Gemini layer selected by model id additionally folds the constraints its function-calling subset cannot express (string formats and lengths, number bounds, array lengths, defaults) into the schema description rather than dropping them, and restates const, oneOf, type unions and tuples inside the subset.
+- 292ae33: ctx.generate now validates a schema call's reply against the caller's own schema. jsonSchema() only describes a shape to the provider and carries no validator, so a model reply that missed the schema was returned as GenerateObjectResult<T>.object typed as T and unchecked. A Standard Schema call now returns the PARSED value and throws naming the failing property; a plain JSON Schema call keeps working, with the reply's top-level type checked against the document's own.
+- Updated dependencies [b5beca2]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [292ae33]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [a9c1577]
+- Updated dependencies [ef096bb]
+  - @alexkroman1/aai@14.0.0
+
 ## 13.3.0
 
 ### Minor Changes
