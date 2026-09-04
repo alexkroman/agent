@@ -176,13 +176,29 @@ export function createPgPreviewQueue(sql: SqlExec): PreviewQueue {
 }
 
 /**
+ * The memory arm's shape: the CONTRACT, plus the one test seam.
+ *
+ * Declared rather than written inline as `PreviewQueue & { archived }` so the
+ * relationship is checked from both sides — `konsistent.json`'s
+ * `studio-store-arms` pins this interface as extending `PreviewQueue` and pins
+ * the factory as returning it, where an inline intersection is a shape no
+ * structural rule can read (konsistent matches the written annotation, so
+ * `PreviewQueue & { … }` is not `PreviewQueue`). The seam itself is real and
+ * stays: four specs and the concurrency fuzz harness read what the queue
+ * archived, and archiving is the one queue outcome that has no other
+ * observable — an acked job and an archived one both simply leave.
+ */
+export interface MemoryPreviewQueue extends PreviewQueue {
+  /** Jobs moved out of the queue for inspection instead of retried. */
+  readonly archived: ClaimedPreviewJob[];
+}
+
+/**
  * In-memory queue for local dev and tests — one process, so the visibility
  * timeout only has to model "a claimed job is not claimed twice", which it
  * does by timestamp exactly as pgmq does.
  */
-export function createMemoryPreviewQueue(
-  opts: { now?: () => number } = {},
-): PreviewQueue & { readonly archived: ClaimedPreviewJob[] } {
+export function createMemoryPreviewQueue(opts: { now?: () => number } = {}): MemoryPreviewQueue {
   const now = opts.now ?? (() => Date.now());
   type Row = { id: string; job: PreviewJob; visibleAt: number; reads: number };
   const rows = new Map<string, Row>();

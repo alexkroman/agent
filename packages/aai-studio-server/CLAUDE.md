@@ -1532,9 +1532,7 @@ down, like the file-length allowlist.
 - **One public origin**, now structurally rather than by proxying: both
   surfaces are served by one process on one hostname. This is what keeps the
   preview iframe working — agent pages are served `X-Frame-Options:
-  SAMEORIGIN`, so the studio must share their origin. Shared base middleware
-  lives in `app-middleware.ts` so the two apps can't drift on CORS/framing
-  policy.
+  SAMEORIGIN`, so the studio must share their origin.
 - **Never derive the public scheme from the request URL** — use
   `resolvePublicOrigin` (`aai-server/public-origin.ts`). Modal terminates TLS
   at its edge and forwards plain HTTP to the container (its ASGI proxy adds

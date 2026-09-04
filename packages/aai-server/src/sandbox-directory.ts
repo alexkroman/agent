@@ -121,16 +121,28 @@ export function studioSandboxName(scope: string, project: string): string {
 }
 
 /**
+ * The memory arm's shape: the CONTRACT, plus the one test seam.
+ *
+ * Declared rather than written inline as `SandboxDirectory & { setPeer }` for
+ * the reason `MemoryPreviewQueue` is (aai-studio-server): an inline
+ * intersection is a shape no structural rule can read, so `konsistent.json`'s
+ * `platform-store-arms` can pin this interface as extending `SandboxDirectory`
+ * and pin the factory as returning it, where the intersection would have had
+ * to be pinned by NAME alone.
+ */
+export interface MemorySandboxDirectory extends SandboxDirectory {
+  /** Test seam: pretend a peer replica is running this deploy. */
+  setPeer(slug: string, version: number, entry: RegisteredSandbox): void;
+}
+
+/**
  * Test-only directory: every lookup is a miss until a test injects a peer.
  *
  * Note that dev and the subprocess backend get NO directory at all
  * (service-config wires one only for the Modal backend) — a single process has
  * no peers, so there is nothing to look up.
  */
-export function createMemorySandboxDirectory(): SandboxDirectory & {
-  /** Test seam: pretend a peer replica is running this deploy. */
-  setPeer(slug: string, version: number, entry: RegisteredSandbox): void;
-} {
+export function createMemorySandboxDirectory(): MemorySandboxDirectory {
   const peers = new Map<string, RegisteredSandbox>();
   return {
     find: (slug, version) => Promise.resolve(peers.get(agentSandboxName(slug, version)) ?? null),

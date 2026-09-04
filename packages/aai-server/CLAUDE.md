@@ -658,11 +658,13 @@ what every platform pool connects as — carries no `rolconnlimit`.
 
   **And the admin pool bounds guest THROUGHPUT, not just connections.**
   `ADMIN_POOL_MAX` reads as a connection budget and is also a concurrency limit,
-  because the four guest-called platform routes — the workflow journal, the
-  queue, session state, upload records — each run their work on a RESERVATION
-  held for the whole request (`_platform-route.ts`'s `withReserved`). So it is
-  the number of guest platform calls a replica may have in flight AT ALL, and the
-  next one queues on `reserve()`.
+  because every guest-called platform route runs its work on a RESERVATION held
+  for the whole request. So it is the number of guest platform calls a replica
+  may have in flight AT ALL, and the next one queues on `reserve()`. WHICH
+  routes those are, and that each takes `withReserved` from
+  `_platform-route.ts` rather than reaching the pool itself, is
+  `konsistent.json`'s `guest-called-platform-routes` — the hand-kept list that
+  used to sit in this sentence said FOUR and there are five.
 
   At 4 that was reached by ONE run: a deployed transcription workflow sustained
   ~2 `POST /:slug/workflow-journal` a second at ~840 ms of server time each, on
@@ -1679,11 +1681,12 @@ with no database, which fails the file instead of skipping it.
 ### Every line goes through `logger.ts`
 
 `createLogger("<namespace>")` at module scope; nothing here writes to
-`console.*`, and `_debug-log.ts` is gone. Built on `aai/runtime`'s published
-`Logger` rather than a second interface — **that module's doc carries the
-rest**. A spec reaches for `captureLogs()` (`test-utils.ts`), which replaced 25
-`spyOn(console, …)` calls whose only job was keeping output quiet; assert THAT a
-line was written, not its wording.
+`console.*`, and `_debug-log.ts` is gone. **That module's doc carries the rest**,
+and that it is built on the SDK's published `Logger` rather than a second
+interface is `konsistent.json`'s `platform-logger`. A spec reaches for
+`captureLogs()` (`test-utils.ts`), which replaced 25 `spyOn(console, …)` calls
+whose only job was keeping output quiet; assert THAT a line was written, not its
+wording.
 
 ### An agent's own output — `GET /:slug/logs`
 

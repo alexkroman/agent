@@ -1205,6 +1205,349 @@
       "must": {
         "areBarrelFiles": true
       }
+    },
+    {
+      "name": "platform-store-arms",
+      "description": "Every store contract on the PLATFORM declares BOTH of its arms in one module, and each factory returns the interface the contract is. This is the root guide's \"each store factory returning the interface it implements\" house rule reaching the package that has the most of them: seven contracts here, and until now the only conventions of this shape were aai-runtime's three. What it buys is what it buys there — DISCOVERY. `store-conformance.ts`'s `STORE_CONTRACTS` names each pair by FACTORY NAME and `store-conformance-registry.test.ts` scans the repo's source for `createPg*`/`createMemory*` and refuses an unregistered pair, a registered name that does not exist, or a conformable contract not invoked from BOTH a unit and a scenario file. That guard matches on a NAME, so this rule is what keeps the names it scans for present in the modules that declare them: a rename now fails HERE, naming the file, rather than as a registry entry that silently stops matching. The RETURN TYPE is the half a name scan cannot reach, and it is the half that matters most for this family — the conformance table enumerates the arms and then runs ONE shared case list against each, so a factory that kept its name and returned a wider or narrower object would be discovered, registered, and exercised against a contract it does not implement. Naming the interface here is what makes the registry's claim — that both arms of a contract really are two implementations of one thing — true by construction rather than by the next reviewer noticing. Two shapes worth knowing before extending it. The pair's names are NOT derivable from the filename (`agent-store.ts` declares `createPgAgentRows`, `secret-store.ts` declares `createVaultSecretStore`, and the memory rate limiter is the unprefixed `createRateLimiter`), which is why this is a block per module rather than a filename grammar — the family is defined by \"something really runs on both arms\", never by a name. And an arm whose factory returned an inline INTERSECTION could not be checked for its type at all — konsistent matches the written annotation, so `SandboxDirectory & { setPeer }` is not `SandboxDirectory`. Two arms were written that way and both are FIXED rather than exempted: the memory sandbox directory here, and `MemoryPreviewQueue` over in `studio-store-arms`. Each is now a declared interface EXTENDING its contract, which this rule pins from both sides — the interface extends the contract, and the factory returns the interface. That is strictly stronger than the intersection was, because the relationship is written down where a reader and a gate can both see it, and the test seam each one exists for (inject a peer; read what was archived) is untouched. The sandbox directory is also the one contract here that `store-conformance.ts` cannot see at all: its arms are memory and MODAL rather than a `createPg*`/`createMemory*` pair, so the registry guard's name scan has never reached it and this is its only structural check.",
+      "paths": "packages/aai-server/src",
+      "must": [
+        {
+          "name": "workspace",
+          "for": {
+            "files": "workspace-store.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgWorkspaceStore",
+                "returnValueOfType": "WorkspaceStore"
+              },
+              {
+                "name": "createMemoryWorkspaceStore",
+                "returnValueOfType": "WorkspaceStore"
+              }
+            ]
+          }
+        },
+        {
+          "name": "chat",
+          "for": {
+            "files": "chat-store.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgChatStore",
+                "returnValueOfType": "ChatStore"
+              },
+              {
+                "name": "createMemoryChatStore",
+                "returnValueOfType": "ChatStore"
+              }
+            ]
+          }
+        },
+        {
+          "name": "agents",
+          "for": {
+            "files": "agent-store.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgAgentRows",
+                "returnValueOfType": "AgentRows"
+              },
+              {
+                "name": "createMemoryAgentRows",
+                "returnValueOfType": "AgentRows"
+              }
+            ]
+          }
+        },
+        {
+          "name": "secrets",
+          "for": {
+            "files": "secret-store.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createVaultSecretStore",
+                "returnValueOfType": "SecretStore"
+              },
+              {
+                "name": "createMemorySecretStore",
+                "returnValueOfType": "SecretStore"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rate-limit",
+          "for": {
+            "files": "rate-limit.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgRateLimiter",
+                "returnValueOfType": "RateLimiter"
+              },
+              {
+                "name": "createRateLimiter",
+                "returnValueOfType": "RateLimiter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "blob-storage",
+          "for": {
+            "files": "blob-storage.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createSupabaseBlobStorage",
+                "returnValueOfType": "BlobStorage"
+              },
+              {
+                "name": "createMemoryBlobStorage",
+                "returnValueOfType": "BlobStorage"
+              }
+            ]
+          }
+        },
+        {
+          "name": "upload-bytes",
+          "for": {
+            "files": "upload-bytes.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createSupabaseUploadBytes",
+                "returnValueOfType": "UploadBytes"
+              },
+              {
+                "name": "createMemoryUploadBytes",
+                "returnValueOfType": "UploadBytes"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sandbox-directory",
+          "for": {
+            "files": "sandbox-directory.ts"
+          },
+          "must": {
+            "exportInterfaces": [
+              {
+                "name": "MemorySandboxDirectory",
+                "extend": "SandboxDirectory"
+              }
+            ],
+            "exportFunctions": [
+              {
+                "name": "createMemorySandboxDirectory",
+                "returnValueOfType": "MemorySandboxDirectory"
+              }
+            ]
+          }
+        },
+        {
+          "name": "modal-sandbox-directory",
+          "for": {
+            "files": "modal-sandbox-directory.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createModalSandboxDirectory",
+                "returnValueOfType": "SandboxDirectory"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "studio-store-arms",
+      "description": "The studio surface's two store contracts, same rule and same argument as `platform-store-arms` beside it — they are a separate convention only because they are in a separate package, and they were the two the boundary hid: `STORE_CONTRACTS` lives in `aai-server` and names `createPgStudioSessionRegistry` / `createMemoryPreviewQueue` as strings, so the registry guard scans for factory names it cannot see the declarations of. Both contracts are cross-replica state whose two arms are not interchangeable in the way a cache's would be — the session registry is what makes a project's coding-agent sandbox ONE fleet-wide instead of one per replica, and the preview queue is pgmq in production against a Map in dev, i.e. a real visibility timeout against a modelled one — so a drift between arms shows up as a second sandbox billed, or a preview deploy delivered twice, on production only. The memory arm needed a code fix before this rule could state anything about its TYPE, and it got one rather than an exemption. It returned `PreviewQueue & { readonly archived: ClaimedPreviewJob[] }` — the intersection carrying the seam four specs and the concurrency fuzz harness read, archiving being the one queue outcome with no other observable — and konsistent matches the written annotation rather than resolving an intersection, so `returnValueOfType: \"PreviewQueue\"` failed on it (verified before the fix). That shape is now the declared `MemoryPreviewQueue extends PreviewQueue`, and this rule pins BOTH halves: the interface extends the contract, and the factory returns the interface. Nothing about the seam changed; what changed is that the arm's relationship to its contract is written down instead of inlined, which is the difference between a gate that can read it and one that has to take the name on trust. `platform-store-arms` carries the same fix for the memory sandbox directory.",
+      "paths": "packages/aai-studio-server/src",
+      "must": [
+        {
+          "name": "session-registry",
+          "for": {
+            "files": "studio-session-registry.ts"
+          },
+          "must": {
+            "exportFunctions": [
+              {
+                "name": "createPgStudioSessionRegistry",
+                "returnValueOfType": "StudioSessionRegistry"
+              },
+              {
+                "name": "createMemoryStudioSessionRegistry",
+                "returnValueOfType": "StudioSessionRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "preview-queue",
+          "for": {
+            "files": "studio-preview-queue.ts"
+          },
+          "must": {
+            "exportInterfaces": [
+              {
+                "name": "MemoryPreviewQueue",
+                "extend": "PreviewQueue"
+              }
+            ],
+            "exportFunctions": [
+              {
+                "name": "createPgPreviewQueue",
+                "returnValueOfType": "PreviewQueue"
+              },
+              {
+                "name": "createMemoryPreviewQueue",
+                "returnValueOfType": "MemoryPreviewQueue"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "guest-called-platform-routes",
+      "description": "The five routes a deployed GUEST calls the platform on — session state, upload records, the replay engine's journal, its correlation-key index, and an enqueue — and the two imports each of them owes. There is no filename grammar for this family and there must not be: what puts a route in it is WHO CALLS IT, so the paths are named one at a time, the same reason `guest-routes.ts` exists a file over. `PLATFORM_ROUTES` comes from `@alexkroman1/aai-runtime/internal` because the guest client that CALLS each route reads the same constant, and the dependency runs one way (aai-server imports the runtime; the runtime may not import the server), so the path is declared once on the guest's side and both ends read it. Spelled as a literal here instead, a rename is a two-package edit whose failure mode is a 404 the runtime reports as `answered HTTP 404` — a rejected `hydrate`, i.e. a failed session start, with nothing naming the path. `withReserved` and `guestSlug` from `./_platform-route.ts` are the other half: each of these routes runs its work on a RESERVATION held for the whole request, which is why `ADMIN_POOL_MAX` is a concurrency limit and not merely a connection budget, and `withReserved` is also the one place the taxonomy lives — it logs the wait and then `workMs` under one trace id, and it maps every plain `Error` to a retryable 503 that the guest's clients already read. A route reaching the admin pool without it would be a guest call the replica's in-flight bound cannot see and an error the guest cannot classify, and nothing about either is visible in a diff. Note the count: the platform guide said FOUR of these for as long as the paragraph existed, having been written before `workflow-keys` split off the journal, which is exactly the drift a hand-kept enumeration in prose has and a matched path list does not.",
+      "paths": [
+        "packages/aai-server/src/session-state-handler.ts",
+        "packages/aai-server/src/uploads-handler.ts",
+        "packages/aai-server/src/workflow-journal-handler.ts",
+        "packages/aai-server/src/workflow-keys-handler.ts",
+        "packages/aai-server/src/workflow-enqueue-handler.ts"
+      ],
+      "must": {
+        "import": [
+          {
+            "name": "PLATFORM_ROUTES",
+            "from": "@alexkroman1/aai-runtime/internal"
+          },
+          {
+            "name": "withReserved",
+            "from": "./_platform-route.ts"
+          },
+          {
+            "name": "guestSlug",
+            "from": "./_platform-route.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "platform-socket-handler",
+      "description": "The platform's end of the guest→platform WebSocket, and the three things it must not re-derive. `parsePlatformFrame` from `@alexkroman1/aai-runtime/internal` is the frame grammar: four frames declared ONCE, in `aai-runtime/platform-socket-frames.ts`, and parsed on both ends — two parsers of one wire is the bug, and a build that does not recognise a frame must DROP it rather than close, which is how a newer peer adds one without an outage on every guest. `PLATFORM_ROUTES` is a BOUNDARY rather than a validation: a frame's `route` is concatenated into a URL, so an unchecked `/../elsewhere/session-state` normalizes away from its own slug, and paths outside `/:slug` are not gated by the guest bearer at all. `guestBearerRefusal` from `./guest-bearer.ts` is the tenant gate, and importing it is the whole claim: it is the same policy every guest-called route runs, split out of `assertGuestBearer` precisely so the HANDSHAKE cannot check a credential differently from the rooms behind it. A socket that authenticated its upgrade by hand would be one credential check nobody compares against the five it stands in front of — and it holds a Modal input for the life of the guest, so getting it wrong is not one request's worth of exposure. Konsistent can say these three arrive from the modules that own them; it cannot say the frame loop dispatches under the slug the upgrade named, which is `platform-socket-handler.test.ts` against a real Hono app, or that the two ends are wired to each other at all, which only `platform-socket.scenario.test.ts` over a real port can see.",
+      "paths": "packages/aai-server/src/platform-socket-handler.ts",
+      "must": {
+        "import": [
+          {
+            "name": "parsePlatformFrame",
+            "from": "@alexkroman1/aai-runtime/internal"
+          },
+          {
+            "name": "PLATFORM_ROUTES",
+            "from": "@alexkroman1/aai-runtime/internal"
+          },
+          {
+            "name": "guestBearerRefusal",
+            "from": "./guest-bearer.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "platform-app-composition",
+      "description": "The two Hono apps composed into the one deployment must both take their base middleware from `app-middleware.ts`, and this is the rule that used to be a sentence in the studio guide: shared base middleware lives there SO THE TWO APPS CANNOT DRIFT on CORS and framing policy. The drift is not hypothetical and not symmetrical in cost — agent pages are served `X-Frame-Options: SAMEORIGIN`, which is what keeps the studio's preview iframe working at all, and both surfaces are same-origin by construction with cross-origin callers coming from `AAI_ALLOWED_ORIGINS` (unset meaning NONE). An app that composed its own middleware would answer one of those questions differently while every test on either side kept passing, because each app's specs exercise its own app. `addHealthRoute` and `bindFetchEnv` are in the list for the same reason rather than as decoration: `/health` is dispatched to the AGENT orchestrator by the studio entry (which is the only entry any deployment runs, `pnpm dev:aai-server` included), so the two must agree on what it is, and `bindFetchEnv` is what puts the per-request env on the context every downstream reader assumes is there. The names are checked without a source, deliberately: `orchestrator.ts` reaches them as `./app-middleware.ts` and `studio-app.ts` as the `aai-server/app-middleware` subpath — one of the 31 entries `platform-surface.test.ts` holds that map to — so pinning a specifier would break on the boundary rather than on the rule.",
+      "paths": [
+        "packages/aai-server/src/orchestrator.ts",
+        "packages/aai-studio-server/src/studio-app.ts"
+      ],
+      "must": {
+        "import": [
+          "applyPlatformMiddleware",
+          "addHealthRoute",
+          "bindFetchEnv"
+        ]
+      }
+    },
+    {
+      "name": "tracing-propagator-is-ours",
+      "description": "The traceparent propagator is OURS, deliberately, and this convention is both halves of that sentence. It is built on the runtime's own `parseTraceparent` (`@alexkroman1/aai-runtime/internal`) and it may not import `W3CTraceContextPropagator`. Two parsers of one header is the bug: ours pins version `00` and rejects all-zero ids, so a header the two read differently would put a DIFFERENT trace id on the span than on the log line — and a span that silently disagrees with the log it should join is worse than no span, because the disagreement is invisible from either side. One grammar, one parse. Reaching for the OTel package's own propagator is the specific mistake worth forbidding rather than a general third-party ban: it is the obvious thing to do, it is already in the dependency tree of everything else the tracing graph imports, and it would look like deleting a wheel we reinvented. The rest of what makes tracing safe here is not structural and stays in TRACING-CLAUDE.md — that spans carry NO conversation content because attributes are built from an allow-list of NAMES (`recordInputs` / `recordOutputs` are advisory fields passed through to the integration, not filters, and every AI SDK event carries the transcript regardless), and that the whole graph is behind a dynamic `import()` inside the configured branch, which konsistent does not see at all.",
+      "paths": "packages/aai-server/src/tracing-propagator.ts",
+      "must": {
+        "import": [
+          {
+            "name": "parseTraceparent",
+            "from": "@alexkroman1/aai-runtime/internal"
+          }
+        ]
+      },
+      "mustNot": {
+        "import": [
+          "W3CTraceContextPropagator"
+        ]
+      }
+    },
+    {
+      "name": "platform-logger",
+      "description": "This package's one way to write a log line, and the claim that it is not a SECOND interface. `createLogger` returns the `Logger` that `@alexkroman1/aai-runtime` publishes and that the runtime inside every guest already logs through, and the sink default is that package's own `consoleLogger`. A local interface here would mean the platform and the agents it hosts describe a log line two ways, and any future sink would have to satisfy both — so what this module is allowed to add is a NAMESPACE and a process-wide swap, and nothing else. The return type is the load-bearing predicate: a `createLogger` that kept its name and widened its result is how the second interface actually arrives, one convenience method at a time, and every one of this package's ~28 log sites is a module-level `const log = createLogger(…)` that would keep compiling. What konsistent CANNOT state is the other half of the section this came from — that nothing here writes to `console.*`. A `console.log` is a function call, not an import, so no structural predicate reaches it; it wants a `console\\.(log|warn|error)` line rule in `guard-invariants` over this package's source, and until then it rests on `captureLogs()` (`test-utils.ts`) being the only way a spec keeps output quiet.",
+      "paths": "packages/aai-server/src/logger.ts",
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "createLogger",
+            "returnValueOfType": "Logger"
+          }
+        ],
+        "importTypes": [
+          {
+            "name": "Logger",
+            "from": "@alexkroman1/aai-runtime"
+          }
+        ],
+        "import": [
+          {
+            "name": "consoleLogger",
+            "from": "@alexkroman1/aai-runtime/internal"
+          }
+        ]
+      }
+    },
+    {
+      "name": "guest-route-table",
+      "description": "`guest-routes.ts` declares the guest harness's surface twice over — `GUEST_ROUTES` (the paths) and `GUEST_ROUTE_EXPOSURE` (how the PLATFORM exposes each one) — and two thirds of the first table is IMPORTED rather than transcribed. This convention pins exactly that, and it is worth stating what it does and does not cover, because the guarantee is three mechanisms and only one of them is here. The IMPORTS are the structural half: ten of the routes are served by `@alexkroman1/aai-runtime` — six by `createRuntimeServer`, four by `handleWorkflowRequest` — and they arrive as `SERVER_ROUTES` and `WORKFLOW_CALLBACK_ROUTES`, so a rename there is a compile error here rather than a 404 a client reads as a dead sandbox and re-brokers against forever. Transcribing them instead would compile and pass every test. The two EXPORT names are pinned because the other two mechanisms read them: `guest-routes.test.ts` introspects the real orchestrator app to prove every `proxied` method is registered under `/:slug` and that no stale `direct-dial` sits beside a route that does forward, and `guard-invariants` rule 12 reads this tree and the guest's dispatch as TEXT — which is how it respects the boundary that aai-server may not import guest source, and also what makes it silent if either table is renamed out from under it. What is NOT expressible here is the completeness question the section exists for: whether `GUEST_ROUTES` still describes the guest. That list is transcribed by hand and cannot be derived, it has already drifted once (`GET /studio/tools` was a real guest route in neither table, and the `satisfies` cannot catch it — that compile error fires for a KEY with no exposure entry, never for a route nobody wrote down), and rule 12 plus the test are the answer. Konsistent holds the names those two depend on.",
+      "paths": "packages/aai-server/src/guest-routes.ts",
+      "must": {
+        "exportConstants": [
+          "GUEST_ROUTES",
+          "GUEST_ROUTE_EXPOSURE"
+        ],
+        "import": [
+          {
+            "name": "SERVER_ROUTES",
+            "from": "@alexkroman1/aai-runtime/internal"
+          },
+          {
+            "name": "WORKFLOW_CALLBACK_ROUTES",
+            "from": "@alexkroman1/aai-runtime/internal"
+          }
+        ]
+      }
     }
   ]
 }

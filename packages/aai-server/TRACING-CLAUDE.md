@@ -36,15 +36,6 @@ describe this as end-to-end tracing; it is not, yet.
 The platform RPC hop, the workflow journal and the STT/TTS sockets emit no
 spans of their own — only the HTTP span that contains them.
 
-## The propagator is ours, deliberately
-
-`tracing-propagator.ts` is built on the runtime's own `parseTraceparent`
-(`@alexkroman1/aai-runtime/internal`) rather than `W3CTraceContextPropagator`.
-Two parsers of one header is the bug: ours pins version `00` and rejects
-all-zero ids, so a header the two read differently would put a DIFFERENT trace
-id on the span than on the log line. A span that silently disagrees with the
-log it should join is worse than no span. One grammar, one parse.
-
 ## Spans carry NO conversation content, and the SDK will not do this for you
 
 `recordInputs` / `recordOutputs` exist in `ai@7` and are enabled by default —
