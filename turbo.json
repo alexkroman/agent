@@ -315,6 +315,13 @@
         // undeclared variable, so "a skip here is a failure" would be inert —
         // and this suite skips SILENTLY useful only if nobody relies on it.
         "AAI_REQUIRE_FFMPEG",
+        // Deno for `aai-cli/_deno-output.scenario.test.ts`, the only thing that
+        // proves an `aai build --target deno` directory boots under a real Deno.
+        // Declared for the same reason as the three above — strict env mode
+        // strips an undeclared variable before the task starts, so "a skip here
+        // is a failure" would be silently inert, which is precisely the state
+        // that suite shipped in.
+        "AAI_REQUIRE_DENO",
         "AAI_FAULT_PROFILE",
         "VITEST_PROFILE",
         "VITEST_INCLUDE",

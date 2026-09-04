@@ -53,16 +53,23 @@ export const DEFAULT_BUILD_TARGET: BuildTarget = "node";
  * rather than a single "am I in CI" test, because a GitHub Action building a
  * container image is CI too and wants the default.
  *
- * `DENO_DEPLOY` is Deno Deploy's documented "you are running here" variable.
+ * `DENO_DEPLOY` and `DENO_DEPLOYMENT_ID` are both Deno Deploy's "you are
+ * running here" variables, and BOTH are listed because either alone is half the
+ * signal. `std-env` — the library Nitro detects providers with — treats the
+ * pair as ONE test, and Nitro's own Deno preset reads `DENO_DEPLOYMENT_ID` for
+ * its build manifest; that is the longer-documented of the two, and it was the
+ * one missing here.
+ *
  * Two honest caveats, stated because a marker that never fires is dead config:
- * it is documented for the RUNTIME and this reads it at BUILD time, which is
- * unverified; and the ordinary Deno flow does not need it anyway, since
+ * they are documented for the RUNTIME and this reads them at BUILD time, which
+ * is unverified; and the ordinary Deno flow does not need either, since
  * `deno deploy` uploads a directory built on the developer's own machine. The
  * flag is the path that matters here — detection is the convenience.
  */
 export const TARGET_ENV_MARKERS: Readonly<Record<string, BuildTarget>> = {
   VERCEL: "vercel",
   DENO_DEPLOY: "deno",
+  DENO_DEPLOYMENT_ID: "deno",
 };
 
 export function isBuildTarget(value: string): value is BuildTarget {

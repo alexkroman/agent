@@ -177,6 +177,32 @@ precedent. The target is detected from the host's own build environment
 (`VERCEL`), so a git-push deploy configures nothing, and `node` — which emits
 nothing extra — is what every other build gets.
 
+**`--target deno` emits a SELF-CONTAINED directory**, and that is forced rather
+than chosen: handed an unbundled project, Deno Deploy caches the dependency
+graph of `@alexkroman1/aai-cli` — a build toolchain — and dies at its 1024 MiB
+limit before reaching any of our code. So `.aai/deno/` carries a bundled
+server, the built worker, the browser client and `.env.example`, with no install
+step. Detection reads BOTH `DENO_DEPLOY` and `DENO_DEPLOYMENT_ID`: `std-env`
+treats the pair as one test and Nitro's own Deno preset reads the second, so
+either alone is half the signal.
+
+**Its scenario suite needs a real `deno`, so CI pins one.**
+`_deno-output.scenario.test.ts`'s portability case copies the output to a
+SIBLING directory and boots it — copied to a CHILD it passed with the client
+removed, because module resolution walks UP and found the project's own
+`node_modules`, so the whole "no install step" claim was false while the test
+was green. Nothing installed Deno, so that case ALSO reported green on every CI
+leg through an `expect.soft(true, …)`: a skip spelled as a pass, over the one
+assertion the target rests on. It is `describeWithDeno` now
+(`aai/host/ffmpeg.scenario.test.ts`'s shape), and **`AAI_REQUIRE_DENO`** turns
+the skip into a hard failure — set by the `integration-and-scenario` job only
+after `deno --version` really answered, and declared in `check:scenario`'s
+`env` in `turbo.json` because strict env mode would otherwise strip it and the
+enforcement would be silently inert. Same shape as `AAI_REQUIRE_REGISTRY`
+below. The runtime version is pinned EXACT (2.9.5, what the target was verified
+against) rather than to a range: a moving runtime turns somebody else's
+regression into a red required check on unrelated pull requests.
+
 **`bin.mjs` is the bin in BOTH layouts** — the source checkout (where it loads
 `cli.ts`) and the published tarball (where only `dist/` ships, so it loads
 `dist/cli.mjs`); there is no `publishConfig.bin` override any more. One wrapper

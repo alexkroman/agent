@@ -15,7 +15,7 @@
  * `defaultClientDir()` on a `require.resolve` with nothing to answer it.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -28,12 +28,52 @@ import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 
 const run = promisify(execFile);
 
-/** Whether a `deno` binary is on PATH — the arm that needs one says so. */
-async function hasDeno(): Promise<boolean> {
-  return await run("deno", ["--version"]).then(
-    () => true,
-    () => false,
-  );
+/**
+ * Whether a `deno` binary is on PATH.
+ *
+ * `spawnSync` at module scope rather than an `await` inside the test, and that
+ * is the whole fix below: a probe awaited in a test BODY can only produce a
+ * pass or a fail, never a skip, so the gate has to be decided at COLLECTION
+ * time to be a gate at all.
+ */
+const HAVE_DENO = spawnSync("deno", ["--version"], { stdio: "ignore" }).status === 0;
+
+const HOW_TO =
+  "Install Deno (`brew install deno`, or `curl -fsSL https://deno.land/install.sh | sh`).\n" +
+  "CI's integration-and-scenario job pins one via denoland/setup-deno.";
+
+// Biome's `noSkippedTests` flags the `describe.skip(…)` CALL form, so the gated
+// suite references it instead — exactly as `aai/host/ffmpeg.scenario.test.ts`
+// and `_pg-test-utils.ts` do.
+const skipSuite = describe.skip;
+
+/**
+ * A suite that needs a real Deno — and whose skip ANNOUNCES itself.
+ *
+ * This replaced an `expect.soft(true, "deno not on PATH …")` inside the test
+ * body, which was a skip spelled as a PASS. Nothing in CI installed Deno, so
+ * that case reported green on every leg — meaning the only test in the repo
+ * that proves `aai build --target deno` emits a directory which BOOTS was
+ * gated by nothing, on the branch that added the target. That is the shape
+ * `AGENTS.md` names a gate reporting success over a comparison it could not
+ * make.
+ *
+ * So it follows `describeWithFfmpeg` (`aai/host/ffmpeg.scenario.test.ts`),
+ * which follows `describeWithPg`: skip loudly, and let **`AAI_REQUIRE_DENO`** —
+ * which CI's scenario job sets only once `deno --version` really answered —
+ * turn the skip into a hard failure, so a broken setup step cannot read as a
+ * green run either.
+ */
+function describeWithDeno(name: string, body: () => void): void {
+  if (HAVE_DENO) {
+    describe(name, body);
+    return;
+  }
+  if ((process.env.AAI_REQUIRE_DENO ?? "") !== "") {
+    throw new Error(`AAI_REQUIRE_DENO is set but no deno was found.\n${HOW_TO}`);
+  }
+  console.warn(`\n[skipped: no deno] Deno portability arm not run.\n${HOW_TO}\n`);
+  skipSuite(name, body);
 }
 
 /**
@@ -88,14 +128,10 @@ describe("the bundled Deno entry", () => {
       }),
     );
   }, 120_000);
+});
 
-  test("boots under DENO from a directory with no node_modules", async () => {
-    if (!(await hasDeno())) {
-      // Announced, never silent: this is the only arm that proves the claim
-      // the target exists for, so a machine without Deno must say it skipped.
-      expect.soft(true, "deno not on PATH — portability arm skipped").toBe(true);
-      return;
-    }
+describeWithDeno("the emitted Deno output, run under Deno", () => {
+  test("boots from a directory with no node_modules", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await builtProject(dir);
