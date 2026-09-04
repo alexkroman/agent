@@ -18,8 +18,14 @@ import path from "node:path";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import { type BuildTarget, resolveBuildTarget, VERCEL_OUTPUT_DIR } from "./_build-target.ts";
+import {
+  type BuildTarget,
+  DENO_OUTPUT_DIR,
+  resolveBuildTarget,
+  VERCEL_OUTPUT_DIR,
+} from "./_build-target.ts";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
+import { emitDenoOutput } from "./_deno-output.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
@@ -192,7 +198,27 @@ export async function executeBuild(opts: {
  * generated `vercel.json`.
  */
 async function emitTargetFiles(cwd: string, target: BuildTarget): Promise<void> {
-  if (target === "node") return;
-  await emitVercelOutput(cwd);
-  log.info(`Target ${target}: wrote ${VERCEL_OUTPUT_DIR}`);
+  // A SWITCH rather than an if-chain, so `BuildTarget` gaining a member is a
+  // compile error here rather than a build that silently emits nothing for it
+  // — which presents as a deploy 404 rather than as anything about the build.
+  switch (target) {
+    case "node":
+      return;
+    case "vercel":
+      await emitVercelOutput(cwd);
+      log.info(`Target ${target}: wrote ${VERCEL_OUTPUT_DIR}`);
+      return;
+    case "deno":
+      await emitDenoOutput(cwd);
+      log.info(`Target ${target}: wrote ${DENO_OUTPUT_DIR} — deploy it with \`deno deploy\``);
+      return;
+    default: {
+      // Biome requires a default; this one is what makes the switch EXHAUSTIVE.
+      // A new `BuildTarget` member fails to assign to `never` here, so adding
+      // one without an emit is a compile error rather than a target that builds
+      // and deploys nothing.
+      const unhandled: never = target;
+      throw new Error(`Unhandled build target ${String(unhandled)}`);
+    }
+  }
 }

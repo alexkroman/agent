@@ -179,18 +179,37 @@ generated, gitignored, and rewritten by the host's own build.
 
 ```sh
 aai build --target vercel   # writes .vercel/output/ (Build Output API v3)
+aai build --target deno     # writes .aai/deno/ — `cd` there and `deno deploy`
 ```
 
-You rarely type it. The target is detected from the host's own build
-environment, so `vercel deploy` (or a git push) picks it up with nothing
-configured; `--target node`, the default everywhere else, emits nothing extra
-and is what `npm start` runs.
+On Vercel you rarely type it: the target is detected from that host's own build
+environment, so a git push picks it up with nothing configured. Deno is the
+other shape — `deno deploy` uploads a directory built on YOUR machine, so you
+pass the flag and then deploy what it wrote:
+
+```sh
+aai build --target deno
+cd .aai/deno && deno deploy --entrypoint server.mjs
+```
+
+That directory is self-contained on purpose. It holds the bundled server, the
+built worker, your client and `.env.example`, and it needs no install step —
+which is also why it is a directory rather than files in your project root:
+`deno deploy` uploads the working directory, so emitting in place would ship
+your `node_modules` and your `.env` along with it. Set secrets with
+`deno deploy env add --secret ASSEMBLYAI_API_KEY <key>`; `.env` is deliberately
+not copied.
+
+`--target node`, the default everywhere else, emits nothing extra and is what
+`npm start` runs.
 
 One thing to know before deploying a VOICE agent to a serverless host: the
 session is a WebSocket, so the host has to support one. Vercel does — it hands
 the function the raw upgrade, and the emitted entry passes it to the same
-server `aai dev` runs. A host that serves only request/response still runs the
-HTTP surface — `/health`, `/client-config`,
+server `aai dev` runs. Deno Deploy does too, and more simply: it runs a
+long-lived process, so the emitted entry just calls `listen()` and the session
+reaches the same server unchanged. A host that serves only request/response
+still runs the HTTP surface — `/health`, `/client-config`,
 `/workflows/*` and your static assets — which is everything a workflow app
 needs and none of what a voice agent needs.
 

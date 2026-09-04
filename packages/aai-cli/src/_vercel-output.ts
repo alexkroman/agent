@@ -22,19 +22,13 @@
  *   beside the worker, so `resolveClientDir` finds a real directory rather
  *   than reaching into a `node_modules` that the bundle replaced.
  *
- * The entry is BUNDLED rather than shipped with a `node_modules`. Same call as
- * the worker (`ssr: { noExternal: true }`, `root: cwd`), so it resolves the
- * project's own installed SDK and pulls the runtime, `ws` and `pg` in with it
- * — which is already the arrangement a deployed worker runs under, and it is
- * what makes the function independent of whether the host's install left a
- * usable, hoisted `node_modules` behind.
+ * The entry is BUNDLED rather than shipped with a `node_modules` — see
+ * `_target-bundle.ts`, which every target that emits an entry shares.
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { invariant } from "@alexkroman1/aai/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
-import { build, type Rollup } from "vite";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import {
   VERCEL_BUILD_CONFIG_SOURCE,
@@ -44,7 +38,7 @@ import {
   VERCEL_STATIC_DIR,
   vercelFunctionConfigSource,
 } from "./_build-target.ts";
-import { withPreservedNodeEnv } from "./_vite-env.ts";
+import { bundleTargetEntry, targetPathExists } from "./_target-bundle.ts";
 
 /**
  * Files copied verbatim into the function, each one read at RUNTIME by a path
@@ -64,7 +58,7 @@ const RUNTIME_FILES: readonly string[] = [WORKER_ARTIFACT_REL, ".env.example"];
 /** Options for {@link emitVercelOutput}. */
 export interface EmitVercelOutputOptions {
   /**
-   * Produce the function's `index.mjs`. Defaults to {@link bundleEntry}.
+   * Produce the function's `index.mjs`. Defaults to bundling {@link VERCEL_ENTRY_SOURCE}.
    *
    * Injectable so the ASSEMBLY — which file lands where, and which does not —
    * can be asserted without a ~15s rolldown pass over the whole runtime. The
@@ -100,12 +94,13 @@ export async function emitVercelOutput(
     vercelFunctionConfigSource(),
     "utf-8",
   );
-  const bundle = options.bundle ?? bundleEntry;
+  const bundle =
+    options.bundle ?? ((dir: string) => bundleTargetEntry(dir, VERCEL_ENTRY_SOURCE, "vercel"));
   await fs.writeFile(path.join(functionDir, "index.mjs"), await bundle(cwd), "utf-8");
 
   for (const rel of RUNTIME_FILES) {
     const from = path.join(cwd, rel);
-    if (!(await exists(from))) continue;
+    if (!(await targetPathExists(from))) continue;
     const to = path.join(functionDir, rel);
     await fs.mkdir(path.dirname(to), { recursive: true });
     await fs.copyFile(from, to);
@@ -114,67 +109,9 @@ export async function emitVercelOutput(
   // This project's own built UI when it has one, otherwise the prebuilt default
   // that ships inside `@alexkroman1/aai-ui` — the same choice `resolveClientDir`
   // makes at boot, made once here so both copies agree.
-  const clientSource = (await exists(path.join(cwd, CLIENT_ARTIFACT_REL, "index.html")))
+  const clientSource = (await targetPathExists(path.join(cwd, CLIENT_ARTIFACT_REL, "index.html")))
     ? path.join(cwd, CLIENT_ARTIFACT_REL)
     : defaultClientDir();
   await fs.cp(clientSource, staticDir, { recursive: true });
   await fs.cp(clientSource, path.join(functionDir, CLIENT_ARTIFACT_REL), { recursive: true });
-}
-
-/**
- * Bundle {@link VERCEL_ENTRY_SOURCE} and everything it imports into one ESM
- * file.
- *
- * The entry is written INTO the project rather than a temp directory, because
- * that is what makes `@alexkroman1/aai-cli/start` resolve against the user's
- * install — the deployed server is then the version their lockfile pins, which
- * is the same guarantee `aai publish` gives. Removed in a `finally`: a build
- * that throws must not leave a file that looks authored.
- */
-export async function bundleEntry(cwd: string): Promise<string> {
-  const entryPath = path.join(cwd, ".aai", "vercel-entry.mjs");
-  await fs.mkdir(path.dirname(entryPath), { recursive: true });
-  await fs.writeFile(entryPath, VERCEL_ENTRY_SOURCE, "utf-8");
-
-  let result: Awaited<ReturnType<typeof build>>;
-  try {
-    result = await withPreservedNodeEnv(() =>
-      build({
-        root: cwd,
-        logLevel: "silent",
-        configFile: false,
-        // Bundle everything except `node:` builtins — see this module's doc.
-        ssr: { noExternal: true },
-        build: {
-          ssr: true,
-          lib: { entry: entryPath, formats: ["es"], fileName: "index" },
-          target: "node20",
-          minify: false,
-          write: false,
-          rollupOptions: {
-            // One file: the `.func` launcher loads `handler` and nothing
-            // resolves a sibling chunk relative to it.
-            output: { entryFileNames: "[name].mjs", codeSplitting: false },
-          },
-        },
-      }),
-    );
-  } finally {
-    await fs.rm(entryPath, { force: true }).catch(() => undefined);
-  }
-
-  const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
-  invariant(output !== undefined, "vercel.entry.output");
-  const chunk = output.output.find((o): o is Rollup.OutputChunk => o.type === "chunk" && o.isEntry);
-  invariant(chunk !== undefined, "vercel.entry.chunk", () => ({
-    kinds: output.output.map((o) => o.type),
-  }));
-  return chunk.code;
-}
-
-async function exists(target: string): Promise<boolean> {
-  return await fs.stat(target).then(
-    () => true,
-    () => false,
-  );
 }

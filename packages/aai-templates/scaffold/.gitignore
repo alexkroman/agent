@@ -6,7 +6,8 @@ node_modules/
 
 # prebuilt deployment emitted by `aai build --target` — generated, never
 # authored, and rewritten by the host's own build, so committing it would pin
-# a stale copy
+# a stale copy. The `deno` target needs no entry here: it emits into `.aai/`,
+# which is already ignored above.
 .vercel/
 
 # local workflow runs and uploads (written by `aai dev`)

@@ -24,9 +24,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
-import { VERCEL_FUNCTION_DIR } from "./_build-target.ts";
+import { VERCEL_ENTRY_SOURCE, VERCEL_FUNCTION_DIR } from "./_build-target.ts";
+import { bundleTargetEntry } from "./_target-bundle.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
-import { bundleEntry, emitVercelOutput } from "./_vercel-output.ts";
+import { emitVercelOutput } from "./_vercel-output.ts";
 
 const run = promisify(execFile);
 
@@ -73,7 +74,7 @@ describe("the bundled Vercel function", () => {
     await withTempDir(
       silenced(async (dir) => {
         await builtProject(dir);
-        const code = await bundleEntry(dir);
+        const code = await bundleTargetEntry(dir, VERCEL_ENTRY_SOURCE, "vercel");
 
         // The failure this pins is not a size regression, it is an import-time
         // crash: a `.node` binding cannot be inlined, so reaching one at all

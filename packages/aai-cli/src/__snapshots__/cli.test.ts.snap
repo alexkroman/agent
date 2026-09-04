@@ -30,7 +30,7 @@ OPTIONS
              --json    Output JSON (auto-detected in non-TTY)
         --skipTests    Skip running tests before build
     --skipTypecheck    Skip type checking before build
-  --target=<target>    Deployment shape to emit (node, vercel; default: detected)"
+  --target=<target>    Deployment shape to emit (node, vercel, deno; default: detected)"
 `;
 
 exports[`cli usage snapshots > aai delete --help 1`] = `
