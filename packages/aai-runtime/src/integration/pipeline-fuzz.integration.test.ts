@@ -200,11 +200,15 @@ describe("pipeline transport — randomized interleaving", () => {
     // FOR survives at 0: catching a rule that stopped applying at all, not
     // pinning how often it applies.
     //
-    // `mismatch` keeps its floor because nothing has been observed below it.
-    // It shares the same generator and the same tail risk, so if it ever does
-    // flake the answer is the same one, not a multiplier.
+    // `mismatch` has now done exactly that, so it takes the same answer this
+    // comment already prescribed for it: observed at **1** against a floor of
+    // `> 1` (measured range 6-13), on a pre-push run of a branch that touches
+    // nothing in this package's transport. Same generator, same tail, same
+    // remedy — 0, not a lower multiplier. Both counters are now floored at what
+    // a floor is FOR: catching a rule that stopped applying at all, rather than
+    // pinning how often it applies.
     expect(count("speculationDiscarded:superseded"), "no partial ever revised").toBeGreaterThan(0);
-    expect(count("speculationDiscarded:mismatch"), "no final ever mismatched").toBeGreaterThan(1);
+    expect(count("speculationDiscarded:mismatch"), "no final ever mismatched").toBeGreaterThan(0);
     // ADOPTION is counted and DELIBERATELY NOT floored, on the `resumeMooted`
     // precedent above. It needs the transport IDLE at the instant a confident
     // interim lands, and this harness is busy by construction — a 5 ms
