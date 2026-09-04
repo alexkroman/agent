@@ -75,10 +75,8 @@ ARGUMENTS
 OPTIONS
                 -f, --force    Overwrite existing files
   -t, --template=<template>    Template to use (prompted when omitted)
-      -s, --server=<server>    Platform server URL
                   -y, --yes    Accept defaults (no prompts)
-                     --json    Output JSON (auto-detected in non-TTY)
-               --skipDeploy    Skip deploy after scaffolding"
+                     --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai secret --help 1`] = `

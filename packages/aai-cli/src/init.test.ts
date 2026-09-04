@@ -30,6 +30,13 @@ async function useFakeTemplates(dir: string): Promise<void> {
   vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 }
 
+/**
+ * `init` SCAFFOLDS and stops — it must never publish. The mock is kept
+ * precisely so that stays asserted rather than assumed: it used to deploy to
+ * production as a side effect of creating a directory, and the specs below
+ * would pass either way without something recording the call that must not
+ * happen.
+ */
 const executePublish = vi.hoisted(() => vi.fn());
 vi.mock("./studio.ts", () => ({ executePublish }));
 
@@ -150,7 +157,7 @@ describe("executeInit", () => {
     selectMock.mockClear();
   });
 
-  test("installs deps then publishes when the template declares dependencies", async () => {
+  test("installs deps when the template declares dependencies", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
@@ -160,24 +167,10 @@ describe("executeInit", () => {
         execaMock.mockImplementation((cmd: string) =>
           Promise.resolve({ failed: cmd === "safe-chain" }),
         );
-        executePublish.mockResolvedValue({
-          ok: true,
-          data: {
-            project: "with-deps",
-            slug: "with-deps",
-            url: "https://agents.test/with-deps",
-            studioUrl: "https://api.test/studio/chat/with-deps",
-            output: "",
-          },
-        });
-
-        const result = await executeInit(
-          { dir: target, template: "deps", server: "https://api.test" },
-          { silent: true },
-        );
+        const result = await executeInit({ dir: target, template: "deps" }, { silent: true });
 
         expect(result.ok).toBe(true);
-        if (result.ok) expect(result.data.deployed).toBe(true);
+        expect(executePublish).not.toHaveBeenCalled();
         const pnpmCall = execaMock.mock.calls.find(([cmd]) => cmd === "pnpm");
         expect(pnpmCall?.[1]).toContain("install");
         expect(pnpmCall?.[2]).toEqual({ cwd: target });
@@ -193,7 +186,7 @@ describe("executeInit", () => {
         const target = path.join(dir, "safe-chained");
         execaMock.mockResolvedValue({ failed: false });
 
-        await executeInit({ dir: target, template: "deps", skipDeploy: true }, { silent: true });
+        await executeInit({ dir: target, template: "deps" }, { silent: true });
 
         // Skip the `safe-chain --version` probe; find the actual install.
         const installCall = execaMock.mock.calls.find(
@@ -206,7 +199,7 @@ describe("executeInit", () => {
     );
   });
 
-  test("skips publish when pnpm install fails", async () => {
+  test("reports the diagnostics when pnpm install fails", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
@@ -218,27 +211,19 @@ describe("executeInit", () => {
             : Promise.resolve({ failed: true }),
         );
 
-        const result = await executeInit(
-          { dir: target, template: "deps", server: "https://api.test" },
-          { silent: true },
-        );
+        const result = await executeInit({ dir: target, template: "deps" }, { silent: true });
 
-        // Deploying without node_modules would fail confusingly further in —
-        // the deploy must not even be attempted.
-        expect(executePublish).not.toHaveBeenCalled();
-        // The three diagnostics ride the RESULT as well as `log.warn`, which
-        // JSON mode silences: without them a scripted `aai init` could not tell
-        // this outcome from `--skipDeploy`, both being `deployed: false`.
+        // Both diagnostics ride the RESULT as well as `log.warn`, which JSON
+        // mode silences: without them a scripted `aai init` could not tell this
+        // outcome from a clean run, both being `{ ok: true }`.
         expect(result).toMatchObject({
           ok: true,
           data: {
             dir: target,
             template: "deps",
-            deployed: false,
             warnings: [
               expect.stringContaining("pnpm install failed: registry unreachable"),
               expect.stringContaining("npm install -g pnpm"),
-              "Skipping publish because dependencies were not installed.",
             ],
           },
         });
@@ -254,27 +239,27 @@ describe("executeInit", () => {
         const target = path.join(dir, "preinstalled");
         await fs.mkdir(path.join(target, "node_modules"), { recursive: true });
 
-        await executeInit({ dir: target, template: "deps", skipDeploy: true }, { silent: true });
+        await executeInit({ dir: target, template: "deps" }, { silent: true });
 
         expect(execaMock).not.toHaveBeenCalled();
       }),
     );
   });
 
-  test("scaffolds a project and skips deploy when requested", async () => {
+  test("scaffolds a project without publishing it", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "my-agent");
 
         // execa is mocked with no implementation, so the scaffold's install
-        // fails — hence the warnings. `--skipDeploy` is what makes `deployed`
-        // false here, and the warnings are what say the install did not run.
-        const result = await executeInit({ dir: target, skipDeploy: true }, { silent: true });
+        // fails — hence the warnings; the files below are what say the scaffold
+        // itself ran.
+        const result = await executeInit({ dir: target }, { silent: true });
 
         expect(result).toMatchObject({
           ok: true,
-          data: { dir: target, template: "simple", deployed: false },
+          data: { dir: target, template: "simple" },
         });
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
         expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
@@ -292,7 +277,7 @@ describe("executeInit", () => {
         // The author scrolls off the pre-selected default and chooses `deps`.
         selectMock.mockResolvedValueOnce("deps");
 
-        const result = await executeInit({ dir: target, skipDeploy: true });
+        const result = await executeInit({ dir: target });
 
         expect(selectMock).toHaveBeenCalledTimes(1);
         if (result.ok) expect(result.data.template).toBe("deps");
@@ -312,7 +297,7 @@ describe("executeInit", () => {
         await addDepsTemplate(dir);
         const target = path.join(dir, "yes-mode");
 
-        const result = await executeInit({ dir: target, yes: true, skipDeploy: true });
+        const result = await executeInit({ dir: target, yes: true });
 
         expect(selectMock).not.toHaveBeenCalled();
         if (result.ok) expect(result.data.template).toBe("simple");
@@ -333,7 +318,7 @@ describe("executeInit", () => {
         await addDepsTemplate(dir);
         const target = path.join(dir, "silent-mode");
 
-        const result = await executeInit({ dir: target, skipDeploy: true }, { silent: true });
+        const result = await executeInit({ dir: target }, { silent: true });
 
         expect(selectMock).not.toHaveBeenCalled();
         if (result.ok) expect(result.data.template).toBe("simple");
@@ -349,9 +334,9 @@ describe("executeInit", () => {
         await fs.mkdir(target, { recursive: true });
         await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
 
-        await expect(
-          executeInit({ dir: target, skipDeploy: true }, { silent: true }),
-        ).rejects.toThrow("agent.ts already exists");
+        await expect(executeInit({ dir: target }, { silent: true })).rejects.toThrow(
+          "agent.ts already exists",
+        );
       }),
     );
   });
@@ -364,83 +349,31 @@ describe("executeInit", () => {
         await fs.mkdir(target, { recursive: true });
         await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
 
-        const result = await executeInit(
-          { dir: target, force: true, skipDeploy: true },
-          { silent: true },
-        );
+        const result = await executeInit({ dir: target, force: true }, { silent: true });
         expect(result.ok).toBe(true);
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
       }),
     );
   });
 
-  test("publishes after scaffolding and returns slug + url", async () => {
+  /**
+   * The regression this file exists to hold: `init` used to publish to
+   * production once the install succeeded, so scaffolding a directory reached
+   * for credentials the author might not have and shipped a template agent
+   * nobody had run. An install that SUCCEEDS is the precondition it used to
+   * need, which is why this spec lets it.
+   */
+  test("never publishes, even when the install succeeds", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
-        const target = path.join(dir, "deployed-agent");
-        // The template's empty manifest gets the scaffold's dependencies
-        // merged under it, so the install runs — let it succeed.
+        const target = path.join(dir, "not-deployed");
         execaMock.mockResolvedValue({ failed: false });
-        executePublish.mockResolvedValue({
-          ok: true,
-          data: {
-            project: "deployed-agent",
-            slug: "deployed-agent",
-            url: "https://agents.test/deployed-agent",
-            studioUrl: "https://api.test/studio/chat/deployed-agent",
-            output: "",
-          },
-        });
 
-        const result = await executeInit(
-          { dir: target, server: "https://api.test" },
-          { silent: true },
-        );
+        const result = await executeInit({ dir: target }, { silent: true });
 
-        expect(executePublish).toHaveBeenCalledWith({ cwd: target, server: "https://api.test" });
-        expect(result).toEqual({
-          ok: true,
-          data: {
-            dir: target,
-            template: "simple",
-            deployed: true,
-            slug: "deployed-agent",
-            url: "https://agents.test/deployed-agent",
-          },
-        });
-      }),
-    );
-  });
-
-  test("reports deployed: false when publish fails", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "failed-deploy");
-        // The install has to SUCCEED for the publish to be attempted at all.
-        // Without this the test reached `!installed` instead, and passed
-        // anyway — both paths report `deployed: false`, which is exactly the
-        // ambiguity `warnings` exists to remove.
-        execaMock.mockResolvedValue({ failed: false });
-        executePublish.mockResolvedValue({ ok: false, code: "publish_failed", error: "boom" });
-
-        const result = await executeInit(
-          { dir: target, server: "https://api.test" },
-          { silent: true },
-        );
-
-        // A publish that RESOLVES a failure is reported too — it used to return
-        // null with nothing said, so the only signal was `deployed: false`.
-        expect(result).toMatchObject({
-          ok: true,
-          data: {
-            dir: target,
-            template: "simple",
-            deployed: false,
-            warnings: expect.arrayContaining([expect.stringContaining("Publish failed: boom")]),
-          },
-        });
+        expect(executePublish).not.toHaveBeenCalled();
+        expect(result).toEqual({ ok: true, data: { dir: target, template: "simple" } });
       }),
     );
   });
@@ -452,12 +385,9 @@ describe("executeInit", () => {
         const target = path.join(dir, "clean");
         execaMock.mockResolvedValue({ failed: false });
 
-        const result = await executeInit({ dir: target, skipDeploy: true }, { silent: true });
+        const result = await executeInit({ dir: target }, { silent: true });
 
-        expect(result).toEqual({
-          ok: true,
-          data: { dir: target, template: "simple", deployed: false },
-        });
+        expect(result).toEqual({ ok: true, data: { dir: target, template: "simple" } });
       }),
     );
   });

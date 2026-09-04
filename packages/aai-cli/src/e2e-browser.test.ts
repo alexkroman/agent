@@ -50,7 +50,7 @@ let tmpDir: string;
 let registry: MockRegistry;
 
 function initProject(template: string, projectDir: string): void {
-  aai(aaiBin, ["init", projectDir, "-t", template, "--skip-deploy"], tmpDir);
+  aai(aaiBin, ["init", projectDir, "-t", template], tmpDir);
   installDeps(registry, projectDir);
 }
 
