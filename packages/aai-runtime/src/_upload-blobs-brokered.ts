@@ -197,8 +197,15 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
           { method: "GET", headers: { Range: `bytes=${start}-${end - 1}` } },
           "read",
         );
-        // Clamped rather than refused — see `UploadBlobs.read`.
-        if (res.status === 404 || res.status === 416) return new Uint8Array(0);
+        // Clamped rather than refused — see `UploadBlobs.read`. The body is
+        // CANCELLED rather than abandoned: undici keeps a connection with an
+        // unread response unusable until it is GC'd, out of the 64 the blob pool
+        // allows per origin, and probing for absent windows is what the resume
+        // path does in bursts.
+        if (res.status === 404 || res.status === 416) {
+          await res.body?.cancel();
+          return new Uint8Array(0);
+        }
         if (!res.ok) throw await brokerError("read", key, res);
         // Inside the retry, so a body that dies mid-stream is re-read rather than
         // reported — the window is a range request and asking again is free.

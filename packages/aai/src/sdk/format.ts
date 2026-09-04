@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The four formatters a workflow uses to narrate itself, and a page uses to
+ * The five formatters a workflow uses to narrate itself, and a page uses to
  * render the same run.
  *
  * They are here because both halves of a template need them and only one of
@@ -8,13 +8,17 @@
  * a sentence a person reads; the `client.tsx` rendering that run's output
  * writes the same sentence again. Every template that reports progress had
  * therefore grown a private copy of each — four of `mb()`, five of
- * `clock()`/`duration()`, four of `countWords()`, and seventeen inline
- * `${n === 1 ? "" : "s"}` — split across the server and browser sides of one
- * project.
+ * `clock()`/`duration()`, four of `countWords()`, seventeen inline
+ * `${n === 1 ? "" : "s"}`, and three incompatible money formats — split across
+ * the server and browser sides of one project.
  *
  * **The duplication was already producing wrong output.** `call-audit` printed a
  * 64-minute recording as `1:04:09` from its workflow and `64:09` from its page:
  * two copies of one formatter, in one template, disagreeing about the same run.
+ * {@link formatMoney} arrived the same way — `pizza-ordering` rendered
+ * `$1234.00` where `travel-concierge` rendered `$1,234`, and `retail` had no
+ * helper at all and spelled the format inline twelve times, so one product
+ * showed a caller three conventions depending on which desk they reached.
  * That is the argument for a single implementation rather than a style
  * preference — a private copy is not merely repeated, it drifts, and nothing
  * downstream can tell which copy produced a given string.
@@ -131,6 +135,56 @@ export function formatDuration(ms: number): string {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
     : `${minutes}:${seconds}`;
+}
+
+/**
+ * `$1,234.00` — an amount of money, grouped in threes and always to the cent.
+ *
+ * `symbol` is a PREFIX and defaults to `"$"`; pass another (`"€"`, `"£"`) to
+ * change the glyph. It does not change the SHAPE, which is fixed: this is not a
+ * localization seam, for the reason the module doc gives. An agent that owes a
+ * caller `1.234,56 €` formats it itself.
+ *
+ * Always two decimal places, because the alternative drifts: a bare
+ * `toLocaleString` renders `$1,234` for a round number and `$1,234.5` for a
+ * change of fifty cents, so a price list rendered through it does not line up
+ * and a total read aloud sounds like a different kind of number than the parts
+ * that made it. Rounding is `toFixed`'s.
+ *
+ * The sign LEADS (`-$4.99`), which is how a refund is written. An amount that
+ * rounds to zero has no sign, so a rounding error just under zero prints
+ * `$0.00` rather than `-$0.00`. Non-finite is `$0.00`, matching
+ * {@link formatBytes} and {@link formatDuration}.
+ *
+ * @example
+ * ```ts
+ * import { formatMoney } from "@alexkroman1/aai/utils";
+ *
+ * formatMoney(0); // "$0.00"
+ * formatMoney(17.5); // "$17.50"
+ * formatMoney(2_292.371); // "$2,292.37"
+ * formatMoney(-4.99); // "-$4.99"
+ * formatMoney(1_234, "€"); // "€1,234.00"
+ * ```
+ *
+ * @public
+ */
+export function formatMoney(amount: number, symbol = "$"): string {
+  const fixed = (Number.isFinite(amount) ? Math.abs(amount) : 0).toFixed(2);
+  const dot = fixed.indexOf(".");
+  // `toFixed` switches to exponential notation at 1e21, where there is no
+  // integer part to group and no cent that survives float precision anyway.
+  // Degraded deliberately rather than sliced into nonsense: the slicing below
+  // assumes a decimal point and would answer `$1e+2` + `1` for `1e21`.
+  if (dot === -1) return `${amount < 0 ? "-" : ""}${symbol}${fixed}`;
+  // `\B(?=(\d{3})+$)` over the WHOLE part only: a position that is not a word
+  // boundary and has a multiple of three digits after it. Slicing the cents off
+  // first is what lets the pattern anchor to the end.
+  const whole = fixed.slice(0, dot).replace(/\B(?=(\d{3})+$)/g, ",");
+  // `Number(fixed)` rather than `amount`, so a value that ROUNDS to zero loses
+  // its sign along with its magnitude.
+  const sign = amount < 0 && Number(fixed) !== 0 ? "-" : "";
+  return `${sign}${symbol}${whole}${fixed.slice(dot)}`;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { calculateTotal, formatPrice, orderSlot } from "../shared.ts";
+import { calculateTotal, orderSlot } from "../shared.ts";
 
 export default orderSlot.updateTool({
   description: "Remove a pizza from the order by its ID.",
@@ -15,7 +16,7 @@ export default orderSlot.updateTool({
 
     return {
       removed,
-      orderTotal: formatPrice(calculateTotal(order.pizzas)),
+      orderTotal: formatMoney(calculateTotal(order.pizzas)),
       itemCount: order.pizzas.length,
     };
   },

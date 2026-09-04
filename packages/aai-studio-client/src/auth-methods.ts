@@ -37,7 +37,7 @@ export const NO_PROVIDERS: SignInMethods = { github: false, password: false };
  * `fetchJson()`: it is not our server's route, and it carries an `apikey` header
  * instead of a bearer.
  */
-export const SIGN_IN_METHODS_TIMEOUT_MS = 10_000;
+const SIGN_IN_METHODS_TIMEOUT_MS = 10_000;
 
 /**
  * Ask GoTrue which providers it has enabled.

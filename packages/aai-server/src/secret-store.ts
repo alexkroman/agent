@@ -15,6 +15,8 @@
  * any other secret.
  */
 
+import { sqlState } from "./platform-db-errors.ts";
+
 /**
  * The per-slug secret-name prefix.
  *
@@ -65,7 +67,7 @@ function isUniqueViolation(err: unknown): boolean {
   // Read the SQLSTATE, never the message: a driver rewording "duplicate key
   // value violates unique constraint" would silently turn this retry back
   // into the 500 it exists to prevent.
-  return (err as { code?: unknown } | null)?.code === UNIQUE_VIOLATION;
+  return sqlState(err) === UNIQUE_VIOLATION;
 }
 
 /**

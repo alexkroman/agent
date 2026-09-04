@@ -49,6 +49,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
+import { captureLogs } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import fc from "fast-check";
 import { expect, test } from "vitest";
@@ -310,6 +311,11 @@ async function checkPreviewOutcome(
   }
   return problems;
 }
+
+// Deploy failures are GENERATED here, so the warnings they produce are expected
+// output, not a signal — hundreds of them per run. Silenced through the log
+// seam, which is only possible now that this package logs through one.
+captureLogs();
 
 test("preview queue: every interleaving converges, one deploy per project at a time", async () => {
   await fc.assert(

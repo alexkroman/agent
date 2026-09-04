@@ -92,8 +92,8 @@ export const WORKFLOW_WEBHOOK_PREFIX = `${WORKFLOW_WEBHOOK_PATH}/` as const;
  *
  * A blank base THROWS the same message `ctx.workflows.publicWebhookUrl` throws,
  * rather than composing a relative `/.well-known/…` that nothing can call back
- * on. `workflow-client.ts` still spells this composition inline and should be
- * folded onto this function — one behaviour, one copy.
+ * on — that door calls THIS function, so the two cannot disagree about the
+ * message or about any of the three composition steps.
  *
  * @internal
  */

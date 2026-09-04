@@ -16,6 +16,33 @@ function formatResult(result: string): string {
 }
 
 /**
+ * The expanded result pane.
+ *
+ * Its own component so the parse-and-pretty-print happens only when the row is
+ * actually OPEN. `ToolCallRow` renders `children` under `isOpen && canExpand`,
+ * and a row starts closed — so computing this in the parent meant every row
+ * paid `JSON.parse` + `JSON.stringify(_, null, 2)` over its whole result, and
+ * then RETAINED the pretty string, for a panel nobody clicked. The burst case
+ * is `history.restored`, which mounts up to `DEFAULT_MAX_HISTORY` rows in one
+ * commit.
+ *
+ * Creating this element is free; React only runs the body once it is mounted.
+ */
+function ToolCallResult({ result }: { result: string }): ReactNode {
+  const theme = useTheme();
+  const formatted = useMemo(() => formatResult(result), [result]);
+  if (!formatted) return null;
+  return (
+    <pre
+      className="font-aai-mono text-xs px-3.5 py-3 m-0 whitespace-pre-wrap wrap-break-word"
+      style={{ color: inkTint(theme.text, theme.surface, INK_MUTED_PCT) }}
+    >
+      {formatted}
+    </pre>
+  );
+}
+
+/**
  * Renders a tool invocation as the design system's console row (see
  * `ToolCallRow`): a small outlined "TOOL" chip (or the tool's configured
  * icon), the tool name in mono, a truncated args preview, and a rotating
@@ -53,10 +80,6 @@ export const ToolCallBlock = memo(function ToolCallBlock({
   const title = config?.label || toolCall.name;
   const icon = config?.icon;
   const canExpand = !isPending && Boolean(toolCall.result);
-  const formatted = useMemo(
-    () => (toolCall.result ? formatResult(toolCall.result) : ""),
-    [toolCall.result],
-  );
 
   const subtitle = useMemo(() => {
     const args = toolCall.args;
@@ -88,14 +111,7 @@ export const ToolCallBlock = memo(function ToolCallBlock({
               {String(toolCall.args.code)}
             </pre>
           )}
-          {formatted && (
-            <pre
-              className="font-aai-mono text-xs px-3.5 py-3 m-0 whitespace-pre-wrap wrap-break-word"
-              style={{ color: inkTint(theme.text, theme.surface, INK_MUTED_PCT) }}
-            >
-              {formatted}
-            </pre>
-          )}
+          {toolCall.result && <ToolCallResult result={toolCall.result} />}
         </>
       ) : undefined}
     </ToolCallRow>

@@ -6,7 +6,7 @@ import path from "node:path";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { IGNORED_WORKSPACE_DIRS, isLocalOnlyFile } from "@alexkroman1/aai/workspace-files";
 import { getMonorepoRoot } from "./_agent.ts";
-import { errorMessage } from "./_utils.ts";
+import { errorMessage, writeJson } from "./_utils.ts";
 
 /** The GitHub repo (owner/name) that hosts this project and its templates. */
 const REPO = "alexkroman/agent";
@@ -128,7 +128,10 @@ async function layerScaffoldManifest(scaffoldDir: string, targetDir: string): Pr
   // No manifest of its own means `fs.cp` copied the scaffold's verbatim.
   if (!(mine && theirs)) return;
   const merged = mergeScaffoldManifest(mine, theirs);
-  if (merged) await fs.writeFile(target, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
+  // `writeJson`, which emits byte-identical output (same indent, same trailing
+  // newline) and adds the temp-file + atomic rename every other config this CLI
+  // writes already gets — `_init.ts` writes THIS same file through it.
+  if (merged) await writeJson(target, merged);
 }
 
 /** Parse a JSON file, or null when it is missing or unparseable. */

@@ -26,11 +26,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { ADMIN_POOL_MAX, MAX_PLATFORM_DB_CONNECTIONS, SLUG_LOCK_POOL_MAX } from "./constants.ts";
 import { fleetMaxContainers, platformDbBudget } from "./platform-db-capacity.ts";
-import {
-  platformDbConnectionsPerReplica,
-  platformWorldConnections,
-  QUEUE_NOTIFY_LISTEN,
-} from "./platform-db-limits.ts";
+import { platformDbConnectionsPerReplica, QUEUE_NOTIFY_LISTEN } from "./platform-db-limits.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 const deployPy = readFileSync(path.join(REPO_ROOT, "packages/aai-server/modal_deploy.py"), "utf-8");
@@ -162,23 +158,23 @@ describe("platform database connection budget", () => {
    */
   test("the fleet's direct connections fit the budget, world included", () => {
     const maxContainers = pyInt("MAX_CONTAINERS");
-    // `platformDbConnectionsPerReplica()` INCLUDES the world now — the allowance it
-    // could not coexist with is gone — so this asserts the sum rather than
-    // recomputing it, and a change to either term is caught here.
     const perReplica = platformDbConnectionsPerReplica();
     // Spelled out rather than called, so a term ADDED to the sum fails here and
-    // has to be accounted for out loud. `QUEUE_NOTIFY_LISTEN` is the queue sweep's
-    // dedicated `NOTIFY` connection: outside every pool, one per replica, and
-    // counted for the same reason the world's `LISTEN` client is — a connection
+    // has to be accounted for out loud — which is the half of this that matters,
+    // since the sum previously carried the DevKit world's pool and `LISTEN`
+    // client for long after that world became an HTTP client and stopped opening
+    // either. The two terms left are exactly the two that need SESSION affinity:
+    // the slug lock's pool, and the queue sweep's dedicated `NOTIFY` connection —
+    // outside every pool, one per replica, and counted because a connection
     // outside a pool is still a backend on the instance.
-    expect(perReplica).toBe(SLUG_LOCK_POOL_MAX + platformWorldConnections() + QUEUE_NOTIFY_LISTEN);
+    expect(perReplica).toBe(SLUG_LOCK_POOL_MAX + QUEUE_NOTIFY_LISTEN);
     const fleetDirect = maxContainers * perReplica;
     expect(
       fleetDirect,
       `MAX_CONTAINERS (${maxContainers}) x ${perReplica} = ${fleetDirect} direct once the ` +
         "direct. With no app-database allowance this has to fit " +
-        `${platformDbBudget()} on its own — if it does not, the world's pool is too ` +
-        "big or MAX_CONTAINERS is.",
+        `${platformDbBudget()} on its own — if it does not, the slug-lock pool is ` +
+        "too big or MAX_CONTAINERS is.",
     ).toBeLessThanOrEqual(platformDbBudget());
   });
 

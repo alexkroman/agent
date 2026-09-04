@@ -28,6 +28,7 @@ import { type FeedItem, parseFeed } from "@alexkroman1/aai/html";
 import {
   createWorkflowCtx,
   parseSchemaInput,
+  routeStepFetch,
   schemaInputIssues,
   stubGatewayRoute,
 } from "@alexkroman1/aai/testing";
@@ -422,12 +423,20 @@ const THREE_EPISODES = feedXml(
  * the thing that forgets, and a step fetch left published reaches the next file.
  */
 function stubRoutes(routes: Record<string, { status?: number; body?: unknown }>) {
-  return installStubStepFetch((request) => {
-    for (const [fragment, answer] of Object.entries(routes)) {
-      if (request.url.includes(fragment)) return answer;
-    }
-    return { status: 404, body: `no route for ${request.url}` };
-  });
+  return installStubStepFetch(
+    routeStepFetch(
+      Object.entries(routes).map(
+        ([fragment, answer]) =>
+          (request) =>
+            request.url.includes(fragment) ? answer : undefined,
+      ),
+      // A 404 rather than the default throw, and this one is deliberate: several
+      // cases below are ABOUT a feed the run cannot reach, and they express that
+      // by leaving it out of `routes`. Where an unrecognised request would be a
+      // finding instead, the default is what says so at the call.
+      { unmatched: "notFound" },
+    ),
+  );
 }
 
 describe("discoverEpisodes", () => {

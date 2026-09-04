@@ -10,6 +10,7 @@
 import type { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
+import { isLocalDev } from "./_boot.ts";
 import type { HonoEnv } from "./context.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import type { PlatformEvents } from "./platform-events.ts";
@@ -94,10 +95,21 @@ export function applyPlatformMiddleware<E extends HonoEnv>(
   // origin comes from caller-written headers, and what it wrote crossed into
   // other tenants' guests. `rememberPublicOrigin` owns that rule and the whole
   // account of the attack; read it there before moving this line.
-  app.use("*", async (c, next) => {
-    rememberPublicOrigin(c.req.raw);
-    await next();
-  });
+  //
+  // Registered ONLY in local dev, because that is the exact condition under which
+  // `rememberPublicOrigin` can assign — it computes `resolvePublicOrigin` first
+  // and then keeps the answer only when `isLocalDev(env) && isLoopback(...)`. In
+  // production it therefore ran a trim, a trailing-slash regex and (without
+  // `AAI_PUBLIC_ORIGIN` set) a whole `new URL(req.url)` on EVERY request of both
+  // surfaces — `/health`, every hashed asset, all four guest platform routes — to
+  // produce a value it then discarded. The spawn paths read `observedOrigin`
+  // through `agentPublicBaseUrl` and are unaffected.
+  if (isLocalDev(process.env)) {
+    app.use("*", async (c, next) => {
+      rememberPublicOrigin(c.req.raw);
+      await next();
+    });
+  }
   app.use(
     "*",
     secureHeaders({

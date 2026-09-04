@@ -8,7 +8,20 @@
     "emitDeclarationOnly": true,
     "incremental": false,
     "allowImportingTsExtensions": false,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    // The one compiler-level statement that this package runs in a BROWSER.
+    // `tsconfig.json` sets `types: ["node", "vitest/globals"]` for the suites,
+    // so without this line a shipped module could reference `process.env`,
+    // `Buffer` or `__dirname`, typecheck clean, and fail at runtime in the only
+    // environment this package has. konsistent's dependency-graph rules cannot
+    // see it: they check SPECIFIERS, and a global is not an import.
+    //
+    // `aai` has had this all along one directory down — `src/sdk/tsconfig.json`
+    // sets `types: []`, which is what makes its `sdk/` vs `host/` boundary real
+    // rather than a naming convention. This is the same thing for the whole
+    // package, and it is set at ZERO: the emit program compiles clean with it
+    // today, so it is a ratchet recorded at its floor rather than a cleanup.
+    "types": []
   },
   "include": ["src"],
   "exclude": [

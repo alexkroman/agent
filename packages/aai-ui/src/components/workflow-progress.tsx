@@ -4,7 +4,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import clsx from "clsx";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useWorkflowProgress } from "../use-workflow-progress.ts";
 import type { WorkflowApi } from "../workflow-client.ts";
 
@@ -17,9 +17,9 @@ import type { WorkflowApi } from "../workflow-client.ts";
  * in a `"use step"` body), which is the only channel a workflow has before it
  * produces an output.
  *
- * Three rules are baked in, and they are why this is a component rather than
+ * Four rules are baked in, and they are why this is a component rather than
  * three lines each page writes for itself — the two templates that had written
- * it had written all three, comments included:
+ * it had written three of them, comments included:
  *
  * - **It renders nothing until there is something to render.** `supported` is
  *   what keeps this from being an empty box forever on an agent deployed before
@@ -33,6 +33,13 @@ import type { WorkflowApi } from "../workflow-client.ts";
  *   or opening a finished run tomorrow — shows how it got there rather than an
  *   empty box. That is `useWorkflowProgress`'s doing; this is what makes it
  *   visible.
+ * - **They are ANNOUNCED**, for the reason the first paragraph gives: this is
+ *   the only channel a run has before it produces an output, and a `<pre>` that
+ *   grows is a silent one. A screen-reader user pressing "Digest" got nothing
+ *   between the click and a terminal state minutes later — no "fetching", no
+ *   "summarising", no evidence the button did anything. See `role="log"` below.
+ *   The six pages that render this pass only `className`, so no template could
+ *   have fixed it locally; that is what makes it this component's job.
  *
  * @example
  * ```tsx
@@ -89,15 +96,42 @@ export function WorkflowProgress({
   const { progress, streaming, supported } = useWorkflowProgress(runId, omitUndefined({ api }));
 
   // Sliced before the emptiness test, so `lines={0}` reads as "nothing to show"
-  // rather than as a full log.
-  const shown =
-    lines === undefined ? progress : progress.slice(Math.max(progress.length - lines, 0));
+  // rather than as a full log. Joined under the same memo: this renders inside
+  // the caller's `<Form>`, which re-renders at upload-progress rate, and the
+  // join is O(the whole log) — quadratic across a fan-out that writes a line
+  // per item.
+  const text = useMemo(() => {
+    const shown =
+      lines === undefined ? progress : progress.slice(Math.max(progress.length - lines, 0));
+    return shown.length === 0 ? null : shown.join("\n");
+  }, [progress, lines]);
 
-  if (!supported || shown.length === 0) return placeholder ?? null;
+  if (!supported || text === null) return placeholder ?? null;
 
   return (
-    <pre className={clsx(className ?? "whitespace-pre-wrap border-l pl-4 text-xs opacity-70")}>
-      {shown.join("\n")}
+    // `role="log"`, which is `AutoScroll`'s choice for the same shape — the
+    // three voice chromes' transcripts are announced because of it, and a run's
+    // narration is the same thing: append-only text a reader is waiting on.
+    //
+    // `role="status"` is the wrong half of the pair here, and not by a hair:
+    // its implicit `aria-atomic` is TRUE, so every poll that appends one line
+    // would have a screen reader re-read the whole block from the top — which
+    // on a fan-out writing a line per item is the reading getting slower as the
+    // run gets longer. `log` implies `aria-atomic="false"`, i.e. announce the
+    // delta.
+    //
+    // Both live-region attributes are then stated EXPLICITLY rather than left
+    // implicit in the role. A role's implicit `aria-live`/`aria-atomic` is
+    // mapped inconsistently across screen readers, and the cost of being wrong
+    // here is silence, which is exactly the failure being fixed — so the two
+    // attributes that carry the behaviour are written down instead of inferred.
+    <pre
+      role="log"
+      aria-live="polite"
+      aria-atomic="false"
+      className={clsx(className ?? "whitespace-pre-wrap border-l pl-4 text-xs opacity-70")}
+    >
+      {text}
       {streaming && "\n…"}
     </pre>
   );

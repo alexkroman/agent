@@ -138,9 +138,8 @@ export function startWorkflowQueueSweep(
     void runQueuePass(passOpts)
       .then(scheduleSoon)
       .catch((error: unknown) => {
-        // `createIntervalSweep` used to own this catch. A tick's pass has no other
-        // caller, so a rejection here would be unhandled — same shape as the
-        // notified path below.
+        // A tick's pass has no other caller, so a rejection here would be
+        // unhandled — same shape as the notified path below.
         log.warn("queue pass failed", { error: errorMessage(error) });
       });
   }, intervalMs);

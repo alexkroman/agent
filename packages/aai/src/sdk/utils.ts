@@ -4,9 +4,9 @@
  *
  * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
  * `toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`,
- * `decodeHtmlEntities`, and the four
- * narration formatters (`formatBytes`, `formatDuration`, `countWords`,
- * `plural`). The remaining exports are framework
+ * `decodeHtmlEntities`, and the five
+ * narration formatters (`formatBytes`, `formatDuration`, `formatMoney`,
+ * `countWords`, `plural`). The remaining exports are framework
  * plumbing shared with the sibling packages. The module stays free of zod and
  * other heavy runtime dependencies so the CLI can import it on every
  * invocation without a startup cost.
@@ -51,7 +51,7 @@ import { formatSchemaIssues, type StandardSchemaIssue } from "./standard-schema.
  * own because `/utils` is already the import a template's `client.tsx` and its
  * `workflows/*.ts` both reach for, and these four are used from both.
  */
-export { countWords, formatBytes, formatDuration, plural } from "./format.ts";
+export { countWords, formatBytes, formatDuration, formatMoney, plural } from "./format.ts";
 /**
  * The one entity decoder, for a step reading text off somebody else's markup.
  *

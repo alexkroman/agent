@@ -85,3 +85,81 @@
   -webkit-text-fill-color: transparent;
   animation: aai-shimmer 2s infinite;
 }
+
+/*
+ * Reduced motion is honoured HERE, once, for everything this stylesheet reaches.
+ *
+ * Roughly nineteen INFINITE animations ship in an aai app and, until this block,
+ * not one of them asked: `prefers-reduced-motion` appeared zero times in the
+ * repository. `aai-pulse` on the console shell's live dot, `aai-bounce` on the
+ * thinking dots, `aai-shimmer` on every streaming tool row, Tailwind's
+ * `animate-pulse` on an indeterminate upload bar — all of them running for as
+ * long as the page is open. For a reader with a vestibular disorder that is not
+ * decoration, it is the reason they close the tab.
+ *
+ * **The universal selector is the leverage point, and it is the only thing that
+ * reaches the TEMPLATES.** Every template's `client.tsx` opens with
+ * `import "@alexkroman1/aai-ui/styles.css"`, and several then declare keyframes
+ * of their own in an inline `<style>` block: `dc-pulse`/`dc-slide-in`
+ * (dispatch-center), `rt-pulse`/`rt-slide-in` (retail), `crisisPulse`
+ * (solo-rpg), and `ic-flicker`/`ic-scanline`/`ic-pulse` (infocom-adventure,
+ * which flickers the whole viewport's opacity and sweeps a scanline across the
+ * page — the worst thing in the repo for a motion-sensitive reader). Nothing in
+ * this package knows those names, and no per-component fix could: it would have
+ * to be written again in every template, by every author who copies one, and
+ * the author who forgets leaves no trace in a diff. A universal selector does
+ * not need to know the name of the animation it is stopping. That is also what
+ * makes this the right FILE rather than merely a convenient one — the published
+ * sheet is the single artifact every client already imports, so a template opts
+ * in by existing, and one written next year opts in before it is written.
+ *
+ * Four properties, because motion arrives four ways:
+ *
+ * - `animation-duration` and `animation-iteration-count` — the keyframe half.
+ *   The count carries its own weight: cut the duration alone and an `infinite`
+ *   animation is still infinite, merely very fast, which is worse than what it
+ *   replaced.
+ * - `transition-duration` — the property-change half, which no search for
+ *   `@keyframes` would ever turn up.
+ * - `scroll-behavior` — the CSS half of scrolling: a host page or template
+ *   declaring `scroll-behavior: smooth`, and any `scrollIntoView()` /
+ *   `scrollTo()` that left the behaviour to CSS. Note what it does NOT reach.
+ *   `AutoScroll`'s `resize: "smooth"` default is a requestAnimationFrame SPRING
+ *   inside `use-stick-to-bottom` (which reads no media query of its own, and
+ *   sets `scroll-behavior: auto` inline while it writes `scrollTop` anyway), so
+ *   silencing that one is a change in `components/auto-scroll.tsx` and is still
+ *   owed. Recording the gap beats letting the next reader assume it is covered.
+ *
+ * `0.01ms` rather than `0s` on both durations is deliberate: a zero-duration
+ * animation or transition fires no `animationend`/`transitionend`, so anything
+ * awaiting one — ours or a consumer's — waits forever. Effectively instant, and
+ * still an event.
+ *
+ * `!important`, and no `@layer`, is what lets this outrank the three ways motion
+ * is actually declared here: a Tailwind utility (`animate-pulse`), a template's
+ * own `<style>` block, and the inline `style={{ animation: … }}` that
+ * `ConsoleShell` and `MessageList` write — an author `!important` beats a normal
+ * inline declaration, which is the only reason those last two are covered. A
+ * reader who asked their OS for less motion outranks all three.
+ *
+ * Biome's `noImportantStyles` warns on all four declarations and the warnings
+ * STAY. The rule's argument — that `!important` reverses the cascade — is the
+ * property being used on purpose here, this block existing precisely to outrank
+ * a declaration written closer to the element. It is not suppressed either: a
+ * lint suppression is a counted escape hatch (`pnpm check:hatches`), so
+ * silencing a warning that is really a design note would spend four of them, and
+ * `biome check .` exits 0 on warnings, so nothing is gated on it.
+ *
+ * `src/styles-motion.test.ts` asserts this block against the stylesheet SOURCE,
+ * a spec having no way to render CSS.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

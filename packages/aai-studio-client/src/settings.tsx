@@ -1,12 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The Settings pane — a full page beside the chat panel, selected from the
-// top bar's UI/API/Code/Settings switcher like the other panes. It used to be
+// top bar's pane switcher like the other panes. It used to be
 // a floating 384px dropdown that scrolled itself; unrelated sections never fit
 // that width, so it is laid out as a real page instead.
 //
 // The sections run in the order a project needs them: the CLI round-trip
-// (cli-commands.tsx) and the
-// delete-project button last. Two subjects have LEFT this pane for panes of
+// (cli-commands.tsx) first, and the delete-project button last. Two subjects have LEFT this pane for panes of
 // their own, and both left for the same reason — a card is the wrong size for
 // them. The carrier webhook URLs went to the API pane (docs.tsx): they
 // document how something CALLS this agent. Secrets went to a pane of their own

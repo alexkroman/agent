@@ -34,6 +34,7 @@ import { getServerInfo } from "./_agent.ts";
 import { readProjectConfig } from "./_config.ts";
 import { CliError, type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
+import { stripTrailingSlash } from "./_utils.ts";
 
 /**
  * One run, as the API reports it.
@@ -101,7 +102,7 @@ function agentBaseUrl(raw: string): string {
       HINT_URL,
     );
   }
-  return raw.replace(/\/+$/, "");
+  return stripTrailingSlash(raw);
 }
 
 /**

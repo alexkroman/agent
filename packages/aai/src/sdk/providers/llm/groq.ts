@@ -19,6 +19,16 @@ export const GROQ_KIND = "groq" as const;
 export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
 
 /**
+ * Options for {@link groqLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface GroqLlmOptions extends ModelOptions {}
+
+/**
  * Build a Groq LLM descriptor for pipeline mode. The API key is resolved
  * host-side from the agent's env (`GROQ_API_KEY`).
  *
@@ -34,16 +44,6 @@ export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
  * });
  * ```
  */
-/**
- * Options for {@link groqLlm}.
- *
- * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
- * one model id, and every vendor still gets a NAME for its own options so its
- * first vendor-specific setting is an additive field here rather than a re-split
- * of the shared interface across eight call sites.
- */
-export interface GroqLlmOptions extends ModelOptions {}
-
 export function groqLlm(opts: GroqLlmOptions): LlmProvider {
   return { kind: GROQ_KIND, options: { ...opts } };
 }

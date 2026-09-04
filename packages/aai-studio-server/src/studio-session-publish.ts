@@ -23,8 +23,11 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { resolveHarnessPath } from "aai-server/constants";
+import { createLogger } from "aai-server/logger";
 import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
 import { z } from "zod";
+
+const log = createLogger("studio.publish");
 
 /** Deadline for one in-guest Publish (`aai deploy`: cold build + upload). */
 const WORKSPACE_DEPLOY_TIMEOUT_MS = 330_000;
@@ -167,7 +170,7 @@ export function createWorkspacePublisher(deps: PublisherDeps) {
     const slug = outcome.ok ? (outcome.slug ?? target.slug) : undefined;
     if (deps.afterDeploy && slug !== undefined) {
       await deps.afterDeploy(scope, project, slug).catch((err: unknown) => {
-        console.warn("Studio publish: post-deploy step failed", {
+        log.warn("post-deploy step failed", {
           project,
           slug,
           error: errorMessage(err),
@@ -202,7 +205,7 @@ async function runDeploy(
     } catch (err) {
       // Dead sandbox — replace it with a fresh one for this publish;
       // the next chat broker call heals the session itself.
-      console.warn("Studio publish: live sandbox failed; using a fresh one", {
+      log.warn("live sandbox failed; using a fresh one", {
         project,
         error: errorMessage(err),
       });
@@ -224,7 +227,7 @@ async function runDeploy(
       role: "studio-publish",
     });
   } catch (err) {
-    console.warn("Studio publish: could not start a sandbox", {
+    log.warn("could not start a sandbox", {
       project,
       error: errorMessage(err),
     });
@@ -248,7 +251,7 @@ async function runDeploy(
   } catch (err) {
     // Died mid-publish — an OOM at the bundler's memory peak is the
     // realistic one (see the burst-range notes in aai-server).
-    console.warn("Studio publish: sandbox failed during deploy", {
+    log.warn("sandbox failed during deploy", {
       project,
       error: errorMessage(err),
     });

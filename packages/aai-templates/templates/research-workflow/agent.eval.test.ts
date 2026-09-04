@@ -29,7 +29,7 @@
 // endpointing, barge-in, whether two sentences merged into one turn.
 
 import agentDef from "virtual:aai/agent";
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
+import { routeStepFetch, stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { type EvalToolCall, type EvalWorkflows, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -132,11 +132,11 @@ type ScriptedSteps = {
 function scriptSteps(options: { hold?: boolean } = {}): ScriptedSteps {
   const gate = Promise.withResolvers<void>();
   const model = stubGatewayRoute(MODEL_SCRIPT);
+  // Throwing on an unrecognised request is `routeStepFetch`'s default and is
+  // what this file wants: every step here is a model call.
+  const route = routeStepFetch([model.route]);
   const stub = installStubStepFetch(async (request) => {
-    const answered = model.route(request);
-    if (answered === undefined) {
-      throw new Error(`unexpected step request in an eval: ${request.method} ${request.url}`);
-    }
+    const answered = route(request);
     // `model.calls` has already recorded this one, so a length of 1 IS the first
     // answer — and holding after the route rather than before it keeps the reply
     // this returns the one the script owed that call.

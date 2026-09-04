@@ -16,7 +16,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { isPathInside } from "@alexkroman1/aai-runtime/internal";
 import { resolveDeployTarget } from "./_agent.ts";
 import { apiRequest, checkedResponse } from "./_api-client.ts";
@@ -35,6 +35,7 @@ import {
 } from "./_studio.ts";
 import { layerScaffold } from "./_templates.ts";
 import { fmtUrl, log } from "./_ui.ts";
+import { formatCappedList } from "./_utils.ts";
 
 export async function executeList(opts: {
   cwd: string;
@@ -98,9 +99,7 @@ async function notFoundHint(serverUrl: string, apiKey: string): Promise<string> 
       "signed in to the account that owns the project, then `aai list`."
     );
   }
-  const shown = projects.slice(0, 10).join(", ");
-  const rest = projects.length > 10 ? `, and ${projects.length - 10} more` : "";
-  return `Your projects: ${shown}${rest}.`;
+  return `Your projects: ${formatCappedList(projects)}.`;
 }
 
 export async function executePull(opts: {
@@ -290,7 +289,7 @@ async function syncEnvSecrets(
     method: "PUT",
     body: env,
   });
-  log.info(`Synced ${names.length} secret${names.length === 1 ? "" : "s"} from .env`);
+  log.info(`Synced ${names.length} ${plural(names.length, "secret")} from .env`);
   return names;
 }
 
@@ -309,16 +308,13 @@ export async function executePublish(opts: {
     warnings?: string[];
   }>
 > {
-  if (!opts.skipTypecheck) {
-    const { assertTypechecks } = await import("./_typecheck-gate.ts");
-    await assertTypechecks(opts.cwd);
-  }
+  const { assertTypechecks } = await import("./_typecheck-gate.ts");
+  await assertTypechecks(opts.cwd, { skip: opts.skipTypecheck });
   const pushed = await pushProject(opts);
   const { project, serverUrl, apiKey } = pushed;
 
   // Secrets merge into the agent env at deploy time — sync them first when
   // the slug already exists so this publish picks them up.
-  const hadSlug = pushed.slug !== undefined;
   if (pushed.slug) await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project);
 
   log.step(`Publishing ${project} (builds in the project's sandbox)…`);
@@ -340,7 +336,10 @@ export async function executePublish(opts: {
 
   await updateProjectConfig(opts.cwd, { serverUrl, slug: result.slug });
   // First publish: the slug didn't exist to attach secrets to until now.
-  if (!hadSlug) {
+  // `pushed` is a const, so this reads the same value the branch above tested —
+  // one predicate, one spelling. The two used to differ (`!== undefined` here,
+  // truthiness there), which disagree on an empty slug.
+  if (!pushed.slug) {
     const synced = await syncEnvSecrets(opts.cwd, serverUrl, apiKey, result.slug);
     if (synced.length > 0) log.info("They apply on the next `aai publish`.");
   }

@@ -33,7 +33,14 @@ import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 // into turns. Two copies must agree by construction — a third terminator added
 // to one would make `say()` return mid-reply while these still thought the turn
 // was open, which reads as the agent misbehaving rather than as a harness bug.
-import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  describeToolCalls,
+  type EvalToolCall,
+  saidIn,
+  TURN_ENDS,
+  toolCallsIn,
+  toolNames,
+} from "@alexkroman1/aai-runtime/eval";
 import type { EvalRecorder } from "./runner.ts";
 
 // Re-exported from the SOURCE rather than import-then-export: a scope's
@@ -146,25 +153,43 @@ function matchesPartial(actual: unknown, expected: unknown): boolean {
   );
 }
 
-/** Is `wanted` a subsequence of `seen`? */
+/**
+ * Is `wanted` a subsequence of `seen`?
+ *
+ * One exit: `at` reaching `wanted.length` IS the answer, including for an empty
+ * `wanted` (vacuously true, and the loop never advances). The early
+ * `return true` this replaces needed a `return wanted.length === 0` tail to
+ * cover that case, so the empty claim was decided in a different place from
+ * every other one.
+ */
 function isSubsequence(seen: readonly string[], wanted: readonly string[]): boolean {
   let at = 0;
-  for (const name of seen) {
-    if (name === wanted[at]) at += 1;
-    if (at === wanted.length) return true;
-  }
-  return wanted.length === 0;
+  for (const name of seen) if (name === wanted[at]) at += 1;
+  return at === wanted.length;
 }
 
 /** How many entries of `list` are `value` — the three counting assertions' shape. */
 function countOf<T>(list: readonly T[], value: T): number {
-  return list.filter((seen) => seen === value).length;
+  let n = 0;
+  for (const seen of list) if (seen === value) n += 1;
+  return n;
 }
 
-function matchesToken(text: string, token: string | RegExp): boolean {
-  return typeof token === "string"
-    ? text.toLowerCase().includes(token.toLowerCase())
-    : token.test(text);
+/**
+ * Does `text` carry `token`? A string matches case-insensitively.
+ *
+ * Takes the token ALREADY lowered for the string case (see {@link tokenTest}),
+ * because both callers apply it across every committed reply and
+ * `token.toLowerCase()` inside that loop is invariant work.
+ */
+function matchesToken(text: string, token: string | RegExp, lowered: string): boolean {
+  return typeof token === "string" ? text.toLowerCase().includes(lowered) : token.test(text);
+}
+
+/** {@link matchesToken} with the token's lowered form computed once. */
+function tokenTest(token: string | RegExp): (text: string) => boolean {
+  const lowered = typeof token === "string" ? token.toLowerCase() : "";
+  return (text) => matchesToken(text, token, lowered);
 }
 
 function short(value: unknown, max = 160): string {
@@ -187,30 +212,27 @@ function short(value: unknown, max = 160): string {
  * that did not exist rather than collapsing them into one line.
  */
 function failedScope(recorder: EvalRecorder, prefix: string, reason: string): EvalScope {
-  const fail = (label: string): void => {
-    recorder.check(false, `${prefix}${label}`, reason);
+  // The real vocabulary over NO events, recording into a recorder that turns
+  // every check into a failure carrying `reason`. It used to be fourteen arms
+  // spelling out their own labels a second time, which is a copy that has to
+  // track the implementation — and had already drifted: its `event()` arm
+  // dropped the bounds suffix the real one appends. A label is now spelled
+  // once, and a newly added arm fails an absent turn by existing.
+  const failing: EvalRecorder = {
+    checks: recorder.checks,
+    check: (_ok, label) => {
+      recorder.check(false, label, reason);
+    },
   };
   return {
-    events: [],
-    toolCalls: [],
-    said: [],
-    succeeded: () => fail("succeeded"),
-    calledTool: (name) => fail(`calledTool(${name})`),
-    notCalledTool: (name) => fail(`notCalledTool(${name})`),
-    toolOrder: (names) => fail(`toolOrder(${names.join(" → ")})`),
-    usedNoTools: () => fail("usedNoTools"),
-    maxToolCalls: (n) => fail(`maxToolCalls(${n})`),
-    saidSomething: (token) => fail(`saidSomething(${String(token)})`),
-    saidNothingAbout: (token) => fail(`saidNothingAbout(${String(token)})`),
-    noErrors: () => fail("noErrors"),
-    event: (type) => fail(`event(${type})`),
-    notEvent: (type) => fail(`notEvent(${type})`),
-    eventOrder: (types) => fail(`eventOrder(${types.join(" → ")})`),
-    eventsSatisfy: (label) => fail(label),
-    // A turn OF a turn that does not exist does not exist either, and the
-    // reason travels with it.
-    turn: (index) => failedScope(recorder, `${prefix}turn ${index}: `, reason),
-    turns: () => 0,
+    ...eventScope(failing, [], prefix),
+    // The one arm that cannot come from the real scope: the real
+    // `eventsSatisfy` EVALUATES its predicate, and an absent turn has nothing
+    // to satisfy — reaching it would mean the arm was measuring rather than
+    // failing (`assertions.test.ts` throws from the predicate to prove it).
+    eventsSatisfy: (label) => {
+      failing.check(false, label);
+    },
   };
 }
 
@@ -227,7 +249,12 @@ export function eventScope(
   prefix = "",
 ): EvalScope {
   const calls = toolCallsIn(events);
-  const names = calls.map((c) => c.name);
+  // `toolNames` and `describeToolCalls` come from the same published module as
+  // `TURN_ENDS`, `saidIn` and `toolCallsIn`, on the same one-declaration rule —
+  // and the diagnostic earns it: it renders a call that NEVER COMPLETED as
+  // `name (never completed)`, where the hand-rolled join printed it
+  // identically to one that answered.
+  const names = toolNames(calls);
   const types = events.map((e) => e.type);
   // Partitioned ONCE, beside the other derived views: `turn()` and `turns()` each
   // re-ran `turnsOf` per call, so a case that scopes three turns walked the event
@@ -265,7 +292,7 @@ export function eventScope(
     calledTool(name, opts = {}) {
       const matching = calls.filter((c) => c.name === name);
       if (matching.length === 0) {
-        check(false, `calledTool(${name})`, `called: ${names.join(", ") || "no tools"}`);
+        check(false, `calledTool(${name})`, describeToolCalls(calls));
         return;
       }
       check(true, `calledTool(${name})`);
@@ -310,7 +337,7 @@ export function eventScope(
     },
 
     usedNoTools() {
-      check(calls.length === 0, "usedNoTools", `called: ${names.join(", ")}`);
+      check(calls.length === 0, "usedNoTools", describeToolCalls(calls));
     },
 
     maxToolCalls(n) {
@@ -319,14 +346,14 @@ export function eventScope(
 
     saidSomething(token) {
       check(
-        said.some((text) => matchesToken(text, token)),
+        said.some(tokenTest(token)),
         `saidSomething(${String(token)})`,
         `said: ${said.map((t) => short(t, 120)).join(" | ") || "nothing"}`,
       );
     },
 
     saidNothingAbout(token) {
-      const hit = said.filter((text) => matchesToken(text, token));
+      const hit = said.filter(tokenTest(token));
       check(hit.length === 0, `saidNothingAbout(${String(token)})`, `said: ${short(hit[0] ?? "")}`);
     },
 

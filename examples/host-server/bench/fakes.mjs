@@ -14,6 +14,25 @@ import os from "node:os";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 
+/**
+ * The port a listening server bound to.
+ *
+ * `address()` answers `string | AddressInfo | null` — `null` before `listen`
+ * resolves and a string for a unix socket — and both fakes read `.port` off it
+ * directly. Neither case can happen here (both are TCP, both read inside the
+ * `listen` callback), so this is where that is said once and loudly.
+ *
+ * @param {import("node:net").Server} server
+ * @returns {number}
+ */
+function addressPort(server) {
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("bench fake: expected a listening TCP server");
+  }
+  return address.port;
+}
+
 /** A self-signed cert for 127.0.0.1 — the TTS adapter hardcodes `wss://`. */
 export function makeCert() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bench-tls-"));
@@ -83,7 +102,7 @@ export function startFakeStt({ key, cert, partialEveryFrames = 25 }) {
   return new Promise((resolve) => {
     httpsServer.listen(0, "127.0.0.1", () => {
       resolve({
-        url: () => `wss://127.0.0.1:${httpsServer.address().port}/v3/ws`,
+        url: () => `wss://127.0.0.1:${addressPort(httpsServer)}/v3/ws`,
         stats: () => ({ audioBytes }),
         close: () => new Promise((r) => httpsServer.close(r)),
       });
@@ -132,7 +151,7 @@ export function startFakeTts({ key, cert, sampleRate = 16_000 }) {
   return new Promise((resolve) => {
     httpsServer.listen(0, "127.0.0.1", () => {
       resolve({
-        host: () => `127.0.0.1:${httpsServer.address().port}`,
+        host: () => `127.0.0.1:${addressPort(httpsServer)}`,
         stats: () => ({ flushes }),
         close: () => new Promise((r) => httpsServer.close(r)),
       });

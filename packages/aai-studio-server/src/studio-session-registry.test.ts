@@ -27,7 +27,7 @@ const record = (owner: string): StudioSessionRecord => ({
 // module stays covered on every machine.
 
 describe("StudioSessionRegistry conformance: memory", () => {
-  studioSessionRegistryConformance(() => createMemoryStudioSessionRegistry());
+  studioSessionRegistryConformance((opts) => createMemoryStudioSessionRegistry(opts));
 });
 
 describe("memory studio session registry", () => {

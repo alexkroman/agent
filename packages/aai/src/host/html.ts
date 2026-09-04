@@ -48,7 +48,7 @@
  * @module html
  */
 
-import { convert } from "html-to-text";
+import { compile } from "html-to-text";
 import { DomUtils, parseDocument } from "htmlparser2";
 
 /**
@@ -81,6 +81,17 @@ const TEXT_SELECTORS = [
 const BLANK_RUN = /\n{3,}/g;
 
 /**
+ * The converter, built ONCE.
+ *
+ * `convert(html, options)` is `compile(options)(html)`, so calling it per
+ * document re-parses the selector list and re-merges the defaults every time —
+ * measured at 116 µs against 3.5 µs for a compiled converter, on identical
+ * output. {@link parseFeed} runs this twice per entry, so a 100-item feed was
+ * paying that thirty-three-fold overhead ~200 times.
+ */
+const toText = compile({ wordwrap: false, selectors: TEXT_SELECTORS });
+
+/**
  * Markup as the prose inside it.
  *
  * Tags are removed by a real HTML parse, entities are decoded, block structure
@@ -110,9 +121,7 @@ const BLANK_RUN = /\n{3,}/g;
  * @public
  */
 export function htmlToText(html: string, options?: { maxChars?: number }): string {
-  const text = convert(html, { wordwrap: false, selectors: TEXT_SELECTORS })
-    .replace(BLANK_RUN, "\n\n")
-    .trim();
+  const text = toText(html).replace(BLANK_RUN, "\n\n").trim();
   const cap = options?.maxChars;
   return cap !== undefined && text.length > cap ? text.slice(0, cap) : text;
 }
@@ -334,9 +343,12 @@ const FEED_TYPES = new Set(["application/rss+xml", "application/atom+xml"]);
  */
 export function pageMetadata(html: string): PageMetadata {
   const dom = parseDocument(html);
+  // One index over the document, read twice: `declaredMeta` is a full traversal,
+  // and calling it per field walked the page again for the same map.
+  const declared = declaredMeta(dom.children);
   return {
-    title: firstOf(declaredMeta(dom.children), TITLE_SOURCES) ?? titleElement(dom.children),
-    description: firstOf(declaredMeta(dom.children), DESCRIPTION_SOURCES),
+    title: firstOf(declared, TITLE_SOURCES) ?? titleElement(dom.children),
+    description: firstOf(declared, DESCRIPTION_SOURCES),
     feedUrls: feedLinks(dom.children),
   };
 }

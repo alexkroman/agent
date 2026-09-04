@@ -195,7 +195,10 @@ function sourceFiles(repo, pkg) {
 function extractFences(text, stripPrefix, origin = "<string>") {
   const blocks = [];
   const lines = text.split("\n");
-  let open = null; // { lang, start, body: [], checked }
+  // The shape was already written here as a trailing comment; this is the same
+  // sentence in a form the compiler reads.
+  /** @type {{ lang: string, start: number, body: string[], checked: boolean } | null} */
+  let open = null;
   for (let i = 0; i < lines.length; i++) {
     const raw = stripPrefix ? lines[i].replace(/^\s*\*( |$)/, "") : lines[i];
     const fence = raw.match(/^\s*```(\S*)\s*(.*)$/);

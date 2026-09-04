@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined, plural } from "@alexkroman1/aai/utils";
 // One static import: the runtime barrel is already loaded for the helpers
 // below, so a dynamic import inside startDevServer would defer nothing.
 import {
@@ -70,10 +70,6 @@ export function agentEnvWarnings(
   env: Record<string, string>,
   shellEnv: Record<string, string | undefined> = process.env,
 ): string[] {
-  // Pluralize by count: "s"/"" for nouns, "them"/"it" for pronouns.
-  const s = (names: string[]) => (names.length > 1 ? "s" : "");
-  const them = (names: string[]) => (names.length > 1 ? "them" : "it");
-
   // Derived from the provider registries rather than matched against hardcoded
   // kinds, so a new provider needs no change here and nothing is missed. (The
   // previous check looked only at `stt`/`llm` and only for AssemblyAI.)
@@ -83,8 +79,8 @@ export function agentEnvWarnings(
   const missing = required.filter((name) => !(env[name] || shellEnv[name]));
   if (missing.length > 0) {
     warnings.push(
-      `Missing provider credential${s(missing)}: ${missing.join(", ")}. ` +
-        `Set ${them(missing)} in .env or the environment.`,
+      `Missing provider ${plural(missing.length, "credential")}: ${missing.join(", ")}. ` +
+        `Set ${plural(missing.length, "it", "them")} in .env or the environment.`,
     );
   }
 
@@ -92,16 +88,17 @@ export function agentEnvWarnings(
   if (shellOnly.length > 0) {
     warnings.push(
       `${shellOnly.join(", ")} resolved from your shell, not .env — ` +
-        `deployed agents won't have ${them(shellOnly)}. ` +
-        `Declare ${them(shellOnly)} in .env before \`aai publish\`.`,
+        `deployed agents won't have ${plural(shellOnly.length, "it", "them")}. ` +
+        `Declare ${plural(shellOnly.length, "it", "them")} in .env before \`aai publish\`.`,
     );
   }
 
   const declared = (agentDef.requiredEnv ?? []).filter((name) => !env[name]);
   if (declared.length > 0) {
     warnings.push(
-      `Missing requiredEnv key${s(declared)} declared by the agent: ${declared.join(", ")}. ` +
-        `Set ${them(declared)} in .env — ctx.env will not contain ${them(declared)} otherwise.`,
+      `Missing requiredEnv ${plural(declared.length, "key")} declared by the agent: ` +
+        `${declared.join(", ")}. Set ${plural(declared.length, "it", "them")} in .env — ` +
+        `ctx.env will not contain ${plural(declared.length, "it", "them")} otherwise.`,
     );
   }
   return warnings;

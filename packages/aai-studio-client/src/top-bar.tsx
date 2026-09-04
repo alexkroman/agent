@@ -3,17 +3,13 @@
 // control, Publish, Account, Log out) and the Publish dropdown it opens.
 // Split from app.tsx, which owns all the state these render. Project
 // switching lives in the home sidebar (brand → home), not here.
-//
-// The switcher was "the seven panes" and is six or eight now: Workflows and
-// Database are both offered only once the project has opted into a database
-// (`isTabVisible`).
 
 import clsx from "clsx";
-import { useRef } from "react";
 import { ACCOUNT_MENU_ID, ACCOUNT_TOGGLE_ATTR } from "./account-menu.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
-import { useDismissablePanel } from "./dismissable.ts";
+import { DropdownPanel } from "./dropdown-panel.tsx";
 import { agentUrl } from "./platform-origin.ts";
+import { SEG_GROUP, segItemClass } from "./segmented.ts";
 
 /** Tooltip while a chat turn is streaming and Publish is locked. */
 const PUBLISH_WAIT_FOR_TURN = "Publish unlocks when the agent finishes its turn";
@@ -61,26 +57,24 @@ type PublishMenuProps = {
  * @see "No studio action writes into the transcript" in the package guide.
  */
 export function PublishMenu(props: PublishMenuProps) {
-  const panel = useRef<HTMLDivElement>(null);
-  const { open, onClose } = props;
-
-  // With Close gone, dismissal is Escape or a click away from the panel.
-  // The toggle exempts itself (see PUBLISH_TOGGLE_ATTR).
-  useDismissablePanel({ open, onClose, panel, toggleAttr: PUBLISH_TOGGLE_ATTR });
-
-  if (!open) return null;
   // The URL rather than a boolean: a `published &&` flag left the two `href`
   // and text reads narrowing `deployedSlug` by cast, which is a claim about a
   // condition three lines away rather than a fact the compiler holds.
+  // Gated on `open` as well, because `agentUrl` builds a `new URL` and this
+  // component stays mounted while the menu is shut.
   const publishedUrl =
-    props.deployedSlug !== undefined && !props.error ? agentUrl(props.deployedSlug) : null;
+    props.open && props.deployedSlug !== undefined && !props.error
+      ? agentUrl(props.deployedSlug)
+      : null;
   return (
-    <div
-      ref={panel}
+    // Dismissal is Escape or a click away; the toggle exempts itself via
+    // PUBLISH_TOGGLE_ATTR.
+    <DropdownPanel
       id={PUBLISH_MENU_ID}
-      role="dialog"
-      aria-label="Publish"
-      className="absolute top-14 right-5 z-10 flex w-96 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md"
+      label="Publish"
+      open={props.open}
+      onClose={props.onClose}
+      toggleAttr={PUBLISH_TOGGLE_ATTR}
     >
       <p className="m-0 text-[13px] leading-5 text-muted">
         Ships the current workspace to production with <code className="font-mono">aai deploy</code>
@@ -119,18 +113,17 @@ export function PublishMenu(props: PublishMenuProps) {
           </pre>
         </details>
       )}
-    </div>
+    </DropdownPanel>
   );
 }
 
 /**
- * The project panes, all peers in the segmented control. Every one of them is
- * offered from the moment a project exists EXCEPT `workflows` and `database`,
- * which the project has to opt into — see {@link isTabVisible}.
+ * The project panes, all peers in the segmented control, every one of them
+ * offered from the moment a project exists.
  *
  * Settings joined them rather than staying a dropdown: it holds the CLI
- * round-trip, the Database switch and Delete project, which is more than a
- * floating panel can lay out. Nothing here gates on a build or a deploy —
+ * round-trip and Delete project, which is more than a floating panel can lay
+ * out. Nothing here gates on a build or a deploy —
  * Delete project has to work before anything has ever been published, and the
  * API pane says what the agent will answer once something is.
  *
@@ -141,10 +134,9 @@ export function PublishMenu(props: PublishMenuProps) {
  * respectively, so the client someone can actually use comes before the
  * contract it exercises.
  * Workflows follows them because a run is that API's output outliving the
- * request that made it; and Database is the same again one step further out,
- * the rows still there when every run has finished. Secrets and Settings come
- * last, in that order: a key is something a working project needs, where
- * Settings ends in Delete project.
+ * request that made it. Secrets and Settings come last, in that order: a key
+ * is something a working project needs, where Settings ends in Delete
+ * project.
  *
  * **The UI tab's id is `preview` and its label is "UI".** The id names a
  * platform concept the whole product spells that way — the auto-deployed
@@ -168,33 +160,6 @@ const TABS: { id: StudioTab; label: string }[] = [
   { id: "secrets", label: "Secrets" },
   { id: "settings", label: "Settings" },
 ];
-
-/**
- * Every pane is offered from the moment a project exists, and the gate that used
- * to exist is worth recording.
- *
- * `isTabVisible(tab, gates)` hid **Database** and **Workflows** behind one
- * `databaseEnabled` flag: a database was an opt-in taken in Settings, and until it
- * was taken the Database pane could only ever show an empty table list. Workflows
- * rode the same flag because a run was only DURABLE with a database behind it —
- * `configureWorkflowWorld` picked the Postgres world off the app's `DATABASE_URL`,
- * and without one a guest got the local world, whose queue is in memory and whose
- * data directory is per-process under `tmpdir()`. A pane promising runs that "keep
- * going after the call, the page, or the request that began them" would have been
- * listing runs that die with the sandbox, which looks like the feature working.
- *
- * Both premises are gone. There is no Database pane — the platform provisions no
- * tenant database — and a durable run no longer depends on the project having one,
- * because the workflow world is the PLATFORM's and every agent reaches it over
- * HTTP. So Workflows is unconditional, and with it the last gate: the predicate,
- * its `TabGates` type and the `databaseEnabled` prop threaded to reach it are all
- * deleted rather than left as an always-true function two files consult.
- *
- * If a pane ever needs gating again, the shape that worked is worth copying: ONE
- * exported predicate, because the switcher (what to render) and `project-view.tsx`
- * (what a selection of a now-hidden pane means) must not disagree — those
- * disagreeing is a tab bar with no `aria-current` beside a blank pane.
- */
 
 type TopBarProps = {
   project: string | null;
@@ -222,8 +187,6 @@ type TopBarProps = {
 
 /** Shared 60px top bar (all 1x options): brand, project name, segmented, actions. */
 export function TopBar(props: TopBarProps) {
-  const segClass = (active: boolean) =>
-    clsx("seg", active ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg");
   // Once per render: the href, the title and the link text are the same URL,
   // and `agentUrl` builds a `new URL` each time it is asked.
   const productionUrl = props.deployedSlug ? agentUrl(props.deployedSlug) : null;
@@ -262,16 +225,13 @@ export function TopBar(props: TopBarProps) {
       <div className="flex-1" />
       {/* The pane switcher is project-scoped — the hero home has no panes. */}
       {props.project && (
-        <div className="flex flex-none overflow-hidden rounded-sm border border-line">
-          {/* `i` indexes the VISIBLE list, so the left border still falls
-              between neighbours when a pane is missing — indexing TABS would
-              leave a seam where the gated tabs used to be. */}
+        <div className={clsx("flex-none", SEG_GROUP)}>
           {TABS.map((entry, i) => (
             <button
               key={entry.id}
               type="button"
               aria-current={props.tab === entry.id ? "page" : undefined}
-              className={clsx(i > 0 && "border-l border-line", segClass(props.tab === entry.id))}
+              className={clsx("seg", segItemClass(props.tab === entry.id, i))}
               onClick={() => props.onSelectTab(entry.id)}
             >
               {entry.label}

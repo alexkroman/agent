@@ -10,10 +10,11 @@
  */
 
 import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { creditRefund, REFUND_DELAY_NOTE, REFUND_IMMEDIATE_NOTE } from "./refund.ts";
 import { resolveOrder } from "./resolve.ts";
 import type { RetailState } from "./shared.ts";
-import { authenticatedUser, money } from "./store.ts";
+import { money } from "./store.ts";
 
 /** The only two reasons the store records. */
 export const CANCEL_REASONS = ["no longer needed", "ordered by mistake"] as const;
@@ -42,9 +43,9 @@ export function planCancel(
   spokenOrderId: string,
   reason: CancelReason,
 ): CancelPlan | ToolFailure {
-  const user = authenticatedUser(state);
-  if (isToolFailure(user)) return user;
-
+  // No `authenticatedUser` gate here: `resolveOrder` opens with the identical
+  // call and returns the identical failure, so a second one is a second store
+  // lookup for a value this planner never reads.
   const order = resolveOrder(state, spokenOrderId);
   if (isToolFailure(order)) return order;
 
@@ -75,7 +76,7 @@ export function planCancel(
   return {
     readBack:
       `cancel order ${order.order_id} (${items}) as '${reason}' and refund ` +
-      `$${total.toFixed(2)} to ${destinations}`,
+      `${formatMoney(total)} to ${destinations}`,
     orderId: order.order_id,
     reason,
     refunds,
@@ -109,7 +110,7 @@ export function applyCancel(state: RetailState, plan: CancelPlan) {
     cancel_reason: plan.reason,
     refunded: plan.total,
     refund_immediate: immediate,
-    message: `Order ${plan.orderId} is cancelled and $${plan.total.toFixed(2)} is being refunded. ${
+    message: `Order ${plan.orderId} is cancelled and ${formatMoney(plan.total)} is being refunded. ${
       immediate ? REFUND_IMMEDIATE_NOTE : REFUND_DELAY_NOTE
     }`,
   };

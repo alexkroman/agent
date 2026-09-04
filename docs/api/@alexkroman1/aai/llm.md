@@ -66,6 +66,9 @@ one interface with four reference pages was three too many.
 function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
 ```
 
+Build an Anthropic (Claude) LLM descriptor for pipeline mode. The API key
+is resolved host-side from the agent's env (`ANTHROPIC_API_KEY`).
+
 #### Parameters
 
 ##### opts
@@ -75,6 +78,19 @@ function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { anthropicLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: anthropicLlm({ model: "claude-sonnet-5" }),
+});
+```
 
 ***
 
@@ -129,6 +145,12 @@ gateway; [AssemblyAIGatewayModel](#assemblyaigatewaymodel) is the id set.
 function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
 ```
 
+Build a Vercel AI Gateway descriptor.
+
+The API key is resolved host-side from the agent's env
+(`AI_GATEWAY_API_KEY`); there is no factory-time key parameter, so the
+descriptor stays free of secrets and safe to serialize.
+
 #### Parameters
 
 ##### opts
@@ -139,6 +161,22 @@ function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
 
 [`LlmProvider`](index.md#llmprovider)
 
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { gatewayLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: gatewayLlm({ model: "zai/glm-4.6" }),
+});
+```
+
+One key, hundreds of models, addressed `"creator/model"`. See
+https://vercel.com/ai-gateway/models for the list.
+
 ***
 
 ### googleLlm()
@@ -146,6 +184,9 @@ function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
 ```ts
 function googleLlm(opts: GoogleLlmOptions): LlmProvider;
 ```
+
+Build a Google (Gemini) LLM descriptor for pipeline mode. The API key is
+resolved host-side from the agent's env (`GOOGLE_GENERATIVE_AI_API_KEY`).
 
 #### Parameters
 
@@ -157,6 +198,19 @@ function googleLlm(opts: GoogleLlmOptions): LlmProvider;
 
 [`LlmProvider`](index.md#llmprovider)
 
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { googleLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: googleLlm({ model: "gemini-2.5-flash" }),
+});
+```
+
 ***
 
 ### groqLlm()
@@ -164,6 +218,9 @@ function googleLlm(opts: GoogleLlmOptions): LlmProvider;
 ```ts
 function groqLlm(opts: GroqLlmOptions): LlmProvider;
 ```
+
+Build a Groq LLM descriptor for pipeline mode. The API key is resolved
+host-side from the agent's env (`GROQ_API_KEY`).
 
 #### Parameters
 
@@ -175,6 +232,19 @@ function groqLlm(opts: GroqLlmOptions): LlmProvider;
 
 [`LlmProvider`](index.md#llmprovider)
 
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { groqLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: groqLlm({ model: "llama-3.3-70b-versatile" }),
+});
+```
+
 ***
 
 ### mistralLlm()
@@ -182,6 +252,9 @@ function groqLlm(opts: GroqLlmOptions): LlmProvider;
 ```ts
 function mistralLlm(opts: MistralLlmOptions): LlmProvider;
 ```
+
+Build a Mistral LLM descriptor for pipeline mode. The API key is resolved
+host-side from the agent's env (`MISTRAL_API_KEY`).
 
 #### Parameters
 
@@ -193,6 +266,19 @@ function mistralLlm(opts: MistralLlmOptions): LlmProvider;
 
 [`LlmProvider`](index.md#llmprovider)
 
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { mistralLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: mistralLlm({ model: "mistral-large-latest" }),
+});
+```
+
 ***
 
 ### openaiLlm()
@@ -200,6 +286,9 @@ function mistralLlm(opts: MistralLlmOptions): LlmProvider;
 ```ts
 function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
 ```
+
+Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
+host-side from the agent's env (`OPENAI_API_KEY`).
 
 #### Parameters
 
@@ -211,6 +300,19 @@ function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
 
 [`LlmProvider`](index.md#llmprovider)
 
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { openaiLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: openaiLlm({ model: "gpt-5.5" }),
+});
+```
+
 ***
 
 ### openrouterLlm()
@@ -218,6 +320,12 @@ function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
 ```ts
 function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 ```
+
+Build an OpenRouter descriptor.
+
+The API key is resolved host-side from the agent's env
+(`OPENROUTER_API_KEY`); there is no factory-time key parameter, so the
+descriptor stays free of secrets and safe to serialize.
 
 #### Parameters
 
@@ -229,6 +337,22 @@ function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 
 [`LlmProvider`](index.md#llmprovider)
 
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { openrouterLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: openrouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" }),
+});
+```
+
+One key, hundreds of models, addressed `"creator/model"`. See
+https://openrouter.ai/models for the list.
+
 ***
 
 ### xaiLlm()
@@ -236,6 +360,9 @@ function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 ```ts
 function xaiLlm(opts: XaiLlmOptions): LlmProvider;
 ```
+
+Build an xAI (Grok) LLM descriptor for pipeline mode. The API key is
+resolved host-side from the agent's env (`XAI_API_KEY`).
 
 #### Parameters
 
@@ -246,6 +373,19 @@ function xaiLlm(opts: XaiLlmOptions): LlmProvider;
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { xaiLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: xaiLlm({ model: "grok-4" }),
+});
+```
 
 ## Interfaces
 

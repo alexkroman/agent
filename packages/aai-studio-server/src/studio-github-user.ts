@@ -33,20 +33,13 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
+import { deadlineFetch } from "./studio-github-client.ts";
 import type { GithubAppConfig } from "./studio-github-config.ts";
-
-/** Deadline for the two calls here — same budget as every other GitHub call. */
-const USER_REQUEST_TIMEOUT_MS = 20_000;
 
 /** Installations one `GET /user/installations` page may report. */
 const PAGE_SIZE = 100;
 /** Pages to walk. A user who administers more than this is not a real case. */
 const MAX_PAGES = 5;
-
-function deadline(signal?: AbortSignal): AbortSignal {
-  const timeout = AbortSignal.timeout(USER_REQUEST_TIMEOUT_MS);
-  return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
 
 /**
  * Exchange the callback's `code` for a user access token, or null.
@@ -61,7 +54,7 @@ export async function exchangeUserCode(
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<string | null> {
   if (!(config.clientId && config.clientSecret)) return null;
-  const res = await fetchFn("https://github.com/login/oauth/access_token", {
+  const res = await deadlineFetch(fetchFn)("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -69,7 +62,6 @@ export async function exchangeUserCode(
       client_secret: config.clientSecret,
       code,
     }),
-    signal: deadline(),
   });
   if (!res.ok) return null;
   // GitHub answers 200 with `{ error: ... }` for a bad code, so the status is
@@ -103,15 +95,15 @@ export async function listUserInstallations(
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<readonly number[]> {
   const ids: number[] = [];
+  const fetchWithDeadline = deadlineFetch(fetchFn);
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const url = `https://api.github.com/user/installations?per_page=${PAGE_SIZE}&page=${page}`;
-    const res = await fetchFn(url, {
+    const res = await fetchWithDeadline(url, {
       headers: {
         Authorization: `Bearer ${userToken}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
       },
-      signal: deadline(),
     });
     // A partial read is discarded whole: a page that failed halfway through
     // cannot be told from a user who administers only what we already have,

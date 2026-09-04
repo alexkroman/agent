@@ -68,9 +68,10 @@
 
 import { workflow } from "@alexkroman1/aai";
 import { vi } from "vitest";
-import { type Scenario, silent } from "./_workflow-resume-harness.ts";
+import type { Scenario } from "./_workflow-resume-harness.ts";
 import { type Program, type Recorder, runProgram, WAIT_MS } from "./_workflow-resume-program.ts";
 import { createTally, journalOutcome } from "./_workflow-tally-harness.ts";
+import { silentLogger } from "./runtime-config.ts";
 import { createInProcessWorkflowEngine } from "./workflow-in-process.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore } from "./workflow-journal-types.ts";
@@ -220,7 +221,7 @@ export async function runRebuildScenario(program: Program): Promise<RebuildScena
         }),
       },
       journal,
-      logger: silent,
+      logger: silentLogger,
     });
 
   const tally: Rebuilt = { rebuilds: 0, resumedOffJournal: 0, startedAtFirstRebuild: undefined };

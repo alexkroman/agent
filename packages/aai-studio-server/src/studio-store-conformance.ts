@@ -17,11 +17,11 @@
  * rather than the hand-written plpgsql stub that used to stand in for it.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, expect, test } from "vitest";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioSessionRecord, StudioSessionRegistry } from "./studio-session-registry.ts";
 
-/** A fresh, collision-proof scope per case — the stack arm shares one database. */
 /**
  * The prefix every key here carries — see `CONFORMANCE_PREFIX` in
  * `aai-server/store-conformance.ts` for why the pid is in the PREFIX rather than
@@ -61,7 +61,12 @@ const RECORD = (owner: string): StudioSessionRecord => ({
  * which a deleted project stops leaving a row carrying a live `chat_token`.
  */
 export function studioSessionRegistryConformance(
-  make: () => StudioSessionRegistry,
+  /**
+   * Takes the registry's own options so a case can drive the LEASE. Without
+   * that, the expiry case below could only claim a row and assert it is
+   * present — which is what it did, under a name describing the opposite.
+   */
+  make: (opts?: { leaseMs?: number }) => StudioSessionRegistry,
   /** Omitted for the memory arm, which has no foreign key to satisfy. */
   parent: (scope: string, project: string) => Promise<void> = noParent,
 ): void {
@@ -113,12 +118,18 @@ export function studioSessionRegistryConformance(
 
   test("an EXPIRED lease reads as absent", async () => {
     // The lease and the owner's local idle window are one number, so an expired
-    // row must not invite an adopt of a guest that is already gone.
-    const registry = make();
+    // row must not invite an adopt of a guest that is already gone. Driven on a
+    // 1ms lease and REAL elapsed time, because the pg arm's expiry is
+    // `expires_at > now()` evaluated by the database — this is the one property
+    // both arms most need agreement on, and the case used to claim a row and
+    // assert it was PRESENT, i.e. a duplicate of the round-trip case above
+    // wearing the name of a check it never made.
+    const registry = make({ leaseMs: 1 });
     const s = uid();
     await parent(s, "p");
     await registry.claim(s, "p", RECORD("replica-1"));
-    expect(await registry.get(s, "p")).not.toBeNull();
+    await sleep(20);
+    expect(await registry.get(s, "p")).toBeNull();
   });
 
   test("touch extends a live lease", async () => {

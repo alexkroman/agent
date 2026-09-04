@@ -25,7 +25,10 @@ export default dispatchSlot.tool({
 
     return {
       systemAlertLevel: state.alertLevel,
-      mutualAidActive: state.mutualAidRequested,
+      // Derived, not stored: mutual aid is requested at red alert and stood
+      // down when the level drops back below it, so the alert level IS the
+      // fact and the two can never disagree.
+      mutualAidActive: state.alertLevel === "red",
       resourceUtilization: `${utilization}%`,
       resourceSummary,
       activeIncidentCount: activeIncidents.length,

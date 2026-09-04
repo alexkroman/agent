@@ -69,6 +69,7 @@
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
+import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { createServer } from "@alexkroman1/aai-runtime";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
@@ -281,18 +282,13 @@ export function main(): void {
 
   controlWss.on("connection", (ws) => {
     hostSocket = ws;
-    lastConnectedAt = Date.now();
     setHostSend((msg) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
     });
 
     ws.on("message", (data) => {
-      let msg: JsonRpcMessage;
-      try {
-        msg = JSON.parse(String(data)) as JsonRpcMessage;
-      } catch {
-        return; // malformed frame — skip
-      }
+      const msg = safeJsonParse(String(data)) as JsonRpcMessage | undefined;
+      if (msg === undefined) return; // malformed frame — skip
       dispatchMessage(msg, state);
     });
 

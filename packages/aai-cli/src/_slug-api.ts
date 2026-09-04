@@ -52,13 +52,36 @@ export async function secretRequest<T = unknown>(
   return { data, target: studioProject ?? slug };
 }
 
+/** An already-resolved deployed target — what {@link slugRequestOn} needs. */
+export type SlugTarget = { serverUrl: string; slug: string; apiKey: string };
+
+/**
+ * A slug-scoped request against an ALREADY-resolved target.
+ *
+ * {@link slugRequest} resolves per call, which is right for a command that
+ * issues one request and wrong for one that POLLS. `aai logs --follow` re-entered
+ * `getServerInfo` on every tick — a read and zod parse of `.aai/project.json`, a
+ * read of the global config, a `new URL` trust check, a slug-shape test, and with
+ * `--server` an `approveServer` that takes the CROSS-PROCESS config lock — once a
+ * second for the life of the follow, all of it re-deriving an immutable answer.
+ * `delete.ts` documents the same cost and answers it the same way, by hand; this
+ * is the general version, so the next polling command inherits it.
+ */
+export async function slugRequestOn<T = unknown>(
+  target: SlugTarget,
+  resourcePath: string,
+  init: SlugRequestInit,
+): Promise<T> {
+  const { serverUrl, slug, apiKey } = target;
+  return deployedAgentRequest<T>(`${serverUrl}/${slug}${resourcePath}`, init, apiKey);
+}
+
 export async function slugRequest<T = unknown>(
   cwd: string,
   resourcePath: string,
   init: SlugRequestInit,
   server?: string,
 ): Promise<{ data: T; slug: string }> {
-  const { serverUrl, slug, apiKey } = await getServerInfo(cwd, server);
-  const data = await deployedAgentRequest<T>(`${serverUrl}/${slug}${resourcePath}`, init, apiKey);
-  return { data, slug };
+  const target = await getServerInfo(cwd, server);
+  return { data: await slugRequestOn<T>(target, resourcePath, init), slug: target.slug };
 }

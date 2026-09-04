@@ -14,10 +14,9 @@
 // stored value is shown as a masked placeholder, never fetched.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef } from "react";
 import { api } from "./api.ts";
 import { ApiKeyField } from "./api-key-field.tsx";
-import { useDismissablePanel } from "./dismissable.ts";
+import { DropdownPanel } from "./dropdown-panel.tsx";
 import { queryKeys } from "./query-keys.ts";
 
 /** Links the top bar's toggle to this panel, and exempts it from click-away. */
@@ -31,9 +30,7 @@ type AccountMenuProps = {
 };
 
 export function AccountMenu({ open, bearer, onClose }: AccountMenuProps) {
-  const panel = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-  useDismissablePanel({ open, onClose, panel, toggleAttr: ACCOUNT_TOGGLE_ATTR });
 
   // Shares main.tsx's cache entry (same key), so the email is already there
   // on first open; `enabled` keeps a closed menu off the network entirely.
@@ -43,15 +40,13 @@ export function AccountMenu({ open, bearer, onClose }: AccountMenuProps) {
     enabled: open,
   });
 
-  if (!open) return null;
-
   return (
-    <div
-      ref={panel}
+    <DropdownPanel
       id={ACCOUNT_MENU_ID}
-      role="dialog"
-      aria-label="Account"
-      className="absolute top-14 right-5 z-10 flex w-96 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md"
+      label="Account"
+      open={open}
+      onClose={onClose}
+      toggleAttr={ACCOUNT_TOGGLE_ATTR}
     >
       {account.data?.email && (
         <p className="m-0 truncate text-[13px] text-fg" title={account.data.email}>
@@ -93,6 +88,6 @@ export function AccountMenu({ open, bearer, onClose }: AccountMenuProps) {
           </p>
         }
       />
-    </div>
+    </DropdownPanel>
   );
 }

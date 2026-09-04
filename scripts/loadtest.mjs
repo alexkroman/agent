@@ -39,7 +39,8 @@ const DURATION_MS = Number(arg("duration", "10")) * 1000;
 
 /** `name=port,name=port` — the backend port for each agent under test. */
 const PORTS = Object.fromEntries(
-  arg("ports", "simple-agent=4110")
+  // `String(...)`: a bare `--ports` reads as `true` (see `valueReader`).
+  String(arg("ports", "simple-agent=4110"))
     .split(",")
     .filter(Boolean)
     .map((pair) => {
@@ -144,7 +145,7 @@ async function workflowScenario() {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`start HTTP ${res.status}`);
-      const { runId } = await res.json();
+      const { runId } = /** @type {{ runId?: string }} */ (await res.json());
       if (!runId) throw new Error("start returned no runId");
       // Read it back: a run must be durably addressable straight away.
       const read = await fetch(`http://localhost:${port}/workflows/runs/${runId}`);
@@ -156,7 +157,15 @@ async function workflowScenario() {
   return out;
 }
 
-/** Open a session, resolve on `session.configured`, close. */
+/**
+ * Open a session, resolve on `session.configured`, close.
+ *
+ * `@returns` is load-bearing, not decoration: without it the promise's value
+ * type is inferred as `unknown`, and `resolve()` with no argument is then an
+ * arity error rather than the "resolved with nothing" this means.
+ *
+ * @returns {Promise<void>}
+ */
 function openSession(port) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://localhost:${port}/websocket`);

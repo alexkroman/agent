@@ -38,6 +38,7 @@
 import { type AgentDef, agent, type BuiltinTool } from "@alexkroman1/aai";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import { withTools } from "@alexkroman1/aai/manifest";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { HarnessBundleAccess } from "./harness-types.ts";
 import { buildWorkspaceDir } from "./studio-build.ts";
 import { createLogsTool } from "./studio-logs-tool.ts";
@@ -101,7 +102,7 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
     // KEY is the caller's own and rides in as `providerEnv`, never here.
     llm: assemblyAILlm({
       model: session.model,
-      ...(session.region === "eu" ? { region: "eu" as const } : {}),
+      ...omitUndefined({ region: session.region }),
     }),
     maxSteps: session.maxSteps,
     builtinTools: STUDIO_BUILTIN_TOOLS,

@@ -22,6 +22,16 @@ export const GATEWAY_KIND = "gateway" as const;
 export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
 
 /**
+ * Options for {@link gatewayLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface GatewayLlmOptions extends ModelOptions {}
+
+/**
  * Build a Vercel AI Gateway descriptor.
  *
  * The API key is resolved host-side from the agent's env
@@ -43,16 +53,6 @@ export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
  * One key, hundreds of models, addressed `"creator/model"`. See
  * https://vercel.com/ai-gateway/models for the list.
  */
-/**
- * Options for {@link gatewayLlm}.
- *
- * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
- * one model id, and every vendor still gets a NAME for its own options so its
- * first vendor-specific setting is an additive field here rather than a re-split
- * of the shared interface across eight call sites.
- */
-export interface GatewayLlmOptions extends ModelOptions {}
-
 export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider {
   return { kind: GATEWAY_KIND, options: { ...opts } };
 }

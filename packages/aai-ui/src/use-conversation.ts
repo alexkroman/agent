@@ -187,5 +187,11 @@ export function useConversation(): UseConversationResult {
     [state, messages, toolCalls],
   );
 
-  return { items, streaming, transcript, thinking };
+  // Memoized for the reason `items` is: this re-renders at STT-partial rate, so
+  // a fresh bag each time makes the stability the doc promises `items` untrue of
+  // the result a caller actually holds.
+  return useMemo(
+    () => ({ items, streaming, transcript, thinking }),
+    [items, streaming, transcript, thinking],
+  );
 }

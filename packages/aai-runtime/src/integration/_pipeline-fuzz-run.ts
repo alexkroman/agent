@@ -23,7 +23,7 @@ import {
   type FakeTtsProvider,
 } from "../_pipeline-test-fakes.ts";
 import { sleep } from "../_test-utils.ts";
-import type { Logger } from "../runtime-config.ts";
+import { silentLogger } from "../runtime-config.ts";
 import { createPipelineTransport } from "../transports/pipeline-transport.ts";
 import { buildActions } from "./_pipeline-fuzz-actions.ts";
 import {
@@ -62,9 +62,6 @@ export const SHORT_RUNS = 120;
 export const LONG_RUNS = 6;
 /** Steps per long run — enough turns to trim at the cap. */
 export const LONG_STEPS = 200;
-
-const noop = (): void => undefined;
-const silentLogger: Logger = { info: noop, warn: noop, error: noop, debug: noop };
 
 type Coverage = Record<string, number>;
 

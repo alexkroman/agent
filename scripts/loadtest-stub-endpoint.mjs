@@ -39,7 +39,9 @@ const PORT = Number(arg("port", "4950"));
 const DELAY_MS = Number(arg("delay", "0"));
 const JITTER_MS = Number(arg("jitter", "0"));
 const FAIL_RATE = Number(arg("fail-rate", "0"));
-const RETRY_AFTER = arg("retry-after", "1");
+// `String(...)`: a bare `--retry-after` reads as `true` (see `valueReader`),
+// and this goes out as a header value.
+const RETRY_AFTER = String(arg("retry-after", "1"));
 /** The status a refusal answers with — 503 by default, 401 for a FATAL one. */
 const FAIL_STATUS = Number(arg("fail-status", "503"));
 const BYTES = Number(arg("bytes", "256"));

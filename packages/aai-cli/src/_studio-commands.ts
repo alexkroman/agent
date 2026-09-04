@@ -2,7 +2,7 @@
 // The studio-workspace citty commands (`aai list/pull/push/publish`) —
 // definitions only; behavior lives in studio.ts.
 
-import { defineExec, sharedArgs } from "./_cli-common.ts";
+import { defineExec, platformArgs } from "./_cli-common.ts";
 
 /**
  * The fast-forward override `push` and `publish` share — `publish` pushes
@@ -19,8 +19,7 @@ const forceArg = {
 export const list = defineExec({
   meta: { name: "list", description: "List your studio projects" },
   args: {
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   // Reads the account's projects; the directory only supplies a `serverUrl`.
   cwd: "any",
@@ -44,8 +43,7 @@ export const pull = defineExec({
       required: false,
     },
     force: { type: "boolean", alias: "f", description: "Overwrite files in a non-empty directory" },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   // It CREATES the project directory — requiring one would be backwards.
   cwd: "any",
@@ -65,8 +63,7 @@ export const push = defineExec({
   meta: { name: "push", description: "Sync this project's source to its studio workspace" },
   args: {
     force: forceArg,
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   cwd: "agent",
   async run({ args, cwd }) {
@@ -82,8 +79,7 @@ export const publish = defineExec({
   },
   args: {
     force: forceArg,
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
     skipTypecheck: { type: "boolean", description: "Skip type checking before publishing" },
   },
   cwd: "agent",

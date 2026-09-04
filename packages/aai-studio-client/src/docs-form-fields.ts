@@ -217,6 +217,29 @@ function elementOf(kind: FormElementKind): string {
  * this deployment's `topic` looks like.
  */
 export function classifiedFields(workflow: WorkflowSummary): readonly ClassifiedField[] {
+  const memo = CLASSIFIED.get(workflow);
+  if (memo !== undefined) return memo;
+  const fields = classifyWorkflow(workflow);
+  CLASSIFIED.set(workflow, fields);
+  return fields;
+}
+
+/**
+ * The walk itself, cached per workflow OBJECT.
+ *
+ * One render of the API pane asks for the same workflow's fields three times —
+ * `formElements` builds the vocabulary table, `fieldsWorkflow` re-walks the
+ * whole listing again only to COUNT, and `docs-field-snippets` walks the winner
+ * a third time — and each walk runs `sampleInput` over the schema plus a
+ * `JSON.stringify` per property. Keyed on identity rather than on a name because
+ * that is what makes it safe: a `WorkflowSummary` is a frozen-in-practice
+ * payload held under `staleTime: Infinity`, so a re-deploy that changes the
+ * schema arrives as a NEW object and misses the cache. A `WeakMap` so a
+ * superseded listing is still collectable.
+ */
+const CLASSIFIED = new WeakMap<WorkflowSummary, readonly ClassifiedField[]>();
+
+function classifyWorkflow(workflow: WorkflowSummary): readonly ClassifiedField[] {
   // A TERSE upload placeholder, against the sampler's default
   // `<upload id for cover>`. The default is right where it appears inside a
   // whole request body — it has to survive being read out of context — and

@@ -60,8 +60,8 @@
     }
   },
   "ffmpeg": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "generate": {
@@ -78,9 +78,11 @@
     "dropped": {}
   },
   "llm": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Doc-comment relocation only. Eight LLM factories, stubReporter and ASSEMBLYAI_TTS_VOICES each had their doc block stranded above a NEIGHBOURING symbol's block, so TypeScript attached only the last one and the report recorded them as '@public (undocumented)'. Moving each block onto the symbol it describes changes no signature, parameter or export — the previous epoch compiles unchanged — but the release-tag annotation it restores moves the report hash. Dropped rather than retained because there are no external consumers, so a frozen example would be a promise about a surface nobody holds."
+    }
   },
   "procedure": {
     "current": 1,
@@ -164,8 +166,8 @@
     }
   },
   "testing": {
-    "current": 20,
-    "supported": [20],
+    "current": 21,
+    "supported": [20, 21],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -213,9 +215,11 @@
     "dropped": {}
   },
   "tts": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Doc-comment relocation only. Eight LLM factories, stubReporter and ASSEMBLYAI_TTS_VOICES each had their doc block stranded above a NEIGHBOURING symbol's block, so TypeScript attached only the last one and the report recorded them as '@public (undocumented)'. Moving each block onto the symbol it describes changes no signature, parameter or export — the previous epoch compiles unchanged — but the release-tag annotation it restores moves the report hash. Dropped rather than retained because there are no external consumers, so a frozen example would be a promise about a surface nobody holds."
+    }
   },
   "uploads": {
     "current": 2,
@@ -225,8 +229,8 @@
     }
   },
   "utils": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "workflow": {

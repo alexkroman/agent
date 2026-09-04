@@ -102,8 +102,13 @@ const IDENTITY_METHODS: readonly string[] = ["step", "sleep", "waitFor"];
  * The receiver is not pinned to `ctx` — a body may destructure or rename it —
  * and a `.step(` on anything else taking a template-literal first argument is
  * not a shape worth excluding.
+ *
+ * Shared rather than built per call, which is safe ONLY because the single
+ * reader is `matchAll`: that method species-constructs its own clone and never
+ * advances this object's `lastIndex`. A `.exec` or `.test` added against a `/g`
+ * regex would carry state between lines — build a fresh one there.
  */
-const identityPattern = () => new RegExp(`\\.(${IDENTITY_METHODS.join("|")})\\(\``, "g");
+const IDENTITY_PATTERN = new RegExp(`\\.(${IDENTITY_METHODS.join("|")})\\(\``, "g");
 
 /** Whether a template literal actually INTERPOLATES, or is merely quoted oddly. */
 const INTERPOLATES = /\$\{/;
@@ -145,7 +150,7 @@ export function findComputedIdentities(source: string, file: string): Determinis
   const findings: DeterminismFinding[] = [];
   for (const [n, line] of source.split("\n").entries()) {
     if (isCommentOnly(line)) continue;
-    for (const match of line.matchAll(identityPattern())) {
+    for (const match of line.matchAll(IDENTITY_PATTERN)) {
       const method = match[1];
       if (method === undefined) continue;
       if (!INTERPOLATES.test(line.slice((match.index ?? 0) + match[0].length))) continue;
@@ -188,17 +193,18 @@ async function workflowFiles(cwd: string): Promise<string[]> {
  * warning pass beside a typecheck that has already run on the same tree.
  */
 export async function scanWorkflowDeterminism(cwd: string): Promise<DeterminismFinding[]> {
-  const findings: DeterminismFinding[] = [];
-  for (const rel of await workflowFiles(cwd)) {
-    let source: string;
-    try {
-      source = await readFile(path.join(cwd, rel), "utf-8");
-    } catch {
-      continue;
-    }
-    findings.push(...findComputedIdentities(source, rel));
-  }
-  return findings;
+  // Read overlapped rather than one at a time — the files are independent, and
+  // mapping (rather than pushing) keeps the report in `workflowFiles` order.
+  const perFile = await Promise.all(
+    (await workflowFiles(cwd)).map(async (rel) => {
+      try {
+        return findComputedIdentities(await readFile(path.join(cwd, rel), "utf-8"), rel);
+      } catch {
+        return [];
+      }
+    }),
+  );
+  return perFile.flat();
 }
 
 /**

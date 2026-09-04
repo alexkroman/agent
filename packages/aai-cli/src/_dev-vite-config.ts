@@ -12,6 +12,7 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { requestPath } from "@alexkroman1/aai/internal";
 import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
+import { isPathInside } from "@alexkroman1/aai-runtime/internal";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost } from "./_dev-env.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
@@ -69,7 +70,7 @@ import { DEDUPED_PEERS } from "./_vite-env.ts";
  * send `..` where a browser would normalize it — and a malformed percent-escape
  * is left to the API, which is where a path we cannot resolve belongs.
  */
-function workflowPathServedByVite(root: string, rawUrl: string | undefined): string | undefined {
+function workflowPathServedByVite(base: string, rawUrl: string | undefined): string | undefined {
   if (rawUrl === undefined) return undefined;
   let decoded: string;
   try {
@@ -78,9 +79,12 @@ function workflowPathServedByVite(root: string, rawUrl: string | undefined): str
   } catch {
     return undefined;
   }
-  const base = path.resolve(root);
   const resolved = path.resolve(base, `.${decoded}`);
-  if (resolved !== base && !resolved.startsWith(base + path.sep)) return undefined;
+  // `isPathInside`, not a fourth copy of the line — see the same note in
+  // `studio.ts`. The open-coded version was correct only for a base that is
+  // absolute, normalized and free of a trailing separator; `base + path.sep`
+  // on a filesystem root doubles the separator and matches nothing.
+  if (!isPathInside(base, resolved)) return undefined;
   try {
     if (!statSync(resolved).isFile()) return undefined;
   } catch {
@@ -183,6 +187,9 @@ export function viteDevConfig(
   backendPort: number,
 ): import("vite").InlineConfig {
   const target = `http://127.0.0.1:${backendPort}`;
+  // Resolved once here rather than per request: it is invariant for the life of
+  // the config, and a workflow-app page polls its run.
+  const viteRoot = path.resolve(cwd);
   return {
     root: cwd,
     plugins: [fallbackHtmlPlugin(cwd)],
@@ -207,7 +214,7 @@ export function viteDevConfig(
         // reach — see `workflowPathServedByVite`.
         [WORKFLOW_API_PREFIX]: {
           target,
-          bypass: (req) => workflowPathServedByVite(cwd, req.url),
+          bypass: (req) => workflowPathServedByVite(viteRoot, req.url),
         },
       },
     },

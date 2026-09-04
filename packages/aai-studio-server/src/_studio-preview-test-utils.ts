@@ -10,6 +10,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
+import { captureLogs } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
 import { vi } from "vitest";
 import {
@@ -81,12 +82,17 @@ export function previewStamped(workspaces: WorkspaceStore): Promise<StudioWorksp
 }
 
 /**
- * Keep an EXPECTED `console.warn` out of the test output, and hand back the spy
- * for the cases that assert on it. `restoreMocks` undoes it before the next
- * test, so there is nothing to tear down (see the root guide).
+ * Keep the EXPECTED warnings out of the test output, and hand back the reader
+ * for the cases that assert on them.
+ *
+ * Through the package's log SEAM (`captureLogs`) rather than
+ * `spyOn(console, "warn")` — a silencing spy is test scaffolding standing in
+ * for the abstraction `aai-server/logger.ts` exists to provide. It registers
+ * its own `beforeEach`/`afterEach`, so call it at DESCRIBE scope, once, rather
+ * than inside a test body.
  */
-export function silenceWarn() {
-  return vi.spyOn(console, "warn").mockImplementation(() => undefined);
+export function previewLogs(): ReturnType<typeof captureLogs> {
+  return captureLogs();
 }
 
 /**

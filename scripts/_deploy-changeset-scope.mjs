@@ -75,7 +75,13 @@ export const SCHEMA_DIR = "supabase/migrations";
  * @type {readonly (readonly [key: string, prefix: string])[]}
  */
 export const CARRIED_PREFIXES = [
-  ...DEPLOY_CARRIED.map((name) => [name, `packages/${name}/`]),
+  // The `@returns` is what makes the body a TUPLE: an array literal infers
+  // `string[]` unless something gives it a contextual type, and `.map`'s result
+  // type is computed before the annotation on `CARRIED_PREFIXES` can reach it.
+  ...DEPLOY_CARRIED.map(
+    /** @returns {readonly [key: string, prefix: string]} */
+    (name) => [name, `packages/${name}/`],
+  ),
   [SCHEMA_DIR, `${SCHEMA_DIR}/`],
 ];
 

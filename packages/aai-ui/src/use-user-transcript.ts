@@ -20,6 +20,7 @@
  * placeholder when there is nothing to show yet.
  */
 
+import { useMemo } from "react";
 import { useSessionSelector } from "./context.ts";
 
 /**
@@ -80,7 +81,13 @@ export interface UseUserTranscriptResult {
  */
 export function useUserTranscript(): UseUserTranscriptResult {
   const partial = useSessionSelector((snapshot) => snapshot.userTranscript);
-  return { speaking: partial !== null, text: displayText(partial), partial };
+  // Memoized on the one field it derives from: this re-runs at STT-partial
+  // rate, and a fresh object each time defeats any `memo()`ed child or
+  // `useMemo` a caller keys on the result.
+  return useMemo(
+    () => ({ speaking: partial !== null, text: displayText(partial), partial }),
+    [partial],
+  );
 }
 
 /** The three cases, spelled out: silent, detected-but-wordless, and words. */

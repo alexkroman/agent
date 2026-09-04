@@ -357,26 +357,17 @@ const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, "");
  * CONFIG_CASES, which exist because this is a "will it run once published"
  * rule — ASSEMBLYAI_API_KEY is the only key publishing seeds, so an agent
  * that reaches for another provider unbidden cannot start.
+ *
+ * It took `source` as well, to note "provider-less agent" and "no loaded config
+ * to check". Neither note could ever be READ — both rode on `ok: true`, and
+ * `createRecorder` drops a `detail` on a check that held — so three regexes
+ * existed to produce two strings no report saw. Stage presence needs no source
+ * check either: any subset of stt/llm/tts (including none) is valid, since
+ * unset stages are filled with the AssemblyAI defaults at parse time.
  */
-export function checkMode(
-  config: LoadedConfig | null | undefined,
-  source: string | undefined,
-): CheckResult {
-  if (!config) return { ok: true, note: "no loaded config to check" };
-  if (config.mode !== "pipeline") {
-    return { ok: false, note: `mode=${config.mode}, expected pipeline (studio default)` };
-  }
-  // Stage presence needs no source check anymore: any subset of stt/llm/tts
-  // (including none) is a valid declaration — unset stages are filled with
-  // the AssemblyAI defaults at parse time, so a pipeline-mode config always
-  // carries all three. (The old check counted declared stages in the source
-  // and special-cased the `assemblyAIPipeline()` spread.)
-  const src = source ?? "";
-  const declared = ["stt", "llm", "tts"].filter((k) => new RegExp(`\\b${k}\\s*:`).test(src));
-  if (declared.length === 0 && !/assemblyAIPipeline\s*\(/.test(src)) {
-    return { ok: true, note: "provider-less agent (pipeline default)" };
-  }
-  return { ok: true };
+export function checkMode(config: LoadedConfig | undefined): CheckResult {
+  if (config === undefined || config.mode === "pipeline") return { ok: true };
+  return { ok: false, note: `mode=${config.mode}, expected pipeline (studio default)` };
 }
 
 /**
@@ -430,14 +421,19 @@ export function checkUi(
 }
 
 /**
- * The prose an agent ships — system prompt and greeting.
+ * The agent's WHOLE source, lowered — tool bodies, identifiers and comments
+ * included, not just its system prompt and greeting.
  *
- * Where a capability lives when it is delegated to a builtin rather than
- * written as a tool: there is no tool name to match, only the instruction
- * that tells the model to use `fetch_json` for a currency lookup.
+ * Where a capability lives when it is delegated to a builtin rather than written
+ * as a tool: no tool name to match, only the instruction telling the model to
+ * use `fetch_json` for a currency lookup. It was `agentProse`, documented as
+ * "system prompt and greeting", which made the check look narrower than it is —
+ * a synonym in a code COMMENT counts as the instruction. Narrowing it to the
+ * real prose changes what the grader accepts and wants a measured run, not a
+ * rename; this says what it does today.
  */
-function agentProse(source: string | undefined): string {
-  return String(source ?? "").toLowerCase();
+function agentSource(source: string | undefined): string {
+  return (source ?? "").toLowerCase();
 }
 
 /**
@@ -452,7 +448,7 @@ function agentProse(source: string | undefined): string {
  */
 export function checkCapabilities(
   expectation: Expectation,
-  { config, source }: { config: LoadedConfig | null | undefined; source: string | undefined },
+  { config, source }: { config: LoadedConfig | undefined; source: string | undefined },
 ): CapabilityReport {
   const declared = [...(config?.tools ?? []), ...toolNamesFromSource(source)].map(norm);
   // Tool descriptions count as evidence too — see toolDescriptionsFromSource.
@@ -474,13 +470,18 @@ export function checkCapabilities(
    */
   const delegation = expectation.builtinDelegation ?? [];
   const delegable = delegation.length > 0 && delegation.every((b) => builtins.has(b));
-  const prose = delegable ? agentProse(source) : "";
+  const prose = delegable ? agentSource(source) : "";
   const missing: string[] = [];
-  for (const synonyms of expectation.capabilities ?? []) {
-    const hit =
-      synonyms.some((s) => declared.some((d) => d.includes(norm(s)))) ||
-      synonyms.some((s) => described.some((d) => d.includes(s.toLowerCase()))) ||
-      (delegable && synonyms.some((s) => prose.includes(s.toLowerCase())));
+  for (const synonyms of expectation.capabilities) {
+    // Each synonym normalized ONCE: inside the inner `.some`, `norm(s)` ran per
+    // candidate name rather than per synonym — ~500 calls where 24 do.
+    const wanted = synonyms.map((s) => ({ normed: norm(s), lowered: s.toLowerCase() }));
+    const hit = wanted.some(
+      ({ normed, lowered }) =>
+        declared.some((d) => d.includes(normed)) ||
+        described.some((d) => d.includes(lowered)) ||
+        (delegable && prose.includes(lowered)),
+    );
     if (!hit && synonyms[0] !== undefined) missing.push(synonyms[0]);
   }
   const missingBuiltins = (expectation.builtins ?? []).filter((b) => !builtins.has(b));

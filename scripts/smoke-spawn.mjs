@@ -236,10 +236,13 @@ function seconds(raw, flag, fallback) {
 export function readSettings(env) {
   const base = env.AAI_PLATFORM_URL?.trim().replace(/\/+$/, "");
   const key = env.AAI_API_KEY?.trim();
-  const missing = [];
-  if (!base) missing.push("AAI_PLATFORM_URL");
-  if (!key) missing.push("AAI_API_KEY");
-  if (missing.length > 0) {
+  // The guard tests the VALUES rather than a count, so that the return below
+  // hands back two strings: a `missing.length > 0` test throws on exactly the
+  // same inputs but narrows neither, and both are read as strings downstream.
+  if (!(base && key)) {
+    const missing = [];
+    if (!base) missing.push("AAI_PLATFORM_URL");
+    if (!key) missing.push("AAI_API_KEY");
     throw new Error(
       `${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} not set. ` +
         "AAI_PLATFORM_URL is the deployed app URL (the Deploy step prints it); " +

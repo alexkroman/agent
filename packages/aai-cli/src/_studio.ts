@@ -110,11 +110,30 @@ export function fetchStudioProject(
   apiKey: string,
   project: string,
 ): Promise<StudioProject | null> {
-  return apiRequest<StudioProject | null>(studioProjectApiUrl(serverUrl, project), {
+  return apiRequest(studioProjectApiUrl(serverUrl, project), {
     apiKey,
     action: "pull",
     allow404: true,
-  });
+    // Checked rather than cast, like the project list above. `null` is the real
+    // 404 answer (the push existence probe) and passes through; a 200 whose body
+    // lacks `files` used to die inside `materializeFiles` on
+    // `Object.entries(undefined)` — a stack trace where this CLI's own sentence
+    // belongs. See `checkedResponse`.
+  }).then((res) =>
+    res === null
+      ? null
+      : checkedResponse(res, isStudioProject, `the studio project ${project} at ${serverUrl}`),
+  );
+}
+
+/** A pulled workspace, as the wire must actually carry it. */
+function isStudioProject(value: unknown): value is StudioProject {
+  return (
+    isRecord(value) &&
+    isRecord(value.files) &&
+    Object.values(value.files).every((v) => typeof v === "string") &&
+    typeof value.sourceHash === "string"
+  );
 }
 
 /** `PUT /studio/projects/:project/source` — the atomic whole-tree push. */
@@ -135,7 +154,22 @@ export function pushStudioSource(
     hints: {
       409: "The studio has newer changes. Run `aai pull` to fetch them, or `aai push --force` to overwrite.",
     },
-  });
+    // Checked rather than cast, and this is the response where it matters most:
+    // `sourceHash` is written into `.aai/project.json`, where `JSON.stringify`
+    // DROPS an `undefined`. So a 200 without it left the next `aai push` on the
+    // "already linked" branch with no fast-forward token to send — and
+    // studio-side edits are then silently overwritten, which is the exact thing
+    // that token exists to prevent.
+  }).then((res) =>
+    checkedResponse(
+      res,
+      (value): value is { sourceHash: string; created: boolean } =>
+        isRecord(value) &&
+        typeof value.sourceHash === "string" &&
+        typeof value.created === "boolean",
+      `the studio push route at ${serverUrl}`,
+    ),
+  );
 }
 
 /** `POST /studio/projects/:project/deploy` — Publish, in the project's sandbox. */

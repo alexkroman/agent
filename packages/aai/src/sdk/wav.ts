@@ -224,20 +224,6 @@ export function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<Arr
   return writeWavHeader("wavHeader", format, byteLength);
 }
 
-/** Join a list of chunks into one buffer, sizing it in a single pass first. */
-function joinChunks(chunks: readonly Uint8Array[]): Uint8Array {
-  if (chunks.length === 1) return chunks[0] as Uint8Array;
-  let total = 0;
-  for (const chunk of chunks) total += chunk.length;
-  const joined = new Uint8Array(total);
-  let at = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, at);
-    at += chunk.length;
-  }
-  return joined;
-}
-
 /**
  * Wrap raw linear-PCM samples in a WAV container.
  *
@@ -258,14 +244,22 @@ export function encodeWav(
   samples: Uint8Array | readonly Uint8Array[],
   format: PcmFormat,
 ): Uint8Array<ArrayBuffer> {
-  const pcm = samples instanceof Uint8Array ? samples : joinChunks(samples);
-  // `byteLength`, not `length`: `samples` may be a VIEW into a larger buffer,
+  // `byteLength`, not `length`: a chunk may be a VIEW into a larger buffer,
   // and for a `Uint8Array` the two agree while for the header they must not be
   // allowed to drift apart — the same confusion `_bytes.ts` records.
-  const header = writeWavHeader("encodeWav", format, pcm.byteLength);
-  const out = new Uint8Array(WAV_HEADER_BYTES + pcm.byteLength);
-  out.set(header, 0);
-  out.set(pcm, WAV_HEADER_BYTES);
+  const chunks = samples instanceof Uint8Array ? [samples] : samples;
+  let total = 0;
+  for (const chunk of chunks) total += chunk.byteLength;
+  // Chunks are written straight into the output rather than joined first: a
+  // list used to be concatenated into an intermediate buffer and then copied in
+  // again, so encoding a capture allocated and copied it TWICE.
+  const out = new Uint8Array(WAV_HEADER_BYTES + total);
+  out.set(writeWavHeader("encodeWav", format, total), 0);
+  let at = WAV_HEADER_BYTES;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
   return out;
 }
 

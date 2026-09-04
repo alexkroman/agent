@@ -51,7 +51,7 @@ describe("project CRUD", () => {
 
   test("create starts an EMPTY project and duplicate returns 409", async () => {
     // No starter agent: the coding agent's first turn goes into the user's
-    // agent rather than into dismantling a dice roller (studio-template.ts).
+    // agent rather than into dismantling a dice roller.
     const res = await createProject(fetch);
     expect(res.status).toBe(201);
     const body = (await res.json()) as { files: Record<string, string> };

@@ -31,7 +31,9 @@ import { valueReader } from "./_args.mjs";
 const arg = valueReader(process.argv.slice(2));
 
 const PORT = arg("port", "4110");
-const URL_ = arg("url", `ws://127.0.0.1:${PORT}/websocket`);
+// `String(...)`: a bare `--url` reads as `true` (see `valueReader`), and this
+// is handed straight to `WebSocket`.
+const URL_ = String(arg("url", `ws://127.0.0.1:${PORT}/websocket`));
 const SPEAK = arg("speak", false);
 const TURNS = SPEAK === true ? 1 : Number(SPEAK || 0);
 const TIMEOUT_MS = Number(arg("timeout", "20")) * 1000;

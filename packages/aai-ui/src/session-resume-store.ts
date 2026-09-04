@@ -24,42 +24,28 @@
  * Keyed by the agent's own URL, so two agents served from one origin — which is
  * every deployed agent, at `/:slug/` — cannot inherit each other's session.
  *
- * Every access is guarded: storage throws outright in some contexts (Safari
- * private mode, storage blocked by policy), and a session that cannot be
- * remembered must degrade to today's behaviour rather than failing to start.
+ * Every access is guarded, and the guard lives in `_web-storage.ts`: a session
+ * that cannot be remembered must degrade to today's behaviour rather than
+ * failing to start.
  */
+
+import { storageGet, storageRemove, storageSet, urlSlot } from "./_web-storage.ts";
 
 const PREFIX = "aai:session:";
 
 /** One agent's slot in storage. */
 function keyFor(platformUrl: string): string {
-  // Resolved against the document, so a relative `platformUrl` ("./", the
-  // default-client case) and the absolute form of the same agent agree on one
-  // key. Falling back to the raw string keeps a caller that passed something
-  // unresolvable working rather than throwing at construction.
-  try {
-    return `${PREFIX}${new URL(platformUrl, globalThis.location?.href).href}`;
-  } catch {
-    return `${PREFIX}${platformUrl}`;
-  }
+  return urlSlot(PREFIX, platformUrl);
 }
 
 /** The stored session id for this agent, or undefined. @internal */
 export function readStoredSessionId(platformUrl: string): string | undefined {
-  try {
-    return globalThis.sessionStorage?.getItem(keyFor(platformUrl)) ?? undefined;
-  } catch {
-    return undefined;
-  }
+  return storageGet("session", keyFor(platformUrl));
 }
 
 /** Remember this agent's session id for the next load. @internal */
 export function writeStoredSessionId(platformUrl: string, sessionId: string): void {
-  try {
-    globalThis.sessionStorage?.setItem(keyFor(platformUrl), sessionId);
-  } catch {
-    // Unavailable — the id still lives in the core for this page's lifetime.
-  }
+  storageSet("session", keyFor(platformUrl), sessionId);
 }
 
 /**
@@ -72,9 +58,5 @@ export function writeStoredSessionId(platformUrl: string, sessionId: string): vo
  * @internal
  */
 export function clearStoredSessionId(platformUrl: string): void {
-  try {
-    globalThis.sessionStorage?.removeItem(keyFor(platformUrl));
-  } catch {
-    // Nothing was stored, or storage is gone; either way there is nothing to do.
-  }
+  storageRemove("session", keyFor(platformUrl));
 }

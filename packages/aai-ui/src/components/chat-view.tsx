@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import type { ReactNode } from "react";
-import { useSessionSelector } from "../context.ts";
+import { useSessionStatus } from "../context.ts";
 import type { AgentState } from "../types.ts";
 import { ConsoleShell } from "./console-shell.tsx";
 import { Controls } from "./controls.tsx";
@@ -49,11 +49,11 @@ export function ChatView({
   /** Additional CSS class names for the root element, appended to its own. */
   className?: string | undefined;
 }): ReactNode {
-  // Narrow subscriptions: the shell only reads these two fields, so it must
-  // not re-render at STT-partial rate the way a full useSession() would —
-  // that cascades into every child below.
-  const state = useSessionSelector((s) => s.state);
-  const error = useSessionSelector((s) => s.error);
+  // One narrow subscription: this component reads the state and nothing else,
+  // so it must not re-render at STT-partial rate the way a full useSession()
+  // would — that cascades into every child below. The error is read one level
+  // down, by the `<SessionErrorBanner>` inside the shell, which is a leaf.
+  const state = useSessionStatus();
 
   return (
     <ConsoleShell
@@ -61,7 +61,6 @@ export function ChatView({
       title={title}
       state={state}
       pulsing={PULSING_STATES.has(state)}
-      error={error?.message}
       className={className}
       footer={<Controls />}
     >

@@ -636,12 +636,11 @@ what every platform pool connects as — carries no `rolconnlimit`.
   for exactly that lock's lifetime, which is what the wake sweep's and the
   pressure reading's leader elections rest on.
   `platformDbConnectionsPerReplica` carries it. So:
-  - `SUPABASE_DB_URL` — direct, session mode. THREE consumers: the slug-lock
-    pool, the workflow world (whose `LISTEN` client needs session affinity as
-    much as an advisory lock does), and the queue sweep's `NOTIFY` listener, on
-    a handle of its own — it rode the admin pool, where a subscription
-    establishes and then receives nothing. `assertSessionModeUrl` refuses a
-    pooler here.
+  - `SUPABASE_DB_URL` — direct, session mode. TWO consumers: the slug-lock pool,
+    and the queue sweep's `NOTIFY` listener, on a handle of its own — it rode the
+    admin pool, where a subscription establishes and then receives nothing.
+    `assertSessionModeUrl` refuses a pooler here. It read THREE, counting a
+    workflow world that opens none now — see `platform-db-limits.ts`.
   - `PLATFORM_POOLER_URL` — Supavisor TRANSACTION mode, for the admin pool.
     Refuses a session-mode URL, which multiplexes nothing while looking set.
 

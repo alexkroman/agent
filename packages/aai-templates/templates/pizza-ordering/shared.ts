@@ -1,4 +1,5 @@
 import { type DeepReadonly, sessionSlot } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 
 export const SIZES = ["small", "medium", "large"] as const;
 export const CRUSTS = ["thin", "regular", "thick", "stuffed"] as const;
@@ -37,19 +38,13 @@ export function calculateTotal(pizzas: readonly ReadonlyPizza[]): number {
   return pizzas.reduce((total, pizza) => total + pizzaPrice(pizza), 0);
 }
 
-/** The one money format. Tool results, the projection, and the sidebar all
- *  show prices through this, so they can never disagree on rounding. */
-export function formatPrice(amount: number): string {
-  return `$${amount.toFixed(2)}`;
-}
-
 /**
  * The menu as prompt prose, generated from `MENU` so the agent can never
  * quote a price the pricing code doesn't charge.
  */
 export function menuText(): string {
   const price = (amount: number, upcharge = false) =>
-    amount === 0 ? "free" : `${upcharge ? "+" : ""}${formatPrice(amount)}`;
+    amount === 0 ? "free" : `${upcharge ? "+" : ""}${formatMoney(amount)}`;
   const list = (items: Record<string, number>, upcharge = false) =>
     Object.entries(items)
       .map(([name, amount]) => `${name.replaceAll("_", " ")} (${price(amount, upcharge)})`)
@@ -169,7 +164,7 @@ export function orderView(order: FrozenOrderState): OrderView {
   const placed = order.placed;
   return {
     pizzas: order.pizzas,
-    total: placed?.total ?? formatPrice(calculateTotal(order.pizzas)),
+    total: placed?.total ?? formatMoney(calculateTotal(order.pizzas)),
     orderPlaced: Boolean(placed),
     ...(placed
       ? { orderNumber: placed.orderNumber, estimatedMinutes: placed.estimatedMinutes }

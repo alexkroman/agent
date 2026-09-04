@@ -1,9 +1,10 @@
 {
   "client": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Reaches the same required `fatal` on SessionError through this capability's rollup — client() surfaces the session error to a custom chrome. Constructing one stops compiling; reading one, which is what a client does, is unaffected."
+      "1": "Reaches the same required `fatal` on SessionError through this capability's rollup — client() surfaces the session error to a custom chrome. Constructing one stops compiling; reading one, which is what a client does, is unaffected.",
+      "2": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here."
     }
   },
   "client-dir": {
@@ -12,14 +13,18 @@
     "dropped": {}
   },
   "components": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: ConsoleShellProps lost its `error` field. The announced role=\"alert\" banner is `<SessionErrorBanner>` now — its own export, COMPOSED inside ConsoleShell — so a full-bleed chrome can take the announced-error decision without taking the frame. Epoch 1's `<ConsoleShell error={session.error?.message} …>` no longer compiles; the migration is to delete that prop, since the shell renders the banner itself. `BulletList`, `Facts` and `SessionErrorBanner` join the capability in the same move."
+    }
   },
   "forms": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here."
+    }
   },
   "hooks": {
     "current": 2,
@@ -34,11 +39,12 @@
     "dropped": {}
   },
   "session": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
       "1": "Pre-release: TRANSCRIBING_PLACEHOLDER moved to @alexkroman1/aai-ui/internal. It is a tuning constant referenced by no public signature and named by no file outside this package, so it sat in a client.tsx author's autocomplete beside useSession while being a framework decision with no field to set.",
-      "2": "SessionError gained a required `fatal`, so anything CONSTRUCTING one stops compiling; reading one is unaffected, which is every client. The field was already on the wire and dropped one line before reaching the client, while this type's own doc described it as REQUIRED."
+      "2": "SessionError gained a required `fatal`, so anything CONSTRUCTING one stops compiling; reading one is unaffected, which is every client. The field was already on the wire and dropped one line before reaching the client, while this type's own doc described it as REQUIRED.",
+      "3": "Additive: `AGENT_STATE_LABELS`, `SessionActions`, `useSessionActions`, `useSessionError` and `useSessionStatus` are new names and `Session` is unchanged structurally (its picked method set simply has a name now), so epoch 3 would in fact still compile. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds."
     }
   },
   "theme": {
@@ -47,15 +53,16 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 7,
-    "supported": [7],
+    "current": 8,
+    "supported": [8],
     "dropped": {
       "1": "Pre-release: DEFAULT_PROGRESS_POLL_MS, DEFAULT_WORKFLOW_POLL_MS and MAX_MISSING_READS moved to @alexkroman1/aai-ui/internal. All three are tuning numbers referenced by no public signature and named by no file outside this package; the hooks that own them take the interval as an OPTION, which is the authoring surface for the same choice and stays public.",
       "2": "The workflow hooks' type parameter is the workflow DEFINITION, not its output type. Epoch 2's `useWorkflowSubmit<Digest>(\"digest\")` no longer compiles: the parameter is constrained to `AnyWorkflowDef`, deliberately, so passing an output type is a compile error rather than a silent loss of typing. What it buys is the other half of the contract — `submit(input)` was `unknown`, so `submit({ ur1: 42 })` compiled and arrived as a 400 in the browser while the same statement already derived the OUTPUT from the def. Migration is one token per call site: `<Digest>` becomes `<typeof digest>`, and the `WorkflowOutputOf` alias above it is deleted.",
       "3": "The workflow hooks' def type parameter is REQUIRED — there is no `unknown` fallback for an un-parameterized call. It existed so `useWorkflowSubmit(\"digest\")` kept compiling, and it was the last way to get an untyped `submit` back. A workflow that declares no input schema now gets `submit(): void` rather than an unusable `never` parameter.",
       "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example. A workflow that declares no input schema gets `submit(undefined)` rather than `submit()`: `void` would let the argument be omitted, and Biome's `noConfusingVoidType` rejects it outside a return or type-parameter position.",
       "5": "Pre-release: `SubmitInputOf` and `WorkflowInputOf` are ADDED to the barrel, so this epoch would in fact still compile. Dropped rather than retained because this package has no external consumers and contracts/compatibility/ stays empty. `SubmitInputOf` is in both submit hooks' return type and had nowhere to click; `WorkflowInputOf` was the missing half of a pair whose other half was already re-exported here. `SubmitOutputOf` came off in the same change — it was `WorkflowOutputOf` spelled a second way.",
-      "6": "`useRunKey` is purely additive, but `UseWorkflowStreamOptions` narrowed in the same change to `Omit<UseWorkflowSubmitOptions, \"wait\" | \"recover\">` — so epoch 6 client code that passed `recover` to a stream submit no longer compiles. No external consumer exists to keep an epoch-6 template for, and aai-ui has dropped every prior epoch on the same grounds."
+      "6": "`useRunKey` is purely additive, but `UseWorkflowStreamOptions` narrowed in the same change to `Omit<UseWorkflowSubmitOptions, \"wait\" | \"recover\">` — so epoch 6 client code that passed `recover` to a stream submit no longer compiles. No external consumer exists to keep an epoch-6 template for, and aai-ui has dropped every prior epoch on the same grounds.",
+      "7": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here."
     }
   }
 }

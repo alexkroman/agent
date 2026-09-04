@@ -33,7 +33,7 @@
  * deployed.
  */
 import agentDef from "virtual:aai/agent";
-import { type EvalTurn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import { type EvalTurn, toolResultIn, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -81,20 +81,6 @@ const Refusal = z.object({ error: z.string() });
  */
 const answerOf = <T>(turn: EvalTurn, name: string, schema: z.ZodType<T>): T =>
   toolResultIn(turn.toolCalls, name, schema);
-
-/**
- * What EVERY call to `name` answered on this turn, in call order.
- *
- * The plural form is for a claim about calls that may legitimately not have
- * happened — a refusal the narrator may have pre-empted by not calling at all.
- * `toolResultIn` over a ONE-CALL list per call: the name is that call's own, so
- * the reader's "no such call" and "two calls" throws are unreachable and what
- * is left is the parse, the schema, and the "never completed" failure.
- */
-const answersOf = <T>(turn: EvalTurn, name: string, schema: z.ZodType<T>): T[] =>
-  turn.toolCalls
-    .filter((c) => c.name === name)
-    .map((call) => toolResultIn([call], call.name, schema));
 
 /**
  * Every field `setup_character` requires, for the SCRIPTED runs.
@@ -267,7 +253,7 @@ describeEval(agentDef, (test) => {
       expect(answerOf(down, "update_state", Settled).state).toBe("gameOver");
 
       const after = await session.say("I refuse to die. Roll to fight on.");
-      const attempts = answersOf(after, "action_roll", Refusal);
+      const attempts = toolResultsIn(after.toolCalls, "action_roll", Refusal);
       // The gate is only OBSERVABLE if something calls the gated tool, and the
       // script is what guarantees that — hence the exact count. `gameOver` was
       // once a flag nothing acted on, so a player with both tracks empty could

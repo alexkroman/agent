@@ -352,15 +352,28 @@ export function dialog(
     };
   };
 
-  /** A fresh dialog's stored value: the machine's own initial snapshot. */
-  const create = (): FlowState => {
-    const actor = actorFor(undefined);
+  /**
+   * Read `state` through a started actor and stop it again.
+   *
+   * The `try`/`finally` is the whole invariant `actorFor` states — "every caller
+   * here stops the one it made" — so it is written once rather than at each of
+   * the five readers.
+   */
+  const withActor = <T>(
+    state: FlowState | undefined,
+    use: (a: ReturnType<typeof actorFor>) => T,
+  ): T => {
+    const actor = actorFor(state);
     try {
-      return { snapshot: actor.getPersistedSnapshot() };
+      return use(actor);
     } finally {
       actor.stop();
     }
   };
+
+  /** A fresh dialog's stored value: the machine's own initial snapshot. */
+  const create = (): FlowState =>
+    withActor(undefined, (a) => ({ snapshot: a.getPersistedSnapshot() }));
 
   const slot: SessionSlot<string, FlowState> = sessionSlot(
     key,
@@ -369,14 +382,8 @@ export function dialog(
   );
 
   /** Read the position without writing anything. */
-  const position = (ctx: SlotHolder): DialogPosition => {
-    const actor = actorFor(readState(slot.get(ctx)));
-    try {
-      return positionOf(actor);
-    } finally {
-      actor.stop();
-    }
-  };
+  const position = (ctx: SlotHolder): DialogPosition =>
+    withActor(readState(slot.get(ctx)), positionOf);
 
   /**
    * Send an event inside the slot's SYNCHRONOUS mutation window.
@@ -387,25 +394,16 @@ export function dialog(
    * the two transitions.
    */
   const send = (ctx: SlotHolder, event: DialogEventOf): DialogPosition =>
-    slot.update(ctx, (draft) => {
-      const actor = actorFor(draft);
-      try {
+    slot.update(ctx, (draft) =>
+      withActor(draft, (actor) => {
         actor.send(event);
         draft.snapshot = actor.getPersistedSnapshot();
         return positionOf(actor);
-      } finally {
-        actor.stop();
-      }
-    });
+      }),
+    );
 
-  const matches = (ctx: SlotHolder, state: string): boolean => {
-    const actor = actorFor(readState(slot.get(ctx)));
-    try {
-      return actor.getSnapshot().matches(state);
-    } finally {
-      actor.stop();
-    }
-  };
+  const matches = (ctx: SlotHolder, state: string): boolean =>
+    withActor(readState(slot.get(ctx)), (a) => a.getSnapshot().matches(state));
 
   return {
     key,
@@ -421,14 +419,7 @@ export function dialog(
       // The slot's own projection resolves the value (defaulting it when the
       // session has run no tool yet), so the actor here is reading a real
       // snapshot rather than guessing at an empty frame.
-      slot.projection((state) => {
-        const actor = actorFor(readState(state));
-        try {
-          return project(positionOf(actor));
-        } finally {
-          actor.stop();
-        }
-      }),
+      slot.projection((state) => withActor(readState(state), (a) => project(positionOf(a)))),
     tool: <P extends ToolInputSchema = ToolInputSchema, R = unknown>(
       def: DialogToolDef<P, R, DialogEventOf>,
     ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>> => {
@@ -459,8 +450,15 @@ export function dialog(
         execute: async (args, ctx): Promise<DialogToolResult<R> | ToolFailure> => {
           // The gate is read BEFORE the body runs, which is the moment that
           // matters: it is what the caller's turn is allowed to do.
-          const at = position(ctx);
-          if (!allowed.some((state) => matches(ctx, state))) {
+          // ONE actor for the position and every `when`: this read used to call
+          // `position` and then `matches` per allowed state, so a three-state
+          // gate built four actors and read the slot four times for one
+          // unchanged snapshot.
+          const { at, here } = withActor(readState(slot.get(ctx)), (a) => ({
+            at: positionOf(a),
+            here: allowed.some((state) => a.getSnapshot().matches(state)),
+          }));
+          if (!here) {
             // The refusal is what the model recovers from, so it says where the
             // conversation IS and what the dialog expects there — not merely that
             // this was not allowed.

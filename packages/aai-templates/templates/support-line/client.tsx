@@ -1,3 +1,4 @@
+import { plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, client, useAgentState } from "@alexkroman1/aai-ui";
 import { PRODUCT, supportProjection } from "./shared.ts";
@@ -19,7 +20,7 @@ function TraceSidebar() {
       <div>
         <h3 className="text-sm font-bold uppercase tracking-wide opacity-60">{support.product}</h3>
         <p className="text-xs opacity-50">
-          {support.asked.length} question{support.asked.length === 1 ? "" : "s"} this call
+          {support.asked.length} {plural(support.asked.length, "question")} this call
           {support.ticket ? ` · ticket ${support.ticket}` : ""}
         </p>
       </div>

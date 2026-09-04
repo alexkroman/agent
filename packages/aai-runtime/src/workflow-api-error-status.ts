@@ -46,19 +46,9 @@ const RESOURCE_CLASS = "53";
  * this one is "the database answered, and the answer was no room".
  */
 export function isInsufficientResources(err: unknown): boolean {
-  const seen = new Set<unknown>();
-  let cur: unknown = err;
-  while (isRecord(cur) && !seen.has(cur)) {
-    seen.add(cur);
-    const code = cur.code;
-    // The length guard is what stops another vocabulary's `53…` passing as a
-    // SQLSTATE: those are exactly five characters.
-    if (typeof code === "string" && code.length === 5 && code.startsWith(RESOURCE_CLASS)) {
-      return true;
-    }
-    cur = cur.cause;
-  }
-  return false;
+  // The length guard is what stops another vocabulary's `53…` passing as a
+  // SQLSTATE: those are exactly five characters.
+  return someErrorCode(err, (code) => code.length === 5 && code.startsWith(RESOURCE_CLASS));
 }
 
 /**
@@ -90,17 +80,14 @@ export function isInsufficientResources(err: unknown): boolean {
  * the value that was thrown.
  */
 export function isDiskFull(err: unknown): boolean {
-  const seen = new Set<unknown>();
-  let cur: unknown = err;
-  while (isRecord(cur) && !seen.has(cur)) {
-    seen.add(cur);
-    // `ENOSPC` exactly, never a prefix: `errno`/`code` are a closed vocabulary
-    // and a `startsWith` would also match a hypothetical `ENOSPCFOO`.
-    if (cur.code === "ENOSPC") return true;
-    cur = cur.cause;
-  }
-  return false;
+  return hasErrorCode(err, DISK_FULL_CODES);
 }
+
+/**
+ * `ENOSPC` exactly, never a prefix: `errno`/`code` are a closed vocabulary and a
+ * `startsWith` would also match a hypothetical `ENOSPCFOO`.
+ */
+const DISK_FULL_CODES: ReadonlySet<string> = new Set(["ENOSPC"]);
 
 /**
  * Codes that mean this agent could not REACH something, rather than being asked
@@ -246,7 +233,7 @@ export function isTransportFailure(err: unknown): boolean {
 /**
  * Does `err`, or anything in its `cause` chain, carry one of `codes`?
  *
- * The walk all three recognizers here need, spelled once. The `seen` set is not
+ * The walk every recognizer here needs, spelled once. The `seen` set is not
  * defensive: a retry wrapper that re-throws its own cause makes a CYCLE, and
  * without it this loops forever inside an error handler — the one place a hang is
  * hardest to attribute.
@@ -255,15 +242,20 @@ export function isTransportFailure(err: unknown): boolean {
  * one: `fetch` rejects with a bare `TypeError: fetch failed` and the real code is
  * one or two hops down.
  */
-function hasErrorCode(err: unknown, codes: ReadonlySet<string>): boolean {
+function someErrorCode(err: unknown, matches: (code: string) => boolean): boolean {
   const seen = new Set<unknown>();
   let cur: unknown = err;
   while (isRecord(cur) && !seen.has(cur)) {
     seen.add(cur);
-    if (typeof cur.code === "string" && codes.has(cur.code)) return true;
+    if (typeof cur.code === "string" && matches(cur.code)) return true;
     cur = cur.cause;
   }
   return false;
+}
+
+/** {@link someErrorCode} against a closed vocabulary, which is what most callers want. */
+function hasErrorCode(err: unknown, codes: ReadonlySet<string>): boolean {
+  return someErrorCode(err, (code) => codes.has(code));
 }
 
 /**

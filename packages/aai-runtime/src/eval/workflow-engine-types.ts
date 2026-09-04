@@ -15,20 +15,6 @@ import type { SpeechSynthesizer, StepFetch } from "@alexkroman1/aai/host-interna
 import type { WorkflowCtx, WorkflowDef, WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
 import type { WdkAdapter } from "../workflow-wdk-types.ts";
 
-/**
- * The DevKit's own slot for the durable `sleep`.
- *
- * `Symbol.for('WORKFLOW_SLEEP')` — read out of `@workflow/core`'s `symbols.js`,
- * where `sleep()` looks it up on `globalThis` and throws when it is empty. Named
- * by its string rather than imported because the import that would give it to us
- * is `@workflow/core/dist/symbols.js`, a deep path into a dependency's internals
- * that no export map offers.
- */
-export const WORKFLOW_SLEEP = Symbol.for("WORKFLOW_SLEEP");
-
-/** The shape the sleep slot is read and written through. */
-export type SleepSlot = { [WORKFLOW_SLEEP]?: (param: string | number | Date) => Promise<void> };
-
 /** One chunk `emit()` wrote during a run, and the stream it named. */
 export type EvalEmitted = {
   /** The stream the step named. */

@@ -40,6 +40,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
+import { storageGet, storageSet } from "./_web-storage.ts";
 
 const PREFIX = "aai:upload:";
 
@@ -70,25 +71,20 @@ function fingerprint(file: File): string {
 
 /** This scope's remembered ids, or nothing at all — a parse failure is nothing. */
 function read(scope: string): Record<string, unknown> {
+  const raw = storageGet("session", keyFor(scope));
+  if (raw === undefined) return {};
   try {
-    const raw = globalThis.sessionStorage?.getItem(keyFor(scope));
-    if (raw === null || raw === undefined) return {};
     const parsed: unknown = JSON.parse(raw);
     return isRecord(parsed) ? parsed : {};
   } catch {
-    // Unavailable, or holding something this version does not recognise. Either
-    // way there is nothing to resume, which is where this code started.
+    // Holding something this version does not recognise. There is nothing to
+    // resume, which is where this code started.
     return {};
   }
 }
 
 function write(scope: string, entries: Record<string, unknown>): void {
-  try {
-    globalThis.sessionStorage?.setItem(keyFor(scope), JSON.stringify(entries));
-  } catch {
-    // Unavailable, or the quota is gone. The id still lives in the session for
-    // this page's lifetime, so only the reload loses.
-  }
+  storageSet("session", keyFor(scope), JSON.stringify(entries));
 }
 
 /**

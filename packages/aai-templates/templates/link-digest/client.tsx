@@ -64,7 +64,7 @@
  * where a fan-out makes the history worth seeing.
  */
 
-import { page, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
+import { BulletList, page, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
@@ -92,10 +92,6 @@ function pendingNote(startedHere: boolean, found: boolean): string {
 
 export function App() {
   const [url, setUrl] = useState("");
-  // Did THIS load start the run? A reload cannot have, and that is the only way
-  // the page can tell "working on what you just submitted" from "picking up
-  // where you left off" — the hook reports the run, not who asked for it.
-  const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. `error` is the agent's own sentence for a
   // rejected input, which is better copy than anything this page could write, and
@@ -104,14 +100,14 @@ export function App() {
   // No `key` and no `recover`: this tab's handle on its own runs is minted and
   // remembered by the hook, and read back as it mounts. See the module doc for
   // what a page says when it wants a different one.
-  const { submit, run, pending, error, wake } = useWorkflowSubmit<typeof digest>("digest");
+  const { submit, run, pending, error, wake, startedHere } =
+    useWorkflowSubmit<typeof digest>("digest");
 
   // `submit()` resolves as soon as the run exists — deliberately not when it
   // finishes. That is the whole mechanism: the digest sleeps for a while, and
   // this page is free to be closed in the meantime.
   const onSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    setStartedHere(true);
     void submit({ url });
   };
 
@@ -125,6 +121,11 @@ export function App() {
           required
           value={url}
           onChange={(e) => setUrl(e.target.value)}
+          // A placeholder is not a name: it disappears the moment anything is
+          // typed, and a screen reader reaches an unlabelled box. The declared
+          // fields in `@alexkroman1/aai-ui` say the same thing — a `label`, or
+          // an `aria-label` where the row has no room for one.
+          aria-label="Article URL"
           // A REAL article, because a placeholder is a suggestion and this one
           // gets typed. `https://example.com/article` 404s, and the bare
           // `example.com` a reader trims it to has no prose on it — so the first
@@ -139,7 +140,13 @@ export function App() {
         </button>
       </form>
 
-      {error !== undefined && <p className="text-red-600">{error}</p>}
+      {/* `<Form>` carries `role="alert"` for the templates that declare their
+          fields; a hand-written form has to say it itself. */}
+      {error !== undefined && (
+        <p role="alert" className="text-red-600">
+          {error}
+        </p>
+      )}
 
       {/* A run that has not settled says so. `pending` is not derivable from the
           snapshot alone — an id the agent never knew leaves `run` undefined,
@@ -168,16 +175,19 @@ export function App() {
         </button>
       )}
 
-      {run?.status === "failed" && <p className="text-red-600">That one failed: {run.error}</p>}
+      {/* `role="alert"`, like the submit error above: this is the outcome the
+          reader has been waiting for, and it can arrive long after they looked
+          away. */}
+      {run?.status === "failed" && (
+        <p role="alert" className="text-red-600">
+          That one failed: {run.error}
+        </p>
+      )}
 
       {run?.status === "completed" && (
         <article className="flex flex-col gap-3">
           <h2 className="text-xl">{run.output.headline}</h2>
-          <ul className="flex list-disc flex-col gap-1 pl-5">
-            {run.output.points.map((point) => (
-              <li key={point}>{point}</li>
-            ))}
-          </ul>
+          <BulletList items={run.output.points} />
           <p className="text-sm opacity-70">Filed {run.output.filedAt}</p>
         </article>
       )}

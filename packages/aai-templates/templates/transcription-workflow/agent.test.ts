@@ -41,6 +41,7 @@ import {
   requestFormat,
 } from "./workflows/downsample.ts";
 import { cuttable, heavierThanNormalized, normalizeRecording } from "./workflows/normalize.ts";
+import { stitchChunks, stitchTranscript, TRANSCRIPT_STREAM } from "./workflows/stitch.ts";
 import {
   expectedSegments,
   nextPollDelay,
@@ -54,9 +55,6 @@ import {
 import {
   mergeTranscript,
   splitRecording,
-  stitchChunks,
-  stitchTranscript,
-  TRANSCRIPT_STREAM,
   type Transcript,
   transcribeFlow,
   transcribeSegment,
@@ -1356,6 +1354,16 @@ describe("normalizing the recording", () => {
    * later in `splitRecording` with a message about a header; a `timeout`
    * classified as fatal is a run that gives up on work that would have finished.
    */
+  // Point the toolchain at nothing, so this block really is what its doc says:
+  // a unit test that spawns no binary. Without it a developer with ffmpeg
+  // installed runs a different test from CI, which has none — and the one
+  // assertion below that reaches `normalizeRecording` is about a reporter line
+  // emitted BEFORE the spawn. `unstubEnvs` is repo-wide, so there is no teardown.
+  beforeEach(() => {
+    vi.stubEnv("AAI_FFMPEG_PATH", "/nonexistent/ffmpeg");
+    vi.stubEnv("AAI_FFPROBE_PATH", "/nonexistent/ffprobe");
+  });
+
   test("a canonical WAV is cuttable, so the desk converts nothing", () => {
     expect(cuttable(wavFile(MONO_16K, 32_000), 44 + 32_000)).toBe(true);
   });

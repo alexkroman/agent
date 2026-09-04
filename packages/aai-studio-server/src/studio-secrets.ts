@@ -31,8 +31,7 @@
  * platform nowhere.
  */
 
-import { safeJsonParse } from "@alexkroman1/aai";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { createLogger } from "aai-server/logger";
 import {
   deleteSlugSecret,
   listSlugSecrets,
@@ -42,13 +41,17 @@ import {
 import type { SecretStore } from "aai-server/secret-store";
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
+import { z } from "zod";
 import { forcePreviewRedeploy } from "./studio-preview.ts";
 import {
   ownedProjectSlugs,
   PROJECT_ENVIRONMENTS,
   type ProjectEnvironment,
 } from "./studio-project-slugs.ts";
+import { readJsonSecret, writeJsonSecret } from "./studio-secret-record.ts";
 import { getWorkspace, type StudioWorkspace } from "./studio-workspace.ts";
+
+const log = createLogger("studio.secrets");
 
 export type ProjectSecretsEnv = SecretEnv & {
   workspaces: WorkspaceStore;
@@ -68,6 +71,16 @@ export function projectEnvSecretName(scope: string, project: string): string {
 }
 
 /**
+ * What a project's stored record must look like.
+ *
+ * A SCHEMA rather than `isRecord` plus a cast, which is what this read used to
+ * do: `isRecord` narrows the container and says nothing about the values, so a
+ * document with a nested object in it was asserted to be
+ * `Record<string, string>` and merged straight into `store.putEnv`.
+ */
+const ProjectSecretsSchema = z.record(z.string(), z.string());
+
+/**
  * The project's own copy of its secrets. A missing or unparseable record
  * reads as empty: this is a cache of intent in front of the per-slug stores,
  * so failing a read closed would take down the whole panel for a bad row.
@@ -77,10 +90,8 @@ async function readProjectSecrets(
   scope: string,
   project: string,
 ): Promise<Record<string, string>> {
-  const raw = await env.secrets.get(projectEnvSecretName(scope, project));
-  if (raw === null) return {};
-  const parsed = safeJsonParse(raw);
-  return isRecord(parsed) ? (parsed as Record<string, string>) : {};
+  const name = projectEnvSecretName(scope, project);
+  return (await readJsonSecret(env.secrets, name, ProjectSecretsSchema)) ?? {};
 }
 
 /** Replace the project's record; an empty one is deleted rather than stored. */
@@ -92,7 +103,7 @@ async function writeProjectSecrets(
 ): Promise<void> {
   const name = projectEnvSecretName(scope, project);
   if (Object.keys(values).length === 0) await env.secrets.delete(name);
-  else await env.secrets.put(name, JSON.stringify(values));
+  else await writeJsonSecret(env.secrets, name, values);
 }
 
 /** Drop a deleted project's record — the delete cascade's share of this. */
@@ -203,17 +214,25 @@ function overProjectAgents<T>(
 export async function projectSecretsState(
   env: ProjectSecretsEnv,
   params: ProjectParams,
-  /** The already-resolved project, when the caller has one (a mutation). */
-  resolved?: ResolvedProject,
+  known: {
+    /** The already-resolved project, when the caller has one (a mutation). */
+    resolved?: ResolvedProject;
+    /**
+     * The project's record, when the caller just WROTE it. A mutation knows
+     * exactly what it stored, so re-reading it here was a Vault round trip
+     * asking a question the caller had already answered.
+     */
+    record?: Record<string, string>;
+  } = {},
 ): Promise<ProjectSecretsState | null> {
-  const project = resolved ?? (await resolveProject(env, params));
+  const project = known.resolved ?? (await resolveProject(env, params));
   if (project === null) return null;
   // Independent reads — the per-agent listing and the project's own record
   // touch different stores, and this runs on the panel's GET as well as after
   // every mutation.
   const [listed, record] = await Promise.all([
     overProjectAgents(project, (slug) => listSlugSecrets(env, slug)),
-    readProjectSecrets(env, params.scope, params.project),
+    known.record ?? readProjectSecrets(env, params.scope, params.project),
   ]);
   const held = Object.keys(record);
   const byEnvironment = new Map(listed.map((entry) => [entry.environment, entry]));
@@ -266,13 +285,20 @@ async function mutateProjectSecrets(
   },
 ): Promise<ProjectSecretsState | null> {
   const { scope, project } = params;
-  const resolved = await resolveProject(env, params);
+  // Concurrent because nothing connects them: resolving the project reads the
+  // workspace and fans out over its slugs, the held record is a Vault read.
+  // The WRITE still waits for both, so the resolve-before-write ordering the
+  // block above argues for is unchanged.
+  const [resolved, held] = await Promise.all([
+    resolveProject(env, params),
+    readProjectSecrets(env, scope, project),
+  ]);
   if (resolved === null) return null;
-  const held = await readProjectSecrets(env, scope, project);
-  await writeProjectSecrets(env, scope, project, change.record(held));
+  const record = change.record(held);
+  await writeProjectSecrets(env, scope, project, record);
   await overProjectAgents(resolved, change.perAgent);
   await redeployPreview(env, params, resolved);
-  return projectSecretsState(env, params, resolved);
+  return projectSecretsState(env, params, { resolved, record });
 }
 
 /**
@@ -331,7 +357,7 @@ export async function reconcileProjectSecrets(
     // an unchanged project is the common case.
     if (Object.keys(merged).length === Object.keys(existing).length) return;
     await env.store.putEnv(params.slug, merged);
-    console.info("Project secrets applied to a newly deployed slug", {
+    log.info("applied to a newly deployed slug", {
       slug: params.slug,
       keyCount: Object.keys(merged).length - Object.keys(existing).length,
     });

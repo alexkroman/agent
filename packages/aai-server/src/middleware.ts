@@ -6,8 +6,9 @@ import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { bearerFailureMessage } from "./_bearer.ts";
 import { TtlCache } from "./_ttl-cache.ts";
-import type { ApiKeyVerifier } from "./api-key-verify.ts";
+import { type ApiKeyVerifier, assemblyAiUnavailable } from "./api-key-verify.ts";
 import type { HonoEnv } from "./context.ts";
+import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
 import { RESERVED_SLUGS, VALID_SLUG_RE } from "./schemas.ts";
 import type { SecretStore } from "./secret-store.ts";
 import { verifySlugOwner } from "./secrets.ts";
@@ -138,10 +139,18 @@ async function assertVerifiedApiKey(
   try {
     valid = await verifier(token);
   } catch (err) {
-    throw new HTTPException(503, {
-      message: "Could not verify the API key right now — retry shortly",
-      cause: err,
-    });
+    // CLASSIFY, do not answer. This used to mint its own `HTTPException(503)`,
+    // which made AssemblyAI — the platform's THIRD dependency reached over HTTP
+    // — the one that never arrived at `createErrorHandler`'s single 503 branch.
+    // That branch's own comment ("they share one branch so a fourth cannot
+    // arrive with a different status") is about exactly this case. What the
+    // bespoke throw cost: no `platform service assemblyai unavailable on <path>`
+    // line, so nothing named the dashboard an operator has to open, and one
+    // condition had two different wire sentences.
+    //
+    // The real verifier already throws this class; the re-wrap covers an
+    // INJECTED verifier that throws something else.
+    throw err instanceof PlatformServiceUnavailableError ? err : assemblyAiUnavailable(err);
   }
   if (!valid) {
     throw new HTTPException(401, { message: "Invalid API key" });

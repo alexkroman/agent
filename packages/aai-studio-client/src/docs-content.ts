@@ -212,6 +212,24 @@ export function agentBase(origin: string, slug: string): string {
   return `${origin}/${slug}`;
 }
 
+/**
+ * What both the API pane and the Workflows card say when an agent declares no
+ * workflow, and when the read itself failed.
+ *
+ * Shared because the two panes answer the same condition about the same agent:
+ * held apart, an edit to one leaves the other saying something else. The
+ * failure quotes the agent's OWN sentence — a 503 while a sandbox boots and a
+ * 404 from an agent that serves no workflow API read very differently, and
+ * that text is the whole difference.
+ */
+export const NO_WORKFLOWS_DECLARED =
+  "This project declares no workflows. A voice agent does not need any — they are for work that has to outlive the call that started it.";
+
+/** @see {@link NO_WORKFLOWS_DECLARED} */
+export function workflowReadFailure(detail: string): string {
+  return `Could not read the workflows: ${detail}`;
+}
+
 /** The absolute URL of one documented route. */
 export function endpointUrl(base: string, endpoint: DocEndpoint): string {
   return endpoint.path === "" ? `${base}/` : `${base}/${endpoint.path}`;

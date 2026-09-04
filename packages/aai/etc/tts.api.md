@@ -17,7 +17,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
     readonly es: "spanish";
 };
 
-// @public (undocumented)
+// @public
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public

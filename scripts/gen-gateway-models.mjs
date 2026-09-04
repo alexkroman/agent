@@ -41,10 +41,29 @@ const EU = "https://llm-gateway.eu.assemblyai.com/v1/models";
 const CHAT = "https://llm-gateway.assemblyai.com/v1/chat/completions";
 const TARGET = new URL("../packages/aai/src/sdk/providers/llm/gateway-models.ts", import.meta.url);
 
+/**
+ * One entry of the gateway's `/models` list, as this generator reads it.
+ *
+ * Only the four fields below are consulted; naming them means a renamed field
+ * upstream is a compile error here rather than a catalog that silently loses a
+ * capability column — `check-gateway-models.mjs` has already been burned once
+ * by a parse that quietly produced zero entries.
+ *
+ * @typedef {{ id: string, supported_parameters?: string[], context_length?: number }} GatewayModel
+ */
+
+/**
+ * @param {string | URL} url
+ * @param {string} key
+ * @returns {Promise<GatewayModel[]>}
+ */
 async function models(url, key) {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-  return (await res.json()).data ?? [];
+  // `Response.json()` answers `unknown`; the gateway's list endpoint answers
+  // `{ data: [...] }`, and `?? []` covers a body that carries no `data`.
+  const body = /** @type {{ data?: GatewayModel[] }} */ (await res.json());
+  return body.data ?? [];
 }
 
 /**
@@ -74,7 +93,17 @@ async function isLive(id, key) {
 const key = apiKey();
 const [us, eu] = await Promise.all([models(US, key), models(EU, key)]);
 const euIds = new Set(eu.map((m) => m.id));
-const live = new Map(await Promise.all(us.map(async (m) => [m.id, await isLive(m.id, key)])));
+const live = new Map(
+  // The `@returns` is what makes the body a TUPLE rather than an array.
+  await Promise.all(
+    us.map(
+      /** @returns {Promise<[id: string, live: boolean]>} */ async (m) => [
+        m.id,
+        await isLive(m.id, key),
+      ],
+    ),
+  ),
+);
 
 const entries = us
   .map((m) => {

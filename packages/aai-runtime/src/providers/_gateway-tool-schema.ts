@@ -68,9 +68,53 @@
  * Schema or reports what it rejected.
  */
 
+import { isRecord } from "@alexkroman1/aai/utils";
 import type { LanguageModelMiddleware } from "ai";
+import type { JSONSchema7 } from "json-schema";
 import { toolSchemaRules } from "./_tool-schema-compat.ts";
-import { rewriteToolSchema } from "./_tool-schema-walk.ts";
+import { rewriteToolSchema, type SchemaRule } from "./_tool-schema-walk.ts";
+
+/**
+ * Answers already given, keyed by the rule set and then by the schema OBJECT.
+ *
+ * `toVercelTools` builds a session's tool set once and the AI SDK hands the same
+ * `inputSchema` object to every request, so without this the whole schema is
+ * deep-walked per LLM request — several times a turn, on the time-to-first-token
+ * path, for every agent on the default gateway provider. `rewriteToolSchema`
+ * allocates per nested object before deciding to return its input, so even the
+ * already-clean fast path pays the walk plus its garbage.
+ *
+ * **Two levels, because the answer depends on the RULES as well as the schema.**
+ * The rewrite is selected by model id, so one schema has a different answer
+ * under the Gemini layer than under the unconditional one — a cache keyed on the
+ * schema alone would serve a Gemini-folded schema to an OpenAI call the moment
+ * an agent used two models. That is safe to key on by identity because
+ * `toolSchemaRules` returns one of exactly two module-level constants, never a
+ * per-call array.
+ *
+ * `WeakMap` rather than a cache with a policy, at both levels: the entry dies
+ * with the schema, which dies with the session. Result IDENTITY is preserved,
+ * which is what `gatewayToolSchemaMiddleware`'s `tool !== tools[i]` check rests
+ * on — a memo that returned an equal-but-fresh object would make every request
+ * look rewritten.
+ */
+const rewritten = new WeakMap<object, WeakMap<object, JSONSchema7>>();
+
+/** {@link rewriteToolSchema}, walked once per (rule set, schema object). */
+function rewriteOnce(schema: JSONSchema7, rules: readonly SchemaRule[]): JSONSchema7 {
+  // A boolean schema is legal JSON Schema and cannot be a `WeakMap` key.
+  if (!isRecord(schema)) return rewriteToolSchema(schema, rules);
+  let bySchema = rewritten.get(rules);
+  if (bySchema === undefined) {
+    bySchema = new WeakMap<object, JSONSchema7>();
+    rewritten.set(rules, bySchema);
+  }
+  const memo = bySchema.get(schema);
+  if (memo !== undefined) return memo;
+  const answer = rewriteToolSchema(schema, rules);
+  bySchema.set(schema, answer);
+  return answer;
+}
 
 /**
  * Middleware that rewrites every function tool's input schema for the model the
@@ -94,7 +138,7 @@ export function gatewayToolSchemaMiddleware(): LanguageModelMiddleware {
       const rules = toolSchemaRules(model.modelId);
       const pruned = tools.map((tool) => {
         if (tool.type !== "function") return tool;
-        const inputSchema = rewriteToolSchema(tool.inputSchema, rules);
+        const inputSchema = rewriteOnce(tool.inputSchema, rules);
         return inputSchema === tool.inputSchema ? tool : { ...tool, inputSchema };
       });
       // Identity when every schema was already clean — see `rewriteToolSchema`.

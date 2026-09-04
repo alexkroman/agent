@@ -226,14 +226,23 @@ function createRepairTransform(newId: () => string): TransformStream<Uint8Array,
       // buffer after every line reallocates the remaining tail per line,
       // which is O(chunk²) on a many-line network chunk.
       let start = 0;
+      let out = "";
       let newline = buffer.indexOf("\n", start);
       while (newline !== -1) {
         const line = buffer.slice(start, newline);
         start = newline + 1;
-        controller.enqueue(encoder.encode(`${repairLine(line, ids, newId)}\n`));
+        out += `${repairLine(line, ids, newId)}\n`;
         newline = buffer.indexOf("\n", start);
       }
       if (start > 0) buffer = buffer.slice(start);
+      // ONE encode and ONE enqueue per network chunk, not per line. An OpenAI
+      // frame is `data: {…}\n` plus a blank line, so a streamed reply was paying
+      // two `TextEncoder.encode` calls and two full stream enqueues — queueing
+      // plus backpressure machinery — per token, on the time-to-first-token path
+      // of every voice turn, and the consumer re-joins the lines anyway. No
+      // latency is traded away: `transform` is synchronous, so every line of a
+      // chunk was already processed before control returned to the reader.
+      if (out !== "") controller.enqueue(encoder.encode(out));
     },
     flush(controller) {
       buffer += decoder.decode();

@@ -184,7 +184,12 @@ export type SseStream = Pick<SSEStreamingApi, "writeSSE" | "onAbort">;
  * to be referred to by.
  */
 export type SsePusher = {
-  write(event: string, data: string): Promise<void>;
+  /**
+   * NO `write`. Every frame goes through {@link SsePusher.push}, which is what
+   * serializes production onto one chain — an escape hatch that writes a frame
+   * directly is an affordance for exactly the out-of-order delivery that chain
+   * exists to prevent.
+   */
   push(produce: () => Promise<Frame>): void;
   /** Hold open until disconnect (or a null push); then run `cleanup`. */
   wait(cleanup: () => void): Promise<void>;
@@ -231,5 +236,5 @@ export function createSsePusher(stream: SseStream): SsePusher {
       clearInterval(heartbeat);
     }
   };
-  return { write, push, wait };
+  return { push, wait };
 }

@@ -1,5 +1,6 @@
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { EXCURSIONS, formatPrice, requireDesk, tripSlot } from "../shared.ts";
+import { EXCURSIONS, requireDesk, tripSlot } from "../shared.ts";
 
 /** Their `search_trip_recommendations` — city plus a loose keyword, matched
  *  against the name and the kind so "boat" and "sail" both land. */
@@ -34,7 +35,7 @@ export default tripSlot.tool({
         id: e.id,
         name: e.name,
         kind: e.kind,
-        price: formatPrice(e.price),
+        price: formatMoney(e.price),
       })),
     };
   },

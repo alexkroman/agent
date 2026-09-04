@@ -4,6 +4,7 @@
 // the CLI round-trip is not discoverable from the UI otherwise, so the
 // commands are spelled out with the project name already filled in.
 
+import { CopyLine } from "./snippet.tsx";
 import { useCopy } from "./use-copy.ts";
 
 const CLI_PACKAGE = "@alexkroman1/aai-cli";
@@ -45,18 +46,8 @@ export function CliCommands({ project }: CliCommandsProps) {
     <div className="flex flex-col gap-3">
       <ol className="m-0 flex list-none flex-col gap-1.5 p-0">
         {commands.map((command) => (
-          <li key={command} className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 rounded-md border border-line bg-cream px-3 py-2 font-mono text-xs break-all">
-              {command}
-            </code>
-            <button
-              type="button"
-              className="btn px-2 py-1 text-xs"
-              onClick={() => copier.copy(command)}
-              aria-label={`Copy: ${command}`}
-            >
-              {copier.label(command)}
-            </button>
+          <li key={command}>
+            <CopyLine text={command} label={`Copy: ${command}`} copier={copier} />
           </li>
         ))}
       </ol>

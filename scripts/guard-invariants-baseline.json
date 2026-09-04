@@ -48,7 +48,6 @@
     "packages/aai-cli/src/_deploy.ts": 2,
     "packages/aai-cli/src/deploy.ts": 1,
     "packages/aai-cli/src/studio.ts": 1,
-    "packages/aai-guest/src/harness-bundle.ts": 1,
     "packages/aai-runtime/src/_test-utils.ts": 1,
     "packages/aai-runtime/src/providers/stt/elevenlabs.ts": 1,
     "packages/aai-runtime/src/transports/pipeline-llm-trace.ts": 1,

@@ -8,7 +8,7 @@
  * back in.
  */
 import { describe, expect, test } from "vitest";
-import { countWords, formatBytes, formatDuration, plural } from "./format.ts";
+import { countWords, formatBytes, formatDuration, formatMoney, plural } from "./format.ts";
 
 describe("formatBytes", () => {
   test.each([
@@ -129,6 +129,48 @@ describe("plural", () => {
   });
 });
 
+describe("formatMoney", () => {
+  test.each([
+    [0, "$0.00"],
+    [1, "$1.00"],
+    // Always to the cent, which is the half `toLocaleString` got wrong.
+    [17.5, "$17.50"],
+    [0.5, "$0.50"],
+    // Grouping starts at exactly 1000, and every three digits after it.
+    [999, "$999.00"],
+    [1000, "$1,000.00"],
+    [2292.371, "$2,292.37"],
+    [1_234_567.891, "$1,234,567.89"],
+    // The sign leads the symbol — how a refund is written.
+    [-4.99, "-$4.99"],
+    [-1234, "-$1,234.00"],
+    // Rounds to zero, so it loses the sign with the magnitude.
+    [-0.001, "$0.00"],
+    [-0, "$0.00"],
+  ])("formats %d as %s", (amount, expected) => {
+    expect(formatMoney(amount)).toBe(expected);
+  });
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "%d is $0.00, like the other formatters",
+    (amount) => {
+      expect(formatMoney(amount)).toBe("$0.00");
+    },
+  );
+
+  test("the symbol is a prefix and does not change the shape", () => {
+    expect(formatMoney(1234, "\u20ac")).toBe("\u20ac1,234.00");
+    expect(formatMoney(-4.99, "\u00a3")).toBe("-\u00a34.99");
+  });
+
+  test("past 1e21 it degrades to notation rather than to nonsense", () => {
+    // `toFixed` has no decimal point to slice at up there, and the grouping
+    // path would answer "$1e+21" by accident of slicing rather than by rule.
+    expect(formatMoney(1e21)).toBe("$1e+21");
+    expect(formatMoney(-1e21)).toBe("-$1e+21");
+  });
+});
+
 describe("the shapes the template copies produced", () => {
   test("one run reports one duration on both sides of the wire", () => {
     // The live bug: `call-audit/workflows/media.ts` said "1:04:09" and
@@ -136,5 +178,12 @@ describe("the shapes the template copies produced", () => {
     const ms = 3_849_000;
     expect(formatDuration(ms)).toBe("1:04:09");
     expect(formatDuration(ms)).toBe(formatDuration(ms));
+  });
+
+  test("one price reads the same at every desk", () => {
+    // The live drift: `pizza-ordering` rendered "$1234.00", `travel-concierge`
+    // rendered "$1,234" for the same amount, and `retail` spelled a third
+    // convention inline twelve times.
+    expect(formatMoney(1234)).toBe("$1,234.00");
   });
 });

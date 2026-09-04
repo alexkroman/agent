@@ -69,6 +69,22 @@ export const AUTH_CONFIG_ATTEMPT_TIMEOUT_MS = 10_000;
 export const AGENT_PAGE_PROBE_TIMEOUT_MS = 5000;
 
 /**
+ * Per-request deadline for the two reads aimed at a deployed AGENT's own
+ * workflow API — the API pane's listing and the Workflows card's runs.
+ *
+ * Generous because the first read may be waiting out a container boot, which
+ * is what brokering does. It lives in this table even though neither call goes
+ * through `fetchJson` (both hand it to the SDK's own client as `timeoutMs`):
+ * the table is about the DEADLINE, not the transport, and the two panes had
+ * declared this same number with this same reasoning twice, so whoever
+ * retuned the boot deadline would have found one of them. The one deadline
+ * that deliberately stays out of this table is `auth-methods.ts`'s GoTrue
+ * read, which is a THIRD-PARTY origin rather than a route of ours — argued
+ * in place.
+ */
+export const AGENT_READ_TIMEOUT_MS = 20_000;
+
+/**
  * The deadline every request carries unless it names its own.
  *
  * A browser `fetch` has NO timeout of its own, and a hung request is not a

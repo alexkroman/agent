@@ -52,7 +52,9 @@ const arg = valueReader(process.argv.slice(2));
 
 const PORT = arg("port", "4900");
 const CARRIER = arg("carrier", "twilio");
-const URL_ = arg("url", `ws://127.0.0.1:${PORT}/phone?carrier=${CARRIER}`);
+// `String(...)`: a bare `--url` reads as `true` (see `valueReader`), and this
+// is handed straight to `WebSocket`.
+const URL_ = String(arg("url", `ws://127.0.0.1:${PORT}/phone?carrier=${CARRIER}`));
 const SECONDS = Number(arg("seconds", "6"));
 const ENCODING = arg("encoding", "audio/x-mulaw");
 const STREAM_ID = "MZ00000000000000000000000000000001";

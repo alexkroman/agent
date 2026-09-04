@@ -78,6 +78,12 @@ export function createMockSessionCore(
       snapshot = { ...snapshot, started: false, running: false, recording: false };
       notify();
     },
+    // Composed from the two halves rather than assigned a shape of its own, so
+    // a mock `restart` cannot claim an effect the real one does not have.
+    restart() {
+      core.end();
+      core.start();
+    },
     update(partial: Partial<SessionSnapshot>) {
       // Mirror the real core: content changes bump contentVersion. An explicit
       // contentVersion in `partial` wins, so tests can pin it for updates the

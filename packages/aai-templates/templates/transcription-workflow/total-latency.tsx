@@ -15,6 +15,7 @@
  */
 
 import { formatDuration } from "@alexkroman1/aai/utils";
+import { Facts } from "@alexkroman1/aai-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
@@ -29,12 +30,17 @@ const STOPWATCH_TICK_MS = 250;
 /** What {@link useTotalLatency} reports. */
 export type TotalLatency = {
   /**
-   * Milliseconds since the submit — ticking while the submission is in flight,
-   * frozen at the finish, and undefined before the first one.
+   * The mark the clock started at, or undefined before the first submit.
+   *
+   * The raw mark rather than an elapsed duration, and that is the load-bearing
+   * part: an elapsed number is stale the instant it is computed, so a page
+   * holding one has to re-render to keep it true — which is what used to drive
+   * the whole tree at 4 Hz. {@link TotalLatency} turns these two marks into a
+   * duration, and only that section re-renders.
    */
-  elapsedMs: number | undefined;
-  /** Whether the clock is still running, which is what makes the label honest. */
-  running: boolean;
+  startedAt: number | undefined;
+  /** The elapsed time at the moment the run settled, once it has. */
+  frozenMs: number | undefined;
   /** Start (or restart) the clock. Called from the form's own submit handler. */
   start: () => void;
   /** Drop it, for a panel that no longer describes the submission it timed. */
@@ -53,7 +59,10 @@ export type TotalLatency = {
  *
  * - **The interval re-renders; it does not accumulate.** The elapsed time is read
  *   from the clock at render, so a tick the tab throttled or dropped cannot make
- *   the number lag behind real time.
+ *   the number lag behind real time. The interval lives in {@link TotalLatency}
+ *   rather than here, because a hook called from the page makes its ticks the
+ *   PAGE's re-renders — the form, the upload bar, the run panel and the whole
+ *   history list, four times a second, to move one duration string.
  * - **`performance.now()`, not `Date.now()`.** It is monotonic, so a clock
  *   correction (NTP, a laptop waking up) cannot make a transcription look
  *   instant — or negative.
@@ -61,8 +70,6 @@ export type TotalLatency = {
 export function useTotalLatency(inFlight: boolean): TotalLatency {
   const [startedAt, setStartedAt] = useState<number | undefined>(undefined);
   const [frozenMs, setFrozenMs] = useState<number | undefined>(undefined);
-  // Re-render trigger only — see the doc above.
-  const [, tick] = useState(0);
   // Whether `inFlight` has been seen true since the last `start()`. Without it,
   // a start that lands one render before the submission reports itself in flight
   // would freeze the clock at zero instead of running it.
@@ -72,8 +79,7 @@ export function useTotalLatency(inFlight: boolean): TotalLatency {
     if (startedAt === undefined || frozenMs !== undefined) return;
     if (inFlight) {
       began.current = true;
-      const id = setInterval(() => tick((n) => n + 1), STOPWATCH_TICK_MS);
-      return () => clearInterval(id);
+      return;
     }
     // Measured here rather than at render, so the frozen number is the one at the
     // moment the run settled rather than whenever this page next drew.
@@ -93,8 +99,8 @@ export function useTotalLatency(inFlight: boolean): TotalLatency {
   }, []);
 
   return {
-    elapsedMs: frozenMs ?? (startedAt === undefined ? undefined : performance.now() - startedAt),
-    running: startedAt !== undefined && frozenMs === undefined,
+    startedAt,
+    frozenMs,
     start,
     clear,
   };
@@ -114,17 +120,31 @@ export function useTotalLatency(inFlight: boolean): TotalLatency {
  * notices it finished. Clamped at zero, because the two numbers come from two
  * different clocks on two different machines and a few milliseconds the wrong way
  * would otherwise print a negative.
+ *
+ * The stopwatch interval lives HERE rather than in {@link useTotalLatency}, so a
+ * running clock re-renders this section and nothing else.
  */
 export function TotalLatency({
-  elapsedMs,
-  running,
+  startedAt,
+  frozenMs,
   runMs,
 }: {
-  elapsedMs: number | undefined;
-  running: boolean;
+  startedAt: number | undefined;
+  frozenMs: number | undefined;
   runMs: number | undefined;
 }) {
-  if (elapsedMs === undefined) return null;
+  // Re-render trigger only: the elapsed time is read from the clock below, so a
+  // tick the tab throttled or dropped cannot make the number lag real time.
+  const [, tick] = useState(0);
+  const running = startedAt !== undefined && frozenMs === undefined;
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => tick((n) => n + 1), STOPWATCH_TICK_MS);
+    return () => clearInterval(id);
+  }, [running]);
+
+  if (startedAt === undefined) return null;
+  const elapsedMs = frozenMs ?? performance.now() - startedAt;
   const outside = runMs === undefined ? undefined : Math.max(0, elapsedMs - runMs);
   return (
     <section className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-md border px-5 py-3">
@@ -134,9 +154,15 @@ export function TotalLatency({
       <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-sm tabular-nums">{formatDuration(elapsedMs)}</span>
         {runMs !== undefined && outside !== undefined && (
-          <span className="text-xs tabular-nums opacity-60">
-            {formatDuration(outside)} before the run · {formatDuration(runMs)} inside it
-          </span>
+          <Facts
+            size="xs"
+            as="span"
+            className="tabular-nums"
+            items={[
+              `${formatDuration(outside)} before the run`,
+              `${formatDuration(runMs)} inside it`,
+            ]}
+          />
         )}
       </span>
     </section>

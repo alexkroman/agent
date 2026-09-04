@@ -18,6 +18,7 @@
  */
 
 import { hash } from "node:crypto";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { projectKey as platformProjectKey } from "aai-server/platform-events";
 import { SafePathSchema } from "aai-server/schemas";
@@ -218,11 +219,10 @@ export function assertWorkspaceLimits(files: Record<string, string>): void {
 
 /** Shape-check a stored document; anything malformed reads as "no workspace". */
 function parseWorkspace(doc: unknown): StudioWorkspace | null {
-  // `typeof null === "object"`: a doc with `files: null` (or an array) must
-  // read as "no workspace", not surface as TypeErrors downstream.
-  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
-  const files = (doc as { files?: unknown }).files;
-  if (!files || typeof files !== "object" || Array.isArray(files)) return null;
+  // `isRecord` rather than a hand-spelled `typeof`/`Array.isArray` pair: it
+  // NARROWS, so reading `.files` needs no cast. A doc with `files: null` (or an
+  // array) must read as "no workspace", not surface as TypeErrors downstream.
+  if (!(isRecord(doc) && isRecord(doc.files))) return null;
   return doc as StudioWorkspace;
 }
 
@@ -233,7 +233,11 @@ function parseWorkspace(doc: unknown): StudioWorkspace | null {
  * without touching `files`, so when the map is reference-equal to `prior`'s
  * its stamped hash is reused rather than re-serializing the whole tree.
  */
-function stampWorkspace(workspace: WorkspaceInput, prior?: StudioWorkspace): StudioWorkspace {
+function stampWorkspace(
+  workspace: WorkspaceInput,
+  prior?: StudioWorkspace,
+  knownHash?: string,
+): StudioWorkspace {
   const files = normalizeFileMap(workspace.files);
   assertWorkspaceLimits(files);
   // `prior` is a PARSED store document, so `prior.hash` is a claim rather than a
@@ -241,7 +245,8 @@ function stampWorkspace(workspace: WorkspaceInput, prior?: StudioWorkspace): Stu
   // presence test is what stops a document that lacks one from stamping
   // `undefined` over the whole tree's hash.
   const hashValue =
-    prior?.hash !== undefined && files === prior.files ? prior.hash : filesHash(files);
+    knownHash ??
+    (prior?.hash !== undefined && files === prior.files ? prior.hash : filesHash(files));
   return { ...workspace, files, hash: hashValue, updatedAt: Date.now() };
 }
 
@@ -308,12 +313,16 @@ export function syncWorkspaceSource(
     // such push as a change — a version bump and a preview deploy per `aai
     // push`, for a byte-identical tree.
     const incoming = normalizeFileMap(files);
+    // Hashed ONCE and threaded into the stamps below: `stampWorkspace` reuses
+    // `prior.hash` only on REFERENCE equality, which a caller replacing the map
+    // defeats by construction, so a changed push hashed the same tree twice.
+    const incomingHash = filesHash(incoming);
     const stored = await readWorkspace(store, scope, project);
     if (!stored) {
       // A caller holding a baseHash pulled a project that has since been
       // deleted — that is a conflict to surface, not a fresh create.
       if (baseHash !== undefined) throw new WorkspaceConflictError(scope, project);
-      const doc = stampWorkspace({ files: incoming });
+      const doc = stampWorkspace({ files: incoming }, undefined, incomingHash);
       await store.put(scope, project, doc, null);
       return { workspace: doc, sourceHash: doc.hash, created: true, changed: true };
     }
@@ -322,10 +331,10 @@ export function syncWorkspaceSource(
     if (baseHash !== undefined && baseHash !== storedHash) {
       throw new WorkspaceConflictError(scope, project);
     }
-    if (filesHash(incoming) === storedHash) {
+    if (incomingHash === storedHash) {
       return { workspace: current, sourceHash: storedHash, created: false, changed: false };
     }
-    const doc = stampWorkspace({ ...current, files: incoming }, current);
+    const doc = stampWorkspace({ ...current, files: incoming }, current, incomingHash);
     await store.put(scope, project, doc, stored.version);
     return { workspace: doc, sourceHash: doc.hash, created: false, changed: true };
   });

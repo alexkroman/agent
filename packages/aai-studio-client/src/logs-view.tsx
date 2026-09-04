@@ -16,10 +16,12 @@
 //   line of its own, because a tail that silently skips is indistinguishable
 //   from an agent that went quiet.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import clsx from "clsx";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import { type AgentLogLine, type AgentLogsPage, api } from "./api.ts";
 import { errorText } from "./api-error.ts";
+import { SEG_GROUP, segItemClass } from "./segmented.ts";
 
 /**
  * How often the pane asks for what is new.
@@ -31,10 +33,10 @@ import { errorText } from "./api-error.ts";
  * would have to re-derive anyway — and because the studio's existing SSE route
  * carries workspace state, which is a different lifetime from a sandbox's.
  */
-export const LOGS_POLL_MS = 1000;
+const LOGS_POLL_MS = 1000;
 
 /** Lines the pane keeps. Past this the oldest go — the guest's ring is bounded too. */
-export const MAX_RENDERED_LINES = 5000;
+const MAX_RENDERED_LINES = 5000;
 
 export type LogsViewProps = {
   bearer: string;
@@ -59,8 +61,8 @@ const TARGET_LABEL: Record<LogsTarget, string> = {
 type Gap = { kind: "gap"; seq: number; count: number };
 type Row = (AgentLogLine & { kind?: undefined }) | Gap;
 
-/** Hoisted: `timeOf` runs once per rendered row, and there are up to
- * {@link MAX_RENDERED_LINES} of them on every re-render. */
+/** Hoisted: `timeOf` runs once per rendered row. See {@link LogRow} for what
+ * keeps the number of those rows proportional to the new lines in a tick. */
 function pad(n: number, width = 2): string {
   return String(n).padStart(width, "0");
 }
@@ -195,16 +197,20 @@ function TargetSwitch(props: {
 }) {
   const slugFor = (id: LogsTarget) => (id === "preview" ? props.previewSlug : props.deployedSlug);
   return (
-    <div className="flex overflow-hidden rounded-sm border border-line">
+    <div className={SEG_GROUP}>
       {LOGS_TARGETS.map((id, i) => (
         <button
           key={id}
           type="button"
           aria-current={props.target === id ? "page" : undefined}
           disabled={slugFor(id) === undefined}
-          className={`px-2.5 py-1 text-[11px] ${i > 0 ? "border-l border-line" : ""} ${
-            props.target === id ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg"
-          } disabled:cursor-not-allowed disabled:text-disabled`}
+          className={clsx(
+            // Its own size rather than `.seg`: this picker sits in a pane
+            // header, not the 60px top bar.
+            "px-2.5 py-1 text-[11px]",
+            segItemClass(props.target === id, i),
+            "disabled:cursor-not-allowed disabled:text-disabled",
+          )}
           onClick={() => props.onSelect(id)}
         >
           {TARGET_LABEL[id]}
@@ -275,7 +281,18 @@ function LogsBody(props: {
   );
 }
 
-function LogRow(props: { row: Row }) {
+/**
+ * One line, memoized.
+ *
+ * The tail re-renders on every poll tick — once a second — and holds up to
+ * {@link MAX_RENDERED_LINES} rows, so without this a tick that brought one new
+ * line re-ran `timeOf` and reconciled all 5000. Row identity is what makes it
+ * work: `append` spreads the previous array and pushes the parsed page objects
+ * themselves, and `slice` preserves identity, so only genuinely new rows have a
+ * new `row` reference. Same pattern and same argument as `MessageView` in
+ * chat-transcript.tsx.
+ */
+const LogRow = memo(function LogRow(props: { row: Row }) {
   const { row } = props;
   if (row.kind === "gap") {
     return (
@@ -291,7 +308,7 @@ function LogRow(props: { row: Row }) {
       <span className={row.stream === "stderr" ? "text-err" : "text-fg"}>{row.text}</span>
     </div>
   );
-}
+});
 
 function Empty(props: { title: string; body: string }) {
   return (

@@ -198,10 +198,16 @@ describe("it cleans up after itself", () => {
     const globalFetch = globalThis.fetch;
     globalThis.fetch = fetchImpl;
     try {
-      const code = await smoke?.main(["--timeout-seconds", "1", "--interval-seconds", "1"], {
-        AAI_PLATFORM_URL: "https://x",
-        AAI_API_KEY: "k",
-      });
+      // Sub-millisecond, because `main` takes no `sleep`/`now` seam: whole
+      // seconds here would make a unit-tier test wait out the real broker
+      // loop. The deadline expiring is the point; how long it took is not.
+      const code = await smoke?.main(
+        ["--timeout-seconds", "0.001", "--interval-seconds", "0.001"],
+        {
+          AAI_PLATFORM_URL: "https://x",
+          AAI_API_KEY: "k",
+        },
+      );
       expect(code).toBe(1);
     } finally {
       globalThis.fetch = globalFetch;

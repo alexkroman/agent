@@ -12,6 +12,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { writeJson } from "./harness-http.ts";
 
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -19,9 +20,9 @@ export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "authorization, content-type",
 };
 
+/** The `/studio/*` responder: {@link writeJson} plus this surface's CORS policy. */
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json", ...CORS_HEADERS });
-  res.end(JSON.stringify(body));
+  writeJson(res, status, body, CORS_HEADERS);
 }
 
 /** Read the request body with a hard byte cap. */

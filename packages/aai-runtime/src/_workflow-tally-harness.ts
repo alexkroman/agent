@@ -80,7 +80,9 @@ export type JournalOutcome = {
   error: string | undefined;
   /** Journal keys, as a sorted list so two runs compare as sets. */
   keys: string[];
+  /** Step NAME to how many times its body really ran. */
   counts: Record<string, number>;
+  /** Counted step-body invocations, which is also the number of crash points. */
   total: number;
 };
 

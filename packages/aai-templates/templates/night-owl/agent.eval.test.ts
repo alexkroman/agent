@@ -13,8 +13,10 @@
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
  *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS — a scaffolded project has no repo helper to import. Without
+ * Taken from `virtual:aai/agent` rather than a hand-written glob: the plugin
+ * expands it against THIS file's own directory, so the spec needs no glob and
+ * no shared helper — which matters because this file SHIPS, and a scaffolded
+ * project has no repo helper to import. Without
  * it the eval would drive an agent with no `recommend` at all, which is the one
  * failure a green eval must never be able to hide.
  *

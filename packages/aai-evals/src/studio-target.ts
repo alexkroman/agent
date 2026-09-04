@@ -16,7 +16,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
-import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
+import { isRecord, responseErrorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import {
   getToolName,
   isDynamicToolUIPart,
@@ -28,6 +28,7 @@ import {
 import type { EventSourceMessage } from "eventsource-parser";
 import { EventSourceParserStream } from "eventsource-parser/stream";
 import { Agent, fetch as undiciFetch } from "undici";
+import { condense } from "./report.ts";
 
 /**
  * A turn can legitimately run for many minutes (the studio's step cap is 80),
@@ -84,20 +85,28 @@ const VERIFYING_TOOLS: ReadonlySet<string> = new Set([
   "edit_file",
 ]);
 
-/** One line of at most {@link MAX_RED_EXCERPT} characters — both readers end here. */
-function condense(text: string): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, MAX_RED_EXCERPT);
-}
+/**
+ * What a `test_agent` output is read for.
+ *
+ * Module constants rather than literals inside {@link recordToolOutput}, which
+ * runs once per tool result — up to the studio's 80-step cap per turn.
+ * {@link TS_ERROR} is the one both branches need: a TypeScript diagnostic is
+ * what makes a `test_agent` run a build failure AND what makes any verifying
+ * tool red.
+ */
+const TS_ERROR = /error TS\d/i;
+const BUILD_FAILED = /Type check failed|Build failed|failed to load/i;
+const TESTS_FAILED = /Tests: FAILED/i;
 
 /** One red verification, reduced to the diagnostics themselves. */
 function redExcerpt(name: string, out: string): string {
   const body = out.replace(WRITE_DIAGNOSTIC_PREAMBLE, (_m, file: string) => `${file}: `);
-  return `${name}: ${condense(body)}`;
+  return `${name}: ${condense(body, MAX_RED_EXCERPT)}`;
 }
 
 /** One failed `test_agent` run, reduced to what actually failed. */
 function failureExcerpt(out: string): string {
-  return condense(out.replace(TEST_AGENT_PREAMBLE, ""));
+  return condense(out.replace(TEST_AGENT_PREAMBLE, ""), MAX_RED_EXCERPT);
 }
 
 /** What one streamed turn produced. */
@@ -117,7 +126,6 @@ export type StudioTurn = {
   readonly lastTestAgentOutput: string;
   readonly text: string;
   readonly errors: readonly string[];
-  readonly ms: number;
 };
 
 type MutableTurn = {
@@ -128,17 +136,20 @@ type MutableTurn = {
 
 /** Fold one `tool-output-available` result into the turn. */
 function recordToolOutput(turn: MutableTurn, name: string | undefined, out: string): void {
+  // Scanned once and shared by both branches, which used to run the same
+  // pattern over the same output separately.
+  const tsError = TS_ERROR.test(out);
   if (name === "test_agent") {
     turn.testAgentRuns.push({
-      buildFailed: /error TS\d|Type check failed|Build failed|failed to load/i.test(out),
-      testsFailed: /Tests: FAILED/i.test(out),
+      buildFailed: tsError || BUILD_FAILED.test(out),
+      testsFailed: TESTS_FAILED.test(out),
       excerpt: failureExcerpt(out),
     });
     turn.lastTestAgentOutput = out;
   }
   // Any verification that came back red, whichever tool ran it — see
   // {@link VERIFYING_TOOLS}.
-  if (name !== undefined && VERIFYING_TOOLS.has(name) && /error TS\d/i.test(out)) {
+  if (name !== undefined && tsError && VERIFYING_TOOLS.has(name)) {
     turn.redChecks.push(name);
     turn.redExcerpts.push(redExcerpt(name, out));
   }
@@ -236,7 +247,6 @@ function foldMessage(turn: MutableTurn, message: UIMessage | undefined): void {
  * drives it with canned SSE for exactly that reason.
  */
 export async function readTurn(body: ReadableStream<Uint8Array>): Promise<StudioTurn> {
-  const started = Date.now();
   const turn: MutableTurn = {
     toolCalls: [],
     testAgentRuns: [],
@@ -245,7 +255,6 @@ export async function readTurn(body: ReadableStream<Uint8Array>): Promise<Studio
     lastTestAgentOutput: "",
     text: "",
     errors: [],
-    ms: 0,
   };
   let last: UIMessage | undefined;
   for await (const message of readUIMessageStream({
@@ -264,7 +273,6 @@ export async function readTurn(body: ReadableStream<Uint8Array>): Promise<Studio
     last = message;
   }
   foldMessage(turn, last);
-  turn.ms = Date.now() - started;
   return turn;
 }
 
@@ -302,8 +310,13 @@ export function createStudioClient(origin: string, key: string): StudioClient {
         ...(init.headers ?? {}),
       },
     });
+    // `responseErrorMessage` rather than a hand-rolled status line: it prefers
+    // the `{ error }` sentence the studio actually returns — the 401 this file's
+    // comment below quotes read as `401: {"error":"Unauthorized"}` where it now
+    // reads `Unauthorized` — and it marks a truncated body rather than slicing
+    // silently. It consumes the body, which only the failing branch does.
+    if (!res.ok) throw new Error(await responseErrorMessage(res, endpoint));
     const text = await res.text();
-    if (!res.ok) throw new Error(`${endpoint} -> ${res.status}: ${text.slice(0, 300)}`);
     return text ? JSON.parse(text) : {};
   };
 

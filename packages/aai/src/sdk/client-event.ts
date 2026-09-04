@@ -16,6 +16,7 @@
  */
 
 import { MAX_CLIENT_EVENT_NAME_LENGTH, MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "./constants.ts";
+import { errorMessage } from "./utils.ts";
 
 /**
  * Why a `ctx.send` never reached the client — one per drop the runtime makes,
@@ -66,7 +67,7 @@ export function decideClientEvent(event: string, data: unknown): ClientEventDeci
     return {
       drop: {
         reason: "unserializable",
-        detail: err instanceof Error ? err.message : String(err),
+        detail: errorMessage(err),
       },
     };
   }

@@ -1,5 +1,6 @@
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { FLIGHTS, formatPrice, requireDesk, tripSlot } from "../shared.ts";
+import { FLIGHTS, requireDesk, tripSlot } from "../shared.ts";
 
 /**
  * Their `search_flights`, with the same "be generous" behaviour their flight
@@ -38,7 +39,7 @@ export default tripSlot.tool({
         route: f.route,
         departs: f.departs,
         arrives: f.arrives,
-        fare: formatPrice(f.fare),
+        fare: formatMoney(f.fare),
         seatsLeft: f.seatsLeft,
       })),
     };

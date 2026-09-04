@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { captureLogs } from "aai-server/test-utils";
+import { describe, expect, test, vi } from "vitest";
 import type { AdoptSessionParams, adoptPeerSession } from "./studio-session-adopt.ts";
 import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
 import {
@@ -59,9 +60,10 @@ describe("soloFleet", () => {
 });
 
 describe("createSessionFleet", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  });
+  // Through the package's log SEAM rather than a `spyOn(console, …)`: the
+  // silencing spy was test scaffolding standing in for the abstraction that
+  // `aai-server/logger.ts` exists to provide.
+  const logs = captureLogs();
 
   test("claim stamps this replica as the owner", async () => {
     const { registry, fleet } = setup();
@@ -89,9 +91,11 @@ describe("createSessionFleet", () => {
     );
     const fleet = createSessionFleet({ registry, replicaId: US });
     await expect(fleet.claim(SCOPE, PROJECT, CLAIM)).resolves.toBeUndefined();
-    const warned = vi.mocked(console.warn).mock.calls.map(([line]) => String(line));
-    expect(warned).toContain("Studio session: project was deleted while it was being brokered");
-    expect(warned).not.toContain("Studio session: registry claim failed; peers may duplicate");
+    const warned = logs.warns();
+    expect(warned).toContain(
+      "studio.session.fleet project was deleted while it was being brokered",
+    );
+    expect(warned).not.toContain("studio.session.fleet registry claim failed; peers may duplicate");
   });
 
   test("adopt installs into a peer's guest and touches the lease", async () => {

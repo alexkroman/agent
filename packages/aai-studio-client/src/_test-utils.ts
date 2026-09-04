@@ -74,14 +74,25 @@ export type FetchMock = ReturnType<typeof vi.fn<typeof fetch>>;
  * a route table keyed `"METHOD /path"` (or just `"/path"` for any method).
  * Factories, not Responses: a Response body is single-use, so each call must
  * mint a fresh one.
+ *
+ * The single-factory arm SEES the request and may answer asynchronously, which
+ * is what lets a responder branch on the URL or reject outright. Without that
+ * it was `() => Response`, so every suite whose stub had to look at where the
+ * request was going hand-rolled `vi.fn(...)` + `vi.stubGlobal` instead — and
+ * typed the callback narrower than `fetch`, which is the thing {@link fakeFetch}
+ * exists to prevent.
  */
-export function stubFetch(routes: (() => Response) | Record<string, () => Response>): FetchMock {
+export function stubFetch(
+  routes:
+    | ((input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>)
+    | Record<string, () => Response>,
+): FetchMock {
   // Typed as `fetch` itself, exactly as `fakeFetch` above is: untyped, every
   // caller either cast `mock.calls[n]` back to `[string, RequestInit]` or read
   // an unchecked `any` off it — and the second is the worse half, since a
   // renamed field on an assertion nothing type-checks stays green.
   const fetchMock = vi.fn<typeof fetch>((input, init) => {
-    if (typeof routes === "function") return Promise.resolve(routes());
+    if (typeof routes === "function") return Promise.resolve(routes(input, init));
     const path = new URL(String(input), "http://studio.test").pathname;
     const make = routes[`${init?.method ?? "GET"} ${path}`] ?? routes[path];
     if (!make) throw new Error(`Unexpected fetch: ${init?.method ?? "GET"} ${path}`);

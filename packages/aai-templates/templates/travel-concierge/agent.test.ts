@@ -368,7 +368,10 @@ describe("search tools", () => {
     const all = (await run("search_hotels", { city: "Boston" }, ctx)) as {
       hotels: { perNight: string }[];
     };
-    expect(all.hotels.map((h) => h.perNight)).toEqual(["$180", "$265", "$340"]);
+    // Always to the cent: `formatMoney` is one shape at every desk, where
+    // this template's own `toLocaleString` copy dropped `.00` on a round
+    // number and kept it on a price with change.
+    expect(all.hotels.map((h) => h.perNight)).toEqual(["$180.00", "$265.00", "$340.00"]);
 
     const cheap = (await run("search_hotels", { city: "Boston", maxPerNight: 200 }, ctx)) as {
       hotels: { name: string }[];

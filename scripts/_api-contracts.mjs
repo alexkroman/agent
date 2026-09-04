@@ -19,13 +19,14 @@ import {
   authoringSubpaths,
   capabilities,
   capabilityId,
-  readJson,
+  readManifest,
   rel,
 } from "./_api-contracts-tree.mjs";
 import { collectExports, reportSource, stripPackageDocumentationMarker } from "./_api-surface.mjs";
 
 const require = createRequire(import.meta.url);
-const { CompilerState, Extractor, ExtractorConfig } = require("@microsoft/api-extractor");
+const { CompilerState, Extractor, ExtractorConfig, ExtractorLogLevel } =
+  require("@microsoft/api-extractor");
 
 /**
  * The published entry point each source module is reachable through.
@@ -39,7 +40,7 @@ const { CompilerState, Extractor, ExtractorConfig } = require("@microsoft/api-ex
  * `pnpm typecheck` run.
  */
 function publishedSubpaths(pkg) {
-  const manifest = readJson(join(pkg.dir, "package.json"));
+  const manifest = readManifest(join(pkg.dir, "package.json"));
   const bySource = new Map();
   for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
     if (typeof target !== "object" || target === null) continue;
@@ -166,9 +167,9 @@ function extractorConfig(pkg, capability, entryFile, reportFolder) {
         },
       },
       messages: {
-        compilerMessageReporting: { default: { logLevel: "none" } },
-        extractorMessageReporting: { default: { logLevel: "none" } },
-        tsdocMessageReporting: { default: { logLevel: "none" } },
+        compilerMessageReporting: { default: { logLevel: ExtractorLogLevel.None } },
+        extractorMessageReporting: { default: { logLevel: ExtractorLogLevel.None } },
+        tsdocMessageReporting: { default: { logLevel: ExtractorLogLevel.None } },
       },
     },
     configObjectFullPath: join(pkg.dir, "api-contracts.virtual.json"),

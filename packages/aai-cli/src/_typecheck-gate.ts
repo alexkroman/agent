@@ -10,7 +10,16 @@ import { typecheckProject } from "./typecheck.ts";
  * bundlers strip types unchecked, so without this a type-broken agent
  * ships and misbehaves at runtime instead of failing here.
  */
-export async function assertTypechecks(cwd: string): Promise<void> {
+export async function assertTypechecks(
+  cwd: string,
+  opts: { skip?: boolean | undefined } = {},
+): Promise<void> {
+  // The gate reads the flag its own remedy names. It used to be
+  // `if (!opts.skipTypecheck) await assertTypechecks(cwd)` at each of three call
+  // sites — a bypass condition spelled per caller is one a fourth caller can add
+  // without, which is the representable-mistake class `defineExec`'s `cwd` field
+  // exists to close.
+  if (opts.skip) return;
   log.step("Type checking…");
   const result = await typecheckProject(cwd);
   if (!result.ok) {

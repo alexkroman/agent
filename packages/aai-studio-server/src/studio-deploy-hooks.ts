@@ -26,7 +26,7 @@ import type { AfterDeploy } from "./studio-session-publish.ts";
 /**
  * Bound to THIS request's stores and handed to a broker that outlives the
  * request — safe because each hook reads the request env rather than closing
- * over the Context (see `databaseEnvFor` / `secretsEnvFor`).
+ * over the Context (see `secretsEnvFor`).
  */
 export function createAfterDeploy(c: Context<StudioHonoEnv>): AfterDeploy {
   const hooks: AfterDeploy[] = [secretsDeployHook(c)];

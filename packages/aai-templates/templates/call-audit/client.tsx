@@ -76,7 +76,9 @@ import "@alexkroman1/aai-ui/styles.css";
 // already declares.
 import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
 import {
+  BulletList,
   createWorkflowApi,
+  Facts,
   Form,
   page,
   SubmitButton,
@@ -86,7 +88,6 @@ import {
   WorkflowFields,
   WorkflowProgress,
 } from "@alexkroman1/aai-ui";
-import { useState } from "react";
 import type { audit } from "./agent.ts";
 
 /**
@@ -130,33 +131,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** A list that renders nothing rather than an empty box — see `risks` in the schema. */
-function Findings({ title, items }: { title: string; items: string[] }) {
-  if (items.length === 0) return null;
-  return (
-    <section className="flex flex-col gap-1">
-      <h3 className="text-sm font-medium opacity-70">{title}</h3>
-      <ul className="flex list-disc flex-col gap-1 pl-5">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 export function App() {
-  // Did THIS load start the run? A reload cannot have, and that is the only way
-  // the page can tell "auditing what you just uploaded" from "picking up where
-  // you left off" — the hook reports the run, not who asked for it.
-  const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. The reload — both halves of it — is the
   // hook's own doing; see the module doc for why the key it mints is the one
   // this desk wants.
-  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = useWorkflowSubmit<
-    typeof audit
-  >(WORKFLOW, { api });
+  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error, startedHere } =
+    useWorkflowSubmit<typeof audit>(WORKFLOW, { api });
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the
@@ -173,14 +154,7 @@ export function App() {
         </p>
       </header>
 
-      <Form
-        onSubmit={(values) => {
-          setStartedHere(true);
-          return submitForm(values);
-        }}
-        error={error}
-        className="flex flex-col gap-4"
-      >
+      <Form onSubmit={(values) => submitForm(values)} error={error} className="flex flex-col gap-4">
         {/* Every control, from the workflow's own input schema. See the module doc. */}
         <WorkflowFields workflow={WORKFLOW} />
         <SubmitButton pending={pending} pendingLabel="Auditing…">
@@ -205,15 +179,21 @@ export function App() {
           measured, how many pauses were found. */}
       <WorkflowProgress runId={run?.runId} api={api} />
 
-      {run?.status === "failed" && <p className="text-red-600">That one failed: {run.error}</p>}
+      {/* `role="alert"`, the same contract `<Form>` gives the submit error: this
+          is the outcome the reader waited minutes for. */}
+      {run?.status === "failed" && (
+        <p role="alert" className="text-red-600">
+          That one failed: {run.error}
+        </p>
+      )}
 
       {output !== undefined && (
         <article className="flex flex-col gap-6">
           <div className="flex flex-col gap-1">
             <h2 className="text-xl">{output.headline}</h2>
-            <p className="text-sm opacity-70">
-              {output.source} · {formatDuration(output.durationMs)} · {output.words} words
-            </p>
+            <Facts
+              items={[output.source, formatDuration(output.durationMs), `${output.words} words`]}
+            />
           </div>
 
           {/* What the pipeline did, which is this template's subject. Rendered rather
@@ -231,8 +211,11 @@ export function App() {
             <Stat label="Run time" value={formatDuration(output.elapsedMs)} />
           </dl>
 
-          <Findings title="Risks" items={output.risks} />
-          <Findings title="Actions" items={output.actions} />
+          {/* Either list can come back empty — see `risks` in the schema — and
+              `<BulletList>` renders nothing at all when it does, heading
+              included, rather than a stray heading over an empty box. */}
+          <BulletList title="Risks" items={output.risks} />
+          <BulletList title="Actions" items={output.actions} />
 
           <section className="flex flex-col gap-2">
             <h3 className="text-sm font-medium opacity-70">
@@ -241,7 +224,9 @@ export function App() {
             </h3>
             {audio.pending && <p className="text-sm opacity-70">Fetching the audio…</p>}
             {audio.error !== undefined && (
-              <p className="text-red-600">Could not load the audio: {audio.error}</p>
+              <p role="alert" className="text-red-600">
+                Could not load the audio: {audio.error}
+              </p>
             )}
             {audio.url !== undefined && (
               <>
@@ -251,7 +236,7 @@ export function App() {
                     track would carry. `spoken-summary` serves a one-cue WebVTT
                     data URL instead — worth reading for how, if a real track is
                     what a page needs. */}
-                <audio controls src={audio.url} className="w-full" />
+                <audio aria-label="Audit read aloud" controls src={audio.url} className="w-full" />
                 {/* `download` works on an object URL because the bytes are already in
                     the tab; it is the href that could not carry the agent's bearer,
                     not the attribute. */}

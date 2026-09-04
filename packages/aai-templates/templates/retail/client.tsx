@@ -1,12 +1,15 @@
+import { formatMoney, plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, ConversationItem, Session } from "@alexkroman1/aai-ui";
+import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
   client,
+  SessionErrorBanner,
   useAgentState,
   useConversation,
-  useSession,
+  useSessionActions,
   useSessionSelector,
+  useSessionStatus,
 } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
 import type {
@@ -100,7 +103,7 @@ function MethodRow({ method }: { method: PaymentMethodView }) {
         </span>
       ) : (
         <span className="font-semibold tabular-nums" style={{ color: "#15803d" }}>
-          ${method.balance.toFixed(2)}
+          {formatMoney(method.balance)}
         </span>
       )}
     </div>
@@ -132,8 +135,7 @@ function OrderCard({ order, focused }: { order: OrderView; focused: boolean }) {
         </span>
       </div>
       <div className="text-[11px] mb-1 tabular-nums" style={{ color: "#71717a" }}>
-        ${order.total.toFixed(2)} · {order.items.length} item
-        {order.items.length === 1 ? "" : "s"}
+        {formatMoney(order.total)} · {order.items.length} {plural(order.items.length, "item")}
       </div>
       {order.items.slice(0, 3).map((item) => (
         <div
@@ -246,7 +248,7 @@ function SwapOptions({ option }: { option: SwapOptionView }) {
           >
             <span>{Object.values(alternative.options).join(", ")}</span>
             <span className="tabular-nums whitespace-nowrap" style={{ color: "#71717a" }}>
-              ${alternative.price.toFixed(2)}
+              {formatMoney(alternative.price)}
             </span>
           </div>
         ))
@@ -344,8 +346,16 @@ function Conversation() {
             {streaming}
           </div>
         )}
+        {/* Same contract as the shipped `MessageList`'s indicator: three pulsing
+            dots are the only sign the agent is working, and to a screen reader
+            they are punctuation. */}
         {thinking && (
-          <div className="self-start text-[11px] px-3.5" style={{ color: "#a1a1aa" }}>
+          <div
+            role="status"
+            aria-label="Agent is thinking"
+            className="self-start text-[11px] px-3.5"
+            style={{ color: "#a1a1aa" }}
+          >
             <span style={{ animation: "rt-pulse 1.2s ease-in-out infinite" }}>· · ·</span>
           </div>
         )}
@@ -370,7 +380,7 @@ function Conversation() {
 /** The live status dot, on its own subscription rather than a field off a
  *  whole-page read — the header is the only thing here that wants it. */
 function StatusReadout() {
-  const state = useSessionSelector((s) => s.state);
+  const state = useSessionStatus();
   return (
     <>
       <span
@@ -393,58 +403,29 @@ function StatusReadout() {
   );
 }
 
-/**
- * The fatal-error banner.
+/*
+ * The call controls.
  *
- * `role="alert"` is the part a hand-rolled banner leaves out and the part that
- * matters: per the `fatalError` latch in the session core this is the only
- * remaining signal — the status readout beside it goes back to reading like a
- * live call — and a screen reader is never told an unannounced one appeared.
- * `ConsoleShell` carries it, and this template's two-pane page cannot use that
- * shell as its frame; the attribute is what it is here for.
+ * The methods come off `useSessionActions()`, which does not subscribe, and the
+ * two flags off one-field selectors. The whole-snapshot `useSession()` this
+ * replaced re-rendered these four buttons on every STT partial to read two
+ * booleans that change once a call.
  */
-function ErrorBanner() {
-  const error = useSessionSelector((s) => s.error);
-  if (!error) return null;
-  return (
-    <div
-      role="alert"
-      className="px-4 py-2 text-xs"
-      style={{ background: "#fef2f2", color: "#b91c1c", borderTop: "1px solid #fecaca" }}
-    >
-      {error.message} ({error.code})
-    </div>
-  );
-}
-
-/**
- * Start a fresh conversation without leaving the console.
- *
- * Written out here rather than reached for on the session, because there is no
- * one method that does it: `reset()` clears the CONVERSATION and keeps the
- * session, which is wrong for any agent that also keeps session-scoped state —
- * this one's store would come back with the next tool call.
- */
-function newConversation(session: Session): void {
-  session.end();
-  session.start();
-}
-
-/** The call controls: the one place a whole-session read is what is wanted —
- *  `started`, `running` and four methods, in four buttons. */
 function CallControls({ productCount }: { productCount: number }) {
-  const session = useSession();
+  const { start, toggle, restart, end } = useSessionActions();
+  const started = useSessionSelector((s) => s.started);
+  const running = useSessionSelector((s) => s.running);
   return (
     <div
       className="flex items-center gap-2 px-4 py-3"
       style={{ background: "#ffffff", borderTop: "1px solid #e4e4e7" }}
     >
-      {!session.started ? (
+      {!started ? (
         <button
           type="button"
           className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
           style={{ background: "#2563eb" }}
-          onClick={() => session.start()}
+          onClick={() => start()}
         >
           Start call
         </button>
@@ -454,12 +435,12 @@ function CallControls({ productCount }: { productCount: number }) {
             type="button"
             className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer"
             style={{
-              background: session.running ? "#e4e4e7" : "#2563eb",
-              color: session.running ? "#18181b" : "#ffffff",
+              background: running ? "#e4e4e7" : "#2563eb",
+              color: running ? "#18181b" : "#ffffff",
             }}
-            onClick={() => session.toggle()}
+            onClick={() => toggle()}
           >
-            {session.running ? "Hold" : "Resume"}
+            {running ? "Hold" : "Resume"}
           </button>
           {/* The one-click new conversation the default shell's
               `<Controls>` gives every other template — a custom
@@ -472,7 +453,7 @@ function CallControls({ productCount }: { productCount: number }) {
             type="button"
             className="px-4 py-2 rounded-md text-xs font-semibold cursor-pointer"
             style={{ background: "#ffffff", color: "#18181b", border: "1px solid #e4e4e7" }}
-            onClick={() => newConversation(session)}
+            onClick={restart}
           >
             New Conversation
           </button>
@@ -484,7 +465,7 @@ function CallControls({ productCount }: { productCount: number }) {
             type="button"
             className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
             style={{ background: "#dc2626" }}
-            onClick={() => session.end()}
+            onClick={() => end()}
           >
             End
           </button>
@@ -545,7 +526,7 @@ function App() {
             style={{ borderRight: "1px solid #e4e4e7" }}
           >
             <Conversation />
-            <ErrorBanner />
+            <SessionErrorBanner className="rounded-none border-x-0 border-b-0" />
             <CallControls productCount={view.productCount} />
           </div>
 
@@ -642,7 +623,7 @@ function App() {
             )}
           </span>
           <span className="tabular-nums whitespace-nowrap ml-3">
-            {view.callSeq} call{view.callSeq === 1 ? "" : "s"}
+            {view.callSeq} {plural(view.callSeq, "call")}
           </span>
         </div>
       </div>

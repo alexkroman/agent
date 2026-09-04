@@ -970,6 +970,11 @@ describe("the run is DURABLE, as far as ffmpeg allows", () => {
     });
     installStubReporter();
     vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
+    // Neither binary is this block's subject (see its doc), and a real
+    // conversion here would make a developer with ffmpeg installed run a
+    // slower, different test from CI, which has none.
+    vi.stubEnv("AAI_FFMPEG_PATH", "/nonexistent/ffmpeg");
+    vi.stubEnv("AAI_FFPROBE_PATH", "/nonexistent/ffprobe");
   });
 
   test("a FatalError in the first step fails the run on ONE attempt, not six", async () => {

@@ -27,9 +27,9 @@
  * uid means the question "who authorized this" has exactly one answer.
  */
 
-import { safeJsonParse } from "@alexkroman1/aai";
 import type { SecretStore } from "aai-server/secret-store";
 import { z } from "zod";
+import { readJsonSecret, writeJsonSecret } from "./studio-secret-record.ts";
 
 /** SecretStore name for one studio user's GitHub App installation link. */
 export function githubLinkSecretName(userId: string): string {
@@ -67,10 +67,7 @@ export async function readGithubLink(
   secrets: SecretStore,
   userId: string,
 ): Promise<GithubLink | null> {
-  const raw = await secrets.get(githubLinkSecretName(userId));
-  if (raw === null) return null;
-  const parsed = GithubLinkSchema.safeParse(safeJsonParse(raw));
-  return parsed.success ? parsed.data : null;
+  return await readJsonSecret(secrets, githubLinkSecretName(userId), GithubLinkSchema);
 }
 
 /** Record (or replace) the account's link — the callback's only write. */
@@ -79,7 +76,7 @@ export async function writeGithubLink(
   userId: string,
   link: GithubLink,
 ): Promise<void> {
-  await secrets.put(githubLinkSecretName(userId), JSON.stringify(link));
+  await writeJsonSecret(secrets, githubLinkSecretName(userId), link);
 }
 
 /**

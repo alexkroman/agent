@@ -45,7 +45,6 @@ import {
 } from "./studio-schemas.ts";
 import { deleteProjectSecrets } from "./studio-secrets.ts";
 import { projectPayload } from "./studio-sse.ts";
-import { starterFiles } from "./studio-template.ts";
 import {
   createWorkspace,
   deleteWorkspace,
@@ -105,7 +104,15 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
         // prompt at every later session install (studio-session-ensure.ts), so
         // it has to outlive the request that chose it.
         const workspace = await createWorkspace(c.env.workspaces, scope, candidate, {
-          files: starterFiles(),
+          // A new project starts EMPTY. It used to ship a working dice-roller
+          // agent, which read as helpful and was not: the coding agent's first
+          // turn went into reading and dismantling someone else's agent before
+          // it could write the user's, and a starter test asserting the dice
+          // tools had to be rewritten too. The project is not shapeless
+          // though — `ensureProjectShape` in the guest supplies package.json,
+          // tsconfig.json, global.d.ts and vite.config.ts when the session
+          // materializes.
+          files: {},
           kind,
         });
         return c.json({ name: candidate, files: workspace.files, kind: workspace.kind }, 201);

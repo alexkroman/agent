@@ -31,6 +31,20 @@ export const sharedArgs = {
   json: { type: "boolean", description: "Output JSON (auto-detected in non-TTY)" },
 } as const;
 
+/**
+ * What every PLATFORM command accepts — the pair, as a group to spread.
+ *
+ * `sharedArgs` supplies the field VALUES, so each of the twelve credentialed
+ * commands still restated the shape (`server: sharedArgs.server, json:
+ * sharedArgs.json`). A flag all of them should take is then twelve edits, and
+ * `assertKnownArgv` refuses the flag on whichever one was missed — after
+ * release. `cli-workflow.ts`'s `workflowArgs` is the same pattern for its group.
+ */
+export const platformArgs = {
+  server: sharedArgs.server,
+  json: sharedArgs.json,
+} as const;
+
 /** Flags citty handles itself, so no command declares them. */
 const BUILTIN_FLAGS = new Set(["help", "h", "version", "v"]);
 
@@ -122,36 +136,54 @@ export function commandPath<T extends ArgsDef>(cmd: CommandDef<T>, parent?: Comm
   return named.startsWith("aai") ? named : `aai ${named}`.trim();
 }
 
+/** What {@link resolveArgv} learned by walking the command tree once. */
+export type ArgvSelection = {
+  /** `["aai", "secret", "put"]` — the path walked, for a `--help` sentence. */
+  named: string[];
+  /**
+   * The first non-flag token that named no subcommand where one was expected,
+   * i.e. a mistyped command. `undefined` when the walk reached a real command.
+   */
+  unknownCommand?: string;
+  /** Args declared by the command the argv selected. */
+  argsDef: ArgsDef;
+  /** argv from the first token that is not a subcommand — flags and positionals. */
+  rest: string[];
+};
+
 /**
- * Unknown flags in `argv` for whichever (possibly nested) subcommand it
- * selects — `[]` when everything is declared.
+ * Walk the real command tree for `argv` and report everything the pre-parse
+ * guards in `cli.ts` need: which command it selects, what that command
+ * declares, and whether a token mistyped a subcommand.
  *
- * Walks the real command tree rather than re-listing flags, so this cannot
- * drift from what the commands accept. An unknown SUBCOMMAND is not reported:
- * citty already answers that with usage text and a non-zero exit.
+ * ONE walk, because there used to be two — this one and a copy in `cli.ts`,
+ * each with its own `Resolvable` narrowing, whose only difference was the
+ * terminal action. The copies also had an ORDERING dependency nothing
+ * enforced: the flag guard reports nothing for a mistyped subcommand (the
+ * flags would be matched against the wrong command's definition), which is
+ * only safe because the command guard ran first. Answering both from one
+ * result removes the ordering rather than documenting it.
  */
-export async function unknownFlagsForArgv(root: AnyCommandDef, argv: string[]): Promise<string[]> {
+export async function resolveArgv(root: AnyCommandDef, argv: string[]): Promise<ArgvSelection> {
   let cmd: AnyCommandDef = root;
+  const named = ["aai"];
   let i = 0;
   for (; i < argv.length; i++) {
     const token = argv[i];
+    // A flag ends the subcommand path; from here on citty's own parser and the
+    // flag guard own the argv.
     if (token === undefined || token.startsWith("-")) break;
     const subCommands = await resolve(cmd.subCommands);
-    const next = subCommands?.[token];
+    // A leaf command's remaining positionals are arguments, not commands.
+    if (!subCommands || Object.keys(subCommands).length === 0) break;
+    const next = await resolve(subCommands[token]);
     if (next === undefined) {
-      // A non-flag token where this command expects a SUBCOMMAND means the
-      // subcommand was mistyped. citty answers that with usage and exit 1;
-      // adding "unknown flag" on top would blame the wrong token, since the
-      // flags were being matched against the wrong command's definition.
-      if (subCommands && Object.keys(subCommands).length > 0) return [];
-      break;
+      return { named, unknownCommand: token, argsDef: (await resolve(cmd.args)) ?? {}, rest: [] };
     }
-    const resolved = await resolve(next);
-    if (resolved === undefined) break;
-    cmd = resolved;
+    cmd = next;
+    named.push(token);
   }
-  const argsDef = (await resolve(cmd.args)) ?? {};
-  return findUnknownFlags(argv.slice(i), argsDef);
+  return { named, argsDef: (await resolve(cmd.args)) ?? {}, rest: argv.slice(i) };
 }
 
 /** Shared command setup: resolve cwd, optionally require agent.ts. */

@@ -47,9 +47,9 @@
 
 import { progressOf, sendViaXhr, uploadXhrClass } from "./_upload-progress.ts";
 import { withResumes } from "./_upload-resume.ts";
+import { readApiJson } from "./_workflow-api-envelope.ts";
 import { invariant } from "./invariant.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import { readJsonBody } from "./response-body.ts";
 import type { UploadInfo } from "./step-uploads.ts";
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 import {
@@ -59,13 +59,6 @@ import {
   type UploadPartsRequest,
   uploadInParts,
 } from "./workflow-upload-parts.ts";
-
-/**
- * Names the surface in a failure that was not the agent's own `{ error }`
- * sentence — the same label `workflow-api-client.ts` uses, spelled here because
- * that module imports THIS one and not the other way round.
- */
-const UPLOAD_ERROR_LABEL = "Workflow API";
 
 /** What an upload call accepts as the file's bytes. */
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
@@ -370,7 +363,7 @@ export async function uploadFile(
   // Guarded like every other read on this surface: a 2xx whose body is not
   // JSON is a proxy answering, not the agent, and `res.json()` would reject
   // with a bare `SyntaxError` for a file that has already been stored.
-  const stored = await readJsonBody<Omit<UploadRef, "url">>(res, UPLOAD_ERROR_LABEL);
+  const stored = await readApiJson<Omit<UploadRef, "url">>(res);
   // The URL is built from THIS client's base, not from the `url` the agent
   // answered with: the agent knows its own paths and not the origin it was
   // reached on, which on the platform is `/:slug/workflows/…`.
@@ -432,23 +425,12 @@ export async function streamUploadFile(
     options,
   );
   if (!res.ok) throw await fail(res);
-  const stored = await readJsonBody<Omit<UploadRef, "url">>(res, UPLOAD_ERROR_LABEL);
+  const stored = await readApiJson<Omit<UploadRef, "url">>(res);
   // Built from THIS client's base, not from the `url` the agent answered with: the
   // agent knows its own paths and not the origin it was reached on.
   return { ...stored, url: `${base}/uploads/${encodeURIComponent(stored.id)}` };
 }
 
-/**
- * Read one upload's record — its name, how much has ARRIVED, and whether that is
- * all of it.
- *
- * What a client watches its own streamed upload with, and what answers "why is
- * this run still waiting". A step reads the same record in-process
- * (`uploadInfo` on `@alexkroman1/aai/utils`), so this is for everything that is
- * not one: a script, a dashboard, a person with `curl`.
- *
- * @internal
- */
 /**
  * Read an upload's BYTES, as a `Blob` a page can play or save.
  *
@@ -481,6 +463,17 @@ export async function downloadUpload(
   return await res.blob();
 }
 
+/**
+ * Read one upload's record — its name, how much has ARRIVED, and whether that is
+ * all of it.
+ *
+ * What a client watches its own streamed upload with, and what answers "why is
+ * this run still waiting". A step reads the same record in-process
+ * (`uploadInfo` on `@alexkroman1/aai/utils`), so this is for everything that is
+ * not one: a script, a dashboard, a person with `curl`.
+ *
+ * @internal
+ */
 export async function readUploadInfo(
   base: string,
   headers: Record<string, string>,
@@ -489,5 +482,5 @@ export async function readUploadInfo(
 ): Promise<UploadInfo> {
   const res = await fetch(`${base}/uploads/${encodeURIComponent(id)}/info`, { headers });
   if (!res.ok) throw await fail(res);
-  return await readJsonBody<UploadInfo>(res, UPLOAD_ERROR_LABEL);
+  return await readApiJson<UploadInfo>(res);
 }

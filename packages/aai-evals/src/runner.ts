@@ -34,6 +34,7 @@
  */
 
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import { envInt, envValue } from "./_env.ts";
 
 /** One recorded assertion: what was claimed, and whether it held. */
 export type EvalCheck = {
@@ -117,28 +118,9 @@ export type EvalSpec = {
   readonly body: (t: EvalRecorder) => Promise<void>;
 };
 
-/**
- * An env var's value, or undefined when it is unset OR blank.
- *
- * Blank counts as unset in both readers below, which matters because
- * `AAI_EVAL_REPEAT= pnpm test:eval` is how a shell unsets one for a single
- * command — and a rule spelled out twice is one that can come to be spelled
- * differently.
- */
-function envValue(env: Record<string, string | undefined>, name: string): string | undefined {
-  const raw = env[name];
-  return raw === undefined || raw.trim() === "" ? undefined : raw;
-}
-
 /** How many times each case runs, unless the spec says. */
 export function evalRepeat(env: Record<string, string | undefined> = process.env): number {
-  const raw = envValue(env, "AAI_EVAL_REPEAT");
-  if (raw === undefined) return 1;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 1) {
-    throw new Error(`AAI_EVAL_REPEAT must be a positive integer, got ${JSON.stringify(raw)}`);
-  }
-  return n;
+  return envInt(env, "AAI_EVAL_REPEAT", 1);
 }
 
 /**
@@ -176,6 +158,9 @@ export function createRecorder(): EvalRecorder & { readonly checks: EvalCheck[] 
   };
 }
 
+// An `if` plus a ternary rather than the tidier nested ternary: Biome's
+// `noNestedTernary` rejects the latter, so this shape is the lint rule's and not
+// an oversight.
 function byCodeUnit(a: string, b: string): number {
   if (a < b) return -1;
   return a > b ? 1 : 0;
@@ -200,9 +185,15 @@ function unstableLabels(passes: readonly EvalPass[]): string[] {
   const seen = new Map<string, Set<boolean>>();
   for (const pass of passes) {
     for (const check of pass.checks) {
-      const outcomes = seen.get(check.label) ?? new Set<boolean>();
+      // Read-then-insert only on a MISS: the `?? new Set()` form this replaces
+      // allocated a set and re-`set` the entry for every check, which over
+      // `AAI_EVAL_REPEAT=5` of a ten-assertion case is fifty of each.
+      let outcomes = seen.get(check.label);
+      if (outcomes === undefined) {
+        outcomes = new Set<boolean>();
+        seen.set(check.label, outcomes);
+      }
       outcomes.add(check.ok);
-      seen.set(check.label, outcomes);
     }
   }
   return (

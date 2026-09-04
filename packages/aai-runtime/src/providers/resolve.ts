@@ -199,7 +199,7 @@ export function isS2sKind(kind: string | undefined): kind is S2sKind {
  */
 export function resolveS2sEnvVar(descriptor: S2sProvider): string {
   const entry = lookupProvider(S2S_REGISTRY, descriptor.kind, "S2S");
-  return descriptorEnvVar(descriptor) ?? entry.envVar;
+  return envVarOf(entry, descriptor);
 }
 
 /**
@@ -247,21 +247,38 @@ export type ResolvedOpener<Opener> = {
  * rather than resolving to `""`.
  */
 function descriptorEnvVar(descriptor: object | undefined): string | undefined {
-  const options = (descriptor as { options?: unknown } | undefined)?.options;
-  const value = (options as Record<string, unknown> | undefined)?.apiKeyEnv;
+  // `bag`, not `options` — that name is an imported helper used throughout the
+  // registries below, and shadowing it here reads as a call site of it.
+  const bag = (descriptor as { options?: unknown } | undefined)?.options;
+  const value = (bag as Record<string, unknown> | undefined)?.apiKeyEnv;
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Which variable a descriptor's credential really lives in: its own
+ * `apiKeyEnv` if it named one, otherwise the registry default.
+ *
+ * Spelled ONCE because it was spelled five times, and the fifth was written
+ * only after the omission had shipped — `requiredProviderEnvVars` demanded
+ * `ASSEMBLYAI_API_KEY` while the session resolved `ASSEMBLYAI_STAGING_KEY`, so
+ * the preflight never reported the key it would actually read as absent. That
+ * is the silently-wrong-key failure {@link S2S_REGISTRY}'s own doc says these
+ * registries exist to prevent, and a sixth reader is a sixth chance at it.
+ */
+function envVarOf(entry: { envVar: string }, descriptor: object | undefined): string {
+  return descriptorEnvVar(descriptor) ?? entry.envVar;
 }
 
 /** Resolve an {@link SttProvider} descriptor into a host-side opener + env var. */
 export function resolveStt(descriptor: SttProvider): ResolvedOpener<SttOpener> {
   const entry = lookupProvider(STT_REGISTRY, descriptor.kind, "STT");
-  return { opener: entry.open(descriptor), envVar: descriptorEnvVar(descriptor) ?? entry.envVar };
+  return { opener: entry.open(descriptor), envVar: envVarOf(entry, descriptor) };
 }
 
 /** Resolve a {@link TtsProvider} descriptor into a host-side opener + env var. */
 export function resolveTts(descriptor: TtsProvider): ResolvedOpener<TtsOpener> {
   const entry = lookupProvider(TTS_REGISTRY, descriptor.kind, "TTS");
-  return { opener: entry.open(descriptor), envVar: descriptorEnvVar(descriptor) ?? entry.envVar };
+  return { opener: entry.open(descriptor), envVar: envVarOf(entry, descriptor) };
 }
 
 /**
@@ -332,7 +349,7 @@ export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => vo
  */
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel {
   const entry = lookupProvider(LLM_REGISTRY, descriptor.kind, "LLM");
-  const apiKey = requireKey(env, descriptorEnvVar(descriptor) ?? entry.envVar, entry.label);
+  const apiKey = requireKey(env, envVarOf(entry, descriptor), entry.label);
   return entry.create(apiKey, descriptor);
 }
 
@@ -399,20 +416,17 @@ export function requiredProviderEnvVars(agent: {
     if (envVar) vars.add(envVar);
   };
 
-  // `descriptorEnvVar` FIRST, exactly as `resolveStt`/`resolveTts`/`resolveLlm`
-  // and the s2s branch below all do. Skipping it here made the preflight demand
-  // the registry default while the session read the override: `assemblyAIStt({
-  // apiKeyEnv: "ASSEMBLYAI_STAGING_KEY" })` was checked for `ASSEMBLYAI_API_KEY`
-  // and never told the key it actually resolves is absent — the silently-wrong-
-  // key failure `S2S_REGISTRY`'s own doc says these registries exist to prevent,
-  // one stage over.
+  // Through `envVarOf` like every resolver: this is the site that once skipped
+  // the override, and an unknown kind has no default to fall back to — only the
+  // override is knowable. Resolution throws on one; a preflight does not.
   const envVarFor = <E extends { envVar: string }>(
     registry: Record<string, E>,
     descriptor: object | undefined,
-  ): string | undefined =>
-    descriptor === undefined
-      ? undefined
-      : (descriptorEnvVar(descriptor) ?? registry[descriptorKind(descriptor) ?? ""]?.envVar);
+  ): string | undefined => {
+    if (descriptor === undefined) return undefined;
+    const entry = registry[descriptorKind(descriptor) ?? ""];
+    return entry === undefined ? descriptorEnvVar(descriptor) : envVarOf(entry, descriptor);
+  };
 
   add(envVarFor(STT_REGISTRY, agent.stt));
   add(envVarFor(TTS_REGISTRY, agent.tts));

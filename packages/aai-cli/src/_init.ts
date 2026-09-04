@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate, REPO_URL } from "./_templates.ts";
-import { isEexist, readJson, writeJson } from "./_utils.ts";
+import { compareCodeUnits, isEexist, readJson, writeJson } from "./_utils.ts";
 
 /**
  * The README every scaffolded project gets, and the first thing a new author
@@ -138,18 +138,6 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
 }
 
 /**
- * Code-unit ordering, never `localeCompare`.
- *
- * With no explicit locale that answers to the runtime's ICU default, so the same
- * project would scaffold a differently-ordered file on a different machine —
- * which is the reason the repo's own generated artifacts sort this way too.
- */
-function compareNames(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
-
-/**
  * Pin every THIRD-PARTY dependency this project shares with a linked workspace
  * package to the copy that workspace package resolved.
  *
@@ -188,22 +176,27 @@ async function pinSharedDeps(
     .filter(([name]) => name in declared)
     .map(([, dir]) => dir);
 
-  const pins = new Map<string, string>();
-  for (const name of Object.keys(declared)) {
-    if (name in WORKSPACE_PKG_DIRS) continue;
-    for (const dir of linked) {
-      const manifest = (await readJson(
-        path.join(packagesDir, dir, "node_modules", name, "package.json"),
-      )) as { version?: string } | null;
-      // The FIRST workspace package that resolved it wins. They install from one
-      // lockfile, so two of them holding different versions of the same
-      // dependency is a state this repo's own syncpack gate refuses.
-      if (typeof manifest?.version === "string") {
-        pins.set(name, manifest.version);
-        break;
-      }
-    }
-  }
+  // One overlapped pass per dependency rather than a nested sequential await:
+  // most of these reads are ENOENT, so the serialized version paid a round trip
+  // per (dependency x workspace package). Each name's own inner loop still stops
+  // at the first package that resolved it, which is what preserves "first wins".
+  const resolved = await Promise.all(
+    Object.keys(declared)
+      .filter((name) => !(name in WORKSPACE_PKG_DIRS))
+      .map(async (name): Promise<[string, string] | null> => {
+        for (const dir of linked) {
+          const manifest = (await readJson(
+            path.join(packagesDir, dir, "node_modules", name, "package.json"),
+          )) as { version?: string } | null;
+          // The FIRST workspace package that resolved it wins. They install from
+          // one lockfile, so two of them holding different versions of the same
+          // dependency is a state this repo's own syncpack gate refuses.
+          if (typeof manifest?.version === "string") return [name, manifest.version];
+        }
+        return null;
+      }),
+  );
+  const pins = new Map(resolved.filter((entry): entry is [string, string] => entry !== null));
   if (pins.size === 0) return;
 
   const file = path.join(targetDir, "pnpm-workspace.yaml");
@@ -217,7 +210,7 @@ async function pinSharedDeps(
   // comment blocks that argue for `minimumReleaseAgeExclude` and
   // `onlyBuiltDependencies`, and a YAML round trip drops every one of them.
   const block = [...pins]
-    .sort(([a], [b]) => compareNames(a, b))
+    .sort(([a], [b]) => compareCodeUnits(a, b))
     // QUOTED, both halves. A scoped name starts with `@`, which YAML reserves —
     // an unquoted `@tailwindcss/vite:` is `bad indentation of a mapping entry`
     // and fails the install outright. And a two-segment version (`5.0`) parses

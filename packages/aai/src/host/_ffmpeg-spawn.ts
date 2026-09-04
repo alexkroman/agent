@@ -206,7 +206,7 @@ export function spawnFfmpeg(
 
     const chunks: Buffer[] = [];
     let stdoutBytes = 0;
-    let stderr = "";
+    const stderrTail = createTailBuffer(FFMPEG_STDERR_TAIL_CHARS);
     let overflowed = false;
 
     // Optional-chained rather than asserted: `stdio` is dynamic, so the types
@@ -227,7 +227,7 @@ export function spawnFfmpeg(
     });
     const decoder = new StringDecoder("utf8");
     child.stderr?.on("data", (chunk: Buffer) => {
-      stderr = keepTail(stderr + decoder.write(chunk), FFMPEG_STDERR_TAIL_CHARS);
+      stderrTail.push(decoder.write(chunk));
     });
 
     if (opts.stdin !== undefined && child.stdin) {
@@ -267,7 +267,7 @@ export function spawnFfmpeg(
           message:
             `${binary} wrote more than ${maxOutputBytes} bytes to stdout and was killed — ` +
             "raise `maxOutputBytes`, or write to a file instead of `pipe:1`.",
-          stderr,
+          stderr: stderrTail.text(),
         });
       }
       // A ZERO exit outranks the abort check, and the order is the fix for a
@@ -277,8 +277,9 @@ export function spawnFfmpeg(
       // reverse mistake is not available. Overflow stays FIRST — the buffer was
       // dropped, so there is no output to resolve with.
       if (exitCode === 0) {
-        return resolve({ stdout: Buffer.concat(chunks), stderr, durationMs });
+        return resolve({ stdout: Buffer.concat(chunks), stderr: stderrTail.text(), durationMs });
       }
+      const stderr = stderrTail.text();
       if (signal.aborted) return fail({ ...abortFailure(deadline, timeoutMs, binary), stderr });
       return fail({
         kind: "exit",
@@ -308,7 +309,35 @@ function abortFailure(
     : { kind: "aborted", message: `${binary} was aborted by the caller` };
 }
 
-/** Keep the last `cap` characters, marking the elision. */
-function keepTail(text: string, cap: number): string {
-  return text.length > cap ? `…${text.slice(-cap)}` : text;
+/**
+ * The last `cap` characters of a stream, joined once at the end.
+ *
+ * This was `text = keepTail(text + chunk, cap)` on every `data` event, which
+ * allocates the whole 4000-character tail plus the chunk, slices it back down,
+ * and prefixes the marker — three strings per event, all but the last thrown
+ * away. `runFfmpeg` takes arbitrary argv and default ffmpeg writes a progress
+ * line about twice a second, so a two-hour transcode churned well over 100 MB
+ * of transient strings to produce a 4 KB result.
+ *
+ * Whole chunks are dropped from the front only while the remainder still covers
+ * the cap, so memory is bounded by `cap` plus one chunk and the elision marker
+ * is applied once, at the read.
+ */
+function createTailBuffer(cap: number): { push(text: string): void; text(): string } {
+  const parts: string[] = [];
+  let length = 0;
+  return {
+    push(text: string): void {
+      if (text === "") return;
+      parts.push(text);
+      length += text.length;
+      while (parts.length > 1 && length - (parts[0] as string).length >= cap) {
+        length -= (parts.shift() as string).length;
+      }
+    },
+    text(): string {
+      const joined = parts.join("");
+      return joined.length > cap ? `…${joined.slice(-cap)}` : joined;
+    },
+  };
 }

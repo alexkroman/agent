@@ -29,7 +29,9 @@ import { valueReader } from "./_args.mjs";
 const arg = valueReader(process.argv.slice(2));
 
 const PORT = arg("port", "4900");
-const URL_ = arg("url", `ws://127.0.0.1:${PORT}/websocket`);
+// `String(...)`: a bare `--url` reads as `true` (see `valueReader`), and this
+// is handed straight to `WebSocket`.
+const URL_ = String(arg("url", `ws://127.0.0.1:${PORT}/websocket`));
 const SESSIONS = Number(arg("sessions", "10"));
 const DURATION_MS = Number(arg("duration", "12")) * 1000;
 
@@ -69,7 +71,14 @@ function readFrame(event) {
   }
 }
 
-/** One session: connect, let the greeting finish, then loop turns to `deadline`. */
+/**
+ * One session: connect, let the greeting finish, then loop turns to `deadline`.
+ *
+ * `@returns` is load-bearing: it is what makes `resolve()` with no argument
+ * legal, the promise carrying no value being the point.
+ *
+ * @returns {Promise<void>}
+ */
 function runSession(deadline) {
   return new Promise((resolve) => {
     const ws = new WebSocket(URL_);

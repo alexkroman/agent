@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { captureLogs } from "aai-server/test-utils";
+import { describe, expect, test } from "vitest";
 import { answering, fakeFetch } from "./_studio-fetch-test-utils.ts";
 import { type AdoptSessionParams, adoptPeerSession } from "./studio-session-adopt.ts";
 import type { StudioSessionRecord } from "./studio-session-registry.ts";
@@ -24,9 +25,9 @@ const PARAMS: AdoptSessionParams = {
 };
 
 describe("adoptPeerSession", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  });
+  // Keeps the EXPECTED warnings out of the output through the package's log
+  // seam; a `spyOn(console, …)` is scaffolding standing in for that seam.
+  captureLogs();
 
   test("installs over the guest's HTTP surface with the SANDBOX token", async () => {
     const fetchFn = fakeFetch(answering("{}", 200));

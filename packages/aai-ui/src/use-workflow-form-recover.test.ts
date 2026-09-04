@@ -227,3 +227,88 @@ describe("useWorkflowSubmit — the run after a reload", () => {
     expect(sessionStorage.length).toBe(0);
   });
 });
+
+/**
+ * `startedHere` — the field six templates kept by hand as a `useState(false)`.
+ *
+ * The claim is that `run` alone cannot answer "did THIS load start it": these
+ * specs put the hook in both states with the same resulting run and assert the
+ * flag tells them apart, plus the third state (`!startedHere` and no run yet)
+ * that is the reason the RAW fact is published rather than a derived
+ * "recovered".
+ */
+describe("useWorkflowSubmit — startedHere", () => {
+  test("true for a run this page started", async () => {
+    const api = fakeApi();
+    const { result } = renderSubmit(api);
+    expect(result.current.startedHere).toBe(false);
+
+    await act(() => result.current.submit({ url: "u" }));
+    await waitFor(() => expect(result.current.run).toBeDefined());
+    expect(result.current.startedHere).toBe(true);
+  });
+
+  test("false for a run adopted on the next load", async () => {
+    const api = fakeApi({
+      find: vi.fn(async () => [run({ runId: "wrun_9", status: "running" })]),
+    });
+    const { result } = renderSubmit(api);
+
+    await waitFor(() => expect(result.current.run?.runId).toBe("wrun_9"));
+    // Same shape of `run` as the spec above, opposite answer — which is the
+    // whole reason a page cannot derive this from what it can see.
+    expect(result.current.startedHere).toBe(false);
+  });
+
+  test("the THIRD state: still looking, and nothing was submitted", async () => {
+    // `!startedHere` with no run yet. A page says "Looking for a run this tab
+    // started earlier…" here, and a boolean meaning only "adopted" could not
+    // tell this from the gap between a submit and its run existing.
+    let release: (runs: WorkflowRun[]) => void = () => undefined;
+    const api = fakeApi({
+      find: vi.fn(
+        () =>
+          new Promise<WorkflowRun[]>((resolve) => {
+            release = resolve;
+          }),
+      ),
+    });
+    const { result } = renderSubmit(api);
+
+    expect(result.current.startedHere).toBe(false);
+    expect(result.current.run).toBeUndefined();
+    // And `pending` is true throughout, so the page is not offering Submit.
+    expect(result.current.pending).toBe(true);
+    await act(async () => {
+      release([]);
+    });
+  });
+
+  test("reset() clears it, without the page mirroring it", async () => {
+    // The half every one of the six had to remember by hand in `onClear`.
+    const api = fakeApi();
+    const { result } = renderSubmit(api);
+    await act(() => result.current.submit({ url: "u" }));
+    await waitFor(() => expect(result.current.startedHere).toBe(true));
+
+    act(() => {
+      result.current.reset();
+    });
+    await waitFor(() => expect(result.current.run).toBeUndefined());
+    expect(result.current.startedHere).toBe(false);
+  });
+
+  test("a submit after adopting one flips it", async () => {
+    // A page offering Submit again after picking up an old run: the new run is
+    // this page's, and the sentence has to change with it.
+    const api = fakeApi({
+      find: vi.fn(async () => [run({ runId: "wrun_9", status: "completed" })]),
+    });
+    const { result } = renderSubmit(api);
+    await waitFor(() => expect(result.current.run?.runId).toBe("wrun_9"));
+    expect(result.current.startedHere).toBe(false);
+
+    await act(() => result.current.submit({ url: "u" }));
+    await waitFor(() => expect(result.current.startedHere).toBe(true));
+  });
+});

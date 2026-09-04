@@ -25,7 +25,7 @@ export async function executeDeploy(opts: {
 }): Promise<CommandResult<DeployData>> {
   const { cwd } = opts;
   const { config: projectConfig, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);
-  if (!opts.skipTypecheck) await assertTypechecks(cwd);
+  await assertTypechecks(cwd, { skip: opts.skipTypecheck });
   // Minify the worker for deploy — smaller upload and stored bundle. Dev
   // builds (`aai dev`) stay unminified for readable stack traces.
   // Loaded beside the build rather than at module scope: it pulls in the

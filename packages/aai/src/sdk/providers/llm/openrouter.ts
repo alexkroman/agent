@@ -27,6 +27,16 @@ export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 /**
+ * Options for {@link openrouterLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface OpenRouterLlmOptions extends ModelOptions {}
+
+/**
  * Build an OpenRouter descriptor.
  *
  * The API key is resolved host-side from the agent's env
@@ -48,16 +58,6 @@ export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
  * One key, hundreds of models, addressed `"creator/model"`. See
  * https://openrouter.ai/models for the list.
  */
-/**
- * Options for {@link openrouterLlm}.
- *
- * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
- * one model id, and every vendor still gets a NAME for its own options so its
- * first vendor-specific setting is an additive field here rather than a re-split
- * of the shared interface across eight call sites.
- */
-export interface OpenRouterLlmOptions extends ModelOptions {}
-
 export function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider {
   return { kind: OPENROUTER_KIND, options: { ...opts } };
 }

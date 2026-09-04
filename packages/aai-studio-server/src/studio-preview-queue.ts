@@ -37,7 +37,10 @@
 
 import { safeJsonParse } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { createLogger } from "aai-server/logger";
 import type { SqlExec } from "aai-server/secret-store";
+
+const log = createLogger("studio.preview.queue");
 
 /** The pgmq queue name. Also the prefix of its archive table. */
 export const PREVIEW_QUEUE = "aai_studio_preview";
@@ -155,7 +158,7 @@ export function createPgPreviewQueue(sql: SqlExec): PreviewQueue {
           // Unreadable payload: archive rather than redeliver forever. This
           // is how a job written by an older/newer shape stops costing us a
           // redelivery every visibility timeout.
-          console.warn(`Archiving unreadable preview job ${id}`);
+          log.warn("archiving unreadable job", { id });
           await archive(id).catch(() => undefined);
           continue;
         }

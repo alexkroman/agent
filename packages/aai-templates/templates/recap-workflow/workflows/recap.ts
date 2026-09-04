@@ -810,10 +810,7 @@ export async function note(line: string): Promise<void> {
  * Note the header is a bare key: AssemblyAI's `authorization` takes the key
  * itself, with no `Bearer` prefix.
  */
-async function request(
-  url: string,
-  init: { method?: string; body?: string } = {},
-): Promise<Response> {
+async function request(url: string): Promise<Response> {
   // Through `stepFetch`, not `fetch`: it pins HTTP/1.1, so several concurrent
   // runs (and this workflow POLLS, so one run is many requests) get a socket
   // each rather than N streams on one connection — and a connection failure
@@ -828,7 +825,6 @@ async function request(
   // than usual, because a fan-out of segments hits a rate limit together. The
   // DELETE below stays on plain `stepFetch`, because there a 404 is a SUCCESS.
   return await stepFetchOk(url, {
-    ...init,
     headers: { authorization: requireStepEnv(API_KEY_ENV), "content-type": "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });

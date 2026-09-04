@@ -41,7 +41,7 @@
 import { WS_OPEN } from "@alexkroman1/aai/host-internal";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
-import { bytesToPcm16 } from "../_pcm.ts";
+import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import type { SessionWebSocket } from "../ws-frames.ts";
@@ -50,6 +50,18 @@ import { mulawToPcm16, pcm16ToMulaw, TELEPHONY_SAMPLE_RATE } from "./mulaw.ts";
 import { createResampler, type Resampler } from "./resample.ts";
 
 /** The `audio_ready` frame, synthesized when the carrier's stream starts. */
+/**
+ * The only four session events this bridge acts on, as a scan over the raw frame.
+ *
+ * A prefilter and NOT the branch itself: a match still goes through
+ * `safeJsonParse` and the `type ===` tests below, so a transcript that happens
+ * to quote one of these names costs a parse and is then dropped exactly as
+ * before. Kept beside the branches it mirrors — a name added there needs adding
+ * here, and the spec asserts the pair.
+ */
+export const ACTED_ON_EVENTS =
+  /"(?:session\.configured|reply\.cancelled|session\.reset|error\.reported)"/;
+
 const AUDIO_READY_FRAME = JSON.stringify({ type: "audio_ready" });
 
 /** Close code sent when the carrier ends the stream (the caller hung up). */
@@ -178,6 +190,13 @@ export function createTelephonyBridge(
 
   /** Session → carrier: a protocol text frame. */
   function handleSessionEvent(text: string): void {
+    // Scanned before it is PARSED. A session emits ~50 events a turn and this
+    // bridge acts on four of them; everything else is "for a screen" (see the
+    // tail of this function) and the transcript frames — the largest, and the
+    // ones carrying a reply's cumulative text — are the bulk of what is thrown
+    // away. One substring scan replaces a full parse plus its object graph for
+    // the ~90% that cannot match, for the whole life of every call.
+    if (!ACTED_ON_EVENTS.test(text)) return;
     const message = safeJsonParse(text);
     if (!isRecord(message)) return;
     const type = message.type;
@@ -308,7 +327,7 @@ export function createTelephonyBridge(
     // through this call's own logger rather than `_base64.ts`'s default.
     const pcm = toSession.process(mulawToPcm16(base64ToUint8(frame.payload, log)));
     if (pcm.length === 0) return;
-    emit(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+    emit(pcm16ToBytes(pcm));
   }
 
   carrierSocket.addEventListener("message", (event) => {

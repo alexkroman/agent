@@ -40,11 +40,7 @@
  * — see `resolve`.
  */
 
-import {
-  formatSchemaIssues,
-  PUBLIC_URL_UNCONFIGURED_MESSAGE,
-  toToolJsonSchema,
-} from "@alexkroman1/aai/host-internal";
+import { formatSchemaIssues, toToolJsonSchema } from "@alexkroman1/aai/host-internal";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
@@ -61,7 +57,7 @@ import type {
 import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
 import { resolveFindLimit, type WorkflowKeyStore } from "./workflow-keys.ts";
-import { WORKFLOW_WEBHOOK_PREFIX } from "./workflow-serve.ts";
+import { workflowWebhookUrl } from "./workflow-serve.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
 
 // The WDK seam's types live next door and are re-exported here, because this is
@@ -383,20 +379,20 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     },
 
     publicWebhookUrl(token: string): string {
-      // Trimmed and de-slashed here rather than at every caller: the value
-      // arrives from a boot env var, a container's `PUBLIC_URL`, or an author's
-      // own string, and a copied-in origin ending in `/` is the ordinary shape of
-      // all three. NOT a `WorkflowRequestError` — that class is for something the
-      // model can recover from by asking differently, and no rewording of a tool
-      // call configures a deployment.
-      const base = publicUrl?.trim().replace(/\/+$/, "");
-      if (!base) throw new Error(PUBLIC_URL_UNCONFIGURED_MESSAGE);
+      // Composed by `workflow-serve.ts` and not here: base + prefix + encoding is
+      // one behaviour with three independently-wrong-able parts, and the URL
+      // handed out has to match the path that parses it or a run waits on a hook
+      // that 404s forever. Its blank-base throw stays FIRST, ahead of the token
+      // check below, which is the order this door has always had — an
+      // unconfigured deployment is the more fundamental fault. NOT a
+      // `WorkflowRequestError`: that class is for something the model can recover
+      // from by asking differently, and no rewording of a tool call configures a
+      // deployment.
+      const url = workflowWebhookUrl(publicUrl ?? "", token);
+      // An empty token IS the model's business — a tool derived one from
+      // something absent — so this half is the recoverable class.
       if (token === "") throw new WorkflowRequestError("A webhook token cannot be empty.");
-      // `workflow-serve.ts`'s prefix, which is also what `webhookToken` parses
-      // and what the platform's proxy route derives from, so the URL handed out
-      // and the path answering it cannot drift. Encoded for the reason that
-      // parser decodes: the route is ONE segment.
-      return `${base}${WORKFLOW_WEBHOOK_PREFIX}${encodeURIComponent(token)}`;
+      return url;
     },
 
     listing(): WorkflowSummary[] {

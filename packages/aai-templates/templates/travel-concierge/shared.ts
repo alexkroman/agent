@@ -47,6 +47,7 @@ import {
   type ToolContext,
   type ToolFailure,
 } from "@alexkroman1/aai";
+import { formatMoney, plural } from "@alexkroman1/aai/utils";
 
 // ─── The booking world ───────────────────────────────────────────────────────
 // Their notebook downloads a sqlite database of a real airline's schedule and
@@ -179,11 +180,6 @@ export const EXCURSIONS: Excursion[] = [
   { id: "E3", name: "North End food crawl", city: "Boston", kind: "food", price: 95 },
   { id: "E4", name: "Lake Zurich cruise", city: "Zurich", kind: "boat", price: 52 },
 ];
-
-/** `$1,234` — one money format, so a spoken price and a rendered one agree. */
-export function formatPrice(amount: number): string {
-  return `$${amount.toLocaleString("en-US")}`;
-}
 
 // ─── The dialog stack ────────────────────────────────────────────────────────
 
@@ -504,24 +500,24 @@ export function describeAction(action: DeepReadonly<PendingAction>): string | To
     case "update_ticket": {
       const flight = FLIGHTS.find((f) => f.id === action.flightId);
       if (!flight) return { error: `No flight ${action.flightId} in the schedule.` };
-      return `move your ticket to ${flight.id}, ${flight.route}, departing ${flight.departs}, at ${formatPrice(flight.fare)}`;
+      return `move your ticket to ${flight.id}, ${flight.route}, departing ${flight.departs}, at ${formatMoney(flight.fare)}`;
     }
     case "cancel_ticket":
       return "cancel your ticket entirely";
     case "book_hotel": {
       const hotel = HOTELS.find((h) => h.id === action.hotelId);
       if (!hotel) return { error: `No hotel ${action.hotelId}.` };
-      return `book ${hotel.name} in ${hotel.area} for ${action.nights} night${action.nights === 1 ? "" : "s"}, ${formatPrice(hotel.pricePerNight * action.nights)} total`;
+      return `book ${hotel.name} in ${hotel.area} for ${action.nights} ${plural(action.nights, "night")}, ${formatMoney(hotel.pricePerNight * action.nights)} total`;
     }
     case "book_car": {
       const car = CAR_RENTALS.find((c) => c.id === action.carId);
       if (!car) return { error: `No car ${action.carId}.` };
-      return `reserve the ${car.tier} from ${car.vendor} for ${action.days} day${action.days === 1 ? "" : "s"}, ${formatPrice(car.pricePerDay * action.days)} total`;
+      return `reserve the ${car.tier} from ${car.vendor} for ${action.days} ${plural(action.days, "day")}, ${formatMoney(car.pricePerDay * action.days)} total`;
     }
     case "book_excursion": {
       const excursion = EXCURSIONS.find((e) => e.id === action.excursionId);
       if (!excursion) return { error: `No excursion ${action.excursionId}.` };
-      return `book ${excursion.name} at ${formatPrice(excursion.price)}`;
+      return `book ${excursion.name} at ${formatMoney(excursion.price)}`;
     }
     // Unreachable while `PendingAction` is exhausted above — and the arm a new
     // member of the union lands in until it has one of its own, which is a
@@ -627,11 +623,11 @@ export function applyPending(
       state.bookings.push({
         kind: "hotel",
         reference,
-        summary: `${hotel.name} (${hotel.area}), ${action.nights} night${action.nights === 1 ? "" : "s"}`,
+        summary: `${hotel.name} (${hotel.area}), ${action.nights} ${plural(action.nights, "night")}`,
         price,
       });
       note(state, `Hotel booked: ${hotel.name} — ${reference}`);
-      return { applied: `${hotel.name} booked, ${formatPrice(price)}.`, reference };
+      return { applied: `${hotel.name} booked, ${formatMoney(price)}.`, reference };
     }
     case "book_car": {
       const car = CAR_RENTALS.find((c) => c.id === action.carId);
@@ -640,12 +636,12 @@ export function applyPending(
       state.bookings.push({
         kind: "car",
         reference,
-        summary: `${car.vendor} ${car.tier}, ${action.days} day${action.days === 1 ? "" : "s"}`,
+        summary: `${car.vendor} ${car.tier}, ${action.days} ${plural(action.days, "day")}`,
         price,
       });
       note(state, `Car reserved: ${car.vendor} ${car.tier} — ${reference}`);
       return {
-        applied: `${car.tier} from ${car.vendor} reserved, ${formatPrice(price)}.`,
+        applied: `${car.tier} from ${car.vendor} reserved, ${formatMoney(price)}.`,
         reference,
       };
     }
@@ -659,7 +655,7 @@ export function applyPending(
         price: excursion.price,
       });
       note(state, `Excursion booked: ${excursion.name} — ${reference}`);
-      return { applied: `${excursion.name} booked, ${formatPrice(excursion.price)}.`, reference };
+      return { applied: `${excursion.name} booked, ${formatMoney(excursion.price)}.`, reference };
     }
     // Same as `describeAction`: unreachable today, and a refusal rather than a
     // silent no-op for whatever the union grows next.

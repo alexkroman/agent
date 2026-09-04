@@ -9,7 +9,10 @@ import {
   SessionProvider,
   ThemeProvider,
   useSession,
+  useSessionActions,
+  useSessionError,
   useSessionSelector,
+  useSessionStatus,
   useTheme,
 } from "./context.ts";
 import type { ClientTheme } from "./types.ts";
@@ -62,11 +65,171 @@ describe("useSession", () => {
   });
 });
 
+function wrap(core: ReturnType<typeof createMockSessionCore>) {
+  return ({ children }: { children: ReactNode }) =>
+    React.createElement(SessionProvider, { value: core }, children);
+}
+
+describe("useSessionActions", () => {
+  it("hands back the core's own eight control methods", () => {
+    const core = createMockSessionCore();
+    const { result } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
+    // Identity, not `toBeTypeOf("function")`: a hook that wrapped each method
+    // would still be a function per key and would break `memo()` children.
+    expect(result.current.start).toBe(core.start);
+    expect(result.current.cancel).toBe(core.cancel);
+    expect(result.current.resetState).toBe(core.resetState);
+    expect(result.current.reset).toBe(core.reset);
+    expect(result.current.restart).toBe(core.restart);
+    expect(result.current.disconnect).toBe(core.disconnect);
+    expect(result.current.toggle).toBe(core.toggle);
+    expect(result.current.end).toBe(core.end);
+  });
+
+  it("does NOT re-render on a snapshot change, which is the whole reason it exists", () => {
+    // The failure this closes: a footer needing `start` and `toggle` held a
+    // whole-snapshot `useSession()`, and `session-core.ts` rebuilds the
+    // snapshot object on every change — so the row re-rendered on every STT
+    // partial and every streaming delta. A spec that only checked the methods
+    // are present would pass straight over that.
+    const core = createMockSessionCore();
+    const renderSpy = vi.fn();
+    const { result } = renderHook(
+      () => {
+        renderSpy();
+        return useSessionActions();
+      },
+      { wrapper: wrap(core) },
+    );
+    const rendersBefore = renderSpy.mock.calls.length;
+    const first = result.current;
+
+    act(() => core.update({ userTranscript: "hi" }));
+    act(() => core.update({ state: "thinking" }));
+    act(() => core.update({ agentTranscript: "well," }));
+    act(() => core.update({ messages: [{ id: 1, role: "user", content: "hi" }] }));
+
+    expect(renderSpy.mock.calls.length).toBe(rendersBefore);
+    expect(result.current).toBe(first);
+  });
+
+  it("keeps one object for the life of the core, so it is safe in a dep array", () => {
+    const core = createMockSessionCore();
+    const { result, rerender } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+  });
+
+  it("does not hand out the STORE — no subscribe, getSnapshot, connect or dispose", () => {
+    // This is the "publishing it does not reopen what /internal closed"
+    // argument, as an assertion: `useSessionCore` returns the store itself, and
+    // returning it from here (typed to the narrower Pick) would leave every one
+    // of those reachable by widening the type back.
+    const core = createMockSessionCore();
+    const { result } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
+    expect(Object.keys(result.current).toSorted()).toEqual([
+      "cancel",
+      "disconnect",
+      "end",
+      "reset",
+      "resetState",
+      "restart",
+      "start",
+      "toggle",
+    ]);
+    expect(result.current).not.toBe(core);
+  });
+
+  it("really drives the session — the methods are live, not a shape", () => {
+    const core = createMockSessionCore();
+    const { result } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
+    act(() => result.current.start());
+    expect(core.getSnapshot().started).toBe(true);
+    act(() => result.current.end());
+    expect(core.getSnapshot().started).toBe(false);
+  });
+
+  it("throws when used outside SessionProvider", () => {
+    expect(() => {
+      renderHook(() => useSessionActions());
+    }).toThrow("Session hooks must be used within <SessionProvider>");
+  });
+});
+
+describe("useSessionStatus / useSessionError", () => {
+  it("read their own field out of the snapshot", () => {
+    const core = createMockSessionCore({
+      state: "listening",
+      error: { code: "stt", message: "transcriber refused", fatal: true },
+    });
+    const { result } = renderHook(() => [useSessionStatus(), useSessionError()] as const, {
+      wrapper: wrap(core),
+    });
+    expect(result.current[0]).toBe("listening");
+    expect(result.current[1]).toEqual({ code: "stt", message: "transcriber refused", fatal: true });
+  });
+
+  it("report no error as null rather than undefined", () => {
+    // A chrome spelling `error === null` predates the hook; `undefined` here
+    // would make that check silently false forever.
+    const core = createMockSessionCore();
+    const { result } = renderHook(() => useSessionError(), { wrapper: wrap(core) });
+    expect(result.current).toBeNull();
+  });
+
+  it("each re-renders on its own field and on nothing else", () => {
+    // The narrowness is the point: these replace an inline
+    // `useSessionSelector` at eight sites, and a hook that woke on every
+    // snapshot would make all eight worse rather than tidier.
+    const core = createMockSessionCore();
+    const statusSpy = vi.fn();
+    const errorSpy = vi.fn();
+    const status = renderHook(
+      () => {
+        statusSpy();
+        return useSessionStatus();
+      },
+      { wrapper: wrap(core) },
+    );
+    const error = renderHook(
+      () => {
+        errorSpy();
+        return useSessionError();
+      },
+      { wrapper: wrap(core) },
+    );
+    const statusRenders = statusSpy.mock.calls.length;
+    const errorRenders = errorSpy.mock.calls.length;
+
+    act(() => core.update({ userTranscript: "hi" }));
+    expect(statusSpy.mock.calls.length).toBe(statusRenders);
+    expect(errorSpy.mock.calls.length).toBe(errorRenders);
+
+    act(() => core.update({ state: "thinking" }));
+    expect(status.result.current).toBe("thinking");
+    expect(statusSpy.mock.calls.length).toBeGreaterThan(statusRenders);
+    expect(errorSpy.mock.calls.length).toBe(errorRenders);
+
+    const renderedOnceStatusMoved = statusSpy.mock.calls.length;
+    act(() => core.update({ error: { code: "connection", message: "gone", fatal: false } }));
+    expect(error.result.current?.code).toBe("connection");
+    expect(errorSpy.mock.calls.length).toBeGreaterThan(errorRenders);
+    expect(statusSpy.mock.calls.length).toBe(renderedOnceStatusMoved);
+  });
+
+  it("both throw when used outside SessionProvider", () => {
+    expect(() => renderHook(() => useSessionStatus())).toThrow(
+      "Session hooks must be used within <SessionProvider>",
+    );
+    expect(() => renderHook(() => useSessionError())).toThrow(
+      "Session hooks must be used within <SessionProvider>",
+    );
+  });
+});
+
 describe("useSessionSelector", () => {
-  function makeWrapper(core: ReturnType<typeof createMockSessionCore>) {
-    return ({ children }: { children: ReactNode }) =>
-      React.createElement(SessionProvider, { value: core }, children);
-  }
+  const makeWrapper = wrap;
 
   it("returns the selected slice of the snapshot", () => {
     const core = createMockSessionCore({ running: true });

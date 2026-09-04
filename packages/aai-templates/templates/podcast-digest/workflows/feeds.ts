@@ -64,8 +64,8 @@
  * parsing. It is the section below's subject, not this one's.
  */
 
-import { type FeedItem, pageMetadata, parseFeed } from "@alexkroman1/aai/html";
-import { report } from "@alexkroman1/aai/step";
+import { type FeedItem, type ParsedFeed, pageMetadata, parseFeed } from "@alexkroman1/aai/html";
+import { mapConcurrent, report } from "@alexkroman1/aai/step";
 import { FatalError, stepFetchOk } from "@alexkroman1/aai/step-errors";
 import { isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { z } from "zod";
@@ -74,19 +74,32 @@ import { z } from "zod";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
- * A show, reduced to what the rest of the run needs — plus the body, when
- * resolving it already had to download one.
+ * How many pasted links are resolved at once.
  *
- * `xml` is the difference between one request per feed and two. Both web paths
- * fetch the feed to decide whether it IS a feed (`looksLikePodcastFeed`), and
- * without somewhere to put that body the reader downloads the identical
- * document a second time. The Apple and Spotify paths resolve a URL without
- * ever reading the feed, so they leave it unset and the reader fetches once.
+ * Small because the far side is Apple and Spotify, who rate-limit, and because
+ * a digest is a handful of shows rather than a fan-out — the win is turning N
+ * sequential round trips into a couple of overlapped ones, not saturating a
+ * link.
+ */
+const RESOLVE_CONCURRENCY = 4;
+
+/**
+ * A show, reduced to what the rest of the run needs — plus the PARSE, when
+ * resolving it already had to do one.
+ *
+ * `parsed` is the difference between one request per feed and two, and between
+ * one parse and three. Both web paths fetch the feed to decide whether it IS a
+ * feed, and without somewhere to put the result the reader downloads and
+ * re-parses the identical document. Re-parsing is the more expensive half:
+ * `parseFeed` builds a DOM and runs `htmlToText` over every item's title AND
+ * description, and a podcast feed routinely carries 300+ entries of HTML show
+ * notes. The Apple and Spotify paths resolve a URL without ever reading the
+ * feed, so they leave it unset and the reader fetches once.
  */
 export type PodcastFeed = {
   feedUrl: string;
   title: string;
-  xml?: string;
+  parsed?: ParsedFeed;
 };
 
 /** One episode with audio attached — the unit everything downstream works on. */
@@ -118,8 +131,13 @@ export async function discoverEpisodes(
   const links = parsePodcastChannels(podcastChannels);
   if (links.length === 0) throw new FatalError("Add at least one podcast link.");
 
-  const feeds: PodcastFeed[] = [];
-  for (const url of links) feeds.push(await resolvePodcastFeed(url));
+  // Overlapped, not sequential: each resolution is one to three HTTP round
+  // trips with a 30s ceiling, and the links are independent. Bounded rather
+  // than a bare `Promise.all` because Apple and Spotify both rate-limit — and
+  // legal here because this whole function is a STEP BODY (`ctx.step` wraps it
+  // in `digest.ts`), so the journal's name+occurrence rule does not apply to
+  // what happens inside it.
+  const feeds = await mapConcurrent(links, RESOLVE_CONCURRENCY, resolvePodcastFeed);
 
   const episodes = (await Promise.all(feeds.map((feed) => readPodcastFeed(feed))))
     .flat()
@@ -154,7 +172,10 @@ async function resolvePodcastFeed(url: string): Promise<PodcastFeed> {
  */
 async function resolveWebPodcastFeed(url: string): Promise<PodcastFeed> {
   const body = await fetchText(url);
-  if (looksLikePodcastFeed(body)) return feedFrom(url, body);
+  // Parsed ONCE and carried: the "is this a feed" test, the channel title and
+  // the item list are three reads of one parse, not three parses.
+  const direct = parseFeed(body);
+  if (carriesAudio(direct)) return feedFrom(url, direct);
 
   const discovered = discoverFeedUrl(body, url);
   if (!discovered) {
@@ -167,9 +188,9 @@ async function resolveWebPodcastFeed(url: string): Promise<PodcastFeed> {
   // The advertised URL is verified rather than trusted: plenty of pages point
   // `application/rss+xml` at a blog feed with no audio in it, and finding that
   // out here names the page, where finding it out later names an empty digest.
-  // The body is carried forward rather than re-fetched — see `PodcastFeed.xml`.
-  const verified = await fetchText(discovered);
-  if (!looksLikePodcastFeed(verified)) {
+  // The parse is carried forward rather than redone — see `PodcastFeed.parsed`.
+  const verified = parseFeed(await fetchText(discovered));
+  if (!carriesAudio(verified)) {
     throw new FatalError(`The feed at ${discovered} does not look like a podcast RSS feed.`);
   }
   return feedFrom(discovered, verified);
@@ -236,8 +257,9 @@ async function resolveSpotifyPodcastFeed(url: string): Promise<PodcastFeed> {
 
 /** Every item in the feed that has audio attached, newest first by the caller. */
 async function readPodcastFeed(feed: PodcastFeed): Promise<Episode[]> {
-  const xml = feed.xml ?? (await fetchText(feed.feedUrl));
-  const parsed = parseFeed(xml);
+  // Already parsed on the web paths; the Apple and Spotify paths resolve a URL
+  // without ever reading the feed, so this is where those two download it.
+  const parsed = feed.parsed ?? parseFeed(await fetchText(feed.feedUrl));
   // `parsed.title` is the CHANNEL's, which is the whole reason to parse: the
   // `indexOf` read this replaces took the first `<title>` at any depth.
   const podcastTitle = parsed?.title ?? feed.title;
@@ -393,15 +415,21 @@ export function titleMatchesSpotify(
   );
 }
 
-/** A feed document that actually carries audio — both halves are required. */
-export function looksLikePodcastFeed(xml: string): boolean {
-  const parsed = parseFeed(xml);
-  // `parseFeed` answering at all is the "is this a feed" half, and it is
-  // stricter than the `<rss` test it replaces in the direction that matters:
-  // an HTML page mentioning `<rss` in prose is not a feed. It is also wider
-  // where being wide is right — an Atom podcast feed has no `<rss` root and
-  // was refused outright.
+/**
+ * A parse that actually carries audio — both halves are required.
+ *
+ * `parseFeed` answering at all is the "is this a feed" half, and it is stricter
+ * than the `<rss` test it replaces in the direction that matters: an HTML page
+ * mentioning `<rss` in prose is not a feed. It is also wider where being wide is
+ * right — an Atom podcast feed has no `<rss` root and was refused outright.
+ */
+function carriesAudio(parsed: ParsedFeed | undefined): parsed is ParsedFeed {
   return parsed?.items.some((item) => item.enclosureUrl !== undefined) ?? false;
+}
+
+/** {@link carriesAudio} over a document that has not been parsed yet. */
+export function looksLikePodcastFeed(xml: string): boolean {
+  return carriesAudio(parseFeed(xml));
 }
 
 /** The first feed a page advertises, resolved against the page's own URL. */
@@ -441,11 +469,11 @@ function publishedAt(episode: Episode): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function feedFrom(feedUrl: string, body: string): PodcastFeed {
+function feedFrom(feedUrl: string, parsed: ParsedFeed): PodcastFeed {
   return {
     feedUrl,
-    title: parseFeed(body)?.title ?? hostOf(feedUrl),
-    xml: body,
+    title: parsed.title ?? hostOf(feedUrl),
+    parsed,
   };
 }
 

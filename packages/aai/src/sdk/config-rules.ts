@@ -197,15 +197,6 @@ export type PipelineTuning = {
 };
 
 /**
- * Reject pipeline-only voice-UX tuning fields in S2S mode — the S2S provider
- * owns endpointing/barge-in service-side, so these would be silently ignored.
- *
- * Shared by `toAgentConfig` and the server's `IsolateConfigSchema` — one
- * source of truth for the validation, mirroring `assertSilencePolicy`.
- *
- * @internal
- */
-/**
  * `temperature` is a knob on a model THIS SDK calls, so an S2S agent may not set it.
  *
  * Not part of {@link PipelineVoiceTuning}: it is not voice tuning, and a TEXT
@@ -231,6 +222,15 @@ export function assertSamplingScope(mode: SessionMode, temperature: number | und
   );
 }
 
+/**
+ * Reject pipeline-only voice-UX tuning fields in S2S mode — the S2S provider
+ * owns endpointing/barge-in service-side, so these would be silently ignored.
+ *
+ * Shared by `toAgentConfig` and the server's `IsolateConfigSchema` — one
+ * source of truth for the validation, mirroring `assertSilencePolicy`.
+ *
+ * @internal
+ */
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
   if (mode === "pipeline") return;
   for (const key of PIPELINE_ONLY_TUNING_FIELDS) {

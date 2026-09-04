@@ -179,7 +179,7 @@ export function parseSource(file, source) {
  * SOURCE rather than a line contrived to satisfy a regex: the sample proving a
  * rule sees the multi-line shape is now written in the multi-line shape.
  *
- * @param {{ match: (node: object) => boolean }} rule
+ * @param {{ match: (node: import("oxc-parser").Node) => boolean }} rule
  * @param {string} file
  * @param {string} source
  * @returns {{ file: string, line: number, text: string }[]}

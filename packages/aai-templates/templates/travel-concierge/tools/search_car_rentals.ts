@@ -1,5 +1,6 @@
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { CAR_RENTALS, formatPrice, requireDesk, tripSlot } from "../shared.ts";
+import { CAR_RENTALS, requireDesk, tripSlot } from "../shared.ts";
 
 /** Their `search_car_rentals`, by city and tier. */
 export default tripSlot.tool({
@@ -30,7 +31,7 @@ export default tripSlot.tool({
         id: c.id,
         vendor: c.vendor,
         tier: c.tier,
-        perDay: formatPrice(c.pricePerDay),
+        perDay: formatMoney(c.pricePerDay),
       })),
     };
   },

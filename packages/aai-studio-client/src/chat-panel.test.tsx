@@ -9,7 +9,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { installResizeObserver, textarea } from "./_test-utils.ts";
+import { installResizeObserver, stubFetch, textarea } from "./_test-utils.ts";
 import type { ChatSession } from "./api.ts";
 import { ChatPanel } from "./chat.tsx";
 
@@ -58,7 +58,7 @@ function stubChatTurns(count: number) {
   const pool = Array.from({ length: count }, () => openTurn());
   const sent: string[][] = [];
   let next = 0;
-  const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchMock = stubFetch((_input, init) => {
     const body = JSON.parse(String(init?.body)) as {
       messages: { role: string; parts: { type: string; text?: string }[] }[];
     };
@@ -74,9 +74,8 @@ function stubChatTurns(count: number) {
     );
     const turn = pool[next++];
     if (!turn) throw new Error(`unexpected chat request #${next}`);
-    return Promise.resolve(turn.response);
+    return turn.response;
   });
-  vi.stubGlobal("fetch", fetchMock);
   /** The nth turn the sandbox will serve, 0-based. */
   const turn = (index: number): Turn => {
     const found = pool[index];
@@ -240,12 +239,11 @@ describe("queued follow-ups", () => {
     const live = openTurn();
     const dead: ChatSession = { url: "http://dead.sandbox.test/studio/chat", token: "dead-token" };
     const replacement: ChatSession = { url: SANDBOX_URL, token: "fresh-token" };
-    const fetchMock = vi.fn((input: RequestInfo | URL) =>
+    const fetchMock = stubFetch((input) =>
       String(input).startsWith(dead.url)
         ? Promise.reject(new TypeError("Failed to fetch"))
-        : Promise.resolve(live.response),
+        : live.response,
     );
-    vi.stubGlobal("fetch", fetchMock);
     const onSessionStale = vi.fn(() => Promise.resolve(replacement));
     renderPanel({ chatSession: dead, onSessionStale });
 
@@ -268,12 +266,11 @@ describe("queued follow-ups", () => {
     // stall with no explanation, which is what sent people to the reload button.
     const live = openTurn();
     const dead: ChatSession = { url: "http://dead.sandbox.test/studio/chat", token: "dead-token" };
-    const fetchMock = vi.fn((input: RequestInfo | URL) =>
+    stubFetch((input) =>
       String(input).startsWith(dead.url)
         ? Promise.reject(new TypeError("Failed to fetch"))
-        : Promise.resolve(live.response),
+        : live.response,
     );
-    vi.stubGlobal("fetch", fetchMock);
     const broker = Promise.withResolvers<ChatSession>();
     renderPanel({ chatSession: dead, onSessionStale: () => broker.promise });
 

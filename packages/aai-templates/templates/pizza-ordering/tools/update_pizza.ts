@@ -1,6 +1,7 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { CRUSTS, calculateTotal, formatPrice, orderSlot, type Pizza, SIZES } from "../shared.ts";
+import { CRUSTS, calculateTotal, orderSlot, type Pizza, SIZES } from "../shared.ts";
 
 export default orderSlot.updateTool({
   description: "Update an existing pizza in the order. Only provided fields are changed.",
@@ -23,6 +24,6 @@ export default orderSlot.updateTool({
 
     order.pizzas[idx] = pizza;
 
-    return { updated: pizza, orderTotal: formatPrice(calculateTotal(order.pizzas)) };
+    return { updated: pizza, orderTotal: formatMoney(calculateTotal(order.pizzas)) };
   },
 });

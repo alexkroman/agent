@@ -13,7 +13,7 @@ import {
 // (guaranteed by the React 18+ peer) instead of bundling the userland shim.
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
-import type { ClientTheme } from "./types.ts";
+import type { AgentState, ClientTheme, SessionError } from "./types.ts";
 
 // AssemblyAI design system ("website refresh"): warm cream surface, deep
 // indigo primary, warm-ink text, taupe borders. Overridable per client via
@@ -40,21 +40,35 @@ export function SessionProvider({ value, children }: { value: SessionCore; child
 }
 
 /**
- * What {@link useSession} returns: the live {@link SessionSnapshot} fields
- * (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
- * `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
- * control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
- * `cancel`, `end`).
+ * The session's control methods, and nothing else — what a `client.tsx` may
+ * legitimately CALL on a session, as against what it may read.
  *
- * Note there is no text-send method — sessions are voice-only; the only
- * client→server inputs are audio and the control methods above.
+ * Declared once and merged into {@link Session} rather than written out at both
+ * places: the two lists have to be the same list, and a member added to one and
+ * not the other is a hook that cannot do what `useSession()` can.
  *
  * Method signatures come from {@link SessionCore} — one source of truth.
  *
  * @public
  */
-export type Session = SessionSnapshot &
-  Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle" | "end">;
+export type SessionActions = Pick<
+  SessionCore,
+  "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end"
+>;
+
+/**
+ * What {@link useSession} returns: the live {@link SessionSnapshot} fields
+ * (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
+ * `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
+ * control methods (`start`, `toggle`, `reset`, `restart`, `resetState`,
+ * `disconnect`, `cancel`, `end`).
+ *
+ * Note there is no text-send method — sessions are voice-only; the only
+ * client→server inputs are audio and the control methods above.
+ *
+ * @public
+ */
+export type Session = SessionSnapshot & SessionActions;
 
 /**
  * Return the raw {@link SessionCore} from context without subscribing to
@@ -69,6 +83,84 @@ export function useSessionCore(): SessionCore {
   const core = useContext(SessionCtx);
   if (!core) throw new Error("Session hooks must be used within <SessionProvider>");
   return core;
+}
+
+/**
+ * The session's control methods — `start`, `cancel`, `resetState`, `reset`,
+ * `restart`, `disconnect`, `toggle`, `end` — with **no snapshot
+ * subscription**.
+ *
+ * This is the narrow half of {@link useSession}, and it is the half a custom
+ * chrome could not reach. `<Controls>` and `<StartScreen>` in this package pair
+ * a one-field `useSessionSelector` with this package's own `useSessionCore`
+ * (`context.ts`, unpublished); a `client.tsx`
+ * could not, because that hook is not published — so a footer needing `start`
+ * and `toggle` held a WHOLE-SNAPSHOT `useSession()`, and `session-core.ts`
+ * rebuilds the snapshot object on every change. Measured consequence: four
+ * components across three templates re-rendered on every STT partial and every
+ * streaming delta, in files whose every other component is narrowly subscribed
+ * on purpose. One of them (`infocom-adventure`'s `TitleScreen`) reads nothing
+ * from the snapshot at all and subscribes to all of it for `session.start`.
+ *
+ * **Why publishing this does not reopen what `/internal` closed.**
+ * `useSessionCore` hands back the STORE — `subscribe`, `getSnapshot`,
+ * `connect`, `Symbol.dispose` — which is the framework's own plumbing, the same
+ * category as the providers and `buildAgentUrl` that live on
+ * `@alexkroman1/aai-ui/internal`. A client that holds it can subscribe out of
+ * band of React, dial a socket the mount did not, and dispose the session under
+ * the tree that is rendering it. What comes back from here is the SAME eight
+ * methods `useSession()` already publishes on its result, built into a fresh
+ * object rather than passed through, so the store is not reachable from it.
+ * There is no new capability here — only the existing one without the
+ * subscription tax.
+ *
+ * Identity-stable per core, so it is safe in a dependency array and in a
+ * `memo()` child's props: the methods are closures created once by
+ * `createSessionCore`, and the object wrapping them is memoized on the core.
+ *
+ * Throws outside the provider `client()` installs, like every session hook.
+ *
+ * @example A footer that acts on the session without re-rendering with it
+ * ```tsx
+ * import { useSessionActions, useSessionSelector } from "@alexkroman1/aai-ui";
+ *
+ * function Footer() {
+ *   // Two narrow subscriptions and no snapshot read: this row re-renders when
+ *   // `running` flips, and not on every transcript delta.
+ *   const running = useSessionSelector((s) => s.running);
+ *   const { toggle, end } = useSessionActions();
+ *   return (
+ *     <>
+ *       <button onClick={toggle}>{running ? "Pause" : "Resume"}</button>
+ *       <button onClick={end}>Hang up</button>
+ *     </>
+ *   );
+ * }
+ * ```
+ *
+ * @returns The eight control methods — see {@link SessionActions}.
+ *
+ * @public
+ */
+export function useSessionActions(): SessionActions {
+  const core = useSessionCore();
+  // Picked rather than returned whole: the point of this hook over
+  // `useSessionCore` is that the store's own surface (`subscribe`,
+  // `getSnapshot`, `connect`, dispose) is NOT in the returned object, so a
+  // client cannot reach it by widening the type back.
+  return useMemo(
+    () => ({
+      start: core.start,
+      cancel: core.cancel,
+      resetState: core.resetState,
+      reset: core.reset,
+      restart: core.restart,
+      disconnect: core.disconnect,
+      toggle: core.toggle,
+      end: core.end,
+    }),
+    [core],
+  );
 }
 
 /**
@@ -98,22 +190,14 @@ export function useSessionCore(): SessionCore {
 export function useSession(): Session {
   const core = useSessionCore();
   const snapshot = useSyncExternalStore(core.subscribe, core.getSnapshot);
+  // The actions come from `useSessionActions` rather than being copied off the
+  // core a second time: this hook and that one must hand out the same eight
+  // methods, and a hand-written second copy is where that stops being true.
+  const actions = useSessionActions();
   // Methods are stable per core; memoizing the merged object keeps the
   // returned Session referentially stable across renders the snapshot didn't
   // cause (parent re-renders), so consumers can use it in hook deps.
-  return useMemo(
-    () => ({
-      ...snapshot,
-      start: core.start,
-      cancel: core.cancel,
-      resetState: core.resetState,
-      reset: core.reset,
-      disconnect: core.disconnect,
-      toggle: core.toggle,
-      end: core.end,
-    }),
-    [snapshot, core],
-  );
+  return useMemo(() => ({ ...snapshot, ...actions }), [snapshot, actions]);
 }
 
 /**
@@ -161,6 +245,82 @@ export function useSessionSelector<T>(
     selector,
     isEqual,
   );
+}
+
+/**
+ * The two selectors below are MODULE-SCOPE functions, and that is load-bearing
+ * rather than tidy.
+ *
+ * `useSyncExternalStoreWithSelector` caches its selection keyed on the selector
+ * it was handed: a fresh arrow per render invalidates that memo every render,
+ * so the selector re-runs and the `isEqual` short-circuit protects only the
+ * re-RENDER, never the work. Hoisting them means the two fields more than one
+ * chrome ever reads are selected by one stable function for the life of the
+ * program — which is also the thing a caller writing the arrow inline cannot
+ * do for themselves, and the reason these two are hooks at all rather than a
+ * documented one-liner.
+ */
+const selectState = (s: SessionSnapshot): AgentState => s.state;
+const selectError = (s: SessionSnapshot): SessionError | null => s.error;
+
+/**
+ * The agent's live {@link AgentState} — `disconnected`, `connecting`, `ready`,
+ * `listening`, `thinking`, `speaking`, `error` — on its own narrow
+ * subscription.
+ *
+ * `useSessionSelector((s) => s.state)` spelled once. It is one of exactly two
+ * snapshot fields that more than one custom chrome ever selects (the other is
+ * {@link useSessionError}), and it had been written inline at eight sites —
+ * including inside this package and, worse, in `ConsoleShell`'s own `@example`,
+ * which taught the inline form to everyone who read it.
+ *
+ * **Named `useSessionStatus`, not `useSessionState`.** `useAgentState` is the
+ * SLOT hook — the agent's own synced application state, whatever a
+ * `sessionSlot()` projects — and `AgentState` here is the phase of the CALL.
+ * Two different concepts one letter apart, so the shorter-sounding name is the
+ * one deliberately not taken.
+ *
+ * Pair it with {@link AGENT_STATE_LABELS} for a rendered word; the raw member
+ * is a wire value, not a label.
+ *
+ * @example
+ * ```tsx
+ * import { AGENT_STATE_LABELS, useSessionStatus } from "@alexkroman1/aai-ui";
+ *
+ * function StatusDot() {
+ *   const status = useSessionStatus();
+ *   return <span data-state={status}>{AGENT_STATE_LABELS[status]}</span>;
+ * }
+ * ```
+ *
+ * @returns The current agent state.
+ *
+ * @public
+ */
+export function useSessionStatus(): AgentState {
+  return useSessionSelector(selectState);
+}
+
+/**
+ * The session's current {@link SessionError}, or `null` when there is none, on
+ * its own narrow subscription.
+ *
+ * The other half of {@link useSessionStatus} — the second of the two fields a
+ * custom chrome reads over and over, and the one whose absence is invisible:
+ * per the `fatalError` latch in `session-core.ts` the error is the ONLY
+ * remaining signal that a session died, since the state beside it goes back to
+ * reading like a live one.
+ *
+ * A chrome rendering it owes `role="alert"` — which is what
+ * {@link SessionErrorBanner} is for, and why reaching for that beats reaching
+ * for this.
+ *
+ * @returns The current error, or `null`.
+ *
+ * @public
+ */
+export function useSessionError(): SessionError | null {
+  return useSessionSelector(selectError);
 }
 
 const ThemeCtx = createContext<Required<ClientTheme>>(DEFAULT_THEME);

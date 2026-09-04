@@ -423,38 +423,6 @@ export async function syncWorkspaceToGithub(opts: {
  * `GithubRefConflictError`, so the sentence is true wherever it appears.
  */
 export function githubSyncErrorMessage(err: unknown): string {
-  return githubErrorMessage(err, "sync");
-}
-
-/**
- * The same translation for a repository CREATE, whose statuses mean something
- * different: 422 is "that name is taken" (or otherwise invalid), not a branch
- * that moved. Reusing the sync vocabulary here answered a duplicate name with
- * "That branch moved while the sync was running", which is advice about a
- * different operation entirely.
- */
-export function githubCreateErrorMessage(err: unknown): string {
-  return githubErrorMessage(err, "create");
-}
-
-function githubErrorMessage(err: unknown, kind: "sync" | "create"): string {
-  if (kind === "create") {
-    switch (githubErrorStatus(err)) {
-      case 401:
-      case 404:
-        return "GitHub no longer grants access to that account — reconnect GitHub.";
-      case 403:
-        return "The GitHub App is not permitted to create repositories in that organization.";
-      case 422:
-        return "That repository name is already taken, or is not a name GitHub accepts.";
-      default:
-        return errorMessage(err);
-    }
-  }
-  return syncErrorMessage(err);
-}
-
-function syncErrorMessage(err: unknown): string {
   // Checked before the status, and it carries none: this is the sync's own
   // verdict after retrying, not a response GitHub sent.
   if (err instanceof GithubRefConflictError) {
@@ -471,6 +439,27 @@ function syncErrorMessage(err: unknown): string {
     // of those statuses is a request GitHub refuses on its merits (a tree it
     // will not accept, a ref name it will not create), and telling that user
     // to try again is advice that cannot ever work.
+    default:
+      return errorMessage(err);
+  }
+}
+
+/**
+ * The same translation for a repository CREATE, whose statuses mean something
+ * different: 422 is "that name is taken" (or otherwise invalid), not a branch
+ * that moved. Reusing the sync vocabulary here answered a duplicate name with
+ * "That branch moved while the sync was running", which is advice about a
+ * different operation entirely.
+ */
+export function githubCreateErrorMessage(err: unknown): string {
+  switch (githubErrorStatus(err)) {
+    case 401:
+    case 404:
+      return "GitHub no longer grants access to that account — reconnect GitHub.";
+    case 403:
+      return "The GitHub App is not permitted to create repositories in that organization.";
+    case 422:
+      return "That repository name is already taken, or is not a name GitHub accepts.";
     default:
       return errorMessage(err);
   }

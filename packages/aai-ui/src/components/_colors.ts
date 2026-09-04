@@ -70,3 +70,29 @@ export function primaryTint(primary: string, surface: string, pct: number): stri
 function mixInto(color: string, ground: string, pct: number): string {
   return `color-mix(in srgb, ${color} ${pct}%, ${ground})`;
 }
+
+/**
+ * The focus ring, as the class half of a pair.
+ *
+ * The ring is the only thing a keyboard user gets, and it has regressed to
+ * invisible twice — `outline-none` shipped here with no replacement, on the
+ * button and then on the URL chips, which is WCAG 2.4.7 on every control in the
+ * default client. Written as a SHORTHAND so it cannot be undone by Tailwind's
+ * shared `--tw-outline-style` variable.
+ *
+ * It is inert on its own: an outline with no colour draws nothing, so a control
+ * using this must also spread {@link focusRingStyle}. Naming the two together
+ * is what stops the next control shipping one without the other.
+ */
+export const FOCUS_RING =
+  "outline-none focus-visible:[outline:2px_solid] focus-visible:[outline-offset:2px]";
+
+/**
+ * The style half of {@link FOCUS_RING} — the colour the outline draws in.
+ *
+ * A real CSS property rather than a variant class, so the `focus-visible` rule
+ * only has to turn the outline on.
+ */
+export function focusRingStyle(primary: string): { outlineColor: string } {
+  return { outlineColor: primary };
+}

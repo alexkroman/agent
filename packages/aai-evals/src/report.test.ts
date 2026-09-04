@@ -4,7 +4,7 @@ import {
   evalShortfalls,
   failureGroups,
   formatEvalReport,
-  formatSpread,
+  formatScore,
   signature,
 } from "./report.ts";
 import { type EvalReport, runEval } from "./runner.ts";
@@ -50,12 +50,12 @@ describe("failureGroups", () => {
   });
 });
 
-describe("formatSpread", () => {
+describe("formatScore", () => {
   test("a single pass prints one number, and repeats print the spread", async () => {
     const once = await report("case", 1, async (t) => {
       t.check(true, "a");
     });
-    expect(formatSpread(once)).toBe("100%");
+    expect(formatScore(once)).toBe("100%");
 
     let call = 0;
     const thrice = await report("case", 4, async (t) => {
@@ -63,7 +63,7 @@ describe("formatSpread", () => {
       t.check(call % 2 === 0, "flips");
       t.check(true, "holds");
     });
-    expect(formatSpread(thrice)).toBe("75% (50%–100%, ±50%)");
+    expect(formatScore(thrice)).toBe("75% (50%–100%, ±50%)");
   });
 });
 

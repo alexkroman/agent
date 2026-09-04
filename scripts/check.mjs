@@ -122,12 +122,13 @@ boundTurboConcurrency();
  * what it gates on. Running plain `test` here made a coverage-floor failure
  * STRUCTURALLY invisible until CI: a new module can be green in every suite and
  * still take its package under a floor. Measured on aai-ui, 17.0s -> 17.9s.
+ * `TYPECHECK` is the three typecheck PROGRAMS, named once so the modes cannot drift.
  */
+const TYPECHECK = ["typecheck", "typecheck:tools", "typecheck:scripts"];
 const TURBO_TASKS = {
   local: [
     "build",
-    "typecheck",
-    "typecheck:tools",
+    ...TYPECHECK,
     "lint",
     "check:publint",
     "check:syncpack",
@@ -143,8 +144,7 @@ const TURBO_TASKS = {
   ],
   full: [
     "build",
-    "typecheck",
-    "typecheck:tools",
+    ...TYPECHECK,
     "lint",
     "check:publint",
     "check:attw",

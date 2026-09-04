@@ -7,7 +7,7 @@
 // `settings-card.tsx` is: a second copy is how one of them ends up with a
 // different font size and no copy button.
 
-import { useCopy } from "./use-copy.ts";
+import { type Copier, useCopy } from "./use-copy.ts";
 
 export function Snippet({ code, label }: { code: string; label: string }) {
   const copier = useCopy();
@@ -25,6 +25,45 @@ export function Snippet({ code, label }: { code: string; label: string }) {
         aria-label={`Copy: ${label}`}
       >
         {copier.label(code)}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * One LINE of text with its own copy button — a webhook URL, a CLI command.
+ *
+ * The narrow sibling of {@link Snippet}: same button, but a `<code>` that wraps
+ * on `break-all` instead of a `<pre>` that scrolls, because these are single
+ * strings the reader wants to see whole. It was written out twice, in
+ * cli-commands.tsx and phone-card.tsx, byte-identical apart from the aria-label.
+ *
+ * Takes the card's {@link Copier} rather than calling `useCopy` itself: the
+ * flash is one-at-a-time per hook instance, so a per-row instance would change
+ * what happens when a reader copies two rows in a row.
+ */
+export function CopyLine({
+  text,
+  label,
+  copier,
+}: {
+  text: string;
+  /** What the copy button announces — the row's own name for the string. */
+  label: string;
+  copier: Copier;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <code className="min-w-0 flex-1 rounded-md border border-line bg-cream px-3 py-2 font-mono text-xs break-all">
+        {text}
+      </code>
+      <button
+        type="button"
+        className="btn px-2 py-1 text-xs"
+        onClick={() => copier.copy(text)}
+        aria-label={label}
+      >
+        {copier.label(text)}
       </button>
     </div>
   );

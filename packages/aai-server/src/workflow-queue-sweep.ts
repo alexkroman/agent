@@ -338,9 +338,13 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // `brokerSessionUrl` (up to `BROKER_READY_TIMEOUT_MS`) plus a POST bounded at
   // `QUEUE_DELIVERY_TIMEOUT_MS`. At the defaults — 32 messages a tick, 8 in
   // flight — one pass against unreachable guests pinned a connection for minutes
-  // out of `ADMIN_POOL_MAX`, which is 16 for the whole replica. Passes never
-  // overlap (`_interval-sweep.ts`), so this is one connection rather than one a
-  // second — and one is the point: the pool is SHARED with every platform read
+  // out of `ADMIN_POOL_MAX`, which is 16 for the whole replica. And passes
+  // OVERLAP — the interval calls `runQueuePass` directly rather than through the
+  // coalescing runner, deliberately, so one slow delivery cannot stall every
+  // other tenant's message (see `inFlight` above, which is what bounds the
+  // overlap instead) — so a reservation held for a pass is one connection per
+  // pass IN FLIGHT, not one for the replica. That is the point: the pool is
+  // SHARED with every platform read
   // the replica makes (Vault, the agents row the broker needs, journal appends,
   // session state), and `platform-db-budget.test.ts` ties `ADMIN_POOL_MAX x
   // MAX_CONTAINERS` to the instance's `max_connections`. So a settle held across

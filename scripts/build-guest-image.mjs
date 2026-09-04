@@ -131,7 +131,13 @@ function resolveSdkSpecs() {
  */
 function sdkSpecsFor(source, guestRoot, packDir) {
   if (source === "workspace") return packWorkspaceSdk(guestRoot);
-  if (source === "packdir") return stageSdkPackDir(guestRoot, packDir);
+  // `resolveSdkSource` only answers "packdir" when `--sdk-pack-dir` was given,
+  // so this cannot fire — it is where that coupling between two functions is
+  // written down, the signature having no way to carry it.
+  if (source === "packdir") {
+    if (packDir === undefined) throw new Error("--sdk-pack-dir is required for the packdir source");
+    return stageSdkPackDir(guestRoot, packDir);
+  }
   return resolveSdkSpecs();
 }
 
@@ -262,6 +268,17 @@ function resolveSdkSource(opts) {
 }
 
 function parseArgv(rawArgv) {
+  // Declared, not inferred: every field seeded `undefined` infers as the TYPE
+  // `undefined`, so `opts.platform?.includes(",")` below read as a property of
+  // `never` and the multi-platform guard could not be checked at all.
+  /**
+   * @type {{
+   *   tag?: string | undefined, registry?: string | undefined,
+   *   platform?: string | undefined, sdkPackDir?: string | undefined,
+   *   push: boolean, print: boolean, printTag: boolean, cacheGha: boolean,
+   *   msb: boolean, publishedSdk: boolean,
+   * }}
+   */
   const opts = {
     tag: undefined,
     registry: undefined,

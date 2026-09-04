@@ -70,11 +70,21 @@ export function hasMinWords(text: string, min: number): boolean {
  * stay one — answering half an utterance is the failure the endpointing
  * measurement on `DEFAULT_MIN_TURN_SILENCE_MS` paid 5.7x reward for.
  */
+/**
+ * One letter or digit, in any script.
+ *
+ * Module scope because {@link normalizeUtterance} tests it once per CHARACTER
+ * and runs on every STT partial — a literal in the loop is a fresh `RegExp` per
+ * character, so a 100-character partial allocated 100 of them, ~5 times a second
+ * while the caller is speaking. No `g` flag, so there is no `lastIndex` to share.
+ */
+const ALPHANUMERIC = /[\p{L}\p{N}]/u;
+
 export function normalizeUtterance(text: string): string {
   let out = "";
   let pendingSpace = false;
   for (const ch of text.toLowerCase()) {
-    if (/[\p{L}\p{N}]/u.test(ch)) {
+    if (ALPHANUMERIC.test(ch)) {
       if (pendingSpace && out.length > 0) out += " ";
       pendingSpace = false;
       out += ch;

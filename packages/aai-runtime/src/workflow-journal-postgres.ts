@@ -20,13 +20,16 @@
  * - **`setStatus`** — `update … where status = any($n)`, and the ROW COUNT is
  *   the answer. That is the compare-and-set, and it is what stops a worker that
  *   had not noticed a cancel from marking the run completed.
- * - **`claimAttempt`** — `insert … on conflict do update set n = n + 1
- *   returning n`. One statement, so two concurrent deliveries cannot read the
- *   same number and let a step exceed its ceiling.
- * - **`releaseAttempt`** — `update … set n = greatest(n - 1, 0)`. One statement
- *   too, and the `greatest` is the floor rather than tidiness: a release that
- *   lands twice may only under-charge a budget the next claim re-takes, where a
- *   negative count is an unbounded budget for a step that wedges the guest.
+ * - **`claimAttempt`** and **`releaseAttempt`** — a LEASE, one row per
+ *   `(run_id, key)` holding a holder→instant map, and the answer is how many
+ *   holders are outstanding rather than how many tries a step has had. One
+ *   statement each, so two concurrent deliveries cannot read the same number
+ *   and let a step exceed its ceiling: the claim prunes every holder older than
+ *   `leaseMs` in the same `insert … on conflict do update`, and the release is
+ *   `holders - $3`, which removes exactly the named holder rather than
+ *   decrementing a shared counter. `_workflow-journal-attempts.ts` owns the SQL
+ *   and the argument — including why the counter this replaced could not be
+ *   made correct, a walk that died holding a charge having stood forever.
  * - **`appendStep`**, **`claimSleep`** and **`claimHook`** — FIRST WRITE WINS,
  *   as ONE statement each. The stored row stays authoritative, so the loser of a
  *   race adopts the winner's value rather than its own, and a replay finds the

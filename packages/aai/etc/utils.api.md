@@ -26,6 +26,9 @@ export function formatBytes(bytes: number): string;
 export function formatDuration(ms: number): string;
 
 // @public
+export function formatMoney(amount: number, symbol?: string): string;
+
+// @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
 
 // @public

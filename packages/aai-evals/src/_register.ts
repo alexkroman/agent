@@ -48,6 +48,20 @@ export type EvalCase = { readonly name: string; readonly body: EvalSpec["body"] 
  * zero cases and one warning per file listing what it could have matched, which
  * is loud enough while being right.
  */
+/**
+ * Does `AAI_EVAL_ONLY` select a case by this name?
+ *
+ * Exported because the starter eval has a PRECONDITION of its own — a 3-second
+ * `/health` probe of the studio origin — and it was paying it unconditionally,
+ * so `AAI_EVAL_ONLY` aimed at a level-1 case made that file probe and then
+ * announce a skip about a run nobody asked for. One predicate, so the file's
+ * gate and this registration cannot select differently.
+ */
+export function evalOnlySelects(name: string): boolean {
+  const only = evalOnly();
+  return only === undefined || name.toLowerCase().includes(only.toLowerCase());
+}
+
 export function registerEvalCases(cases: readonly EvalCase[]): void {
   const reports: EvalReport[] = [];
   afterAll(() => {
@@ -57,10 +71,7 @@ export function registerEvalCases(cases: readonly EvalCase[]): void {
   });
 
   const only = evalOnly();
-  const selected =
-    only === undefined
-      ? cases
-      : cases.filter((c) => c.name.toLowerCase().includes(only.toLowerCase()));
+  const selected = only === undefined ? cases : cases.filter((c) => evalOnlySelects(c.name));
 
   if (selected.length === 0) {
     sayFromHarness(

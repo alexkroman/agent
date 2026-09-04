@@ -16,8 +16,11 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { createLogger } from "aai-server/logger";
 import { type AdoptSessionParams, adoptPeerSession } from "./studio-session-adopt.ts";
 import type { StudioSessionRecord, StudioSessionRegistry } from "./studio-session-registry.ts";
+
+const log = createLogger("studio.session.fleet");
 
 /**
  * Postgres `foreign_key_violation`. On {@link SessionFleet.claim} it has exactly
@@ -119,12 +122,12 @@ export function createSessionFleet(options: SessionFleetOptions): SessionFleet {
         // production as the tail of one `DELETE /studio/projects/<slug>` — the
         // session POST had been in flight for 14s when the delete landed.
         if (workspaceGone(err)) {
-          console.warn("Studio session: project was deleted while it was being brokered", {
+          log.warn("project was deleted while it was being brokered", {
             project,
           });
           return;
         }
-        console.warn("Studio session: registry claim failed; peers may duplicate", {
+        log.warn("registry claim failed; peers may duplicate", {
           project,
           error: errorMessage(err),
         });

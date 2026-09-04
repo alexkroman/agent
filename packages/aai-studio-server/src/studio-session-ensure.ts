@@ -20,6 +20,7 @@ import { randomBytes } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import type { createOwnedMap } from "@alexkroman1/aai/internal";
 import { resolveHarnessPath } from "aai-server/constants";
+import { createLogger } from "aai-server/logger";
 import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-directory";
 import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
 import type { WorkspaceStore } from "aai-server/workspace-store";
@@ -32,6 +33,8 @@ import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
 import { chatUrlForGuest } from "./studio-session-wire.ts";
 import { getWorkspace, type StudioWorkspace } from "./studio-workspace.ts";
+
+const log = createLogger("studio.session");
 
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
@@ -134,11 +137,14 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     scope: string,
     project: string,
     apiKey: string,
-    /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
-    known?: StudioWorkspace,
-    /** This sandbox's existing token; absent on a cold spawn. */
-    existingToken?: string,
+    opts: {
+      /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
+      known?: StudioWorkspace;
+      /** This sandbox's existing token; absent on a cold spawn. */
+      existingToken?: string;
+    } = {},
   ): Promise<string | null> {
+    const { known, existingToken } = opts;
     const workspace = known ?? (await getWorkspace(workspaces, scope, project));
     if (!workspace) return null;
     const chatToken = existingToken ?? randomBytes(32).toString("base64url");
@@ -178,14 +184,9 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     const existing = sessions.get(key);
     if (!existing) return null;
     try {
-      const token = await initSession(
-        existing.warm,
-        scope,
-        project,
-        apiKey,
-        undefined,
-        existing.chatToken,
-      );
+      const token = await initSession(existing.warm, scope, project, apiKey, {
+        existingToken: existing.chatToken,
+      });
       if (token === null) return null;
       existing.lastUsed = Date.now();
       // Fire-and-forget, like every other touch: a lost one costs at most one
@@ -195,7 +196,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       return { url: existing.url, token };
     } catch (err) {
       // Dead sandbox (idle-killed, crashed) — drop it so the caller respawns.
-      console.warn("Studio session: re-init failed; respawning sandbox", {
+      log.warn("re-init failed; respawning sandbox", {
         project,
         error: errorMessage(err),
       });
@@ -252,7 +253,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     await using orphan = new AsyncDisposableStack();
     orphan.use(warm);
     wire(warm, key, scope, project);
-    const token = await initSession(warm, scope, project, apiKey, workspace);
+    const token = await initSession(warm, scope, project, apiKey, { known: workspace });
     if (token === null) return null;
     // Installed: `wire` has handed the harness to the session map, which owns
     // its teardown from here. Moving the resources out of the guard is what

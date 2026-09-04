@@ -85,9 +85,10 @@ import type {
   UploadParallel,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useRunControls } from "./_run-controls.ts";
-import { useUploadPause } from "./_upload-pause.ts";
+import { type SubmissionToken, useSubmissionState } from "./_submission-state.ts";
+import { coalesceUploadReports } from "./_upload-report.ts";
 import {
   createUploadGate,
   randomUploadId,
@@ -184,13 +185,11 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
   opts: UseWorkflowStreamOptions = {},
 ): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
   const { api, key, intervalMs, parallel } = opts;
-  const [runId, setRunId] = useState<string | undefined>(undefined);
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | undefined>(undefined);
-  const [upload, setUpload] = useState<UploadStatus | undefined>(undefined);
-  // The live submission's pause, so `pauseUpload` reaches the gate the uploader is
-  // waiting on. A ref rather than state: nothing renders from it.
-  const gateRef = useRef<UploadGate | undefined>(undefined);
+  // The four states, the live-submission ref, the supersede rule, `reset` and
+  // the pause pair — shared with `useWorkflowSubmit`. See
+  // `_submission-state.ts`.
+  const state = useSubmissionState<SubmissionToken>();
+  const { runId, actions } = state;
 
   const getClient = useWorkflowApiRef(api);
 
@@ -199,17 +198,20 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
   // that hook's type, so a field missing here is a lie in the shared type.
   const { wake, cancel } = useRunControls(runId, getClient);
 
+  // This hook REFUSES `recover` (see `UseWorkflowStreamOptions`), so every run
+  // it reports is one this mount started — but the flag still has to move with
+  // `submit`/`reset` rather than being a constant `true`, because it is false
+  // before the first submission and again after a clear, and a page shares its
+  // markup with `useWorkflowSubmit` pages that read the same field.
+  const [startedHere, setStartedHere] = useState(false);
+
   const submit = useCallback(
     async (input: unknown) => {
       const client = getClient();
-      setStarting(true);
-      setStartError(undefined);
-      setRunId(undefined);
-      // A submission that is starting takes the pause controls from whatever was
-      // there before, so a stale gate cannot park the new one.
-      gateRef.current?.cancel();
-      const gate = createUploadGate();
-      gateRef.current = gate;
+      const current: SubmissionToken = { gate: createUploadGate() };
+      const { gate } = current;
+      setStartedHere(true);
+      actions.begin(current);
       let started: string | undefined;
       try {
         // The declaration decides which property is an upload, and it is READ
@@ -219,9 +221,18 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
         const begun = await beginRun({ client, workflow, input, id, ...omitUndefined({ key }) });
         started = begun.runId;
         const chosen = begun.file;
-        setRunId(started);
+        actions.setRunId(started);
         if (!chosen) return;
-        await streamFile({ client, gate, id, file: chosen, parallel, report: setUpload });
+        // Coalesced for the reason `useWorkflowSubmit` coalesces — see
+        // `_upload-report.ts`.
+        await streamFile({
+          client,
+          gate,
+          id,
+          file: chosen,
+          parallel,
+          report: coalesceUploadReports(actions.setUpload),
+        });
         // See the module doc: the run is asleep between polls, so without this it
         // learns the upload is complete a poll interval late. Best-effort.
         await client.wake(started).catch(() => undefined);
@@ -229,43 +240,23 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
         // An abandoned upload is not a failure to report — `reset()` and the next
         // `submit()` both cancel — but the RUN still has to go, for the reason
         // below: it is waiting on bytes that are not coming either way.
-        if (!gate.cancelled) setStartError(errorMessage(err));
+        if (!gate.cancelled) actions.setStartError(errorMessage(err));
         // A run left behind waits for bytes that will never come, until its own
         // abandonment bound — failing long after the page said so. Best-effort: the
         // submission has already failed, and a failing cancel must not replace the
         // error that caused it.
         if (started) await client.cancel(started).catch(() => undefined);
       } finally {
-        // A SUPERSEDED submission owns none of this state any more: its upload
-        // unwinds after the next one has already set `starting`, so clearing here
-        // unconditionally would report the live submission as finished.
-        if (gateRef.current === gate) {
-          gateRef.current = undefined;
-          setStarting(false);
-          setUpload(undefined);
-        }
+        actions.end(current);
       }
     },
-    [workflow, key, parallel, getClient],
+    [workflow, key, parallel, getClient, actions],
   );
 
   const reset = useCallback(() => {
-    // Abandoned rather than left running — see `useWorkflowSubmit`'s `reset`. The
-    // run this submission started is cancelled by the `submit` it unwinds into,
-    // which is the one place that knows the id.
-    gateRef.current?.cancel();
-    gateRef.current = undefined;
-    setRunId(undefined);
-    setStartError(undefined);
-    setUpload(undefined);
-  }, []);
-
-  // The same pair `useWorkflowSubmit` returns, from the same place — see
-  // `_upload-pause.ts`.
-  const { pauseUpload, resumeUpload } = useUploadPause(
-    useCallback(() => gateRef.current, []),
-    setUpload,
-  );
+    setStartedHere(false);
+    actions.reset();
+  }, [actions]);
 
   return {
     submit,
@@ -273,12 +264,13 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
     reset,
     wake,
     cancel,
-    pauseUpload,
-    resumeUpload,
+    pauseUpload: actions.pauseUpload,
+    resumeUpload: actions.resumeUpload,
     run: tracked.run,
-    pending: starting || tracked.polling,
-    upload,
-    error: startError ?? tracked.error,
+    startedHere,
+    pending: state.starting || tracked.polling,
+    upload: state.upload,
+    error: state.startError ?? tracked.error,
   };
 }
 

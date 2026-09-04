@@ -94,10 +94,10 @@ import {
   typedEntryPoints,
 } from "./_api-surface.mjs";
 import { parseScriptArgs } from "./_args.mjs";
-import { publishablePackages, readJson, repoRoot } from "./_fs.mjs";
+import { publishablePackages, readManifest, repoRoot } from "./_fs.mjs";
 
 const require = createRequire(import.meta.url);
-const { Extractor, ExtractorConfig } = require("@microsoft/api-extractor");
+const { Extractor, ExtractorConfig, ExtractorLogLevel } = require("@microsoft/api-extractor");
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const { values: FLAGS } = parseScriptArgs({
@@ -190,9 +190,9 @@ function runExtractor(packageDir, entry, { write }) {
         // `ae-missing-release-tag` (this repo does not use @public/@beta tags).
         // Failing on those would make this a second, noisier copy of the docs
         // gate instead of a signature diff.
-        compilerMessageReporting: { default: { logLevel: "none" } },
-        extractorMessageReporting: { default: { logLevel: "none" } },
-        tsdocMessageReporting: { default: { logLevel: "none" } },
+        compilerMessageReporting: { default: { logLevel: ExtractorLogLevel.None } },
+        extractorMessageReporting: { default: { logLevel: ExtractorLogLevel.None } },
+        tsdocMessageReporting: { default: { logLevel: ExtractorLogLevel.None } },
       },
     },
     configObjectFullPath: join(packageDir, "api-extractor.virtual.json"),
@@ -323,7 +323,7 @@ const sections = [];
 let reportCount = 0;
 
 for (const packageDir of packages) {
-  const manifest = readJson(join(packageDir, "package.json"));
+  const manifest = readManifest(join(packageDir, "package.json"));
   const entries = typedEntryPoints(manifest);
   if (entries.length === 0) {
     console.error(

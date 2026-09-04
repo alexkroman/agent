@@ -7,6 +7,7 @@
  */
 
 import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { resolveOrder } from "./resolve.ts";
 import type { Order, OrderItem, RetailState, User, Variant } from "./shared.ts";
 import {
@@ -48,7 +49,6 @@ export interface SwapLine {
   fromOptions: Record<string, string>;
   fromPrice: number;
   toItemId: string;
-  toName: string;
   toOptions: Record<string, string>;
   toPrice: number;
 }
@@ -146,9 +146,6 @@ export function toSwapLines(plan: SwapPlan): SwapLine[] {
     fromOptions: { ...pair.item.options },
     fromPrice: pair.item.price,
     toItemId: pair.newVariant.item_id,
-    // Same product by construction — a swap can only reach another option of
-    // it — so the name is the item's own and the OPTIONS are what differ.
-    toName: pair.item.name,
     toOptions: { ...pair.newVariant.options },
     toPrice: pair.newVariant.price,
   }));
@@ -163,7 +160,7 @@ export function assertCanCoverDiff(user: User, methodId: string, diff: number): 
   if (isToolFailure(method)) return method;
   if (isGiftCard(method) && method.balance < diff) {
     return {
-      error: `Gift card ${methodId}'s balance ($${method.balance.toFixed(2)}) does not cover the $${diff.toFixed(2)} difference. Ask for another payment method.`,
+      error: `Gift card ${methodId}'s balance (${formatMoney(method.balance)}) does not cover the ${formatMoney(diff)} difference. Ask for another payment method.`,
     };
   }
   return null;
@@ -190,8 +187,8 @@ function describeLine(line: SwapLine): string {
 }
 
 function describeDiff(diff: number, methodId: string): string {
-  if (diff > 0) return `$${diff.toFixed(2)} charged to ${methodId}`;
-  if (diff < 0) return `$${Math.abs(diff).toFixed(2)} refunded to ${methodId}`;
+  if (diff > 0) return `${formatMoney(diff)} charged to ${methodId}`;
+  if (diff < 0) return `${formatMoney(Math.abs(diff))} refunded to ${methodId}`;
   return "no price difference";
 }
 
@@ -275,8 +272,8 @@ export function applyModifyItems(state: RetailState, plan: ModifyItemsPlan) {
     })),
     message:
       plan.diff > 0
-        ? `Done. $${plan.diff.toFixed(2)} was charged to ${plan.paymentMethodId}. This order can no longer be modified or cancelled.`
-        : `Done. $${Math.abs(plan.diff).toFixed(2)} is being refunded to ${plan.paymentMethodId}. This order can no longer be modified or cancelled.`,
+        ? `Done. ${formatMoney(plan.diff)} was charged to ${plan.paymentMethodId}. This order can no longer be modified or cancelled.`
+        : `Done. ${formatMoney(Math.abs(plan.diff))} is being refunded to ${plan.paymentMethodId}. This order can no longer be modified or cancelled.`,
   };
 }
 
@@ -358,7 +355,7 @@ export function applyExchange(state: RetailState, plan: ExchangePlan) {
     })),
     message:
       plan.diff > 0
-        ? `Exchange requested on ${plan.orderId}. $${plan.diff.toFixed(2)} will be charged to ${plan.paymentMethodId}. An email with return instructions is on its way.`
-        : `Exchange requested on ${plan.orderId}. $${Math.abs(plan.diff).toFixed(2)} will be refunded to ${plan.paymentMethodId}. An email with return instructions is on its way.`,
+        ? `Exchange requested on ${plan.orderId}. ${formatMoney(plan.diff)} will be charged to ${plan.paymentMethodId}. An email with return instructions is on its way.`
+        : `Exchange requested on ${plan.orderId}. ${formatMoney(Math.abs(plan.diff))} will be refunded to ${plan.paymentMethodId}. An email with return instructions is on its way.`,
   };
 }

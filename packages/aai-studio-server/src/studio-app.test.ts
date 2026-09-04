@@ -8,6 +8,7 @@
  */
 
 import { createMemoryChatStore } from "aai-server/chat-store";
+import { createMemoryPlatformEvents } from "aai-server/platform-events";
 import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +44,10 @@ function makeApp(overrides: Partial<StudioAppOpts> = {}) {
     store: createTestStore(),
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
+    // Spelled here for the same reason `previewQueue` is: a test harness IS a
+    // composition root, so it makes the choice rather than leaving a `??`
+    // downstream to make a different one.
+    events: createMemoryPlatformEvents().events,
     ...overrides,
     previewQueue,
   });

@@ -22,9 +22,7 @@ The browser studio's server side (documented below):
   a project's sandbox one fleet-wide, not one per replica),
   `studio-session-adopt.ts` (installing a session into a PEER's guest over
   HTTP), `studio-llm.ts` (gateway model config; the key is always the
-  caller's), `studio-workspace-dir.ts` (materializes a workspace to a
-  scratch dir — eval-suite only now), `studio-errors.ts`
-  (`StudioBuildError`), `studio-deploy.ts` (guest build → validate config →
+  caller's), `studio-deploy.ts` (guest build → validate config →
   deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts`
   (system prompt from the scaffold CLAUDE.md, one per project kind),
   `studio-project-kind.ts` (voice agent vs static workflow app — the
@@ -46,7 +44,8 @@ voice agents without the CLI:
   `SecretStore`). Blob `Storage` serves only deploy artifacts. Rows carry an
   optimistic `version`: writes go through `createWorkspace` /
   `mutateWorkspace` (`studio-workspace.ts`), which retry a conflicted write
-  once — the in-process keyed lock (`studio-workspace-lock.ts`) still
+  once — the in-process keyed lock (`workspaceLock` in
+  `studio-workspace.ts`) still
   serializes local writers, so a conflict means another replica.
 
   **A file's PATH is normalized where it is stored, not merely validated.**

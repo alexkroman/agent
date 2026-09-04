@@ -41,9 +41,6 @@ import {
 
 export type Cmd = fc.AsyncCommand<ServiceModel, Harness>;
 
-/** A generated plan: what `liveSessionCommands`/`retirementCommands` produce. */
-export type S2sPlan = Iterable<Cmd>;
-
 /** Base for a command that delivers one frame on the live socket. */
 abstract class FrameCommand implements Cmd {
   abstract check(m: Readonly<ServiceModel>): boolean;

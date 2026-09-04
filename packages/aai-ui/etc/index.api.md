@@ -31,6 +31,9 @@ import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
+export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
+
+// @public
 export type AgentCustomEvent = {
     readonly id: number;
     readonly event: string;
@@ -50,6 +53,17 @@ export function AutoScroll(input: {
     initial?: "instant" | "smooth" | undefined;
     resize?: "instant" | "smooth" | undefined;
 }): ReactNode;
+
+// @public
+export function BulletList(input: BulletListProps): ReactNode;
+
+// @public
+export type BulletListProps = {
+    items: readonly string[];
+    title?: ReactNode | undefined;
+    size?: "sm" | "base" | undefined;
+    className?: string | undefined;
+};
 
 // @public
 export function Button(input: {
@@ -128,7 +142,6 @@ export type ConsoleShellProps = {
     title?: string | undefined;
     state: AgentState;
     pulsing: boolean;
-    error?: string | null | undefined;
     children: ReactNode;
     footer: ReactNode;
     className?: string | undefined;
@@ -156,6 +169,17 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore;
 
 // @public
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
+
+// @public
+export function Facts(input: FactsProps): ReactNode;
+
+// @public
+export type FactsProps = {
+    items: readonly (string | number | false | null | undefined)[];
+    size?: "sm" | "xs" | undefined;
+    as?: "p" | "span" | undefined;
+    className?: string | undefined;
+};
 
 // @public
 export function fetchClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
@@ -232,7 +256,7 @@ export type MessageListProps = {
 };
 
 // @public
-export function NumberField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
 export function page(config: PageConfig): PageHandle;
@@ -260,7 +284,10 @@ export function SelectField(input: FieldShell & {
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">): JSX.Element;
 
 // @public
-export type Session = SessionSnapshot & Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle" | "end">;
+export type Session = SessionSnapshot & SessionActions;
+
+// @public
+export type SessionActions = Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
 
 // @public
 export type SessionCore = {
@@ -276,6 +303,7 @@ export type SessionCore = {
     start(): void;
     toggle(): void;
     end(): void;
+    restart(): void;
     [Symbol.dispose](): void;
 };
 
@@ -284,6 +312,14 @@ export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
     readonly fatal: boolean;
+};
+
+// @public
+export function SessionErrorBanner(input: SessionErrorBannerProps): ReactNode;
+
+// @public
+export type SessionErrorBannerProps = {
+    className?: string | undefined;
 };
 
 export { SessionErrorCode }
@@ -341,7 +377,7 @@ export type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined 
 export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
 
 // @public
-export function TextField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
+export function TextField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
 
 // @public
 export type ToolCallInfo = {
@@ -440,7 +476,16 @@ export function useRunKey(options?: {
 export function useSession(): Session;
 
 // @public
+export function useSessionActions(): SessionActions;
+
+// @public
+export function useSessionError(): SessionError | null;
+
+// @public
 export function useSessionSelector<T>(selector: (snapshot: SessionSnapshot) => T, isEqual?: (a: T, b: T) => boolean): T;
+
+// @public
+export function useSessionStatus(): AgentState;
 
 // @public
 export function useTheme(): Required<ClientTheme>;
@@ -613,6 +658,7 @@ export type WorkflowSubmission<R = unknown, I = unknown> = {
     wake: () => Promise<number>;
     cancel: () => Promise<boolean>;
     run: WorkflowRun<R> | undefined;
+    startedHere: boolean;
     pending: boolean;
     upload: UploadStatus | undefined;
     pauseUpload: () => void;

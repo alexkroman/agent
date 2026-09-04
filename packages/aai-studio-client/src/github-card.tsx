@@ -150,7 +150,7 @@ function CreateRepo({
         <label className="flex flex-col gap-1 text-[13px]">
           <span className="text-muted">Or create a new one</span>
           <input
-            className="input max-w-xs"
+            className="field h-10 max-w-xs"
             placeholder="repository-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -215,7 +215,7 @@ function RepoPicker({
       <label className="flex flex-col gap-1 text-[13px]">
         <span className="text-muted">Repository</span>
         <select
-          className="input max-w-md"
+          className="field h-10 max-w-md"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           disabled={repos.isPending || disabled}

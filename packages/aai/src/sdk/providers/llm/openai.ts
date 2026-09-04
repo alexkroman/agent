@@ -19,6 +19,16 @@ export const OPENAI_KIND = "openai" as const;
 export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
 
 /**
+ * Options for {@link openaiLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface OpenAILlmOptions extends ModelOptions {}
+
+/**
  * Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
  * host-side from the agent's env (`OPENAI_API_KEY`).
  *
@@ -34,16 +44,6 @@ export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
  * });
  * ```
  */
-/**
- * Options for {@link openaiLlm}.
- *
- * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
- * one model id, and every vendor still gets a NAME for its own options so its
- * first vendor-specific setting is an additive field here rather than a re-split
- * of the shared interface across eight call sites.
- */
-export interface OpenAILlmOptions extends ModelOptions {}
-
 export function openaiLlm(opts: OpenAILlmOptions): LlmProvider {
   return { kind: OPENAI_KIND, options: { ...opts } };
 }

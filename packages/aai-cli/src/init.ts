@@ -247,28 +247,21 @@ export async function executeInit(
   await scaffoldProject(dir, cwd, template, suppressUi);
   const installed = await installDeps(cwd, warn, suppressUi);
 
-  let deployed = false;
-  let slug: string | undefined;
-  let url: string | undefined;
-
-  if (!installed) {
-    warn("Skipping publish because dependencies were not installed.");
-  } else if (!opts.skipDeploy) {
-    const published = await tryPublish(cwd, opts.server, warn);
-    if (published) {
-      deployed = true;
-      slug = published.slug;
-      url = published.url;
-    }
-  }
+  if (!installed) warn("Skipping publish because dependencies were not installed.");
+  // One record rather than three locals kept in sync: `deployed: true` with no
+  // slug was representable, and it would report a successful publish with no
+  // URL to open.
+  const published = installed && !opts.skipDeploy ? await tryPublish(cwd, opts.server, warn) : null;
 
   if (!suppressUi) {
     printPostInitInfo(cwd, monorepoRoot);
   }
 
-  const data: InitData = { dir: cwd, template, deployed };
-  if (slug) data.slug = slug;
-  if (url) data.url = url;
+  const data: InitData = { dir: cwd, template, deployed: published !== null };
+  if (published) {
+    data.slug = published.slug;
+    data.url = published.url;
+  }
   // Omitted when empty so a clean init's result stays exactly as before.
   if (warnings.length > 0) data.warnings = warnings;
   return ok(data);

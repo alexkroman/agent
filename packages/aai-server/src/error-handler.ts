@@ -11,6 +11,7 @@ import { PlatformDbUnavailableError } from "./platform-db-errors.ts";
 import { SlugLockTimeoutError } from "./platform-lock.ts";
 import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
+import { WorkspaceConflictError } from "./workspace-store.ts";
 
 const log = createLogger("http");
 
@@ -154,9 +155,17 @@ export function createErrorHandler(): ErrorHandler {
     if (err instanceof SyntaxError) {
       return c.json({ error: err.message }, 400);
     }
-    // Cross-replica slug-lock contention: another replica holds the lease.
-    // A retryable conflict, not a server fault.
-    if (err instanceof SlugLockTimeoutError) {
+    // ANOTHER WRITER WON — a retryable conflict, not a server fault. Two
+    // shapes: cross-replica slug-lock contention, and an optimistic-concurrency
+    // loss on a workspace row.
+    //
+    // `WorkspaceConflictError` is thrown by this package (`workspace-store.ts`)
+    // and was classified only by three `instanceof` chains in `aai-studio-server`
+    // — so an uncaught one reached the catch-all below as `500 Internal server
+    // error`, for an ordinary version mismatch, and the studio client retries
+    // 5xx. Choosing the status here rather than per route is the property this
+    // module's own doc is about.
+    if (err instanceof SlugLockTimeoutError || err instanceof WorkspaceConflictError) {
       return c.json({ error: err.message }, 409);
     }
     // A DEPENDENCY was unavailable — every one of them is a retryable 503, and

@@ -115,7 +115,7 @@ export { compareNames } from "./_fs.mjs";
  * Sorted by slug with `compareNames`, never `localeCompare` — the order decides
  * the section order of the committed `API.md`.
  *
- * @param {{ exports?: Record<string, unknown> }} manifest
+ * @param {{ exports?: Record<string, import("./_fs.mjs").ExportTarget> }} manifest
  * @returns {{ subpath: string, types: string, slug: string }[]}
  */
 export function typedEntryPoints(manifest) {

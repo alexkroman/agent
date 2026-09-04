@@ -1,12 +1,16 @@
+import { plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, ConversationItem, Session } from "@alexkroman1/aai-ui";
+import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
 import {
+  AGENT_STATE_LABELS,
   AutoScroll,
   client,
+  SessionErrorBanner,
   useAgentState,
   useConversation,
-  useSession,
+  useSessionActions,
   useSessionSelector,
+  useSessionStatus,
 } from "@alexkroman1/aai-ui";
 import type { DispatchState, IncidentSummary, Severity, Status } from "./shared.ts";
 import { dashboardProjection } from "./shared.ts";
@@ -76,6 +80,20 @@ const STATE_COLORS = {
   speaking: "#3b82f6",
   error: "#6b7280",
 } satisfies Record<AgentState, string>;
+
+/*
+ * The board's own vocabulary, spread over the package's record rather than
+ * written as a ternary chain. Only three of the seven states get a dispatch
+ * word; the rest come from `AGENT_STATE_LABELS`, so a state added upstream
+ * reads as something rather than falling through to whichever arm the chain
+ * ended on.
+ */
+const STATE_LABELS: Record<AgentState, string> = {
+  ...AGENT_STATE_LABELS,
+  listening: "LISTENING",
+  thinking: "PROCESSING",
+  speaking: "TRANSMITTING",
+};
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -230,8 +248,16 @@ function Conversation() {
             {streaming}
           </div>
         )}
+        {/* Same contract as the shipped `MessageList`'s indicator: three pulsing
+            dots are the only sign the desk is working, and to a screen reader
+            they are punctuation. */}
         {thinking && (
-          <div className="self-start text-[11px] px-3.5" style={{ color: "#64748b" }}>
+          <div
+            role="status"
+            aria-label="Dispatch is thinking"
+            className="self-start text-[11px] px-3.5"
+            style={{ color: "#64748b" }}
+          >
             <span style={{ animation: "dc-pulse 1.2s ease-in-out infinite" }}>· · ·</span>
           </div>
         )}
@@ -261,7 +287,7 @@ function Conversation() {
  * it one level up dragged the incident board through every snapshot change.
  */
 function StatusReadout() {
-  const state = useSessionSelector((s) => s.state);
+  const state = useSessionStatus();
   return (
     <>
       <span
@@ -278,70 +304,36 @@ function StatusReadout() {
         title={state}
       />
       <span className="text-[11px] font-normal normal-case" style={{ color: "#64748b" }}>
-        {state === "listening"
-          ? "LISTENING"
-          : state === "thinking"
-            ? "PROCESSING"
-            : state === "speaking"
-              ? "TRANSMITTING"
-              : state.toUpperCase()}
+        {STATE_LABELS[state]}
       </span>
     </>
   );
 }
 
-/**
- * The fatal-error banner.
+/*
+ * The shift controls.
  *
- * `role="alert"` is the part that is easy to leave out and is load-bearing: per
- * the `fatalError` latch in the session core this banner is the only remaining
- * signal — the status eyebrow beside it goes back to reading like a live
- * session — and a screen reader is never told an unannounced one appeared. It
- * is what `ConsoleShell` carries, which this template's full-bleed two-pane
- * board cannot use as its frame.
+ * `useSessionActions()` for the methods and two one-field selectors for the
+ * flags, rather than the whole-snapshot `useSession()` this used to hold. The
+ * methods are what the row is really after, and `useSession()` re-renders on
+ * every snapshot change — so four buttons re-rendered at STT-partial rate to
+ * read two booleans that flip once a shift.
  */
-function ErrorBanner() {
-  const error = useSessionSelector((s) => s.error);
-  if (!error) return null;
-  return (
-    <div
-      role="alert"
-      className="px-4 py-2 text-xs"
-      style={{ background: "#450a0a", color: "#fca5a5", borderTop: "1px solid #991b1b" }}
-    >
-      ERROR: {error.message} ({error.code})
-    </div>
-  );
-}
-
-/**
- * Start a fresh conversation without leaving the console.
- *
- * Written out here rather than reached for on the session, because there is no
- * one method that does it: `reset()` clears the CONVERSATION and keeps the
- * session, which is wrong for any agent that also keeps session-scoped state —
- * this one's incident board would come back with the next tool call.
- */
-function newConversation(session: Session): void {
-  session.end();
-  session.start();
-}
-
-/** The shift controls. The one place a whole-session read is what is wanted:
- *  it needs `started`, `running` and four methods, and it is four buttons. */
 function ShiftControls({ logged }: { logged: number }) {
-  const session = useSession();
+  const { start, toggle, restart, end } = useSessionActions();
+  const started = useSessionSelector((s) => s.started);
+  const running = useSessionSelector((s) => s.running);
   return (
     <div
       className="flex items-center gap-2.5 px-4 py-3"
       style={{ background: "#111827", borderTop: "1px solid #1e293b" }}
     >
-      {!session.started ? (
+      {!started ? (
         <button
           type="button"
           className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
           style={{ background: "#2563eb" }}
-          onClick={() => session.start()}
+          onClick={() => start()}
         >
           Start Dispatch
         </button>
@@ -351,12 +343,12 @@ function ShiftControls({ logged }: { logged: number }) {
             type="button"
             className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
             style={{
-              background: session.running ? "#334155" : "#2563eb",
-              color: session.running ? "#e2e8f0" : "white",
+              background: running ? "#334155" : "#2563eb",
+              color: running ? "#e2e8f0" : "white",
             }}
-            onClick={() => session.toggle()}
+            onClick={() => toggle()}
           >
-            {session.running ? "Pause" : "Resume"}
+            {running ? "Pause" : "Resume"}
           </button>
           {/* The one-click new conversation the default shell's
               `<Controls>` gives every other template — a custom
@@ -375,7 +367,7 @@ function ShiftControls({ logged }: { logged: number }) {
             type="button"
             className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
             style={{ background: "#1e293b", color: "#e2e8f0" }}
-            onClick={() => newConversation(session)}
+            onClick={restart}
           >
             New Conversation
           </button>
@@ -388,7 +380,7 @@ function ShiftControls({ logged }: { logged: number }) {
             type="button"
             className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
             style={{ background: "#dc2626" }}
-            onClick={() => session.end()}
+            onClick={() => end()}
           >
             End Shift
           </button>
@@ -396,7 +388,7 @@ function ShiftControls({ logged }: { logged: number }) {
       )}
       <div className="flex-1" />
       <span className="text-[10px]" style={{ color: "#475569" }}>
-        {logged} incident{logged !== 1 ? "s" : ""} logged
+        {logged} {plural(logged, "incident")} logged
       </span>
     </div>
   );
@@ -471,7 +463,7 @@ function App() {
             style={{ borderRight: "1px solid #1e293b" }}
           >
             <Conversation />
-            <ErrorBanner />
+            <SessionErrorBanner className="rounded-none border-x-0 border-b-0" />
             <ShiftControls logged={incidentList.length} />
           </div>
 

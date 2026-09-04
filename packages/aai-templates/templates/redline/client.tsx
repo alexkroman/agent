@@ -59,6 +59,8 @@ import "@alexkroman1/aai-ui/styles.css";
 import { plural } from "@alexkroman1/aai/utils";
 import type { WorkflowInputOf, WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
+  BulletList,
+  Facts,
   Form,
   type FormValues,
   page,
@@ -70,7 +72,6 @@ import {
   WorkflowProgress,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
-import { useState } from "react";
 import type { redline } from "./agent.ts";
 
 /**
@@ -124,13 +125,10 @@ export function toInput(values: FormValues): WorkflowInputOf<typeof redline> {
 }
 
 function RedlineDesk() {
-  // Did THIS load start the run? A reload cannot have, and that is the only way
-  // the page can tell "writing what you just briefed" from "picking up where
-  // you left off" — the hook reports the run, not who asked for it.
-  const [startedHere, setStartedHere] = useState(false);
   // The reload is covered by the hook's own key — see the module doc for why
   // this desk wants the tab-scoped one it mints rather than a key of its own.
-  const { submit, run, pending, error, reset } = useWorkflowSubmit<typeof redline>(WORKFLOW);
+  const { submit, run, pending, error, reset, startedHere } =
+    useWorkflowSubmit<typeof redline>(WORKFLOW);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
@@ -142,13 +140,7 @@ function RedlineDesk() {
         </p>
       </header>
 
-      <Form
-        onSubmit={(values) => {
-          setStartedHere(true);
-          return submit(toInput(values));
-        }}
-        error={error}
-      >
+      <Form onSubmit={(values) => submit(toInput(values))} error={error}>
         {/* The scalars: brief, audience, rounds. Declared, not written. */}
         <WorkflowFields workflow={WORKFLOW} />
         {/* The array the schema declares and no generic control can render. */}
@@ -177,7 +169,6 @@ function RedlineDesk() {
             // The recovered run is dismissed as deliberately as one this load
             // started: `reset()` is not undone by a second lookup (the lookup
             // is a mount-time act), so Clear really does clear.
-            setStartedHere(false);
             reset();
           }}
         />
@@ -193,15 +184,16 @@ function Rounds({ rounds }: { rounds: Redline["rounds"] }) {
     <ol className="flex flex-col gap-3">
       {rounds.map((entry) => (
         <li key={entry.round} className="flex flex-col gap-1 border-l pl-4">
-          <p className="text-xs uppercase tracking-[1.2px] opacity-60">
-            Round {entry.round} · {entry.critique.score}/10 ·{" "}
-            {entry.critique.verdict === "ship" ? "ship it" : "revise"}
-          </p>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-            {entry.critique.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
+          <Facts
+            size="xs"
+            className="uppercase tracking-[1.2px]"
+            items={[
+              `Round ${entry.round}`,
+              `${entry.critique.score}/10`,
+              entry.critique.verdict === "ship" ? "ship it" : "revise",
+            ]}
+          />
+          <BulletList items={entry.critique.notes} size="sm" />
         </li>
       ))}
     </ol>
@@ -233,20 +225,30 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => 
           without a cast. */}
       {run.status === "completed" && (
         <>
-          <p className="text-xs opacity-60">
-            {run.output.words} words · {run.output.roundsRun}{" "}
-            {plural(run.output.roundsRun, "round")} ·{" "}
-            {/* Which of the two stop conditions ended the loop is the one thing
-                a reader cannot infer from the round count alone. */}
-            {run.output.shipped ? "the critic stopped it" : "the round budget stopped it"}
-          </p>
+          {/* Which of the two stop conditions ended the loop is the one thing a
+              reader cannot infer from the round count alone, so it is a fact of
+              its own rather than something left to the round count. */}
+          <Facts
+            size="xs"
+            items={[
+              `${run.output.words} words`,
+              `${run.output.roundsRun} ${plural(run.output.roundsRun, "round")}`,
+              run.output.shipped ? "the critic stopped it" : "the round budget stopped it",
+            ]}
+          />
           <Rounds rounds={run.output.rounds} />
           <article className="whitespace-pre-wrap text-sm leading-relaxed">
             {run.output.draft}
           </article>
         </>
       )}
-      {run.status === "failed" && <p className="text-red-600">{run.error}</p>}
+      {/* `role="alert"`, the same contract `<Form>` gives the submit error: this
+          is the outcome the reader waited minutes for. */}
+      {run.status === "failed" && (
+        <p role="alert" className="text-red-600">
+          {run.error}
+        </p>
+      )}
     </section>
   );
 }

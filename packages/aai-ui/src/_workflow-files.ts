@@ -4,7 +4,7 @@
  *
  * Its own module because both submit hooks need the identical answer and then do
  * two different things with it — `useWorkflowSubmit` stores each file and passes
- * its id, `useWorkflowStream` cuts it into parts and passes the group they share.
+ * its id, `useWorkflowStream` mints the id first so the run can start on it.
  * A second copy of this predicate would be a form field that one hook treats as a
  * file and the other does not, which is invisible until the run reads the wrong
  * kind of string.

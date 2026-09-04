@@ -75,10 +75,18 @@ export const GITHUB_SYNC_IP_RATE_LIMIT = {
   windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
 } as const;
 
-/** The studio's limiters, injectable per app. */
+/**
+ * The studio's limiters, injectable per app.
+ *
+ * EVERY field is optional, because that is what the type is used as: an
+ * OVERRIDE map. `createRouteLimits` reads each one as
+ * `injected?.x ?? createRateLimiter(DEFAULT)`, and the Postgres factory
+ * answers `Required<StudioRateLimiters>` regardless — so a required field
+ * only ever taxed a spec into constructing a window it does not exercise.
+ */
 export type StudioRateLimiters = {
-  chat: RateLimiter;
-  projectCreate: RateLimiter;
+  chat?: RateLimiter;
+  projectCreate?: RateLimiter;
   previewWake?: RateLimiter;
   githubSync?: RateLimiter;
   /** Per-IP companions to the four above. */

@@ -398,8 +398,15 @@ export const SLUG_LOCK_POOL_MAX = 4;
  * `PLATFORM_POOLER_URL` in TRANSACTION mode, which does multiplex. With either
  * pooler URL unset those connections are DIRECT and this budget understates the
  * fleet, which is why boot announces the reading rather than trusting the constant.
+ *
+ * It was 30 while `platformDbConnectionsPerReplica` still carried the DevKit
+ * world's `pg.Pool` and `LISTEN` client — 5 per replica for something that opens
+ * no connection at all, since the replay engine replaced that world with HTTP
+ * clients. `platform-db-limits.ts` has the account; the effect of the stale terms
+ * was that `platform-db-capacity.ts` subtracted 15 connections from the headroom
+ * it reports at boot.
  */
-export const MAX_PLATFORM_DB_CONNECTIONS = 30;
+export const MAX_PLATFORM_DB_CONNECTIONS = 15;
 
 /**
  * Concurrent live SSE streams one caller SCOPE may hold across this replica.

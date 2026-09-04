@@ -29,7 +29,7 @@
 // journal, no replay, and no per-step retry, so a rate-limited live run FAILS
 // where a deployed one would have ridden it out. The tier that really resumes a
 // run is `aai-cli`'s `dev-workflow.scenario.test.ts`.
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
+import { routeStepFetch, stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -75,13 +75,10 @@ const critique = (verdict: "ship" | "revise", score = 8): string =>
  */
 function scriptGateway(contents: readonly string[]) {
   const model = stubGatewayRoute(contents);
-  installStubStepFetch((request) => {
-    const answered = model.route(request);
-    if (answered === undefined) {
-      throw new Error(`unexpected step request in an eval: ${request.method} ${request.url}`);
-    }
-    return answered;
-  });
+  // `routeStepFetch` defaults to throwing on an unrecognised request, which is
+  // what this file wants and what it used to spell out: every step in this body
+  // is a model call, so anything the route does not recognise is a finding.
+  installStubStepFetch(routeStepFetch([model.route]));
   return model;
 }
 

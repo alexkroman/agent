@@ -28,6 +28,8 @@
  * @module
  */
 
+import { pushCapped } from "@alexkroman1/aai/utils";
+
 /** Which of a process's two streams a line came from. */
 export type LogStream = "stdout" | "stderr";
 
@@ -119,13 +121,16 @@ export function createLogBuffer(opts: LogBufferOptions = {}): LogBuffer {
     // otherwise leave a trailing carriage return on every line, which renders
     // as a stray glyph in the pane and breaks equality in tests.
     const text = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    lines.push({
-      seq: nextSeq++,
-      at: now(),
-      stream,
-      text: text.length > maxLineBytes ? text.slice(0, maxLineBytes) + LOG_LINE_TRUNCATED : text,
-    });
-    if (lines.length > maxLines) lines.splice(0, lines.length - maxLines);
+    pushCapped(
+      lines,
+      {
+        seq: nextSeq++,
+        at: now(),
+        stream,
+        text: text.length > maxLineBytes ? text.slice(0, maxLineBytes) + LOG_LINE_TRUNCATED : text,
+      },
+      maxLines,
+    );
   };
 
   return {

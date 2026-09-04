@@ -10,7 +10,13 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { execaSync } from "execa";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log, notify } from "./_ui.ts";
-import { binFromPackageJson, errorCode, errorMessage } from "./_utils.ts";
+import {
+  binFromPackageJson,
+  compareCodeUnits,
+  errorCode,
+  errorMessage,
+  formatCappedList,
+} from "./_utils.ts";
 
 /**
  * What `aai test` measured, not merely whether it exited 0.
@@ -229,12 +235,6 @@ function coveredList(ran: RanSpecs): readonly string[] {
   return typeof ran === "string" ? [ran] : ran;
 }
 
-/** Code-unit comparison — see {@link projectSpecFiles} for why not `localeCompare`. */
-function compareCodeUnits(a: string, b: string): number {
-  if (a < b) return -1;
-  return a > b ? 1 : 0;
-}
-
 /** One directory of {@link projectSpecFiles}, recursing into the ones that count. */
 function collectSpecs(dir: string, prefix: string, out: string[]): void {
   let entries: Dirent[];
@@ -254,16 +254,6 @@ function collectSpecs(dir: string, prefix: string, out: string[]): void {
       out.push(rel);
     }
   }
-}
-
-/** How many unrun spec names a message prints before it starts counting. */
-const MAX_NAMED_SPECS = 10;
-
-/** The unrun set as one phrase — capped, because a project may hold hundreds. */
-function formatSpecList(files: readonly string[]): string {
-  const named = files.slice(0, MAX_NAMED_SPECS).join(", ");
-  const rest = files.length - MAX_NAMED_SPECS;
-  return rest > 0 ? `${named}, and ${rest} more` : named;
 }
 
 /**
@@ -295,7 +285,7 @@ export function warnUnrunSpecs(cwd: string, ran: RanSpecs): void {
     ranList.length === 0
       ? `No agent.test.ts, so vitest ran nothing. ${skipped.length} spec file(s) exist and were NOT run:`
       : `vitest ran ${ranList.join(", ")} only. ${skipped.length} other spec file(s) were NOT run:`;
-  notify("warn", `${preamble} ${formatSpecList(skipped)}. ${WIDEN_HINT}`);
+  notify("warn", `${preamble} ${formatCappedList(skipped)}. ${WIDEN_HINT}`);
 }
 
 /** What `aai test` was asked to cover. */
@@ -360,7 +350,7 @@ function incomplete(ran: string[] | false, unrun: string[]): CommandResult<never
       : `\`aai test\` ran ${ran.join(", ")} only — ${unrun.length} other spec file(s) in this project were not run`;
   return fail(
     "incomplete_run",
-    `${preamble}: ${formatSpecList(unrun)}. An unrun spec is not a passing one, so this is not a green result.`,
+    `${preamble}: ${formatCappedList(unrun)}. An unrun spec is not a passing one, so this is not a green result.`,
     WIDEN_HINT,
   );
 }

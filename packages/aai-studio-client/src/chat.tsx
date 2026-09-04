@@ -6,7 +6,14 @@
 
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
-import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ChatSession, StudioStatus } from "./api.ts";
 import { errorText } from "./api-error.ts";
 import { EmptyStateBody, Transcript } from "./chat-transcript.tsx";
@@ -302,50 +309,61 @@ function ProjectChat({
  */
 export function ChatPanel(props: ChatPanelProps) {
   const [input, setInput] = useState("");
+  // The three states as an if/else rather than three `&&` guards over the same
+  // two discriminants: written as independent tests, their mutual exclusivity
+  // was something a reader had to prove, and a fourth state would render two
+  // panels at once rather than fail.
+  const { chatHistory, chatSession } = props;
+  let body: ReactNode;
+  if (chatHistory === undefined) {
+    // Nothing to show yet: not even the conversation has arrived. A failed
+    // broker is still worth reporting here — it is the only thing that has an
+    // answer, and it comes with the button that retries it.
+    body = (
+      <div className="flex flex-1 flex-col items-start justify-center gap-3 px-6 py-5">
+        {props.sessionError != null ? (
+          <SandboxNote error={props.sessionError} onRetry={props.onSessionStale} />
+        ) : (
+          <p className="m-0 text-[13px] text-subtle italic">Loading conversation…</p>
+        )}
+      </div>
+    );
+  } else if (chatSession === undefined) {
+    body = (
+      <PendingChat
+        history={chatHistory}
+        chatStatus={props.chatStatus}
+        toolLabels={props.toolLabels}
+        initialPrompt={props.initialPrompt}
+        sessionError={props.sessionError}
+        onSessionStale={props.onSessionStale}
+        input={input}
+        onInputChange={setInput}
+      />
+    );
+  } else {
+    body = (
+      <ProjectChat
+        session={chatSession}
+        initialMessages={chatHistory}
+        chatStatus={props.chatStatus}
+        toolLabels={props.toolLabels}
+        initialPrompt={props.initialPrompt}
+        onInitialPromptSent={props.onInitialPromptSent}
+        onWorkspaceChanged={props.onWorkspaceChanged}
+        onBusyChange={props.onBusyChange}
+        onSessionStale={props.onSessionStale}
+        input={input}
+        onInputChange={setInput}
+      />
+    );
+  }
   return (
     <div className="flex w-[360px] flex-none flex-col border-r border-line bg-panel">
       <div className="flex items-center justify-between gap-2 px-6 pt-5">
         <span className="eyebrow">Agent</span>
       </div>
-      {props.chatHistory === undefined && (
-        // Nothing to show yet: not even the conversation has arrived. A failed
-        // broker is still worth reporting here — it is the only thing that has
-        // an answer, and it comes with the button that retries it.
-        <div className="flex flex-1 flex-col items-start justify-center gap-3 px-6 py-5">
-          {props.sessionError != null ? (
-            <SandboxNote error={props.sessionError} onRetry={props.onSessionStale} />
-          ) : (
-            <p className="m-0 text-[13px] text-subtle italic">Loading conversation…</p>
-          )}
-        </div>
-      )}
-      {props.chatHistory !== undefined && props.chatSession === undefined && (
-        <PendingChat
-          history={props.chatHistory}
-          chatStatus={props.chatStatus}
-          toolLabels={props.toolLabels}
-          initialPrompt={props.initialPrompt}
-          sessionError={props.sessionError}
-          onSessionStale={props.onSessionStale}
-          input={input}
-          onInputChange={setInput}
-        />
-      )}
-      {props.chatHistory !== undefined && props.chatSession !== undefined && (
-        <ProjectChat
-          session={props.chatSession}
-          initialMessages={props.chatHistory}
-          chatStatus={props.chatStatus}
-          toolLabels={props.toolLabels}
-          initialPrompt={props.initialPrompt}
-          onInitialPromptSent={props.onInitialPromptSent}
-          onWorkspaceChanged={props.onWorkspaceChanged}
-          onBusyChange={props.onBusyChange}
-          onSessionStale={props.onSessionStale}
-          input={input}
-          onInputChange={setInput}
-        />
-      )}
+      {body}
     </div>
   );
 }

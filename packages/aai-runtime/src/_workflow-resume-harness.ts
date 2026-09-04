@@ -50,7 +50,8 @@ import {
   runProgram,
   tokensOf,
 } from "./_workflow-resume-program.ts";
-import { createTally, journalOutcome } from "./_workflow-tally-harness.ts";
+import { createTally, type JournalOutcome, journalOutcome } from "./_workflow-tally-harness.ts";
+import { silentLogger } from "./runtime-config.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore, type RunStatus } from "./workflow-journal-types.ts";
@@ -82,16 +83,7 @@ export {
 const MAX_DELIVERIES = 40;
 
 /** What one execution of a program did, as the oracle compares it. */
-export type Scenario = {
-  status: RunStatus | undefined;
-  output: unknown;
-  error: string | undefined;
-  /** Journal keys, as a sorted list so two runs compare as sets. */
-  keys: string[];
-  /** Step NAME to how many times its body really ran. */
-  counts: Record<string, number>;
-  /** Counted step-body invocations, which is also the number of crash points. */
-  total: number;
+export type Scenario = JournalOutcome & {
   /** Deliveries of the run message this scenario took. */
   deliveries: number;
   /** Suspends the driver had to advance past. */
@@ -110,14 +102,6 @@ export type ScenarioOptions = {
   cancelAt?: number | undefined;
   /** The engine's step gate width. 1 is what deadlocked on a nested step. */
   stepConcurrency?: number | undefined;
-};
-
-/** Discards. A generated body's abandonment warnings are not the finding. */
-export const silent = {
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-  debug: () => undefined,
 };
 
 /**
@@ -228,7 +212,7 @@ export async function runScenario(
     dispatch: () => undefined,
     newRunId: () => "wrun_generated",
     stepConcurrency: options.stepConcurrency ?? 4,
-    logger: silent,
+    logger: silentLogger,
   });
 
   const runId = await engine.start("generated", [{}]);

@@ -7,6 +7,8 @@
  * stdout. In human mode (TTY, default), commands use @clack/prompts as before.
  */
 
+import { stripVTControlCharacters } from "node:util";
+
 export type OutputMode = "json" | "human";
 
 export type CommandResult<T> =
@@ -28,22 +30,10 @@ export function getOutputMode(
 }
 
 /**
- * The ESC byte, computed rather than written as an escape in a regex literal:
- * it is a control character, which `noControlCharactersInRegex` rejects.
- */
-const ESC = String.fromCharCode(27);
-
-/**
- * A CSI sequence — `ESC [ params intermediates final` — which covers every SGR
- * colour pair a diagnostic can arrive wearing (`\u001B[31m` … `\u001B[0m`,
- * `\u001B[38;5;246m`) as well as cursor moves.
- */
-const ANSI_RAW = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
-
-/**
- * The same sequence AFTER `JSON.stringify`, which escapes the ESC byte as the
- * six characters `\u001b`. Both forms are needed because a caller stringifies
- * a whole result and hands the line here — see {@link writeLine}.
+ * A terminal escape sequence AFTER `JSON.stringify`, which escapes the ESC
+ * byte as the six characters `\u001b`. Needed alongside the raw form because a
+ * caller stringifies a whole result and hands the line here — see
+ * {@link writeLine} — and no builtin reads that spelling.
  */
 const ANSI_JSON = /\\u001[bB]\[[0-?]*[ -/]*[@-~]/g;
 
@@ -51,12 +41,19 @@ const ANSI_JSON = /\\u001[bB]\[[0-?]*[ -/]*[@-~]/g;
  * Remove ANSI escape sequences, in raw or JSON-escaped form.
  *
  * A bundler colours its own diagnostics unconditionally, so `aai build`'s
- * failure reached the JSON envelope as per-character SGR pairs
- * (`[38;5;246m1 │[0m [38;5;249mi[0m[38;5;249mm[0m…`) — illegible in a CI log
- * and meaningless to a `jq` consumer, which is the audience JSON mode has.
+ * failure reached the JSON envelope as per-character SGR pairs — illegible in a
+ * CI log and meaningless to a `jq` consumer, which is the audience JSON mode
+ * has.
+ *
+ * The raw half is `node:util`'s, not a local CSI regex. A/B'd on Node 26: the
+ * two agree on every SGR pair and cursor move the hand-built pattern was
+ * written for, and the builtin ALSO strips OSC-8 hyperlinks (`ESC ] 8 ;; url`)
+ * and charset selects (`ESC ( B`), which that pattern left in the envelope — so
+ * its claim to cover what a diagnostic arrives wearing was the incomplete part.
+ * The JSON-escaped half has no builtin and stays.
  */
 export function stripAnsi(text: string): string {
-  return text.replace(ANSI_RAW, "").replace(ANSI_JSON, "");
+  return stripVTControlCharacters(text).replace(ANSI_JSON, "");
 }
 
 /**

@@ -21,9 +21,10 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { getServerInfo } from "./_agent.ts";
 import { checkedResponse } from "./_api-client.ts";
 import { type CommandResult, ok } from "./_output.ts";
-import { slugRequest } from "./_slug-api.ts";
+import { type SlugTarget, slugRequestOn } from "./_slug-api.ts";
 import { log } from "./_ui.ts";
 
 /** One captured line, as the platform reports it. */
@@ -77,16 +78,16 @@ export function formatLine(line: LogLine): string {
   return `${formatTime(line.at)}${mark}  ${line.text}`;
 }
 
-async function readPage(
-  cwd: string,
-  after: number,
-  server: string | undefined,
-): Promise<{ page: LogsPage; slug: string }> {
-  const { data, slug } = await slugRequest(cwd, `/logs?after=${after}`, { action: "logs" }, server);
-  return {
-    page: checkedResponse(data, isLogsPage, `the logs route for ${slug}`),
-    slug,
-  };
+/**
+ * One page, against a target resolved ONCE by the caller.
+ *
+ * `slugRequestOn` rather than `slugRequest`: under `--follow` this runs every
+ * second for the life of the command, and the target is immutable — see that
+ * function's doc for what re-resolving it cost.
+ */
+async function readPage(target: SlugTarget, after: number): Promise<LogsPage> {
+  const data = await slugRequestOn(target, `/logs?after=${after}`, { action: "logs" });
+  return checkedResponse(data, isLogsPage, `the logs route for ${target.slug}`);
 }
 
 type LogsData = { slug: string; lines: number; running: boolean };
@@ -102,7 +103,9 @@ export async function executeLogs(
   cwd: string,
   opts: LogsOpts = {},
 ): Promise<CommandResult<LogsData>> {
-  const { page, slug } = await readPage(cwd, -1, opts.server);
+  const target = await getServerInfo(cwd, opts.server);
+  const { slug } = target;
+  const page = await readPage(target, -1);
   let cursor = page.cursor;
   let printed = printPage(page);
 
@@ -132,11 +135,11 @@ export async function executeLogs(
     // A failed poll is not a failed command: an agent between sandboxes answers
     // exactly like a network blip, and the next tick is a second away. Only a
     // signalled stop ends the loop.
-    const next = await readPage(cwd, cursor, opts.server).catch(() => undefined);
+    const next = await readPage(target, cursor).catch(() => undefined);
     if (!next) continue;
-    cursor = next.page.cursor;
-    running = next.page.running;
-    printed += printPage(next.page);
+    cursor = next.cursor;
+    running = next.running;
+    printed += printPage(next);
   }
   return ok({ slug, lines: printed, running });
 }

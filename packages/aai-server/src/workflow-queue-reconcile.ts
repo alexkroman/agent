@@ -89,6 +89,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { abandonStalledRun, RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { createLogger } from "./logger.ts";
+import { sqlState } from "./platform-db-errors.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { enqueue } from "./workflow-queue-store.ts";
 
@@ -105,7 +106,7 @@ const FOREIGN_KEY_VIOLATION = "23503";
  * silently turn this skip back into the pass-wide throw it exists to prevent.
  */
 function isAgentGone(err: unknown): boolean {
-  return (err as { code?: unknown } | null)?.code === FOREIGN_KEY_VIOLATION;
+  return sqlState(err) === FOREIGN_KEY_VIOLATION;
 }
 
 /**

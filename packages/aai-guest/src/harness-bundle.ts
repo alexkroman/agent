@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { SessionRuntime } from "@alexkroman1/aai-runtime";
 import { publishStepEnv, publishWorkflowWebhookUrl } from "@alexkroman1/aai-runtime/internal";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
@@ -279,7 +279,7 @@ export function ensureRuntime(state: HarnessState): GuestRuntime {
   state.runtime ??= state.createRuntime({
     env: { ...state.env },
     runCode,
-    ...(publicUrl ? { publicUrl } : {}),
+    ...omitUndefined({ publicUrl }),
   });
   return state.runtime;
 }

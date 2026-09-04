@@ -60,8 +60,8 @@ import type { WorkflowApi } from "./workflow-client.ts";
 export type RecoverRunOptions = {
   /** The workflow whose runs are indexed under `key`. */
   workflow: string;
-  /** The caller's handle on its own run, or undefined for a page with none. */
-  key: string | undefined;
+  /** The caller's handle on its own run. `useDefaultRunKey` always supplies one. */
+  key: string;
   /** Whether the caller asked for this at all — `recover` at the call site. */
   enabled: boolean;
   /** The stable getter from `useWorkflowApiRef`. */
@@ -86,7 +86,7 @@ export function useRecoveredRun(opts: RecoverRunOptions): boolean {
   const { workflow, key, enabled, getClient } = opts;
   // True from the FIRST render rather than from the effect, so there is no
   // frame in which a page about to adopt a run reads as idle.
-  const [recovering, setRecovering] = useState(enabled && key !== undefined);
+  const [recovering, setRecovering] = useState(enabled);
   // The two callbacks through a ref, for the reason `_workflow-api-ref.ts`
   // holds the client in one: a call site writes them inline, so as dependencies
   // they would restart the lookup on every render it causes.
@@ -94,7 +94,7 @@ export function useRecoveredRun(opts: RecoverRunOptions): boolean {
   handlers.current = opts;
 
   useEffect(() => {
-    if (!enabled || key === undefined) return;
+    if (!enabled) return;
     let cancelled = false;
     setRecovering(true);
     getClient()

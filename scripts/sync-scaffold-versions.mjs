@@ -29,7 +29,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { parseScriptArgs } from "./_args.mjs";
-import { readJson, repoRoot } from "./_fs.mjs";
+import { readManifest, repoRoot } from "./_fs.mjs";
 
 const { values: flags } = parseScriptArgs({
   script: import.meta.url,
@@ -138,7 +138,7 @@ function resolveSpecifier(spec, dep, source) {
   return range;
 }
 
-const scaffold = readJson(scaffoldPath);
+const scaffold = readManifest(scaffoldPath);
 let changed = false;
 
 /** Set scaffold's range for `dep` in whichever section already declares it. */
@@ -153,7 +153,7 @@ function syncDep(dep, range, source) {
 }
 
 for (const [dep, pkgPath] of Object.entries(pkgMap)) {
-  const { version } = readJson(join(root, pkgPath));
+  const { version } = readManifest(join(root, pkgPath));
   // Never let a missing version become a literal "^undefined" in the scaffold.
   if (typeof version !== "string" || version.length === 0) {
     console.error(
@@ -165,7 +165,7 @@ for (const [dep, pkgPath] of Object.entries(pkgMap)) {
 }
 
 for (const [dep, pkgPath] of Object.entries(sharedDepSources)) {
-  const pkg = readJson(join(root, pkgPath));
+  const pkg = readManifest(join(root, pkgPath));
   const range =
     pkg.dependencies?.[dep] ?? pkg.devDependencies?.[dep] ?? pkg.peerDependencies?.[dep];
   if (typeof range !== "string" || range.length === 0) {
@@ -202,7 +202,7 @@ if (leaked.length > 0) {
   process.exit(1);
 }
 
-const { packageManager } = readJson(join(root, "package.json"));
+const { packageManager } = readManifest(join(root, "package.json"));
 if (typeof packageManager === "string" && scaffold.packageManager !== packageManager) {
   console.log(`packageManager: ${scaffold.packageManager} → ${packageManager} (from package.json)`);
   scaffold.packageManager = packageManager;

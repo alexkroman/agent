@@ -19,7 +19,7 @@ import {
 } from "./_ffmpeg-spawn.ts";
 import { ffmpegVersion } from "./_ffmpeg-version.ts";
 import { tick } from "./_test-utils.ts";
-import { probeMedia, runFfmpeg, transcodeToWav, wavEncodeArgs } from "./ffmpeg.ts";
+import { ffmpegBaseArgs, probeMedia, runFfmpeg, transcodeToWav, wavEncodeArgs } from "./ffmpeg.ts";
 
 const spawnMock = vi.fn();
 vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(...args) }));
@@ -455,7 +455,12 @@ describe("transcodeToWav", () => {
       "-hide_banner",
       "-loglevel",
       "error",
+      // `-nostats` and `-y` arrived with `ffmpegBaseArgs`: this call used to be
+      // the SDK's own copy of the prelude, and the one missing the flag that
+      // keeps a failure diagnosable.
+      "-nostats",
       "-nostdin",
+      "-y",
       "-i",
       "pipe:0",
       "-vn",
@@ -510,5 +515,47 @@ describe("ffmpegVersion", () => {
     child.stderrText("Unrecognized option\n");
     child.close(1);
     await expect(version).rejects.toMatchObject({ kind: "exit" });
+  });
+});
+
+describe("ffmpegBaseArgs", () => {
+  test("carries the two flags the five hand-written copies disagreed on", () => {
+    const argv = ffmpegBaseArgs();
+    // `-nostats` keeps ffmpeg's per-second progress line from filling the
+    // captured stderr tail and evicting the error that explains a failure.
+    expect(argv).toContain("-nostats");
+    // `-nostdin` is about the guest, where there is no terminal and an ffmpeg
+    // that reads stdin never exits.
+    expect(argv).toContain("-nostdin");
+    expect(argv).toContain("-hide_banner");
+    expect(argv).toContain("-y");
+  });
+
+  test("defaults to error and takes a louder level for a filter that logs", () => {
+    // `loudnorm`'s `print_format=json` reports through the LOG, so a measure
+    // pass at `error` runs, succeeds, and prints nothing.
+    expect(ffmpegBaseArgs()).toEqual(expect.arrayContaining(["-loglevel", "error"]));
+    const info = ffmpegBaseArgs({ loglevel: "info" });
+    expect(info[info.indexOf("-loglevel") + 1]).toBe("info");
+    expect(info).not.toContain("error");
+  });
+
+  test("a caller cannot mutate the next caller's flags", () => {
+    // A shared frozen constant would make `[...base, "-i", x]` fine and
+    // `base.push(...)` a cross-call bug; a fresh array per call has neither.
+    ffmpegBaseArgs().push("-boom");
+    expect(ffmpegBaseArgs()).not.toContain("-boom");
+  });
+
+  test("transcodeToWav goes through it, so the SDK's own call is not the outlier", async () => {
+    const child = installChild();
+    const done = transcodeToWav("/tmp/in.m4a");
+    child.stdout("RIFF....WAVE");
+    child.close(0);
+    await done;
+    const argv = child.call?.args ?? [];
+    // The regression this closes: `transcodeToWav` shipped without `-nostats`,
+    // so the SDK's own transcode was the case whose diagnosis got evicted.
+    expect(argv).toEqual(expect.arrayContaining(ffmpegBaseArgs()));
   });
 });

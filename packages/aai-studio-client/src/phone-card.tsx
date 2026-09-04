@@ -19,8 +19,10 @@
 // value, and getting any of the three wrong produces a number that answers
 // and then hangs up.
 
+import { agentBase } from "./docs-content.ts";
 import { platformOrigin } from "./platform-origin.ts";
 import { Card } from "./settings-card.tsx";
+import { CopyLine } from "./snippet.tsx";
 import { useCopy } from "./use-copy.ts";
 
 /** A carrier the platform can emit a media-stream document for. */
@@ -62,7 +64,7 @@ const CARRIERS: readonly Carrier[] = [
  * people's phone-number settings are not.
  */
 export function phoneWebhookUrl(origin: string, slug: string, carrier: string): string {
-  return `${origin}/${slug}/phone?carrier=${carrier}`;
+  return `${agentBase(origin, slug)}/phone?carrier=${carrier}`;
 }
 
 /** Whether a carrier's signing secret is set, and whether it has landed. */
@@ -114,9 +116,9 @@ function SecretHint({ carrier, state }: { carrier: Carrier; state: SecretState }
 type PhoneCardProps = {
   /**
    * The project's PUBLISHED slug. Absent until the first Publish — and this
-   * card gates on it, unlike its neighbours. Secrets and Database record an
-   * intent that a later deploy picks up, so they are useful before anything
-   * ships; a webhook URL is not an intent. Pointed at an unpublished slug it
+   * card gates on it, unlike its neighbours. A secret records an intent that a
+   * later deploy picks up, so it is useful before anything ships; a webhook URL
+   * is not an intent. Pointed at an unpublished slug it
    * resolves to nothing, and the caller hears the agent-not-found message and
    * gets hung up on, which is a worse answer than not showing a URL yet.
    */
@@ -150,19 +152,11 @@ export function PhoneCard({ deployedSlug, secretNames, pendingSecrets }: PhoneCa
                   <span className="text-[13px] font-medium text-fg">{carrier.label}</span>
                   <span className="text-[11px] text-subtle">{carrier.webhook}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <code className="min-w-0 flex-1 rounded-md border border-line bg-cream px-3 py-2 font-mono text-xs break-all">
-                    {url}
-                  </code>
-                  <button
-                    type="button"
-                    className="btn px-2 py-1 text-xs"
-                    onClick={() => copier.copy(url)}
-                    aria-label={`Copy the ${carrier.label} webhook URL`}
-                  >
-                    {copier.label(url)}
-                  </button>
-                </div>
+                <CopyLine
+                  text={url}
+                  label={`Copy the ${carrier.label} webhook URL`}
+                  copier={copier}
+                />
                 <SecretHint
                   carrier={carrier}
                   state={secretState(carrier.secret, secretNames, pendingSecrets)}

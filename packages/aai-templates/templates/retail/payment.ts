@@ -4,6 +4,7 @@
  */
 
 import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { resolveOrder } from "./resolve.ts";
 import type { RetailState } from "./shared.ts";
 import { authenticatedUser, findPaymentMethod, isGiftCard, money } from "./store.ts";
@@ -53,13 +54,13 @@ export function planPayment(
   const amount = original.amount;
   if (isGiftCard(newMethod) && newMethod.balance < amount) {
     return {
-      error: `Gift card ${newMethodId}'s balance ($${newMethod.balance.toFixed(2)}) does not cover the $${amount.toFixed(2)} order total.`,
+      error: `Gift card ${newMethodId}'s balance (${formatMoney(newMethod.balance)}) does not cover the ${formatMoney(amount)} order total.`,
     };
   }
 
   return {
     readBack:
-      `charge order ${order.order_id} — $${amount.toFixed(2)} — to ${newMethodId} instead, ` +
+      `charge order ${order.order_id} — ${formatMoney(amount)} — to ${newMethodId} instead, ` +
       `refunding ${original.payment_method_id}`,
     orderId: order.order_id,
     newMethodId,
@@ -102,6 +103,6 @@ export function applyPayment(state: RetailState, plan: PaymentPlan) {
     amount: plan.amount,
     paid_with: plan.newMethodId,
     refunded_to: plan.oldMethodId,
-    message: `Order ${plan.orderId} is now charged to ${plan.newMethodId}, and $${plan.amount.toFixed(2)} is going back to ${plan.oldMethodId}.`,
+    message: `Order ${plan.orderId} is now charged to ${plan.newMethodId}, and ${formatMoney(plan.amount)} is going back to ${plan.oldMethodId}.`,
   };
 }

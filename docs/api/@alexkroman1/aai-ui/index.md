@@ -116,6 +116,59 @@ function Transcript() {
 
 ***
 
+### BulletList()
+
+```ts
+function BulletList(props: BulletListProps): ReactNode;
+```
+
+A disc-bulleted list of short strings — a run's key points, findings, risks.
+
+Five pages had written this, byte-identical apart from a `text-sm` suffix on
+two of them, and all five had the same two defects. Both are the reason this
+is a component rather than four lines a page repeats:
+
+- **All five keyed by the string itself, and these lists are MODEL OUTPUT.**
+  Two identical bullets are entirely plausible — a summariser that repeats
+  itself is a bad summary, not a bad program — and a repeated string is then
+  a duplicate `key`: React warns, and the two `<li>`s contend for one slot in
+  the reconciliation. What is keyed here instead is the content PLUS how many
+  times that content has already appeared in this list, which is unique by
+  construction and unchanged by a re-render that did not change the text.
+  (Position alone would also be sound — these lists are replaced wholesale by
+  each new output and never reordered — but it is what `noArrayIndexKey`
+  exists to talk you out of, and a unique key is one `Map` away, so there is
+  no reason to spend a lint suppression on it.)
+- **Three of the five rendered an empty `<ul>` under a heading.** Two had
+  hand-rolled `if (items.length === 0) return null` and three had not, so the
+  same absent field was "nothing" on two pages and a stray heading with a
+  void under it on three. Emptiness renders NOTHING here, `title` included:
+  a heading over no bullets is a claim the run did not make.
+
+#### Parameters
+
+##### props
+
+[`BulletListProps`](#bulletlistprops)
+
+Bullet-list props.
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+```tsx
+import { BulletList } from "@alexkroman1/aai-ui";
+
+function Findings({ risks }: { risks: string[] }) {
+  return <BulletList title="Risks" items={risks} size="sm" />;
+}
+```
+
+***
+
 ### Button()
 
 ```ts
@@ -340,14 +393,20 @@ content on a raised card, and a footer row beneath it.
 `<Controls>` under it, and until now that was the only way to get it — the
 shell itself was internal, so a client wanting its own conversation markup
 had to rebuild the chrome as well. Each one that did re-derived the error
-banner WITHOUT `role="alert"`, which is the one part of this component a
-reviewer cannot see is missing: per the `fatalError` latch in
-`session-core.ts`, the banner is the only remaining signal once the state
-eyebrow goes back to reading like a live session, and a screen reader is
-never told an unannounced one appeared.
+banner WITHOUT `role="alert"`.
+
+**The banner is [SessionErrorBanner](#sessionerrorbanner) now, composed here rather than
+spelled out.** It was four lines of this file, and this file is a whole
+FRAME — a centred `max-w-190` column — so the full-bleed chromes that needed
+the announced banner could not take it without taking a layout that would
+replace the design they exist to demonstrate. Composing means there is one
+banner, and it means this component no longer takes an `error` prop: the
+banner reads the session itself, which is one fewer thing a caller can wire
+up wrong.
 
 Reach for it when the conversation is yours and the frame is not. Reach for
-`<ChatView>` when both are ours.
+`<ChatView>` when both are ours. Reach for `<SessionErrorBanner>` alone when
+neither is.
 
 Must be rendered inside the providers `client()` installs.
 
@@ -372,19 +431,17 @@ import {
   ConsoleShell,
   Controls,
   useConversation,
-  useSessionSelector,
+  useSessionStatus,
 } from "@alexkroman1/aai-ui";
 
 function Console() {
-  const state = useSessionSelector((s) => s.state);
-  const error = useSessionSelector((s) => s.error);
+  const state = useSessionStatus();
   const { items } = useConversation();
   return (
     <ConsoleShell
       title="Dispatch"
       state={state}
       pulsing={state === "listening"}
-      error={error?.message}
       footer={<Controls />}
     >
       <ul>
@@ -493,6 +550,63 @@ function StartDigest() {
       {run ? run.status : "Start"}
     </button>
   );
+}
+```
+
+***
+
+### Facts()
+
+```ts
+function Facts(props: FactsProps): ReactNode;
+```
+
+A muted line of run facts, joined by `·` — "6 segments · 12:04 of audio ·
+1,840 words".
+
+Nine pages had written this by hand under four different typographies for
+one role, two of them (`call-audit` and `spoken-summary`) byte-identical down
+to the payload. Three things it takes off the caller:
+
+- **The separator cannot be forgotten, and neither can the space around it.**
+  Four of the nine carried a literal `{" "}` at the end of a line, because
+  Prettier's wrap ate the space that made `· ` read as a separator rather
+  than as punctuation glued to the next word. A line that is correct only
+  because somebody remembered an invisible JSX expression is exactly the
+  thing a component should own.
+- **A fact worth omitting is omitted, and by the caller's own condition.**
+  The hand-written shape for a conditional fact was to splice the separator
+  into the string — `{x ? \` · budget exhausted\` : ""}` — which puts the
+  punctuation in two places and gets the leading separator wrong the moment
+  the fact before it also disappears. Passing the condition and letting this
+  drop it keeps the separator in one place.
+- **A line with nothing left to say renders NOTHING.** With every fact
+  conditional, the alternative is a muted empty row, or a bare `·`.
+
+The facts are JOINED into one string rather than interleaved as elements, and
+that is why the prop is text: joined, there is no per-fact `key` to invent —
+the same reasoning `WorkflowProgress` gives for its log lines. A line that
+genuinely needs an element in it (a link) wants its own markup.
+
+#### Parameters
+
+##### props
+
+[`FactsProps`](#factsprops)
+
+Facts-line props.
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+```tsx
+import { Facts } from "@alexkroman1/aai-ui";
+
+function RunFacts({ words, cut }: { words: number; cut: number }) {
+  return <Facts size="xs" items={[`${words} words`, cut > 0 && `${cut} blind cuts`]} />;
 }
 ```
 
@@ -906,6 +1020,76 @@ attributes.
 #### Returns
 
 `Element`
+
+***
+
+### SessionErrorBanner()
+
+```ts
+function SessionErrorBanner(props: SessionErrorBannerProps): ReactNode;
+```
+
+The announced banner for a failed session: the error's message and code, or
+nothing at all when the session is fine.
+
+**This used to be four lines inside `ConsoleShell`, and that is why it is its
+own component.** The banner was the reason `ConsoleShell` was published —
+`role="alert"` is the one part of that component a reviewer cannot see is
+missing, since per the `fatalError` latch in `session-core.ts` the banner is
+the ONLY remaining signal a session died (the state eyebrow beside it goes
+back to reading like a live session), and a screen reader is never told an
+unannounced one appeared. But `ConsoleShell` is a whole FRAME: a centred
+`max-w-190` column with its own header and footer. Every full-bleed chrome —
+a two-pane board, a CRT — therefore could not adopt it, rebuilt the banner
+instead, and the three that did had ALREADY drifted: one rendered
+`ERROR: {message}` and dropped the code entirely, one `ERROR: {message}
+({code})`, one `{message} ({code})`. Splitting the banner out is what lets a
+chrome take the announced-error decision without taking the layout, and
+`ConsoleShell` composes this rather than keeping a second copy, so the two
+cannot drift again.
+
+**It reads the session itself.** There is no `error` prop: a banner that
+takes its text from the caller is a banner a caller can forget to wire, which
+is exactly the failure above with an extra step. It subscribes narrowly via
+[useSessionError](#usesessionerror), so a page that renders it does not re-render with
+the transcript.
+
+**The code is shown, always.** `SessionError.code` is the eight-member wire
+union — it is what a user pastes into a bug report and the only part of the
+error that is stable across wordings — and the chrome that dropped it left
+its readers with a sentence and no way to say which failure it was.
+
+Must be rendered inside the providers `client()` installs.
+
+#### Parameters
+
+##### props
+
+[`SessionErrorBannerProps`](#sessionerrorbannerprops)
+
+See [SessionErrorBannerProps](#sessionerrorbannerprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+**A full-bleed chrome that wants the banner and not the frame**
+
+```tsx
+import { SessionErrorBanner } from "@alexkroman1/aai-ui";
+
+function Board() {
+  return (
+    <div className="grid grid-cols-[1fr_320px] h-screen">
+      <main>…</main>
+      <aside>…</aside>
+      <SessionErrorBanner className="col-span-2" />
+    </div>
+  );
+}
+```
 
 ***
 
@@ -1699,6 +1883,102 @@ function Controls() {
 
 ***
 
+### useSessionActions()
+
+```ts
+function useSessionActions(): SessionActions;
+```
+
+The session's control methods — `start`, `cancel`, `resetState`, `reset`,
+`restart`, `disconnect`, `toggle`, `end` — with **no snapshot
+subscription**.
+
+This is the narrow half of [useSession](#usesession), and it is the half a custom
+chrome could not reach. `<Controls>` and `<StartScreen>` in this package pair
+a one-field `useSessionSelector` with this package's own `useSessionCore`
+(`context.ts`, unpublished); a `client.tsx`
+could not, because that hook is not published — so a footer needing `start`
+and `toggle` held a WHOLE-SNAPSHOT `useSession()`, and `session-core.ts`
+rebuilds the snapshot object on every change. Measured consequence: four
+components across three templates re-rendered on every STT partial and every
+streaming delta, in files whose every other component is narrowly subscribed
+on purpose. One of them (`infocom-adventure`'s `TitleScreen`) reads nothing
+from the snapshot at all and subscribes to all of it for `session.start`.
+
+**Why publishing this does not reopen what `/internal` closed.**
+`useSessionCore` hands back the STORE — `subscribe`, `getSnapshot`,
+`connect`, `Symbol.dispose` — which is the framework's own plumbing, the same
+category as the providers and `buildAgentUrl` that live on
+`@alexkroman1/aai-ui/internal`. A client that holds it can subscribe out of
+band of React, dial a socket the mount did not, and dispose the session under
+the tree that is rendering it. What comes back from here is the SAME eight
+methods `useSession()` already publishes on its result, built into a fresh
+object rather than passed through, so the store is not reachable from it.
+There is no new capability here — only the existing one without the
+subscription tax.
+
+Identity-stable per core, so it is safe in a dependency array and in a
+`memo()` child's props: the methods are closures created once by
+`createSessionCore`, and the object wrapping them is memoized on the core.
+
+Throws outside the provider `client()` installs, like every session hook.
+
+#### Returns
+
+[`SessionActions`](#sessionactions)
+
+The eight control methods — see [SessionActions](#sessionactions).
+
+#### Example
+
+**A footer that acts on the session without re-rendering with it**
+
+```tsx
+import { useSessionActions, useSessionSelector } from "@alexkroman1/aai-ui";
+
+function Footer() {
+  // Two narrow subscriptions and no snapshot read: this row re-renders when
+  // `running` flips, and not on every transcript delta.
+  const running = useSessionSelector((s) => s.running);
+  const { toggle, end } = useSessionActions();
+  return (
+    <>
+      <button onClick={toggle}>{running ? "Pause" : "Resume"}</button>
+      <button onClick={end}>Hang up</button>
+    </>
+  );
+}
+```
+
+***
+
+### useSessionError()
+
+```ts
+function useSessionError(): SessionError | null;
+```
+
+The session's current [SessionError](#sessionerror), or `null` when there is none, on
+its own narrow subscription.
+
+The other half of [useSessionStatus](#usesessionstatus) — the second of the two fields a
+custom chrome reads over and over, and the one whose absence is invisible:
+per the `fatalError` latch in `session-core.ts` the error is the ONLY
+remaining signal that a session died, since the state beside it goes back to
+reading like a live one.
+
+A chrome rendering it owes `role="alert"` — which is what
+[SessionErrorBanner](#sessionerrorbanner) is for, and why reaching for that beats reaching
+for this.
+
+#### Returns
+
+[`SessionError`](#sessionerror) \| `null`
+
+The current error, or `null`.
+
+***
+
 ### useSessionSelector()
 
 ```ts
@@ -1752,6 +2032,50 @@ import { useSessionSelector } from "@alexkroman1/aai-ui";
 function MicDot() {
   const running = useSessionSelector((snapshot) => snapshot.running);
   return <span>{running ? "●" : "○"}</span>;
+}
+```
+
+***
+
+### useSessionStatus()
+
+```ts
+function useSessionStatus(): AgentState;
+```
+
+The agent's live [AgentState](#agentstate) — `disconnected`, `connecting`, `ready`,
+`listening`, `thinking`, `speaking`, `error` — on its own narrow
+subscription.
+
+`useSessionSelector((s) => s.state)` spelled once. It is one of exactly two
+snapshot fields that more than one custom chrome ever selects (the other is
+[useSessionError](#usesessionerror)), and it had been written inline at eight sites —
+including inside this package and, worse, in `ConsoleShell`'s own `@example`,
+which taught the inline form to everyone who read it.
+
+**Named `useSessionStatus`, not `useSessionState`.** `useAgentState` is the
+SLOT hook — the agent's own synced application state, whatever a
+`sessionSlot()` projects — and `AgentState` here is the phase of the CALL.
+Two different concepts one letter apart, so the shorter-sounding name is the
+one deliberately not taken.
+
+Pair it with [AGENT\_STATE\_LABELS](#agent_state_labels) for a rendered word; the raw member
+is a wire value, not a label.
+
+#### Returns
+
+[`AgentState`](#agentstate)
+
+The current agent state.
+
+#### Example
+
+```tsx
+import { AGENT_STATE_LABELS, useSessionStatus } from "@alexkroman1/aai-ui";
+
+function StatusDot() {
+  const status = useSessionStatus();
+  return <span data-state={status}>{AGENT_STATE_LABELS[status]}</span>;
 }
 ```
 
@@ -2536,9 +2860,9 @@ identical while they happen. These lines come from the run itself (`report()`
 in a `"use step"` body), which is the only channel a workflow has before it
 produces an output.
 
-Three rules are baked in, and they are why this is a component rather than
+Four rules are baked in, and they are why this is a component rather than
 three lines each page writes for itself — the two templates that had written
-it had written all three, comments included:
+it had written three of them, comments included:
 
 - **It renders nothing until there is something to render.** `supported` is
   what keeps this from being an empty box forever on an agent deployed before
@@ -2552,6 +2876,13 @@ it had written all three, comments included:
   or opening a finished run tomorrow — shows how it got there rather than an
   empty box. That is `useWorkflowProgress`'s doing; this is what makes it
   visible.
+- **They are ANNOUNCED**, for the reason the first paragraph gives: this is
+  the only channel a run has before it produces an output, and a `<pre>` that
+  grows is a silent one. A screen-reader user pressing "Digest" got nothing
+  between the click and a terminal state minutes later — no "fetching", no
+  "summarising", no evidence the button did anything. See `role="log"` below.
+  The six pages that render this pass only `className`, so no template could
+  have fixed it locally; that is what makes it this component's job.
 
 #### Parameters
 
@@ -2795,9 +3126,70 @@ The seven members, in the order a call passes through them:
 - `"speaking"` — the agent's reply is playing. A caller may still barge in;
   the mic stays open throughout.
 - `"error"` — the session reported a failure. See
-  [SessionSnapshot.error](#error-1) for what it was. A FATAL error latches here
+  [SessionSnapshot.error](#error) for what it was. A FATAL error latches here
   until the next completed handshake, so a later frame cannot quietly paint
   over the banner explaining a dead call.
+
+***
+
+### BulletListProps
+
+```ts
+type BulletListProps = {
+  className?: string;
+  items: readonly string[];
+  size?: "sm" | "base";
+  title?: ReactNode;
+};
+```
+
+Props for [BulletList](#bulletlist).
+
+#### Properties
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+ADDED to the list's own classes rather than replacing them. There is no
+`tailwind-merge` in this package, so a class that CONFLICTS with a base one
+is not reliably the winner — use this for additions, not overrides.
+
+##### items
+
+```ts
+items: readonly string[];
+```
+
+The bullets, in the order they should read.
+
+TEXT rather than `ReactNode`, deliberately: every list this replaced was a
+string array straight off a run's output, and taking strings is what lets
+this component key them (see the component doc). A page that needs a link
+inside a bullet wants its own `<ul>`, not a prop here.
+
+##### size?
+
+```ts
+optional size?: "sm" | "base";
+```
+
+`"sm"` adds `text-sm`, which two of the five copies carried and three did
+not. `"base"` is the default and adds nothing.
+
+##### title?
+
+```ts
+optional title?: ReactNode;
+```
+
+Rendered as a heading above the list, inside a wrapping `<section>`.
+
+Omitted (or `null`/`false`, so `title={cond && "Risks"}` means what it
+looks like) renders the bare `<ul>` with no wrapper — which is what four of
+the five lists this replaced were.
 
 ***
 
@@ -3166,7 +3558,6 @@ Main text color. Default: `#1B1A18`.
 type ConsoleShellProps = {
   children: ReactNode;
   className?: string;
-  error?: string | null;
   footer: ReactNode;
   icon?: ReactNode;
   pulsing: boolean;
@@ -3194,18 +3585,6 @@ optional className?: string;
 ```
 
 Additional CSS class names for the root element, appended to its own.
-
-##### error?
-
-```ts
-optional error?: string | null;
-```
-
-Error banner text; `null`/`undefined` hides the banner.
-
-Pass `session.error?.message` — the banner is announced, which a
-hand-rolled `<div>` in a custom chrome is not. See the `role="alert"`
-comment below for why that matters more here than it looks.
 
 ##### footer
 
@@ -3291,6 +3670,70 @@ One row of the conversation: a finalized message, or a tool invocation.
 A discriminated union rather than two arrays, because the ORDER between them
 is the thing this hook computes — handing back two lists would hand back the
 problem. `kind` is what a `switch` in a custom renderer narrows on.
+
+***
+
+### FactsProps
+
+```ts
+type FactsProps = {
+  as?: "p" | "span";
+  className?: string;
+  items: readonly (string | number | false | null | undefined)[];
+  size?: "sm" | "xs";
+};
+```
+
+Props for [Facts](#facts).
+
+#### Properties
+
+##### as?
+
+```ts
+optional as?: "p" | "span";
+```
+
+The element to render. `"p"` by default; `"span"` for a line that sits
+inside phrasing content, where a `<p>` is invalid nesting the browser will
+reparent out from under React.
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+ADDED to the base classes rather than replacing them — `tabular-nums`,
+`uppercase tracking-[1.2px]`. There is no `tailwind-merge` in this package,
+so a class that CONFLICTS with a base one is not reliably the winner.
+
+##### items
+
+```ts
+items: readonly (string | number | false | null | undefined)[];
+```
+
+The facts, in reading order. Anything `false`, `null`, `undefined` or the
+empty string is DROPPED, so a page writes `cond && \`${n} skipped\`` inline
+instead of splicing a separator into a conditional string.
+
+`0` is NOT dropped — it is a fact ("0 words"), and treating it as absent is
+the bug a plain truthiness filter would ship.
+
+They are TEXT rather than `ReactNode`: every one of the nine lines this
+replaced was a string, and taking strings is what lets this JOIN them (see
+the component doc) instead of interleaving keyed separator elements.
+
+##### size?
+
+```ts
+optional size?: "sm" | "xs";
+```
+
+Which of the two muted typographies the pages use. `"sm"` is
+`text-sm opacity-70`, `"xs"` is `text-xs opacity-60` — the size and the
+muting move together, because that is the pair every site had.
 
 ***
 
@@ -3651,24 +4094,40 @@ Unmount the React tree.
 ### Session
 
 ```ts
-type Session = SessionSnapshot & Pick<SessionCore, 
-  | "start"
-  | "cancel"
-  | "resetState"
-  | "reset"
-  | "disconnect"
-  | "toggle"
-| "end">;
+type Session = SessionSnapshot & SessionActions;
 ```
 
 What [useSession](#usesession) returns: the live [SessionSnapshot](#sessionsnapshot) fields
 (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
 `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
-control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
-`cancel`, `end`).
+control methods (`start`, `toggle`, `reset`, `restart`, `resetState`,
+`disconnect`, `cancel`, `end`).
 
 Note there is no text-send method — sessions are voice-only; the only
 client→server inputs are audio and the control methods above.
+
+***
+
+### SessionActions
+
+```ts
+type SessionActions = Pick<SessionCore, 
+  | "start"
+  | "cancel"
+  | "resetState"
+  | "reset"
+  | "restart"
+  | "disconnect"
+  | "toggle"
+| "end">;
+```
+
+The session's control methods, and nothing else — what a `client.tsx` may
+legitimately CALL on a session, as against what it may read.
+
+Declared once and merged into [Session](#session-1) rather than written out at both
+places: the two lists have to be the same list, and a member added to one and
+not the other is a hook that cannot do what `useSession()` can.
 
 Method signatures come from [SessionCore](#sessioncore) — one source of truth.
 
@@ -3686,6 +4145,7 @@ type SessionCore = {
   getSnapshot: SessionSnapshot;
   reset: void;
   resetState: void;
+  restart: void;
   start: void;
   subscribe: () => void;
   toggle: void;
@@ -3818,6 +4278,39 @@ connection (unlike `reset()`, which also reconnects).
 
 `void`
 
+##### restart()
+
+```ts
+restart(): void;
+```
+
+End the current call and immediately begin a new one — `end()` then
+`start()`, which is what "New Conversation" means for an agent that keeps
+SESSION-SCOPED STATE.
+
+`reset()` is the one whose name suggests this and it is not the same
+thing: it clears the transcript and reconnects, but the reconnect carries
+the same `?sessionId=`, so every `sessionSlot` on the server survives —
+the game world, the incident board, the cart. A caller who asked to start
+over gets a blank transcript in front of the old state. This drops the
+session id, so the next connect mints a fresh one and the greeting plays
+again.
+
+Three templates had each written `session.end(); session.start();` with
+the same paragraph explaining why `reset()` was wrong; the six on the
+stock shell could not, because [Controls](#controls) called `reset()` for them.
+
+###### Returns
+
+`void`
+
+###### Example
+
+```ts
+declare const session: import("@alexkroman1/aai-ui").Session;
+session.restart();
+```
+
 ##### start()
 
 ```ts
@@ -3912,6 +4405,34 @@ readonly message: string;
 ```
 
 A human-readable description of the error.
+
+***
+
+### SessionErrorBannerProps
+
+```ts
+type SessionErrorBannerProps = {
+  className?: string;
+};
+```
+
+Props of [SessionErrorBanner](#sessionerrorbanner).
+
+Every field is optional, so `<SessionErrorBanner />` is the whole call. It is
+a NAMED type all the same, for the reason `ControlsProps` and
+`ConsoleShellProps` are: an inline object literal in the signature leaves a
+`createElement(SessionErrorBanner, { className })` caller unable to infer the
+props at all, and gives the reference page nothing to link to.
+
+#### Properties
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+Additional CSS class names for the banner, appended to its own.
 
 ***
 
@@ -5867,6 +6388,7 @@ type WorkflowSubmission<R = unknown, I = unknown> = {
   reset: () => void;
   resumeUpload: () => void;
   run: WorkflowRun<R> | undefined;
+  startedHere: boolean;
   submit: (input: I) => Promise<void>;
   submitForm: (values: FormValues) => Promise<void>;
   upload: UploadStatus | undefined;
@@ -5986,6 +6508,43 @@ run: WorkflowRun<R> | undefined;
 ```
 
 The run, once started, followed to completion.
+
+##### startedHere
+
+```ts
+startedHere: boolean;
+```
+
+True from `submit()` on this mount until `reset()` — did THIS page start
+the run it is showing?
+
+A page needs it to say the right sentence and cannot derive it: a run
+ADOPTED by the mount-time lookup after a reload looks exactly like one this
+page started. Six templates kept a `useState(false)` next to this hook, set
+it in their `onSubmit` and mirrored it in their `onClear` — shadow state
+for a fact only this hook can know, since it is the thing that decides
+between `submit()` and the recovery lookup. One of the six grew a fourth
+branch and had to move the whole note into its own module with its own
+spec, which is what a seam missing one layer down looks like.
+
+The RAW fact rather than a derived "recovered", deliberately: with `run`
+these are three states, not two, and the third is the one a page most needs
+to explain. `startedHere` is "you pressed the button"; `!startedHere &&
+!run` is the mount-time lookup still going; `!startedHere && run` is a run
+this browser started earlier, now in front of somebody who did not press
+anything. A boolean meaning only the last of those cannot express the
+middle one.
+
+###### Example
+
+```ts
+declare const submission: import("@alexkroman1/aai-ui").WorkflowSubmission;
+const note = submission.startedHere
+  ? "You can close this tab or reload it — this page will find the run again."
+  : submission.run === undefined
+    ? "Looking for a run this tab started earlier…"
+    : "Still working on the run this tab started earlier. Reloading is safe.";
+```
 
 ##### submit
 
@@ -6153,6 +6712,44 @@ says the property is a string, and this says the string is a file the page
 has to upload first.
 
 ## Variables
+
+### AGENT\_STATE\_LABELS
+
+```ts
+const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
+```
+
+The default label per [AgentState](#agentstate).
+
+Override the ones your page has a better word for and keep the rest:
+
+```ts
+import type { AgentState } from "@alexkroman1/aai-ui";
+import { AGENT_STATE_LABELS } from "@alexkroman1/aai-ui";
+
+// A dispatch board that shouts, and renames one state.
+const STATE_LABEL = { ...AGENT_STATE_LABELS, thinking: "Processing" };
+const shout = (s: AgentState) => STATE_LABEL[s].toUpperCase();
+```
+
+**Sentence case, deliberately.** A template that wants caps applies its own
+`.toUpperCase()`, and a template that wants Title Case is already there;
+shipping the shouted form instead would leave the two chromes that do not
+shout with a string they have to un-shout, which no case transform does
+correctly.
+
+Two wordings are decisions rather than transliterations of the member name:
+
+- `disconnected` is **"Idle"**. It is the state a session is in BEFORE it has
+  ever started as well as after it ends, so it is the first word most callers
+  see; "Disconnected" reads as a fault on a page where nothing has gone
+  wrong yet. Both chromes that mapped this state by hand chose "Idle" too.
+- `connecting` and `thinking` carry an ellipsis, `listening` and `speaking`
+  do not. The first two are waits with nothing for the caller to do; the
+  other two describe someone actually talking. Same distinction
+  `WORKFLOW_STATUS_LABELS` draws with its one "Working…".
+
+***
 
 ### Controls
 

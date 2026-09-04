@@ -189,6 +189,21 @@ const UNREACHABLE_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The SQLSTATE `err` carries, or `undefined` when it carries none.
+ *
+ * Three predicates read this field with three different hand-written casts —
+ * `(err as { code?: unknown }).code`, and twice the same with `| null` and `?.` —
+ * so the repo paid three `as` escape hatches for a narrowing this module already
+ * did correctly one function below, via `isRecord`. Deliberately NOT a cause-chain
+ * walk like {@link isPlatformDbUnreachable}: each caller is deciding what its OWN
+ * statement did (`55P03`, `23505`, `23503`), and a nested unique violation from
+ * somewhere else in a chain is a different event, not a stronger signal.
+ */
+export function sqlState(err: unknown): string | undefined {
+  return isRecord(err) && typeof err.code === "string" ? err.code : undefined;
+}
+
+/**
  * Whether `err` (or anything in its `cause` chain) means the platform database
  * could not be reached.
  *
