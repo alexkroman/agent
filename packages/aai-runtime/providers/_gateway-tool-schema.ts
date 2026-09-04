@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Strips JSON Schema keywords the AssemblyAI LLM Gateway's Gemini path cannot
- * accept, from the `tools` of an outgoing chat-completions request.
+ * Rewrites the `tools` of an outgoing chat-completions request into the JSON
+ * Schema subset the AssemblyAI LLM Gateway's Gemini path can accept.
  *
  * The sibling repair in `_openai-stream-repair.ts` fixes the gateway's
  * *responses*; this fixes a *request* it will not accept. Without it, every
@@ -25,10 +25,13 @@
  * - **`propertyNames`** — how `z.record(z.string(), …)` serializes.
  *
  * Both are ordinary JSON Schema that OpenAI, Claude and Qwen all accept
- * (verified), so this rewrites unconditionally rather than sniffing the model
- * name: neither keyword carries information a model uses, the cost is one
- * pass over a small object, and model-sniffing would silently miss whichever
- * Gemini id someone configures next.
+ * (verified), so those two are removed unconditionally rather than by sniffing
+ * the model name: neither keyword carries information a model uses, the cost is
+ * one pass over a small object, and model-sniffing would silently miss
+ * whichever Gemini id someone configures next. The Gemini layer added since
+ * DOES select by model id, and that is not a reversal of this argument — it
+ * holds for a rewrite that costs nothing, and every rule in that layer costs
+ * something. `_tool-schema-compat.ts` carries the trade.
  *
  * ## It is MIDDLEWARE, and the difference is the size of what it touches
  *
@@ -43,9 +46,9 @@
  * request it ever makes.
  *
  * `transformParams` is handed `params.tools` as structured objects, BEFORE the
- * provider serializes anything, so the prune touches the tool schemas and
- * nothing else. Same rewrite, same unconditional application, and the
- * conversation is never re-encoded.
+ * provider serializes anything, so the rewrite touches the tool schemas and
+ * nothing else. Same rewrite, same application, and the conversation is never
+ * re-encoded.
  *
  * The response-side repairs stay in the `fetch` wrapper, and that split is not
  * arbitrary — see `_openai-stream-repair.ts`: those defects break the SDK's own
@@ -53,76 +56,48 @@
  * Bytes are genuinely the only place to catch them. A REQUEST defect has a
  * typed representation, so it belongs where the types are.
  *
- * Not exhaustive — Gemini's function-calling subset rejects more than these
- * two, and `gemini-3.5-flash-lite` still fails with both removed. This
- * handles what the SDK actually emits. Remove it once the gateway either
- * accepts standard JSON Schema or reports what it rejected.
+ * Those two are where this started and they are no longer all of it. Gemini's
+ * function-calling subset rejects more than them — `gemini-3.5-flash-lite`
+ * still failed with both removed — so the rewrite is now a two-layer
+ * PROVIDER-COMPAT table in `_tool-schema-compat.ts`: the unconditional pair
+ * above, plus a Gemini layer selected by model id, whose rules fold a
+ * constraint into the schema's `description` rather than deleting it outright.
+ * That module's doc carries which keyword each rule exists for, what is
+ * measured versus taken from Mastra's Google layer, and the three gaps that
+ * remain. Remove all of it once the gateway either accepts standard JSON
+ * Schema or reports what it rejected.
  */
 
-import { isRecord } from "@alexkroman1/aai/utils";
 import type { LanguageModelMiddleware } from "ai";
-import type { JSONSchema7 } from "json-schema";
-
-/** Keywords the gateway's Gemini path rejects outright, with a 500. */
-const UNSUPPORTED = new Set(["$schema", "propertyNames"]);
+import { toolSchemaRules } from "./_tool-schema-compat.ts";
+import { rewriteToolSchema } from "./_tool-schema-walk.ts";
 
 /**
- * Recursive: `propertyNames` shows up on nested properties, not just the root.
- *
- * Returns the input by IDENTITY when nothing was removed, so a request whose
- * schemas are already clean — every non-zod-derived tool, and every tool at all
- * once the gateway is fixed — allocates nothing and leaves `params` untouched.
- */
-function prune(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    const items = value.map(prune);
-    return items.some((item, i) => item !== value[i]) ? items : value;
-  }
-  if (!isRecord(value)) return value;
-  const out: Record<string, unknown> = {};
-  let changed = false;
-  for (const [key, child] of Object.entries(value)) {
-    if (UNSUPPORTED.has(key)) {
-      changed = true;
-      continue;
-    }
-    const pruned = prune(child);
-    if (pruned !== child) changed = true;
-    out[key] = pruned;
-  }
-  return changed ? out : value;
-}
-
-/**
- * Prune the unsupported keywords from a single tool input schema.
- *
- * Exported for the spec, which is about which keywords survive rather than
- * about how a call's parameters are assembled.
- */
-export function pruneToolSchema(schema: JSONSchema7): JSONSchema7 {
-  return prune(schema) as JSONSchema7;
-}
-
-/**
- * Middleware that prunes the unsupported keywords from every function tool's
- * input schema.
+ * Middleware that rewrites every function tool's input schema for the model the
+ * call is going to.
  *
  * Only `type: "function"` tools are rewritten. A provider-defined tool carries
  * vendor arguments rather than a converted zod schema, so it is neither a source
  * of these keywords nor something to walk blindly — and the gateway serves
  * chat-completions, where provider tools do not arise at all.
+ *
+ * The model id comes from the call rather than from the descriptor that built
+ * the provider, because that is the id the request is actually for; a wrapped
+ * model reports its own. An id the vendor's type promises and the runtime does
+ * not supply resolves to the unconditional layer, which is the safe half.
  */
 export function gatewayToolSchemaMiddleware(): LanguageModelMiddleware {
   return {
-    transformParams: ({ params }) => {
+    transformParams: ({ params, model }) => {
       const { tools } = params;
       if (!tools || tools.length === 0) return Promise.resolve(params);
+      const rules = toolSchemaRules(model.modelId);
       const pruned = tools.map((tool) => {
         if (tool.type !== "function") return tool;
-        const inputSchema = pruneToolSchema(tool.inputSchema);
+        const inputSchema = rewriteToolSchema(tool.inputSchema, rules);
         return inputSchema === tool.inputSchema ? tool : { ...tool, inputSchema };
       });
-      // Identity when every schema was already clean — see `prune`.
+      // Identity when every schema was already clean — see `rewriteToolSchema`.
       return Promise.resolve(
         pruned.some((tool, i) => tool !== tools[i]) ? { ...params, tools: pruned } : params,
       );
