@@ -8342,7 +8342,7 @@ snapshots:
 
   '@types/ws@8.18.1':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 26.4.1
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
