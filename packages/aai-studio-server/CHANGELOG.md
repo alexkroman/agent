@@ -1,5 +1,42 @@
 # aai-studio-server
 
+## 0.11.10
+
+### Patch Changes
+
+- 79e3ea6: Fix unstyled GitHub card inputs and a misplaced secrets refusal in the studio front-end, and consolidate its duplicated seams
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [b5beca2]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [a9c1577]
+- Updated dependencies [a1a4e1e]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [1a093ea]
+- Updated dependencies [b5beca2]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [292ae33]
+- Updated dependencies [5fc40e3]
+- Updated dependencies [a9c1577]
+- Updated dependencies [a9c1577]
+- Updated dependencies [292ae33]
+- Updated dependencies [ef096bb]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [79e3ea6]
+- Updated dependencies [79e3ea6]
+  - @alexkroman1/aai-runtime@14.0.0
+  - @alexkroman1/aai@14.0.0
+  - @alexkroman1/aai-ui@14.0.0
+  - aai-server@5.3.0
+  - aai-studio-client@0.6.23
+
 ## 0.11.9
 
 ### Patch Changes

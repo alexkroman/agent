@@ -1,5 +1,56 @@
 # @alexkroman1/aai
 
+## 14.0.0
+
+### Major Changes
+
+- b5beca2: Rename 63 exports for consistency across the published surface.
+  
+  Every rename is mechanical — no type, signature, behaviour or layering change — but they are breaking, so the old names are gone rather than aliased. What moved, and why:
+  
+  - **Test doubles speak one word.** The four test-facing subpaths used `Stub` (50 names), `Fake` (7) and `Mock` (2) for one idea, and the split was not by role: `StubSpeech` doubles the `stepSpeak` step while `FakeSpeech` doubled the STT/TTS providers, so the shared word was the ambiguous half and the distinguishing word meant nothing. `FakeSpeech` and its family are now `StubSpeechProviders`, `StubSttSession`, `StubTtsSession`, `createStubSttOpener`, `createStubTtsOpener`, `installStubSpeechProviders`, `STUB_SPEECH_API_KEY_ENV`; `mockWorkflows`/`MockWorkflowsOptions` become `installStubWorkflows`/`StubWorkflowsOptions`, matching the six `installStub*` siblings in the same subpath.
+  - **`SessionCore` meant two opposite things.** `aai-runtime` exported the server session, `aai-ui` the browser session, and both were declared in a file called `session-core-types.ts`. They are `ServerSession` and `BrowserSession` (`createSessionCore` -> `createBrowserSession`).
+  - **`client()` and `page()` mount, they do not declare.** Unlike `agent()`, `tool()` and `workflow()`, they resolve a DOM container, render React and return a live handle. Now `mountClient()` and `mountPage()`; the `Config` and `Handle` types keep their names.
+  - **`/step` prefixes its own vocabulary.** `emit`, `report`, `readUpload`, `writeUpload`, `uploadInfo` and `requireCompleteUpload` take the `step` prefix the subpath's other eighteen exports carry. `mapConcurrent`, `isTransientStatus`, `retryAfter`, `encodeWav` and `wavHeader` stay bare deliberately — they are reached from tool bodies and specs, not only from steps.
+  - **`/step-errors` settles on one suffix.** Six `*Classified` plus the odd `stepFetchOk` all become `*OrFail`, naming the retry verdict a caller gets rather than an internal act.
+  - **Channels say handler where they mean handler.** `ChannelKind` was the handler object while every other `*_KIND` in the repo is a string discriminant: now `ChannelHandler`, `SLACK_CHANNEL_HANDLER`, `registerChannelHandler`. `registeredChannelKinds` -> `registeredChannelKindNames` says what it returns, and `channelAdvice`/`slackChannelAdvice` -> `explainChannelFailure`/`explainSlackChannelFailure` name the failure they explain.
+  - **Suffix outliers.** `UploadPartsSettings` -> `UploadPartsOptions` (the only `Settings` among 105 options bags) and `WorkflowCtx` -> `WorkflowContext` (the only `Ctx` among eight context types, and the one an author writes beside `ToolContext`), with `createWorkflowContext`, `WorkflowContextOptions`, `WorkflowContextRecorder`, `WORKFLOW_CONTEXT_NOW`.
+  - **Types named as verbs or events.** `FileRead` -> `FileReadMode`, `SkipGreeting` -> `SkipGreetingOption`, `UploadParallel` -> `UploadParallelOption`.
+  - **Server factories say which layer.** `createServer` -> `createRuntimeServer`, so the generic name stops reading as the default when `createAgentServer` is the front door; `ServerOptions` -> `RuntimeServerOptions`, and `PassthroughServerOptions` -> `SharedServerOptions`, matching `SharedAgentParams`.
+  - **Storage nouns.** `UploadBlobs` -> `UploadBackend` and its factories, matching the `SessionStateBackend` it sits beside; `UploadStore` keeps its name as the facade.
+  - **Two functions that differed only in their argument.** `callsIn` and `toolCallsIn` both returned `EvalToolCall[]`; they are `toolCallsInTurns` and `toolCallsInEvents`.
+  - **Casing.** `S2SConfig` -> `S2sConfig` (the lone `S2S` among seven `S2s`), and the provider factories now derive from their Pascal spelling instead of being exempted in `konsistent.json`: `openaiLlm` -> `openAILlm`, `openaiS2s` -> `openAIS2s`, `openrouterLlm` -> `openRouterLlm`, `xaiLlm` -> `xAILlm`, `XaiLlmOptions` -> `XAILlmOptions`.
+  - **`make*` -> `create*`.** `makeSttError`/`makeTtsError` were the only two `make*` factories among forty `create*`.
+  - **`decliningRuntime` -> `rejectingRuntime`**, pairing with the existing `rejectingWorkflows`.
+  
+  Nineteen capability epochs are dropped and six retained; each dropped epoch records its reason in the tree.
+- 292ae33: Network builtins take a `signal`, and an untyped call can no longer ignore `ToolFailure`. `fetchJson`/`visitWebpage`/`webSearch` (`@alexkroman1/aai/tools`) accept `signal` in `CallOptions` and both call shapes, folded into the builtin's own request deadline with `AbortSignal.any` — so "pass `ctx.signal` to anything slow" no longer means abandoning the screened fetch for a raw one. Their default type argument is `Record<string, DefaultToolResult>` rather than `DefaultToolResult`: `any | ToolFailure` collapsed to `any`, so an untyped call could read any field off a result that was really `{ error }`. Past an `isToolFailure` narrowing a field is still `any`, so loose call sites need no cast; a non-object body (a top-level array) now needs the type argument. That default type is exported as `UntypedJsonBody`, so a caller can name what it is overriding — and so the name in all three signatures resolves to a page rather than to nothing.
+
+### Minor Changes
+
+- 79e3ea6: Publish seven more seams the templates had each re-derived: `formatMoney` (`@alexkroman1/aai/utils`), `ffmpegBaseArgs` (`/ffmpeg`), `routeStepFetch` (`/testing`), and `Session.restart()`, `WorkflowSubmission.startedHere`, `<BulletList>` and `<Facts>` (`@alexkroman1/aai-ui`).
+  
+  Two are behaviour fixes rather than de-duplication. `Controls`' "New Conversation" button called `reset()`, which reconnects carrying the same session id — so on any agent with a `sessionSlot` the caller got a blank transcript in front of their old state; it calls `restart()` now. And `transcodeToWav` did not pass `-nostats`, so ffmpeg's progress output could evict the error explaining a failure out of the captured stderr tail.
+  
+  `startedHere` is the fact only the hook can know — six pages kept a `useState(false)` beside it, set in their own `onSubmit` and mirrored in their `onClear`, to tell a run this page started from one the mount-time lookup adopted after a reload.
+  
+  The published stylesheet now honours `prefers-reduced-motion: reduce`, which appeared nowhere in the repository before: roughly nineteen infinite animations ship in an aai app, and the universal selector is the only thing that reaches the keyframes a template declares in its own `<style>` block.
+- a9c1577: Add an MCP tool client: an agent can declare HTTP MCP servers with `mcpServers`, and `withMcpTools` (@alexkroman1/aai-runtime) connects them and attaches their tools as ordinary tools. Tools are namespaced `mcp_<server>_<tool>` so a server cannot shadow a native tool, pinned by fingerprint against rug pulls, screened for SSRF, and routed through the existing ExecuteTool path. HTTP only; a server that is down or slow costs its own tools and never the session.
+- 79e3ea6: Attach 14 stranded doc blocks to the symbols they describe, and cut repeated work on three hot paths.
+  
+  Fourteen JSDoc blocks sat directly above ANOTHER block, so TypeScript attached only the last one and the first was discarded — twelve published symbols shipped undocumented, including every LLM provider factory and ASSEMBLYAI_TTS_VOICES, whose doc carries the argument that a wrong voice id fails silently. Moving each block onto its own symbol restores the prose in the reference docs; no signature, parameter or export changed.
+  
+  Also: html-to-text is compiled once instead of per call (116us -> 3.5us, identical output; parseFeed ran it twice per feed entry), encodeWav writes chunks straight into the output rather than joining them first (was allocating and copying the recording twice), pageMetadata builds its <meta> index once instead of per field, and the XHR upload's abort listener is detached on every outcome rather than only on abort (it was retaining a completed XMLHttpRequest per part on the caller's signal).
+  
+  Plus small dedup: readApiJson and the shared Workflow API label replace six hand-spelled calls and two copied constants, the upload retry path uses the published retryAfter parser, one dialog actor now serves the gate instead of one per allowed state, and errorMessage/progressOf replace inline copies.
+- a9c1577: Recover the message a record KEY schema wrote. Zod nests a failed key's own issues one level down under `issues`, so `formatSchemaIssues` reported `mcpServers.my-docs: Invalid key in record` and dropped the grammar the schema spells out; it now appends the nested cause while keeping the parent, which is the only thing that says KEY rather than value. `StandardSchemaIssue` gains an optional `issues` field alongside `errors`, and `withMcpTools`' doc no longer promises a throw its own name pre-filtering makes unreachable.
+
+### Patch Changes
+
+- 292ae33: Close four silent-failure gaps at build time: a tools/ file that shadows an enabled builtin is now a named build error, an inverted minTurnSilenceMs/maxTurnSilenceMs window is refused where the pair resolves, a Cartesia or Rime voice the SDK cannot check is reported as unvalidated with its failure mode, and `aai build` reports WHICH system prompt shipped (the file, agent.ts, or the framework default).
+- 292ae33: A rejected provider credential now says so. `errorMessage` never answers with an empty string: an HTTP failure is described by its status, the host that answered and the sentence in its response body, a `fetch failed` reports the reason in its cause, and an `AggregateError` reports its members. A rejected API key reached a browser client as {"code":"llm","message":""} — the AI SDK copies an absent HTTP reason phrase into `APICallError.message` — so the banner said an error occurred and refused to say what. Pipeline mode now reports it as "The LLM provider rejected this agent's API key: Invalid API key (HTTP 401 from llm-gateway.assemblyai.com). Check the API key in the agent's environment.", once rather than twice: the "No output generated" throw that follows an error part no longer paints over the sentence naming the cause.
+- ef096bb: Rewrite the aai README as a tour of what your own code adds to an agent: tools and `ctx.signal`, built-in tools and `run_code`, typed session state, session resume, `dialog()`, `ctx.generate()`, subagents, durable workflows with `key`/`notify`, a projected custom UI, phone transports, tool tests and `describeEval`. Drops the stale `ctx.db` and opt-in-storage claims.
+
 ## 13.3.0
 
 ## 13.2.0
