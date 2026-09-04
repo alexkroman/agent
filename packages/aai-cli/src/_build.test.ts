@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -210,6 +210,50 @@ describe("executeBuild", () => {
         // attached by the generated entry.
         const mod = await import(pathToFileURL(written).href);
         expect((mod.default as { name: string }).name).toBe("on-disk");
+      }),
+    );
+  });
+});
+
+describe("executeBuild reports WHICH prompt shipped", () => {
+  // Deleting `system-prompt.md` swaps in DEFAULT_SYSTEM_PROMPT — a total
+  // personality change — with exit 0 and, before this, nothing in the result
+  // saying so. `withSystemPrompt` cannot refuse it: an agent with no file is
+  // what a project with no file legitimately looks like. So the build REPORTS
+  // the source instead. This spec is also what pins `build.ts`'s copy of the
+  // file name against `worker-bundler.ts`'s, the two being unshareable.
+  test("names the file, then the framework default once it is gone", {
+    timeout: 240_000,
+  }, async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await linkSdkNodeModules(dir);
+        await writeFile(
+          path.join(dir, "agent.ts"),
+          `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "prompt-source" });`,
+        );
+        await writeFile(path.join(dir, "system-prompt.md"), "You are a pirate. Always say arrr.\n");
+
+        const withFile = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+        expect(withFile.ok && withFile.data.systemPrompt).toBe("system-prompt.md");
+
+        await rm(path.join(dir, "system-prompt.md"));
+        const without = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+        expect(without.ok && without.data.systemPrompt).toContain("framework default");
+      }),
+    );
+  });
+
+  test("names agent.ts when the prompt is declared there", { timeout: 120_000 }, async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await linkSdkNodeModules(dir);
+        await writeFile(
+          path.join(dir, "agent.ts"),
+          `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "inline", systemPrompt: "Be brief." });`,
+        );
+        const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+        expect(result.ok && result.data.systemPrompt).toBe("agent.ts");
       }),
     );
   });

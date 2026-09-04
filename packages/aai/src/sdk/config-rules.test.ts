@@ -14,6 +14,7 @@ import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesiaTts } from "./providers/tts/cartesia.ts";
+import { rimeTts } from "./providers/tts/rime.ts";
 
 const pipelineFields = {
   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
@@ -184,8 +185,45 @@ describe("agentConfigWarnings", () => {
     ]);
   });
 
-  test("says nothing about another vendor's voice, which it cannot judge", () => {
-    expect(agentConfigWarnings({ tts: cartesiaTts({ voice: "not-a-uuid" }) })).toEqual([]);
+  test("says a vendor voice it CANNOT judge is unjudged, rather than nothing", () => {
+    // The third option, applied to the case that had neither of the other two.
+    // There is no Cartesia catalog in this SDK and inventing one would go
+    // stale, so the honest line is that the id is unvalidated plus the failure
+    // it hides — this built clean and produced a permanently silent agent.
+    const warnings = agentConfigWarnings({ tts: cartesiaTts({ voice: "not-a-uuid" }) });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('Cartesia voice "not-a-uuid" is not checked here');
+    expect(warnings[0]).toContain("never speak");
+  });
+
+  test("adds the one thing it CAN check — a Cartesia voice id is a UUID", () => {
+    // Not a catalog and not a guess: the id FORMAT is answerable offline, so
+    // the shape half of the sentence is a fact rather than a hedge.
+    expect(agentConfigWarnings({ tts: cartesiaTts({ voice: "not-a-uuid" }) })[0]).toContain(
+      "it is not a UUID",
+    );
+    expect(
+      agentConfigWarnings({
+        tts: cartesiaTts({ voice: "0f3b8d02-1c44-4a9e-8f21-b6d5e7c90a3b" }),
+      })[0],
+    ).not.toContain("it is not a UUID");
+  });
+
+  test("warns for Rime too, which has no checkable shape at all", () => {
+    const warnings = agentConfigWarnings({ tts: rimeTts({ voice: "definitely-not-a-speaker" }) });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("Rime");
+    // No shape claim: a Rime speaker id is a bare lowercase word, which a typo
+    // does not violate, so asserting one would be a check that pretends to know.
+    expect(warnings[0]).not.toContain("UUID");
+  });
+
+  test("says nothing about a default the SDK itself supplied", () => {
+    // `cartesiaTts()` fills in CARTESIA_DEFAULT_VOICE and every template runs
+    // on it, so a line saying "we cannot vouch for this" about our own value is
+    // noise. The warning is for a voice the AUTHOR picked.
+    expect(agentConfigWarnings({ tts: cartesiaTts() })).toEqual([]);
+    expect(agentConfigWarnings({ tts: rimeTts() })).toEqual([]);
   });
 
   test("says nothing when no voice is declared", () => {
@@ -504,6 +542,59 @@ test("the warning fires on assemblyAIPipeline({ region: 'eu' }) itself", () => {
   // threads `region` cannot pass this by accident.
   const warnings = agentConfigWarnings(assemblyAIPipeline({ region: "eu" }));
   expect(warnings.join("\n")).toContain("outside the EU");
+});
+
+describe("the end-of-turn window", () => {
+  // `minTurnSilenceMs` is when the service CHECKS whether the turn reads as
+  // complete; `maxTurnSilenceMs` is when it force-ends regardless. Inverted,
+  // the check can never fire — the docs said so and nothing enforced it, so
+  // `agent({ minTurnSilenceMs: 2000, maxTurnSilenceMs: 1000 })` built clean.
+  test("an inverted pair is refused, naming both values", () => {
+    expect(() =>
+      rawConfig({ name: "Line", minTurnSilenceMs: 2000, maxTurnSilenceMs: 1000 }),
+    ).toThrow(/`minTurnSilenceMs` is 2000 and `maxTurnSilenceMs` is 1000/);
+  });
+
+  test("the same contradiction on an explicit descriptor is refused too", () => {
+    // The shorthand lowers onto exactly this shape, so the rule reads the
+    // descriptor rather than the two convenience fields.
+    expect(() =>
+      rawConfig({
+        name: "Line",
+        stt: assemblyAIStt({ minTurnSilenceMs: 2000, maxTurnSilenceMs: 1000 }),
+        llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+        tts: assemblyAITts(),
+      }),
+    ).toThrow(/can never fire/);
+  });
+
+  test("a lone minimum is judged against the DEFAULT ceiling nobody typed", () => {
+    // The half a check on the pair as written would miss: each side falls back
+    // to its own default, so one number can invert the window on its own.
+    expect(() => rawConfig({ name: "Line", minTurnSilenceMs: 5000 })).toThrow(/the default/);
+  });
+
+  test("a legal window, and equality, both pass", () => {
+    expect(rawConfig({ name: "Line", minTurnSilenceMs: 1000, maxTurnSilenceMs: 4000 }).mode).toBe(
+      "pipeline",
+    );
+    expect(rawConfig({ name: "Line", minTurnSilenceMs: 2000, maxTurnSilenceMs: 2000 }).mode).toBe(
+      "pipeline",
+    );
+  });
+
+  test("says nothing about a stage that is not AssemblyAI STT", () => {
+    // Another provider's endpointing is its own; a TTS descriptor shares the
+    // `assemblyai` kind tag and must not be read as one.
+    expect(
+      rawConfig({
+        name: "Line",
+        stt: { kind: "deepgram", options: { minTurnSilenceMs: 9000 } },
+        llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+        tts: assemblyAITts(),
+      }).mode,
+    ).toBe("pipeline");
+  });
 });
 
 describe("temperature scope", () => {

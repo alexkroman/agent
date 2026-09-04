@@ -14,6 +14,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
@@ -38,7 +39,55 @@ type BuildData = {
   workerBytes: number;
   /** Absolute path of the worker written — what `npm start` boots. */
   worker: string;
+  /**
+   * WHERE the prompt this bundle carries came from — see
+   * {@link systemPromptSource}.
+   */
+  systemPrompt: string;
 };
+
+/**
+ * The prose slot, named by convention. Mirrors `worker-bundler.ts`'s constant of
+ * the same name — the two cannot share one without an import cycle
+ * (`build.ts` → `_bundler.ts` → `worker-bundler.ts`), so `_build.test.ts` pins
+ * the pair end to end instead: a build whose prompt really came from the file
+ * has to report the file.
+ */
+const SYSTEM_PROMPT_FILE = "system-prompt.md";
+
+/** What {@link systemPromptSource} reports when nothing declared a prompt. */
+const FRAMEWORK_DEFAULT_PROMPT_SOURCE = "the framework default (DEFAULT_SYSTEM_PROMPT)";
+
+/**
+ * Which of the three possible authors of this agent's system prompt actually
+ * wrote the one in the bundle.
+ *
+ * `aai build` reported `name` and `workerBytes` and nothing about the prompt,
+ * and the prompt is the one field that can change COMPLETELY without any
+ * config changing: deleting `system-prompt.md` swaps in
+ * `DEFAULT_SYSTEM_PROMPT` — a total personality change — with exit 0 and no
+ * line anywhere. `withSystemPrompt` refuses the case where a file exists and
+ * nothing reads it; it cannot refuse a file that is simply GONE, because that
+ * is what an agent with no file legitimately looks like. So this is a report
+ * rather than a check.
+ *
+ * Decided by comparing VALUES against the built agent's resolved prompt, which
+ * is the same method `withSystemPrompt` uses and for the same reason — the
+ * alternative asks the bundler's module graph a question, and the author may
+ * have imported the file and composed it, which is neither "the file" nor
+ * "agent.ts" alone.
+ */
+async function systemPromptSource(cwd: string, resolved: string): Promise<string> {
+  if (resolved === DEFAULT_SYSTEM_PROMPT) return FRAMEWORK_DEFAULT_PROMPT_SOURCE;
+  const file = await fs
+    .readFile(path.join(cwd, SYSTEM_PROMPT_FILE), "utf-8")
+    .catch(() => undefined);
+  const trimmed = file?.trim();
+  if (trimmed === undefined || trimmed === "" || !resolved.includes(trimmed)) return "agent.ts";
+  return resolved.trim() === trimmed
+    ? SYSTEM_PROMPT_FILE
+    : `agent.ts (composing ${SYSTEM_PROMPT_FILE})`;
+}
 
 /**
  * Map a {@link runVitest} failure to a CliError — distinguishing a real test
@@ -101,11 +150,17 @@ export async function executeBuild(opts: {
   await fs.mkdir(path.dirname(worker), { recursive: true });
   await fs.writeFile(worker, bundle.worker, "utf-8");
 
+  // Reported in BOTH modes, deliberately: `log` is silenced under --json, and a
+  // field on the result is invisible on a TTY, so the swap this exists to
+  // surface would stay invisible in whichever mode the reader happened to use.
+  const systemPrompt = await systemPromptSource(cwd, agentDef.systemPrompt);
+  log.info(`System prompt: ${systemPrompt}`);
   log.success("Build complete");
 
   return ok({
     name: agentDef.name,
     workerBytes: bundle.worker.length,
     worker,
+    systemPrompt,
   });
 }

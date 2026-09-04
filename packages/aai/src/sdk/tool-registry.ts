@@ -195,20 +195,41 @@ export function toolRegistry(modules: ToolModules): ToolRegistry {
  * what this catches is a hand-written `export default { … tools: {…} }` that
  * skipped `agent()`, and a second `withTools` over a def that already has one.
  *
+ * **A name the def declared as a BUILTIN is an error too, and that one an
+ * author can reach.** `builtinTools: ["calculate"]` beside `tools/calculate.ts`
+ * is one file name away at all times, filenames being the only thing here a
+ * user picks freely — and it built clean: the runtime's merge drops the
+ * colliding builtin (`mergeBuiltinSurface`), so the entry the author wrote did
+ * nothing and the only trace was one `info` line in a session log, minted at the
+ * first call rather than at the build. That is the same silence discovery was
+ * introduced to kill ("forgetting one line was silent"), reached by the other
+ * route, and it is the one collision where BOTH halves were declared on purpose
+ * — so it is a contradiction to report rather than a precedence to apply.
+ *
  * Structural rather than `AgentDef`, and it hands back what it was given: a
  * caller keeps whatever else its def carries, and nothing this returns is
- * described by a type the caller did not already name.
+ * described by a type the caller did not already name. `builtinTools` joins the
+ * constraint as optional and widened to `readonly string[]`, so a def that
+ * carries none still passes and this module still names no builtin catalog.
  *
  * @public
  */
-export function withTools<D extends { readonly tools: ToolRegistry }>(
-  def: D,
-  registry: ToolRegistry,
-): D {
+export function withTools<
+  D extends {
+    readonly tools: ToolRegistry;
+    readonly builtinTools?: readonly string[] | undefined;
+  },
+>(def: D, registry: ToolRegistry): D {
+  const builtins: readonly string[] = def.builtinTools ?? [];
   for (const name of Object.keys(registry)) {
     if (def.tools[name] !== undefined) {
       throw new Error(
         `The tool "${name}" is declared twice: once by tools/${name}.ts and once on the agent definition. Remove one — a tool is declared by its file.`,
+      );
+    }
+    if (builtins.includes(name)) {
+      throw new Error(
+        `tools/${name}.ts shadows the builtin "${name}", which this agent enables in \`builtinTools\`. The file wins and the builtin is dropped, so the \`builtinTools\` entry does nothing — drop "${name}" from \`builtinTools\` if the file is the tool you want, or rename the file if you wanted the builtin.`,
       );
     }
   }

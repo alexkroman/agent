@@ -12,12 +12,19 @@
  */
 
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+import {
+  DEFAULT_MAX_TURN_SILENCE_MS,
+  DEFAULT_MIN_TURN_SILENCE_MS,
+} from "./endpointing-constants.ts";
 import { isRecord } from "./is-record.ts";
+import { ASSEMBLYAI_STT_KIND, type AssemblyAISttOptions } from "./providers/stt/assemblyai.ts";
 import {
   ASSEMBLYAI_TTS_HOST,
   type AssemblyAITtsOptions,
   assemblyAIVoiceWarning,
 } from "./providers/tts/assemblyai.ts";
+import { CARTESIA_DEFAULT_VOICE, CARTESIA_KIND } from "./providers/tts/cartesia.ts";
+import { RIME_DEFAULT_VOICE, RIME_KIND } from "./providers/tts/rime.ts";
 
 /**
  * Session mode derived from which provider fields are set.
@@ -234,6 +241,79 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
 }
 
 /**
+ * Reject an end-of-turn window whose floor sits above its ceiling.
+ *
+ * `minTurnSilenceMs` is when the service runs its end-of-turn CHECK and
+ * `maxTurnSilenceMs` is when it force-ends the turn regardless of content, so
+ * a floor above the ceiling means the check can never fire — the turn is
+ * always closed by the content-blind timer, which is precisely the split the
+ * knob is usually reached for in order to prevent
+ * ({@link AssemblyAISttOptions.minTurnSilenceMs} says so in prose, and prose
+ * was the whole enforcement: `agent({ minTurnSilenceMs: 2000,
+ * maxTurnSilenceMs: 1000 })` built clean and shipped).
+ *
+ * An error rather than a warning, unlike the voice catalog below: this needs no
+ * knowledge the SDK might be missing, and there is no configuration this shape
+ * expresses. It is two numbers contradicting each other.
+ *
+ * **Resolved values, not declared ones**, which is the half a check on the pair
+ * as written would miss: each side falls back to its own default, so
+ * `agent({ minTurnSilenceMs: 5000 })` alone is already inverted against the
+ * 3500 ms ceiling nobody typed. Reading the defaults here is the same
+ * `?? DEFAULT_…` chain `resolveAssemblyAISttSettings` runs, and the constants
+ * are shared so the two cannot drift.
+ *
+ * Takes `unknown` so callers can hand it a possibly-absent descriptor, and
+ * anything that is not an AssemblyAI STT stage is left alone — another
+ * provider's endpointing is its own.
+ *
+ * @internal
+ */
+export function assertTurnSilenceWindow(stt: unknown): void {
+  if (!isRecord(stt) || stt.kind !== ASSEMBLYAI_STT_KIND || !isRecord(stt.options)) return;
+  const [minKey, maxKey] = ENDPOINTING_KEYS;
+  const min = stt.options[minKey];
+  const max = stt.options[maxKey];
+  const resolvedMin = typeof min === "number" ? min : DEFAULT_MIN_TURN_SILENCE_MS;
+  const resolvedMax = typeof max === "number" ? max : DEFAULT_MAX_TURN_SILENCE_MS;
+  if (resolvedMin <= resolvedMax) return;
+  const defaulted = (declared: unknown, fallback: number): string =>
+    typeof declared === "number" ? `${declared}` : `${fallback} (the default)`;
+  throw new Error(
+    `\`${minKey}\` is ${defaulted(min, DEFAULT_MIN_TURN_SILENCE_MS)} and \`${maxKey}\` is ` +
+      `${defaulted(max, DEFAULT_MAX_TURN_SILENCE_MS)}. The minimum is when the service CHECKS ` +
+      "whether the turn reads as complete and the maximum is when it force-ends the turn " +
+      "regardless, so a minimum above the maximum means the check can never fire — every turn " +
+      `is cut by the content-blind timer. Raise \`${maxKey}\` above \`${minKey}\`, or lower ` +
+      `\`${minKey}\`.`,
+  );
+}
+
+/**
+ * The two field names, read off a type rather than written as string literals.
+ *
+ * The indirection is Biome's: `noSecrets` reads either name as a high-entropy
+ * literal — the false positive a long camelCase string always trips — and a
+ * suppression would raise the escape-hatch baseline, which only moves down.
+ * Deriving them from `AssemblyAISttOptions` also means a rename over there is a
+ * compile error here rather than a rule that silently stops firing.
+ *
+ * Declared HERE rather than in `_author-conveniences.ts`, which desugars the
+ * pair and which imports it: the rule above and the desugaring have to agree on
+ * the two names, and the import runs one way (that module already depends on
+ * this one), so one declaration is available to both.
+ *
+ * @internal
+ */
+export const ENDPOINTING_KEYS = Object.keys({
+  minTurnSilenceMs: 0,
+  maxTurnSilenceMs: 0,
+}) as [EndpointingKey, EndpointingKey];
+
+/** @internal */
+export type EndpointingKey = Extract<keyof AssemblyAISttOptions, `${"min" | "max"}TurnSilenceMs`>;
+
+/**
  * Everything worth SAYING about a config that is nonetheless legal.
  *
  * The other half of the rules above, and it exists because those all had to be
@@ -262,8 +342,75 @@ export function agentConfigWarnings(config: {
   return [
     assemblyAIVoiceWarning(config.tts),
     assemblyAIVoiceWarning(config.s2s),
+    uncatalogedVoiceWarning(config.tts),
     euResidencyWarning(config),
   ].filter((warning): warning is string => warning !== undefined);
+}
+
+/**
+ * The providers whose voice this SDK cannot check, with the one voice for each
+ * that it can.
+ *
+ * A DEFAULT is exempt from the warning below because the SDK chose it: it ships
+ * here, every template runs on it, and a line saying "we cannot vouch for this"
+ * about the value we supplied is noise rather than a signal.
+ *
+ * `shape` is whatever remains checkable OFFLINE. Cartesia issues UUIDs, so an id
+ * that is not one is wrong without any catalog being consulted — the only half
+ * of the question that can be answered here. Rime's speaker ids are bare
+ * lowercase words (`cove`, `marsh`), which is not a shape a typo violates, so it
+ * declares none and gets the unvalidated line alone.
+ */
+const UNCATALOGED_VOICE_PROVIDERS = [
+  {
+    kind: CARTESIA_KIND,
+    label: "Cartesia",
+    defaultVoice: CARTESIA_DEFAULT_VOICE,
+    // Nothing secret and nothing high-entropy: five groups of hex digits.
+    shape: { re: /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i, name: "a UUID" },
+  },
+  { kind: RIME_KIND, label: "Rime", defaultVoice: RIME_DEFAULT_VOICE, shape: undefined },
+] as const;
+
+/**
+ * A sentence about a voice on a provider this SDK carries no catalog for.
+ *
+ * The third option {@link agentConfigWarnings} exists to offer, applied to the
+ * case that had NEITHER of the other two.
+ * `assemblyAIVoiceWarning` can say "not in this release's catalog" because there
+ * IS one; for Cartesia and Rime there is no list in this repo and inventing one
+ * would be worse than saying nothing — it would go stale, and a stale catalog
+ * refuses voices the service ships, which is the same silent mute from the other
+ * side. So the honest line is that the id is UNVALIDATED, plus the failure mode
+ * it hides: both services refuse an unknown voice in-band after the socket
+ * opens, so a typo leaves an agent that connects, reports ready and never
+ * speaks. That failure is invisible at every layer before a live call, which is
+ * what makes one line per build worth its noise.
+ *
+ * It fires only on a voice the AUTHOR picked (see
+ * {@link UNCATALOGED_VOICE_PROVIDERS}), so the shipped templates and a bare
+ * `cartesiaTts()` say nothing.
+ *
+ * Takes the DESCRIPTOR, like its AssemblyAI sibling, so a caller hands it any
+ * stage and anything else is simply not warned about.
+ */
+function uncatalogedVoiceWarning(descriptor: unknown): string | undefined {
+  if (!(isRecord(descriptor) && isRecord(descriptor.options))) return undefined;
+  const provider = UNCATALOGED_VOICE_PROVIDERS.find((p) => p.kind === descriptor.kind);
+  if (provider === undefined) return undefined;
+  const { voice } = descriptor.options;
+  if (typeof voice !== "string" || voice === "" || voice === provider.defaultVoice) {
+    return undefined;
+  }
+  const { label, shape } = provider;
+  const malformed = shape !== undefined && !shape.re.test(voice);
+  return (
+    `${label} voice "${voice}" is not checked here: this SDK carries no ${label} voice catalog` +
+    (malformed ? `, and it is not ${shape.name}, which every ${label} voice id is` : "") +
+    `. ${label} refuses a voice it does not know after the socket opens, so if this id is wrong ` +
+    "the agent will connect, report ready and never speak — verify it against your " +
+    `${label} account before shipping.`
+  );
 }
 
 /**
