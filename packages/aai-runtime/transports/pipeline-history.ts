@@ -14,20 +14,12 @@
  * push records what its own cap evicted, so `dropTrailingUser` can undo the
  * eviction along with the append. See that member's doc for the turn a rollback
  * at the cap used to cost.
- *
- * The `llm` view carries a SECOND, PRIMARY bound: a token budget derived from
- * the model's context window (`pipeline-history-budget.ts`). A message count
- * does not correlate with tokens — one tool result can be 106 KB — so the count
- * cap alone let that view grow past any window and fail at the provider
- * mid-call. The budget is `undefined` when the model's window is not known, and
- * the view then trims by count exactly as it always did.
  */
 
 import type { Message } from "@alexkroman1/aai";
 import { createEpoch, type Epoch } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
-import { estimateMessageTokens } from "./pipeline-history-budget.ts";
 import { toModelMessage } from "./pipeline-stream.ts";
 
 /** Conversation memory handle returned by {@link createPipelineHistory}. */
@@ -98,20 +90,7 @@ function cap<T>(arr: T[]): T[] {
 }
 
 /**
- * Cap the LLM view — by message count and by TOKENS — then heal a
- * tool-call/result pair either trim split.
- *
- * **The token budget is the PRIMARY bound and the message cap the secondary
- * one**; `pipeline-history-budget.ts` carries the argument for both, and for
- * why an unknown context window (`budget === undefined`) leaves this a pure
- * count trim rather than a guess.
- *
- * The token trim keeps at least ONE message however far over budget it is: a
- * request with an empty message list is a provider error, and the message left
- * standing is the one the caller just said, so dropping it answers nothing and
- * loses the turn anyway. A single message over budget is therefore still sent —
- * and still fails at the provider, which is the honest outcome, since nothing
- * this side can make a 300 KB tool result fit a 32k window.
+ * Cap the LLM view, then heal a tool-call/result pair the trim split.
  *
  * {@link cap} is a pure index trim, and the LLM view — unlike the text-only
  * `conversation` view — holds PAIRS: an assistant message carrying `tool-call`
@@ -130,18 +109,8 @@ function cap<T>(arr: T[]): T[] {
  * produce — dropping those is sufficient, and it costs at most a few messages
  * below the cap.
  */
-function capLlm(arr: ModelMessage[], budget: number | undefined): ModelMessage[] {
+function capLlm(arr: ModelMessage[]): ModelMessage[] {
   const evicted = cap(arr);
-  if (budget !== undefined) {
-    let total = 0;
-    for (const m of arr) total += estimateMessageTokens(m);
-    while (total > budget && arr.length > 1) {
-      const shifted = arr.shift();
-      if (!shifted) break;
-      total -= estimateMessageTokens(shifted);
-      evicted.push(shifted);
-    }
-  }
   while (arr.length > 0 && arr[0]?.role === "tool") {
     const shifted = arr.shift();
     if (shifted) evicted.push(shifted);
@@ -302,38 +271,10 @@ export function persistInterruptedTurn(args: {
  */
 type PushUndo<T> = { readonly pushed: T; readonly evicted: readonly T[] } | null;
 
-/**
- * Options for {@link createPipelineHistory} beyond the seed.
- *
- * An options bag rather than a second positional parameter because the seed is
- * already optional: `createPipelineHistory(undefined, 150_000)` is the shape a
- * positional budget forces on every caller that has no seed, and that is most
- * of them.
- */
-export interface PipelineHistoryOptions {
-  /**
-   * Tokens the LLM view may occupy — `historyTokenBudget(llm)`.
-   *
-   * Omitted (or `undefined`) when the model's context window is not known, in
-   * which case the LLM view is bounded by `DEFAULT_MAX_HISTORY` alone. See
-   * `pipeline-history-budget.ts`.
-   */
-  llmTokenBudget?: number | undefined;
-}
-
 /** Create a {@link PipelineHistory}, optionally seeded from prior text history. */
-export function createPipelineHistory(
-  seed?: readonly Message[],
-  options?: PipelineHistoryOptions,
-): PipelineHistory {
-  const budget = options?.llmTokenBudget;
+export function createPipelineHistory(seed?: readonly Message[]): PipelineHistory {
   const conversation: Message[] = seed ? [...seed] : [];
   const llm: ModelMessage[] = conversation.map(toModelMessage);
-  // The CONSTRUCTOR seed is bounded too, and it used to be the one door that
-  // was not: `seed()` capped and this did not, so a resume handed back a
-  // history the very first turn would send over the model's window — the case
-  // the budget exists for, arriving before any push could trim it.
-  capLlm(llm, budget);
   // The existing primitive rather than a hand-rolled counter — see
   // `PipelineHistory.revision`.
   const revision = createEpoch();
@@ -387,7 +328,7 @@ export function createPipelineHistory(
           pushed.push(cleaned);
         }
       }
-      const evicted = capLlm(llm, budget);
+      const evicted = capLlm(llm);
       const only = pushed.length === 1 ? pushed[0] : undefined;
       llmUndo = only ? { pushed: only, evicted } : null;
       revision.bump();
@@ -404,7 +345,7 @@ export function createPipelineHistory(
       conversation.push(...msgs);
       cap(conversation);
       llm.push(...msgs.map(toModelMessage));
-      capLlm(llm, budget);
+      capLlm(llm);
       // A reconnect seed is never rolled back — nothing pushes a synthetic
       // prompt through this door — and its eviction is therefore not owed back
       // to anybody. Cleared rather than recorded so a stale slot cannot outlive

@@ -66,6 +66,7 @@ import {
   streamText,
   type ToolSet,
 } from "ai";
+import { composePrepareStep, forceFinalAnswer } from "./_prepare-step.ts";
 import { createGenerateFn } from "./generate.ts";
 import { resolveLlm } from "./providers/resolve.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
@@ -74,7 +75,6 @@ import { createSubagentRunner } from "./subagent.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { createToolCallRepair } from "./tool-call-repair.ts";
 import { createToolDispatcher, executeToolCall } from "./tool-executor.ts";
-import { forceFinalAnswer } from "./transports/pipeline-llm-stream.ts";
 
 /**
  * What one turn hands back: the AI SDK's own `streamText` result, with this
@@ -367,28 +367,6 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
         },
       });
     },
-  };
-}
-
-/**
- * Run the caller's `prepareStep` first, then layer the forced final answer
- * over whatever it returned.
- *
- * The order is the point. A caller legitimately owns the step's MESSAGES —
- * compaction, an injected wrap-up notice — and must keep them; nothing
- * legitimately owns `toolChoice` on the step the budget reserved for
- * answering, because that step exists precisely so the model has no move left
- * but to speak. So the caller's result passes through and the override wins
- * on the one key it sets.
- */
-function composePrepareStep(
-  caller: PrepareStepFunction<ToolSet> | undefined,
-  forceFinal: (opts: { stepNumber: number }) => { toolChoice: "none" } | undefined,
-): PrepareStepFunction<ToolSet> {
-  return async (options) => {
-    const base = (await caller?.(options)) ?? {};
-    const forced = forceFinal({ stepNumber: options.stepNumber });
-    return forced ? { ...base, ...forced } : base;
   };
 }
 

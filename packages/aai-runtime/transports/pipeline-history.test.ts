@@ -6,7 +6,6 @@ import type { ModelMessage } from "ai";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
-import { estimateMessageTokens } from "./pipeline-history-budget.ts";
 
 describe("createPipelineHistory", () => {
   test("starts empty when unseeded", () => {
@@ -499,111 +498,5 @@ describe("persistInterruptedTurn — the record is what was HEARD", () => {
     ]);
     // The step message already carried it, so the LLM view gets no duplicate.
     expect(history.llm).toEqual([]);
-  });
-});
-
-// The PRIMARY bound on the LLM view. A message count does not correlate with
-// tokens — a `retail`-shaped tool result is ~106 KB, and 200 of those is an
-// order of magnitude past any context window — so the count cap alone let the
-// view overflow the model and fail at the provider mid-call. See
-// pipeline-history-budget.ts.
-describe("createPipelineHistory — LLM token budget", () => {
-  /** Tokens the whole LLM view currently estimates at. */
-  const cost = (h: { llm: readonly ModelMessage[] }): number =>
-    h.llm.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
-
-  const bulky = (i: number): ModelMessage => ({
-    role: "user",
-    content: `message ${i} ${"payload ".repeat(200)}`,
-  });
-
-  test("a history that fits is untouched, by identity", () => {
-    const h = createPipelineHistory(undefined, { llmTokenBudget: 100_000 });
-    const sent = [bulky(0), bulky(1), bulky(2)];
-    for (const m of sent) h.pushLlm(m);
-    expect(h.llm).toHaveLength(3);
-    // By identity: the messages in the view are the objects that were pushed,
-    // so nothing was rewritten or reconstructed on the way through.
-    expect(h.llm[0]).toBe(sent[0]);
-    expect(h.llm[2]).toBe(sent[2]);
-    expect(cost(h)).toBeLessThanOrEqual(100_000);
-  });
-
-  test("a history that overflows trims oldest until it fits", () => {
-    const budget = 2000;
-    const h = createPipelineHistory(undefined, { llmTokenBudget: budget });
-    for (let i = 0; i < 60; i++) h.pushLlm(bulky(i));
-    // Well under the message cap, so the COUNT cap cannot be what trimmed.
-    expect(h.llm.length).toBeLessThan(DEFAULT_MAX_HISTORY);
-    expect(h.llm.length).toBeGreaterThan(0);
-    expect(cost(h)).toBeLessThanOrEqual(budget);
-    // Oldest first, newest kept: the last message pushed is the last one held.
-    expect(h.llm.at(-1)?.content).toContain("message 59");
-    expect(JSON.stringify(h.llm)).not.toContain("message 0 ");
-  });
-
-  test("the newest message survives however far over budget it is", () => {
-    // An empty message list is a provider error, and the message left standing
-    // is the one the caller just said — dropping it answers nothing.
-    const h = createPipelineHistory(undefined, { llmTokenBudget: 1 });
-    h.pushLlm(bulky(0));
-    h.pushLlm(bulky(1));
-    expect(h.llm).toHaveLength(1);
-    expect(h.llm[0]?.content).toContain("message 1");
-  });
-
-  test("a tool-call/result pair at the budget boundary goes whole, never split", () => {
-    // The trim boundary landing between an assistant `tool-call` and the `tool`
-    // message answering it is what both providers reject outright.
-    const budget = 1500;
-    const h = createPipelineHistory(undefined, { llmTokenBudget: budget });
-    h.pushLlm(toolCallMsg("c1"), toolResultMsg("c1"));
-    for (let i = 0; i < 40; i++) h.pushLlm(bulky(i));
-    const held = JSON.stringify(h.llm);
-    // Either the whole pair is still there or neither half is — never one.
-    expect(held.includes("tool-call")).toBe(held.includes("tool-result"));
-    expect(orphanToolResults(h.llm)).toEqual([]);
-    expect(cost(h)).toBeLessThanOrEqual(budget);
-  });
-
-  test("an unknown context window falls back to the message-count cap alone", () => {
-    // `historyTokenBudget` answers undefined for a model this repo carries no
-    // window for (an author-supplied provider, a custom `registerLlmKind`), and
-    // the view then behaves exactly as it did before the budget existed.
-    const h = createPipelineHistory(undefined, { llmTokenBudget: undefined });
-    const bounded = createPipelineHistory(undefined, { llmTokenBudget: 2000 });
-    for (let i = 0; i < 250; i++) {
-      h.pushLlm(bulky(i));
-      bounded.pushLlm(bulky(i));
-    }
-    expect(h.llm).toHaveLength(DEFAULT_MAX_HISTORY);
-    // Stated against the budgeted run of the same script: the fallback keeps a
-    // view far more expensive than any budget would allow, deliberately, since
-    // guessing a window is what it refuses to do.
-    expect(cost(h)).toBeGreaterThan(cost(bounded) * 10);
-  });
-
-  test("a seed is budgeted too, not only later pushes", () => {
-    const seed: Message[] = Array.from({ length: 60 }, (_, i) => ({
-      role: "user",
-      content: `seeded ${i} ${"payload ".repeat(200)}`,
-    }));
-    const h = createPipelineHistory(seed, { llmTokenBudget: 2000 });
-    expect(cost(h)).toBeLessThanOrEqual(2000);
-    // Only the LLM view is token-bounded; the text view keeps its count cap.
-    expect(h.conversation).toHaveLength(60);
-  });
-
-  test("a rollback at the token boundary restores what its own push evicted", () => {
-    // The same inverse `dropTrailingUser` owes the COUNT cap — a push that
-    // trims and a pop that does not leave the window permanently shallower.
-    const synthetic = `synthetic ${"payload ".repeat(200)}`;
-    const h = createPipelineHistory(undefined, { llmTokenBudget: 2000 });
-    for (let i = 0; i < 40; i++) h.pushLlm(bulky(i));
-    const before = [...h.llm];
-    h.pushLlm({ role: "user", content: synthetic });
-    expect(h.llm.length).toBeLessThan(before.length + 1);
-    h.dropTrailingUser(synthetic);
-    expect(h.llm).toEqual(before);
   });
 });

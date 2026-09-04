@@ -2,4 +2,4 @@
 "@alexkroman1/aai-runtime": minor
 ---
 
-Bound the pipeline LLM history by TOKENS, not by message count: the LLM view is now trimmed to a budget derived from the model's context window (25% reserved for the system prompt, tool declarations and the reply), with DEFAULT_MAX_HISTORY kept as a secondary hard cap. Tool-call/result pairs still trim together. A model whose context window this SDK does not know falls back to the message-count cap rather than a guessed window.
+Bound what a pipeline step SENDS the model by tokens rather than by message count. A `prepareStep` preparer trims the request to the model's advertised context window less an explicit 25% reserve for the system prompt, the tool declarations and the reply, calibrating its estimate against each completed step's reported `usage.inputTokens`; conversation history itself is untouched, so the client replay, resume and `ctx.messages` still see everything and `DEFAULT_MAX_HISTORY` stays as the guard on unbounded growth. Tool-call/result pairs trim together, and a model whose context window this SDK does not know is left entirely alone rather than trimmed against a guessed window.

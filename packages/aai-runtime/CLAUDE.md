@@ -1602,22 +1602,24 @@ makes yields look instant. A correct client's yield rate against the old code
 was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
 reverting the gate.
 
-## The LLM view is bounded by TOKENS; the message cap is the backstop
+## A step's REQUEST is bounded in tokens; the message cap only guards growth
 
-`DEFAULT_MAX_HISTORY` counts MESSAGES, which does not correlate with what a
-request costs: a text turn is a sentence and one `retail`-shaped tool result is
-~106 KB, so 200 of those is an order of magnitude past any window and the
-request fails at the provider mid-call. `transports/pipeline-history-budget.ts`
-derives a budget from the model's own window — `ASSEMBLYAI_GATEWAY_MODELS`'
-`context`, which nothing read until now — less `HISTORY_CONTEXT_RESERVE` (25%)
-for the system prompt, the tool DECLARATIONS and the reply. `capLlm` trims
-oldest to it, keeps at least the newest message, then heals the tool-pair split
-as before. Counting is `tokenx` (heuristic, no BPE encoder), memoized per
-message object; the reserve is what absorbs its error.
+`DEFAULT_MAX_HISTORY` counts MESSAGES, which does not predict what a request
+costs: one `retail`-shaped tool result is ~106 KB, so 200 of them overflow any
+window and the request fails at the provider mid-call.
+`transports/pipeline-context-budget.ts` bounds it as a **`prepareStep`
+preparer** — the SDK's per-step hook, whose `messages` override is what the step
+SENDS — so `PipelineHistory` keeps everything (client replay, resume and
+`ctx.messages` read it) and only the request is trimmed. **That module's doc
+carries the argument**, and this guide is at its cap: the window comes from
+`ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`, an unknown
+one yields NO preparer rather than a guess, and the count is CALIBRATED against
+each step's reported `usage.inputTokens` (hence one budget per SESSION).
 
-**An unknown window falls back to the count cap rather than guessing one.** A
-guess too large fails at the provider — the bug — and one too small amputates a
-working conversation.
+**Two preparers now share the one slot, so they COMPOSE** (`_prepare-step.ts`,
+promoted out of `text-agent.ts`): the budget owns `messages`,
+`forceFinalAnswer` goes last and owns `toolChoice`. Writing either straight into
+the slot deletes the other, silently.
 
 ## A rollback at the cap used to cost a real turn
 
