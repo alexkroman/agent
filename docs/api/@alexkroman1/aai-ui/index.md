@@ -1919,7 +1919,7 @@ subscription tax.
 
 Identity-stable per core, so it is safe in a dependency array and in a
 `memo()` child's props: the methods are closures created once by
-`createSessionCore`, and the object wrapping them is memoized on the core.
+`createBrowserSession`, and the object wrapping them is memoized on the core.
 
 Throws outside the provider `mountClient()` installs, like every session hook.
 
