@@ -583,5 +583,7 @@ column describes what you are doing.
 Full API reference: <https://alexkroman.github.io/agent/>
 
 The complete authoring guide — every `agent()` field, the workflow rules, the
-UI hooks, the voice-prompt rules — ships beside this file as
-[`AGENT_GUIDE.md`](./AGENT_GUIDE.md).
+UI hooks, the voice-prompt rules — ships in this package as `AGENT_GUIDE.md`,
+beside this file. (Deliberately not a relative link: TypeDoc copies a linked
+file into the rendered docs tree, and this one is 100 kB of generated text
+that already lives in two places.)
