@@ -202,7 +202,7 @@ which `mountClient()` does for itself.
 `useSessionError()` and `useSessionActions()` as the narrow reads a custom
 chrome repeats; `useUserTranscript()` for the caller's in-progress turn, which
 keeps `null` (silent) and `""` (speech, no words yet) apart; `useConversation()`
-for the interleaved transcript with nothing rendered. `createSessionCore()` is
+for the interleaved transcript with nothing rendered. `createBrowserSession()` is
 the same session as a plain store with an immutable snapshot per change, for a
 non-React client. `SessionSnapshot`, `AgentState`, `ChatMessage`,
 `ToolCallInfo`, `SessionError` and `SessionErrorCode` come with it.
