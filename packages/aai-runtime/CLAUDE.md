@@ -98,7 +98,7 @@ since the split, and that guide is at its cap.
 
 ## The published surface is versioned in epochs
 
-Fourteen capabilities under `contracts/`, each a named slice of what an
+Fifteen capabilities under `contracts/`, each a named slice of what an
 embedder writes against: `server`, `runtime`, `session`, `session-state`,
 `providers`, `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`,
 `text`, `tools`, `eval`. The
@@ -106,7 +106,7 @@ mechanism is the repo's — see "The authoring surface is versioned in epochs" i
 `docs/CLAUDE.md`, which owns all three artifacts over this surface (the reports,
 the epochs and the renderings); `AGENTS.md` keeps the four obligations a change
 owes — and what it means here is that a signature change on any
-of the 125 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
+of the public names on that surface is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
 rather than discovered by whoever's build breaks.
 
 `tools` is the smallest — one name, `withToolsDir` — and it is
@@ -181,16 +181,11 @@ and imported by nothing, and the rule that took them back off is below.
 `aai-server`, `aai-cli` and `aai-guest` import from what is left — which is
 honest, since they are the cross-package consumers the seam exists for.
 
-**The 17-name OPENER CONTRACT deliberately stayed on the root barrel.**
-`registerSttKind`/`registerTtsKind`/`registerLlmKind` live there — all three are
-`registerKind` under three names, which is why the LLM one joined them (it
-reached no published subpath at all while `resolveLlm`, the reader of the
-registry it writes, was contracted). Moving their parameter types
-(`SttOpener`, `SttOpenOptions`, `SttSession`, and the Tts twins) would make a
-custom provider — the documented use, and what `aai-evals/stub-speech.ts` really
-does — import from two subpaths, one of them labelled not-semver-covered. The
-block's own comment already called those names one contract; the split respects
-it. Do not "tidy" them onto `/internal` later.
+**The 17-name OPENER CONTRACT deliberately stayed on the root barrel**, and
+konsistent's `runtime-opener-contract-on-root-barrel` is what refuses the
+tidy-up — it names the three registrars, `resolveLlm` and the six opener types,
+each with the module it must be re-exported FROM, and its description carries
+the argument.
 
 ### `ServerSession` is what `SessionCore` became, and the collision is closed
 
@@ -235,8 +230,9 @@ to 0.
 
 **The division is now mechanical, and it is worth stating as a rule.**
 
-- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the 125 names
-  the fourteen capabilities select. A name here has an epoch and a report.
+- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the names the
+  capabilities select — `API-EXPORTS.json` is the count, never a number written
+  out here, which went stale twice. A name here has an epoch and a report.
   Nothing on it is
   `@internal` — that is what the zero means, and the ratchet is what holds it.
 - **`@alexkroman1/aai-runtime/internal` (`internal.ts`)** is the cross-package
@@ -507,9 +503,10 @@ steps — is a spec asserting on a provider's choices.
 ## Driving an agent from text is a published surface
 
 **Moved to [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md)** beside this file:
-the text-agent surface itself, which subpaths a template eval may import from
-(`/eval` and `/eval/vitest`, and nowhere else), why a workflow app is evaluated
-by RUNNING it, and why a keyless run gets a SCRIPTED model rather than a skip.
+the text-agent surface itself, why a workflow app is evaluated by RUNNING it,
+and why a keyless run gets a SCRIPTED model rather than a skip. Which subpaths a
+template eval may import from is konsistent's
+`template-eval-runtime-subpaths` (`/eval` and `/eval/vitest`, and nowhere else).
 
 ## Tool discovery off the platform
 

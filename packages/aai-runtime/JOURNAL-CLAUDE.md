@@ -83,18 +83,18 @@ retryable **503**, so the engine spends the message's whole attempt budget on a
 refusal that cannot change.
 
 **The case list crosses the boundary through a LOADER, not a re-export clause.**
-`loadJournalConformance()` on `/internal` dynamically imports the case modules.
-They `import { describe, expect, test } from "vitest"`, which is an OPTIONAL peer
-of this package, and a static clause is bundled INTO `dist/internal.js` —
-measured: `import … from "vitest"` on line 4. `@alexkroman1/aai-cli`'s published
-`dist` imports a VALUE from that exact module (`consoleLogger`, in `_dev-env.ts`)
-with every bare specifier external, so the plain clause makes `aai dev`
-unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` from
-inside a published package, invisible to `publint` and to `attw`. Behind the
-dynamic import the same code splits into its own chunk (verified: zero `vitest`
-references in `dist/internal.js`) and is loaded only by the caller that asks.
-Same rule as `/eval/vitest` and `@alexkroman1/aai/testing/vitest`, but as a
-function because `/internal` cannot afford to be split in two.
+`loadJournalConformance()` on `/internal` dynamically imports the case modules,
+which `import { describe, expect, test } from "vitest"`. Behind the dynamic
+import that code splits into its own chunk — verified: zero `vitest` references
+in `dist/internal.js` — and is loaded only by the caller that asks. It is a
+function rather than a second subpath because `/internal` cannot afford to be
+split in two. **The rule this serves, and the shipped failure behind it, are
+konsistent's `runtime-runner-free-subpaths`**; what stays here is the half that
+convention cannot see, because konsistent reads static import statements and not
+`import()`: a STATIC clause reaching these modules is bundled in, measured at
+`import … from "vitest"` on line 4 of `dist/internal.js`, so the dynamic form is
+load-bearing and a refactor that "simplifies" it back to a clause reintroduces
+the fault with the direct-import gate still green.
 
 ## Three `JournalStore` contract points the suite refused to decide, decided
 

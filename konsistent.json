@@ -976,6 +976,235 @@
           "GuestRouteExposure"
         ]
       }
+    },
+    {
+      "name": "runtime-stt-openers",
+      "description": "A `providers/stt/<provider>.ts` file in aai-runtime IS the HOST half of that provider, and it exports `open<Provider>(opts: <Provider>SttOptions): SttOpener`. This is the other end of the line the package split was cut along, and only this end was checked. The SDK side already had `stt-providers` next door — a factory returning a pure DESCRIPTOR (`{ kind, options }`) and importing no vendor SDK — while the resolver that turns that descriptor into an open socket, which is why `@deepgram/sdk`, `assemblyai`, `@elevenlabs/elevenlabs-js` and `ws` are dependencies of THIS package and not of the authoring install, had no shape stated anywhere. Four modules, one interface, and every one of them is reached the same way: `registerSttKind` writes the kind into the opener registry and `resolveLlm`'s siblings read it, so a fifth provider that named its factory anything else, or returned something wider or narrower than `SttOpener`, would register and then be dialled against a contract it does not implement. All three halves are checked because each fails differently. The NAME is what makes the opener derivable from the filename, which is what a registration site can be read against. The RETURN TYPE is the half a name scan cannot reach — `SttOpener` is a function type whose session contract every transport depends on, and a factory that kept the name and widened the return is discovered, registered and exercised anyway. And the PARAMETER type has to be the SDK's own `<Provider>SttOptions`, imported from `@alexkroman1/aai/stt`: that is the descriptor's `options` payload arriving here, so an opener declaring its own option bag is a second spelling of one type across a published package boundary, where the two drift silently and only a user's agent notices. `assemblyai` resolves through `kebabToPascalMap` to `openAssemblyAI`; note the map is consulted for the WHOLE captured value and not per segment, which is why a multi-segment provider id would get plain PascalCase.",
+      "paths": [
+        "packages/aai-runtime/src/providers/stt/{providerId}.ts",
+        "!packages/aai-runtime/src/providers/stt/_*.ts",
+        "!packages/aai-runtime/src/providers/stt/*.test.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "open${providerId.toPascalCase()}",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}SttOptions"
+            ],
+            "returnValueOfType": "SttOpener"
+          }
+        ],
+        "importTypes": [
+          {
+            "name": "${providerId.toPascalCase()}SttOptions",
+            "from": "@alexkroman1/aai/stt"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-tts-openers",
+      "description": "The TTS twin of `runtime-stt-openers`: a `providers/tts/<provider>.ts` file exports `open<Provider>(opts: <Provider>TtsOptions): TtsOpener`, with the option type imported from `@alexkroman1/aai/tts`. Read that convention for the argument — one interface, N implementations, registered by `registerTtsKind` and dialled by every transport, so a factory that keeps the name and changes the shape is discovered and exercised against a contract it does not implement. Two things are specific to this directory. `assemblyai.ts` is deliberately NOT matched here and has its own rule (`runtime-assemblyai-tts-opener`) because its factory is `openAssemblyAITts` rather than `openAssemblyAI`: the STT opener already owns that name and both land on the same registry, so the suffix is a collision fix rather than drift, and a grammar cannot state one file's exception. And the `assemblyai-*.ts` neighbours — the cancel barrier, the frame reader, the segment splitter, the turn tracker and the word timeline — match `{providerId}.ts` while being pieces of ONE provider rather than providers, which is why they are excluded by prefix rather than one at a time: the exclusion is what keeps a new helper beside them from having to be added here.",
+      "paths": [
+        "packages/aai-runtime/src/providers/tts/{providerId}.ts",
+        "!packages/aai-runtime/src/providers/tts/_*.ts",
+        "!packages/aai-runtime/src/providers/tts/*.test.ts",
+        "!packages/aai-runtime/src/providers/tts/assemblyai*.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "open${providerId.toPascalCase()}",
+            "receiveParamsOfTypes": [
+              "${providerId.toPascalCase()}TtsOptions"
+            ],
+            "returnValueOfType": "TtsOpener"
+          }
+        ],
+        "importTypes": [
+          {
+            "name": "${providerId.toPascalCase()}TtsOptions",
+            "from": "@alexkroman1/aai/tts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-assemblyai-tts-opener",
+      "description": "The AssemblyAI TTS opener, checked by a rule of its own because its name breaks the grammar `runtime-tts-openers` states. It is `openAssemblyAITts` and not `openAssemblyAI` — the STT opener beside it already holds that name, and both are re-exported toward one registry, so the `Tts` suffix is disambiguation rather than drift. A rule per file is what there is to state when a family has one exception: folding it into the grammar would mean weakening the grammar for the other two, and leaving it out means the provider that ships the most audio in this repo is the one file in `providers/` whose factory name and return type are checked by nothing. The remaining halves are identical to the family's and carry the same argument: `TtsOpener` as the return type, because the conformance the transports depend on is the session contract rather than the name, and `AssemblyAITtsOptions` imported from `@alexkroman1/aai/tts`, because the option bag is the SDK descriptor's own payload arriving here and a second spelling of it drifts across a published package boundary in silence.",
+      "paths": [
+        "packages/aai-runtime/src/providers/tts/assemblyai.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "openAssemblyAITts",
+            "receiveParamsOfTypes": [
+              "AssemblyAITtsOptions"
+            ],
+            "returnValueOfType": "TtsOpener"
+          }
+        ],
+        "importTypes": [
+          {
+            "name": "AssemblyAITtsOptions",
+            "from": "@alexkroman1/aai/tts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-transports",
+      "description": "A `transports/<name>-transport.ts` file IS a transport, and it exports `create<Name>Transport(opts: <Name>TransportOptions): Transport`. Three of them — pipeline (STT → LLM → TTS, assembled here), s2s (AssemblyAI's speech-to-speech) and openai-realtime — one interface (`transports/types.ts`), and the session core is written against that interface and nothing else. That is the property worth stating mechanically, because the guide's rule for this seam is a NEGATIVE one no per-file tool can see: the session takes two vocabularies rather than nineteen callbacks, so a `Transport` is the whole inbound surface plus the two audio paths, and every divergence between the three implementations has cost something (`speech_started` derived from a partial in pipeline mode against a real yield in S2S; `reply.completed` being the provider's claim rather than the turn's end). The RETURN TYPE is what this convention actually buys: a factory that kept its name and returned a structural near-miss of `Transport` still compiles at every call site that only reads part of it, and the divergence surfaces as one transport behaving differently on a live call. The parameter type is checked with it so a transport's options stay one named type rather than an inline bag that cannot be referenced from a host's own wiring. Note the filename grammar is what makes a fourth transport's factory name derivable — and that `openai-realtime` resolves to `OpenaiRealtime` rather than `OpenAIRealtime`, because `kebabToPascalMap` is consulted for the whole captured value and not per segment.",
+      "paths": [
+        "packages/aai-runtime/src/transports/{transportId}-transport.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "create${transportId.toPascalCase()}Transport",
+            "receiveParamsOfTypes": [
+              "${transportId.toPascalCase()}TransportOptions"
+            ],
+            "returnValueOfType": "Transport"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-carrier-codecs",
+      "description": "`telephony/carriers.ts` declares every carrier shim, and this pins their names, the interface they implement, and the lookup that resolves one. A phone call is an ordinary session here: the whole point of the design is that no telephony branch may exist below the bridge, which means every carrier difference — Twilio Media Streams against Telnyx media streaming — is squeezed into a `CarrierCodec` and nothing downstream may ever ask which carrier is on the wire. So the codecs are the entire surface over which a third carrier can be added, and a shipped one is what a template for adding a third is written against. It is a literal path rather than a filename grammar for the reason `workflow-keys.ts` next door is: two implementations share one module, so there is no segment to capture, and a `carriers-{name}.ts` pattern would match no file that exists. What each half catches: `CarrierCodec` staying EXPORTED is what lets a third carrier be written outside this file at all; `twilioCodec` and `telnyxCodec` are the two names the bridge's own tests and the codec table are written against; `CARRIER_CODECS` is the table `CarrierName` is derived from with `keyof typeof`, so a codec silently absent from it is a carrier that resolves to null on a real call rather than failing here; and `carrierByName` returning `CarrierCodec | null` is the refusal being part of the contract — a lookup widened to `CarrierCodec` would push an unknown carrier's failure past the bridge and into the branch-free path below it.",
+      "paths": [
+        "packages/aai-runtime/src/telephony/carriers.ts"
+      ],
+      "must": {
+        "exportTypes": [
+          "CarrierCodec"
+        ],
+        "exportConstants": [
+          "twilioCodec",
+          "telnyxCodec",
+          "CARRIER_CODECS"
+        ],
+        "exportFunctions": [
+          {
+            "name": "carrierByName",
+            "returnValueOfType": "CarrierCodec | null"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-workflow-interleavings",
+      "description": "A file under `workflow-interleavings/` IS one frozen counterexample, and it exports a single const named after its own filename, typed by the shared `Interleaving` declared beside them. These are the shrunk orderings a `fc.schedulerFor` property found and a human then pinned: each names the engine guard whose removal it catches, so the directory is the durable half of a fuzz harness — the part that keeps working after the generator that found it has been rewritten. Two things make them worth a convention rather than a paragraph. Their whole value is DISCOVERY: the suite enumerates the directory, so an interleaving whose const is named something the enumeration does not reach is a regression test that exists in the tree and runs nowhere, and nothing fails — the suite reports the cases it did find, which is the shape of failure this repo keeps paying for. Deriving the const name from the filename is what makes that enumeration honest. And the `importTypes` half pins the TYPE, which the const name cannot: `exportConstants`' schema field understands only scalars, arrays and object literals, so a named-type annotation is unreachable there, and a case that declared its own local `Interleaving` shape — dropping the journal defect, or the arm, or the program the ordering is played against — would satisfy a name check while asserting a different thing. Requiring the import from `./interleaving.ts` is what keeps all five cases answering to one contract. `interleaving.ts` itself is excluded: it declares the type rather than a case.",
+      "paths": [
+        "packages/aai-runtime/src/workflow-interleavings/{caseName}.ts",
+        "!packages/aai-runtime/src/workflow-interleavings/interleaving.ts"
+      ],
+      "must": {
+        "exportConstants": [
+          "${caseName.toCamelCase()}"
+        ],
+        "importTypes": [
+          {
+            "name": "Interleaving",
+            "from": "./interleaving.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-opener-contract-on-root-barrel",
+      "description": "The 17-name OPENER CONTRACT deliberately stays on `@alexkroman1/aai-runtime`'s ROOT barrel, and this is what refuses the tidy-up. `registerSttKind`/`registerTtsKind`/`registerLlmKind` live there — all three are `registerKind` under three names, which is why the LLM one joined them: it reached no published subpath at all while `resolveLlm`, the reader of the registry it writes, was already contracted. Moving their parameter types (`SttOpener`, `SttOpenOptions`, `SttSession`, and the Tts twins) onto `@alexkroman1/aai-runtime/internal` would make a custom provider — the documented use, and what `aai-evals/stub-speech.ts` really does — import from two subpaths, one of them labelled not-semver-covered, i.e. it would move half of one contract off every epoch this package has. The pull toward doing it is real and structural, which is why prose was not enough: those six types are re-exports of `@alexkroman1/aai/host-internal`, and fifty OTHER re-exports of that same module were correctly moved off this barrel for exactly the reason that would appear to apply here. The block's own comment already called these names one contract; this makes the claim checkable. Both halves matter and fail differently. The `from` on each entry is load-bearing rather than decoration: it is what catches the names being kept on the barrel while their SOURCE changes underneath, which is how a re-export quietly stops being the same symbol. And `resolveLlm` is checked beside the three registrars because it is the registry's reader — a writer published without its reader is a seam a host can fill and not use.",
+      "paths": [
+        "packages/aai-runtime/src/runtime-barrel.ts"
+      ],
+      "must": {
+        "exportTypes": [
+          {
+            "name": "SttOpener",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "SttOpenOptions",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "SttSession",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "TtsOpener",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "TtsOpenOptions",
+            "from": "@alexkroman1/aai/host-internal"
+          },
+          {
+            "name": "TtsSession",
+            "from": "@alexkroman1/aai/host-internal"
+          }
+        ],
+        "export": [
+          {
+            "name": "registerSttKind",
+            "from": "./providers/resolve.ts"
+          },
+          {
+            "name": "registerTtsKind",
+            "from": "./providers/resolve.ts"
+          },
+          {
+            "name": "registerLlmKind",
+            "from": "./providers/resolve.ts"
+          },
+          {
+            "name": "resolveLlm",
+            "from": "./providers/resolve.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-runner-free-subpaths",
+      "description": "`vitest` is an OPTIONAL peer of `@alexkroman1/aai-runtime`, so exactly one published subpath may pull it — `/eval/vitest` — and the four barrels behind every other subpath may not import it at all. This is not hygiene; it is a shipped-runtime failure with a consumer behind it. `@alexkroman1/aai-cli`'s published `dist` imports a VALUE from `@alexkroman1/aai-runtime/internal` (`consoleLogger`, in `_dev-env.ts`) with every bare specifier external, so a static `vitest` clause anywhere on that barrel's own module makes `aai dev` unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` raised from inside a published package, in a user's project, and invisible to `publint` and to `attw` because both ask whether the declared exports RESOLVE rather than what they then require at run time. The same argument covers the other three: `/` is what an embedder installs, `/testing` is runner-agnostic by construction so it works from any harness, and `/eval` is the driving half a template imports without committing to a runner. What this convention checks is the DIRECT clause, which is the form a refactor actually writes. It cannot see the transitive route — a static re-export of a module that itself imports the runner, which is the shape the journal conformance case list arrived in and why `loadJournalConformance()` reaches those modules through a dynamic `import()`; dynamic imports are outside what konsistent reads, so that half stays argued in `JOURNAL-CLAUDE.md` where the measurement of `dist/internal.js` lives. `eval-vitest-barrel.ts` is absent from these paths deliberately: it is the one subpath whose whole job is to pull the runner.",
+      "paths": [
+        "packages/aai-runtime/src/runtime-barrel.ts",
+        "packages/aai-runtime/src/eval-barrel.ts",
+        "packages/aai-runtime/src/testing-barrel.ts",
+        "packages/aai-runtime/src/internal.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "vitest",
+          "vitest/*"
+        ]
+      }
+    },
+    {
+      "name": "template-eval-runtime-subpaths",
+      "description": "A template's eval imports from `@alexkroman1/aai-runtime/eval` and `/eval/vitest`, and from no other subpath of that package. The root barrel is the one that bites: it reaches `agent-server.ts` → `server.ts` → `workflow-install.ts` → `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program — three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` re-exports that type rather than letting a template reach past it. `/testing` is forbidden HERE and not in templates generally: eight template `agent.test.ts` files legitimately use `runWorkflow` from it, but an eval driving a real session has no business starting a durable run through a second door, and the two subpaths gate on different credentials. `/internal` is already refused for every template file by `template-authoring-boundary`, so this list plus that one is TOTAL over the package's export map — an allow-list spelled as a complete deny-list, which is the only form konsistent has. It was written down before only inside a JSDoc block copied verbatim into four template evals, and deduplicating those onto `createVmRunCode` is what left it with no home — the general hazard in a dedupe being that the copies carry prose as well as code, and the prose is the half a diff does not miss.",
+      "paths": [
+        "packages/aai-templates/templates/**/*.eval.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/testing"
+        ]
+      }
+    },
+    {
+      "name": "runtime-capability-entrypoints",
+      "description": "A file under `contracts/entrypoints/` is a capability's EXTRACTION POINT and nothing else: every top-level statement is a re-export, never a declaration. Each one exists so `pnpm check:api-contracts` can extract an API report for one capability alone, hash it, and hold that hash to a committed epoch under `contracts/epochs/<capability>/v<N>.json`. Nothing imports these files and nothing ships them, which is exactly why they need a structural rule rather than a reviewer: a local `type`, `const` or `function` declared in one is extracted as part of that capability's public report, so it hashes into the epoch as though `@alexkroman1/aai-runtime` published it. The consequences run both ways and neither is visible in the file itself. A signature change on the phantom name demands a classification (`--bump <pkg>:<capability> --retain|--drop`) for a symbol that is on no subpath, so nobody can find the export the gate is asking about; and a name genuinely absent from every barrel appears in the capability's report anyway, which is the report an embedder reads as the promise. The repo's existing `barrel-files` convention does not reach these — it matches `*-barrel.ts`, and none of the fifteen is named that way — so until now the one tree whose whole purpose is to be a faithful projection of the published barrels was the one tree free to declare its own symbols. `areBarrelFiles` is the exact predicate: it permits imports, `export … from`, and `export { … }` over identifiers an import brought in, and refuses declarations, top-level expressions and a default export of anything but an imported identifier.",
+      "paths": [
+        "packages/aai-runtime/src/contracts/entrypoints/*.ts"
+      ],
+      "must": {
+        "areBarrelFiles": true
+      }
     }
   ]
 }
