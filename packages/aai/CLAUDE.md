@@ -779,7 +779,7 @@ replaced; what follows is the index plus the rule and the adopters.**
   a key that is not the session id, or `{ timeoutMs }` when a contended mutation
   must fail rather than queue. No template demonstrates it any more, recorded in
   `template-api-allowlist.json` rather than an oversight.
-- **`mapConcurrent(items, size, run)`** (`sdk/map-concurrent.ts`, `/step` — the
+- **`mapConcurrent(items, width, run)`** (`sdk/map-concurrent.ts`, `/step` — the
   other PUBLIC one) — bounded fan-out inside a durable workflow body: a WINDOW
   over a cursor, so a slow item costs only itself. It was `mapInBatches`
   (sequential `Promise.all` batches, since deleted) on the belief

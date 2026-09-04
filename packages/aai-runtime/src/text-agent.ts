@@ -153,7 +153,7 @@ export interface TextTurnOptions {
    * wall-clock deadline is the usual one, since a step cap says nothing
    * about how long a caller waits.
    */
-  stopWhen?: readonly ((opts: {
+  stopWhen?: readonly ((options: {
     steps: readonly StepResult<ToolSet>[];
   }) => boolean | PromiseLike<boolean>)[];
   /**
@@ -197,10 +197,10 @@ export interface TextAgent {
  * instead — the same AssemblyAI LLM Gateway default every other mode gets,
  * on the same one key.
  */
-function resolveModel(opts: TextAgentOptions): LanguageModel {
-  if (opts.model) return opts.model;
-  const descriptor: LlmProvider = opts.agent.llm ?? assemblyAILlm();
-  return resolveLlm(descriptor, opts.providerEnv ?? opts.env ?? {});
+function resolveModel(options: TextAgentOptions): LanguageModel {
+  if (options.model) return options.model;
+  const descriptor: LlmProvider = options.agent.llm ?? assemblyAILlm();
+  return resolveLlm(descriptor, options.providerEnv ?? options.env ?? {});
 }
 
 /**
@@ -230,23 +230,23 @@ export function textAgentHasNoSession(name: string): Error {
  *
  * @public
  */
-export function createTextAgent(opts: TextAgentOptions): TextAgent {
-  const { agent, logger = consoleLogger } = opts;
+export function createTextAgent(options: TextAgentOptions): TextAgent {
+  const { agent, logger = consoleLogger } = options;
   if (agent.text !== true) {
     throw new Error(
       `Agent "${agent.name}" is not a text agent — add \`text: true\` to its ` +
         "definition, or run it as a voice session with `createRuntime`.",
     );
   }
-  const model = resolveModel(opts);
-  const sessionId = opts.sessionId ?? crypto.randomUUID();
-  const env = Object.freeze({ ...(opts.env ?? {}) });
+  const model = resolveModel(options);
+  const sessionId = options.sessionId ?? crypto.randomUUID();
+  const env = Object.freeze({ ...(options.env ?? {}) });
 
   const builtins = mergeBuiltinSurface(
     agent,
     {
-      ...omitUndefined({ fetch: opts.fetch }),
-      ...omitUndefined({ runCode: opts.runCode }),
+      ...omitUndefined({ fetch: options.fetch }),
+      ...omitUndefined({ runCode: options.runCode }),
     },
     { schemas: agentToolsToSchemas(agent.tools ?? {}) },
   );
@@ -265,7 +265,7 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
   // turns do, and three independent spellings is three chances at a text agent
   // whose tools quietly dial a different provider than its replies.
   const toolLlm: LlmProvider = agent.llm ?? assemblyAILlm();
-  const toolEnv = opts.providerEnv ?? opts.env ?? {};
+  const toolEnv = options.providerEnv ?? options.env ?? {};
 
   const generate = createGenerateFn({ llm: toolLlm, env: toolEnv });
 
@@ -276,8 +276,8 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
   const subagents = createSubagentRunner({
     llm: toolLlm,
     env: toolEnv,
-    ...omitUndefined({ fetch: opts.fetch }),
-    ...omitUndefined({ runCode: opts.runCode }),
+    ...omitUndefined({ fetch: options.fetch }),
+    ...omitUndefined({ runCode: options.runCode }),
     logger,
   });
 
@@ -303,13 +303,13 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
       // conversation, which is what makes its slots mean the same thing here as
       // in a session.
       sessionId: call.sessionId || sessionId,
-      workflows: opts.workflows,
+      workflows: options.workflows,
       messages: call.messages,
       generate,
       subagents,
       logger,
       signal: call.options?.signal,
-      timeoutMs: opts.toolTimeoutMs,
+      timeoutMs: options.toolTimeoutMs,
     }),
   );
 

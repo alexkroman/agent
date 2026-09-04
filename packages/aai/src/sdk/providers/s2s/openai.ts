@@ -71,6 +71,6 @@ export interface OpenAIS2sOptions extends ProviderCredentialOptions {
  *
  * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline.
  */
-export function openAIS2s(opts: OpenAIS2sOptions = {}): S2sProvider {
-  return { kind: OPENAI_S2S_KIND, options: { ...opts } };
+export function openAIS2s(options: OpenAIS2sOptions = {}): S2sProvider {
+  return { kind: OPENAI_S2S_KIND, options: { ...options } };
 }

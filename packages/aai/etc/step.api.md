@@ -14,7 +14,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 export function isTransientStatus(status: number): boolean;
 
 // @public
-export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+export function mapConcurrent<T, R>(items: readonly T[], width: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
 
 // @public
 export type MultipartBody = {
@@ -134,11 +134,11 @@ export type StepFetchInit = {
 };
 
 // @public
-export function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+export function stepGenerate(prompt: string, options?: StepGenerateOptions): Promise<string>;
 
 // @public
 export class StepGenerateError extends Error {
-    constructor(message: string, opts: {
+    constructor(message: string, options: {
         status?: number | undefined;
         retryable: boolean;
         retryAfter?: Date | undefined;
@@ -150,7 +150,7 @@ export class StepGenerateError extends Error {
 }
 
 // @public
-export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
 // @public
 export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
@@ -181,7 +181,7 @@ export type StepInfo = {
 export function stepInfo(): StepInfo | undefined;
 
 // @public
-export function stepReadUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+export function stepReadUpload(id: string, options?: ReadUploadOptions): Promise<UploadSlice>;
 
 // @public
 export function stepReport(line: string): Promise<void>;
@@ -190,23 +190,23 @@ export function stepReport(line: string): Promise<void>;
 export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
 
 // @public
-export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
+export function stepSpeak(text: string, options?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public
-export function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+export function stepTranscribePoll(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 
 // @public
-export function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+export function stepTranscribeSubmit(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
     id: string;
 }>;
 
 // @public
-export function stepTranscribeSync(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
+export function stepTranscribeSync(bytes: Uint8Array | readonly Uint8Array[], options?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 
 // @public
-export function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+export function stepTranscribeUpload(uploadId: string, options?: TranscribeRequestOptions): Promise<{
     audioUrl: string;
 }>;
 
@@ -225,7 +225,7 @@ export function stepUploadInfo(id: string): Promise<UploadInfo>;
 export function stepWebhookUrl(token: string): string;
 
 // @public
-export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
+export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, options?: WriteUploadOptions): Promise<UploadInfo>;
 
 // @public
 export function stripJsonFence(reply: string): string;

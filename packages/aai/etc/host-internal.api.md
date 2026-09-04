@@ -420,7 +420,7 @@ export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s
 export function assertUploadToken(id: string): void;
 
 // @public
-export function buildSystemPrompt(config: AgentConfig, opts: {
+export function buildSystemPrompt(config: AgentConfig, options: {
     hasTools: boolean;
     voice?: boolean;
     toolGuidance?: readonly string[] | undefined;
@@ -596,7 +596,7 @@ export interface Epoch {
 }
 
 // @public
-export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], opts?: ExecuteToolOptions) => Promise<string>;
+export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], options?: ExecuteToolOptions) => Promise<string>;
 
 // @public
 export interface ExecuteToolOptions {
@@ -628,7 +628,7 @@ type FfmpegRunOptions = {
 };
 
 // @public
-export function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
+export function ffmpegVersion(options?: FfmpegRunOptions): Promise<string | undefined>;
 
 // @public
 export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
@@ -651,7 +651,7 @@ export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
 export const GATEWAY_KIND: "gateway";
 
 // @public
-export function gatewayModelIds(opts?: {
+export function gatewayModelIds(options?: {
     eu?: boolean;
 }): AssemblyAIGatewayModel[];
 
@@ -921,13 +921,13 @@ export function requestPath(rawUrl: string | undefined): string;
 export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 
 // @public
-export function resolveAllBuiltins(names: readonly string[], opts?: BuiltinToolOptions): ResolvedBuiltins;
+export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
 // @internal
 export function resolveAndAssertPublic(url: string, lookupFn?: DnsLookup): Promise<string | null>;
 
 // @public
-export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
+export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     model: string;
     minTurnSilenceMs: number;
     maxTurnSilenceMs: number;
@@ -944,18 +944,18 @@ export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
 export function resolveAssemblyAITtsLanguage(code: string): string | undefined;
 
 // @public
-export function resolveAssemblyAITtsSettings(opts: AssemblyAITtsOptions): {
+export function resolveAssemblyAITtsSettings(options: AssemblyAITtsOptions): {
     voice: string;
     language?: string;
 };
 
 // @internal
-export function resolveBuiltin(name: string, opts?: BuiltinToolOptions): (ToolDef & {
+export function resolveBuiltin(name: string, options?: BuiltinToolOptions): (ToolDef & {
     guidance?: string;
 }) | undefined;
 
 // @public
-export function resolveCartesiaTtsSettings(opts: CartesiaTtsOptions): {
+export function resolveCartesiaTtsSettings(options: CartesiaTtsOptions): {
     voice: string;
     model: string;
     language: string;
@@ -969,27 +969,27 @@ export type ResolvedBuiltins = {
 };
 
 // @public
-export function resolveDeepgramSttSettings(opts: DeepgramSttOptions): {
+export function resolveDeepgramSttSettings(options: DeepgramSttOptions): {
     model: string;
     language: string;
     endpointingMs: number;
 };
 
 // @public
-export function resolveElevenLabsSttSettings(opts: ElevenLabsSttOptions): {
+export function resolveElevenLabsSttSettings(options: ElevenLabsSttOptions): {
     model: string;
     languageCode?: string;
 };
 
 // @public
-export function resolveRimeTtsSettings(opts: RimeTtsOptions): {
+export function resolveRimeTtsSettings(options: RimeTtsOptions): {
     voice: string;
     model: string;
     language: string;
 };
 
 // @public
-export function resolveSonioxSttSettings(opts: SonioxSttOptions): {
+export function resolveSonioxSttSettings(options: SonioxSttOptions): {
     model: string;
     languageHints?: readonly string[];
 };
@@ -1049,7 +1049,7 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 type SessionMode = "s2s" | "pipeline" | "text";
 
 // @internal
-export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
+export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public
 type SleepOptions = {
@@ -1235,7 +1235,7 @@ export interface SttOpener {
     // (undocumented)
     readonly name: string;
     // (undocumented)
-    open(opts: SttOpenOptions): Promise<SttSession>;
+    open(options: SttOpenOptions): Promise<SttSession>;
 }
 
 // @public
@@ -1352,7 +1352,7 @@ export interface TtsOpener {
     // (undocumented)
     readonly name: string;
     // (undocumented)
-    open(opts: TtsOpenOptions): Promise<TtsSession>;
+    open(options: TtsOpenOptions): Promise<TtsSession>;
 }
 
 // @public
@@ -1470,7 +1470,7 @@ type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;

@@ -60,21 +60,21 @@ export function storageEndpoint(url: string): string {
 }
 
 /** {@link UploadBackend} over Supabase Storage's REST API. */
-export function createHttpUploadBackend(opts: HttpUploadBackendOptions): UploadBackend {
-  const endpoint = storageEndpoint(opts.url);
+export function createHttpUploadBackend(options: HttpUploadBackendOptions): UploadBackend {
+  const endpoint = storageEndpoint(options.url);
   // See `_egress-fetch.ts`: the operator's own bucket is reached the same way the
   // platform is, several windows at a time, so it takes the same HTTP/1.1 pool.
-  const call = opts.fetch ?? blobFetch;
+  const call = options.fetch ?? blobFetch;
   const auth = {
-    apikey: opts.serviceKey,
-    Authorization: `Bearer ${opts.serviceKey}`,
+    apikey: options.serviceKey,
+    Authorization: `Bearer ${options.serviceKey}`,
   };
   // Every segment is encoded: an upload id is `UPLOAD_TOKEN_RE`-checked and a
   // prefix is ours, so nothing here needs escaping today — and a key is composed
   // from three separately-validated pieces, which is exactly the shape where a
   // later fourth piece arrives unvalidated.
   const objectUrl = (key: string): string =>
-    `${endpoint}/object/${encodeURIComponent(opts.bucket)}/${key
+    `${endpoint}/object/${encodeURIComponent(options.bucket)}/${key
       .split("/")
       .map(encodeURIComponent)
       .join("/")}`;

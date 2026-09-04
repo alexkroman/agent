@@ -50,11 +50,11 @@ export const CARRIER_PARAM = "carrier";
 export function startTelephonySession(
   carrierSocket: SessionWebSocket,
   runtime: SessionRuntime,
-  opts: { carrier: CarrierCodec; logger?: Logger },
+  options: { carrier: CarrierCodec; logger?: Logger },
 ): void {
-  const bridge = createTelephonyBridge(carrierSocket, opts);
+  const bridge = createTelephonyBridge(carrierSocket, options);
   runtime.startSession(bridge, {
-    logContext: { transport: "phone", carrier: opts.carrier.name },
+    logContext: { transport: "phone", carrier: options.carrier.name },
   });
 }
 
@@ -85,7 +85,7 @@ function refuse(socket: Duplex, status: string, log: Logger, reason: string): vo
  *
  * @internal
  */
-export function handleTelephonyUpgrade(opts: {
+export function handleTelephonyUpgrade(options: {
   req: http.IncomingMessage;
   socket: Duplex;
   head: Buffer;
@@ -95,10 +95,10 @@ export function handleTelephonyUpgrade(opts: {
   logger: Logger;
   enabled: boolean;
 }): boolean {
-  const rawUrl = opts.req.url;
+  const rawUrl = options.req.url;
   if (requestPath(rawUrl) !== TELEPHONY_PATH) return false;
-  if (!opts.enabled) {
-    refuse(opts.socket, "404 Not Found", opts.logger, "telephony is disabled on this server");
+  if (!options.enabled) {
+    refuse(options.socket, "404 Not Found", options.logger, "telephony is disabled on this server");
     return true;
   }
   const requested = requestQuery(rawUrl).get(CARRIER_PARAM);
@@ -108,11 +108,14 @@ export function handleTelephonyUpgrade(opts: {
     // framing to another produces a socket that connects and then exchanges
     // nothing in either direction, which is far harder to diagnose than a
     // refused upgrade naming the value.
-    refuse(opts.socket, "400 Bad Request", opts.logger, `unknown carrier "${requested}"`);
+    refuse(options.socket, "400 Bad Request", options.logger, `unknown carrier "${requested}"`);
     return true;
   }
-  opts.wss.handleUpgrade(opts.req, opts.socket, opts.head, (ws) => {
-    startTelephonySession(asSessionWebSocket(ws), opts.runtime, { carrier, logger: opts.logger });
+  options.wss.handleUpgrade(options.req, options.socket, options.head, (ws) => {
+    startTelephonySession(asSessionWebSocket(ws), options.runtime, {
+      carrier,
+      logger: options.logger,
+    });
   });
   return true;
 }

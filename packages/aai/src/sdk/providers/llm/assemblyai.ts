@@ -192,17 +192,17 @@ export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
  * {@link ASSEMBLYAI_LLM_DEFAULT_MODEL}. `region: "eu"` selects the EU
  * gateway; {@link AssemblyAIGatewayModel} is the id set.
  */
-export function assemblyAILlm(opts: AssemblyAILlmOptions = {}): LlmProvider {
-  const model = opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL;
+export function assemblyAILlm(options: AssemblyAILlmOptions = {}): LlmProvider {
+  const model = options.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL;
   // See TOOLS_REQUIRE_NO_REASONING: for these models, leaving reasoning on
   // the server-side default is a 500 on every tool-calling turn, so the
   // descriptor carries "none" unless the author named an effort themselves.
   const reasoningEffort =
-    opts.reasoningEffort ?? (TOOLS_REQUIRE_NO_REASONING.has(model) ? "none" : undefined);
+    options.reasoningEffort ?? (TOOLS_REQUIRE_NO_REASONING.has(model) ? "none" : undefined);
   return {
     kind: ASSEMBLYAI_LLM_KIND,
     options: {
-      ...opts,
+      ...options,
       model,
       // `omitUndefined`, not an inverted spread-ternary: this repo has one
       // spelling of an optional field (`guard-invariants` rule 2), and the

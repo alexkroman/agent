@@ -100,6 +100,6 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
  *
  * @public
  */
-export function assemblyAIS2s(opts: AssemblyAIS2sOptions = {}): S2sProvider {
-  return { kind: ASSEMBLYAI_S2S_KIND, options: { ...opts } };
+export function assemblyAIS2s(options: AssemblyAIS2sOptions = {}): S2sProvider {
+  return { kind: ASSEMBLYAI_S2S_KIND, options: { ...options } };
 }

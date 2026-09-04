@@ -5,7 +5,7 @@
 ```ts
 
 // @public
-export function slugifyName(input: string, maxLen: number): string;
+export function slugifyName(name: string, maxLength: number): string;
 
 // (No @packageDocumentation comment for this package)
 

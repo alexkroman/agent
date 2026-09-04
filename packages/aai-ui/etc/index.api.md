@@ -183,7 +183,7 @@ export type ConversationItem = {
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
-export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
+export function createWorkflowApi(options?: WorkflowApiOptions): WorkflowApi;
 
 // @public
 export function Facts(input: FactsProps): ReactNode;
@@ -450,7 +450,7 @@ export type UseConversationResult = {
 };
 
 // @public
-export function useDownloadUrl(uploadId: string | undefined, opts?: UseDownloadUrlOptions): UseDownloadUrlResult;
+export function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
 
 // @public
 export type UseDownloadUrlOptions = {
@@ -517,7 +517,7 @@ export interface UseUserTranscriptResult {
 }
 
 // @public
-export function useWorkflowProgress<T = string>(runId: string | undefined, opts?: {
+export function useWorkflowProgress<T = string>(runId: string | undefined, options?: {
     api?: WorkflowApi;
     namespace?: string;
     startIndex?: number;
@@ -533,7 +533,7 @@ export type UseWorkflowProgressResult<T = string> = {
 };
 
 // @public
-export function useWorkflowRun<R = unknown>(runId: string | undefined, opts?: {
+export function useWorkflowRun<R = unknown>(runId: string | undefined, options?: {
     api?: WorkflowApi;
     intervalMs?: number;
 }): UseWorkflowRunResult<R>;
@@ -546,7 +546,7 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflowRuns<R = unknown>(workflow: string | undefined, opts?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+export function useWorkflowRuns<R = unknown>(workflow: string | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 
 // @public
 export type UseWorkflowRunsOptions = {
@@ -565,7 +565,7 @@ export type UseWorkflowRunsResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflows(opts?: UseWorkflowsOptions): UseWorkflowsResult;
+export function useWorkflows(options?: UseWorkflowsOptions): UseWorkflowsResult;
 
 // @public
 export type UseWorkflowsOptions = {
@@ -581,13 +581,13 @@ export type UseWorkflowsResult = {
 };
 
 // @public
-export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
 
 // @public
-export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowSubmitOptions = {

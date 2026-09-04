@@ -306,14 +306,14 @@ export type UseWorkflowSubmitOptions = {
  */
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
-  opts: UseWorkflowSubmitOptions = {},
+  options: UseWorkflowSubmitOptions = {},
 ): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
-  const { api, recover = true, wait, intervalMs, parallel } = opts;
+  const { api, recover = true, wait, intervalMs, parallel } = options;
   // The key the runs are recorded under: the caller's, or the per-page one this
   // hook mints and stores for itself. Minted even when `recover` is off, so
   // opting out of the LOOKUP still leaves the run findable — by the next load
   // that turns recovery back on, and by anything else holding the key.
-  const key = useDefaultRunKey(opts.key);
+  const key = useDefaultRunKey(options.key);
   // The four states, the live-submission ref, the supersede rule, `reset` and
   // the pause pair — shared with `useWorkflowStream`, which had a copy of every
   // one of them. See `_submission-state.ts`.

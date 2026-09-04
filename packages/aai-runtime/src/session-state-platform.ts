@@ -74,11 +74,11 @@ export type PlatformSessionStateOptions = PlatformEndpoint;
 
 /** One call to the platform's session-state route. */
 async function call(
-  opts: PlatformSessionStateOptions,
+  options: PlatformSessionStateOptions,
   method: string,
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  return await platformResult(opts, {
+  return await platformResult(options, {
     route: PLATFORM_ROUTES.sessionState,
     label: `session-state ${method}`,
     timeoutMs: SESSION_STATE_TIMEOUT_MS,
@@ -146,7 +146,9 @@ function toEvents(value: unknown): StoredSessionEvent[] {
  *
  * @internal
  */
-export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend {
+export function createPlatformStateBackend(
+  options: PlatformSessionStateOptions,
+): SessionStateBackend {
   return {
     name: "platform",
     // Earned: a committed value is a row in the platform's database, which outlives
@@ -154,22 +156,22 @@ export function createPlatformStateBackend(opts: PlatformSessionStateOptions): S
     durable: true,
 
     async load(sessionId) {
-      return toSlotMap(await call(opts, "load", { sessionId }));
+      return toSlotMap(await call(options, "load", { sessionId }));
     },
 
     async commit(sessionId, values) {
       // The store above calls this with only the slots that CHANGED, so the map is
       // small even when the session's state is not.
-      await call(opts, "commit", { sessionId, values: Object.fromEntries(values) });
+      await call(options, "commit", { sessionId, values: Object.fromEntries(values) });
     },
 
     async discard(sessionId) {
-      await call(opts, "discard", { sessionId });
+      await call(options, "discard", { sessionId });
     },
 
     async appendEvents(sessionId, events) {
       if (events.length === 0) return;
-      await call(opts, "appendEvents", {
+      await call(options, "appendEvents", {
         sessionId,
         // The indices travel as they are. They were assigned above this backend, so
         // renumbering them here would hand a client a position it was never told.
@@ -178,11 +180,11 @@ export function createPlatformStateBackend(opts: PlatformSessionStateOptions): S
     },
 
     async readEvents(sessionId, startIndex, limit) {
-      return toEvents(await call(opts, "readEvents", { sessionId, startIndex, limit }));
+      return toEvents(await call(options, "readEvents", { sessionId, startIndex, limit }));
     },
 
     async countEvents(sessionId) {
-      const next = await call(opts, "countEvents", { sessionId });
+      const next = await call(options, "countEvents", { sessionId });
       // `typeof`, not `Number(next)`. `Number(null)` is 0 and `Number("")` is 0, so
       // coercing first turns two unreadable answers into the ONE value that must
       // never be guessed — a resumed session restarting its log at 0 overwrites its

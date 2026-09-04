@@ -386,17 +386,17 @@ const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
  * behaviour change is only to a state nobody chose.
  *
  * @param config - The serializable agent configuration (name, systemPrompt, etc.).
- * @param opts.hasTools - When `true`, includes the TOOLS section (preamble
+ * @param options.hasTools - When `true`, includes the TOOLS section (preamble
  *   discipline, results-not-intentions, mis-hearing retries, error handling).
- * @param opts.voice - Reserved. The delivery rules are always included today
+ * @param options.voice - Reserved. The delivery rules are always included today
  *   because every S2S session speaks; if a text-channel mode ships, gate
  *   `PROMPT_SPEAKING` (and swap `PROMPT_ROLE` for a text variant) here.
- * @param opts.toolGuidance - Extra per-tool guidance lines from built-in tools.
+ * @param options.toolGuidance - Extra per-tool guidance lines from built-in tools.
  * @returns The assembled system prompt string.
  */
 export function buildSystemPrompt(
   config: AgentConfig,
-  opts: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
+  options: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
 ): string {
   const custom = stripDefaultPrefix(config.systemPrompt);
 
@@ -404,14 +404,14 @@ export function buildSystemPrompt(
 
   const sections: string[] = [PROMPT_ROLE, PROMPT_PERSONALITY, PROMPT_SPEAKING, PROMPT_LISTENING];
 
-  if (opts.hasTools) {
+  if (options.hasTools) {
     sections.push(PROMPT_TOOLS);
   }
 
   sections.push(`Today's date is ${today}.`);
 
-  if (opts.toolGuidance && opts.toolGuidance.length > 0) {
-    sections.push(`Built-in tool usage:\n${opts.toolGuidance.join("\n")}`);
+  if (options.toolGuidance && options.toolGuidance.length > 0) {
+    sections.push(`Built-in tool usage:\n${options.toolGuidance.join("\n")}`);
   }
 
   if (custom !== undefined) {

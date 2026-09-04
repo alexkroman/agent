@@ -245,12 +245,12 @@ export type EvalWorkflows = {
    */
   settle<R>(
     runId: string,
-    of: AnyWorkflowDef<R>,
+    workflow: AnyWorkflowDef<R>,
     options?: { timeoutMs?: number | undefined },
   ): Promise<EvalWorkflowRun<R>>;
   settle(
     runId: string,
-    of?: undefined,
+    workflow?: undefined,
     options?: { timeoutMs?: number | undefined },
   ): Promise<EvalWorkflowRun>;
   /** Every run this app has started, oldest first, without waiting for any. */
@@ -296,21 +296,21 @@ export type EvalWorkflows = {
  *   "no workflow backend" message, which describes a deployment problem rather
  *   than this one.
  */
-export function openEvalWorkflows(opts: EvalWorkflowsOptions): EvalWorkflows {
-  const declared = opts.agent.workflows;
+export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows {
+  const declared = options.agent.workflows;
   if (!declared || Object.keys(declared).length === 0) {
     throw new Error(
-      `Agent "${opts.agent.name}" declares no workflows, so there is nothing for an ` +
+      `Agent "${options.agent.name}" declares no workflows, so there is nothing for an ` +
         "eval to run. Declare one with `workflow({ … })` and list it in " +
         "`agent({ workflows })`.",
     );
   }
-  const logger = opts.logger ?? silentLogger;
-  const env = opts.env ?? { ...evalWorkflowCredentials(opts.agent).env };
+  const logger = options.logger ?? silentLogger;
+  const env = options.env ?? { ...evalWorkflowCredentials(options.agent).env };
   const engine = createEvalWorkflowEngine({
     workflows: declared,
     env,
-    ...omitUndefined({ stepFetch: opts.stepFetch, speech: opts.speech }),
+    ...omitUndefined({ stepFetch: options.stepFetch, speech: options.speech }),
   });
   // The REAL client. Only the engine under it is the eval's — see the module doc.
   const client = createWorkflowClient({
@@ -324,7 +324,7 @@ export function openEvalWorkflows(opts: EvalWorkflowsOptions): EvalWorkflows {
   });
 
   const timeoutFor = (override: number | undefined): number =>
-    override ?? opts.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
+    override ?? options.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
 
   async function read(runId: string, timeoutMs: number): Promise<EvalWorkflowRun> {
     const record = engine.record(runId);
@@ -399,10 +399,10 @@ export function openEvalWorkflows(opts: EvalWorkflowsOptions): EvalWorkflows {
     },
     settle(
       runId: string,
-      _of?: AnyWorkflowDef | undefined,
+      _workflow?: AnyWorkflowDef | undefined,
       options?: { timeoutMs?: number | undefined },
     ): Promise<EvalWorkflowRun> {
-      // `_of` is a TYPE argument only, exactly as `WorkflowClient.get`'s is: the
+      // `_workflow` is a TYPE argument only, exactly as `WorkflowClient.get`'s is: the
       // run's own record says which workflow it is.
       return read(runId, timeoutFor(options?.timeoutMs));
     },

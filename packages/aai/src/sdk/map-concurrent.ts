@@ -64,7 +64,7 @@
  *
  * ## The WINDOW is not the concurrency — the ENGINE's step gate is
  *
- * `size` bounds how many step calls this body has in flight. How many of them
+ * `width` bounds how many step calls this body has in flight. How many of them
  * EXECUTE at once is decided one layer down, by `DEFAULT_STEP_CONCURRENCY` in
  * `@alexkroman1/aai-runtime` — **16**. So a window of 32 runs sixteen wide, and
  * past sixteen a wider window buys nothing while still costing a queued job per
@@ -98,7 +98,7 @@
  */
 
 /**
- * Map `items` through `run`, at most `size` at a time, in a replay-safe order.
+ * Map `items` through `run`, at most `width` at a time, in a replay-safe order.
  *
  * Results come back in ITEM order however the individual calls settle, so it
  * substitutes directly for `Promise.all(items.map(run))` where a bound is
@@ -113,10 +113,10 @@
  * decision only the caller can make — do it inside `run`.
  *
  * @param items - What to map. An empty list runs nothing and resolves `[]`.
- * @param size - Most calls in flight at once. Rounded down, and floored at 1.
- *   A size of zero would otherwise start no slot at all — a hang, not an error,
+ * @param width - Most calls in flight at once. Rounded down, and floored at 1.
+ *   A width of zero would otherwise start no slot at all — a hang, not an error,
  *   and a hang inside a workflow body is a run that never completes. A
- *   non-finite size is worse and needs the same floor for a different reason:
+ *   non-finite width is worse and needs the same floor for a different reason:
  *   `Math.min(NaN, n)` is `NaN`, so `Array.from({ length: NaN })` is empty and
  *   the map silently does NOTHING, which reads as an empty input.
  * @param run - Called once per item, with the item and its index in `items`.
@@ -137,10 +137,10 @@
  */
 export async function mapConcurrent<T, R>(
   items: readonly T[],
-  size: number,
+  width: number,
   run: (item: T, index: number) => Promise<R> | R,
 ): Promise<R[]> {
-  const width = Number.isFinite(size) ? Math.max(1, Math.floor(size)) : 1;
+  const slots = Number.isFinite(width) ? Math.max(1, Math.floor(width)) : 1;
   // Sized up front and filled BY INDEX, never appended: results are in item
   // order by construction rather than by sorting, and there is no `push(...)`
   // whose argument list a wide fan-out could overflow.
@@ -180,8 +180,8 @@ export async function mapConcurrent<T, R>(
     }
   };
 
-  // Started synchronously, in order, so the first `width` calls are issued as
-  // items 0..width-1 before any of them settles.
+  // Started synchronously, in order, so the first `slots` calls are issued as
+  // items 0..slots-1 before any of them settles.
   //
   // DRAINED, then thrown. `Promise.all` rejects the moment one slot does, and
   // `stopped` only stops a slot taking a NEW item — so a slot already inside
@@ -196,7 +196,7 @@ export async function mapConcurrent<T, R>(
   // Issue ORDER is untouched, which is what replay correlation rests on: the
   // cursor is still monotonic and still read synchronously, so the Nth call
   // issued is still item N-1.
-  await Promise.allSettled(Array.from({ length: Math.min(width, items.length) }, slot));
+  await Promise.allSettled(Array.from({ length: Math.min(slots, items.length) }, slot));
   // `firstFailure` rather than the settled results, because WHICH rejection is
   // raised matters as much as raising one — see its declaration. Boxed so a
   // rejection whose reason is itself `undefined` is still a failure.

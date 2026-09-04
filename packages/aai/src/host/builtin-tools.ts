@@ -337,10 +337,10 @@ const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
  */
 export function resolveBuiltin(
   name: string,
-  opts?: BuiltinToolOptions,
+  options?: BuiltinToolOptions,
 ): (ToolDef & { guidance?: string }) | undefined {
-  if (Object.hasOwn(SANDBOX_BUILTINS, name)) return SANDBOX_BUILTINS[name]?.(opts?.runCode);
-  if (Object.hasOwn(FETCH_BUILTINS, name)) return FETCH_BUILTINS[name]?.(opts?.fetch);
+  if (Object.hasOwn(SANDBOX_BUILTINS, name)) return SANDBOX_BUILTINS[name]?.(options?.runCode);
+  if (Object.hasOwn(FETCH_BUILTINS, name)) return FETCH_BUILTINS[name]?.(options?.fetch);
   if (Object.hasOwn(STATIC_BUILTINS, name)) return STATIC_BUILTINS[name];
   return undefined;
 }
@@ -358,13 +358,13 @@ export type ResolvedBuiltins = {
  */
 export function resolveAllBuiltins(
   names: readonly string[],
-  opts?: BuiltinToolOptions,
+  options?: BuiltinToolOptions,
 ): ResolvedBuiltins {
   const defs: ToolDefRecord = {};
   const guidance: string[] = [];
 
   for (const name of names) {
-    const def = resolveBuiltin(name, opts);
+    const def = resolveBuiltin(name, options);
     if (!def) continue;
     defs[name] = def;
     if (def.guidance) guidance.push(def.guidance);

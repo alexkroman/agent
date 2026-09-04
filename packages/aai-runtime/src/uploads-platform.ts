@@ -53,7 +53,7 @@
  * no `SUPABASE_DB_URL` — every upload 500ed with nothing to act on.
  *
  * Neither translation is a FALLBACK, and the difference matters: this arm is
- * taken once (`createUploadStore`'s `opts.platform` branch), so there is no local
+ * taken once (`createUploadStore`'s `options.platform` branch), so there is no local
  * store to fall back TO — and a local record behind the platform's bucket would
  * be the half-durable pairing `_upload-store-blobs.ts` refuses everywhere else.
  * Everything else non-2xx throws, because a silent failure would mean an upload
@@ -108,12 +108,12 @@ function notConfiguredError(): UploadsUnavailableError {
 
 /** One call to the platform's upload-records route. */
 async function call(
-  opts: PlatformUploadRecordsOptions,
+  options: PlatformUploadRecordsOptions,
   method: string,
   id: string,
   body: Record<string, unknown> = {},
 ): Promise<unknown> {
-  return await platformResult(opts, {
+  return await platformResult(options, {
     route: PLATFORM_ROUTES.uploadRecords,
     label: `upload-records ${method}`,
     timeoutMs: UPLOAD_RECORD_TIMEOUT_MS,
@@ -157,7 +157,7 @@ function recordOf(value: unknown): UploadRecord | undefined {
  *
  * @internal
  */
-export function createPlatformUploadRecords(opts: PlatformUploadRecordsOptions): UploadRecords {
+export function createPlatformUploadRecords(options: PlatformUploadRecordsOptions): UploadRecords {
   return {
     // Nothing to ensure and nothing to send — see the module doc. Not a no-op by
     // omission: the seam requires the method, and answering it locally is what
@@ -165,11 +165,11 @@ export function createPlatformUploadRecords(opts: PlatformUploadRecordsOptions):
     ensure: () => Promise.resolve(),
 
     async read(id) {
-      return recordOf(await call(opts, "read", id));
+      return recordOf(await call(options, "read", id));
     },
 
     async claim(id, record) {
-      await call(opts, "claim", id, {
+      await call(options, "claim", id, {
         name: record.name,
         type: record.type,
         size: record.size,
@@ -182,7 +182,7 @@ export function createPlatformUploadRecords(opts: PlatformUploadRecordsOptions):
     },
 
     async insert(id, record) {
-      await call(opts, "insert", id, {
+      await call(options, "insert", id, {
         name: record.name,
         type: record.type,
         size: record.size,
@@ -193,7 +193,7 @@ export function createPlatformUploadRecords(opts: PlatformUploadRecordsOptions):
     },
 
     async update(id, state) {
-      await call(opts, "update", id, {
+      await call(options, "update", id, {
         size: state.size,
         complete: state.complete,
         parts: state.parts,
@@ -201,7 +201,7 @@ export function createPlatformUploadRecords(opts: PlatformUploadRecordsOptions):
     },
 
     async finish(id, size) {
-      await call(opts, "finish", id, { size });
+      await call(options, "finish", id, { size });
     },
   };
 }

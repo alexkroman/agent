@@ -76,14 +76,14 @@ export type UseWorkflowsResult = {
  * }
  * ```
  *
- * @param opts - See {@link UseWorkflowsOptions}.
+ * @param options - See {@link UseWorkflowsOptions}.
  * @returns The listing, its loading flag and its failure — see
  * {@link UseWorkflowsResult}.
  *
  * @public
  */
-export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult {
-  const { api, skip = false } = opts;
+export function useWorkflows(options: UseWorkflowsOptions = {}): UseWorkflowsResult {
+  const { api, skip = false } = options;
   const [state, setState] = useState<UseWorkflowsResult>({
     workflows: [],
     // A skipped lookup is not a pending one: `loading: true` forever would hold

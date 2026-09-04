@@ -115,9 +115,11 @@ export type {
  *
  * @public
  */
-export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi {
-  const base = apiRoot(opts.baseUrl);
-  const auth: Record<string, string> = opts.token ? { Authorization: `Bearer ${opts.token}` } : {};
+export function createWorkflowApiClient(options: WorkflowApiClientOptions): WorkflowApi {
+  const base = apiRoot(options.baseUrl);
+  const auth: Record<string, string> = options.token
+    ? { Authorization: `Bearer ${options.token}` }
+    : {};
 
   /**
    * The per-request deadline, or nothing.
@@ -128,8 +130,8 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
    * thing the caller cannot rebuild.
    */
   function deadline(extraMs = 0): { signal?: AbortSignal } {
-    if (opts.timeoutMs === undefined) return {};
-    return { signal: AbortSignal.timeout(opts.timeoutMs + extraMs) };
+    if (options.timeoutMs === undefined) return {};
+    return { signal: AbortSignal.timeout(options.timeoutMs + extraMs) };
   }
 
   /** `POST /runs`, shared by `start` and `startAndWait`. */

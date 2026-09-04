@@ -53,6 +53,6 @@ export interface GatewayLlmOptions extends ModelOptions {}
  * One key, hundreds of models, addressed `"creator/model"`. See
  * https://vercel.com/ai-gateway/models for the list.
  */
-export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider {
-  return { kind: GATEWAY_KIND, options: { ...opts } };
+export function gatewayLlm(options: GatewayLlmOptions): LlmProvider {
+  return { kind: GATEWAY_KIND, options: { ...options } };
 }

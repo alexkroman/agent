@@ -326,7 +326,7 @@ export type UploadStore = UploadReader & {
   create(
     meta: UploadMeta,
     body: AsyncIterable<Uint8Array>,
-    opts?: { limit?: number },
+    options?: { limit?: number },
   ): Promise<UploadInfo>;
   /**
    * Store one file under an id the CALLER chose, readable as it arrives.
@@ -345,7 +345,7 @@ export type UploadStore = UploadReader & {
     id: string,
     meta: UploadMeta,
     body: AsyncIterable<Uint8Array>,
-    opts?: { limit?: number },
+    options?: { limit?: number },
   ): Promise<UploadInfo>;
   /**
    * Claim an id for an upload whose bytes arrive as PARTS, declaring its total.
@@ -361,7 +361,7 @@ export type UploadStore = UploadReader & {
     id: string,
     meta: UploadMeta,
     total: number,
-    opts?: { limit?: number },
+    options?: { limit?: number },
   ): Promise<UploadInfo>;
   /**
    * Store one window of a parts upload, at a byte offset the caller chose.

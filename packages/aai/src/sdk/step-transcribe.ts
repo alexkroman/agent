@@ -210,7 +210,7 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  */
 export async function stepTranscribeUpload(
   uploadId: string,
-  opts: TranscribeRequestOptions = {},
+  options: TranscribeRequestOptions = {},
 ): Promise<{ audioUrl: string }> {
   // Not `stepUploadInfo`: `size` is the readable PREFIX, and a run started while the
   // recording was still arriving would upload the prefix and transcribe it.
@@ -220,13 +220,13 @@ export async function stepTranscribeUpload(
     // The raw key — this API takes it unprefixed, and a `Bearer ` in front of
     // it is a 401 that reads like a wrong key.
     headers: {
-      Authorization: transcribeKey(opts),
+      Authorization: transcribeKey(options),
       "Content-Type": "application/octet-stream",
     },
     body: uploadWindows(uploadId, stored.size),
     signal: transcribeSignal({
-      ...opts,
-      timeoutMs: opts.timeoutMs ?? TRANSCRIBE_UPLOAD_TIMEOUT_MS,
+      ...options,
+      timeoutMs: options.timeoutMs ?? TRANSCRIBE_UPLOAD_TIMEOUT_MS,
     }),
   });
   if (!response.ok) throw await transcribeFailure(response, "Upload");
@@ -288,19 +288,19 @@ export async function stepTranscribeUpload(
  */
 export async function stepTranscribeSubmit(
   audioUrl: string,
-  opts: TranscribeSubmitOptions = {},
+  options: TranscribeSubmitOptions = {},
 ): Promise<{ id: string }> {
   const response = await stepFetch(`${TRANSCRIBE_API}/v2/transcript`, {
     method: "POST",
-    headers: { Authorization: transcribeKey(opts), "Content-Type": "application/json" },
+    headers: { Authorization: transcribeKey(options), "Content-Type": "application/json" },
     body: JSON.stringify({
       // The caller's extras FIRST, so the two arguments this function takes
       // cannot be shadowed by a `params` key saying something else.
-      ...opts.params,
+      ...options.params,
       audio_url: audioUrl,
-      speech_models: opts.models ?? TRANSCRIBE_MODELS,
+      speech_models: options.models ?? TRANSCRIBE_MODELS,
     }),
-    signal: transcribeSignal(opts),
+    signal: transcribeSignal(options),
   });
   if (!response.ok) throw await transcribeFailure(response, "Submit");
 
@@ -337,14 +337,14 @@ export async function stepTranscribeSubmit(
  * retried until the attempts run out.
  */
 export async function stepTranscribePoll(
-  id: string,
-  opts: TranscribeRequestOptions = {},
+  transcriptId: string,
+  options: TranscribeRequestOptions = {},
 ): Promise<TranscribeProgress> {
-  const response = await stepFetch(`${TRANSCRIBE_API}/v2/transcript/${id}`, {
-    headers: { Authorization: transcribeKey(opts) },
-    signal: transcribeSignal(opts),
+  const response = await stepFetch(`${TRANSCRIBE_API}/v2/transcript/${transcriptId}`, {
+    headers: { Authorization: transcribeKey(options) },
+    signal: transcribeSignal(options),
   });
-  if (!response.ok) throw await transcribeFailure(response, `Transcript ${id}`);
+  if (!response.ok) throw await transcribeFailure(response, `Transcript ${transcriptId}`);
 
   const body = (await response.json()) as {
     status?: string;
@@ -369,7 +369,11 @@ export async function stepTranscribePoll(
     done: true,
     status,
     // `audio_duration` is the provider's measurement, in seconds.
-    transcript: { id, text, durationMs: Math.round((body.audio_duration ?? 0) * 1000) },
+    transcript: {
+      id: transcriptId,
+      text,
+      durationMs: Math.round((body.audio_duration ?? 0) * 1000),
+    },
   };
 }
 

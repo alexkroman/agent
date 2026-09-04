@@ -141,8 +141,8 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
  * a model that is deprecated or loses `stream` upstream drops out on the
  * next regeneration instead of waiting to be noticed.
  */
-export function gatewayModelIds(opts: { eu?: boolean } = {}): AssemblyAIGatewayModel[] {
+export function gatewayModelIds(options: { eu?: boolean } = {}): AssemblyAIGatewayModel[] {
   return (Object.entries(ASSEMBLYAI_GATEWAY_MODELS) as [AssemblyAIGatewayModel, GatewayModelInfo][])
-    .filter(([, m]) => m.live && m.tools && m.stream && (!opts.eu || m.eu))
+    .filter(([, m]) => m.live && m.tools && m.stream && (!options.eu || m.eu))
     .map(([id]) => id);
 }

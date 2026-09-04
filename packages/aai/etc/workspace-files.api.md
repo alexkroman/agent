@@ -5,7 +5,7 @@
 ```ts
 
 // @public (undocumented)
-export function decodeWorkspaceText(buf: Uint8Array): string | null;
+export function decodeWorkspaceText(bytes: Uint8Array): string | null;
 
 // @public
 export const IGNORED_WORKSPACE_DIRS: ReadonlySet<string>;
@@ -29,12 +29,12 @@ export const MAX_WORKSPACE_FILE_BYTES = 256000;
 export const MAX_WORKSPACE_FILES = 100;
 
 // @public
-export function snapshotWorkspaceFiles(dir: string, opts?: WorkspaceWalkOptions & {
+export function snapshotWorkspaceFiles(dir: string, options?: WorkspaceWalkOptions & {
     subject?: string | undefined;
 }): Promise<WorkspaceSnapshot>;
 
 // @public
-export function walkWorkspaceFiles(dir: string, opts?: WorkspaceWalkOptions): Promise<string[]>;
+export function walkWorkspaceFiles(dir: string, options?: WorkspaceWalkOptions): Promise<string[]>;
 
 // @public (undocumented)
 export type WorkspaceSnapshot = {

@@ -7,7 +7,7 @@
 import { z } from 'zod';
 
 // @public
-export function buildClientConfig(src: {
+export function buildClientConfig(source: {
     name?: string | undefined;
     greeting?: string | undefined;
     sessionUrl?: string | undefined;
@@ -43,7 +43,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
 // @public
 export interface ClientSink {
     close?(reason?: string): void;
-    event(e: SessionEvent): void;
+    event(event: SessionEvent): void;
     readonly open: boolean;
     playAudioChunk(chunk: Uint8Array): void;
 }

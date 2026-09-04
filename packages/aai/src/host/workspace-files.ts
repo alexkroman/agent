@@ -115,7 +115,7 @@ export function isLocalOnlyFile(name: string): boolean {
 }
 
 /**
- * Decode `buf` as UTF-8, or null when it isn't valid UTF-8.
+ * Decode `bytes` as UTF-8, or null when it isn't valid UTF-8.
  *
  * `fatal` makes an invalid sequence throw instead of becoming U+FFFD, which
  * is the whole point: a workspace is a JSON path→string map and cannot carry
@@ -126,9 +126,9 @@ export function isLocalOnlyFile(name: string): boolean {
  * meant to stop corruption would quietly perform some of its own.
  */
 const UTF8_STRICT = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-export function decodeWorkspaceText(buf: Uint8Array): string | null {
+export function decodeWorkspaceText(bytes: Uint8Array): string | null {
   try {
-    return UTF8_STRICT.decode(buf);
+    return UTF8_STRICT.decode(bytes);
   } catch {
     return null;
   }
@@ -147,10 +147,10 @@ export type WorkspaceWalkOptions = {
  */
 export async function walkWorkspaceFiles(
   dir: string,
-  opts: WorkspaceWalkOptions = {},
+  options: WorkspaceWalkOptions = {},
 ): Promise<string[]> {
   const out: string[] = [];
-  await walkInto(dir, dir, opts.skipFile, out);
+  await walkInto(dir, dir, options.skipFile, out);
   return out.sort((a, b) => a.localeCompare(b));
 }
 
@@ -201,13 +201,13 @@ export type WorkspaceSnapshot = {
  */
 export async function snapshotWorkspaceFiles(
   dir: string,
-  opts: WorkspaceWalkOptions & {
+  options: WorkspaceWalkOptions & {
     /** What the warnings call this tree ("Project" for a push). */
     subject?: string | undefined;
   } = {},
 ): Promise<WorkspaceSnapshot> {
-  const subject = opts.subject ?? "Workspace";
-  const paths = await walkWorkspaceFiles(dir, opts);
+  const subject = options.subject ?? "Workspace";
+  const paths = await walkWorkspaceFiles(dir, options);
   const warnings: string[] = [];
   if (paths.length > MAX_WORKSPACE_FILES) {
     warnings.push(

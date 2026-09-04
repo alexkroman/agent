@@ -182,9 +182,9 @@ export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmiss
  */
 export function useWorkflowStream<D extends AnyWorkflowDef>(
   workflow: string,
-  opts: UseWorkflowStreamOptions = {},
+  options: UseWorkflowStreamOptions = {},
 ): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
-  const { api, key, intervalMs, parallel } = opts;
+  const { api, key, intervalMs, parallel } = options;
   // The four states, the live-submission ref, the supersede rule, `reset` and
   // the pause pair — shared with `useWorkflowSubmit`. See
   // `_submission-state.ts`.
@@ -282,14 +282,14 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
  * listing in state would make a submit before it landed a race, and the failure
  * mode of that race is a `File` reaching a run input.
  */
-async function beginRun(opts: {
+async function beginRun(options: {
   client: WorkflowApi;
   workflow: string;
   input: unknown;
   id: string;
   key?: string;
 }): Promise<{ runId: string; file: File | undefined }> {
-  const { client, workflow, input, id } = opts;
+  const { client, workflow, input, id } = options;
   const field = await uploadField(client, workflow);
   const chosen = field === undefined ? undefined : fileAt(input, field);
   // No file to stream: start the run with the input exactly as given. A workflow
@@ -299,7 +299,7 @@ async function beginRun(opts: {
   const payload = chosen && field ? { ...(input as object), [field]: id } : input;
   // Checked on the PAYLOAD, so the substitution above is what clears it.
   assertSendable(workflow, payload, field);
-  const runId = await client.start(workflow, payload, omitUndefined({ key: opts.key }));
+  const runId = await client.start(workflow, payload, omitUndefined({ key: options.key }));
   return { runId, file: chosen };
 }
 
@@ -311,7 +311,7 @@ async function beginRun(opts: {
  * the id, start the run, then the bytes, then the wake — and the sending is the
  * one step of that list with a loop in it.
  */
-async function streamFile(opts: {
+async function streamFile(options: {
   client: WorkflowApi;
   gate: UploadGate;
   id: string;
@@ -319,7 +319,7 @@ async function streamFile(opts: {
   parallel: UploadParallelOption | undefined;
   report: (status: UploadStatus) => void;
 }): Promise<void> {
-  const { client, gate, id, file, parallel, report } = opts;
+  const { client, gate, id, file, parallel, report } = options;
   await sendThroughGate(gate, async (resume) => {
     await client.uploadStream(id, file, {
       name: file.name,

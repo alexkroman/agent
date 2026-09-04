@@ -44,6 +44,6 @@ export interface MistralLlmOptions extends ModelOptions {}
  * });
  * ```
  */
-export function mistralLlm(opts: MistralLlmOptions): LlmProvider {
-  return { kind: MISTRAL_KIND, options: { ...opts } };
+export function mistralLlm(options: MistralLlmOptions): LlmProvider {
+  return { kind: MISTRAL_KIND, options: { ...options } };
 }

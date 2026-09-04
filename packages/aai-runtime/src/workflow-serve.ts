@@ -210,7 +210,7 @@ export function handleWorkflowRequest(
   res: ServerResponse,
   url: string,
   method: string,
-  opts: {
+  options: {
     /**
      * May this off-box caller reach the delivery door?
      *
@@ -259,7 +259,7 @@ export function handleWorkflowRequest(
   // runtime in a guest, which is work an unauthenticated caller must not be able
   // to trigger. Fails closed when no predicate was supplied, which is every
   // composition that has no platform.
-  if (!opts.allowRemote?.(req)) {
+  if (!options.allowRemote?.(req)) {
     sendJson(res, 401, { error: "unauthorized" });
     return true;
   }
@@ -271,10 +271,10 @@ export function handleWorkflowRequest(
   // guest's guard exits the process mid-call.
   // Resolved once, above the try: three readers now — the resolver's own
   // failure, `serveFetch`, and the delivery door's PARK report.
-  const logger = opts.logger ?? consoleLogger;
+  const logger = options.logger ?? consoleLogger;
   let deliver: ((runId: string) => Promise<unknown>) | undefined;
   try {
-    deliver = opts.deliver?.();
+    deliver = options.deliver?.();
   } catch (err: unknown) {
     logger.error("Workflow delivery unavailable", { error: errorMessage(err) });
     sendJson(res, 500, { error: `Workflow delivery unavailable: ${errorMessage(err)}` });

@@ -67,8 +67,8 @@ const CHANNEL_KINDS = new Map<string, ChannelHandler>();
  *
  * @public
  */
-export function registerChannelHandler(kind: ChannelHandler): void {
-  CHANNEL_KINDS.set(kind.kind, kind);
+export function registerChannelHandler(handler: ChannelHandler): void {
+  CHANNEL_KINDS.set(handler.kind, handler);
 }
 
 /** The tags {@link sendToChannel} can dispatch, in registration order. */

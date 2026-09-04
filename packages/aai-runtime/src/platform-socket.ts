@@ -200,7 +200,7 @@ export type PlatformSocket = {
 /** How a socket is opened — the seam a spec fills. */
 export type CreatePlatformWebSocket = (
   url: string,
-  opts: { headers: Record<string, string> },
+  options: { headers: Record<string, string> },
 ) => HeaderWebSocket;
 
 export type CreatePlatformSocketOptions = {
@@ -247,9 +247,9 @@ export function platformSocketUrl(base: string): string {
  * measured the trade on this path. Turning it on is a one-line, one-measurement
  * change; leaving it on by inheritance is not.
  */
-const openPlatformWebSocket: CreatePlatformWebSocket = (url, opts) =>
+const openPlatformWebSocket: CreatePlatformWebSocket = (url, options) =>
   openHeaderWebSocket(url, {
-    headers: opts.headers,
+    headers: options.headers,
     maxPayload: MAX_PLATFORM_SOCKET_FRAME_BYTES,
   });
 
@@ -266,10 +266,10 @@ type Pending = {
  *
  * @internal
  */
-export function createPlatformSocket(opts: CreatePlatformSocketOptions): PlatformSocket {
-  const log = opts.logger ?? consoleLogger;
-  const create = opts.create ?? openPlatformWebSocket;
-  const url = platformSocketUrl(opts.base);
+export function createPlatformSocket(options: CreatePlatformSocketOptions): PlatformSocket {
+  const log = options.logger ?? consoleLogger;
+  const create = options.create ?? openPlatformWebSocket;
+  const url = platformSocketUrl(options.base);
   const pending = new Map<number, Pending>();
   let socket: HeaderWebSocket | undefined;
   let nextId = 1;
@@ -366,7 +366,7 @@ export function createPlatformSocket(opts: CreatePlatformSocketOptions): Platfor
     if (closed || socket !== undefined) return;
     let opening: HeaderWebSocket;
     try {
-      opening = create(url, { headers: { authorization: `Bearer ${opts.token}` } });
+      opening = create(url, { headers: { authorization: `Bearer ${options.token}` } });
     } catch (err: unknown) {
       // A malformed URL, or `ws` refusing the options. Nothing to close, and the
       // next attempt will fail the same way — which is what the backoff is for.

@@ -221,7 +221,7 @@ export const SPEECH_UNAVAILABLE_MESSAGE =
  *
  * @public
  */
-export async function stepSpeak(text: string, opts: SpeakOptions = {}): Promise<SpokenAudio> {
+export async function stepSpeak(text: string, options: SpeakOptions = {}): Promise<SpokenAudio> {
   const spoken = text.trim();
   if (spoken.length === 0) {
     throw new Error("stepSpeak: nothing to say — `text` is empty.");
@@ -229,19 +229,19 @@ export async function stepSpeak(text: string, opts: SpeakOptions = {}): Promise<
   const synthesizer = (globalThis as StepSpeakSlot)[STEP_SPEAK_SLOT];
   if (!synthesizer) throw new Error(SPEECH_UNAVAILABLE_MESSAGE);
 
-  const sampleRate = opts.sampleRate ?? STEP_SPEAK_SAMPLE_RATE;
-  const voice = opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE;
+  const sampleRate = options.sampleRate ?? STEP_SPEAK_SAMPLE_RATE;
+  const voice = options.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE;
   // Combined rather than either/or: a caller's signal cancels sooner, and the
   // deadline still bounds a caller that passed none — or one whose own signal
   // never fires. Sources are held weakly, so there is no unlink bookkeeping.
   const deadline = AbortSignal.timeout(STEP_SPEAK_TIMEOUT_MS);
-  const signal = opts.signal ? AbortSignal.any([opts.signal, deadline]) : deadline;
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
 
   const pcm = await synthesizer({
     text: spoken,
-    apiKey: requireStepEnv(opts.apiKeyEnv ?? ASSEMBLYAI_TTS_API_KEY_ENV),
+    apiKey: requireStepEnv(options.apiKeyEnv ?? ASSEMBLYAI_TTS_API_KEY_ENV),
     voice,
-    language: opts.language,
+    language: options.language,
     sampleRate,
     signal,
   });

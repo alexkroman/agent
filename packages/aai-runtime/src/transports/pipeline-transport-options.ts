@@ -206,24 +206,24 @@ export interface ResolvedPipelineOptions {
 }
 
 /** Apply the documented default for every defaultable option. */
-export function resolvePipelineOptions(opts: PipelineTransportOptions): ResolvedPipelineOptions {
+export function resolvePipelineOptions(options: PipelineTransportOptions): ResolvedPipelineOptions {
   return {
-    log: opts.logger ?? consoleLogger,
-    sttSampleRate: opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE,
-    ttsSampleRate: opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE,
-    maxSteps: opts.maxSteps ?? DEFAULT_MAX_STEPS,
-    minBargeInWords: opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS,
+    log: options.logger ?? consoleLogger,
+    sttSampleRate: options.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE,
+    ttsSampleRate: options.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE,
+    maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
+    minBargeInWords: options.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS,
     interruptionMinDurationMs:
-      opts.interruptionMinDurationMs ?? DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-    deadAirCoverMs: opts.deadAirCoverMs ?? DEFAULT_DEAD_AIR_COVER_MS,
-    heardLagMs: opts.heardLagMs ?? HEARD_AUDIO_LAG_MS,
-    errorPhrase: opts.errorPhrase ?? DEFAULT_ERROR_PHRASE,
-    startFailurePhrase: opts.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,
-    resumeFalseInterruption: opts.resumeFalseInterruption ?? true,
-    preemptiveGeneration: opts.preemptiveGeneration ?? false,
-    speechIdleTimeoutMs: opts.speechIdleTimeoutMs ?? DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
-    toolChoice: opts.toolChoice ?? DEFAULT_TOOL_CHOICE,
-    toolSchemas: opts.toolSchemas ?? [],
-    executeTool: opts.executeTool,
+      options.interruptionMinDurationMs ?? DEFAULT_INTERRUPTION_MIN_DURATION_MS,
+    deadAirCoverMs: options.deadAirCoverMs ?? DEFAULT_DEAD_AIR_COVER_MS,
+    heardLagMs: options.heardLagMs ?? HEARD_AUDIO_LAG_MS,
+    errorPhrase: options.errorPhrase ?? DEFAULT_ERROR_PHRASE,
+    startFailurePhrase: options.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,
+    resumeFalseInterruption: options.resumeFalseInterruption ?? true,
+    preemptiveGeneration: options.preemptiveGeneration ?? false,
+    speechIdleTimeoutMs: options.speechIdleTimeoutMs ?? DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
+    toolChoice: options.toolChoice ?? DEFAULT_TOOL_CHOICE,
+    toolSchemas: options.toolSchemas ?? [],
+    executeTool: options.executeTool,
   };
 }

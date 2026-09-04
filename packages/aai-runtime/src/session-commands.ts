@@ -41,7 +41,7 @@ export type CommandDeps = {
   clearHistory: () => void;
   /** Host/relay mode: settle a pending relayed call. */
   onToolResult?:
-    | ((msg: { toolCallId: string; result: string; error?: string }) => void)
+    | ((message: { toolCallId: string; result: string; error?: string }) => void)
     | undefined;
 };
 

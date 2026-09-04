@@ -1,0 +1,14 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "subagent",
+  "epoch": 15,
+  "sha256": "4fe9732178183eba75869000d627d1c5caec7b9241efeb0171b0f0961dda6049",
+  "exports": [
+    "DelegateFn",
+    "DelegateOptions",
+    "DelegateResult",
+    "SubagentDef",
+    "SubagentToolCall",
+    "subagent"
+  ]
+}

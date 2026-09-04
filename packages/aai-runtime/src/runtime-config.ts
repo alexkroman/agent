@@ -13,7 +13,6 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
 } from "@alexkroman1/aai/host-internal";
 
-/** Structured context attached to log messages. */
 /** Structured context attached to a log line. */
 export type LogContext = Record<string, unknown>;
 
@@ -21,7 +20,7 @@ export type LogContext = Record<string, unknown>;
 export type LogLevel = "info" | "warn" | "error" | "debug";
 
 /** A single log method: message plus optional structured context. */
-export type LogFn = (msg: string, ctx?: LogContext) => void;
+export type LogFn = (message: string, ctx?: LogContext) => void;
 
 /**
  * Structured logger interface. Used by tests to suppress output and by
@@ -31,13 +30,13 @@ export type LogFn = (msg: string, ctx?: LogContext) => void;
  * ```ts
  * import { agent } from "@alexkroman1/aai";
  * import { createRuntime, type Logger } from "@alexkroman1/aai-runtime";
- * declare const myBackend: { log(level: string, msg: string, ctx?: object): void };
+ * declare const myBackend: { log(level: string, message: string, ctx?: object): void };
  *
  * const myLogger: Logger = {
- *   info: (msg, ctx) => myBackend.log("info", msg, ctx),
- *   warn: (msg, ctx) => myBackend.log("warn", msg, ctx),
- *   error: (msg, ctx) => myBackend.log("error", msg, ctx),
- *   debug: (msg, ctx) => myBackend.log("debug", msg, ctx),
+ *   info: (message, ctx) => myBackend.log("info", message, ctx),
+ *   warn: (message, ctx) => myBackend.log("warn", message, ctx),
+ *   error: (message, ctx) => myBackend.log("error", message, ctx),
+ *   debug: (message, ctx) => myBackend.log("debug", message, ctx),
  * };
  * createRuntime({ agent: agent({ name: "My Agent" }), env: {}, logger: myLogger });
  * ```
@@ -51,10 +50,10 @@ function consoleLog(fn: typeof console.log): LogFn {
   // end-of-turn confidence threshold would buy, where a stall sat. Cheap
   // enough for the debug hot path: one `toISOString` per emitted line, and
   // `debug` is a no-op unless AAI_DEBUG is set.
-  return (msg, ctx) => {
+  return (message, ctx) => {
     const at = new Date().toISOString();
-    if (ctx) fn(at, msg, ctx);
-    else fn(at, msg);
+    if (ctx) fn(at, message, ctx);
+    else fn(at, message);
   };
 }
 

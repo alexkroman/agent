@@ -147,10 +147,10 @@ type EvalWorkflows = {
     readonly client: WorkflowClient;
     run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
     run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
-    settle<R>(runId: string, of: AnyWorkflowDef<R>, options?: {
+    settle<R>(runId: string, workflow: AnyWorkflowDef<R>, options?: {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun<R>>;
-    settle(runId: string, of?: undefined, options?: {
+    settle(runId: string, workflow?: undefined, options?: {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun>;
     runs(): Promise<readonly EvalWorkflowRun[]>;
@@ -180,7 +180,7 @@ export type EvalWorkflowTestContext = {
 };
 
 // @internal
-type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -188,7 +188,7 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (msg: string, ctx?: LogContext) => void;
+type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 type Logger = Record<LogLevel, LogFn>;
@@ -197,7 +197,7 @@ type Logger = Record<LogLevel, LogFn>;
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
-export function resolveEvalMode(agent: AgentDef, env?: Record<string, string | undefined>,
+export function resolveEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>,
 overrides?: {
     readonly llm?: LlmProvider;
 }): {
@@ -206,7 +206,7 @@ overrides?: {
 };
 
 // @public
-export function resolveWorkflowEvalMode(agent: AgentDef, env?: Record<string, string | undefined>): {
+export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>): {
     mode: EvalMode;
     reason: string;
 };

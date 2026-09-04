@@ -37,17 +37,17 @@ export function toVercelTools(
         // Per-call abortSignal from streamText takes precedence over bag-level
         // ctx.signal so individual invocations respect outer-turn aborts.
         const signal = options.abortSignal ?? ctx.signal;
-        const opts: ExecuteToolOptions = {};
-        if (signal !== undefined) opts.signal = signal;
+        const executeOptions: ExecuteToolOptions = {};
+        if (signal !== undefined) executeOptions.signal = signal;
         // The AI SDK declares `toolCallId` required, so this guard is dead by
         // the vendor's own types — kept because it is the vendor's claim about
         // its runtime, not ours, and `ExecuteToolOptions.toolCallId` is
         // optional under `exactOptionalPropertyTypes`.
-        if (options.toolCallId !== undefined) opts.toolCallId = options.toolCallId;
+        if (options.toolCallId !== undefined) executeOptions.toolCallId = options.toolCallId;
         // Snapshot history so concurrent mutation from a newer turn can't
         // leak into this tool's view.
         const history = ctx.messages().slice();
-        return ctx.executeTool(schema.name, input, ctx.sessionId, history, opts);
+        return ctx.executeTool(schema.name, input, ctx.sessionId, history, executeOptions);
       },
     });
   }

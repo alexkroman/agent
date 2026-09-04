@@ -63,7 +63,7 @@ one interface with four reference pages was three too many.
 ### anthropicLlm()
 
 ```ts
-function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
+function anthropicLlm(options: AnthropicLlmOptions): LlmProvider;
 ```
 
 Build an Anthropic (Claude) LLM descriptor for pipeline mode. The API key
@@ -71,7 +71,7 @@ is resolved host-side from the agent's env (`ANTHROPIC_API_KEY`).
 
 #### Parameters
 
-##### opts
+##### options
 
 [`AnthropicLlmOptions`](#anthropicllmoptions)
 
@@ -97,7 +97,7 @@ export default agent({
 ### assemblyAILlm()
 
 ```ts
-function assemblyAILlm(opts?: AssemblyAILlmOptions): LlmProvider;
+function assemblyAILlm(options?: AssemblyAILlmOptions): LlmProvider;
 ```
 
 Build an AssemblyAI LLM Gateway descriptor.
@@ -112,7 +112,7 @@ imported side by side without aliasing.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`AssemblyAILlmOptions`](#assemblyaillmoptions)
 
@@ -142,7 +142,7 @@ gateway; [AssemblyAIGatewayModel](#assemblyaigatewaymodel) is the id set.
 ### gatewayLlm()
 
 ```ts
-function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
+function gatewayLlm(options: GatewayLlmOptions): LlmProvider;
 ```
 
 Build a Vercel AI Gateway descriptor.
@@ -153,7 +153,7 @@ descriptor stays free of secrets and safe to serialize.
 
 #### Parameters
 
-##### opts
+##### options
 
 [`GatewayLlmOptions`](#gatewayllmoptions)
 
@@ -182,7 +182,7 @@ https://vercel.com/ai-gateway/models for the list.
 ### googleLlm()
 
 ```ts
-function googleLlm(opts: GoogleLlmOptions): LlmProvider;
+function googleLlm(options: GoogleLlmOptions): LlmProvider;
 ```
 
 Build a Google (Gemini) LLM descriptor for pipeline mode. The API key is
@@ -190,7 +190,7 @@ resolved host-side from the agent's env (`GOOGLE_GENERATIVE_AI_API_KEY`).
 
 #### Parameters
 
-##### opts
+##### options
 
 [`GoogleLlmOptions`](#googlellmoptions)
 
@@ -216,7 +216,7 @@ export default agent({
 ### groqLlm()
 
 ```ts
-function groqLlm(opts: GroqLlmOptions): LlmProvider;
+function groqLlm(options: GroqLlmOptions): LlmProvider;
 ```
 
 Build a Groq LLM descriptor for pipeline mode. The API key is resolved
@@ -224,7 +224,7 @@ host-side from the agent's env (`GROQ_API_KEY`).
 
 #### Parameters
 
-##### opts
+##### options
 
 [`GroqLlmOptions`](#groqllmoptions)
 
@@ -250,7 +250,7 @@ export default agent({
 ### mistralLlm()
 
 ```ts
-function mistralLlm(opts: MistralLlmOptions): LlmProvider;
+function mistralLlm(options: MistralLlmOptions): LlmProvider;
 ```
 
 Build a Mistral LLM descriptor for pipeline mode. The API key is resolved
@@ -258,7 +258,7 @@ host-side from the agent's env (`MISTRAL_API_KEY`).
 
 #### Parameters
 
-##### opts
+##### options
 
 [`MistralLlmOptions`](#mistralllmoptions)
 
@@ -284,7 +284,7 @@ export default agent({
 ### openAILlm()
 
 ```ts
-function openAILlm(opts: OpenAILlmOptions): LlmProvider;
+function openAILlm(options: OpenAILlmOptions): LlmProvider;
 ```
 
 Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
@@ -292,7 +292,7 @@ host-side from the agent's env (`OPENAI_API_KEY`).
 
 #### Parameters
 
-##### opts
+##### options
 
 [`OpenAILlmOptions`](#openaillmoptions)
 
@@ -318,7 +318,7 @@ export default agent({
 ### openRouterLlm()
 
 ```ts
-function openRouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
+function openRouterLlm(options: OpenRouterLlmOptions): LlmProvider;
 ```
 
 Build an OpenRouter descriptor.
@@ -329,7 +329,7 @@ descriptor stays free of secrets and safe to serialize.
 
 #### Parameters
 
-##### opts
+##### options
 
 [`OpenRouterLlmOptions`](#openrouterllmoptions)
 
@@ -358,7 +358,7 @@ https://openrouter.ai/models for the list.
 ### xAILlm()
 
 ```ts
-function xAILlm(opts: XAILlmOptions): LlmProvider;
+function xAILlm(options: XAILlmOptions): LlmProvider;
 ```
 
 Build an xAI (Grok) LLM descriptor for pipeline mode. The API key is
@@ -366,7 +366,7 @@ resolved host-side from the agent's env (`XAI_API_KEY`).
 
 #### Parameters
 
-##### opts
+##### options
 
 [`XAILlmOptions`](#xaillmoptions)
 

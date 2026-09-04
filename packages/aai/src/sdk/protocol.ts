@@ -117,7 +117,7 @@ export interface ClientSink {
    * retained stream. A sink that stamped its own would mint a second id for an
    * event the stream had already recorded under another.
    */
-  event(e: SessionEvent): void;
+  event(event: SessionEvent): void;
   /** Send a single PCM16 audio chunk (raw binary frame) to the client. */
   playAudioChunk(chunk: Uint8Array): void;
   /**

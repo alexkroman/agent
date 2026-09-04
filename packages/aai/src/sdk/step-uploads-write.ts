@@ -68,7 +68,7 @@ export type WriteUploadOptions = {
  * @param bytes - The file. A LIST is stored in order and an async iterable is
  *   streamed, so a step producing something large — a long recording, a
  *   concatenation of many utterances — never has to hold it whole.
- * @param opts - What to declare about it. Both fields are stored verbatim and
+ * @param options - What to declare about it. Both fields are stored verbatim and
  *   neither is inferred; see {@link WriteUploadOptions}.
  *
  * @throws when the process published no store, or published a READ-ONLY one —
@@ -81,11 +81,11 @@ export type WriteUploadOptions = {
  */
 export async function stepWriteUpload(
   bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>,
-  opts: WriteUploadOptions = {},
+  options: WriteUploadOptions = {},
 ): Promise<UploadInfo> {
   const { create } = requireUploadAccess();
   if (!create) throw new Error(UPLOAD_WRITES_UNAVAILABLE_MESSAGE);
-  return await create({ name: opts.name, type: opts.type }, toChunks(bytes));
+  return await create({ name: options.name, type: options.type }, toChunks(bytes));
 }
 
 /**

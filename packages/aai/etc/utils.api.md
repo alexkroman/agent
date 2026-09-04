@@ -35,7 +35,7 @@ export function isRecord(value: unknown): value is Record<string, unknown>;
 export function isToolFailure(value: unknown): value is ToolFailure;
 
 // @public (undocumented)
-export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
+export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;
 };
 
@@ -63,7 +63,7 @@ export function plural(n: number, one: string, many?: string): string;
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
-export function responseErrorMessage(res: Response, label?: string): Promise<string>;
+export function responseErrorMessage(response: Response, label?: string): Promise<string>;
 
 // @public
 export function safeJsonParse(text: string): unknown;
@@ -77,7 +77,7 @@ export type ToolFailure = {
 export function toolFailure(message: string): ToolFailure;
 
 // @public
-export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;
 
 // (No @packageDocumentation comment for this package)
 

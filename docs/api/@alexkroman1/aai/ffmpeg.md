@@ -163,7 +163,7 @@ Narrow an unknown catch to a failed ffmpeg run.
 ### probeMedia()
 
 ```ts
-function probeMedia(source: FfmpegSource, opts?: ProbeOptions): Promise<MediaInfo>;
+function probeMedia(source: FfmpegSource, options?: ProbeOptions): Promise<MediaInfo>;
 ```
 
 What ffprobe makes of a file: duration, container, and every stream.
@@ -188,7 +188,7 @@ duration lives in a trailing index, ffprobe cannot seek to it and answers
 
 [`FfmpegSource`](#ffmpegsource)
 
-##### opts?
+##### options?
 
 [`ProbeOptions`](#probeoptions)
 
@@ -201,7 +201,7 @@ duration lives in a trailing index, ffprobe cannot seek to it and answers
 ### runFfmpeg()
 
 ```ts
-function runFfmpeg(args: readonly string[], opts?: FfmpegRunOptions): Promise<FfmpegRunResult>;
+function runFfmpeg(args: readonly string[], options?: FfmpegRunOptions): Promise<FfmpegRunResult>;
 ```
 
 Run ffmpeg with `args`, exactly as given.
@@ -215,7 +215,7 @@ naming its [FfmpegFailureKind](#ffmpegfailurekind).
 
 readonly `string`[]
 
-##### opts?
+##### options?
 
 [`FfmpegRunOptions`](#ffmpegrunoptions)
 
@@ -242,7 +242,7 @@ await runFfmpeg([
 ### transcodeToWav()
 
 ```ts
-function transcodeToWav(source: FfmpegSource, opts?: TranscodeToWavOptions): Promise<Uint8Array<ArrayBufferLike>>;
+function transcodeToWav(source: FfmpegSource, options?: TranscodeToWavOptions): Promise<Uint8Array<ArrayBufferLike>>;
 ```
 
 Re-encode anything ffmpeg can read into linear-PCM WAV bytes.
@@ -266,7 +266,7 @@ that trusts the header's `data` size will read zero samples.
 
 [`FfmpegSource`](#ffmpegsource)
 
-##### opts?
+##### options?
 
 [`TranscodeToWavOptions`](#transcodetowavoptions)
 
@@ -279,7 +279,7 @@ that trusts the header's `data` size will read zero samples.
 ### wavEncodeArgs()
 
 ```ts
-function wavEncodeArgs(opts?: WavEncodeOptions): string[];
+function wavEncodeArgs(options?: WavEncodeOptions): string[];
 ```
 
 The encoder half of a linear-PCM WAV argv — no input, no output.
@@ -301,7 +301,7 @@ await runFfmpeg([
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`WavEncodeOptions`](#wavencodeoptions)
 
@@ -330,7 +330,7 @@ until its attempts run out.
 ##### Constructor
 
 ```ts
-new FfmpegError(opts: {
+new FfmpegError(options: {
   argv: readonly string[];
   binary: string;
   cause?: unknown;
@@ -344,7 +344,7 @@ new FfmpegError(opts: {
 
 ###### Parameters
 
-###### opts
+###### options
 
 ###### argv
 

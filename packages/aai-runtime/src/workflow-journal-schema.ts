@@ -235,13 +235,13 @@ export function workflowJournalDdl(schema?: string): string[] {
  *
  * @public
  */
-export async function ensureWorkflowJournalSchema(opts: {
+export async function ensureWorkflowJournalSchema(options: {
   url: string;
   logger: Logger;
 }): Promise<boolean> {
-  const db = createPostgresDb({ url: opts.url, max: 1 });
+  const db = createPostgresDb({ url: options.url, max: 1 });
   try {
-    return await applyWorkflowJournalDdl({ db, logger: opts.logger });
+    return await applyWorkflowJournalDdl({ db, logger: options.logger });
   } finally {
     await db.close().catch(() => undefined);
   }
@@ -257,12 +257,15 @@ export async function ensureWorkflowJournalSchema(opts: {
  *
  * @internal
  */
-export async function applyWorkflowJournalDdl(opts: { db: Db; logger: Logger }): Promise<boolean> {
+export async function applyWorkflowJournalDdl(options: {
+  db: Db;
+  logger: Logger;
+}): Promise<boolean> {
   try {
-    for (const statement of workflowJournalDdl()) await opts.db.query(statement);
+    for (const statement of workflowJournalDdl()) await options.db.query(statement);
     return true;
   } catch (err: unknown) {
-    opts.logger.warn?.("Workflow journal schema not applied", { error: errorMessage(err) });
+    options.logger.warn?.("Workflow journal schema not applied", { error: errorMessage(err) });
     return false;
   }
 }

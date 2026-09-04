@@ -26,7 +26,7 @@
 import slugifyLib from "@sindresorhus/slugify";
 
 /**
- * Normalize a human-given name into the slug grammar, capped at `maxLen`.
+ * Normalize a human-given name into the slug grammar, capped at `maxLength`.
  *
  * Delegated to `@sindresorhus/slugify` rather than a local regex so
  * non-ASCII transliterates properly ("Café Ordering" → `cafe-ordering`,
@@ -36,7 +36,7 @@ import slugifyLib from "@sindresorhus/slugify";
  *
  * **What it guarantees is the slug CHARACTER grammar, not `VALID_SLUG_RE`.**
  * Every result is empty or matches `/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/`, is at
- * most `maxLen` long, and is unchanged by a second pass. What it does NOT
+ * most `maxLength` long, and is unchanged by a second pass. What it does NOT
  * guarantee is the two-character FLOOR `VALID_SLUG_RE` also requires:
  * `slugifyName("b", 64)` is `"b"`, and so are `"日X"` -> `"x"` and
  * `slugifyName("ab cd", 1)` -> `"a"` — legal outputs the platform refuses.
@@ -51,9 +51,9 @@ import slugifyLib from "@sindresorhus/slugify";
  * answers `null`. Padding a one-character result would invent a name nobody
  * typed, and emptying it would conflate "one usable character" with "nothing
  * usable" — a distinction those two callers answer differently. It also could
- * not be done here: `projectBaseFromPrompt` uses this as a TOKENIZER (maxLen
+ * not be done here: `projectBaseFromPrompt` uses this as a TOKENIZER (maxLength
  * 2000, output split on `-`), where a single-character word is a word.
  */
-export function slugifyName(input: string, maxLen: number): string {
-  return slugifyLib(input, { decamelize: false }).slice(0, maxLen).replace(/-+$/, "");
+export function slugifyName(name: string, maxLength: number): string {
+  return slugifyLib(name, { decamelize: false }).slice(0, maxLength).replace(/-+$/, "");
 }

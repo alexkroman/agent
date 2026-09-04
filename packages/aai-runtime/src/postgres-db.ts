@@ -303,13 +303,13 @@ async function reserveWithin(
  *
  * @public
  */
-export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
-  const sql = postgres(opts.url, {
-    max: opts.max ?? 4,
+export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb {
+  const sql = postgres(options.url, {
+    max: options.max ?? 4,
     prepare: false,
-    idle_timeout: opts.idleTimeoutSeconds ?? POOL_IDLE_TIMEOUT_SECONDS,
-    onnotice: opts.onNotice ?? logNotice,
-    ...omitUndefined({ connect_timeout: opts.connectTimeoutSeconds }),
+    idle_timeout: options.idleTimeoutSeconds ?? POOL_IDLE_TIMEOUT_SECONDS,
+    onnotice: options.onNotice ?? logNotice,
+    ...omitUndefined({ connect_timeout: options.connectTimeoutSeconds }),
   });
 
   /**
@@ -345,11 +345,11 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
     };
 
   return {
-    query: queryOn(sql, opts.queryTimeoutMs),
+    query: queryOn(sql, options.queryTimeoutMs),
     async reserve(): Promise<ReservedDb> {
-      const reserved = await reserveWithin(sql, opts.reserveTimeoutMs);
+      const reserved = await reserveWithin(sql, options.reserveTimeoutMs);
       return {
-        query: queryOn(reserved, opts.reservedQueryTimeoutMs),
+        query: queryOn(reserved, options.reservedQueryTimeoutMs),
         release: () => reserved.release(),
       };
     },

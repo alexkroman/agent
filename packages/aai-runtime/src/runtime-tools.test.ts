@@ -69,7 +69,7 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
   // required member, and the tool surface then quietly loses it.
   const { executeTool } = setupTools({
     agent,
-    opts: { agent, env: {} },
+    options: { agent, env: {} },
     llm: undefined,
     env: {},
     providerEnv: {},

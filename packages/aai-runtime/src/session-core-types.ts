@@ -54,7 +54,7 @@ export type ServerSessionOptions = {
    * it is the only thing that settles a pending relay call, and an observe-only
    * hook could not.
    */
-  onToolResult?: (msg: { toolCallId: string; result: string; error?: string }) => void;
+  onToolResult?: (message: { toolCallId: string; result: string; error?: string }) => void;
 };
 
 /**
@@ -108,7 +108,7 @@ export type ServerSession = {
    * commands. An unrecognised type is a no-op here for the same
    * forward-compatibility reason `lenientParse` tolerates one.
    */
-  command(cmd: SessionCommand): void;
+  command(command: SessionCommand): void;
   /** Binary user audio from the client. Not a command — see the module doc. */
   onAudio(bytes: Uint8Array): void;
   /**

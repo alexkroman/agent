@@ -205,7 +205,7 @@ A workflow trigger, which takes flat variables and not Block Kit.
 ### registerChannelHandler()
 
 ```ts
-function registerChannelHandler(kind: ChannelHandler): void;
+function registerChannelHandler(handler: ChannelHandler): void;
 ```
 
 Register a channel kind, so `sendToChannel` can dispatch a descriptor
@@ -227,7 +227,7 @@ overridable — and is why the tag is the identity rather than the value.
 
 #### Parameters
 
-##### kind
+##### handler
 
 [`ChannelHandler`](#channelhandler)
 

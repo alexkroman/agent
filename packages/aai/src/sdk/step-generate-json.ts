@@ -98,9 +98,9 @@ export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOp
  */
 export async function stepGenerateJson<S extends StandardSchemaV1>(
   prompt: string,
-  opts: StepGenerateJsonOptions<S>,
+  options: StepGenerateJsonOptions<S>,
 ): Promise<InferSchemaOutput<S>> {
-  const { schema, ...generate } = opts;
+  const { schema, ...generate } = options;
   const reply = await stepGenerate(prompt, generate);
   const parsed = safeJsonParse(stripJsonFence(reply));
   // A record OR an array, spelled out — this is the one guard in the package

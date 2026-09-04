@@ -230,7 +230,7 @@ export interface SttOpenOptions {
  */
 export interface SttOpener {
   readonly name: string;
-  open(opts: SttOpenOptions): Promise<SttSession>;
+  open(options: SttOpenOptions): Promise<SttSession>;
 }
 
 // -------- TTS openable (host-only) ------------------------------------------
@@ -331,5 +331,5 @@ export interface TtsOpenOptions {
  */
 export interface TtsOpener {
   readonly name: string;
-  open(opts: TtsOpenOptions): Promise<TtsSession>;
+  open(options: TtsOpenOptions): Promise<TtsSession>;
 }

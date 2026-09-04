@@ -71,19 +71,19 @@ function normalizeResult(raw: string): string {
  *
  * @internal
  */
-export function createRelayExecuteTool(opts: {
+export function createRelayExecuteTool(options: {
   send: (event: ToolCallEvent) => void;
   timeoutMs?: number | undefined;
 }): RelayExecuteTool {
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_RELAY_TOOL_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_RELAY_TOOL_TIMEOUT_MS;
   type Pending = {
     resolve: (value: string) => void;
     reject: (reason: Error) => void;
   };
   const pending = new Map<string, Pending>();
 
-  const executeTool: ExecuteTool = (name, args, _sessionId, _messages, callOpts) => {
-    const toolCallId = callOpts?.toolCallId;
+  const executeTool: ExecuteTool = (name, args, _sessionId, _messages, callOptions) => {
+    const toolCallId = callOptions?.toolCallId;
     if (!toolCallId) {
       // Defensive: every path should thread a toolCallId (see session-core /
       // to-vercel-tools). Without one the result can't be correlated.
@@ -101,7 +101,7 @@ export function createRelayExecuteTool(opts: {
         ),
       );
     }
-    const signal = callOpts?.signal;
+    const signal = callOptions?.signal;
     if (signal?.aborted) {
       return Promise.resolve(
         serializeToolFailure(`Relay tool "${name}" (${toolCallId}) was cancelled`),
@@ -109,7 +109,7 @@ export function createRelayExecuteTool(opts: {
     }
     const { promise, resolve, reject } = Promise.withResolvers<string>();
     pending.set(toolCallId, { resolve, reject });
-    opts.send({ type: "tool.called", toolCallId, toolName: name, args });
+    options.send({ type: "tool.called", toolCallId, toolName: name, args });
     // p-timeout owns the deadline and the abort listener: it rejects with the
     // timeout Error below, or with the signal's abort reason on cancellation.
     // Either way the pending entry is dropped once the call settles.

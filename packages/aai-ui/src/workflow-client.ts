@@ -135,15 +135,15 @@ export type WorkflowApiOptions = {
  * }
  * ```
  *
- * @param opts - See {@link WorkflowApiOptions}. Both fields are optional; the
+ * @param options - See {@link WorkflowApiOptions}. Both fields are optional; the
  * default base URL is the page's own origin and path.
  * @returns The call set — see {@link WorkflowApi}.
  *
  * @public
  */
-export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
+export function createWorkflowApi(options: WorkflowApiOptions = {}): WorkflowApi {
   return createWorkflowApiClient({
-    baseUrl: opts.baseUrl ?? pageBaseUrl(),
-    ...omitUndefined({ token: opts.token }),
+    baseUrl: options.baseUrl ?? pageBaseUrl(),
+    ...omitUndefined({ token: options.token }),
   });
 }

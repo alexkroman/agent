@@ -105,7 +105,7 @@ export class FfmpegError extends Error {
   readonly binary: string;
   readonly argv: readonly string[];
 
-  constructor(opts: {
+  constructor(options: {
     kind: FfmpegFailureKind;
     message: string;
     binary: string;
@@ -115,14 +115,14 @@ export class FfmpegError extends Error {
     stderr?: string;
     cause?: unknown;
   }) {
-    super(opts.message, omitUndefined({ cause: opts.cause }));
+    super(options.message, omitUndefined({ cause: options.cause }));
     this.name = "FfmpegError";
-    this.kind = opts.kind;
-    this.exitCode = opts.exitCode ?? null;
-    this.signal = opts.signal ?? null;
-    this.stderr = opts.stderr ?? "";
-    this.binary = opts.binary;
-    this.argv = opts.argv;
+    this.kind = options.kind;
+    this.exitCode = options.exitCode ?? null;
+    this.signal = options.signal ?? null;
+    this.stderr = options.stderr ?? "";
+    this.binary = options.binary;
+    this.argv = options.argv;
   }
 }
 
@@ -187,19 +187,19 @@ export function resolveBinary(
 export function spawnFfmpeg(
   binary: string,
   args: readonly string[],
-  opts: FfmpegRunOptions & { installHint: string; pathEnv: string },
+  options: FfmpegRunOptions & { installHint: string; pathEnv: string },
 ): Promise<FfmpegRunResult> {
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_FFMPEG_TIMEOUT_MS;
-  const maxOutputBytes = opts.maxOutputBytes ?? DEFAULT_MAX_FFMPEG_OUTPUT_BYTES;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_FFMPEG_TIMEOUT_MS;
+  const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_FFMPEG_OUTPUT_BYTES;
   const deadline = AbortSignal.timeout(timeoutMs);
-  const signal = opts.signal ? AbortSignal.any([opts.signal, deadline]) : deadline;
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
   const startedAt = performance.now();
 
   return new Promise<FfmpegRunResult>((resolve, reject) => {
     const child = spawn(binary, [...args], {
-      ...omitUndefined({ cwd: opts.cwd }),
+      ...omitUndefined({ cwd: options.cwd }),
       signal,
-      stdio: [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+      stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
     const fail = (opt: Omit<ConstructorParameters<typeof FfmpegError>[0], "binary" | "argv">) =>
       reject(new FfmpegError({ ...opt, binary, argv: args }));
@@ -230,13 +230,13 @@ export function spawnFfmpeg(
       stderrTail.push(decoder.write(chunk));
     });
 
-    if (opts.stdin !== undefined && child.stdin) {
+    if (options.stdin !== undefined && child.stdin) {
       // EPIPE is ROUTINE, not an error: ffmpeg exits as soon as it has what it
       // needs (`-t 5` of a long input, a bad header), and an unhandled `error`
       // on this stream would take the process down with it. The child's own
       // exit is the outcome that matters, so this one is swallowed.
       child.stdin.on("error", () => undefined);
-      child.stdin.end(opts.stdin);
+      child.stdin.end(options.stdin);
     }
 
     child.on("error", (err: NodeJS.ErrnoException) => {
@@ -245,9 +245,9 @@ export function spawnFfmpeg(
           kind: "missing-binary",
           message:
             `${binary} is not installed. A deployed agent's sandbox has it; under \`aai dev\` ` +
-            `install ${opts.installHint} locally (\`brew install ffmpeg\`, ` +
+            `install ${options.installHint} locally (\`brew install ffmpeg\`, ` +
             "`apt-get install ffmpeg`) or point " +
-            `${opts.pathEnv} at a binary.`,
+            `${options.pathEnv} at a binary.`,
           cause: err,
         });
       }

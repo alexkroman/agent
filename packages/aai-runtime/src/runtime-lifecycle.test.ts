@@ -574,8 +574,8 @@ describe("Runtime — session routing", () => {
     expect(createWebSocket).not.toHaveBeenCalled();
 
     // Pipeline providers saw the resolved host-side credentials.
-    expect(stt.last()?.opts.apiKey).toBe("stt-key");
-    expect(tts.last()?.opts.apiKey).toBe("tts-key");
+    expect(stt.last()?.options.apiKey).toBe("stt-key");
+    expect(tts.last()?.options.apiKey).toBe("tts-key");
 
     await session.stop();
     fakes.unregister();

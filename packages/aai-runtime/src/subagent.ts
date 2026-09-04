@@ -95,12 +95,12 @@ export const NESTED_DELEGATE_MESSAGE =
  *
  * @internal
  */
-export function createSubagentRunner(opts: CreateSubagentRunnerOptions): SubagentRunner {
-  const logger = opts.logger ?? consoleLogger;
-  const modelFor = createLlmModelCache(opts.env);
+export function createSubagentRunner(options: CreateSubagentRunnerOptions): SubagentRunner {
+  const logger = options.logger ?? consoleLogger;
+  const modelFor = createLlmModelCache(options.env);
 
   const resolveModel = (sub: SubagentDef): LanguageModel => {
-    const descriptor = sub.llm ? normalizeLlm(sub.llm) : opts.llm;
+    const descriptor = sub.llm ? normalizeLlm(sub.llm) : options.llm;
     if (!isLlmDescriptor(descriptor)) {
       throw new Error(
         `subagent "${sub.name}": no LLM configured. Give the subagent an \`llm\` ` +
@@ -117,8 +117,8 @@ export function createSubagentRunner(opts: CreateSubagentRunnerOptions): Subagen
     const sessionId = parent.sessionId ?? "";
 
     const builtins = resolveAllBuiltins(sub.builtinTools ?? [], {
-      ...omitUndefined({ fetch: opts.fetch }),
-      ...omitUndefined({ runCode: opts.runCode }),
+      ...omitUndefined({ fetch: options.fetch }),
+      ...omitUndefined({ runCode: options.runCode }),
     });
     // The subagent's OWN tools win a name collision with a builtin, which is
     // the same policy `mergeBuiltinSurface` applies one level up — and the

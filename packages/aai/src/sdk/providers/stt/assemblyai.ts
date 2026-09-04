@@ -184,8 +184,8 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
  * "detect per turn", which is not "English" — see
  * {@link AssemblyAISttOptions.languages}.
  */
-export function assemblyAIStt(opts: AssemblyAISttOptions = {}): SttProvider {
-  return { kind: ASSEMBLYAI_STT_KIND, options: { ...opts } };
+export function assemblyAIStt(options: AssemblyAISttOptions = {}): SttProvider {
+  return { kind: ASSEMBLYAI_STT_KIND, options: { ...options } };
 }
 
 /**
@@ -199,7 +199,7 @@ export function assemblyAIStt(opts: AssemblyAISttOptions = {}): SttProvider {
  * measured value behind it (see the constants' docs) — "which endpointing
  * window is this session on" has to be answerable without re-deriving it.
  */
-export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
+export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
   model: string;
   minTurnSilenceMs: number;
   maxTurnSilenceMs: number;
@@ -213,21 +213,21 @@ export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
 } {
   // "off" is spelled as the empty string on the wire; normalize here so the
   // log and the connection parameter agree on what "disabled" looks like.
-  const requestedVoiceFocus = opts.voiceFocus ?? DEFAULT_VOICE_FOCUS;
+  const requestedVoiceFocus = options.voiceFocus ?? DEFAULT_VOICE_FOCUS;
   return {
-    model: opts.model ?? ASSEMBLYAI_STT_DEFAULT_MODEL,
-    minTurnSilenceMs: opts.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
-    maxTurnSilenceMs: opts.maxTurnSilenceMs ?? DEFAULT_MAX_TURN_SILENCE_MS,
+    model: options.model ?? ASSEMBLYAI_STT_DEFAULT_MODEL,
+    minTurnSilenceMs: options.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
+    maxTurnSilenceMs: options.maxTurnSilenceMs ?? DEFAULT_MAX_TURN_SILENCE_MS,
     voiceFocus: requestedVoiceFocus === "off" ? "" : requestedVoiceFocus,
-    voiceFocusThreshold: opts.voiceFocusThreshold ?? DEFAULT_VOICE_FOCUS_THRESHOLD,
-    connectTimeoutMs: opts.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
-    maxConnectRetries: opts.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
+    voiceFocusThreshold: options.voiceFocusThreshold ?? DEFAULT_VOICE_FOCUS_THRESHOLD,
+    connectTimeoutMs: options.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
+    maxConnectRetries: options.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
     // Absent means "detect per turn" — a defaulted ["en"] here would silently
     // disable multilingual transcription for every agent, so it stays unset.
-    ...(opts.languages !== undefined && opts.languages.length > 0
-      ? { languages: opts.languages }
+    ...(options.languages !== undefined && options.languages.length > 0
+      ? { languages: options.languages }
       : {}),
-    ...(opts.streamingUrl ? { streamingUrl: opts.streamingUrl } : {}),
-    ...omitUndefined({ region: opts.region }),
+    ...(options.streamingUrl ? { streamingUrl: options.streamingUrl } : {}),
+    ...omitUndefined({ region: options.region }),
   };
 }

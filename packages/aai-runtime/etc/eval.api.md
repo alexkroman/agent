@@ -159,10 +159,10 @@ export type EvalWorkflows = {
     readonly client: WorkflowClient;
     run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
     run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
-    settle<R>(runId: string, of: AnyWorkflowDef<R>, options?: {
+    settle<R>(runId: string, workflow: AnyWorkflowDef<R>, options?: {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun<R>>;
-    settle(runId: string, of?: undefined, options?: {
+    settle(runId: string, workflow?: undefined, options?: {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun>;
     runs(): Promise<readonly EvalWorkflowRun[]>;
@@ -183,7 +183,7 @@ export type EvalWorkflowsOptions = {
 };
 
 // @internal
-type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -203,7 +203,7 @@ export function lastStateIn(events: readonly SessionEvent[]): unknown;
 type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (msg: string, ctx?: LogContext) => void;
+type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 type Logger = Record<LogLevel, LogFn>;
@@ -212,10 +212,10 @@ type Logger = Record<LogLevel, LogFn>;
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
-export function openEvalSession(opts: EvalSessionOptions): Promise<EvalSession>;
+export function openEvalSession(options: EvalSessionOptions): Promise<EvalSession>;
 
 // @public
-export function openEvalWorkflows(opts: EvalWorkflowsOptions): EvalWorkflows;
+export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
 
 export { RunCodeExecutor }
 

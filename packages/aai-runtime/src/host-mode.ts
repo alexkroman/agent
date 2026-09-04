@@ -199,7 +199,7 @@ export type StartHostSessionOptions = {
   /** Per-tool relay timeout (default `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, 120 000 ms). */
   relayTimeoutMs?: number;
   /** Injectable runtime factory (test seam). Defaults to {@link createRuntime}. */
-  createRuntime?: (opts: RuntimeOptions) => ReturnType<typeof createRuntime>;
+  createRuntime?: (options: RuntimeOptions) => ReturnType<typeof createRuntime>;
   /**
    * Whether this connection may use host mode, overriding the `AAI_ALLOW_HOST`
    * env gate.
@@ -313,16 +313,16 @@ function s2sConfigFromHandshake(msg: {
  *
  * @internal
  */
-export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOptions): void {
-  const log = opts.logger ?? consoleLogger;
-  const makeRuntime = opts.createRuntime ?? createRuntime;
+export function startHostSession(ws: SessionWebSocket, options: StartHostSessionOptions): void {
+  const log = options.logger ?? consoleLogger;
+  const makeRuntime = options.createRuntime ?? createRuntime;
   let settled = false;
 
   const handshakeTimer = setTimeout(() => {
     if (settled) return;
     settled = true;
     rejectHandshake(ws, log, "host-mode: timed out waiting for config frame");
-  }, opts.handshakeTimeoutMs ?? DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS);
+  }, options.handshakeTimeoutMs ?? DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS);
   handshakeTimer.unref?.();
 
   // A socket that dies before any handshake must release the timer — left
@@ -347,7 +347,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     // would wait forever for an `open` that never comes and leak its pool.
     if (ws.readyState !== WS_OPEN) return;
 
-    if (!(opts.allowHost ?? isHostAllowed(env))) {
+    if (!(options.allowHost ?? isHostAllowed(env))) {
       rejectHandshake(ws, log, "host-mode is disabled on this server (AAI_ALLOW_HOST)");
       return;
     }
@@ -364,7 +364,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     }
     const sessionEnv = withHostCredentials(env, host.credentials);
 
-    const hostAgent = buildHostAgent(host, opts.baseAgent);
+    const hostAgent = buildHostAgent(host, options.baseAgent);
     const rateError = assertHostRatesSupported(hostAgent, handshake);
     if (rateError !== undefined) {
       rejectHandshake(ws, log, rateError);
@@ -373,7 +373,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
 
     const relay = createRelayExecuteTool({
       send: (e) => sendEvent(ws, e, log),
-      timeoutMs: opts.relayTimeoutMs,
+      timeoutMs: options.relayTimeoutMs,
     });
 
     let runtime: ReturnType<typeof createRuntime>;
@@ -424,7 +424,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     // means unpaced, for a harness that genuinely steps faster than real time.
     runtime.startSession(ws, {
       ...hostAudioLead(host.audioLeadMs),
-      ...opts.startOpts,
+      ...options.startOpts,
     });
   }
 
@@ -456,7 +456,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     // (or out of rejectHandshake itself — the logger is caller-injectable,
     // same reason s2s-transport wraps its handler): without it, that throw
     // is an unhandled rejection on the host, per handshake.
-    void Promise.resolve(opts.env)
+    void Promise.resolve(options.env)
       .then(
         (env) => startWithEnv(env, result.data),
         (err: unknown) => {

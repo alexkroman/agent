@@ -139,11 +139,11 @@ function dispatchMessage(data: unknown, session: ServerSession, log: Logger, sid
  *
  * @internal
  */
-export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void {
-  const { sessions, logger: log = consoleLogger } = opts;
-  const sessionId = opts.resumeFrom ?? crypto.randomUUID();
+export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOptions): void {
+  const { sessions, logger: log = consoleLogger } = options;
+  const sessionId = options.resumeFrom ?? crypto.randomUUID();
   const sid = sessionId.slice(0, 8);
-  const ctx = opts.logContext ?? {};
+  const ctx = options.logContext ?? {};
 
   /**
    * This socket's session, once built.
@@ -235,7 +235,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         // this key while the old one drains — a key delete here would evict
         // the resumed session's entry and leak it past runtime.shutdown().
         releaseSessionEntry?.();
-        opts.onSessionEnd?.(sessionId, clientSink ?? undefined);
+        options.onSessionEnd?.(sessionId, clientSink ?? undefined);
       })
       .catch(() => {
         /* finally callback errors are not actionable */
@@ -267,7 +267,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
    */
   const lifecycle = createWsSessionLifecycle({
     start: () => {
-      const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
+      const timeoutMs = options.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
       // `p-timeout` rather than anything of the machine's: a rejection is what
       // `starting` is prepared for. Note it does NOT cancel the `start()`
       // underneath, which is why `endSession` runs on that arm.
@@ -328,7 +328,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         // it — an escaping throw would surface as an unhandled exception.
         log.debug("ws: keepalive ping failed", { sid, error: errorMessage(err) });
       }
-    }, opts.keepaliveIntervalMs ?? SESSION_KEEPALIVE_INTERVAL_MS);
+    }, options.keepaliveIntervalMs ?? SESSION_KEEPALIVE_INTERVAL_MS);
     // Never let the keepalive alone hold the event loop open: without this a
     // finished CLI process would linger for the life of the socket.
     keepalive.unref?.();
@@ -341,15 +341,15 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   }
 
   function onOpen(): void {
-    opts.onOpen?.();
+    options.onOpen?.();
     log.info("Session connected", { ...ctx, sid });
     startKeepalive();
 
     const { client, stopPacing } = createClientSink(
       ws,
       log,
-      opts.readyConfig.ttsSampleRate,
-      opts.audioLeadMs,
+      options.readyConfig.ttsSampleRate,
+      options.audioLeadMs,
     );
     clientSink = client;
     stopPacingCurrent = stopPacing;
@@ -358,7 +358,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // kind on a programmatically-built agent) would escape as an
     // uncaughtException and take down the host process.
     try {
-      session = opts.createSession(sessionId, client);
+      session = options.createSession(sessionId, client);
     } catch (err) {
       log.error("Session create failed", { ...ctx, sid, error: errorDetail(err) });
       session = null;
@@ -380,7 +380,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     const superseded = sessions.get(sessionId);
     releaseSessionEntry = sessions.claim(sessionId, session);
     sinkBySession.set(session, client);
-    opts.onSinkCreated?.(sessionId, client);
+    options.onSinkCreated?.(sessionId, client);
     if (superseded && superseded !== session) {
       log.warn("ws: session id already live; evicting the superseded session", { ...ctx, sid });
       sinkBySession.get(superseded)?.close?.("session resumed by another connection");
@@ -393,7 +393,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // id, so the client can reconnect with ?sessionId=<id> to resume; the session
     // owns the send because the frame is an ordinary recorded event now (see
     // `ServerSession.configure`).
-    session.configure(opts.readyConfig);
+    session.configure(options.readyConfig);
 
     // Every branch the continuation used to carry is a transition now: the
     // ready log and the buffer drain, the teardown on a rejected or timed-out
@@ -443,7 +443,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // nulling that used to enforce that is gone. `endSession` runs on this
     // transition out of `starting` and `ready`, and on neither of the others.
     lifecycle.send({ type: "SOCKET_CLOSED" });
-    opts.onClose?.();
+    options.onClose?.();
   });
 
   ws.addEventListener("error", (ev) => {

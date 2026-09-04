@@ -208,8 +208,8 @@ export const __aaiConfig = {
 };
 ${
   runtime
-    ? `export const __aaiCreateRuntime = (opts: Record<string, unknown>) =>
-  createRuntime({ ...opts, agent: __aaiAgent });
+    ? `export const __aaiCreateRuntime = (options: Record<string, unknown>) =>
+  createRuntime({ ...options, agent: __aaiAgent });
 `
     : ""
 }`;
@@ -224,7 +224,7 @@ ${
  * @internal — build hook for aai-server/the studio; not a supported public
  * API and not covered by semver.
  */
-export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): Promise<string> {
+export async function buildWorker(cwd: string, options: BuildWorkerOptions = {}): Promise<string> {
   const wrapperPath = path.join(cwd, WRAPPER_ENTRY_REL);
 
   // The two probes are independent reads of the project directory, and this
@@ -237,7 +237,7 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   ]);
   await fs.writeFile(
     wrapperPath,
-    wrapperEntrySource(opts.runtime !== false, toolFiles, systemPromptFile),
+    wrapperEntrySource(options.runtime !== false, toolFiles, systemPromptFile),
     "utf-8",
   );
 
@@ -245,7 +245,7 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   // DevKit's client transform, which is gone. The key stays ABSENT when the
   // caller supplied none, so a project's own `vite.config.ts` plugins are
   // untouched rather than overwritten with an empty list.
-  const plugins = opts.plugins ?? [];
+  const plugins = options.plugins ?? [];
 
   let result: Awaited<ReturnType<typeof build>>;
   try {
@@ -253,7 +253,7 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
       build({
         root: cwd,
         logLevel: "silent",
-        ...(opts.configFile === false && { configFile: false }),
+        ...(options.configFile === false && { configFile: false }),
         ...(plugins.length > 0 && { plugins }),
         // Bundle everything (the guest sandbox has no node_modules) EXCEPT
         // `node:` builtins, which the SSR build keeps external. Without the
@@ -267,7 +267,7 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
           ssr: true,
           lib: { entry: wrapperPath, formats: ["es"], fileName: "worker" },
           target: "node20",
-          minify: opts.minify ? "oxc" : false,
+          minify: options.minify ? "oxc" : false,
           write: false,
           rollupOptions: {
             output: {

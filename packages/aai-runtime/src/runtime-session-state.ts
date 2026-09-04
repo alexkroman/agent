@@ -60,7 +60,7 @@ export type RuntimeSessionState = {
  * which is what a reader of "Session mode resolved" needs when they are asking why
  * an agent is in the tier it is in.
  */
-function selectBackend(opts: {
+function selectBackend(options: {
   db: Db | undefined;
   logger: Logger;
   platform?: PlatformSessionStateOptions | undefined;
@@ -68,9 +68,9 @@ function selectBackend(opts: {
   // FIRST, and it wins over a `DATABASE_URL` for the same reason the platform WORLD
   // does: a deployed agent's durability should not depend on whether it happens to
   // have provisioned a database.
-  if (opts.platform) return createPlatformStateBackend(opts.platform);
+  if (options.platform) return createPlatformStateBackend(options.platform);
   // A self-hosted server, or `aai dev` against a project with a database.
-  if (opts.db) return createPostgresStateBackend({ db: opts.db });
+  if (options.db) return createPostgresStateBackend({ db: options.db });
   // `aai dev` with no database. A restart forgets the turn, which is the honest
   // trade and what `durable: false` in the resolved line reports.
   return createMemoryStateBackend();
@@ -90,17 +90,17 @@ function selectBackend(opts: {
  *
  * @internal
  */
-export function createRuntimeSessionState(opts: {
+export function createRuntimeSessionState(options: {
   db: Db | undefined;
   logger: Logger;
   /** The platform's session-state endpoint, when this guest has one. */
   platform?: PlatformSessionStateOptions | undefined;
 }): RuntimeSessionState {
-  const backend = selectBackend(opts);
-  const store = createSessionStateStore({ backend, logger: opts.logger });
+  const backend = selectBackend(options);
+  const store = createSessionStateStore({ backend, logger: options.logger });
   return {
     store,
-    stream: createSessionEventStream({ backend, logger: opts.logger }),
+    stream: createSessionEventStream({ backend, logger: options.logger }),
     sweeps: createStateSweeps(store),
     describe: { backend: backend.name, durable: backend.durable },
   };
@@ -141,7 +141,7 @@ export function createRuntimeSessionState(opts: {
  */
 export function attachSessionState(
   core: ServerSession,
-  opts: {
+  options: {
     state: RuntimeSessionState;
     sessionId: string;
     /** This session's event emitter — what a forced state snapshot is pushed through. */
@@ -158,7 +158,7 @@ export function attachSessionState(
     findings?: ResumeFindings | undefined;
   },
 ): void {
-  const { state, sessionId, emitter, release, pushStateSnapshot, findings } = opts;
+  const { state, sessionId, emitter, release, pushStateSnapshot, findings } = options;
   const startCore = core.start.bind(core);
   core.start = async () => {
     await state.store.hydrate(sessionId);

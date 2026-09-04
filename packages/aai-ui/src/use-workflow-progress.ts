@@ -329,14 +329,14 @@ function readProgressUntilComplete<T>(
  */
 export function useWorkflowProgress<T = string>(
   runId: string | undefined,
-  opts: {
+  options: {
     api?: WorkflowApi;
     namespace?: string;
     startIndex?: number;
     intervalMs?: number;
   } = {},
 ): UseWorkflowProgressResult<T> {
-  const { api, namespace, startIndex, intervalMs = DEFAULT_PROGRESS_POLL_MS } = opts;
+  const { api, namespace, startIndex, intervalMs = DEFAULT_PROGRESS_POLL_MS } = options;
   const [progress, setProgress] = useState<T[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [supported, setSupported] = useState(true);

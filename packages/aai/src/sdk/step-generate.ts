@@ -120,18 +120,18 @@ export class StepGenerateError extends Error {
 
   constructor(
     message: string,
-    opts: {
+    options: {
       status?: number | undefined;
       retryable: boolean;
       retryAfter?: Date | undefined;
       cause?: unknown;
     },
   ) {
-    super(message, opts.cause === undefined ? undefined : { cause: opts.cause });
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "StepGenerateError";
-    this.status = opts.status;
-    this.retryable = opts.retryable;
-    this.retryAfter = opts.retryAfter;
+    this.status = options.status;
+    this.retryable = options.retryable;
+    this.retryAfter = options.retryAfter;
   }
 }
 
@@ -174,9 +174,9 @@ export class StepGenerateError extends Error {
  */
 export async function stepGenerate(
   prompt: string,
-  opts: StepGenerateOptions = {},
+  options: StepGenerateOptions = {},
 ): Promise<string> {
-  const base = opts.gatewayUrl ?? ASSEMBLYAI_LLM_GATEWAY_URL;
+  const base = options.gatewayUrl ?? ASSEMBLYAI_LLM_GATEWAY_URL;
   // `stepFetch`, not `fetch`: this is a step's outbound call like any other, and
   // a fan-out that calls the model once per item is exactly the shape HTTP/2
   // multiplexing punishes. It also turns a connection failure into a
@@ -189,16 +189,16 @@ export async function stepGenerate(
       // The gateway is OpenAI-compatible, so the key is a BEARER here — unlike
       // AssemblyAI's streaming sockets, which take it raw. Getting this wrong is
       // a 401 that reads like a wrong key.
-      Authorization: `Bearer ${apiKey(opts.apiKeyEnv ?? ASSEMBLYAI_LLM_API_KEY_ENV)}`,
+      Authorization: `Bearer ${apiKey(options.apiKeyEnv ?? ASSEMBLYAI_LLM_API_KEY_ENV)}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL,
+      model: options.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL,
       messages: [
         // An ARRAY, so `omitUndefined` does not apply: an empty system message
         // is a message the model still reads, so an unset one is dropped rather
         // than sent blank.
-        ...(opts.system === undefined ? [] : [{ role: "system", content: opts.system }]),
+        ...(options.system === undefined ? [] : [{ role: "system", content: options.system }]),
         { role: "user", content: prompt },
       ],
       // The same setting the shipped voice pipeline sends, and for the same
@@ -209,9 +209,9 @@ export async function stepGenerate(
       // `omitUndefined` rather than two spread-ternaries: an unset knob must be
       // ABSENT from the body, not present as `undefined`, and this is the one
       // spelling of that (`guard-invariants.mjs` rule 2).
-      ...omitUndefined({ temperature: opts.temperature, max_tokens: opts.maxTokens }),
+      ...omitUndefined({ temperature: options.temperature, max_tokens: options.maxTokens }),
     }),
-    signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   });
   if (!response.ok) throw await gatewayFailure(response);
 

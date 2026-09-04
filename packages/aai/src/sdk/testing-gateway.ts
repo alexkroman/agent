@@ -94,10 +94,10 @@ export interface StubGateway {
  */
 export function stubGateway(
   replies: string | readonly string[],
-  opts: StubGatewayOptions = {},
+  options: StubGatewayOptions = {},
 ): StubGateway {
   const scripted = typeof replies === "string" ? [replies] : replies;
-  const status = opts.status ?? 200;
+  const status = options.status ?? 200;
   const calls: StubGatewayCall[] = [];
 
   return {
@@ -119,7 +119,7 @@ export function stubGateway(
       return Promise.resolve(
         new Response(JSON.stringify(completionBody(content, status)), {
           status,
-          headers: { "Content-Type": "application/json", ...opts.headers },
+          headers: { "Content-Type": "application/json", ...options.headers },
         }),
       );
     },
@@ -202,10 +202,10 @@ export interface StubGatewayRoute {
  */
 export function stubGatewayRoute(
   replies: string | readonly string[],
-  opts: StubGatewayOptions = {},
+  options: StubGatewayOptions = {},
 ): StubGatewayRoute {
   const scripted = typeof replies === "string" ? [replies] : replies;
-  const status = opts.status ?? 200;
+  const status = options.status ?? 200;
   const calls: StubGatewayCall[] = [];
   return {
     calls,
@@ -217,7 +217,7 @@ export function stubGatewayRoute(
       return {
         status,
         body: completionBody(content, status),
-        ...omitUndefined({ headers: opts.headers }),
+        ...omitUndefined({ headers: options.headers }),
       };
     },
   };

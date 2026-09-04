@@ -286,7 +286,7 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
-export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
+export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public
 type SleepOptions = {
@@ -400,7 +400,7 @@ type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;

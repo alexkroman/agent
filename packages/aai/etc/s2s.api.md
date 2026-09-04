@@ -5,7 +5,7 @@
 ```ts
 
 // @public
-export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
+export function assemblyAIS2s(options?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
 export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
@@ -15,7 +15,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function openAIS2s(opts?: OpenAIS2sOptions): S2sProvider;
+export function openAIS2s(options?: OpenAIS2sOptions): S2sProvider;
 
 // @public
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {

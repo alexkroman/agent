@@ -90,13 +90,15 @@ export type AgentClient = WorkflowApi & {
  *
  * @public
  */
-export function createAgentClient(opts: WorkflowApiClientOptions): AgentClient {
-  const workflows = createWorkflowApiClient(opts);
+export function createAgentClient(options: WorkflowApiClientOptions): AgentClient {
+  const workflows = createWorkflowApiClient(options);
   // No trailing slash: `${base}/${path}` is how every URL here is built, and a
   // base that ends in one produces the `//client-config` a platform routing
   // `/:slug/client-config` answers 404.
-  const baseUrl = opts.baseUrl.replace(/\/+$/, "");
-  const auth: Record<string, string> = opts.token ? { Authorization: `Bearer ${opts.token}` } : {};
+  const baseUrl = options.baseUrl.replace(/\/+$/, "");
+  const auth: Record<string, string> = options.token
+    ? { Authorization: `Bearer ${options.token}` }
+    : {};
 
   return {
     ...workflows,
@@ -105,7 +107,8 @@ export function createAgentClient(opts: WorkflowApiClientOptions): AgentClient {
       // Built above the literal rather than spread into it: the guard is on the
       // BUDGET and the value is a signal, so `omitUndefined` is the spelling
       // this repo builds an optional property from (`guard-invariants` rule 2).
-      const signal = opts.timeoutMs === undefined ? undefined : AbortSignal.timeout(opts.timeoutMs);
+      const signal =
+        options.timeoutMs === undefined ? undefined : AbortSignal.timeout(options.timeoutMs);
       const res = await fetch(`${baseUrl}/${CLIENT_CONFIG_PATH}`, {
         // The bearer is sent when there is one even though this route does not
         // require it: a self-hosted server sitting behind an authenticating

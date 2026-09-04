@@ -70,7 +70,7 @@ export type WorkflowClient = {
    * `unknown`. The argument is used ONLY for that — the run's own record says
    * which workflow it belongs to.
    */
-  get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+  get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
   get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
   /**
    * Runs of `workflow` started with this correlation key, newest first.

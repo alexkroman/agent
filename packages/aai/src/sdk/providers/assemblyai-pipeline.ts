@@ -106,12 +106,12 @@ export interface AssemblyAIPipelineOptions {
  * Every stage bills to `ASSEMBLYAI_API_KEY` — the one key a published agent is
  * guaranteed to have — so this configuration runs the moment it is deployed.
  */
-export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
+export function assemblyAIPipeline(options: AssemblyAIPipelineOptions = {}): {
   stt: SttProvider;
   llm: LlmProvider;
   tts: TtsProvider;
 } {
-  const { voice, region, minTurnSilenceMs, maxTurnSilenceMs } = opts;
+  const { voice, region, minTurnSilenceMs, maxTurnSilenceMs } = options;
   return {
     stt: assemblyAIStt(omitUndefined({ region, minTurnSilenceMs, maxTurnSilenceMs })),
     // `reasoningEffort: "none"` because on a voice line time-to-first-token IS

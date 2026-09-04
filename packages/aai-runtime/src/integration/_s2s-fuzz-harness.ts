@@ -266,8 +266,8 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     //    gets exactly that signal. Only listening for `abort` left the promise
     //    pending forever, `stop()` awaiting the turn, and the property reporting
     //    a 5s hang against a transport that was behaving perfectly.
-    executeTool: (_name, _args, _sid, _messages, opts) => {
-      const callId = opts?.toolCallId ?? "unknown";
+    executeTool: (_name, _args, _sid, _messages, options) => {
+      const callId = options?.toolCallId ?? "unknown";
       hit("toolExecuted");
       return new Promise<string>((resolve) => {
         let done = false;
@@ -278,7 +278,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
           h.pendingTools = h.pendingTools.filter((t) => t.callId !== callId);
           resolve(result);
         };
-        const signal = opts?.signal;
+        const signal = options?.signal;
         if (signal?.aborted === true) {
           hit("toolCancelledBeforeRun");
           finish(serializeToolFailure(`Tool "lookup" was cancelled before it ran`));

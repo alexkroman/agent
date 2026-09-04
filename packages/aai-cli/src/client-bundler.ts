@@ -65,14 +65,14 @@ const DEFAULT_OUT_DIR = ".aai/client";
  */
 export async function buildClient(
   cwd: string,
-  opts: BuildClientOptions = {},
+  options: BuildClientOptions = {},
 ): Promise<Record<string, string>> {
   const clientEntry = path.join(cwd, "client.tsx");
   if (!(await fileExists(clientEntry))) {
     return {}; // No client.tsx — skip client build
   }
 
-  const outDir = opts.outDir ?? DEFAULT_OUT_DIR;
+  const outDir = options.outDir ?? DEFAULT_OUT_DIR;
   const clientDir = path.join(cwd, outDir);
   // Assigned inside the try so cleanup runs even if writeTempHtml itself
   // throws mid-write; until then there is nothing to clean up.
@@ -86,8 +86,8 @@ export async function buildClient(
         root: cwd,
         base: "./",
         logLevel: "silent",
-        ...(opts.configFile === false && { configFile: false }),
-        ...omitUndefined({ plugins: opts.plugins }),
+        ...(options.configFile === false && { configFile: false }),
+        ...omitUndefined({ plugins: options.plugins }),
         resolve: { dedupe: DEDUPED_PEERS },
         build: {
           outDir,

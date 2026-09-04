@@ -122,7 +122,7 @@ type ToolSetup = {
 /** Runtime state the tool-setup paths close over. */
 type ToolSetupDeps = {
   agent: AgentDef;
-  opts: RuntimeOptions;
+  options: RuntimeOptions;
   /**
    * The agent's EFFECTIVE LLM descriptor, already resolved by
    * `resolveEffectiveProviders` in runtime.ts — the one owner of the
@@ -210,7 +210,7 @@ function withNotify(
 function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
   // A caller-supplied one wins — see `RuntimeOptions.generate`.
   return (
-    deps.opts.generate ??
+    deps.options.generate ??
     createGenerateFn({
       llm: deps.llm,
       env: deps.providerEnv,
@@ -230,8 +230,8 @@ function setupSubagents(deps: ToolSetupDeps): SubagentRunner {
   return createSubagentRunner({
     llm: deps.llm,
     env: deps.providerEnv,
-    ...omitUndefined({ fetch: deps.opts.fetch }),
-    ...omitUndefined({ runCode: deps.opts.runCode }),
+    ...omitUndefined({ fetch: deps.options.fetch }),
+    ...omitUndefined({ runCode: deps.options.runCode }),
     ...omitUndefined({ logger: deps.logger }),
   });
 }
@@ -242,8 +242,8 @@ function setupSandboxTools(
   rpcExecuteTool: ExecuteTool,
   schemas: ToolSchema[],
 ): ToolSetup {
-  const { agent, opts, env, workflows, notifier, logger } = deps;
-  const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
+  const { agent, options, env, workflows, notifier, logger } = deps;
+  const builtinFetchOpt = options.fetch ? { fetch: options.fetch } : undefined;
   const generate = setupGenerate(deps);
   const subagents = setupSubagents(deps);
   const resolved = mergeBuiltinSurface(
@@ -253,7 +253,7 @@ function setupSandboxTools(
       // Never absent — `setupTools` refuses this mode without it, so the `?? []`
       // here defaulted an unreachable path and read as a sanction for a drop.
       schemas,
-      ...omitUndefined({ guidance: opts.toolGuidance }),
+      ...omitUndefined({ guidance: options.toolGuidance }),
     },
     logger,
   );
@@ -261,7 +261,7 @@ function setupSandboxTools(
   const toolSchemas = resolved.schemas;
   const frozenEnv = Object.freeze({ ...env });
 
-  const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
+  const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOptions) => {
     // Handle builtins on the host (where SSRF-safe fetch lives) — EXCEPT
     // sandbox-only builtins (see SANDBOX_ONLY_BUILTINS), which execute
     // untrusted JS and must run inside the guest sandbox (Modal/Deno),
@@ -278,15 +278,15 @@ function setupSandboxTools(
         generate,
         subagents,
         logger,
-        signal: callOpts?.signal,
-        timeoutMs: opts.toolTimeoutMs,
+        signal: callOptions?.signal,
+        timeoutMs: options.toolTimeoutMs,
       });
     }
     // Delegate custom tools (and run_code) to the isolate via RPC. Forward
-    // `callOpts` (which carries `toolCallId`) — the relay executor needs it to
+    // `callOptions` (which carries `toolCallId`) — the relay executor needs it to
     // correlate the client's `tool_result`; dropping it makes every relayed
     // tool call fail with "invoked without a toolCallId" in pipeline mode.
-    return rpcExecuteTool(name, args, sessionId, messages, callOpts);
+    return rpcExecuteTool(name, args, sessionId, messages, callOptions);
   };
   return { executeTool, toolSchemas, toolGuidance: resolved.guidance };
 }
@@ -297,12 +297,12 @@ function setupSandboxTools(
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, opts, env, workflows, notifier, logger, emitters, stateStore } = deps;
+  const { agent, options, env, workflows, notifier, logger, emitters, stateStore } = deps;
   const builtinOpts = {
-    ...omitUndefined({ fetch: opts.fetch }),
+    ...omitUndefined({ fetch: options.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
     // real run_code executor; without one the builtin refuses (aai dev).
-    ...omitUndefined({ runCode: opts.runCode }),
+    ...omitUndefined({ runCode: options.runCode }),
   };
   const customSchemas = agentToolsToSchemas(agent.tools ?? {});
   const builtins = mergeBuiltinSurface(agent, builtinOpts, { schemas: customSchemas }, logger);
@@ -359,10 +359,10 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   const syncStateToClient = (
     emitter: SessionEmitter | undefined,
     sessionId: string,
-    options?: { force?: boolean },
+    syncOptions?: { force?: boolean },
   ): void => {
     if (!(emitter && stateSync)) return;
-    const result = stateSync(stateStore.syncSession(sessionId), options);
+    const result = stateSync(stateStore.syncSession(sessionId), syncOptions);
     if (result.push) {
       emitter.emit({ type: "state.updated", state: result.state });
       return;
@@ -405,7 +405,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         // The frame exists so a throw is VISIBLE — see `onUncaught`.
         onUncaught: (message) =>
           liveEmitter()?.emit({ type: "error.reported", code: "tool", message, fatal: false }),
-        timeoutMs: opts.toolTimeoutMs,
+        timeoutMs: options.toolTimeoutMs,
         // Always defined: `ctx.send` is a no-op when no socket holds the id
         // (the same shape a missing sink produced before), and binding it
         // late is what lets a resumed client receive it.
@@ -486,7 +486,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
  * `Record<string, unknown>` and the platform's stored JSON.
  */
 export function setupTools(deps: ToolSetupDeps): ToolSetup {
-  const { executeTool, toolSchemas } = deps.opts;
+  const { executeTool, toolSchemas } = deps.options;
   // `toolSchemas: []` is a legal relay with no tools, so the test is PRESENCE.
   if (Boolean(executeTool) !== Boolean(toolSchemas)) {
     throw new Error(

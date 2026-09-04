@@ -58,6 +58,6 @@ export interface OpenRouterLlmOptions extends ModelOptions {}
  * One key, hundreds of models, addressed `"creator/model"`. See
  * https://openrouter.ai/models for the list.
  */
-export function openRouterLlm(opts: OpenRouterLlmOptions): LlmProvider {
-  return { kind: OPENROUTER_KIND, options: { ...opts } };
+export function openRouterLlm(options: OpenRouterLlmOptions): LlmProvider {
+  return { kind: OPENROUTER_KIND, options: { ...options } };
 }

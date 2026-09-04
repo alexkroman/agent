@@ -116,10 +116,10 @@ function asBytes(data: string | ArrayBuffer | Uint8Array): Uint8Array | null {
  */
 export function createTelephonyBridge(
   carrierSocket: SessionWebSocket,
-  opts: TelephonyBridgeOptions,
+  options: TelephonyBridgeOptions,
 ): SessionWebSocket {
-  const { carrier } = opts;
-  const log = opts.logger ?? consoleLogger;
+  const { carrier } = options;
+  const log = options.logger ?? consoleLogger;
 
   /** Echoed on outbound frames; Twilio drops frames that omit it. */
   let streamId: string | null = null;

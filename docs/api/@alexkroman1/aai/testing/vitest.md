@@ -40,7 +40,7 @@ coupling is the feature rather than a leak.
 ### installStubGateway()
 
 ```ts
-function installStubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayCall[];
+function installStubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayCall[];
 ```
 
 Install a fake LLM gateway as the global `fetch`, and return its call log.
@@ -62,7 +62,7 @@ anyway) makes that moot, and `vi.unstubAllGlobals()` is the explicit undo.
 Completion contents, in order; the last repeats — see
   `stubGateway` in `@alexkroman1/aai/testing`, which this installs.
 
-##### opts?
+##### options?
 
 [`StubGatewayOptions`](../testing.md#stubgatewayoptions)
 

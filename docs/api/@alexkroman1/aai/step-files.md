@@ -73,7 +73,7 @@ and what crosses the step boundary is an upload id.
 function readUploadToFile(
    uploadId: string, 
    path: string, 
-   opts?: ReadUploadToFileOptions
+   options?: ReadUploadToFileOptions
 ): Promise<number>;
 ```
 
@@ -140,7 +140,7 @@ The id a run input carried.
 
 Where to write. Created, or truncated if it exists.
 
-##### opts?
+##### options?
 
 [`ReadUploadToFileOptions`](#readuploadtofileoptions)
 
@@ -163,7 +163,7 @@ when no `size` was given and the upload is
 ### withTempDir()
 
 ```ts
-function withTempDir<T>(work: (dir: string) => Promise<T>, opts?: WithTempDirOptions): Promise<T>;
+function withTempDir<T>(work: (dir: string) => Promise<T>, options?: WithTempDirOptions): Promise<T>;
 ```
 
 Run `work` with a private temp directory, and remove it afterwards.
@@ -195,7 +195,7 @@ and replace the real error with this one.
 Called with the directory. Its result is this call's result, so
   a step returns an upload id out of the scope rather than a path into it.
 
-##### opts?
+##### options?
 
 [`WithTempDirOptions`](#withtempdiroptions)
 
@@ -210,7 +210,7 @@ See [WithTempDirOptions](#withtempdiroptions).
 ### writeUploadFromFile()
 
 ```ts
-function writeUploadFromFile(path: string, opts?: WriteUploadFromFileOptions): Promise<UploadInfo>;
+function writeUploadFromFile(path: string, options?: WriteUploadFromFileOptions): Promise<UploadInfo>;
 ```
 
 Store a local file as an upload, streaming it, and answer with the record.
@@ -235,7 +235,7 @@ the store an `AsyncIterable` is what keeps it off the heap.
 The file to store. Read to EOF; never modified or removed, so a
   [withTempDir](#withtempdir) scope is still what owns its lifetime.
 
-##### opts?
+##### options?
 
 [`WriteUploadFromFileOptions`](#writeuploadfromfileoptions)
 

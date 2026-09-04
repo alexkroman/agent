@@ -11,7 +11,7 @@ aai-ui's browser session is built on it.
 ### buildClientConfig()
 
 ```ts
-function buildClientConfig(src: {
+function buildClientConfig(source: {
   greeting?: string;
   name?: string;
   page?: "voice" | "static";
@@ -32,7 +32,7 @@ surface rule can't drift between them.
 
 #### Parameters
 
-##### src
+##### source
 
 ###### greeting?
 
@@ -253,7 +253,7 @@ react to instead of a socket that silently stops answering.
 ##### event()
 
 ```ts
-event(e: 
+event(event: 
   | {
   audioFormat: string;
   meta: {
@@ -431,7 +431,7 @@ event the stream had already recorded under another.
 
 ###### Parameters
 
-###### e
+###### event
 
   \| \{
   `audioFormat`: `string`;

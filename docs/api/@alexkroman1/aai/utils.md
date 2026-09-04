@@ -501,7 +501,7 @@ pushCapped(log, "d", 3); // ["b", "c", "d"]
 ### responseErrorMessage()
 
 ```ts
-function responseErrorMessage(res: Response, label?: string): Promise<string>;
+function responseErrorMessage(response: Response, label?: string): Promise<string>;
 ```
 
 Read a failed `Response`'s error sentence — the one every route this SDK
@@ -529,7 +529,7 @@ contracts are free to move apart.
 
 #### Parameters
 
-##### res
+##### response
 
 `Response`
 

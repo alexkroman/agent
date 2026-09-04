@@ -40,7 +40,7 @@ import { z } from 'zod';
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
 
 // @internal
-export function applyWorkflowJournalDdl(opts: {
+export function applyWorkflowJournalDdl(options: {
     db: Db;
     logger: Logger;
 }): Promise<boolean>;
@@ -54,10 +54,10 @@ export { CONTAINED_ENV }
 export function createMemoryJournal(): JournalStore;
 
 // @internal
-export function createPlatformJournal(opts: PlatformEndpoint): JournalStore;
+export function createPlatformJournal(options: PlatformEndpoint): JournalStore;
 
 // @internal
-export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName: string, message: unknown, queueOpts?: {
+export function createPlatformQueueSend(options: PlatformQueueOptions): (queueName: string, message: unknown, queueOptions?: {
     deploymentId?: string | undefined;
     idempotencyKey?: string | undefined;
     headers?: Record<string, string> | undefined;
@@ -67,7 +67,7 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }>;
 
 // @internal
-export function createPlatformSocket(opts: CreatePlatformSocketOptions): PlatformSocket;
+export function createPlatformSocket(options: CreatePlatformSocketOptions): PlatformSocket;
 
 // @public (undocumented)
 type CreatePlatformSocketOptions = {
@@ -78,37 +78,37 @@ type CreatePlatformSocketOptions = {
 };
 
 // @internal
-export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend;
+export function createPlatformStateBackend(options: PlatformSessionStateOptions): SessionStateBackend;
 
 // @public
-type CreatePlatformWebSocket = (url: string, opts: {
+type CreatePlatformWebSocket = (url: string, options: {
     headers: Record<string, string>;
 }) => HeaderWebSocket;
 
 // @internal
-export function createPostgresJournal(opts: {
+export function createPostgresJournal(options: {
     db: Db;
 }): JournalStore;
 
 // @internal
-export function createPostgresStateBackend(opts: {
+export function createPostgresStateBackend(options: {
     db: Db;
 }): SessionStateBackend;
 
 // @internal
-export function createSessionEventStream(opts: {
+export function createSessionEventStream(options: {
     backend: SessionStateBackend;
     logger?: Logger | undefined;
 }): SessionEventStream;
 
 // @internal
-export function createSessionStateStore(opts: {
+export function createSessionStateStore(options: {
     backend: SessionStateBackend;
     logger?: Logger | undefined;
 }): SessionStateStore;
 
 // @internal
-export function createUploadStore(opts: {
+export function createUploadStore(options: {
     db?: Db | undefined;
     blobs?: UploadBackend | undefined;
     localDir?: string | undefined;
@@ -138,7 +138,7 @@ type EnqueueBody = {
 };
 
 // @internal
-export function enqueueToPlatform(opts: PlatformQueueOptions, body: EnqueueBody): Promise<string>;
+export function enqueueToPlatform(options: PlatformQueueOptions, body: EnqueueBody): Promise<string>;
 
 // @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
@@ -166,7 +166,7 @@ type ExecuteToolCallOptions = {
 };
 
 // @internal
-export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
+export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, options?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
     logger?: Logger | undefined;
     deliver?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
@@ -200,7 +200,7 @@ type HookRecord = {
 };
 
 // @internal
-type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -256,7 +256,7 @@ export function loadSessionStateConformance(): Promise<SessionStateConformanceSu
 type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (msg: string, ctx?: LogContext) => void;
+type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 type Logger = Record<LogLevel, LogFn>;
@@ -460,7 +460,7 @@ type ServerSession = {
     start(): Promise<void>;
     stop(): Promise<void>;
     readonly faultCode: string | undefined;
-    command(cmd: SessionCommand): void;
+    command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
@@ -623,7 +623,7 @@ export { UPLOAD_TOKEN_RE }
 
 // @public
 type UploadBackend = {
-    put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
+    put(key: string, body: AsyncIterable<Uint8Array>, options?: {
         type?: string | undefined;
         limit?: number | undefined;
     }): Promise<number>;
@@ -640,13 +640,13 @@ type UploadMeta = {
 // @public
 type UploadStore = UploadReader & {
     open(id: string): Promise<OpenUpload | undefined>;
-    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
-    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
-    beginParts(id: string, meta: UploadMeta, total: number, opts?: {
+    beginParts(id: string, meta: UploadMeta, total: number, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
     writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
@@ -654,7 +654,7 @@ type UploadStore = UploadReader & {
 };
 
 // @internal
-export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
+export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOptions): void;
 
 // @internal
 export const WORKFLOW_API_METHODS: readonly string[];

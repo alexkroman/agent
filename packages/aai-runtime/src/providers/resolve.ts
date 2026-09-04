@@ -95,12 +95,12 @@ export type OpenerRegistryEntry<Opener> = {
  */
 function lazyOpener<Opts, Session>(
   kind: string,
-  load: () => Promise<{ open(opts: Opts): Promise<Session> }>,
-): { readonly name: string; open(opts: Opts): Promise<Session> } {
+  load: () => Promise<{ open(options: Opts): Promise<Session> }>,
+): { readonly name: string; open(options: Opts): Promise<Session> } {
   return {
     name: kind,
-    async open(opts: Opts): Promise<Session> {
-      return (await load()).open(opts);
+    async open(options: Opts): Promise<Session> {
+      return (await load()).open(options);
     },
   };
 }

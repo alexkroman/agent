@@ -152,13 +152,13 @@ export type WithTempDirOptions = {
  *
  * @param work - Called with the directory. Its result is this call's result, so
  *   a step returns an upload id out of the scope rather than a path into it.
- * @param opts - See {@link WithTempDirOptions}.
+ * @param options - See {@link WithTempDirOptions}.
  */
 export async function withTempDir<T>(
   work: (dir: string) => Promise<T>,
-  opts: WithTempDirOptions = {},
+  options: WithTempDirOptions = {},
 ): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), opts.prefix ?? "aai-step-"));
+  const dir = await mkdtemp(join(tmpdir(), options.prefix ?? "aai-step-"));
   try {
     return await work(dir);
   } finally {
@@ -251,7 +251,7 @@ export type ReadUploadToFileOptions = {
  *
  * @param uploadId - The id a run input carried.
  * @param path - Where to write. Created, or truncated if it exists.
- * @param opts - See {@link ReadUploadToFileOptions}.
+ * @param options - See {@link ReadUploadToFileOptions}.
  * @returns Bytes written — equal to the upload's size unless the store came back
  *   short, which is the case a caller polling a streamed upload has to notice.
  * @throws {UploadIncompleteError} when no `size` was given and the upload is
@@ -260,22 +260,22 @@ export type ReadUploadToFileOptions = {
 export async function readUploadToFile(
   uploadId: string,
   path: string,
-  opts: ReadUploadToFileOptions = {},
+  options: ReadUploadToFileOptions = {},
 ): Promise<number> {
   // Resolved BEFORE the handle is opened, which `open(path, "w")` makes
   // load-bearing: a refused incomplete upload must leave the destination alone
   // rather than truncate it to nothing on its way out.
-  const size = opts.size ?? (await stepRequireCompleteUpload(uploadId)).size;
-  const windowBytes = opts.windowBytes ?? STEP_FILE_WINDOW_BYTES;
+  const size = options.size ?? (await stepRequireCompleteUpload(uploadId)).size;
+  const windowBytes = options.windowBytes ?? STEP_FILE_WINDOW_BYTES;
   const handle = await open(path, "w");
   try {
     // The presence of `size`, never its VALUE, is what picks the path — it is the
     // caller saying "I am judging completeness", and a caller who did that gets
     // the serial walk however whole the file happens to be.
-    if (opts.size !== undefined)
+    if (options.size !== undefined)
       return await walkWindows(uploadId, handle, path, size, windowBytes);
     return await fanOutWindows(uploadId, handle, path, size, windowBytes, {
-      width: opts.concurrency ?? STEP_FILE_READ_CONCURRENCY,
+      width: options.concurrency ?? STEP_FILE_READ_CONCURRENCY,
     });
   } finally {
     await handle.close();
@@ -337,14 +337,14 @@ async function fanOutWindows(
   path: string,
   size: number,
   windowBytes: number,
-  opts: { width: number },
+  options: { width: number },
 ): Promise<number> {
   const windows: Array<{ start: number; end: number }> = [];
   for (let at = 0; at < size; at += windowBytes) {
     windows.push({ start: at, end: Math.min(at + windowBytes, size) });
   }
 
-  const landed = await mapConcurrent(windows, opts.width, async (window) => {
+  const landed = await mapConcurrent(windows, options.width, async (window) => {
     const slice = await stepReadUpload(uploadId, window);
     // How far this window really got, from the BYTES rather than from the `end`
     // the read echoes back: those agree for every well-behaved store, and where
@@ -451,16 +451,16 @@ export type WriteUploadFromFileOptions = WriteUploadOptions & {
  *
  * @param path - The file to store. Read to EOF; never modified or removed, so a
  *   {@link withTempDir} scope is still what owns its lifetime.
- * @param opts - `name` and `type` are stored verbatim and neither is inferred —
+ * @param options - `name` and `type` are stored verbatim and neither is inferred —
  *   pass both, since `type` is what the byte route serves as `Content-Type` and a
  *   browser will not play a file it was handed as bytes. See
  *   {@link WriteUploadFromFileOptions}.
  */
 export async function writeUploadFromFile(
   path: string,
-  opts: WriteUploadFromFileOptions = {},
+  options: WriteUploadFromFileOptions = {},
 ): Promise<UploadInfo> {
-  const { windowBytes, ...meta } = opts;
+  const { windowBytes, ...meta } = options;
   return await stepWriteUpload(fileChunks(path, windowBytes ?? STEP_FILE_WINDOW_BYTES), meta);
 }
 
