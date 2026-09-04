@@ -9,7 +9,8 @@
     "prestart": "aai build --skip-tests",
     "start": "node server.mjs",
     "build": "aai build",
-    "test": "aai test",
+    "test": "vitest run --exclude \"**/*.eval.test.*\"",
+    "test:agent": "aai test",
     "eval": "aai eval",
     "publish:agent": "aai publish"
   },

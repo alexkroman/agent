@@ -189,6 +189,118 @@ describe("openEvalSession", () => {
   });
 });
 
+describe("a turn nothing can be read off", () => {
+  /**
+   * The `{ live: true }` refusal case that passed against a REJECTED credential.
+   *
+   * An `error` part is exactly what a provider rejection produces: the pipeline
+   * ends the turn and speaks `errorPhrase`, `completed` is `true`, and the reply
+   * the case reads was written by this runtime. So `not.toMatch(/ibuprofen/)`
+   * held, and every negative assertion in the corpus inverted into a pass.
+   */
+  test("a stage error FAILS the turn rather than handing back errorPhrase", async () => {
+    const { llm, providerEnv, release } = scriptedAgent({
+      steps: [[{ type: "error", error: new Error("401 Unauthorized") }]],
+    });
+    const session = await openEvalSession({
+      agent: agent({ name: "Order Desk" }),
+      llm,
+      providerEnv,
+    });
+    try {
+      await expect(session.say("what painkiller should I take?")).rejects.toThrow(
+        /did not come from the agent.*llm: .*401 Unauthorized/s,
+      );
+      // The whole point: the turn is still readable, so a case that MEANS to
+      // observe a broken turn catches the throw and reads the stream itself.
+      expect(session.events().some((e) => e.type === "error.reported")).toBe(true);
+    } finally {
+      await session.close();
+      release();
+    }
+  });
+
+  test("an EMPTY provider message is named, never forwarded as a blank", async () => {
+    // What a rejected credential really produced: two `error.reported` events,
+    // the first with `message: ""`. Forwarding it verbatim renders `llm: `,
+    // which reads as a harness that lost the string.
+    const { llm, providerEnv, release } = scriptedAgent({
+      steps: [[{ type: "error", error: { message: "" } }]],
+    });
+    const session = await openEvalSession({
+      agent: agent({ name: "Order Desk" }),
+      llm,
+      providerEnv,
+    });
+    try {
+      await expect(session.say("hello?")).rejects.toThrow(/llm: \(no message\)/);
+    } finally {
+      await session.close();
+      release();
+    }
+  });
+
+  test("a TOOL error is left alone — a tool that throws is the agent's business", async () => {
+    const boom = tool({
+      description: "Explode.",
+      inputSchema: z.object({}),
+      execute: () => {
+        throw new Error("gate refused");
+      },
+    });
+    const { llm, providerEnv, release } = scriptedAgent({
+      steps: [
+        [{ type: "tool-call", toolCallId: "c1", toolName: "boom", input: "{}" }],
+        [{ type: "text", text: "I could not do that." }],
+      ],
+    });
+    const session = await openEvalSession({
+      agent: withTools(agent({ name: "Order Desk" }), { boom }),
+      llm,
+      providerEnv,
+    });
+    try {
+      const turn = await session.say("do the thing");
+      // The failure reached the model, which explained itself — which is what
+      // three shipped template evals assert about a gate they expect to refuse.
+      expect(turn.text).toContain("could not");
+      expect(turn.events.some((e) => e.type === "error.reported")).toBe(true);
+    } finally {
+      await session.close();
+      release();
+    }
+  });
+
+  test("a tool the agent does not declare FAILS, naming the tools it does", async () => {
+    // The finding: a `stubReply` (or a live model) naming a tool the runtime has
+    // no definition for emits `tool.called`, never `tool.completed`, and leaves
+    // `result` undefined — so `turn.toolCalls[0].result` is permanently
+    // undefined and every claim about what it answered holds vacuously. The
+    // usual cause is an eval importing `./agent.ts`, which carries none of the
+    // tools a bundler discovers from `tools/`.
+    const { llm, providerEnv, release } = scriptedAgent({
+      steps: [
+        [{ type: "tool-call", toolCallId: "c1", toolName: "note_it", input: '{"text":"hi"}' }],
+        [{ type: "text", text: "Noted." }],
+      ],
+    });
+    const session = await openEvalSession({
+      agent: withTools(agent({ name: "Order Desk" }), { look_up: lookUp }),
+      llm,
+      providerEnv,
+    });
+    try {
+      const failure = session.say("note this down");
+      await expect(failure).rejects.toThrow(/"note_it".*never ran it/s);
+      await expect(failure).rejects.toThrow(/This agent's tools: look_up/);
+      await expect(failure).rejects.toThrow(/virtual:aai\/agent/);
+    } finally {
+      await session.close();
+      release();
+    }
+  });
+});
+
 describe("a scripted tool call", () => {
   test("drives the real tool executor, so a stub run covers a tool agent", async () => {
     const { installStubLlm } = await import("./stub-llm.ts");

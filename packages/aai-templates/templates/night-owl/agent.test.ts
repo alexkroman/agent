@@ -32,7 +32,12 @@ describe("night-owl template", () => {
   });
 
   test("recommend is discovered from tools/", () => {
-    expect(Object.keys(agentDef.tools ?? {})).toEqual(["recommend"]);
+    // `toContain` rather than an exact list: a file in `tools/` IS a tool, so
+    // adding one is the edit this template most invites, and an exact list
+    // would make that edit fail a test the author never wrote. What has to hold
+    // is that discovery ran at all — a template whose `tools/` is never
+    // resolved ships a model with no tools.
+    expect(Object.keys(agentDef.tools ?? {})).toContain("recommend");
   });
 
   test("the projection an untouched session pushes is an empty log", () => {

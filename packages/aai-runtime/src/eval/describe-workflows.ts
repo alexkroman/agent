@@ -49,7 +49,13 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import { describe, test } from "vitest";
-import { announceEvalMode, type EvalMode, resolveWorkflowEvalMode } from "./describe.ts";
+import {
+  announceEvalCoverage,
+  announceEvalMode,
+  type EvalMode,
+  registerEmptySuiteFailure,
+} from "./_announce.ts";
+import { resolveWorkflowEvalMode } from "./describe.ts";
 import {
   type EvalWorkflows,
   type EvalWorkflowsOptions,
@@ -136,8 +142,13 @@ export function describeWorkflowEval(
   const env = options?.env ?? stubbedEnv(agent, mode);
 
   describe(agent.name, () => {
+    let declared = 0;
+    let skipped = 0;
     const evalTest: EvalWorkflowTest = (name, body, caseOptions) => {
-      const run = mode === "stub" && caseOptions?.live === true ? test.skip : test;
+      declared += 1;
+      const skip = mode === "stub" && caseOptions?.live === true;
+      if (skip) skipped += 1;
+      const run = skip ? test.skip : test;
       run(name, async () => {
         const app = openEvalWorkflows({ ...options, agent, env });
         try {
@@ -148,6 +159,15 @@ export function describeWorkflowEval(
       });
     };
     define(evalTest);
+    // The same two lines `describeEval` owes, for the same reason and with the
+    // same wording: how many of the suite's cases this mode will actually run,
+    // and a hard failure when the answer is none. A workflow suite has the
+    // sharper version of that hazard — every case being `{ live: true }` is more
+    // tempting here, since a scripted run needs the case to install a fake per
+    // provider a step reaches — so a keyless CI job going green and empty is
+    // easier to arrive at by degrees.
+    announceEvalCoverage(agent.name, mode, declared, skipped);
+    registerEmptySuiteFailure(agent.name, mode, declared, skipped);
   });
 }
 

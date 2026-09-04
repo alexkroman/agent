@@ -51,7 +51,13 @@ describe("the agent declares itself a workflow app", () => {
   test("under the name the page starts a run by", () => {
     // `api.start("digest", …)` in client.tsx names this key. Nothing else
     // records it, so a rename here is a 400 there rather than a compile error.
-    expect(Object.keys(agentDef.workflows ?? {})).toEqual(["digest"]);
+    // `toContain` rather than an exact key list: adding a second workflow is an
+    // invited edit and must not redden a test the author did not write. The
+    // NAME is still pinned, deliberately — the page starts a run by this
+    // string, so renaming the key is a runtime 400 rather than a compile
+    // error, and this pin is the only thing that says so. Rename it here and
+    // in `client.tsx` together.
+    expect(Object.keys(agentDef.workflows ?? {})).toContain("digest");
     expect(agentDef.workflows?.digest).toBe(digest);
   });
 });

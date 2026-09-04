@@ -19,8 +19,7 @@ const executors = vi.hoisted(() => ({
     executeSecretPut: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     executeSecretDelete: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     executeSecretList: vi.fn().mockResolvedValue({ ok: true, data: {} }),
-    readStdin: vi.fn().mockResolvedValue("s3cret"),
-    NO_INPUT: ["no_input", "nothing on stdin"] as const,
+    resolveSecretValue: vi.fn().mockResolvedValue("s3cret"),
   },
   logs: { executeLogs: vi.fn().mockResolvedValue({ ok: true, data: {} }) },
 }));
@@ -34,7 +33,7 @@ beforeEach(() => {
   for (const fn of Object.values(executors.secret))
     if (vi.isMockFunction(fn)) fn.mockResolvedValue(ok);
   executors.logs.executeLogs.mockResolvedValue(ok);
-  executors.secret.readStdin.mockResolvedValue("s3cret");
+  executors.secret.resolveSecretValue.mockResolvedValue("s3cret");
 });
 
 type Runnable = { run: (ctx: { args: Record<string, unknown> }) => Promise<void> };
@@ -51,9 +50,19 @@ describe("the secret command group", () => {
     expect(subsOf(secret)[name]).toBeDefined();
   });
 
-  test("put reads the value off stdin in JSON mode", async () => {
-    await subsOf(secret).put?.run({ args: { name: "OPENAI_API_KEY", json: true } });
-    expect(executors.secret.readStdin).toHaveBeenCalled();
+  // The command layer decides the SOURCE and the executor does the rest, so
+  // what belongs here is that the mode reaches the resolver and its answer
+  // reaches the executor — never that this layer reads stdin itself, which is
+  // the coupling that let the output mode decide whether to block on it.
+  test.each([
+    ["JSON", true],
+    ["human", false],
+  ])("put resolves the value for %s mode and passes it on", async (_label, json) => {
+    await subsOf(secret).put?.run({ args: { name: "OPENAI_API_KEY", json } });
+    expect(executors.secret.resolveSecretValue).toHaveBeenCalledWith(
+      "OPENAI_API_KEY",
+      json ? "json" : "human",
+    );
     expect(executors.secret.executeSecretPut).toHaveBeenCalledWith(
       expect.any(String),
       "OPENAI_API_KEY",
@@ -62,15 +71,55 @@ describe("the secret command group", () => {
     );
   });
 
-  test("put prompts instead in human mode — the value is not read from stdin", async () => {
+  test("put passes an unresolved value through, which is the prompt request", async () => {
+    executors.secret.resolveSecretValue.mockResolvedValue(undefined);
     await subsOf(secret).put?.run({ args: { name: "OPENAI_API_KEY", json: false } });
-    expect(executors.secret.readStdin).not.toHaveBeenCalled();
     expect(executors.secret.executeSecretPut).toHaveBeenCalledWith(
       expect.any(String),
       "OPENAI_API_KEY",
       undefined,
       undefined,
     );
+  });
+
+  /**
+   * `aai secret put FOO bar` is the natural guess, and citty drops an
+   * undeclared positional silently — so it used to set the secret to whatever
+   * stdin yielded (nothing) and report no problem. Refused rather than
+   * accepted: a value in argv is in the shell history and in `ps`.
+   */
+  test("put refuses a value passed as an argument, without echoing it", async () => {
+    // Observed through the emitted RESULT rather than as a rejection: every
+    // failure in this CLI converges on `runCommand`'s one emitter, which
+    // writes the JSON line and exits 1.
+    // A stub that THROWS rather than one cast to `never`: `process.exit` is
+    // typed `never` and a function whose body only throws is inferred that
+    // way, so the seam needs no cast — and the throw is what the assertion
+    // below observes, after the JSON line has already been written.
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`process.exit(${String(code)})`);
+    });
+    const written: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown, cb?: unknown) => {
+      written.push(String(chunk));
+      if (typeof cb === "function") cb();
+      return true;
+    });
+
+    await expect(
+      subsOf(secret).put?.run({ args: { name: "FOO", json: true, _: ["FOO", "hunter2"] } }),
+    ).rejects.toThrow("process.exit(1)");
+
+    const line = written.join("");
+    expect(JSON.parse(line)).toMatchObject({
+      ok: false,
+      code: "usage",
+      error: expect.stringContaining("takes only the secret NAME"),
+      hint: expect.stringContaining("shell history"),
+    });
+    // The value itself is never repeated back — it is a credential.
+    expect(line).not.toContain("hunter2");
+    expect(executors.secret.executeSecretPut).not.toHaveBeenCalled();
   });
 
   test("delete and list reach their executors with the server flag", async () => {

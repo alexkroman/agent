@@ -233,6 +233,57 @@ describe("ensureApiKey", () => {
     });
   });
 
+  /**
+   * `"local-session"` is `aai dev` asking for a PROVIDER credential, and the
+   * account-shaped `not_logged_in` sentence was the whole defect: it names only
+   * `aai login` and `AAI_CONFIG_DIR`, so a developer with two purely local ways
+   * forward read it as "local development is gated on a cloud account" — which
+   * is what most of a twenty-persona DX audit concluded before abandoning
+   * `aai dev` altogether.
+   */
+  describe('use: "local-session"', () => {
+    test("names .env and a shell export BEFORE `aai login`", async () => {
+      await withTempDir(async (dir) => {
+        const { ensureApiKey } = await import("./_config.ts");
+        const err = await ensureApiKey(dir, "local-session").catch((e: unknown) => e);
+        expect(err).toMatchObject({
+          code: "missing_assemblyai_key",
+          message: expect.stringContaining("ASSEMBLYAI_API_KEY"),
+        });
+        const hint = (err as { hint: string }).hint;
+        // ORDER is the assertion, not mere presence: the two remedies that need
+        // no account have to come first, or the message reads as an account
+        // requirement with a workaround appended.
+        expect(hint).toContain(".env");
+        expect(hint).toContain("export ASSEMBLYAI_API_KEY=");
+        expect(hint).toContain("aai login");
+        expect(hint.indexOf(".env")).toBeLessThan(hint.indexOf("aai login"));
+        expect(hint.indexOf("export ASSEMBLYAI_API_KEY=")).toBeLessThan(hint.indexOf("aai login"));
+      });
+    });
+
+    test("still returns the logged-in key when there is one", async () => {
+      // The login key stays a FALLBACK for `aai dev` — the new message is about
+      // the failure, not about removing the convenience.
+      await withTempDir(async (dir) => {
+        const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
+        await writeGlobalConfig(dir, { apiKey: "logged-in-key" });
+        await expect(ensureApiKey(dir, "local-session")).resolves.toBe("logged-in-key");
+      });
+    });
+
+    test("the platform default is untouched — an account IS the requirement there", async () => {
+      // `publish`/`push`/`logs`/`secret` reach the platform, so their refusal
+      // must keep pointing at `aai login` and must NOT offer a local key.
+      await withTempDir(async (dir) => {
+        const { ensureApiKey } = await import("./_config.ts");
+        const err = await ensureApiKey(dir).catch((e: unknown) => e);
+        expect(err).toMatchObject({ code: "not_logged_in" });
+        expect((err as { hint: string }).hint).not.toContain(".env");
+      });
+    });
+  });
+
   test("the saved login key wins even with a different key exported", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
 

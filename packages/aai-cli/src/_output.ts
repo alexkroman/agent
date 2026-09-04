@@ -28,7 +28,46 @@ export function getOutputMode(
 }
 
 /**
- * Write a line to stdout, resolving only once it has been flushed.
+ * The ESC byte, computed rather than written as an escape in a regex literal:
+ * it is a control character, which `noControlCharactersInRegex` rejects.
+ */
+const ESC = String.fromCharCode(27);
+
+/**
+ * A CSI sequence — `ESC [ params intermediates final` — which covers every SGR
+ * colour pair a diagnostic can arrive wearing (`\u001B[31m` … `\u001B[0m`,
+ * `\u001B[38;5;246m`) as well as cursor moves.
+ */
+const ANSI_RAW = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
+
+/**
+ * The same sequence AFTER `JSON.stringify`, which escapes the ESC byte as the
+ * six characters `\u001b`. Both forms are needed because a caller stringifies
+ * a whole result and hands the line here — see {@link writeLine}.
+ */
+const ANSI_JSON = /\\u001[bB]\[[0-?]*[ -/]*[@-~]/g;
+
+/**
+ * Remove ANSI escape sequences, in raw or JSON-escaped form.
+ *
+ * A bundler colours its own diagnostics unconditionally, so `aai build`'s
+ * failure reached the JSON envelope as per-character SGR pairs
+ * (`[38;5;246m1 │[0m [38;5;249mi[0m[38;5;249mm[0m…`) — illegible in a CI log
+ * and meaningless to a `jq` consumer, which is the audience JSON mode has.
+ */
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI_RAW, "").replace(ANSI_JSON, "");
+}
+
+/**
+ * Write a machine-readable line to stdout, resolving only once it has been
+ * flushed.
+ *
+ * ANSI escapes are stripped on the way out. This function carries JSON mode's
+ * one result line and nothing else — human output goes through `log.*` in
+ * `_ui.ts`, which is where colour belongs — so stripping here is what keeps
+ * the envelope clean no matter which module built the string inside it, and
+ * leaves a TTY's coloured diagnostic intact.
  *
  * Resolves (never rejects) even when the write fails: the common failure is
  * EPIPE — the consumer closed the pipe (`aai … --json | head -1`) — and there
@@ -36,8 +75,9 @@ export function getOutputMode(
  * Stream-level `'error'` events are handled by {@link installStdoutGuard}.
  */
 export function writeLine(line: string): Promise<void> {
+  const clean = stripAnsi(line);
   return new Promise((resolve) => {
-    process.stdout.write(line, () => resolve());
+    process.stdout.write(clean, () => resolve());
   });
 }
 

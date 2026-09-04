@@ -28,7 +28,12 @@ import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
 import { classifyVitestError, runVitest } from "./test.ts";
 
-type EvalData = { passed: boolean; skipped?: boolean };
+type EvalData = {
+  passed: boolean;
+  skipped?: boolean;
+  /** The eval file(s) this run covered — `aai test`'s result names its set too. */
+  ran: string[];
+};
 
 /** The files `aai eval` runs, in preference order. */
 export const EVAL_FILES = ["agent.eval.test.ts", "agent.eval.test.js"] as const;
@@ -58,16 +63,21 @@ export async function executeEval(cwd: string): Promise<CommandResult<EvalData>>
       candidates: EVAL_FILES,
       extraArgs: ["--testTimeout", String(EVAL_TEST_TIMEOUT_MS)],
       env,
+      // "Did not run" is a claim about the TEST tier: `unrunSpecFiles` drops
+      // eval files by infix, so left on, an eval run would name every unit spec
+      // in the project as skipped — true, and not this command's business.
+      // `aai test` is where that set is reported and refused a green verdict.
+      announceUnrun: false,
     });
     if (!ran) {
       log.info(
         "No eval file found. Create agent.eval.test.ts to measure what the agent does — " +
           "see `openEvalSession` in @alexkroman1/aai-runtime/eval.",
       );
-      return ok({ passed: true, skipped: true });
+      return ok({ passed: true, skipped: true, ran: [] });
     }
     log.success("Evals passed");
-    return ok({ passed: true });
+    return ok({ passed: true, ran });
   } catch (err: unknown) {
     const { code, message } = classifyVitestError(err, "Evals");
     return fail(code, message);

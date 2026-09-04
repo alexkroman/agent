@@ -137,6 +137,15 @@ export function toolNames(calls: readonly EvalToolCall[]): readonly string[] {
  * a question instead of acting — and `tools called: []` is one character away
  * from looking like the message got truncated.
  *
+ * **And a call that NEVER COMPLETED says so, right beside its name.** That is
+ * the state {@link EvalToolCall.result} spells as `undefined`, and the state
+ * every message built by hand rendered identically to a call that answered:
+ * `called note_it` while the tool body had not run and `toolCalls[0].result`
+ * was `undefined`, which a case then meets as a chai type error four lines
+ * further on. `openEvalSession` refuses such a turn outright — this is what the
+ * DIAGNOSTIC owes the cases that read a call list some other way (a cancelled
+ * reply, `callsIn` over several turns).
+ *
  * ```ts
  * import { describeToolCalls, type EvalSession } from "@alexkroman1/aai-runtime/eval";
  *
@@ -149,7 +158,11 @@ export function toolNames(calls: readonly EvalToolCall[]): readonly string[] {
  * ```
  */
 export function describeToolCalls(calls: readonly EvalToolCall[]): string {
-  return calls.length === 0 ? "called no tools" : `called ${toolNames(calls).join(", ")}`;
+  if (calls.length === 0) return "called no tools";
+  const named = calls.map((call) =>
+    call.result === undefined ? `${call.name} (never completed)` : call.name,
+  );
+  return `called ${named.join(", ")}`;
 }
 
 /**

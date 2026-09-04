@@ -411,7 +411,14 @@ describe("startDevServer", () => {
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
-      expect(mockEnsureApiKey).toHaveBeenCalled();
+      // `"local-session"` is what keeps the FAILURE credential-shaped when
+      // there is no key anywhere: `ensureApiKey`'s default `not_logged_in`
+      // offers only account remedies, and reported by `aai dev` it read as
+      // "local development needs a platform account" — which it does not (see
+      // `ApiKeyUse` in _config.ts). Pinned here because the message itself is
+      // specced against the real module in `_config.test.ts`, and this is the
+      // only place the two are wired together.
+      expect(mockEnsureApiKey).toHaveBeenCalledWith(undefined, "local-session");
       expect(mockCreateRuntime).toHaveBeenCalledWith(
         expect.objectContaining({
           env: expect.objectContaining({

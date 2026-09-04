@@ -11,20 +11,60 @@ import { defineCommand } from "citty";
 import { defineExec, sharedArgs } from "./_cli-common.ts";
 import { CliError } from "./_output.ts";
 
+/**
+ * Refuse `aai secret put NAME value` instead of dropping the value.
+ *
+ * `value` is not a declared positional, and citty drops an undeclared one
+ * silently — so the natural guess set the secret to whatever stdin later
+ * yielded (usually nothing) and reported no problem, which is the same class
+ * of failure as the unknown flag `assertKnownFlags` exists for.
+ *
+ * REFUSED rather than accepted, deliberately: a value in argv is in the
+ * user's shell history and in `ps` output for every process on the machine,
+ * and this is the command whose whole subject is a credential. The extra
+ * token is NOT echoed back for the same reason.
+ */
+function refuseValueInArgv(positionals: string[] | undefined): void {
+  if (!positionals || positionals.length <= 1) return;
+  throw new CliError(
+    "usage",
+    "`aai secret put` takes only the secret NAME — the value is read from stdin.",
+    'Pipe it in: `printf %s "$VALUE" | aai secret put NAME`. A value passed as ' +
+      "an argument would be left in your shell history and visible in `ps`.",
+  );
+}
+
 const secretPut = defineExec({
-  meta: { name: "put", description: "Create or update a secret" },
+  // The stdin contract belongs in `--help` — that is where someone looks when
+  // a command appears to hang, and it said only "NAME". It is split across
+  // the two slots citty renders: `description` is repeated in the GROUP
+  // listing (`aai secret --help`), so it stays one line, and the positional's
+  // description carries the copy-pasteable form plus the fact that the value
+  // is not an argument at all.
+  meta: {
+    name: "put",
+    description: "Create or update a secret (value read from stdin, or prompted on a terminal)",
+  },
   args: {
-    name: { type: "positional", description: "Secret name", required: true },
+    name: {
+      type: "positional",
+      description:
+        "Secret name. The VALUE is not an argument — pipe it in " +
+        '(`printf %s "$VALUE" | aai secret put NAME`), or be prompted, masked, ' +
+        "when stdin is a terminal",
+      required: true,
+    },
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
   cwd: "any",
   async run({ args, mode, cwd }) {
-    const { executeSecretPut, NO_INPUT, readStdin } = await import("./secret.ts");
-    const value = mode === "json" ? await readStdin() : undefined;
-    if (mode === "json" && !value) {
-      throw new CliError(...NO_INPUT);
-    }
+    refuseValueInArgv(args._);
+    const { executeSecretPut, resolveSecretValue } = await import("./secret.ts");
+    // Resolved here, not inside the executor: which SOURCE a value comes from
+    // is a property of the invocation (is stdin a terminal?), and reading
+    // stdin when it is one is what made this command block forever.
+    const value = await resolveSecretValue(args.name, mode);
     return executeSecretPut(cwd, args.name, value, args.server);
   },
 });

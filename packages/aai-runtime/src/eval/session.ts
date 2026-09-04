@@ -66,6 +66,7 @@ import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntime } from "../runtime.ts";
 import type { Logger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
+import { assertTurnMeasurable } from "./_turn-faults.ts";
 import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsIn } from "./events.ts";
 import { type FakeSpeech, installFakeSpeech } from "./fake-speech.ts";
 
@@ -361,6 +362,12 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
     logger: opts.logger ?? silentLogger,
   });
 
+  // The RESOLVED set — the agent's own tools plus whichever builtins it enabled,
+  // which is what the model was offered. Read off the runtime rather than
+  // recomputed from `agent.tools`, so the diagnosis below cannot come to
+  // disagree with what the LLM saw.
+  const toolNames = runtime.toolSchemas.map((schema) => schema.name);
+
   const waitFor = async (
     what: string,
     ready: (since: readonly SessionEvent[]) => boolean,
@@ -419,6 +426,10 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
         (since) => since.some((e) => TURN_ENDS.has(e.type)),
         greetingFrom,
       );
+      // The EARLIEST place a rejected credential is visible, and the cheapest to
+      // read: a case that has not said anything yet cannot have written an
+      // assertion this could be confused with.
+      assertTurnMeasurable("the greeting", events.slice(greetingFrom), toolNames);
     }
   } catch (err) {
     // The runtime is live from `createRuntime` onward and the caller never
@@ -446,6 +457,7 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
     stt.commit(text);
     await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
     const turn = events.slice(from);
+    assertTurnMeasurable(`the reply to ${JSON.stringify(text.slice(0, 60))}`, turn, toolNames);
     return {
       text: saidIn(turn).join(" "),
       events: turn,

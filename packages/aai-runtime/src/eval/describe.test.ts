@@ -21,7 +21,8 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
 import { registerLlmKind } from "../providers/resolve.ts";
-import { announceEvalMode, describeEval, resolveEvalMode } from "./describe.ts";
+import { announceEvalCoverage, announceEvalMode, emptySuiteReason } from "./_announce.ts";
+import { describeEval, resolveEvalMode } from "./describe.ts";
 import { toolResultIn } from "./events.ts";
 import { installStubLlm, STUB_LLM_API_KEY_ENV } from "./stub-llm.ts";
 
@@ -127,6 +128,53 @@ describe("announceEvalMode", () => {
   });
 });
 
+describe("announceEvalCoverage", () => {
+  /**
+   * The counts nothing else reports. Vitest prints `2 skipped` per FILE and
+   * `aai eval --json` answers `{"passed":true}` with no counts at all, so a
+   * suite whose every case is live-only read as a green run — see
+   * {@link emptySuiteReason}.
+   */
+  test("says how many of the suite's cases this mode will run", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    announceEvalCoverage("Desk", "stub", 3, 1);
+    expect(stderr).toHaveBeenCalledWith(
+      "eval: Desk — 2 of 3 case(s) run against the scripted model; 1 skipped as live-only.\n",
+    );
+  });
+
+  test("an all-ran suite still gets a line — a number that hides is not read", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    announceEvalCoverage("Desk", "live", 2, 0);
+    expect(stderr).toHaveBeenCalledWith(
+      "eval: Desk — 2 of 2 case(s) run against the live model.\n",
+    );
+  });
+});
+
+describe("emptySuiteReason", () => {
+  test("a suite whose every case is skipped by the mode gate FAILS", () => {
+    // Measured on a scaffolded project: two `{ live: true }` cases with no key
+    // printed `2 skipped`, `{"ok":true,"data":{"passed":true}}` and exited 0.
+    const reason = emptySuiteReason("stub", 2, 2);
+    expect(reason).toContain("{ live: true }");
+    expect(reason).toContain("measured nothing");
+    expect(reason).toContain("stubReply");
+  });
+
+  test("the mirror: an all-scripted suite on a live model", () => {
+    expect(emptySuiteReason("live", 3, 3)).toContain("{ scripted: true }");
+  });
+
+  test("one runnable case is enough — the gate is 'nothing ran', not 'few ran'", () => {
+    expect(emptySuiteReason("stub", 3, 2)).toBeUndefined();
+  });
+
+  test("a suite that declared nothing is left to vitest, which already fails it", () => {
+    expect(emptySuiteReason("stub", 0, 0)).toBeUndefined();
+  });
+});
+
 // Read by `describeEval` below at COLLECTION time, which is why the stub is set
 // here rather than in a hook. `unstubEnvs` restores it before each test runs,
 // which is fine: the mode was already decided.
@@ -229,6 +277,28 @@ describeEval(withTools(agent({ name: "Stub Suite" }), { judge }), (test) => {
     {
       stubReply: [{ tool: "judge", args: { claim: "it holds" } }, "the turn's own line"],
       stubGenerate: '{"verdict":"sound"}',
+    },
+  );
+
+  test(
+    "a stubGenerate the call's own schema rejects fails, rather than answering a typed lie",
+    async ({ session }) => {
+      // `ctx.generate({ schema })` is `generateText` + `Output.object` over
+      // `jsonSchema(...)`, which carries no validator — so a script of
+      // `{"verdict":123}` against `z.object({ verdict: z.string() })` used to
+      // RESOLVE, typed as the schema's shape and holding a number. The tool
+      // then read `verdict.length` off it and the case passed.
+      //
+      // The refusal arrives as the tool's own failure, which is the honest
+      // shape: `judge` is what called `generate`.
+      const turn = await session.say("what do you make of it?");
+      expect(toolResultIn(turn.toolCalls, "judge", z.object({ error: z.string() })).error).toMatch(
+        /stubGenerate answered something the call's own schema rejects/,
+      );
+    },
+    {
+      stubReply: [{ tool: "judge", args: { claim: "it holds" } }, "the turn's own line"],
+      stubGenerate: '{"verdict":123}',
     },
   );
 
