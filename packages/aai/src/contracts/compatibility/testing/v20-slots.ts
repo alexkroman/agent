@@ -1,17 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai:testing` epoch 19 — the step slots.
+ * Frozen authoring example: `aai:testing` epoch 20 — the step slots.
  *
- * The second half of {@link ../testing/v19.ts | v19.ts} and part of the SAME
+ * The second half of {@link ../testing/v20.ts | v20.ts} and part of the SAME
  * frozen example: the four published slots a step reaches the outside world
  * through, plus what it narrates. It is a separate module for one reason and it
  * is not a taxonomy — the example outgrew the 500-line source cap
  * (`pnpm check:file-length`), and the seam the file already had is the section
- * banner. Every rule in `v19.ts`'s header applies here unchanged: nothing below
+ * banner. Every rule in `v20.ts`'s header applies here unchanged: nothing below
  * is ever invoked, the evidence is that it type-checks, and editing it to make a
  * future error go away defeats the mechanism.
  *
- * The gate reads `v19.ts` by name (`fixturePath` in
+ * The gate reads `v20.ts` by name (`fixturePath` in
  * `scripts/_api-contracts-tree.mjs` looks for exactly `v<N>.ts`), so that file
  * stays the entry point and this one is reached from it. Splitting the example
  * costs nothing the gate can see: what freezes an epoch is that the whole
@@ -71,9 +71,9 @@ import {
 const REFUSED: StubGatewayOptions = { status: 429, headers: { "retry-after": "2" } };
 
 /**
- * The hand-written composition — epoch 19's only way to fake two far sides.
+ * The hand-written composition — epoch 20's only way to fake two far sides.
  *
- * A model leg, then a throw for anything it does not recognise. Epoch 20's
+ * A model leg, then a throw for anything it does not recognise. Epoch 21's
  * `routeStepFetch` is this function; keeping it here is what proves an epoch-19
  * spec still compiles.
  */
@@ -87,7 +87,7 @@ export function handler(model: StubGatewayRoute): (r: StubStepRequest) => StubSt
   };
 }
 
-/** Publishing that handler, epoch 19. */
+/** Publishing that handler, epoch 20. */
 export function installWorld(replies: readonly string[]): {
   model: StubGatewayRoute;
   fetched: StubStepFetch;

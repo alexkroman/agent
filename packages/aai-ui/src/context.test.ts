@@ -161,13 +161,13 @@ describe("useSessionStatus / useSessionError", () => {
   it("read their own field out of the snapshot", () => {
     const core = createMockSessionCore({
       state: "listening",
-      error: { code: "stt", message: "transcriber refused" },
+      error: { code: "stt", message: "transcriber refused", fatal: true },
     });
     const { result } = renderHook(() => [useSessionStatus(), useSessionError()] as const, {
       wrapper: wrap(core),
     });
     expect(result.current[0]).toBe("listening");
-    expect(result.current[1]).toEqual({ code: "stt", message: "transcriber refused" });
+    expect(result.current[1]).toEqual({ code: "stt", message: "transcriber refused", fatal: true });
   });
 
   it("report no error as null rather than undefined", () => {
@@ -212,7 +212,7 @@ describe("useSessionStatus / useSessionError", () => {
     expect(errorSpy.mock.calls.length).toBe(errorRenders);
 
     const renderedOnceStatusMoved = statusSpy.mock.calls.length;
-    act(() => core.update({ error: { code: "connection", message: "gone" } }));
+    act(() => core.update({ error: { code: "connection", message: "gone", fatal: false } }));
     expect(error.result.current?.code).toBe("connection");
     expect(errorSpy.mock.calls.length).toBeGreaterThan(errorRenders);
     expect(statusSpy.mock.calls.length).toBe(renderedOnceStatusMoved);

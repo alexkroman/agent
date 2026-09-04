@@ -133,7 +133,7 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public (undocumented)
+// @internal
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
 // @internal

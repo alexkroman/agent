@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "session",
   "epoch": 4,
-  "sha256": "b1f054eeec009185c8ce42bef14e10eed470e010abf8672ccd6ad28452d46b00",
+  "sha256": "49e4326074ee95d44502425869871a0ea89f6a15849620c589f97c30f353cf04",
   "exports": [
     "AGENT_STATE_LABELS",
     "AgentCustomEvent",

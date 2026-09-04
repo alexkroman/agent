@@ -205,6 +205,11 @@ export type RecordedStep = {
 };
 
 // @public
+export function routeStepFetch(routes: readonly StepRoute[], options?: {
+    unmatched?: StepUnmatched;
+}): (request: StubStepRequest) => StubStepAnswer;
+
+// @public
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
     status?: "pending" | "running" | undefined;
 } | {
@@ -487,9 +492,15 @@ type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
 };
 
 // @public
+export type StepRoute = (request: StubStepRequest) => StubStepAnswer | undefined;
+
+// @public
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
+
+// @public
+export type StepUnmatched = "throw" | "notFound" | StepRoute;
 
 // @public
 type StreamOptions = {
@@ -602,7 +613,7 @@ export type StubReporter = {
     restore: () => void;
 };
 
-// @public (undocumented)
+// @public
 export function stubReporter(): StubReporter;
 
 // @public

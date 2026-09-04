@@ -4,9 +4,9 @@ Shared utility functions (the `@alexkroman1/aai/utils` subpath).
 
 For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
 `toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`,
-`decodeHtmlEntities`, and the four
-narration formatters (`formatBytes`, `formatDuration`, `countWords`,
-`plural`). The remaining exports are framework
+`decodeHtmlEntities`, and the five
+narration formatters (`formatBytes`, `formatDuration`, `formatMoney`,
+`countWords`, `plural`). The remaining exports are framework
 plumbing shared with the sibling packages. The module stays free of zod and
 other heavy runtime dependencies so the CLI can import it on every
 invocation without a startup cost.
@@ -280,6 +280,58 @@ import { formatDuration } from "@alexkroman1/aai/utils";
 formatDuration(0); // "0:00"
 formatDuration(249_000); // "4:09"
 formatDuration(3_849_000); // "1:04:09"
+```
+
+***
+
+### formatMoney()
+
+```ts
+function formatMoney(amount: number, symbol?: string): string;
+```
+
+`$1,234.00` — an amount of money, grouped in threes and always to the cent.
+
+`symbol` is a PREFIX and defaults to `"$"`; pass another (`"€"`, `"£"`) to
+change the glyph. It does not change the SHAPE, which is fixed: this is not a
+localization seam, for the reason the module doc gives. An agent that owes a
+caller `1.234,56 €` formats it itself.
+
+Always two decimal places, because the alternative drifts: a bare
+`toLocaleString` renders `$1,234` for a round number and `$1,234.5` for a
+change of fifty cents, so a price list rendered through it does not line up
+and a total read aloud sounds like a different kind of number than the parts
+that made it. Rounding is `toFixed`'s.
+
+The sign LEADS (`-$4.99`), which is how a refund is written. An amount that
+rounds to zero has no sign, so a rounding error just under zero prints
+`$0.00` rather than `-$0.00`. Non-finite is `$0.00`, matching
+[formatBytes](#formatbytes) and [formatDuration](#formatduration).
+
+#### Parameters
+
+##### amount
+
+`number`
+
+##### symbol?
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { formatMoney } from "@alexkroman1/aai/utils";
+
+formatMoney(0); // "$0.00"
+formatMoney(17.5); // "$17.50"
+formatMoney(2_292.371); // "$2,292.37"
+formatMoney(-4.99); // "-$4.99"
+formatMoney(1_234, "€"); // "€1,234.00"
 ```
 
 ***

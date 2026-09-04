@@ -197,7 +197,7 @@ const packages = Object.entries(tables)
        * `v<N>.ts` (or `.tsx`, so a JSX-free capability may keep a `.ts`
        * example) is the entry point and the only name `fixturePath` in
        * `scripts/_api-contracts-tree.mjs` resolves — but an example for a wide
-       * capability outgrows the 500-line source cap, and `aai:testing` epoch 19
+       * capability outgrows the 500-line source cap, and `aai:testing` epoch 20
        * did: it froze 29 published names across five sections. So any
        * `v<N>-*.ts(x)` beside it is part of the SAME example, and this reads
        * them together.

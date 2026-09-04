@@ -73,6 +73,7 @@ type SessionCore = {
     start(): void;
     toggle(): void;
     end(): void;
+    restart(): void;
     [Symbol.dispose](): void;
 };
 

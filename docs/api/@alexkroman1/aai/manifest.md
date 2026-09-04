@@ -25,28 +25,6 @@ function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSche
 
 ***
 
-### assertPipelineTuning()
-
-```ts
-function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
-```
-
-#### Parameters
-
-##### mode
-
-[`SessionMode`](#sessionmode)
-
-##### tuning
-
-`PipelineTuning`
-
-#### Returns
-
-`void`
-
-***
-
 ### toAgentConfig()
 
 ```ts

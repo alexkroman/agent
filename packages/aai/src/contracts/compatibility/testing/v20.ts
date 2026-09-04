@@ -1,23 +1,23 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai:testing` epoch 19.
+ * Frozen authoring example: `aai:testing` epoch 20.
  *
- * A template's spec as it was authored at epoch 19 — build the context a tool
+ * A template's spec as it was authored at epoch 20 — build the context a tool
  * body is handed, drive a tool through the agent's own table, unwrap a gated
  * result, ask a schema what it accepts, script the two model seams, fake the
  * four published slots a step reaches the outside world through, and drive a
  * workflow body without an engine. It must keep compiling for as long as epoch
  * 19 is advertised as supported.
  *
- * ## What moved, and why epoch 19 survives it
+ * ## What moved, and why epoch 20 survives it
  *
- * Epoch 20 ADDED `routeStepFetch` and its two types. Additive: no existing
+ * Epoch 21 ADDED `routeStepFetch` and its two types. Additive: no existing
  * signature moved, and nothing a spec already called behaves differently.
  *
  * What the addition replaces is a COMPOSITION callers wrote by hand — route the
  * model leg, then decide what an unrecognised request means. {@link handler}
  * below is that hand-written version, which is the whole point of freezing it:
- * thirteen sites across seven templates looked like this at epoch 19, and they
+ * thirteen sites across seven templates looked like this at epoch 20, and they
  * have to keep compiling whether or not they are ever converted.
  *
  * Nothing here names `routeStepFetch`, `StepRoute` or `StepUnmatched`.
@@ -29,7 +29,7 @@
  * `mockWorkflows` come from `@alexkroman1/aai/testing/vitest`, which is a second
  * SUBPATH of this one contract rather than a second contract: what is there is
  * only the installation of what is here, split off so the test-runner dependency
- * is opt-in. So they are epoch 19's promise too and they are frozen here.
+ * is opt-in. So they are epoch 20's promise too and they are frozen here.
  *
  * That costs nothing, because this file is COMPILED and never executed. An
  * `install*` reaches for `onTestFinished`, which only a running test has — but
@@ -40,7 +40,7 @@
  * ## Where a break lands
  *
  * The three shapes are frozen from three different sides, deliberately — the
- * rule holds for `v19-slots.ts` too, and the examples named here are the ones
+ * rule holds for `v20-slots.ts` too, and the examples named here are the ones
  * this half carries:
  *
  * - **Options bags** ({@link CTX}, {@link CLIENT}) are written by the caller, so
@@ -55,11 +55,11 @@
  *   one is where that shows up.
  *
  * Editing this file to make a future error go away defeats the mechanism: the
- * error IS the finding, and it means epoch 19 has to be dropped with a reason.
+ * error IS the finding, and it means epoch 20 has to be dropped with a reason.
  *
  * ## The example is two files
  *
- * The four published step slots and the reporter live in `v19-slots.ts`, which
+ * The four published step slots and the reporter live in `v20-slots.ts`, which
  * is the same frozen example in a second module — the file outgrew the 500-line
  * source cap and the section banner was the seam it already had. This one keeps
  * the name because the gate reads `v<N>.ts` by name (`fixturePath` in
@@ -161,7 +161,7 @@ export function toolWorkflows() {
 }
 
 /**
- * The context a tool body is handed, with the defaults epoch 19 filled.
+ * The context a tool body is handed, with the defaults epoch 20 filled.
  *
  * The overrides are annotated rather than inferred because the ANNOTATION is
  * what the type exists for: `ToolContextOverrides` admits an explicit
@@ -234,7 +234,7 @@ export function bind(agent: ToolBearingAgent): ToolRunner {
   return toolRunner(agent);
 }
 
-/** Driving a tool through the agent's own table, epoch 19. */
+/** Driving a tool through the agent's own table, epoch 20. */
 export async function callTool(agent: ToolBearingAgent, args: Record<string, unknown>) {
   const run: ToolRunner = bind(agent);
   // `ok` fails at the CALL quoting a refusal, rather than letting a cast read

@@ -47,7 +47,7 @@ describe("ConsoleShell", () => {
     // remaining signal — the state eyebrow beside it goes back to reading like
     // a live session — so an unannounced banner is a session that failed
     // silently for a screen reader.
-    shell({}, { code: "audio", message: "microphone permission denied" });
+    shell({}, { code: "audio", message: "microphone permission denied", fatal: false });
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toBe("microphone permission denied (audio)");
   });

@@ -177,6 +177,11 @@ export interface SlackChannelOptions {
 
 ```ts
 // @public
+export function ffmpegBaseArgs(options?: {
+    loglevel?: string;
+}): string[];
+
+// @public
 export class FfmpegError extends Error {
     constructor(opts: {
         kind: FfmpegFailureKind;
@@ -1949,7 +1954,7 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
     readonly es: "spanish";
 };
 
-// @public (undocumented)
+// @public
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
@@ -3402,7 +3407,7 @@ export const WS_OPEN = 1;
 ## `@alexkroman1/aai/llm`
 
 ```ts
-// @public (undocumented)
+// @public
 export function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
 
 // @public
@@ -3435,21 +3440,21 @@ export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
 // @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
-// @public (undocumented)
+// @public
 export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
 
 // @public
 export interface GatewayLlmOptions extends ModelOptions {
 }
 
-// @public (undocumented)
+// @public
 export function googleLlm(opts: GoogleLlmOptions): LlmProvider;
 
 // @public
 export interface GoogleLlmOptions extends ModelOptions {
 }
 
-// @public (undocumented)
+// @public
 export function groqLlm(opts: GroqLlmOptions): LlmProvider;
 
 // @public
@@ -3461,7 +3466,7 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
     readonly __stage?: "llm";
 };
 
-// @public (undocumented)
+// @public
 export function mistralLlm(opts: MistralLlmOptions): LlmProvider;
 
 // @public
@@ -3473,7 +3478,7 @@ export interface ModelOptions extends ProviderCredentialOptions {
     model: string;
 }
 
-// @public (undocumented)
+// @public
 export function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
 
 // @public
@@ -3483,7 +3488,7 @@ export interface OpenAILlmOptions extends ModelOptions {
 // @public
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-// @public (undocumented)
+// @public
 export function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 
 // @public
@@ -3503,7 +3508,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
     readonly options: Options;
 }
 
-// @public (undocumented)
+// @public
 export function xaiLlm(opts: XaiLlmOptions): LlmProvider;
 
 // @public
@@ -3643,7 +3648,7 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public (undocumented)
+// @internal
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
 // @internal
@@ -5530,6 +5535,11 @@ export type RecordedStep = {
 };
 
 // @public
+export function routeStepFetch(routes: readonly StepRoute[], options?: {
+    unmatched?: StepUnmatched;
+}): (request: StubStepRequest) => StubStepAnswer;
+
+// @public
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
     status?: "pending" | "running" | undefined;
 } | {
@@ -5812,9 +5822,15 @@ type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
 };
 
 // @public
+export type StepRoute = (request: StubStepRequest) => StubStepAnswer | undefined;
+
+// @public
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
+
+// @public
+export type StepUnmatched = "throw" | "notFound" | StepRoute;
 
 // @public
 type StreamOptions = {
@@ -5927,7 +5943,7 @@ export type StubReporter = {
     restore: () => void;
 };
 
-// @public (undocumented)
+// @public
 export function stubReporter(): StubReporter;
 
 // @public
@@ -6687,7 +6703,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
     readonly es: "spanish";
 };
 
-// @public (undocumented)
+// @public
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
@@ -6783,6 +6799,9 @@ export function formatBytes(bytes: number): string;
 
 // @public
 export function formatDuration(ms: number): string;
+
+// @public
+export function formatMoney(amount: number, symbol?: string): string;
 
 // @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
@@ -9728,6 +9747,9 @@ import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
+export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
+
+// @public
 export type AgentCustomEvent = {
     readonly id: number;
     readonly event: string;
@@ -9747,6 +9769,17 @@ export function AutoScroll(input: {
     initial?: "instant" | "smooth" | undefined;
     resize?: "instant" | "smooth" | undefined;
 }): ReactNode;
+
+// @public
+export function BulletList(input: BulletListProps): ReactNode;
+
+// @public
+export type BulletListProps = {
+    items: readonly string[];
+    title?: ReactNode | undefined;
+    size?: "sm" | "base" | undefined;
+    className?: string | undefined;
+};
 
 // @public
 export function Button(input: {
@@ -9825,7 +9858,6 @@ export type ConsoleShellProps = {
     title?: string | undefined;
     state: AgentState;
     pulsing: boolean;
-    error?: string | null | undefined;
     children: ReactNode;
     footer: ReactNode;
     className?: string | undefined;
@@ -9853,6 +9885,17 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore;
 
 // @public
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
+
+// @public
+export function Facts(input: FactsProps): ReactNode;
+
+// @public
+export type FactsProps = {
+    items: readonly (string | number | false | null | undefined)[];
+    size?: "sm" | "xs" | undefined;
+    as?: "p" | "span" | undefined;
+    className?: string | undefined;
+};
 
 // @public
 export function fetchClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
@@ -9929,7 +9972,7 @@ export type MessageListProps = {
 };
 
 // @public
-export function NumberField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
 export function page(config: PageConfig): PageHandle;
@@ -9957,7 +10000,10 @@ export function SelectField(input: FieldShell & {
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">): JSX.Element;
 
 // @public
-export type Session = SessionSnapshot & Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle" | "end">;
+export type Session = SessionSnapshot & SessionActions;
+
+// @public
+export type SessionActions = Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
 
 // @public
 export type SessionCore = {
@@ -9973,6 +10019,7 @@ export type SessionCore = {
     start(): void;
     toggle(): void;
     end(): void;
+    restart(): void;
     [Symbol.dispose](): void;
 };
 
@@ -9981,6 +10028,14 @@ export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
     readonly fatal: boolean;
+};
+
+// @public
+export function SessionErrorBanner(input: SessionErrorBannerProps): ReactNode;
+
+// @public
+export type SessionErrorBannerProps = {
+    className?: string | undefined;
 };
 
 export { SessionErrorCode }
@@ -10038,7 +10093,7 @@ export type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined 
 export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
 
 // @public
-export function TextField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
+export function TextField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
 
 // @public
 export type ToolCallInfo = {
@@ -10137,7 +10192,16 @@ export function useRunKey(options?: {
 export function useSession(): Session;
 
 // @public
+export function useSessionActions(): SessionActions;
+
+// @public
+export function useSessionError(): SessionError | null;
+
+// @public
 export function useSessionSelector<T>(selector: (snapshot: SessionSnapshot) => T, isEqual?: (a: T, b: T) => boolean): T;
+
+// @public
+export function useSessionStatus(): AgentState;
 
 // @public
 export function useTheme(): Required<ClientTheme>;
@@ -10310,6 +10374,7 @@ export type WorkflowSubmission<R = unknown, I = unknown> = {
     wake: () => Promise<number>;
     cancel: () => Promise<boolean>;
     run: WorkflowRun<R> | undefined;
+    startedHere: boolean;
     pending: boolean;
     upload: UploadStatus | undefined;
     pauseUpload: () => void;
@@ -10392,6 +10457,7 @@ type SessionCore = {
     start(): void;
     toggle(): void;
     end(): void;
+    restart(): void;
     [Symbol.dispose](): void;
 };
 
