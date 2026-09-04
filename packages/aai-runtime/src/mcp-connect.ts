@@ -73,7 +73,6 @@
  * going.
  */
 
-import { createMCPClient } from "@ai-sdk/mcp";
 import { safeFetch } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { ToolSet } from "ai";
@@ -230,6 +229,36 @@ async function discardLateConnect(pending: Promise<{ close(): Promise<void> }>):
  * (`mcp-tools.ts`) is what turns that into a degraded surface rather than a
  * failed session, which is why this one throws instead of returning a status.
  */
+/**
+ * `@ai-sdk/mcp`, loaded on the first connect rather than imported at module
+ * load, and an OPTIONAL PEER rather than a dependency.
+ *
+ * MCP is opt-in: an agent that declares no `mcpServers` never reaches this
+ * function. A plain `import` would still put the package in the tree of every
+ * consumer of `@alexkroman1/aai-runtime`, which is what
+ * `artifact-size-report.mjs` fails a new runtime dependency over regardless of
+ * its bytes — a transitive cost paid by everyone for a feature most agents do
+ * not use. Unlike `tokenx` this one cannot be bundled: it resolves
+ * `@ai-sdk/provider-utils` and shares that module's identity with `ai`, so an
+ * inlined second copy would be a different module to the one `ai` holds.
+ *
+ * The failure when it is absent is therefore a real path, not a theoretical
+ * one, and it is answered with the install line rather than a bare
+ * `ERR_MODULE_NOT_FOUND` naming a package the author never wrote down.
+ */
+async function loadCreateMcpClient(): Promise<typeof import("@ai-sdk/mcp").createMCPClient> {
+  try {
+    return (await import("@ai-sdk/mcp")).createMCPClient;
+  } catch (cause) {
+    throw new Error(
+      "An agent declares `mcpServers`, which needs the optional peer " +
+        "`@ai-sdk/mcp`. Install it alongside `@alexkroman1/aai-runtime`: " +
+        "`pnpm add @ai-sdk/mcp`.",
+      { cause },
+    );
+  }
+}
+
 export async function openMcpSession(
   server: ResolvedMcpServer,
   options: McpConnectOptions = {},
@@ -237,6 +266,7 @@ export async function openMcpSession(
   const headers: Record<string, string> = {};
   if (server.token) headers.authorization = `Bearer ${server.token}`;
   const budget = options.connectTimeoutMs ?? MCP_CONNECT_TIMEOUT_MS;
+  const createMCPClient = await loadCreateMcpClient();
   const connecting = createMCPClient({
     transport: {
       type: "http",
