@@ -586,8 +586,8 @@ describe("delivery on NOTIFY", () => {
    * Note what does NOT reach this: a failing DELIVERY is handled inside
    * `runQueuePass`, which turns it into a backoff — so the hazard is a pass that
    * cannot even claim, i.e. the connection itself. The interval's trigger is
-   * covered by `createIntervalSweep`; this path calls the runner directly and is
-   * the one that needed its own catch.
+   * covered by `startWorkflowQueueSweep`'s specs; this path calls the runner
+   * directly and is the one that needed its own catch.
    */
   test("a pass that cannot claim is reported, not left as an unhandled rejection", async () => {
     const { db, notify } = fakeDb([]);

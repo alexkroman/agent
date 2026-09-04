@@ -64,6 +64,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import type { CloseableDb } from "@alexkroman1/aai-runtime";
 import { KeyedLockTimeoutError } from "./_keyed-lock.ts";
 import { createLogger } from "./logger.ts";
+import { sqlState } from "./platform-db-errors.ts";
 import { withSlugLock } from "./sandbox-slots.ts";
 
 const log = createLogger("platform.lock");
@@ -272,7 +273,7 @@ export function createPgSlugLock(db: AdminDb, opts: PgSlugLockOptions = {}): Slu
             await reserved.query(ACQUIRE_SQL, [SLUG_LOCK_NAMESPACE, slug]);
             held = true;
           } catch (err) {
-            if ((err as { code?: unknown }).code === LOCK_NOT_AVAILABLE) {
+            if (sqlState(err) === LOCK_NOT_AVAILABLE) {
               throw new SlugLockTimeoutError(slug, { cause: err });
             }
             throw err;

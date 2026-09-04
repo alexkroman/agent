@@ -1,70 +1,52 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * What the platform's own database costs per replica, and what the DevKit's world
- * adds to it.
+ * What the platform's own database costs per replica.
  *
- * Its own module rather than a pair of entries in `constants.ts`, and not only
- * because that file is at its length cap: these two numbers are the price of
- * relocating the world out of every guest, and the argument for them is one
+ * Its own module rather than entries in `constants.ts`, and not only because that
+ * file is at its length cap: the argument for what counts and what does not is one
  * argument. `constants.ts` imports the sum so the fleet budget stays in one place.
  *
  * ## They are DIRECT connections, and that is forced
  *
- * `platformDbConnectionsPerReplica` counts only connections that consume
- * `max_connections` — the admin pool is excluded because it goes through the
- * transaction pooler, which multiplexes it away. This pool cannot: the DevKit's
- * streamer `LISTEN`s, and a `LISTEN` needs connection affinity for the same
- * reason a session-scoped advisory lock does. So these are direct, they count,
- * and they are in the sum.
+ * {@link platformDbConnectionsPerReplica} counts only connections that consume
+ * `max_connections`. The ADMIN pool is excluded because it reaches the instance
+ * through `PLATFORM_POOLER_URL` in transaction mode, which multiplexes it away —
+ * a reserved-but-idle client there pins no server backend. What cannot be pooled
+ * is what needs SESSION affinity, and that is the whole membership rule: the slug
+ * lock holds `pg_advisory_lock` across a deploy, and the queue sweep `LISTEN`s.
+ * Both need one fixed backend, so both are direct, and both are in the sum.
  *
- * ## The trade, stated as numbers
+ * ## The DevKit world is NOT in it, and used to be
  *
- * Per WORKFLOW AGENT, the in-guest world cost four pooled connections plus a
- * dedicated `LISTEN` client plus the queue-lock sweep's presence connection, none
- * of them shareable, against a role limited to ten — the ceiling the whole arc was
- * about. Here it is {@link platformWorldConnections} per REPLICA, shared by every
- * agent on it. At `MAX_CONTAINERS` of 3 that is a fixed fleet-wide cost, so the
- * break-even is two workflow agents and the improvement grows linearly after that.
+ * This module was written around two terms it no longer has — a
+ * `PLATFORM_WORLD_POOL_MAX` of 4 for a `pg.Pool` and a `PLATFORM_WORLD_LISTEN` of
+ * 1 for the streamer's dedicated `LISTEN` client — on the premise that relocating
+ * the DevKit's Postgres world out of every guest moved those connections onto the
+ * platform's own database. The replay engine then replaced the world outright:
+ * `aai-runtime/workflow-platform-world.ts` opens with "There is no 'world' left to
+ * compose", and its four clients — the journal, the queue, session state and
+ * upload records — reach the platform over HTTP with the per-sandbox bearer.
+ * Neither `aai-server` nor `aai-runtime` depends on `pg`, `graphile-worker` or
+ * `@workflow/world-postgres`, and neither contains a `new Pool`.
  *
- * ## They ARE in the per-replica sum, and the allowance is what paid for it
+ * So the two terms claimed 5 connections per replica, 15 of the fleet's budget,
+ * for something that opens none — which is the same shape of error as the
+ * tenant-scaled app-database allowance they replaced, one step smaller: an
+ * accounting term outliving the code it described. A budget that overstates is
+ * not the safe direction it looks like, because `platform-db-capacity.ts`
+ * compares it against the real instance at boot and reports the spare, so the
+ * overstatement is subtracted from the headroom an operator reads.
  *
- * These terms could not be added while per-app databases existed: at
- * `MAX_CONTAINERS` of 3 the fleet is `3 x (SLUG_LOCK_POOL_MAX + PLATFORM_WORLD_POOL_MAX
- * + PLATFORM_WORLD_LISTEN + QUEUE_NOTIFY_LISTEN)` direct, and the app-database
- * allowance was 28, against a budget of 40. The two do not fit, and they were never
- * meant to — the allowance existed to give every workflow agent its own six
- * connections, which is exactly the cost this world removes.
+ * ## The sum is spelled as its TERMS, never as a total
  *
- * So the allowance went and the world took its place in the same change, which is
- * what `platform-db-budget.test.ts` asserts — and it asserts it by COMPUTING
+ * `platform-db-budget.test.ts` asserts by COMPUTING
  * {@link platformDbConnectionsPerReplica} rather than against a number written
- * here, which is why the sum is spelled as its terms above. A literal total went
- * stale within one change: `QUEUE_NOTIFY_LISTEN` joined the sum and the prose still
- * read `3 x (4 + 5) = 27`, understating the fleet by three.
+ * here. A literal total went stale within one change once already:
+ * `QUEUE_NOTIFY_LISTEN` joined the sum and the prose still read `3 x (4 + 5) = 27`,
+ * understating the fleet by three.
  */
 
 import { SLUG_LOCK_POOL_MAX } from "./constants.ts";
-
-/**
- * `pg.Pool` size for the platform's world — storage reads and the one mutation.
- *
- * PINNED because their default is node-postgres's, which is 10 per replica and
- * would put the fleet over its direct-connection budget on its own. Four is sized
- * against what a request actually needs: `events.create` is one transaction, and
- * the read routes are single queries, so this is a concurrency ceiling on storage
- * requests rather than a working-set requirement.
- */
-export const PLATFORM_WORLD_POOL_MAX = 4;
-
-/**
- * The streamer's dedicated `pg.Client`, which sits OUTSIDE the pool.
- *
- * Not a pool member: their streamer opens its own client to `LISTEN` on, exactly
- * as it did when the world ran inside each guest. One per replica now instead of
- * one per workflow agent — which is the whole shape of what moving the world onto
- * the platform's own database bought.
- */
-export const PLATFORM_WORLD_LISTEN = 1;
 
 /**
  * The queue sweep's `NOTIFY` listener, which also sits OUTSIDE every pool.
@@ -110,15 +92,6 @@ export const PLATFORM_WORLD_LISTEN = 1;
  * change: the connection it moves onto the instance is the one already claimed.
  */
 export const QUEUE_NOTIFY_LISTEN = 1;
-
-/**
- * What one replica's world holds at its ceiling.
- *
- * A function rather than a constant so the sum cannot be spelled twice.
- */
-export function platformWorldConnections(): number {
-  return PLATFORM_WORLD_POOL_MAX + PLATFORM_WORLD_LISTEN;
-}
 
 /**
  * DIRECT connections one replica may open against the PRIMARY cluster.
@@ -174,5 +147,5 @@ export function platformWorldConnections(): number {
  * budget quietly wrong.
  */
 export function platformDbConnectionsPerReplica(): number {
-  return SLUG_LOCK_POOL_MAX + platformWorldConnections() + QUEUE_NOTIFY_LISTEN;
+  return SLUG_LOCK_POOL_MAX + QUEUE_NOTIFY_LISTEN;
 }

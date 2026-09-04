@@ -133,13 +133,21 @@ export function createGzipRequestMw(maxBytes: number = MAX_INFLATED_BODY_BYTES) 
 
     // Swap in an identical request carrying the inflated body so downstream
     // consumers (zValidator's c.req.json()) parse the real JSON.
+    //
+    // The Buffer is handed over AS IS. It was `new Uint8Array(inflated)`, which
+    // is a full copy — and undici's `extractBody` then copies "the bytes held by
+    // object" for any `BufferSource` regardless, so the explicit one was a second
+    // copy of a body up to `MAX_WORKER_SIZE`. A Buffer already IS an
+    // `ArrayBufferView`, so nothing about the request changes; `constants.ts`
+    // counts the re-wrapped body among the allocations that put a max-size
+    // deploy near ~164 MB RSS, and this drops one of them.
     const headers = new Headers(c.req.raw.headers);
     headers.delete("content-encoding");
     headers.set("content-length", String(inflated.byteLength));
     c.req.raw = new Request(c.req.raw.url, {
       method: c.req.raw.method,
       headers,
-      body: new Uint8Array(inflated),
+      body: inflated,
     });
 
     await next();

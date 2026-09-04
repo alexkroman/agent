@@ -38,9 +38,11 @@
  */
 
 import { hash } from "node:crypto";
+import { errorMessage } from "@alexkroman1/aai";
 import { createSingleFlight } from "./_memo.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import { createLogger } from "./logger.ts";
+import { isUnavailableStatus, PlatformServiceUnavailableError } from "./platform-service-errors.ts";
 
 const log = createLogger("auth");
 
@@ -89,6 +91,28 @@ function authHeader(apiKey: string): Record<string, string> {
   return { Authorization: apiKey };
 }
 
+/** The service name AssemblyAI failures are reported under. */
+const KEY_VERIFY_SERVICE = "assemblyai";
+
+/**
+ * AssemblyAI could not be reached, or refused to answer right now.
+ *
+ * The SAME marker class Supabase Auth and Storage throw, so `error-handler.ts`'s
+ * ONE 503 branch answers all three — its comment ("they share one branch so a
+ * fourth cannot arrive with a different status") is about exactly this, and this
+ * was that fourth, minting a bespoke `HTTPException(503)` in `middleware.ts`. What
+ * the branch adds: a `platform service assemblyai unavailable on <path>` line
+ * carrying the `service` field an operator routes on, and one wire sentence for
+ * one condition.
+ *
+ * The MESSAGE stays the underlying technical one and the original rides as
+ * `cause`, which is `platform-service-errors.ts`'s stated contract: the log keeps
+ * the diagnosis while the wire body gets the authored sentence.
+ */
+export function assemblyAiUnavailable(err: unknown): PlatformServiceUnavailableError {
+  return new PlatformServiceUnavailableError(KEY_VERIFY_SERVICE, errorMessage(err), { cause: err });
+}
+
 export type AssemblyAiKeyVerifierOptions = {
   /** Defaults to {@link DEFAULT_KEY_VERIFY_URL}. */
   url?: string | undefined;
@@ -118,17 +142,38 @@ export function createAssemblyAiKeyVerifier(
     if (cached !== undefined) return cached;
 
     return flights.run(cacheKey, async () => {
-      const res = await doFetch(url, {
-        headers: authHeader(apiKey),
-        signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
-      });
+      let res: Response;
+      try {
+        res = await doFetch(url, {
+          headers: authHeader(apiKey),
+          signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
+        });
+      } catch (err) {
+        // No response arrived — DNS, a reset socket, a proxy, or the timeout
+        // above. The most retryable failure there is, and the one
+        // `platform-service-errors.ts` lists first.
+        throw assemblyAiUnavailable(err);
+      }
       // The ONLY definite rejection. Everything else is "we do not know".
       if (res.status === 401 || res.status === 403) {
         cache.set(cacheKey, false);
         return false;
       }
       if (!res.ok) {
-        throw new Error(`AssemblyAI key verification failed (HTTP ${res.status})`);
+        // The SAME marker class Supabase Auth and Storage throw, so the ONE 503
+        // branch in `error-handler.ts` answers all three — its comment ("they
+        // share one branch so a fourth cannot arrive with a different status")
+        // is about exactly this, and AssemblyAI is that fourth. What it buys
+        // over the bespoke `HTTPException(503)` this replaced: a
+        // `platform service assemblyai unavailable on <path>` line carrying the
+        // `service` field an operator routes on, and one wire sentence for one
+        // condition. A non-retryable status (any 4xx that is not 401/403 — a
+        // bad verify URL, i.e. OUR misconfiguration) deliberately stays a plain
+        // Error and a 500, per `isUnavailableStatus`.
+        const message = `AssemblyAI key verification failed (HTTP ${res.status})`;
+        throw isUnavailableStatus(res.status)
+          ? new PlatformServiceUnavailableError(KEY_VERIFY_SERVICE, message)
+          : new Error(message);
       }
       cache.set(cacheKey, true);
       return true;

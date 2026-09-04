@@ -425,7 +425,7 @@ describeWithPg("workflow queue store", () => {
    * what this adds is that the two halves agree — the claim really hands back
    * what the sweep expects, and its ack and its backoff really land on the rows.
    * A pass is driven directly rather than through an interval; the interval is
-   * `createIntervalSweep`'s and has its own spec.
+   * `startWorkflowQueueSweep`'s and has its own spec.
    */
   test("a pass delivers what it claims and removes it", async () => {
     await enqueue(sql, msg("m1", "r1"));
