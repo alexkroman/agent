@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { defineCommand, runMain, showUsage } from "citty";
+import { BUILD_TARGETS } from "./_build-target.ts";
 import {
   commandPath,
   defineExec,
@@ -190,7 +191,10 @@ const build = defineExec({
     // to reach any target but `node`.
     target: {
       type: "string",
-      description: "Deployment shape to emit (node, vercel; default: detected)",
+      // DERIVED from `BUILD_TARGETS`, never restated: this string is the only
+      // place a user learns which targets exist, and a hand-kept copy of a
+      // list is the shape that goes stale the first time one is added.
+      description: `Deployment shape to emit (${BUILD_TARGETS.join(", ")}; default: detected)`,
     },
   },
   cwd: "agent",

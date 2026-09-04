@@ -13,14 +13,23 @@
 // the entry through a DYNAMIC import from a wrapper is the only ordering that
 // puts the enable genuinely first.
 import { existsSync } from "node:fs";
-import { enableCompileCache } from "node:module";
+import * as nodeModule from "node:module";
 import { fileURLToPath } from "node:url";
 
 // Caches V8 bytecode per (Node version, file content) under the user's cache
 // dir, so `aai` pays parse+compile once per version rather than per
-// invocation. Deliberately unguarded: this returns a `{ status }` result and
+// invocation. The CALL needs no guard — it returns a `{ status }` result and
 // does not throw, so an unwritable cache dir degrades to today's behaviour.
-enableCompileCache();
+//
+// The IMPORT is the part that did, and a NAMED one was wrong. It is a static
+// binding, so a runtime that does not export `enableCompileCache` fails at
+// module evaluation with `SyntaxError: The requested module 'node:module' does
+// not provide an export named 'enableCompileCache'` — before any statement
+// here runs, so nothing can catch it and the whole CLI is unusable. Measured
+// on Deno 2.9.5, which is otherwise Node-compatible enough to run this CLI.
+// A namespace import plus `?.()` degrades to no cache instead, which is what
+// the comment above always claimed the fallback was.
+nodeModule.enableCompileCache?.();
 
 // Source wins when present: a checkout that has also been built must keep
 // running `cli.ts`, or `pnpm link --global` would silently serve a stale
