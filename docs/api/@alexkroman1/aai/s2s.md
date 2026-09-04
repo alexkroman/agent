@@ -15,12 +15,12 @@ here opens a socket or reads a credential.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { openaiS2s } from "@alexkroman1/aai/s2s";
+import { openAIS2s } from "@alexkroman1/aai/s2s";
 
 export default agent({
   name: "Concierge",
   systemPrompt: "You are a hotel concierge. Be brief.",
-  s2s: openaiS2s({ model: "gpt-realtime", voice: "marin" }),
+  s2s: openAIS2s({ model: "gpt-realtime", voice: "marin" }),
 });
 ```
 
@@ -31,7 +31,7 @@ because it is the service that synthesizes.
 **[assemblyAIS2s](index.md#assemblyais2s) is also on the root barrel**, which is the one
 exception to "provider factories live on subpaths". S2S became opt-in when
 the pipeline became the default mode, so the descriptor that opts in sits
-beside `agent()` where an author meets it. `openaiS2s` is on this
+beside `agent()` where an author meets it. `openAIS2s` is on this
 subpath alone, like every other vendor.
 
 **Credentials are never passed here.** Each factory's vendor names the env
@@ -53,10 +53,10 @@ one interface with four reference pages was three too many.
 
 ## Functions
 
-### openaiS2s()
+### openAIS2s()
 
 ```ts
-function openaiS2s(opts?: OpenAIS2sOptions): S2sProvider;
+function openAIS2s(opts?: OpenAIS2sOptions): S2sProvider;
 ```
 
 Build an OpenAI Realtime S2S descriptor — the explicit opt-in to
@@ -77,12 +77,12 @@ host-side from the agent's env (`OPENAI_API_KEY`).
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { openaiS2s } from "@alexkroman1/aai/s2s";
+import { openAIS2s } from "@alexkroman1/aai/s2s";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  s2s: openaiS2s({ model: "gpt-realtime", voice: "marin" }),
+  s2s: openAIS2s({ model: "gpt-realtime", voice: "marin" }),
 });
 ```
 
@@ -92,7 +92,7 @@ Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline.
 
 ### OpenAIS2sOptions
 
-Options for [openaiS2s](#openais2s).
+Options for [openAIS2s](#openais2s).
 
 #### Extends
 

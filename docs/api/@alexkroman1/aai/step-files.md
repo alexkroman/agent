@@ -96,7 +96,7 @@ it back out four at a time. See [STEP\_FILE\_READ\_CONCURRENCY](#step_file_read_
 that same 4 and the same 32 MiB held.
 
 **The walk advances by what was READ, not by the window it asked for, and that
-contract only holds IN ORDER.** A `readUpload` window is clamped to the bytes
+contract only holds IN ORDER.** A `stepReadUpload` window is clamped to the bytes
 that have ARRIVED, so on a STREAMED upload — or on any stale `size` — a short
 answer means the file ends there, and the returned count is how the caller
 learns it. A fan-out cannot preserve that by itself: window 5 may land in full
@@ -104,7 +104,7 @@ while window 2 comes back short, and writing 5 leaves a HOLE the returned count
 claims is not there — silent truncation, which is the failure this whole module
 keeps being rewritten to refuse. So the two paths are cut on exactly that line:
 
-- **No `size`** — `requireCompleteUpload` has established the file is whole, so
+- **No `size`** — `stepRequireCompleteUpload` has established the file is whole, so
   every window but the last is full BY CONSTRUCTION and landing order cannot
   change the result. This path fans out.
 - **A `size`** — the caller is judging completeness itself, which is what makes
@@ -121,7 +121,7 @@ is what `step-files.test.ts` asserts rather than assumes.
 
 **With no `size`, an upload that is still arriving is REFUSED.** That count was
 documented as how a caller learns the store came back short, and against a
-defaulted size it could never say so: the default was `uploadInfo(id).size`,
+defaulted size it could never say so: the default was `stepUploadInfo(id).size`,
 the contiguous readable PREFIX, so the walk copied the prefix and returned a
 number equal to it. What reached ffmpeg was a truncated recording with nothing
 anywhere reporting it. See `sdk/step-uploads-complete.ts`.
@@ -216,7 +216,7 @@ function writeUploadFromFile(path: string, opts?: WriteUploadFromFileOptions): P
 Store a local file as an upload, streaming it, and answer with the record.
 
 The composition rather than the generator, and that is the whole design of this
-function: `writeUpload(fileChunks(path), { … })` is three lines a caller can
+function: `stepWriteUpload(fileChunks(path), { … })` is three lines a caller can
 write, and one of the three is a trap that has to be re-explained every time it
 is written (see below). Handing over the composition means the trap is tested
 once, here, by `step-files.test.ts` — where deleting the `.slice()` fails a
@@ -284,19 +284,19 @@ see [readUploadToFile](#readuploadtofile), which is where the two paths are cut 
 optional size?: number;
 ```
 
-How many bytes the upload holds. Defaults to what `requireCompleteUpload`
+How many bytes the upload holds. Defaults to what `stepRequireCompleteUpload`
 reports — so with no size, an upload that is still ARRIVING is refused.
 
 Pass it only when you already have the record — a step that reported the
 file's name and size before starting has one, and this saves a second look.
-Passing a size LARGER than the store holds is not an error: `readUpload`
+Passing a size LARGER than the store holds is not an error: `stepReadUpload`
 clamps its window to what has arrived, and this walk stops at what it was
 actually given rather than at what it asked for.
 
 **Passing one moves the completeness judgement to the CALLER**, which is
 what makes a polling body expressible: this option means "I have read the
 record", and a caller who has read it can see `complete` for itself. It
-therefore has to read it — `uploadInfo(id).size` threaded in here is the
+therefore has to read it — `stepUploadInfo(id).size` threaded in here is the
 whole bug this default now refuses, since that number IS the prefix.
 
 ##### windowBytes?

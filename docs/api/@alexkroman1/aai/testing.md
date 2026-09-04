@@ -23,7 +23,7 @@ order, roughly by what a spec reaches for first:
   bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
   own FILES (`tools/`, `system-prompt.md`) onto its `agent.ts` default export
   the way the build does — the one function a spec needs.
-- `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
+- `_testing-tool-results.ts` — `expectToolOk` / `expectDialogOk`, unwrapping what a gated
   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
   schema accepts, without reaching through `~standard`.
 - `testing-delegate.ts` — `stubDelegate`, the same seam one loop up: what a
@@ -32,7 +32,7 @@ order, roughly by what a spec reaches for first:
   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
   slots a step reaches through, each answered in memory.
 - `testing-workflows.ts` — run snapshots and progress streams, for a page;
-  `testing-workflow-ctx.ts` — `createWorkflowCtx`, the `ctx` a workflow BODY
+  `testing-workflow-ctx.ts` — `createWorkflowContext`, the `ctx` a workflow BODY
   takes, which nothing else can hand it.
 
 ## Functions
@@ -223,28 +223,28 @@ test("recommend pushes its picks to the client", async () => {
 
 ***
 
-### createWorkflowCtx()
+### createWorkflowContext()
 
 ```ts
-function createWorkflowCtx(options?: WorkflowCtxOptions): WorkflowCtxRecorder;
+function createWorkflowContext(options?: WorkflowContextOptions): WorkflowContextRecorder;
 ```
 
-Build a `WorkflowCtx` that runs a body and records what it asked for.
+Build a `WorkflowContext` that runs a body and records what it asked for.
 
 #### Parameters
 
 ##### options?
 
-[`WorkflowCtxOptions`](#workflowctxoptions)
+[`WorkflowContextOptions`](#workflowcontextoptions)
 
 #### Returns
 
-[`WorkflowCtxRecorder`](#workflowctxrecorder)
+[`WorkflowContextRecorder`](#workflowcontextrecorder)
 
 #### Example
 
 ```ts no-check
-const ctx = createWorkflowCtx();
+const ctx = createWorkflowContext();
 const output = await digestFlow({ url: "https://example.com/a" }, ctx);
 
 expect(output.headline).toBe("…");
@@ -330,10 +330,59 @@ the "I edited the prompt and nothing changed" failure.
 
 ***
 
-### ok()
+### expectDialogOk()
 
 ```ts
-function ok<T>(result: unknown): T;
+function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+```
+
+The same unwrap as [expectToolOk](#expecttoolok), keeping WHERE the dialog landed.
+
+The half a spec needs when the assertion is about the conversation rather
+than about the tool's own value — that a call advanced the machine into
+`quote.pending`, that a final state reports `done`. `expectToolOk()` is this
+with `.result` taken off the end.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+What the tool's `execute` returns, under `result`.
+
+#### Parameters
+
+##### result
+
+`unknown`
+
+#### Returns
+
+[`DialogToolResult`](index.md#dialogtoolresult)\<`T`\>
+
+#### Throws
+
+As [expectToolOk](#expecttoolok) does, and for the same reasons.
+
+#### Example
+
+```ts no-check
+import { expectDialogOk, runTool } from "@alexkroman1/aai/testing";
+
+const answered = expectDialogOk<{ quoted: number }>(
+  await runTool(agentDef, "quote", {}, ctx),
+);
+expect(answered.state).toBe("quote.pending");
+expect(answered.result.quoted).toBe(42);
+```
+
+***
+
+### expectToolOk()
+
+```ts
+function expectToolOk<T>(result: unknown): T;
 ```
 
 The value a gated tool's own `execute` returned, or a throw naming the refusal.
@@ -376,57 +425,12 @@ When the value is not a tool result envelope at all, which is what a
 
 ```ts no-check
 // `no-check`: the agent under test is in another file, which is the point.
-import { ok, runTool } from "@alexkroman1/aai/testing";
+import { expectToolOk, runTool } from "@alexkroman1/aai/testing";
 
-const order = ok<{ id: string }>(await runTool(agentDef, "place_order", {}, ctx));
+const order = expectToolOk<{ id: string }>(
+  await runTool(agentDef, "place_order", {}, ctx),
+);
 expect(order.id).toBe("ord_1");
-```
-
-***
-
-### okPosition()
-
-```ts
-function okPosition<T>(result: unknown): DialogToolResult<T>;
-```
-
-The same unwrap as [ok](#ok), keeping WHERE the dialog landed.
-
-The half a spec needs when the assertion is about the conversation rather
-than about the tool's own value — that a call advanced the machine into
-`quote.pending`, that a final state reports `done`. `ok()` is this with
-`.result` taken off the end.
-
-#### Type Parameters
-
-##### T
-
-`T`
-
-What the tool's `execute` returns, under `result`.
-
-#### Parameters
-
-##### result
-
-`unknown`
-
-#### Returns
-
-[`DialogToolResult`](index.md#dialogtoolresult)\<`T`\>
-
-#### Throws
-
-As [ok](#ok) does, and for the same reasons.
-
-#### Example
-
-```ts no-check
-import { okPosition, runTool } from "@alexkroman1/aai/testing";
-
-const answered = okPosition<{ quoted: number }>(await runTool(agentDef, "quote", {}, ctx));
-expect(answered.state).toBe("quote.pending");
-expect(answered.result.quoted).toBe(42);
 ```
 
 ***
@@ -1234,7 +1238,7 @@ function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: Stub
 ```
 
 Publish an in-memory upload store, so a step that calls
-`readUpload` can be tested without a server.
+`stepReadUpload` can be tested without a server.
 
 A step reads uploads through a process-wide slot rather than dialling
 anything, which is what makes this possible at all: a spec supplies its own
@@ -1270,8 +1274,8 @@ const uploads = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
 // … call the step …
 uploads.restore();
 
-// A streamed upload mid-flight: `readUpload` comes back short and
-// `uploadInfo(...).complete` is false, which is what a polling body sees.
+// A streamed upload mid-flight: `stepReadUpload` comes back short and
+// `stepUploadInfo(...).complete` is false, which is what a polling body sees.
 const firstHalf = new Uint8Array([1, 2]);
 stubUploads({ upl_2: { bytes: firstHalf, complete: false } }).restore();
 ```
@@ -1962,7 +1966,7 @@ type StubEmitted = {
 };
 ```
 
-One chunk `emit()` wrote, and the stream it went to.
+One chunk `stepEmit()` wrote, and the stream it went to.
 
 #### Properties
 
@@ -2039,7 +2043,7 @@ What [stubReporter](#stubreporter-1) returns.
 emitted: StubEmitted[];
 ```
 
-Every chunk `emit()` wrote, oldest first.
+Every chunk `stepEmit()` wrote, oldest first.
 
 ##### lines
 
@@ -2047,7 +2051,7 @@ Every chunk `emit()` wrote, oldest first.
 lines: string[];
 ```
 
-Every line `report()` wrote, oldest first.
+Every line `stepReport()` wrote, oldest first.
 
 ##### restore
 
@@ -2638,7 +2642,7 @@ optional complete?: boolean;
 Whether every byte is in. Defaults to `true`.
 
 `false` stages a STREAMED upload that is still arriving, which is the state
-a step polling one has to handle and the only one where `readUpload`
+a step polling one has to handle and the only one where `stepReadUpload`
 legitimately comes back short. Being able to write that down is most of why
 this field exists: a body that treats a stalled size as the end returns a
 transcript of most of a recording and reports success, and a spec cannot
@@ -2673,7 +2677,7 @@ What [stubUploads](#stubuploads-1) returns.
 An OBJECT, like every other fake here (`stubSpeech`, `stubReporter`,
 `stubStepFetch`) — this one used to be the bare `restore` function, which made
 it the only stub in the family a spec had to remember was different, and left
-a spec asserting on a WRITE to round-trip through `uploadInfo`/`readUpload`:
+a spec asserting on a WRITE to round-trip through `stepUploadInfo`/`stepReadUpload`:
 the published slot, read back through the same seam the step wrote it through,
 to answer "did it write anything at all".
 
@@ -2688,7 +2692,7 @@ read(id: string): StubUploadWrite | undefined;
 What is stored under `id` right now — a seeded file or one a step wrote.
 
 Synchronous and outside the published slot, so a spec asserting on bytes
-does not have to `await readUpload` through the very seam it is testing.
+does not have to `await stepReadUpload` through the very seam it is testing.
 
 ###### Parameters
 
@@ -2763,13 +2767,13 @@ returned is a value a spec can assert on rather than a fresh UUID.
 optional writable?: boolean;
 ```
 
-Accept WRITES, so a step calling `writeUpload` can be tested.
+Accept WRITES, so a step calling `stepWriteUpload` can be tested.
 
 Off by default, and deliberately: a store that silently accepts writes it
 was not asked for cannot fail a spec whose step wrote a file nobody meant
-it to, and `writeUpload` naming a read-only store is a better failure than
+it to, and `stepWriteUpload` naming a read-only store is a better failure than
 an upload appearing from nowhere. What a step writes is readable through
-`readUpload`/`uploadInfo` on the id it was given, like any other upload.
+`stepReadUpload`/`stepUploadInfo` on the id it was given, like any other upload.
 
 ***
 
@@ -2937,10 +2941,10 @@ that binds it.
 
 ***
 
-### WorkflowCtxOptions
+### WorkflowContextOptions
 
 ```ts
-type WorkflowCtxOptions = {
+type WorkflowContextOptions = {
   hooks?: Record<string, unknown>;
   now?: number | (() => number);
   random?: number | (() => number);
@@ -2952,7 +2956,7 @@ type WorkflowCtxOptions = {
 };
 ```
 
-What [createWorkflowCtx](#createworkflowctx) takes.
+What [createWorkflowContext](#createworkflowcontext) takes.
 
 #### Properties
 
@@ -2975,7 +2979,7 @@ optional now?: number | (() => number);
 
 What `ctx.now()` answers — a fixed number, or a function called per reach.
 
-Defaults to [WORKFLOW\_CTX\_NOW](#workflow_ctx_now), a FIXED instant, so a body's derived
+Defaults to [WORKFLOW\_CONTEXT\_NOW](#workflow_context_now), a FIXED instant, so a body's derived
 durations are constants a spec can write down. There is no journal here, so
 nothing is memoized: a function is called once per reach, which is what a
 spec asserting on two reads (a start and an end) wants.
@@ -3052,17 +3056,17 @@ The declared key. Defaults to `"test"`.
 
 ***
 
-### WorkflowCtxRecorder
+### WorkflowContextRecorder
 
 ```ts
-type WorkflowCtxRecorder = WorkflowCtx & {
+type WorkflowContextRecorder = WorkflowContext & {
   slept: RecordedSleep[];
   steps: RecordedStep[];
   waited: string[];
 };
 ```
 
-What [createWorkflowCtx](#createworkflowctx) answers: a real `WorkflowCtx` plus its log.
+What [createWorkflowContext](#createworkflowcontext) answers: a real `WorkflowContext` plus its log.
 
 #### Type Declaration
 
@@ -3102,13 +3106,13 @@ PCM bytes [stubSpeech](#stubspeech-1) answers with when no size is named — ~0.
 
 ***
 
-### WORKFLOW\_CTX\_NOW
+### WORKFLOW\_CONTEXT\_NOW
 
 ```ts
-const WORKFLOW_CTX_NOW: 1767225600000 = 1767225600000;
+const WORKFLOW_CONTEXT_NOW: 1767225600000 = 1767225600000;
 ```
 
-The instant [createWorkflowCtx](#createworkflowctx) freezes `ctx.now()` at.
+The instant [createWorkflowContext](#createworkflowcontext) freezes `ctx.now()` at.
 
 `2026-01-01T00:00:00.000Z`. Exported so a spec computes an expected duration
 from it rather than copying the number.

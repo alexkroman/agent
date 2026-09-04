@@ -28,7 +28,7 @@ A fake with no lifetime (`stubGenerate`, `createToolContext`, the workflow
 snapshots) gets no wrapper — there is nothing to restore, so a second name
 for it would only be a second name.
 
-**`mockWorkflows` is here for the other half of the same rule: `vi.fn` IS its
+**`installStubWorkflows` is here for the other half of the same rule: `vi.fn` IS its
 content.** It restores nothing and installs nothing, so it takes no `install`
 prefix — but its methods have to be spies, because a spec of a
 workflow-driving tool asserts on `start` and re-points `lastLine` per test.
@@ -96,8 +96,8 @@ function installStubReporter(): StubReporter;
 Capture what a step narrates and emits, restored when this
 test finishes.
 
-`stubReporter` with the bookkeeping done — see it for why `report()` and
-`emit()` are separated the way the streams are.
+`stubReporter` with the bookkeeping done — see it for why `stepReport()` and
+`stepEmit()` are separated the way the streams are.
 
 #### Returns
 
@@ -223,10 +223,10 @@ test("the step reads the recording it was given", async () => {
 
 ***
 
-### mockWorkflows()
+### installStubWorkflows()
 
 ```ts
-function mockWorkflows(options?: MockWorkflowsOptions): WorkflowClient;
+function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
 ```
 
 A `ctx.workflows` whose reads answer from one fixture and whose every method
@@ -253,13 +253,13 @@ reading a progress channel by hand is the hazard `lastLine` exists to remove
 the wrong order waits forever with no error. A spec that really is testing
 one of those overrides it, which reads as the deliberate act it is.
 
-Spread it to replace a method for one test: `{ ...mockWorkflows(), signal }`.
+Spread it to replace a method for one test: `{ ...installStubWorkflows(), signal }`.
 
 #### Parameters
 
 ##### options?
 
-[`MockWorkflowsOptions`](#mockworkflowsoptions)
+[`StubWorkflowsOptions`](#stubworkflowsoptions)
 
 #### Returns
 
@@ -269,9 +269,9 @@ Spread it to replace a method for one test: `{ ...mockWorkflows(), signal }`.
 
 ```ts
 import { createRunSnapshot, createToolContext } from "@alexkroman1/aai/testing";
-import { mockWorkflows } from "@alexkroman1/aai/testing/vitest";
+import { installStubWorkflows } from "@alexkroman1/aai/testing/vitest";
 
-const workflows = mockWorkflows({
+const workflows = installStubWorkflows({
   names: ["recap"],
   runs: [createRunSnapshot({ workflow: "recap", status: "running" })],
 });
@@ -280,10 +280,10 @@ const ctx = createToolContext({ workflows });
 
 ## Type Aliases
 
-### MockWorkflowsOptions
+### StubWorkflowsOptions
 
 ```ts
-type MockWorkflowsOptions = {
+type StubWorkflowsOptions = {
   lastLine?: unknown;
   names?: readonly string[];
   runId?: string;
@@ -291,9 +291,9 @@ type MockWorkflowsOptions = {
 };
 ```
 
-What [mockWorkflows](#mockworkflows) answers each read with.
+What [installStubWorkflows](#installstubworkflows) answers each read with.
 
-Every field has a default, so `mockWorkflows()` is a client whose reads all
+Every field has a default, so `installStubWorkflows()` is a client whose reads all
 answer "nothing has run" — which is the arm a `*_status` tool branches on
 first and the one most specs of one want.
 

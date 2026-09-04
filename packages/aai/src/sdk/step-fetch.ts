@@ -46,7 +46,7 @@
  *
  * ## What it is, mechanically
  *
- * A published slot, the mechanism {@link stepEnv} and {@link report} use and for
+ * A published slot, the mechanism {@link stepEnv} and {@link stepReport} use and for
  * the same reason: the HTTP/1.1 dispatcher needs `undici`, this module is on the
  * CLI's zero-dependency startup path and rides the browser bundle, and a step
  * artifact carries its own copy of this file — so the publisher and the reader

@@ -481,7 +481,7 @@ the unset stages keep the AssemblyAI default:
 | Subpath | Factories |
 | --- | --- |
 | `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt` |
-| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropicLlm`, `openaiLlm`, `googleLlm`, `mistralLlm`, `xaiLlm`, `groqLlm`, `openrouterLlm`, `gatewayLlm` |
+| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `gatewayLlm` |
 | `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts` |
 
 Factories return pure descriptors — serializable data, not SDK clients.
@@ -494,7 +494,7 @@ model.
 
 **S2S mode** is the explicit opt-in to a speech-to-speech service, where
 STT, the LLM loop, and TTS all run service-side over one socket:
-`s2s: assemblyAIS2s()` (root export) or `openaiS2s()` from
+`s2s: assemblyAIS2s()` (root export) or `openAIS2s()` from
 `@alexkroman1/aai/s2s`.
 
 ## Testing a tool

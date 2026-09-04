@@ -27,7 +27,7 @@ import { mountRoot, resolveContainer } from "./define-client.tsx";
 import type { ClientTheme } from "./types.ts";
 
 /**
- * Configuration for {@link page}.
+ * Configuration for {@link mountPage}.
  *
  * @public
  */
@@ -49,7 +49,7 @@ export type PageConfig = {
 };
 
 /**
- * Handle returned by {@link page}. `Disposable`, so `using` works.
+ * Handle returned by {@link mountPage}. `Disposable`, so `using` works.
  *
  * @public
  */

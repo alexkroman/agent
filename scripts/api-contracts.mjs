@@ -227,7 +227,9 @@ function retire(target) {
   const id = capabilityId(pkg, capability);
   const reason = FLAGS.drop;
   if (reason === undefined || reason.trim() === "") {
-    console.error('api-contracts: `--retire` needs `--drop "<reason>"` — it is what a future reader reads.');
+    console.error(
+      'api-contracts: `--retire` needs `--drop "<reason>"` — it is what a future reader reads.',
+    );
     process.exit(1);
   }
   const epoch = Number(FLAGS.epoch);

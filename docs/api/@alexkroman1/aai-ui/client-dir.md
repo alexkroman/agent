@@ -21,7 +21,7 @@ function defaultClientDir(): string;
 ```
 
 Absolute path to the prebuilt browser client's static files — pass it to
-`createServer`/`createAgentServer` as `clientDir`.
+`createRuntimeServer`/`createAgentServer` as `clientDir`.
 
 A function, not a constant: resolution touches the module graph and throws
 when the package is missing, and a module-level constant would move that

@@ -309,10 +309,10 @@ rather than above it, so `hint` is the place for guidance.
 
 ***
 
-### client()
+### mountClient()
 
 ```ts
-function client(config: ClientConfig): ClientHandle;
+function mountClient(config: ClientConfig): ClientHandle;
 ```
 
 Define and mount a client UI for a voice agent.
@@ -352,7 +352,7 @@ function OrderPanel() {
   return <div>Cart</div>;
 }
 
-client({
+mountClient({
   name: "Pizza Ordering",
   theme: { bg: "#1a1a1a", primary: "#e55" },
   sidebar: OrderPanel,
@@ -363,14 +363,14 @@ client({
 **A custom component**
 
 ```tsx
-import { client, useSession } from "@alexkroman1/aai-ui";
+import { mountClient, useSession } from "@alexkroman1/aai-ui";
 
 function MyCustomApp() {
   const session = useSession();
   return <div>{session.state}</div>;
 }
 
-client({ component: MyCustomApp });
+mountClient({ component: MyCustomApp });
 ```
 
 #### Throws
@@ -408,7 +408,7 @@ Reach for it when the conversation is yours and the frame is not. Reach for
 `<ChatView>` when both are ours. Reach for `<SessionErrorBanner>` alone when
 neither is.
 
-Must be rendered inside the providers `client()` installs.
+Must be rendered inside the providers `mountClient()` installs.
 
 #### Parameters
 
@@ -458,10 +458,10 @@ function Console() {
 
 ***
 
-### createSessionCore()
+### createBrowserSession()
 
 ```ts
-function createSessionCore(options: VoiceSessionOptions): SessionCore;
+function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 ```
 
 Create a framework-agnostic voice session core that connects to an AAI
@@ -470,7 +470,7 @@ server via WebSocket.
 Uses a subscribe/getSnapshot pattern for state management, compatible with
 React's `useSyncExternalStore` and other external store integrations.
 
-Most clients never call this: `client()` creates a core and installs it in
+Most clients never call this: `mountClient()` creates a core and installs it in
 React context for the hooks. Reach for it directly when building a
 non-React UI (or wiring the session into another framework's store).
 
@@ -484,18 +484,18 @@ Session configuration including the platform server URL.
 
 #### Returns
 
-[`SessionCore`](#sessioncore)
+[`BrowserSession`](#sessioncore)
 
-A [SessionCore](#sessioncore) handle for controlling the session.
+A [BrowserSession](#sessioncore) handle for controlling the session.
 
 #### Example
 
 ```ts
-import { createSessionCore, type SessionSnapshot } from "@alexkroman1/aai-ui";
+import { createBrowserSession, type SessionSnapshot } from "@alexkroman1/aai-ui";
 
 declare function render(snapshot: SessionSnapshot): void;
 
-const session = createSessionCore({ platformUrl: "https://host/my-agent/" });
+const session = createBrowserSession({ platformUrl: "https://host/my-agent/" });
 session.subscribe(() => render(session.getSnapshot()));
 session.start();
 ```
@@ -630,8 +630,8 @@ Fetch the agent's declared `name`, `greeting` and front door; any failure
 yields the agent default (`{}`).
 
 **This is what a workflow app calls instead of receiving the config.**
-`client()` fetches `GET client-config` for itself before it renders the
-default chat shell, so a voice client never has to. `page()` mounts no
+`mountClient()` fetches `GET client-config` for itself before it renders the
+default chat shell, so a voice client never has to. `mountPage()` mounts no
 session and makes no such request — deliberately, since a page has no shell
 to put a name in — so a page that wants the agent's own `name` or `greeting`
 asks for them here.
@@ -693,7 +693,7 @@ function App() {
   );
 }
 
-page({ name: name ?? "Workflows", component: App });
+mountPage({ name: name ?? "Workflows", component: App });
 ```
 
 ***
@@ -777,7 +777,7 @@ function ColorForm() {
 
 ```ts
 function FileField(props: FieldShell & {
-  read?: FileRead;
+  read?: FileReadMode;
   upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): Element;
 ```
@@ -790,14 +790,14 @@ the run record and replayed from it on every resume, so a file's BYTES cannot
 travel in it. With `upload` the field contributes the `File` itself,
 `useWorkflowSubmit` stores it through `POST /workflows/uploads` before
 starting the run, and the input carries the upload id — which a step reads
-windows of with `readUpload`. Declaring the property in the workflow's
+windows of with `stepReadUpload`. Declaring the property in the workflow's
 `uploads` list makes `<WorkflowFields>` render exactly this, so a declared
 form needs no file markup at all.
 
 **Without it the field describes the file and does not read it.** `read`
 exists for the cases where the bytes really are small and really are the
 input — a CSV of ids, a config — and the size is the author's to check. See
-[FileRead](#fileread) for the four values; `upload` is shorthand for
+[FileReadMode](#fileread) for the four values; `upload` is shorthand for
 `read="upload"`.
 
 Otherwise accepts every `<input>` attribute except `name`, `className` and
@@ -809,7 +809,7 @@ Otherwise accepts every `<input>` attribute except `name`, `className` and
 ##### props
 
 [`FieldShell`](#fieldshell) & \{
-  `read?`: [`FileRead`](#fileread);
+  `read?`: [`FileReadMode`](#fileread);
   `upload?`: `boolean`;
 \} & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"name"` \| `"className"` \| `"type"`\>
 
@@ -924,10 +924,10 @@ passed straight through.
 
 ***
 
-### page()
+### mountPage()
 
 ```ts
-function page(config: PageConfig): PageHandle;
+function mountPage(config: PageConfig): PageHandle;
 ```
 
 Mount a page for an agent whose work happens in workflows.
@@ -968,7 +968,7 @@ function App() {
   );
 }
 
-page({ name: "Digest", component: App });
+mountPage({ name: "Digest", component: App });
 ```
 
 #### Throws
@@ -1059,7 +1059,7 @@ union — it is what a user pastes into a bug report and the only part of the
 error that is stable across wordings — and the chrome that dropped it left
 its readers with a sentence and no way to say which failure it was.
 
-Must be rendered inside the providers `client()` installs.
+Must be rendered inside the providers `mountClient()` installs.
 
 #### Parameters
 
@@ -1669,7 +1669,7 @@ function useConversation(): UseConversationResult;
 Subscribe to the conversation: the interleaved exchange, the streaming
 utterance, the live transcript and the thinking rule — with no markup.
 
-Must be used inside the provider `client()` installs.
+Must be used inside the provider `mountClient()` installs.
 
 #### Returns
 
@@ -1859,9 +1859,9 @@ Return the live [Session](#session-1): the current snapshot fields plus the
 control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
 `cancel`, `end`).
 
-Throws if used outside the provider `client()` installs (the error names
+Throws if used outside the provider `mountClient()` installs (the error names
 `<SessionProvider>` — you only mount that yourself when bypassing
-`client()`). Re-renders the component on *every* snapshot change; for a
+`mountClient()`). Re-renders the component on *every* snapshot change; for a
 component that reads one field, prefer [useSessionSelector](#usesessionselector) for a
 targeted subscription.
 
@@ -1919,9 +1919,9 @@ subscription tax.
 
 Identity-stable per core, so it is safe in a dependency array and in a
 `memo()` child's props: the methods are closures created once by
-`createSessionCore`, and the object wrapping them is memoized on the core.
+`createBrowserSession`, and the object wrapping them is memoized on the core.
 
-Throws outside the provider `client()` installs, like every session hook.
+Throws outside the provider `mountClient()` installs, like every session hook.
 
 #### Returns
 
@@ -2092,7 +2092,7 @@ default) from the nearest theme context. Returns the default theme when no
 provider is present, so components can call it unconditionally.
 
 This is how a custom component stays on the agent's palette: a
-`client({ theme })` override reaches it here, where a hardcoded colour or a
+`mountClient({ theme })` override reaches it here, where a hardcoded colour or a
 Tailwind class cannot see it.
 
 #### Returns
@@ -2856,7 +2856,7 @@ What a run has said so far, rendered.
 
 The complement of a status line, and the reason both exist: a run is
 `running` for its whole life, so a one-round job and a ten-round one look
-identical while they happen. These lines come from the run itself (`report()`
+identical while they happen. These lines come from the run itself (`stepReport()`
 in a `"use step"` body), which is the only channel a workflow has before it
 produces an output.
 
@@ -3293,7 +3293,7 @@ The session-forwarded fields are picked from [VoiceSessionOptions](#voicesession
 (one source of truth for types and docs) rather than re-declared — a
 re-declared copy is exactly how doc comments drift. It is NOT the session's
 own options type: that is [VoiceSessionOptions](#voicesessionoptions), which
-`createSessionCore` takes and which three of these fields come from.
+`createBrowserSession` takes and which three of these fields come from.
 
 #### Type Declaration
 
@@ -3423,7 +3423,7 @@ sidebar); present, the caller's own component inside the same providers —
 and that decision is made at runtime, where every field can be honoured. It
 used to be a union whose two arms banned each other's fields with `?: never`,
 and the failure that shape produces is recorded twice in this file's history:
-`client({ name, component })` and `client({ component, tools })` were both
+`mountClient({ name, component })` and `mountClient({ component, tools })` were both
 the natural thing to write, both were refused with *"Type 'string' is not
 assignable to type 'undefined'"*, and both cost a build round each time
 before the ban was lifted. What was left banned was `sidebar` beside a
@@ -3446,7 +3446,7 @@ Parsed body of `GET /client-config`.
 
 ```ts
 type ClientHandle = {
-  session: SessionCore;
+  session: BrowserSession;
   [dispose]: void;
   dispose: void;
 };
@@ -3487,7 +3487,7 @@ Unmount the UI and disconnect the session.
 ##### session
 
 ```ts
-session: SessionCore;
+session: BrowserSession;
 ```
 
 The underlying session core.
@@ -3793,10 +3793,10 @@ Key this field contributes to [FormValues](#formvalues).
 
 ***
 
-### FileRead
+### FileReadMode
 
 ```ts
-type FileRead = "none" | "text" | "dataUrl" | "upload";
+type FileReadMode = "none" | "text" | "dataUrl" | "upload";
 ```
 
 How much of a chosen file a [FileField](#filefield) reads.
@@ -4032,7 +4032,7 @@ optional name?: string;
 ```
 
 Page title. Set only when given, so a title the HTML shell declared is never
-clobbered — the same rule `client()`'s custom-component tier follows.
+clobbered — the same rule `mountClient()`'s custom-component tier follows.
 
 ##### target?
 
@@ -4111,7 +4111,7 @@ client→server inputs are audio and the control methods above.
 ### SessionActions
 
 ```ts
-type SessionActions = Pick<SessionCore, 
+type SessionActions = Pick<BrowserSession, 
   | "start"
   | "cancel"
   | "resetState"
@@ -4129,14 +4129,14 @@ Declared once and merged into [Session](#session-1) rather than written out at b
 places: the two lists have to be the same list, and a member added to one and
 not the other is a hook that cannot do what `useSession()` can.
 
-Method signatures come from [SessionCore](#sessioncore) — one source of truth.
+Method signatures come from [BrowserSession](#sessioncore) — one source of truth.
 
 ***
 
-### SessionCore
+### BrowserSession
 
 ```ts
-type SessionCore = {
+type BrowserSession = {
   [dispose]: void;
   cancel: void;
   connect: void;
@@ -5323,7 +5323,7 @@ type UseWorkflowSubmitOptions = {
   api?: WorkflowApi;
   intervalMs?: number;
   key?: string;
-  parallel?: UploadParallel;
+  parallel?: UploadParallelOption;
   recover?: boolean;
   wait?: number;
 };
@@ -5370,7 +5370,7 @@ typed — `use-run-key.ts` argues every alternative.
 ##### parallel?
 
 ```ts
-optional parallel?: UploadParallel;
+optional parallel?: UploadParallelOption;
 ```
 
 Send each chosen file as concurrent parts instead of in one request.
@@ -5430,8 +5430,8 @@ type VoiceSessionOptions = {
 ```
 
 Options for creating a voice session — the shared field set accepted by
-both `client()` and `createSessionCore`. The one difference: `client()`
-defaults `platformUrl` from `location.href`, while `createSessionCore`
+both `mountClient()` and `createBrowserSession`. The one difference: `mountClient()`
+defaults `platformUrl` from `location.href`, while `createBrowserSession`
 requires it.
 
 #### Properties
@@ -5595,7 +5595,7 @@ download(id: string, options?: {
 ```
 
 Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
-a file (`writeUpload` stores it, the output carries the id). A `Blob`
+a file (`stepWriteUpload` stores it, the output carries the id). A `Blob`
 rather than a URL because the byte route takes the same bearer every route
 here does and neither `<audio src>` nor `<a href>` can send one;
 `downloadUpload` carries the rest.
@@ -5973,7 +5973,7 @@ Store a file and resolve the handle a run input carries.
 The other half of `WorkflowDef.uploads`: a workflow's input is journaled and
 replayed on every resume, so bytes may not travel in it — they go here once,
 and the run carries [UploadRef.id](../aai/workflow-api.md#id), which a step reads windows of with
-`readUpload`.
+`stepReadUpload`.
 
 A `File` from an `<input type="file">` needs no second argument: its own
 `name` and `type` are what get stored. Anything else — a `Blob`, a
@@ -5999,10 +5999,10 @@ recording over a long link wants — see [UploadOptions.parallel](../aai/workflo
 
 `Promise`\<[`UploadRef`](../aai/workflow-api.md#uploadref)\>
 
-##### uploadInfo()
+##### stepUploadInfo()
 
 ```ts
-uploadInfo(id: string): Promise<UploadInfo>;
+stepUploadInfo(id: string): Promise<UploadInfo>;
 ```
 
 Read an upload's record: its name, how much has ARRIVED, and `complete`.
@@ -6216,7 +6216,7 @@ export const digest = workflow({
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import type { digest } from "../agent.ts";
 
-export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
   // `limit` is `number`, not `number | undefined` — the default already ran.
   return await research(input.topic, input.limit);
 }

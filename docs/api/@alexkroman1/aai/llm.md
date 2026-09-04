@@ -42,7 +42,7 @@ default from. Only [assemblyAILlm](#assemblyaillm) has a default
 ([ASSEMBLYAI\_LLM\_DEFAULT\_MODEL](#assemblyai_llm_default_model)) and so a bare call.
 
 Two vendors here are AGGREGATORS rather than model owners, addressed as
-`"creator/model"`: [openrouterLlm](#openrouterllm) and [gatewayLlm](#gatewayllm). A third,
+`"creator/model"`: [openRouterLlm](#openrouterllm) and [gatewayLlm](#gatewayllm). A third,
 [assemblyAILlm](#assemblyaillm), fronts AssemblyAI's own gateway — its ids are
 [AssemblyAIGatewayModel](#assemblyaigatewaymodel), and the CATALOG behind that union (which
 model streams, calls tools, serves the EU) is on
@@ -281,10 +281,10 @@ export default agent({
 
 ***
 
-### openaiLlm()
+### openAILlm()
 
 ```ts
-function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
+function openAILlm(opts: OpenAILlmOptions): LlmProvider;
 ```
 
 Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
@@ -315,10 +315,10 @@ export default agent({
 
 ***
 
-### openrouterLlm()
+### openRouterLlm()
 
 ```ts
-function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
+function openRouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 ```
 
 Build an OpenRouter descriptor.
@@ -355,10 +355,10 @@ https://openrouter.ai/models for the list.
 
 ***
 
-### xaiLlm()
+### xAILlm()
 
 ```ts
-function xaiLlm(opts: XaiLlmOptions): LlmProvider;
+function xAILlm(opts: XAILlmOptions): LlmProvider;
 ```
 
 Build an xAI (Grok) LLM descriptor for pipeline mode. The API key is
@@ -368,7 +368,7 @@ resolved host-side from the agent's env (`XAI_API_KEY`).
 
 ##### opts
 
-[`XaiLlmOptions`](#xaillmoptions)
+[`XAILlmOptions`](#xaillmoptions)
 
 #### Returns
 
@@ -424,7 +424,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
@@ -577,7 +577,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
@@ -625,7 +625,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
@@ -673,7 +673,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
@@ -721,7 +721,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
@@ -751,7 +751,7 @@ Options for an LLM factory whose only setting is which model to run.
 - [`MistralLlmOptions`](#mistralllmoptions)
 - [`OpenAILlmOptions`](#openaillmoptions)
 - [`OpenRouterLlmOptions`](#openrouterllmoptions)
-- [`XaiLlmOptions`](#xaillmoptions)
+- [`XAILlmOptions`](#xaillmoptions)
 
 #### Properties
 
@@ -775,7 +775,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
@@ -786,7 +786,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ### OpenAILlmOptions
 
-Options for [openaiLlm](#openaillm).
+Options for [openAILlm](#openaillm).
 
 Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
 one model id, and every vendor still gets a NAME for its own options so its
@@ -819,7 +819,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
@@ -834,7 +834,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ### OpenRouterLlmOptions
 
-Options for [openrouterLlm](#openrouterllm).
+Options for [openRouterLlm](#openrouterllm).
 
 Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
 one model id, and every vendor still gets a NAME for its own options so its
@@ -867,7 +867,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
@@ -880,9 +880,9 @@ from, and an id invented on its behalf fails at the first session.
 
 ***
 
-### XaiLlmOptions
+### XAILlmOptions
 
-Options for [xaiLlm](#xaillm).
+Options for [xAILlm](#xaillm).
 
 Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
 one model id, and every vendor still gets a NAME for its own options so its
@@ -915,7 +915,7 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
 `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 

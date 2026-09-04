@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The published half of {@link report} and {@link emit}: one call becomes a
+ * The published half of {@link stepReport} and {@link stepEmit}: one call becomes a
  * stream chunk, and — for a narration line — a server-log line beside it.
  *
  * `sdk/step-report.ts` is the surface a step calls and may not import a logger
