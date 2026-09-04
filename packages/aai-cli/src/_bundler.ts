@@ -109,14 +109,15 @@ export async function evalWorkerConfig(code: string): Promise<unknown> {
  * distinct-build leak is accepted for the reasons documented there.
  */
 export function createWorkerEvaluator(): (code: string) => Promise<AgentDef> {
-  let lastHash: string | undefined;
-  let lastWorker: AgentDef | undefined;
+  // One record rather than a hash/worker pair: a half-updated pair is
+  // representable and the guard then needs a `lastWorker &&` conjunct that
+  // documents the hazard instead of removing it.
+  let last: { hash: string; worker: AgentDef } | undefined;
   return async (code: string): Promise<AgentDef> => {
     const codeHash = hash("sha256", code);
-    if (lastWorker && codeHash === lastHash) return lastWorker;
+    if (last?.hash === codeHash) return last.worker;
     const worker = await evalWorkerBundle(code);
-    lastHash = codeHash;
-    lastWorker = worker;
+    last = { hash: codeHash, worker };
     return worker;
   };
 }

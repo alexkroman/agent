@@ -8,7 +8,7 @@
 
 import path from "node:path";
 import { defineCommand } from "citty";
-import { defineExec, sharedArgs } from "./_cli-common.ts";
+import { defineExec, platformArgs } from "./_cli-common.ts";
 import { CliError } from "./_output.ts";
 
 /**
@@ -54,8 +54,7 @@ const secretPut = defineExec({
         "when stdin is a terminal",
       required: true,
     },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   cwd: "any",
   async run({ args, mode, cwd }) {
@@ -73,8 +72,7 @@ const secretDelete = defineExec({
   meta: { name: "delete", description: "Delete a secret" },
   args: {
     name: { type: "positional", description: "Secret name", required: true },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   cwd: "any",
   async run({ args, cwd }) {
@@ -86,8 +84,7 @@ const secretDelete = defineExec({
 const secretList = defineExec({
   meta: { name: "list", description: "List all secrets" },
   args: {
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   cwd: "any",
   async run({ args, cwd }) {
@@ -127,8 +124,7 @@ export const logs = defineExec({
   args: {
     dir: dirArg,
     follow: { type: "boolean", alias: "f", description: "Keep printing new output" },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   cwd: "any",
   async run({ args, cwd }) {

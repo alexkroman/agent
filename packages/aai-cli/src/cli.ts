@@ -3,15 +3,16 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { plural } from "@alexkroman1/aai/utils";
+import { defineCommand, runMain, showUsage } from "citty";
 import {
-  type ArgsDef,
-  type CommandDef,
-  defineCommand,
-  type Resolvable,
-  runMain,
-  showUsage,
-} from "citty";
-import { commandPath, defineExec, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
+  commandPath,
+  defineExec,
+  findUnknownFlags,
+  platformArgs,
+  resolveArgv,
+  sharedArgs,
+} from "./_cli-common.ts";
 import { fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
 import { logs, secret } from "./_resource-commands.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
@@ -69,6 +70,8 @@ const init = defineExec({
       alias: "t",
       description: "Template to use (run `aai templates` for the list)",
     },
+    // Not `...platformArgs`: this command interleaves `yes` between the pair,
+    // and the spread would reorder its `--help` block for no gain.
     server: sharedArgs.server,
     yes: sharedArgs.yes,
     json: sharedArgs.json,
@@ -118,7 +121,7 @@ const test = defineExec({
   args: {
     json: sharedArgs.json,
     // The widening `executeTest`'s own `incomplete_run` failure recommends.
-    // Without it declared here `assertKnownFlags` rejects the very flag that
+    // Without it declared here `assertKnownArgv` rejects the very flag that
     // error tells the reader to run.
     all: {
       type: "boolean",
@@ -173,8 +176,7 @@ const build = defineExec({
 const deploy = defineExec({
   meta: { name: "deploy", description: "(internal) used by studio Publish", hidden: true },
   args: {
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
     allowPreviewSlug: {
       type: "boolean",
       description:
@@ -201,8 +203,7 @@ const del = defineExec({
     description: "Delete the studio project and its deployed agents",
   },
   args: {
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   // The link in `.aai/project.json` is what it deletes; a directory that has
   // lost its agent.ts can still own a studio project.
@@ -216,8 +217,7 @@ const del = defineExec({
 const login = defineExec({
   meta: { name: "login", description: "Link your signed-in browser account and save your API key" },
   args: {
-    server: sharedArgs.server,
-    json: sharedArgs.json,
+    ...platformArgs,
   },
   // Account-level, not project-level: it works from anywhere.
   cwd: "none",
@@ -357,71 +357,48 @@ if (process.env.VITEST !== "true") {
   };
 
   /**
-   * Resolve a citty `Resolvable` field. The cast is `Resolvable<T>` admitting
-   * `T` itself, so `typeof value === "function"` narrows to `T & Function`
-   * alongside the two thunk signatures; `_cli-common.ts`'s copy does the same.
-   */
-  const resolveField = async <T>(value: Resolvable<T> | undefined): Promise<T | undefined> =>
-    typeof value === "function" ? await (value as () => T | Promise<T>)() : await value;
-
-  /**
-   * Answer an unknown SUBCOMMAND here rather than leaving it to citty.
+   * Refuse a mistyped command or an unrecognized flag instead of letting
+   * either through — both read off ONE walk of the command tree.
    *
-   * citty throws `Unknown command ${cyan(name)}` and its own catch writes that
-   * message with `console.error` — colour escapes and all, whatever the output
-   * mode and whether or not stderr is a terminal — AFTER `showUsage` has
-   * already emitted the result line. So `aai deploy-now | jq` produced an
-   * envelope that named `aai` instead of the token the user typed, plus an
-   * ANSI-studded sentence on stderr that no JSON consumer asked for. Reported
-   * here instead: the envelope names the command, and nothing colours a pipe.
+   * An unknown SUBCOMMAND is answered here rather than by citty, which throws
+   * `Unknown command ${cyan(name)}` and writes it with `console.error` —
+   * colour escapes and all, whatever the output mode and whether or not stderr
+   * is a terminal — AFTER `showUsage` has already emitted the result line. So
+   * `aai deploy-now | jq` produced an envelope that named `aai` instead of the
+   * token the user typed, plus an ANSI-studded sentence on stderr that no JSON
+   * consumer asked for. Reported here instead: the envelope names the command,
+   * and nothing colours a pipe.
    *
-   * The tree walk is the same one `unknownFlagsForArgv` does in
-   * `_cli-common.ts`, which cannot report this case (it returns `[]` for it,
-   * because the flags would be matched against the wrong command). Worth
-   * hoisting into that module next to it.
+   * An unknown FLAG is refused because citty drops one silently, so
+   * `aai push --serverr=http://x` exited 0 having pushed to the DEFAULT server.
+   * `--server` decides where the API key and secret values go, so a typo that
+   * quietly retargets it is worth failing on.
+   *
+   * The command check comes first because a flag can only be judged against
+   * the right command's `argsDef` — which is why `resolveArgv` reports the two
+   * together instead of leaving the order to this call site.
    */
-  const assertKnownCommand = async (): Promise<void> => {
-    let cmd: CommandDef<ArgsDef> = mainCommand;
-    const named: string[] = ["aai"];
-    for (const token of process.argv.slice(2)) {
-      // A flag ends the subcommand path; from here on citty's own parser and
-      // `assertKnownFlags` own the argv.
-      if (token.startsWith("-")) return;
-      const subCommands = await resolveField(cmd.subCommands);
-      // A leaf command's remaining positionals are arguments, not commands.
-      if (!subCommands || Object.keys(subCommands).length === 0) return;
-      const next = await resolveField(subCommands[token]);
-      if (next === undefined) {
-        await reportAndExit(
-          `Unknown command: ${token}`,
-          `Run \`${named.join(" ")} --help\` to see the commands it accepts.`,
-        );
-        return;
-      }
-      cmd = next;
-      named.push(token);
+  const assertKnownArgv = async (): Promise<void> => {
+    const { named, unknownCommand, argsDef, rest } = await resolveArgv(
+      mainCommand,
+      process.argv.slice(2),
+    );
+    if (unknownCommand !== undefined) {
+      await reportAndExit(
+        `Unknown command: ${unknownCommand}`,
+        `Run \`${named.join(" ")} --help\` to see the commands it accepts.`,
+      );
     }
-  };
-
-  /**
-   * Refuse an unrecognized flag instead of ignoring it.
-   *
-   * citty drops one silently, so `aai push --serverr=http://x` exited 0 having
-   * pushed to the DEFAULT server. `--server` decides where the API key and
-   * secret values go, so a typo that quietly retargets it is worth failing on.
-   */
-  const assertKnownFlags = async (): Promise<void> => {
-    const unknown = await unknownFlagsForArgv(mainCommand, process.argv.slice(2));
+    const unknown = findUnknownFlags(rest, argsDef);
     if (unknown.length === 0) return;
-    const label = `Unknown ${unknown.length === 1 ? "option" : "options"}: ${unknown.join(", ")}`;
+    const label = `Unknown ${plural(unknown.length, "option")}: ${unknown.join(", ")}`;
     await reportAndExit(label, "Run `aai <command> --help` to see the options it accepts.");
   };
 
   // API key acquisition happens inside the platform commands, after citty
   // parses args — so --help/--version never prompt for a key.
   void runDefault()
-    .then(assertKnownCommand)
-    .then(assertKnownFlags)
+    .then(assertKnownArgv)
     .then(() => runMain(mainCommand, { showUsage: usageForMode }))
     .catch((err: unknown) => {
       log.error(errorMessage(err));

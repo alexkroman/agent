@@ -6,10 +6,13 @@ import { VALID_SLUG_RE } from "@alexkroman1/aai/internal";
 import {
   approveServer,
   ensureApiKey,
+  type GlobalConfig,
+  type ProjectConfig,
   readGlobalConfig,
   readProjectConfig,
   serverOrigin,
 } from "./_config.ts";
+import { stripTrailingSlash } from "./_utils.ts";
 
 export const DEFAULT_SERVER = "https://alexkroman--aai-server-web-server.modal.run";
 export const DEFAULT_DEV_SERVER = "http://localhost:8080";
@@ -32,12 +35,6 @@ export function getMonorepoRoot(): string | null {
 export function isDevMode(): boolean {
   if (process.env.AAI_NO_DEV === "1") return false;
   return getMonorepoRoot() !== null;
-}
-
-// Callers join paths with `${serverUrl}/...` — strip trailing slashes once at
-// resolution time so a hand-typed `--server https://x.dev/` can't produce `//deploy`.
-function stripTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, "");
 }
 
 /**
@@ -123,13 +120,18 @@ function assertValidConfigSlug(slug: string | undefined): void {
 }
 
 /**
- * Resolve everything needed to talk to the platform: project config (null if
- * the project has never been deployed), server URL, and API key.
+ * Everything `resolveDeployTarget` decides BEFORE a credential is involved:
+ * the project config (null when never deployed, or when `cwd` is null), the
+ * user's global config, and the trust-checked, approved server URL.
  */
-export async function resolveDeployTarget(cwd: string, explicitServer?: string) {
-  // Resolve (and trust-check) the target before ensureApiKey(), so an
-  // untrusted serverUrl is refused without first prompting for a key.
-  const [config, globalConfig] = await Promise.all([readProjectConfig(cwd), readGlobalConfig()]);
+export async function resolveApprovedServer(
+  cwd: string | null,
+  explicitServer?: string,
+): Promise<{ config: ProjectConfig | null; globalConfig: GlobalConfig; serverUrl: string }> {
+  const [config, globalConfig] = await Promise.all([
+    cwd === null ? null : readProjectConfig(cwd),
+    readGlobalConfig(),
+  ]);
   const serverUrl = resolveServerUrl(
     explicitServer,
     config?.serverUrl,
@@ -140,8 +142,28 @@ export async function resolveDeployTarget(cwd: string, explicitServer?: string) 
   if (explicitServer) await approveServer(serverUrl);
   // Before the key is resolved, and before any caller can interpolate it.
   assertValidConfigSlug(config?.slug);
-  const apiKey = await ensureApiKey();
-  return { config, serverUrl, apiKey };
+  return { config, globalConfig, serverUrl };
+}
+
+/**
+ * Resolve everything needed to talk to the platform: project config (null if
+ * the project has never been deployed), server URL, and API key.
+ *
+ * `resolveApprovedServer` plus the key, rather than one function, because
+ * `aai login` needs the first half and cannot have the second — it is the
+ * command that PUTS the key on disk. It had its own copy of the
+ * read → `resolveServerUrl` → `approveServer` sequence, which is security
+ * policy ("passing `--server` is what approves an origin"), so a change to that
+ * policy landed here and silently missed the one command whose whole job is to
+ * write a credential for the origin in question. Same shape as the slug-guard
+ * incident `assertValidConfigSlug` was moved down here for.
+ *
+ * The key comes from the config document already in hand — `ensureApiKey` would
+ * read and parse the same file a second time, on every platform command.
+ */
+export async function resolveDeployTarget(cwd: string, explicitServer?: string) {
+  const { config, serverUrl } = await resolveApprovedServer(cwd, explicitServer);
+  return { config, serverUrl, apiKey: await ensureApiKey() };
 }
 
 /**

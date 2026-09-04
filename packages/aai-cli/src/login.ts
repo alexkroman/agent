@@ -24,8 +24,8 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { linkConfirmationCode, sleep } from "@alexkroman1/aai/internal";
-import { resolveServerUrl } from "./_agent.ts";
-import { approveServer, readGlobalConfig, updateGlobalConfig } from "./_config.ts";
+import { resolveApprovedServer } from "./_agent.ts";
+import { updateGlobalConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 
@@ -183,9 +183,12 @@ export async function executeLogin(
   const fetchFn = deps.fetchFn ?? globalThis.fetch;
   requireTty();
 
-  const globalConfig = await readGlobalConfig();
-  const serverUrl = resolveServerUrl(opts.server, undefined, globalConfig.approvedServers ?? []);
-  if (opts.server) await approveServer(serverUrl);
+  // `resolveApprovedServer`, not a second copy of the trust-and-approve
+  // sequence: "passing `--server` is what approves an origin" is security
+  // policy, and this is the command that writes a credential FOR that origin.
+  // `null` because a login is not scoped to a directory — there is no project
+  // config to take a `serverUrl` from.
+  const { serverUrl } = await resolveApprovedServer(null, opts.server);
 
   const auth = await jsonBody<{ mode: string }>(
     await reachable(fetchFn, `${serverUrl}/studio/auth`, serverUrl),

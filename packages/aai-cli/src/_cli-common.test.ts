@@ -18,8 +18,9 @@ const logMock = vi.hoisted(() => ({
 const silenceOutput = vi.hoisted(() => vi.fn());
 vi.mock("./_ui.ts", () => ({ log: logMock, silenceOutput }));
 
-const { defineExec, findUnknownFlags, runCommand, setup, sharedArgs, unknownFlagsForArgv } =
-  await import("./_cli-common.ts");
+const { defineExec, findUnknownFlags, resolveArgv, runCommand, setup, sharedArgs } = await import(
+  "./_cli-common.ts"
+);
 
 // `logMock` and `silenceOutput` are module-level `vi.fn()`s, and
 // `restoreMocks: true` registers only `vi.spyOn` mocks — it clears none of
@@ -78,7 +79,7 @@ describe("findUnknownFlags", () => {
   });
 });
 
-describe("unknownFlagsForArgv", () => {
+describe("unknown flags, resolved against the real command tree", () => {
   // Resolved against the REAL command tree, so the check can't drift from the
   // flags the commands actually declare — which means importing cli.ts and,
   // with it, every subcommand module it registers.
@@ -94,6 +95,21 @@ describe("unknownFlagsForArgv", () => {
   beforeAll(async () => {
     ({ mainCommand } = await import("./cli.ts"));
   }, 60_000);
+
+  /**
+   * The same two calls `cli.ts`'s `assertKnownArgv` makes, in the same order —
+   * so this exercises the shipped composition rather than a wrapper only the
+   * spec used. A mistyped SUBCOMMAND reports no flags: they would be matched
+   * against the wrong command's `argsDef`, and `unknownCommand` is what names
+   * that case.
+   */
+  const unknownFlagsForArgv = async (
+    root: Parameters<typeof resolveArgv>[0],
+    argv: string[],
+  ): Promise<string[]> => {
+    const { unknownCommand, argsDef, rest } = await resolveArgv(root, argv);
+    return unknownCommand === undefined ? findUnknownFlags(rest, argsDef) : [];
+  };
 
   test("accepts every flag a command declares", async () => {
     expect(

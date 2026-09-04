@@ -24,6 +24,7 @@
  * deploy that would have worked.
  */
 
+import { plural } from "@alexkroman1/aai/utils";
 import { requiredProviderEnvVars } from "@alexkroman1/aai-runtime";
 
 /**
@@ -63,10 +64,10 @@ export function missingCredentials(config: PreflightConfig, env: Record<string, 
 
 /** One line naming the missing keys and what to do about them. */
 export function missingCredentialMessage(missing: string[]): string {
-  const plural = missing.length > 1;
   return (
-    `Missing credential${plural ? "s" : ""} the agent needs to start: ${missing.join(", ")}. ` +
-    `Declare ${plural ? "them" : "it"} in .env and redeploy ` +
+    `Missing ${plural(missing.length, "credential")} the agent needs to start: ` +
+    `${missing.join(", ")}. ` +
+    `Declare ${plural(missing.length, "it", "them")} in .env and redeploy ` +
     "(already set on the platform with `aai secret put`? then this is already handled)."
   );
 }

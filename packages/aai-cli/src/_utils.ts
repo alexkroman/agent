@@ -152,3 +152,51 @@ export async function writeJson(
     throw err;
   }
 }
+
+/**
+ * Code-unit ordering, never `localeCompare`.
+ *
+ * With no explicit locale `localeCompare` answers to the runtime's ICU default,
+ * so the same project would produce a differently-ordered artifact on a
+ * different machine — which is why the repo's own generated files sort this way.
+ * The reproducibility this protects is real in both callers: the scaffold's
+ * `pnpm-workspace.yaml` overrides, and the unrun-spec report.
+ */
+export function compareCodeUnits(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/**
+ * Strip trailing slashes, so a `${base}/...` join cannot produce `//path`.
+ *
+ * Here rather than beside its first caller because BOTH callers need it and
+ * `_agent.ts` — where it lived — is a module `workflow.test.ts` mocks whole, so
+ * importing a pure helper from there breaks the mock. `workflow.ts`'s local copy
+ * took `/\/$/` — ONE slash — against this `/\/+$/`, so the two disagreed on the
+ * only input either was written for.
+ */
+export function stripTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+/** How many names a capped list prints before it starts counting. */
+export const MAX_NAMED_ITEMS = 10;
+
+/**
+ * A list as one phrase — the first {@link MAX_NAMED_ITEMS} names, then a count.
+ *
+ * One definition because a user reads this wording from two different commands:
+ * the unrun-spec report (`aai test`) and the "no such project" hint
+ * (`aai pull`). Both open-coded the same slice, the same arithmetic and the same
+ * `, and N more`, so the cap could drift between two messages one CLI prints.
+ *
+ * Here rather than in `_ui.ts` because this is a pure formatter and that module
+ * is the OUTPUT seam specs mock — `studio.test.ts` replaces it with a bare
+ * factory, which drops every export the factory does not list.
+ */
+export function formatCappedList(items: readonly string[], max = MAX_NAMED_ITEMS): string {
+  const named = items.slice(0, max).join(", ");
+  const rest = items.length - max;
+  return rest > 0 ? `${named}, and ${rest} more` : named;
+}

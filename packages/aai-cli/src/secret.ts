@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { Readable } from "node:stream";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, plural } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
 import pTimeout from "p-timeout";
 import { checkedResponse, isStringArray } from "./_api-client.ts";
@@ -155,8 +155,12 @@ export async function resolveSecretValue(
   return undefined;
 }
 
-type SecretPutData = { name: string };
-type SecretDeleteData = { name: string };
+/**
+ * Both the put and the delete result — one shape, so one name. They were two
+ * distinct aliases for `{ name: string }`, which implied a difference that does
+ * not exist and left "which alias meant the secret result" to be re-decided.
+ */
+type SecretNameData = { name: string };
 type SecretListData = { secrets: string[] };
 
 /**
@@ -169,7 +173,7 @@ export async function executeSecretPut(
   name: string,
   value: string | undefined,
   server: string | undefined,
-): Promise<CommandResult<SecretPutData>> {
+): Promise<CommandResult<SecretNameData>> {
   let secretValue = value;
 
   if (!secretValue) {
@@ -196,7 +200,7 @@ export async function executeSecretDelete(
   cwd: string,
   name: string,
   server: string | undefined,
-): Promise<CommandResult<SecretDeleteData>> {
+): Promise<CommandResult<SecretNameData>> {
   // Encoded so a name containing `/`, `?`, `#`, or `%` can't target a
   // different path (or truncate the request) on the server.
   const { target } = await secretRequest(
@@ -225,7 +229,7 @@ export async function executeSecretList(
   if (vars.length === 0) {
     log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {
-    log.message(`${vars.length} secret${vars.length === 1 ? "" : "s"}:`);
+    log.message(`${vars.length} ${plural(vars.length, "secret")}:`);
     for (const v of vars) {
       log.message(`  ${v}`);
     }

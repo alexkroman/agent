@@ -10,7 +10,7 @@
  */
 
 import { defineCommand } from "citty";
-import { defineExec, sharedArgs } from "./_cli-common.ts";
+import { defineExec, platformArgs } from "./_cli-common.ts";
 import { CliError } from "./_output.ts";
 
 /**
@@ -54,8 +54,7 @@ const runIdArg = { type: "positional", description: "Run id", required: true } a
  * without `--token`.
  */
 const workflowArgs = {
-  server: sharedArgs.server,
-  json: sharedArgs.json,
+  ...platformArgs,
   token: workflowToken,
   agent: workflowAgent,
 } as const;
@@ -67,13 +66,31 @@ const workflowArgs = {
  */
 const WORKFLOW_CWD = "any";
 
+/**
+ * The group flags, forwarded.
+ *
+ * The declaration side is DRY (`workflowArgs`) and the forwarding side was not:
+ * four hand-copied `{ server, token, agent }` triples, in the module whose own
+ * doc argues that "four hand-copied triples is how one of them ends up without
+ * `--token`". A fifth group flag is one edit here rather than four below.
+ */
+const workflowOpts = (args: {
+  server?: string | undefined;
+  token?: string | undefined;
+  agent?: string | undefined;
+}): { server?: string | undefined; token?: string | undefined; agent?: string | undefined } => ({
+  server: args.server,
+  token: args.token,
+  agent: args.agent,
+});
+
 const workflowList = defineExec({
   meta: { name: "list", description: "List the workflows this agent declares" },
   args: workflowArgs,
   cwd: WORKFLOW_CWD,
   async run({ args, cwd }) {
     const { executeWorkflowList } = await import("./workflow.ts");
-    return executeWorkflowList(cwd, { server: args.server, token: args.token, agent: args.agent });
+    return executeWorkflowList(cwd, workflowOpts(args));
   },
 });
 
@@ -93,12 +110,7 @@ const workflowRuns = defineExec({
     if (limit !== undefined && !Number.isFinite(limit)) {
       throw new CliError("bad_limit", "--limit must be a number");
     }
-    return executeWorkflowRuns(cwd, args.workflow, {
-      server: args.server,
-      token: args.token,
-      agent: args.agent,
-      limit,
-    });
+    return executeWorkflowRuns(cwd, args.workflow, { ...workflowOpts(args), limit });
   },
 });
 
@@ -108,11 +120,7 @@ const workflowShow = defineExec({
   cwd: WORKFLOW_CWD,
   async run({ args, cwd }) {
     const { executeWorkflowShow } = await import("./workflow.ts");
-    return executeWorkflowShow(cwd, args.runId, {
-      server: args.server,
-      token: args.token,
-      agent: args.agent,
-    });
+    return executeWorkflowShow(cwd, args.runId, workflowOpts(args));
   },
 });
 
@@ -122,11 +130,7 @@ const workflowCancel = defineExec({
   cwd: WORKFLOW_CWD,
   async run({ args, cwd }) {
     const { executeWorkflowCancel } = await import("./workflow.ts");
-    return executeWorkflowCancel(cwd, args.runId, {
-      server: args.server,
-      token: args.token,
-      agent: args.agent,
-    });
+    return executeWorkflowCancel(cwd, args.runId, workflowOpts(args));
   },
 });
 

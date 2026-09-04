@@ -122,7 +122,7 @@ export async function executeBuild(opts: {
       throw testGateError(err);
     }
   }
-  if (!opts.skipTypecheck) await assertTypechecks(cwd);
+  await assertTypechecks(cwd, { skip: opts.skipTypecheck });
 
   // `aai build` previews the deploy artifact, so build it exactly like deploy.
   const bundle = await buildAgentBundle(cwd, { minify: true });
