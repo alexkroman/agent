@@ -208,8 +208,8 @@ session is a WebSocket, so the host has to support one. Vercel does — it hands
 the function the raw upgrade, and the emitted entry passes it to the same
 server `aai dev` runs. Deno Deploy does too, and more simply: it runs a
 long-lived process, so the emitted entry just calls `listen()` and the session
-reaches the same server unchanged. A host that serves only request/response still runs the
-HTTP surface — `/health`, `/client-config`,
+reaches the same server unchanged. A host that serves only request/response
+still runs the HTTP surface — `/health`, `/client-config`,
 `/workflows/*` and your static assets — which is everything a workflow app
 needs and none of what a voice agent needs.
 
