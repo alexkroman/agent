@@ -1,6 +1,6 @@
 {
   "name": "aai-evals",
-  "version": "0.1.36",
+  "version": "0.1.37",
   "private": true,
   "type": "module",
   "engines": {

@@ -1,5 +1,13 @@
 # aai-studio-client
 
+## 0.6.25
+
+### Patch Changes
+
+- 6e9fd4b: Lower the engines floor on the private packages from Node >=26 to >=24, matching the published packages and the scaffold. The deployed images still run Node 26; the floor only stops a warning on every install under Node 24.
+- @alexkroman1/aai@15.1.0
+  - @alexkroman1/aai-ui@15.1.0
+
 ## 0.6.24
 
 ### Patch Changes
