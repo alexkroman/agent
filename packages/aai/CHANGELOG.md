@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 15.0.0
+
+### Minor Changes
+
+- f9c1a98: Rename public API parameters for consistency: the options bag is `options` everywhere it was `opts`, and a dozen per-signature fixes an audit of every parameter in every `etc/*.api.md` report found — `WorkflowClient.get`/`EvalWorkflows.settle` take `workflow` rather than `of`, `stepTranscribePoll` takes `transcriptId` rather than an `id` its neighbour spells `uploadId`, `registerChannelHandler` takes `handler` rather than `kind`, `mapConcurrent` takes `width`, `slugifyName` takes `(name, maxLength)`, `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `decodeWorkspaceText` takes `bytes`, `LogFn` and `onToolResult` take `message`, `ClientSink.event` takes `event`, `ServerSession.command` takes `command`, and the eval mode gates take `hostEnv`. Parameters are positional, so no call site changes.
+- 8dc4cbb: Agents declare which phone carriers may reach them: `agent({ telephony: ["twilio"] })` mounts `WS /phone` for exactly those carriers, and an agent that declares none no longer serves the route at all. Previously every voice agent served Twilio and Telnyx framing from boot — `aai dev`, a self-hosted server and every deployed sandbox alike — whether or not it had a phone number. `RuntimeServerOptions.telephony` / `AgentServerOptions.telephony` take the same declaration (a boolean or a carrier list) and default to the agent's own; an unknown carrier is still refused with a 400, and a real carrier the agent did not declare with a 404.
+
 ## 14.0.0
 
 ### Major Changes

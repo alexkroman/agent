@@ -1,5 +1,39 @@
 # @alexkroman1/aai-cli
 
+## 15.0.0
+
+### Major Changes
+
+- 77b86d9: `aai start` replaces the scaffold's `server.mjs`, and `aai build --target` emits a host entry instead of committing one.
+  
+  The scaffold shipped ~300 lines of boot into every project — worker load, env resolution, schema DDL, client-dir probing, error classification, listen, signal handlers — so improving any of them reached only projects scaffolded afterwards. It is a command now: `npm start` runs `aai start`, and `@alexkroman1/aai-cli/start` publishes `createProjectServer()` for a custom or serverless host, which builds the `AgentServer` and binds nothing.
+  
+  `aai build --target <host>` writes the entry a host expects into the build output rather than the project. The target is detected from the host's own build environment (`VERCEL`), so a git-push deploy configures nothing; `node`, the default, emits nothing extra. The Vercel entry is `export default (await createProjectServer(...)).node`, which is that platform's documented Node WebSocket shape.
+  
+  Breaking for a scaffolded project: `server.mjs` is gone and `@alexkroman1/aai-cli` moves from devDependencies to dependencies, since `npm start` now runs it.
+
+### Minor Changes
+
+- ae5e069: `aai init` now shows a template selector when `--template` is omitted, listing every template the CLI ships with `simple` pre-selected. `--yes` and JSON mode still take the default without prompting.
+
+### Patch Changes
+
+- 77b86d9: Emit a Vercel deployment through the Build Output API (`.vercel/output/`) instead of an `api/` entry beside a generated `vercel.json`. Vercel reads `vercel.json` before running the build, so a config the build writes never applied to that deployment; the Build Output tree is read after it. The function is now assembled rather than traced, so `.aai/worker.mjs` and `.env.example` — both reached by paths no static tracer can follow — are present, the built client is CDN-served from `static/`, and a WebSocket upgrade arrives through Vercel's per-request context and is re-emitted onto the same server `aai dev` runs. Also cuts `@alexkroman1/aai-cli/start` off the build toolchain: it reached `build.ts` (hence vite and rolldown's native binding) for one path constant, which made the bundled entry fail on import.
+- b92507b: Scaffolded templates: give the four prompt-only starters (code-interpreter, math-buddy, personal-finance, web-researcher) a unit-tier `agent.test.ts`, which `aai build` runs before it bundles, and make every `tools/` file default-export its tool rather than re-export it.
+  
+  The templates ship inside this package's tarball, so the carrier is named here rather than `aai-templates`, which reaches nobody on its own version (`guard-invariants` rule 20). Also tightens the repo's structural conventions, which changes no shipped behaviour: provider factory signatures and options interfaces, provider and channel descriptor purity, store factory return types, the `sdk/`→`host/` boundary, boundaries for `aai-studio-server` and `aai-evals`, and a test asserting the boundary matrix is total.
+- Updated dependencies [29fbf01]
+- Updated dependencies [f9c1a98]
+- Updated dependencies [77b86d9]
+- Updated dependencies [29fbf01]
+- Updated dependencies [29fbf01]
+- Updated dependencies [8dc4cbb]
+- Updated dependencies [77b86d9]
+- Updated dependencies [29fbf01]
+  - @alexkroman1/aai-runtime@15.0.0
+  - @alexkroman1/aai@15.0.0
+  - @alexkroman1/aai-ui@15.0.0
+
 ## 14.0.0
 
 ### Patch Changes

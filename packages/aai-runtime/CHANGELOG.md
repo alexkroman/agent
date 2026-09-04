@@ -1,5 +1,26 @@
 # @alexkroman1/aai-runtime
 
+## 15.0.0
+
+### Major Changes
+
+- 77b86d9: AgentServer now exposes the `node:http` server underneath as `node`, so a serverless host can be handed a wired-but-unbound server instead of being asked to start one. Vercel's Node runtime wants `export default <http.Server>` and binds the socket itself; the only route before was to listen on an ephemeral port inside the function and proxy HTTP plus upgrades to it. `port` is now read off that server rather than latched by `listen()`, and `close()` gates on whether the server is listening, so both are correct for a host that bound `node` itself. `createAgentServer` publishes the workflow step env at construction rather than just before the bind, so a deployment that never calls `listen()` does not silently fall back to `process.env` in its steps. Breaking only for a host that IMPLEMENTS `AgentServer`, which must add the member; every consumer of the handle is unaffected.
+
+### Minor Changes
+
+- 29fbf01: Give `createTextAgent` a typed event stream: `onEvent` reports a text agent's turns as the same `SessionEvent` union a voice session emits, narrowed to what a text agent can honestly report, so an eval reads a text turn with the readers it already has instead of scraping the reply text. `runTextAgent` hands the recorded list back as `TextAgentTestRun.events`. Additive: `TextTurnResult` is still the AI SDK's own `StreamTextResult`.
+- 29fbf01: Publish a scripted-model test harness for text agents on `@alexkroman1/aai-runtime/testing`: `scriptedTextModel(steps)` builds the `LanguageModel` a spec hands `createTextAgent({ model })`, and `runTextAgent(def, input, { script })` drives one turn through the real `createTextAgent`, the real tool executor and the real tool `ctx`, handing back the text, the tool calls in order with their arguments and results, the steps, and the messages the turn appended. Replaces the hand-written provider fakes (and their `as unknown as LanguageModel` casts) that every caller was writing, each copy re-deriving the `finish` frame whose bare-string `finishReason` silently stops every tool from running.
+- 29fbf01: Publish the TEXT-AGENT eval harness on `@alexkroman1/aai-runtime/eval`: `openEvalTextAgent({ agent })` stands up a real `createTextAgent` — the resolved model, the real tool executor, `ctx` and its slots, the step budget — and hands back a `send()` that returns the `EvalTurn` it provoked, plus `sendAll`, `events()`, `said()` and `toolCalls()`. The sibling of `openEvalSession`, which structurally cannot serve a text agent because `createRuntime` refuses `text: true` by name, and deliberately the same shape: the turn record, the event readers and every assertion above them are shared rather than reimplemented, since a text agent emits the same `SessionEvent` union.
+  
+  A turn ends on a real terminator rather than a timer, and here that is structural: the harness consumes the turn's own stream, so `reply.completed`/`reply.cancelled` has passed through by the time `send()` resolves and the next message cannot be sent inside the previous turn. One agent per conversation, so `ctx.state` and the model's view of the history carry across turns; a turn nothing about the agent can be read off (the model stream failed, or a tool was called the agent has no definition for) throws instead of reporting a reply that said nothing.
+
+### Patch Changes
+
+- 77b86d9: Fix silently mute audio on Node 24, and pin the SDK to its declared engine floor. `base64ToUint8` called `Uint8Array.fromBase64` — a Stage 3 proposal absent from Node 24 — inside a `try` whose `catch` exists for a malformed payload, so the `TypeError` was swallowed and every audio frame decoded to zero bytes. Measured on Vercel nodejs24.x: 77 TTS frames in, 77 empty, 0 emitted; a deployed voice agent transcribed the caller, answered in text, and said nothing. Affected every audio path (TTS, S2S, telephony, OpenAI Realtime) on any Node 24 or 25 host, plus binary workflow values, which failed with a mislabelled error instead. The decode now feature-detects once and falls back to a validating decoder; `tsconfig` pins `lib` to ES2025, `@types/node` to the 24 line, and CI runs the engine floor rather than the newest Node.
+- Updated dependencies [f9c1a98]
+- Updated dependencies [8dc4cbb]
+  - @alexkroman1/aai@15.0.0
+
 ## 14.0.0
 
 ### Minor Changes
