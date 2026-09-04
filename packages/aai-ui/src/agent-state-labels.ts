@@ -33,6 +33,7 @@ import type { AgentState } from "./types.ts";
  * Override the ones your page has a better word for and keep the rest:
  *
  * ```ts
+ * import type { AgentState } from "@alexkroman1/aai-ui";
  * import { AGENT_STATE_LABELS } from "@alexkroman1/aai-ui";
  *
  * // A dispatch board that shouts, and renames one state.
