@@ -21,6 +21,7 @@
  * client, which is a type-only import and erased.
  */
 
+import { WORKFLOW_API_ERROR_LABEL } from "./_workflow-api-envelope.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { UploadBody, UploadProgress } from "./workflow-upload-client.ts";
 
@@ -34,9 +35,6 @@ export function progressOf(loaded: number, total: number | undefined): UploadPro
     fraction: total !== undefined && total > 0 ? Math.min(1, loaded / total) : undefined,
   };
 }
-
-/** Names the surface in a failure that was not the agent's own `{ error }` sentence. */
-const UPLOAD_ERROR_LABEL = "Workflow API";
 
 /**
  * The slice of `XMLHttpRequest` this module uses.
@@ -99,8 +97,23 @@ export function sendViaXhr(
   report: (progress: UploadProgress) => void,
   signal: AbortSignal | undefined,
 ): Promise<Response> {
-  return new Promise<Response>((resolve, reject) => {
+  return new Promise<Response>((settleOk, settleErr) => {
     const xhr = new Xhr();
+    // Detached on EVERY outcome, not just on abort. `{ once: true }` only fires
+    // when the signal does, so on the success path the listener stayed on the
+    // CALLER's signal — which a page holds for the whole upload — with the
+    // finished `XMLHttpRequest` and its `responseText` alive in its closure.
+    // A parallel multi-part upload registers one per part, so a large file left
+    // hundreds of completed requests retained until the upload object went away.
+    const done =
+      <T>(settle: (value: T) => void) =>
+      (value: T) => {
+        if (signal) signal.removeEventListener("abort", onAbort);
+        settle(value);
+      };
+    const resolve = done(settleOk);
+    const reject = done(settleErr);
+    const onAbort = () => xhr.abort();
     xhr.open(method, url);
     for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
     xhr.upload.addEventListener("progress", (event) => {
@@ -139,7 +152,7 @@ export function sendViaXhr(
         reject(signal.reason ?? abortError());
         return;
       }
-      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+      signal.addEventListener("abort", onAbort, { once: true });
     }
     xhr.send(file);
   });
@@ -147,7 +160,7 @@ export function sendViaXhr(
 
 /** What `fetch` rejects a failed request with, spelled for the other transport. */
 function networkError(): Error {
-  return new TypeError(`${UPLOAD_ERROR_LABEL}: the upload did not reach the agent`);
+  return new TypeError(`${WORKFLOW_API_ERROR_LABEL}: the upload did not reach the agent`);
 }
 
 /** What an aborted request rejects with when the signal named no reason. */

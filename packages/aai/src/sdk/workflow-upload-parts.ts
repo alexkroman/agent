@@ -82,9 +82,9 @@
 import { createClaimer } from "./_upload-claims.ts";
 import type { Part, UploadPartsPlan } from "./_upload-parts-plan.ts";
 import { createPartSender, type SendPart, sendEveryPart } from "./_upload-parts-send.ts";
+import { progressOf } from "./_upload-progress.ts";
 import { withRetries } from "./_upload-retry.ts";
-import { WORKFLOW_API_PREFIX } from "./_workflow-api-envelope.ts";
-import { readJsonBody } from "./response-body.ts";
+import { readApiJson, WORKFLOW_API_PREFIX } from "./_workflow-api-envelope.ts";
 import type { UploadInfo, UploadRange } from "./step-uploads.ts";
 import { UPLOAD_PART_ATTEMPTS, UPLOAD_PART_CONCURRENCY } from "./upload-constants.ts";
 import type {
@@ -225,9 +225,7 @@ async function openedUpload(ctx: {
 }): Promise<{ bytesBase: string | undefined; claimBatch: number; missing: readonly Part[] }> {
   const { req, begun, begunAlready, uploads, signal, attempts, parts } = ctx;
   const claimed = begun.ok
-    ? await readJsonBody<UploadCapability>(begun, "Workflow API").catch(
-        () => ({}) as UploadCapability,
-      )
+    ? await readApiJson<UploadCapability>(begun).catch(() => ({}) as UploadCapability)
     : {};
 
   // What is already stored, so a resume sends the windows that are MISSING rather
@@ -374,7 +372,7 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
     { attempts, signal },
   );
   if (!stored.ok) throw await req.fail(stored);
-  const info = await readJsonBody<Omit<UploadRef, "url">>(stored, "Workflow API");
+  const info = await readApiJson<Omit<UploadRef, "url">>(stored);
   assertRecorded(info, req.id, total);
   return { ...info, url: uploads };
 }
@@ -438,7 +436,7 @@ async function storedRanges(
     { attempts, signal },
   );
   if (!res.ok) throw await req.fail(res);
-  const info = await readJsonBody<UploadInfo & UploadCapability>(res, "Workflow API");
+  const info = await readApiJson<UploadInfo & UploadCapability>(res);
   return {
     ranges: info.complete ? [{ start: 0, end: info.size }] : (info.ranges ?? []),
     // The record answers the same two capability fields the claim does, precisely so
@@ -469,10 +467,10 @@ function partReporter(
   if (!onProgress) return () => undefined;
   // Once at zero before anything is sent, the same promise the single-request path
   // makes: a bar exists from the moment the upload starts.
-  onProgress({ loaded: 0, total, fraction: 0 });
+  onProgress(progressOf(0, total));
   return (index, sent) => {
     loaded[index] = sent;
     const done = loaded.reduce((sum, part) => sum + part, 0);
-    onProgress({ loaded: done, total, fraction: Math.min(1, done / total) });
+    onProgress(progressOf(done, total));
   };
 }

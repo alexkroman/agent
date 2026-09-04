@@ -236,6 +236,22 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 }
 
 /**
+ * The refusal an asynchronous `updateTool` body earns, in one place.
+ *
+ * Both arms — the `async` DECLARATION and the sync function that RETURNS a
+ * thenable — say the same thing and had drifted: one told the author to "call
+ * the slot's update()", the other to call `${key}Slot.update`, inventing a
+ * `Slot` suffix the key does not carry.
+ *
+ * @param how - What the caller did, appended to "must be synchronous".
+ */
+function mustBeSync(key: string, how: string): Error {
+  return new Error(
+    `The body of ${key}.updateTool must be synchronous${how} — its mutations are committed when it returns, so an await inside it writes to a value that has already been stored. Do the awaiting in an ordinary tool() and call the slot's update() afterwards.`,
+  );
+}
+
+/**
  * Declare a named slot of per-session state.
  *
  * An agent whose tools live in separate modules has no other way to type its
@@ -442,9 +458,7 @@ export function sessionSlot<const K extends string, T, After = void>(
       // visible. The check below still stands for a sync function that RETURNS
       // a promise, which only the call can see.
       if (execute.constructor?.name === "AsyncFunction") {
-        throw new Error(
-          `The body of ${key}.updateTool must be synchronous, and this one is \`async\` — its mutations are committed when it returns, so an await inside it writes to a value that has already been stored. Do the awaiting in an ordinary tool() and call the slot's update() afterwards.`,
-        );
+        throw mustBeSync(key, ", and this one is `async`");
       }
       return {
         ...rest,
@@ -456,9 +470,7 @@ export function sessionSlot<const K extends string, T, After = void>(
             // would then mutate a frozen draft — a `TypeError` from somewhere
             // unrelated. Named here instead.
             if (isThenable(result)) {
-              throw new Error(
-                `The body of ${key}.updateTool must be synchronous — its mutations are committed when it returns, so an await inside it writes to a value that has already been stored. Do the awaiting in an ordinary tool() and call ${key}Slot.update afterwards.`,
-              );
+              throw mustBeSync(key, "");
             }
             return result;
           }),

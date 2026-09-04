@@ -326,14 +326,6 @@ export function json(status: number, body: unknown, headers?: Record<string, str
 }
 
 /**
- * Run an upload that waits out backoffs, on VIRTUAL time.
- *
- * The retries are seconds apart by design, so a spec that lets them elapse is a
- * spec that spends them — and one that is racing a 5s tier timeout. The clock is
- * advanced in whole {@link UPLOAD_RETRY_MAX_MS} steps until the upload settles,
- * which is the largest wait `retryDelay` can ever produce.
- */
-/**
  * End an upload a spec deliberately left unfinished, and wait for it to stop.
  *
  * Without this the upload outlives the test: it is still waiting out a backoff when
@@ -347,6 +339,14 @@ export async function settle(abandon: AbortController, work: Promise<unknown>): 
   await work.catch(() => undefined);
 }
 
+/**
+ * Run an upload that waits out backoffs, on VIRTUAL time.
+ *
+ * The retries are seconds apart by design, so a spec that lets them elapse is a
+ * spec that spends them — and one that is racing a 5s tier timeout. The clock is
+ * advanced in whole {@link UPLOAD_RETRY_MAX_MS} steps until the upload settles,
+ * which is the largest wait `retryDelay` can ever produce.
+ */
 export async function withoutBackoff<T>(start: () => Promise<T>): Promise<T> {
   vi.useFakeTimers();
   try {

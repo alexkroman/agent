@@ -1,0 +1,24 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "tts",
+  "epoch": 2,
+  "sha256": "5e7f6ab24349121479401935a0b71ee58277e7006ccc2181720486ed2e754910",
+  "exports": [
+    "ASSEMBLYAI_TTS_DEFAULT_VOICE",
+    "ASSEMBLYAI_TTS_LANGUAGES",
+    "ASSEMBLYAI_TTS_VOICES",
+    "AssemblyAITtsLanguage",
+    "AssemblyAITtsOptions",
+    "AssemblyAITtsVoice",
+    "AssemblyAITtsVoiceId",
+    "AssemblyAITtsVoiceInfo",
+    "CARTESIA_DEFAULT_VOICE",
+    "CartesiaTtsOptions",
+    "RIME_DEFAULT_VOICE",
+    "RimeTtsOptions",
+    "TtsProvider",
+    "assemblyAITts",
+    "cartesiaTts",
+    "rimeTts"
+  ]
+}

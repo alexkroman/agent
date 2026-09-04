@@ -157,13 +157,10 @@ function parseResults(html: string, format: EndpointFormat): SearchResult[] {
   let depth = 0;
   let text = "";
   let href = "";
-  const selectorFor = (which: "title" | "snippet"): ResultSelector =>
-    which === "title" ? format.title : format.snippet;
-
   const parser = new Parser({
     onopentag(tag, attribs) {
       if (capturing) {
-        if (tag === selectorFor(capturing).tag) depth += 1;
+        if (tag === format[capturing].tag) depth += 1;
         return;
       }
       if (tag === format.title.tag && hasClass(attribs, format.title.className)) {
@@ -187,7 +184,7 @@ function parseResults(html: string, format: EndpointFormat): SearchResult[] {
       if (capturing) text += chunk;
     },
     onclosetag(tag) {
-      if (capturing === undefined || tag !== selectorFor(capturing).tag) return;
+      if (capturing === undefined || tag !== format[capturing].tag) return;
       if (depth > 0) {
         depth -= 1;
         return;

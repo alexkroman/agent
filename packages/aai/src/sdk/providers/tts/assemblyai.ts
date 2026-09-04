@@ -43,30 +43,6 @@ export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
 export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
 
 /**
- * The voice catalog — voice id → the language it speaks and its accent.
- * The accent is descriptive metadata for choosing a voice, not a settable
- * option: {@link AssemblyAITtsOptions} has no `accent` field.
- *
- * A constant rather than a sentence in a doc comment, because a wrong voice
- * id is a *silent* failure: it is a free-form string the service rejects
- * in-band after the socket opens, so the agent connects, reports ready, and
- * never speaks — the same shape as the unmapped-`language` bug below, and
- * nothing upstream of a live session catches it.
- *
- * It is a constant for a second reason, learned the hard way. The list this
- * replaced lived in a doc comment and was simply wrong — it carried ten names
- * (`azelma`, `cosette`, `fantine`, `javert`, `marius`, `peter_yearsley` …)
- * that are in no published catalog, while omitting most of the real ones. A
- * list nobody can check drifts into fiction, and here the fiction is
- * indistinguishable, at authoring time, from a working agent.
- *
- * Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
- *
- * Anything that shows an author their choices — the scaffold guide, a picker
- * — should read this rather than restate it. A partial list is what sends
- * someone guessing, which is the failure being prevented.
- */
-/**
  * What the catalog records about one voice: the language it speaks and the
  * accent it speaks with.
  *
@@ -112,6 +88,30 @@ export type AssemblyAITtsVoiceId =
   | "rafael"
   | "estelle";
 
+/**
+ * The voice catalog — voice id → the language it speaks and its accent.
+ * The accent is descriptive metadata for choosing a voice, not a settable
+ * option: {@link AssemblyAITtsOptions} has no `accent` field.
+ *
+ * A constant rather than a sentence in a doc comment, because a wrong voice
+ * id is a *silent* failure: it is a free-form string the service rejects
+ * in-band after the socket opens, so the agent connects, reports ready, and
+ * never speaks — the same shape as the unmapped-`language` bug below, and
+ * nothing upstream of a live session catches it.
+ *
+ * It is a constant for a second reason, learned the hard way. The list this
+ * replaced lived in a doc comment and was simply wrong — it carried ten names
+ * (`azelma`, `cosette`, `fantine`, `javert`, `marius`, `peter_yearsley` …)
+ * that are in no published catalog, while omitting most of the real ones. A
+ * list nobody can check drifts into fiction, and here the fiction is
+ * indistinguishable, at authoring time, from a working agent.
+ *
+ * Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
+ *
+ * Anything that shows an author their choices — the scaffold guide, a picker
+ * — should read this rather than restate it. A partial list is what sends
+ * someone guessing, which is the failure being prevented.
+ */
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>> =
   {
     alba: { language: "en", accent: "US" },

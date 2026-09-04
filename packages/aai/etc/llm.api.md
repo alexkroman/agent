@@ -4,7 +4,7 @@
 
 ```ts
 
-// @public (undocumented)
+// @public
 export function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
 
 // @public
@@ -37,21 +37,21 @@ export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
 // @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
-// @public (undocumented)
+// @public
 export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
 
 // @public
 export interface GatewayLlmOptions extends ModelOptions {
 }
 
-// @public (undocumented)
+// @public
 export function googleLlm(opts: GoogleLlmOptions): LlmProvider;
 
 // @public
 export interface GoogleLlmOptions extends ModelOptions {
 }
 
-// @public (undocumented)
+// @public
 export function groqLlm(opts: GroqLlmOptions): LlmProvider;
 
 // @public
@@ -63,7 +63,7 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
     readonly __stage?: "llm";
 };
 
-// @public (undocumented)
+// @public
 export function mistralLlm(opts: MistralLlmOptions): LlmProvider;
 
 // @public
@@ -75,7 +75,7 @@ export interface ModelOptions extends ProviderCredentialOptions {
     model: string;
 }
 
-// @public (undocumented)
+// @public
 export function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
 
 // @public
@@ -85,7 +85,7 @@ export interface OpenAILlmOptions extends ModelOptions {
 // @public
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-// @public (undocumented)
+// @public
 export function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 
 // @public
@@ -105,7 +105,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
     readonly options: Options;
 }
 
-// @public (undocumented)
+// @public
 export function xaiLlm(opts: XaiLlmOptions): LlmProvider;
 
 // @public

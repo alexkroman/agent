@@ -43,6 +43,7 @@ import { safeJsonParse } from "./safe-json-parse.ts";
 import { requireStepEnv } from "./step-env.ts";
 import { stepFetch } from "./step-fetch.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
+import { errorMessage } from "./utils.ts";
 
 /** A model call's deadline. `fetch` has none, and a hung step never ends. */
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -244,10 +245,10 @@ async function gatewayFetch(url: string, init: Parameters<typeof stepFetch>[1]):
   try {
     return await stepFetch(url, init);
   } catch (err: unknown) {
-    throw new StepGenerateError(
-      `LLM gateway request failed: ${err instanceof Error ? err.message : String(err)}`,
-      { retryable: true, cause: err },
-    );
+    throw new StepGenerateError(`LLM gateway request failed: ${errorMessage(err)}`, {
+      retryable: true,
+      cause: err,
+    });
   }
 }
 
@@ -280,7 +281,7 @@ function apiKey(name: string): string {
   try {
     return requireStepEnv(name);
   } catch (err: unknown) {
-    throw new StepGenerateError(err instanceof Error ? err.message : String(err), {
+    throw new StepGenerateError(errorMessage(err), {
       retryable: false,
       cause: err,
     });

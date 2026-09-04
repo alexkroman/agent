@@ -15,6 +15,7 @@
 
 import { jitteredBackoff } from "./jittered-backoff.ts";
 import { sleep } from "./sleep.ts";
+import { retryAfter } from "./step-retry.ts";
 import { UPLOAD_RETRY_BASE_MS, UPLOAD_RETRY_MAX_MS } from "./upload-constants.ts";
 
 /**
@@ -46,25 +47,12 @@ export const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
  * is a page a person reloads.
  */
 function retryDelay(attempt: number, res: Response | undefined): number {
-  const asked = retryAfterMs(res);
-  if (asked !== undefined) return Math.min(asked, UPLOAD_RETRY_MAX_MS);
+  const asked = res && retryAfter(res);
+  if (asked) return Math.min(Math.max(0, asked.getTime() - Date.now()), UPLOAD_RETRY_MAX_MS);
   return jitteredBackoff(attempt, {
     baseMs: UPLOAD_RETRY_BASE_MS,
     maxMs: UPLOAD_RETRY_MAX_MS,
   });
-}
-
-/** What `Retry-After` asked for, in ms — both spellings, or nothing. */
-function retryAfterMs(res: Response | undefined): number | undefined {
-  const header = res?.headers.get("retry-after");
-  if (!header) return undefined;
-  const seconds = Number(header);
-  // The delta-seconds form. `Number("")` is 0, which the falsy check above already
-  // took, so a finite number here is a real one.
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
-  // The HTTP-date form, which a proxy is more likely to send than the agent.
-  const at = Date.parse(header);
-  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
 }
 
 /**

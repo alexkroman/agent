@@ -915,6 +915,32 @@ const model = stubGenerate({ object: { steps: ["Only step"] } });
 function stubReporter(): StubReporter;
 ```
 
+Capture what a step narrates and emits.
+
+`report()` and `emit()` both go through a published slot, and with nothing
+published they fall back to the console — which is right for a step under test
+that nobody is asserting on, and useless the moment the narration IS the
+subject. It is for a step whose partial results are part of its contract: a
+fan-out that emits each segment as it lands has a page depending on the shape
+of those chunks, and nothing else in a spec can see them.
+
+The two are separated the way the streams are, so a spec asserting a chunk
+never has to filter the sentences out of it.
+
+```ts no-check
+const reported = stubReporter();
+afterEach(reported.restore);
+
+await transcribeSegment(uploadId, format, segment);
+expect(reported.emitted).toEqual([
+  { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
+]);
+```
+
+Publishing REPLACES, so a spec that forgets to restore leaves this one
+answering the next file's steps — the same rule [stubStepFetch](#stubstepfetch-1) follows,
+and the same remedy.
+
 #### Returns
 
 [`StubReporter`](#stubreporter)

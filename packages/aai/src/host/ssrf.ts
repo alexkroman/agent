@@ -221,24 +221,6 @@ export async function resolveAndAssertPublic(
 const MAX_REDIRECTS = 5;
 
 /**
- * Pin the connection to an already-validated IP without rewriting the URL.
- *
- * Rewriting the URL's hostname to the resolved IP (the previous approach)
- * pinned DNS but broke TLS: SNI and certificate verification use the URL
- * hostname, so every `https://` request failed with
- * "Hostname/IP does not match certificate's altnames". Overriding the
- * `Host` header does not help — Node validates against the URL, not the
- * header.
- *
- * Instead we keep the original URL (correct SNI + cert validation) and
- * override DNS resolution for this request only, so the socket can only
- * ever connect to the IP we already checked against the bogon list. That
- * closes the TOCTOU DNS-rebinding window that pinning existed to close.
- *
- * Injected fetch implementations that aren't undici-backed (test doubles)
- * simply ignore the dispatcher.
- */
-/**
  * The pin itself: a `lookup` that ignores the hostname and answers with the
  * address already screened. Split out of {@link pinnedDispatcher} because it
  * is the whole security content of that function and was untestable inside
@@ -263,6 +245,24 @@ export function pinnedLookup(resolvedIp: string) {
   };
 }
 
+/**
+ * Pin the connection to an already-validated IP without rewriting the URL.
+ *
+ * Rewriting the URL's hostname to the resolved IP (the previous approach)
+ * pinned DNS but broke TLS: SNI and certificate verification use the URL
+ * hostname, so every `https://` request failed with
+ * "Hostname/IP does not match certificate's altnames". Overriding the
+ * `Host` header does not help — Node validates against the URL, not the
+ * header.
+ *
+ * Instead we keep the original URL (correct SNI + cert validation) and
+ * override DNS resolution for this request only, so the socket can only
+ * ever connect to the IP we already checked against the bogon list. That
+ * closes the TOCTOU DNS-rebinding window that pinning existed to close.
+ *
+ * Injected fetch implementations that aren't undici-backed (test doubles)
+ * simply ignore the dispatcher.
+ */
 function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
   const agent = new Agent({
     connect: {

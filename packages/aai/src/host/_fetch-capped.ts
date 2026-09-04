@@ -44,8 +44,6 @@ export type FetchCappedOptions = {
   accept?: string | undefined;
   /** Extra headers, merged over (and able to replace) the pair above. */
   headers?: Record<string, string> | undefined;
-  /** Defaults to a fresh {@link FETCH_TIMEOUT_MS} deadline over headers AND body. */
-  signal?: AbortSignal | undefined;
 };
 
 /**
@@ -106,7 +104,11 @@ export async function fetchCappedText(url: string, opts: FetchCappedOptions): Pr
     opts.accept === undefined ? undefined : { "User-Agent": TOOL_USER_AGENT, Accept: opts.accept };
   const resp = await opts.fetch(url, {
     headers: { ...preamble, ...opts.headers },
-    signal: opts.signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    // A fresh {@link FETCH_TIMEOUT_MS} deadline over headers AND body, always.
+    // There used to be a caller-supplied `signal` here that REPLACED it, which
+    // no caller ever passed and which would have silently retired this module's
+    // own byte-read deadline for whoever did.
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!resp.ok) {
     // Nothing reads a failed body, and an undrained one keeps the connection
