@@ -6,8 +6,8 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "noEmit": true,
     "paths": {
-      "@alexkroman1/aai": ["../aai/index.ts"],
-      "@alexkroman1/aai-ui": ["../aai-ui/index.ts"]
+      "@alexkroman1/aai": ["../aai/src/index.ts"],
+      "@alexkroman1/aai-ui": ["../aai-ui/src/index.ts"]
     }
   },
   "include": [
@@ -24,11 +24,12 @@
     // `template-api-coverage.test.ts` and `test-assertion-gate.test.ts` were
     // type-checked by nothing (verified with `tsc --listFiles`, and by
     // injecting `const x: number = "s"` into one and watching `tsc --noEmit`
-    // report zero errors). `*.ts` is the same argument as the template globs
+    // report zero errors). `src` is the same argument as the template globs
     // below — the next file added here is covered on creation. It matches
     // only this directory, so `scaffold/` stays out: that tree is checked
     // separately by `check:template-types`, under the SCAFFOLD's looser
     // tsconfig, which is the point of checking it there.
+    "src",
     "*.ts",
     "templates/*/*.ts",
     "templates/*/*.tsx",

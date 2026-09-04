@@ -21,7 +21,7 @@ export default defineConfig({
     // reader out of checking.
     exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
     coverage: {
-      exclude: [...sharedCoverageExclude, "index.ts", "modal_deploy.py"],
+      exclude: [...sharedCoverageExclude, "src/index.ts", "modal_deploy.py"],
       // Ratchet seed for a new package: set just below the first measured
       // actuals; floors only move up from here.
       thresholds: { lines: 96, functions: 93, branches: 90, statements: 94 },

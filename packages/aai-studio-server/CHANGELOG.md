@@ -1,5 +1,25 @@
 # aai-studio-server
 
+## 0.11.9
+
+### Patch Changes
+
+- aab5d81: Move every package's TypeScript under src/, and gate it.
+  
+  Source now lives in packages/<pkg>/src/; manifests, tsconfigs, tool configs, guides, etc/ and static assets stay at the package root. rootDir/include are scoped to src/, so a repo artifact can no longer be emitted into dist/ by accident. The published dist layout and every exports target are unchanged — only the @dev/source condition names src/.
+  
+  check:package-layout enforces it from both sides (no .ts outside src/, and every package has a non-empty src/), with corpus floors and a gate spec that A/Bs each half.
+- Updated dependencies [14c54ac]
+- Updated dependencies [25e42e8]
+- Updated dependencies [aab5d81]
+- Updated dependencies [78ed86c]
+- Updated dependencies [130898e]
+  - @alexkroman1/aai-runtime@13.3.0
+  - @alexkroman1/aai-ui@13.3.0
+  - aai-server@5.2.0
+  - aai-studio-client@0.6.22
+  - @alexkroman1/aai@13.3.0
+
 ## 0.11.8
 
 ### Patch Changes

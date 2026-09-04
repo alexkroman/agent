@@ -188,15 +188,30 @@ PORT = 8080
 # where the database is, and `modal-image-inputs.test.ts` pins that intent so
 # a later edit cannot drift the first entry away from Supabase.
 #
-# ## Guest sandboxes are NOT pinned by this, and that is deliberate
+# ## Guest sandboxes take the SAME list, and they used to take nothing
 #
 # They are a separate placement site (``MODAL_SANDBOX_REGION``, read by
-# modal-sandbox-env.ts) and they stay unpinned — see build_image in
-# scripts/modal_image.py for the ``Sandbox operation timed out`` this produced
-# under load. It costs little here: an agent guest holds no host channel at
-# all, so the hop this would shorten is the guest's own platform calls
-# (measured at ~117 ms of the ~8.9 s above), not a voice turn. An operator can
-# still set that variable per environment without a code change.
+# modal-sandbox-env.ts), and they were left unpinned on an argument that voice
+# is what a hop costs: an agent guest holds no host channel at all — browsers
+# dial the sandbox tunnel directly — so a voice turn crosses guest→platform
+# zero times.
+#
+# Durable workflows are what that argument does not cover. A run's journal is
+# one ``POST /:slug/workflow-journal`` per operation, made BY THE GUEST, and
+# the engine's operations are sequential by construction — so an unpinned
+# guest's distance from this service multiplies a run's wall clock exactly the
+# way this service's distance from Supabase did. Measured against a deployed
+# platform: **~24 ms an operation out of region, ~2 ms in it**, and a walk
+# makes a dozen or more.
+#
+# So they take this same list, exported into the image below — and the LIST is
+# the whole reason it is safe to pin them at all. A single region is what once
+# broke them: every spawn confined to one region's spare capacity, and a spawn
+# Modal cannot schedule inside the ~50 s ``sandbox.tunnels()`` wait fails with
+# ``Sandbox operation timed out``, i.e. a studio chat or voice session that
+# never starts. That is this file's own zero-container outage one layer down,
+# and a spill region is what makes it unreachable while still expressing the
+# preference. An operator can still override the variable per environment.
 REGIONS = ["us-east-2", "us-east"]
 
 # ── One app, both surfaces ───────────────────────────────────────────────────
@@ -237,7 +252,22 @@ REGIONS = ["us-east-2", "us-east"]
 # Each in-flight HTTP request counts as one input. Voice sessions never pass
 # through this process (browsers dial the sandbox tunnel directly, and
 # `/:slug/websocket` upgrades are instant handshake redirects), so inputs are
-# short HTTP traffic plus the studio proxy's SSE streams:
+# short HTTP traffic, the studio proxy's SSE streams, and one PLATFORM SOCKET
+# per running agent guest:
+#
+# - A deployed guest opens `WS /:slug/platform-socket` once and carries every
+#   platform call (session state, upload records, the workflow journal, its key
+#   index, an enqueue) down it — `platform-socket-handler.ts` here,
+#   `aai-runtime/platform-socket.ts` at the other end. A WebSocket is ONE input
+#   for its whole lifetime, so that is one long-lived input per live guest where
+#   the same traffic used to be short requests any replica could serve.
+# - MAX_INPUTS below is therefore the cap that matters: at 400 a replica holds
+#   400 guests' sockets plus its SSE streams and its ordinary requests, and
+#   sockets are the only one of the three that does not drain on its own. Two
+#   things bound it — the server idle-reaps a socket after 90 s with no frame
+#   (PLATFORM_SOCKET_IDLE_MS) and a draining replica REFUSES a new one — and one
+#   thing makes exhaustion survivable: a guest with no socket falls back to plain
+#   POSTs, so the ceiling costs latency rather than availability.
 #
 # - TARGET_INPUTS is the autoscaler's set point: Modal adds containers once
 #   per-container concurrency crosses it.
@@ -303,12 +333,14 @@ MAX_INPUTS = 400  # concurrent-input cap per container (SSE streams included)
 # 300s. Unset, that silently severed every in-process voice session (the old
 # `?host=1` host mode, since removed) at exactly five minutes, mid-word,
 # surfacing to the client as a bare "not connected" with nothing logged
-# server-side. Sessions now never run in this process — browsers dial the
+# server-side. Sessions still never run in this process — browsers dial the
 # guest sandbox's tunnel directly, and `/:slug/websocket` upgrades are
-# handshake redirects — but the studio proxy's SSE streams and any future
-# long-lived input sit under the same cap, so it stays pinned rather than
-# inherited. Same trap the sandbox layer documents in modal-sandbox-env.ts,
-# matched to the same 4h value.
+# handshake redirects — but the studio proxy's SSE streams and the guests'
+# PLATFORM SOCKETS sit under the same cap, so it stays pinned rather than
+# inherited. A platform socket really does live for hours, which is what makes
+# this value load-bearing rather than precautionary now: at Modal's default it
+# would cut every deployed guest's transport every five minutes. Same trap the
+# sandbox layer documents in modal-sandbox-env.ts, matched to the same 4h value.
 FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 
 # ── Guest-sandbox resources ──────────────────────────────────────────────────
@@ -353,6 +385,13 @@ image = build_image(
         "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
         "SANDBOX_MEMORY_MB": str(SANDBOX_MEMORY_MB),
         "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
+        # Guest sandboxes are placed by the SAME preference list this function
+        # is pinned to — see "Guest sandboxes take the SAME list" above for the
+        # per-operation measurement, and modal-sandbox-env.ts for the parser.
+        # Comma-separated because that is what an operator setting this by hand
+        # writes, and the spill entry is not optional: a single region is what
+        # produced `Sandbox operation timed out` under load.
+        "MODAL_SANDBOX_REGION": ",".join(REGIONS),
         # The autoscaler ceiling, readable by the process it bounds. It is the
         # MULTIPLIER on every per-replica pool, so the boot-time capacity check
         # cannot state the fleet's claim without it (platform-db-capacity.ts) —

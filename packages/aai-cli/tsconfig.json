@@ -12,6 +12,6 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["./**/*.ts", "./*.mjs"],
+  "include": ["src", "*.ts", "*.mjs"],
   "exclude": ["node_modules", "dist", "templates", "**/__snapshots__"]
 }

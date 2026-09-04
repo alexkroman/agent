@@ -100,7 +100,7 @@
  * The success output is a count, so the scan carries floors: a corpus that
  * resolved to nothing, or a matcher that stopped recognising `fc.assert`, would
  * otherwise print "all 0 file(s) ✓" — which is this gate's own defect class
- * arriving in the gate. `packages/aai-templates/property-floor-gate.test.ts`
+ * arriving in the gate. `packages/aai-templates/src/property-floor-gate.test.ts`
  * pins the matcher for the same reason.
  *
  * Wired up as `pnpm check:property-floors`, in `scripts/check.mjs`'s `GATES`
@@ -222,7 +222,7 @@ if (corpus.size < MIN_CORPUS_FILES) {
       "Either the pathspec stopped matching or the import matcher did. A gate whose\n" +
       "success output is a count reports both as a clean run — which is the exact\n" +
       "defect this gate exists to catch. Its spec is\n" +
-      "packages/aai-templates/property-floor-gate.test.ts.",
+      "packages/aai-templates/src/property-floor-gate.test.ts.",
   );
   process.exit(1);
 }
@@ -331,8 +331,8 @@ if (floorless.length > 0) {
       "it passes, faster, forever. Count the states the property is about and assert\n" +
       "each as a floor after the run:\n" +
       `  expect(reached.toolTurn, "no turn ever called a tool").${FLOOR_MATCHER}(670); // 2016-2489\n` +
-      "See packages/aai-ui/fuzz-voiceio.test.ts and\n" +
-      "packages/aai-runtime/workflow-resume-equivalence.test.ts for the shape.",
+      "See packages/aai-ui/src/fuzz-voiceio.test.ts and\n" +
+      "packages/aai-runtime/src/workflow-resume-equivalence.test.ts for the shape.",
   );
 }
 
@@ -371,7 +371,7 @@ if (obliged.length < MIN_OBLIGED_FILES || totalFloors < MIN_FLOORS) {
       `${corpus.size} file(s) were found, so this is the matcher rather than the pathspec:\n` +
       "it has stopped recognising a property runner, a stateful API or a floor\n" +
       "assertion, and a gate whose success output is a count reports that as green.\n" +
-      "Its spec is packages/aai-templates/property-floor-gate.test.ts.",
+      "Its spec is packages/aai-templates/src/property-floor-gate.test.ts.",
   );
   process.exit(1);
 }

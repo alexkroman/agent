@@ -19,16 +19,18 @@
  * page used to promise "the run continues without it" and then had no way back
  * to the run it was promising about.
  *
- * `key` is the handle that survives, and `recover` is what reads it back. Two
- * lines of wiring, one decision:
+ * A correlation KEY is the handle that survives, and this page writes none of
+ * it: `useWorkflowSubmit` mints an opaque per-page key into `sessionStorage`,
+ * records every run under it, and asks `find("digest", key)` as it mounts —
+ * so a reload lands back on the same headline, the same progress log and the
+ * same buttons. Six templates used to write those two options each, which is
+ * what made it the default.
  *
- * - **The key is OPAQUE and lives in `sessionStorage`.** It names nothing about
- *   the person or the link — `useRunKey()` is the SDK's, and its module argues
- *   what that rules out (a key derived from the URL being digested, a `?key=`
- *   parameter) and why. Six templates had written those twenty lines each.
- * - **`recover: true`** makes the hook ask `find("digest", key)` as it mounts
- *   and follow whatever run comes back, so a reload lands back on the same
- *   headline, the same progress log and the same buttons.
+ * What the page can still say is which key: `useRunKey({ storage: "local" })`
+ * for a run meant to outlive the tab (`podcast-digest`), an ACCOUNT's own id
+ * for an app with logins, `recover: false` for a form that must always open
+ * empty. `use-run-key.ts` argues what a key may not be — derived from the URL
+ * being digested, or carried in a `?key=` parameter.
  *
  * Deployed, this needs the correlation-key index, which is a `DATABASE_URL`
  * away — `agent.ts` says what happens without one (the runs are still durable;
@@ -55,14 +57,14 @@
  * Progress also REPLAYS — chunks are retained with the run — so a reload mid-run
  * catches up rather than starting from whatever arrives next. That only pays off
  * because the reload can name its run again: `<WorkflowProgress runId>` is handed
- * `run?.runId`, so before `recover` a refresh replayed a log for nobody.
+ * `run?.runId`, so before the recovery a refresh replayed a log for nobody.
  * `lines={1}` is
  * what narrows it to the newest line, because on a page this small that is the
  * whole of what a status wants; `transcription-workflow` renders the full log,
  * where a fan-out makes the history worth seeing.
  */
 
-import { page, useRunKey, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
+import { page, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
@@ -90,9 +92,6 @@ function pendingNote(startedHere: boolean, found: boolean): string {
 
 export function App() {
   const [url, setUrl] = useState("");
-  // This tab's handle on its own runs — minted once and remembered, which is
-  // what a later load produces to find the run again.
-  const key = useRunKey();
   // Did THIS load start the run? A reload cannot have, and that is the only way
   // the page can tell "working on what you just submitted" from "picking up
   // where you left off" — the hook reports the run, not who asked for it.
@@ -102,13 +101,10 @@ export function App() {
   // rejected input, which is better copy than anything this page could write, and
   // `wake` is bound to whatever run the hook is following — the whole reason this
   // page no longer holds a `createWorkflowApi()` of its own.
-  const { submit, run, pending, error, wake } = useWorkflowSubmit<typeof digest>("digest", {
-    // Recorded with the run, and read back on the next load. Neither half is
-    // useful alone: without the key there is nothing to find the run by, and
-    // without `recover` the key is only ever written.
-    key,
-    recover: true,
-  });
+  // No `key` and no `recover`: this tab's handle on its own runs is minted and
+  // remembered by the hook, and read back as it mounts. See the module doc for
+  // what a page says when it wants a different one.
+  const { submit, run, pending, error, wake } = useWorkflowSubmit<typeof digest>("digest");
 
   // `submit()` resolves as soon as the run exists — deliberately not when it
   // finishes. That is the whole mechanism: the digest sleeps for a while, and

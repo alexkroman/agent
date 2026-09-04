@@ -111,7 +111,7 @@ export const STATE_RULES = [
     paths: SESSION_SURFACE_PATHS,
     skipComments: true,
     remedy:
-      "Add the EVENT to `packages/aai/sdk/protocol-events.ts` and report it —\n" +
+      "Add the EVENT to `packages/aai/src/sdk/protocol-events.ts` and report it —\n" +
       "`SessionCore.report(event)` and `TransportCallbacks.report(event)` take the\n" +
       "protocol's own vocabulary, so a new thing the session observes costs one\n" +
       "union member and one `case`. A new `on*` costs a declaration on the type, a\n" +
@@ -228,7 +228,7 @@ export const STATE_RULES = [
       "hands the resource on — bind an AsyncDisposableStack instead, register\n" +
       "the resource with its use method, and call move on the success path so\n" +
       "that scope exit leaves it alone. See installOrDispose in\n" +
-      "packages/aai-studio-server/studio-session-ensure.ts.\n\n" +
+      "packages/aai-studio-server/src/studio-session-ensure.ts.\n\n" +
       "The repo implemented the protocol and then called it by hand: three\n" +
       "modules declare `[Symbol.asyncDispose]` and every consumer invoked it as\n" +
       "an ordinary method, so the language feature that exists to make teardown\n" +

@@ -7,7 +7,7 @@ carries no content of its own — `AGENTS.md` is the name every other agent tool
 looks for, so keeping the guide here means one canonical copy rather than a
 per-tool set that drifts. Edit THIS file; never paste content into
 `CLAUDE.md` (`check-claude-md.mjs` and
-`packages/aai-templates/claude-md-limit.test.ts` both fail if you do — this
+`packages/aai-templates/src/claude-md-limit.test.ts` both fail if you do — this
 line used to cite an `agents-md-shim.test.ts` that has never existed in the
 tree, which mattered because the parenthetical is the whole reason an author
 believes the rule is checked). Package guides stay
@@ -128,7 +128,7 @@ pnpm dev:aai-server      # Start aai-server in dev mode
 
 ```sh
 pnpm vitest run --project aai                   # Single package via --project
-pnpm vitest run packages/aai/sdk/types.test.ts  # Single file
+pnpm vitest run packages/aai/src/sdk/types.test.ts  # Single file
 pnpm vitest run session                         # All files matching "session"
 pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 ```
@@ -404,6 +404,13 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   The baseline is itself a list of the pattern names, so it needs the same
   pathspec exclusion the script does — its first per-file run scored its own
   keys as four fresh hatches. Same trap as markdown, by a new route.
+- **`pnpm check:package-layout`** (`scripts/check-package-layout.mjs`) — a
+  package's TypeScript lives under `src/` (see "Package layout"). Stated from
+  BOTH sides, since "no `.ts` outside `src/`" is vacuously true of an emptied
+  package: every package must also HAVE a non-empty `src/`. Two corpus floors,
+  for the reason every counting gate here carries them. Its header has the
+  argument and the three failures the flat layout cost.
+
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
   source files at 500 lines and test files at 700. Files that already
   exceed the cap are grandfathered in `scripts/file-length-allowlist.json`,
@@ -443,7 +450,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   There is deliberately **no allowlist**: an entry would assert that some test
   rightly checks nothing, which is never true. It carries FLOORS (200 files,
   2,000 tests), and its parser is specced in
-  `packages/aai-templates/test-assertion-gate.test.ts` — both for the same
+  `packages/aai-templates/src/test-assertion-gate.test.ts` — both for the same
   reason the corpus floor above exists: its whole success output is a count, so
   a glob or a parser that stopped recognising `test(` would print "all 0 test(s)
   assert something ✓" and pass, the same shape as the bug it exists to catch.
@@ -473,7 +480,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   pattern invites — Claude Code would read it and every other agent tool would
   read `AGENTS.md`, with no symptom until the two halves disagreed.
   **The same cap is also a TEST**
-  (`packages/aai-templates/claude-md-limit.test.ts`), so it fails in the
+  (`packages/aai-templates/src/claude-md-limit.test.ts`), so it fails in the
   ordinary test run and not only in `pnpm check` — an agent editing a guide
   sees it without knowing this gate exists. It asserts both lines separately
   (over budget = refactor before adding more; over 150k = a guide is being
@@ -518,7 +525,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   Two things to know before editing `konsistent.json`. **A convention that
   matches nothing passes** — a typo'd `paths` glob checks zero files and prints
   the same "No violations found" as a healthy run, with no error anywhere, so
-  `packages/aai-templates/konsistent-config.test.ts` asserts every pattern's
+  `packages/aai-templates/src/konsistent-config.test.ts` asserts every pattern's
   literal prefix exists (plus that each convention is named, described, and
   declares at least one predicate). And **the case maps compose**:
   `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
@@ -542,51 +549,26 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   instead, so a violation is self-correcting and a reviewer never re-explains
   it.
 
-  | # | Rule | Instead |
-  | --- | --- | --- |
-  | 1 | no symlinks anywhere | a real file, or a module that re-exports |
-  | 2 | no conditional spread on a `!== undefined` presence test — all three spellings | `omitUndefined()` |
-  | 3 | no `Promise.race` against a `setTimeout`, WRAPPED FORM INCLUDED | `p-timeout` |
-  | 4 | no inline `new Promise(r => setTimeout(r, 0))`, `setImmediate` and `<T>` included | `flush()` / `tick()` |
-  | 5 | no `delete process.env.X` | `vi.stubEnv(name, undefined)` |
-  | 7 | no floating-tag GitHub Action | a 40-char commit SHA |
-  | 8 | no `if (m.get(k) === mine) m.delete(k)` | `createOwnedMap()` |
-  | 9 | no `tails.get(k) ?? Promise.resolve()` | `createKeyedLock()` / `slot.update` |
-  | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
-  | 12 | every guest route literal is in `GUEST_ROUTES` — `aai-guest` AND the `aai/host` modules it bundles | declare it + its exposure |
-  | 13 | no template import escaping its template dir | move it in, or publish it |
-  | 14 | no fixture directory nothing reads | delete it, or add the reader |
-  | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
-  | 17 | no open-coded record guard, in either polarity | `isRecord()` |
-  | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
-  | 19 | no hand-rolled sleep (or `node:timers/promises`), `<T>` included | `sleep()` |
-  | 20 | no changeset that cannot bump, or that ships nowhere | a real name, plus a package that carries it |
-  | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
-  | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
-  | 23 | no `async` function handed straight to `.on`/`addEventListener` | a sync listener + `void p.catch(report)` |
-  | 24 | no new field on `ToolContext` | that value's own module + capability root |
-  | 25 | no new field on the shared channel message shape | that kind's own options type |
-  | 26 | no raw step call in a shipped `workflows/` body | the `*Classified` sibling |
-  | 27 | no explicit `[Symbol.dispose]()` call in shipped source | `using` / `await using` |
-  | 28 | no hand-rolled `process.argv` scan in `scripts/` | `parseScriptArgs()` |
-  | 29 | no `globalThis.fetch` as a runtime egress default | `egressFetch()` |
-  | 30 | no non-deterministic read in a shipped `workflows/` body | move it inside `ctx.step` |
-  | 31 | no hand-rolled jittered backoff | `jitteredBackoff()` |
-  | 32 | no computed journal identity (a template-literal step/wait name) | a plain string literal |
+  **`node scripts/guard-invariants.mjs --rules` prints the catalogue.** There
+  used to be a copy of it here, a `# | Rule | Instead` table of all 32, and it
+  went stale twice — it stopped at 23, then at 28 — while the one DERIVED line
+  beside it, the printed count, stayed right. That is the same failure the
+  script's own prose catalogue was deleted for, and the file already said so
+  about itself ("when it disagrees with `--rules`, `--rules` is right"), which
+  is an instruction to read the other thing rather than a reason to keep this
+  one. So there is no copy now: the catalogue is computed from the `id`,
+  `label` and `remedy` every rule carries, and a new rule joins it by existing.
 
-  Hand-kept, and it keeps going stale — it stopped at 23, then at 28, and
-  `--rules` is the derived source to read instead. The recurrence IS the
-  argument: this table is a convenience copy, so when it disagrees with
-  `--rules`, `--rules` is right.
   Rule IDs are **stable** — they appear in commit messages and in the baseline,
   so a deleted rule leaves its number retired rather than letting a later rule
   inherit it (6, retired with `ctx.state`; 10, with the `research/` directory it
   checked; 15, reserved). Several are at zero and enforced
-  absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
-  was widened**: a wrapped `Promise.race([` is matched by its opening line,
-  which cannot see whether a timer is among the elements, so a timer-free
-  wrapped race is a legitimate entry. Over-reporting is the cheap error here —
-  see `RACE_CONTINUES` in `guard-invariants-ere.mjs`.
+  absolutely; the rest carry per-file baselines. **Rule 3 is back at zero**: it
+  used to carry a baselined entry that was never a violation — a wrapped
+  `Promise.race([` was matched by its opening LINE, which cannot see whether a
+  timer is among the elements, so a timer-free race scored. It is a node rule
+  now and looks at the elements, which is the difference between over-reporting
+  as the cheap error and not having to choose.
 
   **Rule 2's `undefined` scope is a BOUNDARY, and rule 22 is why.** Rule 2 tests
   presence, which `omitUndefined` *is*, so its matches rewrite without changing
@@ -604,24 +586,45 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   asymmetry is exactly why the grep-based rules announced their own blindness
   and these two could not.
 
-  **The rule definitions are six modules behind one barrel.**
-  `guard-invariants-rules.mjs` re-exports `LINE_RULES` (sorted by id) and the
-  scope constants; under it sit `-ere.mjs` (the regex vocabulary),
-  `-scopes.mjs` (the corpora), and four rule groups — `-rules-timing.mjs` /
-  `-rules-shape.mjs` / `-rules-state.mjs` / `-rules-workflow.mjs`, the last
-  holding the two rules over a shipped `workflows/` body, which left the timing
-  module when rule 31 took it past the source cap.
-  **Every one is in the gate's `SELF_REFERENTIAL` set**,
+  **TWO ENGINES, chosen by what a rule ASKS.** A **line rule** carries a POSIX
+  ERE for `git grep -E`; a **node rule** carries a `match(node)` over a real
+  parse (`oxc-parser`, via `scripts/_ast-scan.mjs`, predicates in
+  `-nodes.mjs`). Everything else is shared — one baseline, one `--update`
+  contract, one report — so a rule keeps its id, key and budgets across a
+  migration, and the gate interleaves both lists by id. Ask whether the thing
+  banned is a **name** or a **shape**: `delete process.env.X` (5), a `/tmp`
+  literal (11), an `on*` declaration (16) are names, and grep answers them
+  exactly; "a callback that is `async`", "a delay that is zero", "a timer among
+  a race's elements" are shapes, and **every gap this gate has ever had was a
+  shape written as a pattern.** The timing family (3, 4, 19, 21, 23, 31) is all
+  six of them and went first — its module doc lists the four misses that closed,
+  including a rule 21 printing `0 ✓` over two live `expect.poll` calls Biome had
+  wrapped. Line rules keep one thing the parse gives up: they see code inside a
+  TEMPLATE LITERAL, which several fixtures write out and then execute. Parsing
+  the repo costs ~1.6 s; the gate went 1.2 s to 2.4 s.
+
+  **The rule definitions are seven modules behind one barrel.**
+  `guard-invariants-rules.mjs` re-exports `LINE_RULES` and `NODE_RULES` (each
+  sorted by id) and the scope constants; under it sit `-ere.mjs` and `-nodes.mjs`
+  (the two vocabularies), `-scopes.mjs` (the corpora), and four rule groups —
+  `-rules-timing.mjs` / `-rules-shape.mjs` / `-rules-state.mjs` /
+  `-rules-workflow.mjs`, the last holding the two rules over a shipped
+  `workflows/` body, which left the timing module when rule 31 took it past the
+  source cap.
+  **Every LINE-rule module is in the gate's `SELF_REFERENTIAL` set**,
   because each `label` and `re` describes the thing it bans — a split that
-  forgot one file would be the fifth time this repo pays for that trap. A rule
-  may also carry `samples: { matches, ignores }`, where a widened pattern's
+  forgot one file would be the fifth time this repo pays for that trap. The two
+  node modules are absent by proof rather than by oversight: a node rule's own
+  definition cannot match it, a remedy quoting the anti-pattern being a string
+  literal and not a call — the entry was removed and the gate stayed green. A
+  rule may also carry `samples: { matches, ignores }`, where a widened pattern's
   proof belongs: rule 3 shipped for months with a single-line positive sample
-  while the rule was blind to the multi-line form.
-  `node scripts/guard-invariants.mjs --rules` prints the catalogue DERIVED from
-  the definitions — the prose copy that used to live in the script's header went
-  three rules stale (17, 18, 19) while the one computed line, the printed count,
-  stayed right. The per-file baselines carry the same `--update`-only-lowers
-  contract as `check:hatches`.
+  while blind to the multi-line form. A node rule's samples are SOURCE, so that
+  gap is not expressible — but a node rule can still be silently dead, and rule
+  31 was, matching nothing until `unwrap` existed (oxc preserves
+  `ParenthesizedExpression`). Its own sample caught it.
+  The per-file baselines carry the same `--update`-only-lowers contract as
+  `check:hatches`.
 
   **A baselined occurrence needs a reason, and the JSON is NOT where it goes** —
   that file is a bare `{path: count}` map written by `--update`, with
@@ -903,9 +906,30 @@ few lines.
   `await pTimeout(…)` as floating, costing nine suppressions; 2.5.12 also
   retires the one this cost at 2.5.8. Do not lower the floor.
 
-- **Exports**: In dev mode, package.json exports point to `.ts` source for
-  seamless workspace resolution. Update to compiled `.js` dist paths before
-  publishing.
+- **Exports**: every entry carries BOTH conditions — `@dev/source` naming
+  `./src/…` and `types`/`import` naming `./dist/…`. There is no pre-publish
+  rewrite: a consumer without `customConditions` resolves to `dist`.
+
+### Package layout
+
+**Every package is `src/` plus its configs.** Source — `.ts`, `.tsx`, tests,
+fixtures, snapshots, the capability contracts — lives in `packages/<pkg>/src/`;
+the manifests, tsconfigs, tool configs, guides, `etc/` (the API reports) and
+static assets (`index.html`, `public/`, `aai-ui`'s published `styles.css`,
+`aai`'s `skills/`) stay at the package root. `aai-templates` keeps `templates/`
+and `scaffold/` there too: that TypeScript is a shipped product authored FOR a
+user's project, checked under the SCAFFOLD's tsconfig by
+`check:template-types`, not source this package builds.
+
+`tsconfig.build.json` therefore sets `rootDir: "src"` and `include: ["src"]`,
+which keeps a repo artifact out of `dist/` by construction rather than by an
+`exclude` list somebody keeps current — `aai-ui` shipped the frozen contract
+examples that way. **The emitted layout is unchanged**: with every entry under
+`src/`, tsdown and tsc both take it as the common root, so `dist/index.js` and
+`dist/sdk/protocol.d.ts` are where they were and no published `exports` target
+moved — only `@dev/source` names `src/`. Enforced by `check:package-layout`,
+not konsistent: `paths` is a discovery glob, so a package that lost its `src/`
+would match nothing and pass.
 
 ### File naming conventions
 
@@ -921,21 +945,15 @@ few lines.
 
 Each package has distinct test helpers tailored to its domain:
 
-- **`aai/sdk/testing.ts`** and **`aai/sdk/testing-vitest.ts`** — the ones that
-  are PUBLISHED (`@alexkroman1/aai/testing` and `/testing/vitest`, so a user's
-  agent project can import them). `createToolContext(overrides?)` builds a
-  `ToolContext` for testing a tool's `execute`; the collaborator fakes
-  (`stubGenerate`, `stubGateway`/`stubUploads`, `toolOf`/`runTool`,
-  `withDiscoveredTools`) drive what that tool calls. **The subpath table in
-  `packages/aai/CLAUDE.md` carries the inventory and the argument** — why the
-  defaults are inert, why each call is a distinct session, and why `/testing`
-  stays framework-agnostic while importing `/testing/vitest` is what pulls the
-  runner. The repo-wide half is only that they replaced the same eight-field
-  stub in four template suites, two of which reached for
-  `{ … } as unknown as ToolContext` — the cast that also stops reporting when a
-  field is ADDED, which is the failure a shared builder exists to prevent.
-  **The split has a RULE now rather than a precedent: anything that INSTALLS,
-  and anything that RESTORES, is `/testing/vitest`.** Every fake filling a
+- **`aai/src/sdk/testing.ts`** and **`aai/src/sdk/testing-vitest.ts`** — the ones
+  that are PUBLISHED (`@alexkroman1/aai/testing` and `/testing/vitest`, so a
+  user's agent project can import them). **The subpath table in
+  `packages/aai/CLAUDE.md` carries the inventory and the argument** — what each
+  fake fills, why the defaults are inert, why each call is a distinct session,
+  and why `/testing` stays framework-agnostic while importing `/testing/vitest`
+  is what pulls the runner.
+  **The split has a RULE rather than a precedent: anything that INSTALLS, and
+  anything that RESTORES, is `/testing/vitest`.** Every fake filling a
   published slot hands back a `restore` the caller owns, and owning it means a
   `const restores: (() => void)[]` plus an `afterEach` that splices it — written
   out template after template, three times in one file. `install*` is that fake
@@ -1024,21 +1042,14 @@ The repo's recurring async-coordination patterns are reified as small
 primitives. Almost all of them are `packages/aai` exports, so **the catalogue
 and the argument behind each one live in `packages/aai/CLAUDE.md`,
 "Concurrency primitives"** — go there before re-inventing one at a call site.
-What is there, by name: `createEpoch()` (staleness guard for async
-continuations), `createOwnedMap()` (a map whose entries are removed by
-ownership token), `createCoalescingRunner()` (serialize + coalesce repeatable
-async work), `createTurnMachine()` (the pipeline's turn lifecycle),
-`createKeyedLock()`/`withLock()` (serialize async work per key — the one that
-is PUBLIC, because the LLM loop runs a step's tool calls concurrently),
-`sleep(ms, { signal?, unref? })` (the ONE wait; `guard-invariants` rule 19
-keeps the seventh spelling out),
-`jitteredBackoff(attempt, { baseMs, maxMs? })` (how long before the next
-retry — rule 31 keeps the fourth copy out; the JITTER is the half a copy gets
-wrong), `sessionSlot()` (a typed named slot that owns
-a session's state, with a SYNCHRONOUS update window), `ToolFailure` /
-`isToolFailure()` / `toolFailure()` (the failure a tool returns for the MODEL
-to recover from), `pushCapped()`, `resolveOne()`, `omitUndefined()` and
-`isRecord()`.
+The roster, so a call site can be grepped
+against it: `createEpoch()`, `createOwnedMap()`, `createCoalescingRunner()`,
+`createTurnMachine()`, `createKeyedLock()` / `withLock()`,
+`sleep(ms, { signal?, unref? })` (the ONE wait — `guard-invariants` rule 19
+keeps the seventh spelling out), `jitteredBackoff(attempt, …)` (rule 31 keeps
+the fourth copy out; the JITTER is the half a copy gets wrong),
+`sessionSlot()`, `ToolFailure` / `isToolFailure()` / `toolFailure()`,
+`pushCapped()`, `resolveOne()`, `omitUndefined()`, `isRecord()`.
 
 Two are repo-wide rather than this SDK's, and stay here:
 
@@ -1253,19 +1264,13 @@ Four things a change to a published package owes, without reading further:
   `template-api-allowlist.json` at one: it records the exports no shipped
   example exercises, and a bump only ever asks about the names that MOVED.
 
-A new CONTRACT package (a package that grows a `contracts/` directory) owes
-three more: the `tsconfig.build.json` exclusion, the `vitest.config.ts`
-coverage exclusion, and knip `entry` points — plus `packages/*/contracts/**`
-staying in the `aai-templates` turbo `inputs`, which is what stops the
-gate-under-the-gate being served from cache exactly when a contract tree
-changes.
-
-**This section used to be two, "Published type signatures are a committed
-report" and "The authoring surface is versioned in epochs"** — the titles three
-package guides still cite as living in the root. Both are now in
-[`docs/CLAUDE.md`](docs/CLAUDE.md) under those same headings, with the
-`@internal`-surface ratchet, the six load-bearing properties of an epoch, why
-capabilities rather than entry points, and the two mechanical notes.
+**The rest is in [`docs/CLAUDE.md`](docs/CLAUDE.md)**, including what a new
+CONTRACT package owes. This section used to be two, "Published type signatures
+are a committed report" and "The authoring surface is versioned in epochs" —
+the titles three package guides still cite as living in the root; both are
+there under those same headings, with the `@internal`-surface ratchet, the six
+load-bearing properties of an epoch, why capabilities rather than entry points,
+and the two mechanical notes.
 
 ### The authoring guide ships inside the SDK
 
@@ -1306,8 +1311,8 @@ a schema change merged earlier sits in an earlier commit. `workflow_dispatch`
 job-1 comment carries the rest.
 
 **Within a release, the deploy fires on a server VERSION bump, and NOT on a
-server source change.** A source-diff arm over `packages/aai-server/**` /
-`packages/aai-studio-server/**` was added (#1343) and is reverted: it made a
+server source change.** A source-diff arm over `packages/aai-server/src/**` /
+`packages/aai-studio-server/src/**` was added (#1343) and is reverted: it made a
 production rollout the consequence of a MERGE rather than of a RELEASE, so
 every server PR deployed on its own, several times a day — a rolling Modal
 rollout plus a migration job each, with no release to name in an incident.
@@ -1748,29 +1753,20 @@ bumped automatically.
 
 The third artifact of the three above: two renderings of the published type
 surface, both from TypeDoc over the built `dist/*.d.ts` of `aai` and `aai-ui`
-(only those two, deliberately).
+(only those two, deliberately). `pnpm docs:api` renders `docs/dist/**` as HTML
+for GitHub Pages; `pnpm docs:md` renders `docs/api/**` as **committed**
+markdown, so an agent can `cat` the API reference instead of a rendered site,
+and `pnpm check:docs-md` fails when it is stale.
 
-- **`pnpm docs:api`** → `docs/dist/**`, HTML, published to GitHub Pages by
-  `.github/workflows/docs.yml`. Runs as the turbo `docs` task, a merge gate in
-  `pnpm check` and CI, with `treatWarningsAsErrors` — a broken `{@link}` fails
-  the build.
-- **`pnpm docs:md`** → `docs/api/**`, markdown, **committed**, one file per
-  documented entry point, so an agent can `cat` the API reference instead of a
-  rendered site. `pnpm check:docs-md` fails when it is stale.
-
-Entry points live in each package's `typedoc.json`; a new subpath export needs
-an entry there, and an `@module` tag naming it, or it renders under its
-emitted-file path. Unlike the API reports these carry the doc COMMENTS, which
-is the whole reason a third artifact exists.
-
-**The rest is in [`docs/CLAUDE.md`](docs/CLAUDE.md)**: the five load-bearing
-options in `typedoc.markdown.json`, why the markdown rendering is committed and
-floored, the `@module` rule and the latent broken link it surfaced, why
-`aai-cli` and `aai-runtime` are deliberately absent, the three sets and where
-they disagree, why `docs/` pins its own `typescript@6`, and why knip has to be
-told about the second config. `pnpm check:doc-examples` — every ```` ```ts ````
-fence in published-package doc comments, READMEs, the scaffold guide and the
-studio prompts compiles under the scaffold tsconfig — is documented there too.
+**All of it is in [`docs/CLAUDE.md`](docs/CLAUDE.md)** — the two commands and
+what gates each, the `@module`/entry-point rule a new subpath export owes, the
+five load-bearing options in `typedoc.markdown.json`, why the markdown
+rendering is committed and floored, why `aai-cli` and `aai-runtime` are
+deliberately absent, why `docs/` pins its own `typescript@6`, and why knip has
+to be told about the second config. `pnpm check:doc-examples` — every
+```` ```ts ```` fence in published-package doc comments, READMEs, the scaffold
+guide and the studio prompts compiles under the scaffold tsconfig — is
+documented there too.
 
 ### Git hooks (lefthook)
 
@@ -1885,7 +1881,7 @@ catches the most common issues that historically required follow-up commits:
 against a server where the guest's dispatch table is the whole API. Deployed,
 almost nothing works that way, and the gap is invisible in a diff and to the
 feature's own tests — it has landed twice. `GUEST_ROUTE_EXPOSURE` and
-`GUEST_ROUTES` (`packages/aai-server/guest-routes.ts`) are what close it.
+`GUEST_ROUTES` (`packages/aai-server/src/guest-routes.ts`) are what close it.
 **See "A new guest route must declare how the PLATFORM exposes it" in
 `packages/aai-server/CLAUDE.md`** for the four exposure kinds, which half is a
 test and which is `guard-invariants` rule 12, and why exposure is decided by

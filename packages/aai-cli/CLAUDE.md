@@ -46,6 +46,67 @@ The harness the eval file is written against is published from
 is not "skip". See "Driving an agent from text is a published surface" in
 `packages/aai-runtime/CLAUDE.md`.
 
+## An INCOMPLETE `aai test` is not a pass
+
+`aai test` runs `agent.test.ts` and nothing else, and that narrow default
+STANDS: which files it runs is a documented contract, and widening it by default
+would reach specs that are slow or want credentials. What did not stand is the
+verdict it printed over the difference. It answered
+`{"ok":true,"data":{"passed":true}}` with **exit 0** while naming the files it
+had skipped in a warning printed *after* the green summary — so the scaffold's
+`"test": "aai test"`, which is what users wire into CI, could report a passing
+suite over 211 unrun tests. Measured: one tool added to the `retail` template
+broke its `registry.test.ts` in 17 assertions with `pnpm test` and `pnpm build`
+green throughout, and one user concatenated a 25-test suite into `agent.test.ts`
+to get it gated at all.
+
+It is the same defect `defineExec`'s `cwd` policy exists for — "a green result
+for a project that is not there reads, in CI, exactly like a passing suite" —
+one directory over, and it gets the same answer. Four parts, and the split
+between them is the design:
+
+- **`executeTest` FAILS with `incomplete_run`** when any non-eval spec in the
+  project was not covered, naming the files (capped at ten, then counted) and
+  the flag that runs them. Both arms fail, including the one that misled longest
+  — no `agent.test.ts` at all, where the CLI printed "No test file found" while
+  the project's specs sat right there. A warning after a green summary is not a
+  gate; an exit code is.
+- **The result carries the SET, not just a boolean.** `ran`, `unrun` and
+  `complete` ride `TestData`, because `jq -e .data.passed` answered `true` for a
+  narrowed run and a complete one alike, so no script could tell them apart.
+  `aai eval` reports its `ran` for the same reason.
+- **`aai test --all`** is the opt-in: every non-eval spec in one run
+  (`TestOptions.all` → `VitestRunOptions.all`, declared as the `test` command's
+  one non-`json` arg in `cli.ts`). Still a vitest FILTER LIST rather than an
+  include glob, so the eval tier stays disjoint by construction exactly as the
+  narrow path is (see above) — nothing had to learn the other command's
+  filename. The failure's hint names the project's own `npm test` FIRST and the
+  flag second, because the script is the answer that needs nothing remembered.
+- **`aai build` runs the WHOLE suite**, not `agent.test.ts` alone
+  (`runVitest(cwd, { candidates: TEST_FILES, all: true })`). The narrow default
+  above is a fast-inner-loop contract — one documented file, so a spec that is
+  slow or wants credentials is not dragged into every save. A build is the
+  opposite situation: it previews the deploy artifact and it is run
+  deliberately, so a gate reading one file out of eight is the same false green
+  one command over. It printed "Build complete" over exactly that.
+  `--skipTests` remains the opt-out, and it is the honest one — it says no
+  tests ran, where the narrowed gate implied they all had.
+- **`runVitest` announces the unrun set ITSELF by default**
+  (`announceUnrun`, default `true`), so a caller that narrows without knowing it
+  cannot stay silent. `aai test` and `aai eval` pass `false` — the first because
+  its own result and failure report the set, the second because "did not run" is
+  a claim about the TEST tier and an eval run would otherwise name every unit
+  spec in the project.
+
+**And the scaffold's `test` script is no longer `aai test`.** It is
+`vitest run --exclude "**/*.eval.test.*"` (`scaffold/package.json`), with the
+narrow command kept as `test:agent`. The command a project wires into CI must be
+the one that runs that project's suite — and vitest's CLI `--exclude` is PUSHED
+onto `defaultExclude` rather than replacing it (verified in vitest 4.1's own
+`resolved.cliExclude` handling), so `node_modules` stays excluded and the one
+pattern buys the same test/eval disjointness the CLI gets from its filter. The
+scaffold guide already said `pnpm test`; this makes that true.
+
 **`aai workflow` talks to the AGENT, not to the platform API** (`workflow.ts`,
 `cli-workflow.ts`): `list`, `runs <name>`, `show <runId>`, `cancel <runId>` over
 the brokered `/:slug/workflows` surface. It is deliberately NOT an `apiRequest`
@@ -492,9 +553,9 @@ a mode whose whole job is to inject faults has to be shown to inject them.
 
 ### The other fault mode lives in `aai`, and faults a SOCKET
 
-`packages/aai/host/_fault-socket.ts` is the sibling of this one: a TCP proxy that
-SEVERS live connections, for testing that a session continues across a
-disconnect. It sits in `aai` rather than here because what it faults —
+`packages/aai/src/host/_fault-socket.ts` is the sibling of this one: a TCP
+proxy that SEVERS live connections, for testing that a session continues
+across a disconnect. It sits in `aai` rather than here because what it faults —
 `createServer`, the WebSocket upgrade, session resume — lives there.
 
 Three things separate the two, and picking the wrong one measures nothing:
@@ -806,7 +867,7 @@ guess is not trusted where egress is real.
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
-The SDK's `createServer` (`packages/aai/host/server.ts`) is what `aai dev` runs,
+The SDK's `createServer` (`packages/aai/src/host/server.ts`) is what `aai dev` runs,
 and its defaults are documented here because this is the caller that owns
 `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`. The two fail-closed
 defaults are summarised in `packages/aai/CLAUDE.md`, "Self-hosted server
@@ -1008,7 +1069,7 @@ scaffold already declares — so `npm ci --omit=dev` in a container is not a
 supported shape, and `prestart` skips only the TESTS: `npm test` is where a suite
 belongs, and a failing test must not be what stops a container from starting.
 
-`packages/aai-cli/e2e.test.ts` boots `npm start` against a real installed
+`packages/aai-cli/src/e2e.test.ts` boots `npm start` against a real installed
 project — **`pizza-ordering`, chosen for its `tools/` directory**, which is what
 this leg is now about (it keeps the old `math-buddy` coverage anyway, whose
 prompt is a discovered `system-prompt.md`). It probes `/health`,

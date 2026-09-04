@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "13.2.0",
+  "version": "13.3.0",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -19,117 +19,117 @@
   ],
   "exports": {
     ".": {
-      "@dev/source": "./index.ts",
+      "@dev/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./utils": {
-      "@dev/source": "./sdk/utils.ts",
+      "@dev/source": "./src/sdk/utils.ts",
       "types": "./dist/sdk/utils.d.ts",
       "import": "./dist/sdk/utils.js"
     },
     "./step": {
-      "@dev/source": "./sdk/step-barrel.ts",
+      "@dev/source": "./src/sdk/step-barrel.ts",
       "types": "./dist/sdk/step-barrel.d.ts",
       "import": "./dist/sdk/step-barrel.js"
     },
     "./testing": {
-      "@dev/source": "./sdk/testing.ts",
+      "@dev/source": "./src/sdk/testing.ts",
       "types": "./dist/sdk/testing.d.ts",
       "import": "./dist/sdk/testing.js"
     },
     "./testing/vitest": {
-      "@dev/source": "./sdk/testing-vitest.ts",
+      "@dev/source": "./src/sdk/testing-vitest.ts",
       "types": "./dist/sdk/testing-vitest.d.ts",
       "import": "./dist/sdk/testing-vitest.js"
     },
     "./testing/vite": {
-      "@dev/source": "./host/testing-vite.ts",
+      "@dev/source": "./src/host/testing-vite.ts",
       "types": "./dist/host/testing-vite.d.ts",
       "import": "./dist/host/testing-vite.js"
     },
     "./channels": {
-      "@dev/source": "./sdk/channels-barrel.ts",
+      "@dev/source": "./src/sdk/channels-barrel.ts",
       "types": "./dist/sdk/channels-barrel.d.ts",
       "import": "./dist/sdk/channels-barrel.js"
     },
     "./step-errors": {
-      "@dev/source": "./sdk/step-errors.ts",
+      "@dev/source": "./src/sdk/step-errors.ts",
       "types": "./dist/sdk/step-errors.d.ts",
       "import": "./dist/sdk/step-errors.js"
     },
     "./workflow-api": {
-      "@dev/source": "./sdk/workflow-api-barrel.ts",
+      "@dev/source": "./src/sdk/workflow-api-barrel.ts",
       "types": "./dist/sdk/workflow-api-barrel.d.ts",
       "import": "./dist/sdk/workflow-api-barrel.js"
     },
     "./protocol": {
-      "@dev/source": "./sdk/protocol.ts",
+      "@dev/source": "./src/sdk/protocol.ts",
       "types": "./dist/sdk/protocol.d.ts",
       "import": "./dist/sdk/protocol.js"
     },
     "./workspace-files": {
-      "@dev/source": "./host/workspace-files.ts",
+      "@dev/source": "./src/host/workspace-files.ts",
       "types": "./dist/host/workspace-files.d.ts",
       "import": "./dist/host/workspace-files.js"
     },
     "./slugify": {
-      "@dev/source": "./host/slugify.ts",
+      "@dev/source": "./src/host/slugify.ts",
       "types": "./dist/host/slugify.d.ts",
       "import": "./dist/host/slugify.js"
     },
     "./manifest": {
-      "@dev/source": "./sdk/manifest-barrel.ts",
+      "@dev/source": "./src/sdk/manifest-barrel.ts",
       "types": "./dist/sdk/manifest-barrel.d.ts",
       "import": "./dist/sdk/manifest-barrel.js"
     },
     "./stt": {
-      "@dev/source": "./sdk/providers/stt-barrel.ts",
+      "@dev/source": "./src/sdk/providers/stt-barrel.ts",
       "types": "./dist/sdk/providers/stt-barrel.d.ts",
       "import": "./dist/sdk/providers/stt-barrel.js"
     },
     "./tts": {
-      "@dev/source": "./sdk/providers/tts-barrel.ts",
+      "@dev/source": "./src/sdk/providers/tts-barrel.ts",
       "types": "./dist/sdk/providers/tts-barrel.d.ts",
       "import": "./dist/sdk/providers/tts-barrel.js"
     },
     "./llm": {
-      "@dev/source": "./sdk/providers/llm-barrel.ts",
+      "@dev/source": "./src/sdk/providers/llm-barrel.ts",
       "types": "./dist/sdk/providers/llm-barrel.d.ts",
       "import": "./dist/sdk/providers/llm-barrel.js"
     },
     "./s2s": {
-      "@dev/source": "./sdk/providers/s2s-barrel.ts",
+      "@dev/source": "./src/sdk/providers/s2s-barrel.ts",
       "types": "./dist/sdk/providers/s2s-barrel.d.ts",
       "import": "./dist/sdk/providers/s2s-barrel.js"
     },
     "./ffmpeg": {
-      "@dev/source": "./host/ffmpeg.ts",
+      "@dev/source": "./src/host/ffmpeg.ts",
       "types": "./dist/host/ffmpeg.d.ts",
       "import": "./dist/host/ffmpeg.js"
     },
     "./html": {
-      "@dev/source": "./host/html.ts",
+      "@dev/source": "./src/host/html.ts",
       "types": "./dist/host/html.d.ts",
       "import": "./dist/host/html.js"
     },
     "./step-files": {
-      "@dev/source": "./host/step-files.ts",
+      "@dev/source": "./src/host/step-files.ts",
       "types": "./dist/host/step-files.d.ts",
       "import": "./dist/host/step-files.js"
     },
     "./tools": {
-      "@dev/source": "./host/agent-tools.ts",
+      "@dev/source": "./src/host/agent-tools.ts",
       "types": "./dist/host/agent-tools.d.ts",
       "import": "./dist/host/agent-tools.js"
     },
     "./internal": {
-      "@dev/source": "./internal.ts",
+      "@dev/source": "./src/internal.ts",
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
     },
     "./host-internal": {
-      "@dev/source": "./host-internal.ts",
+      "@dev/source": "./src/host-internal.ts",
       "types": "./dist/host-internal.d.ts",
       "import": "./dist/host-internal.js"
     }
@@ -142,8 +142,8 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=host/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "typecheck": "tsc --noEmit && tsc -p sdk/tsconfig.json"
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=src/host/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "typecheck": "tsc --noEmit && tsc -p src/sdk/tsconfig.json"
   },
   "dependencies": {
     "@sindresorhus/slugify": "^3.0.1",

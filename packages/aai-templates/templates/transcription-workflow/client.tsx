@@ -153,15 +153,17 @@
  * ## A reload keeps two of the three runs, and the third CANNOT be kept
  *
  * The run id lives in React state, so a refresh loses it while the fan-out
- * carries on. `key` is the handle that survives that and `recover: true` is what
- * reads it back — and here it is a decision PER MODE rather than per page:
+ * carries on. A correlation KEY is the handle that survives that, and
+ * `useWorkflowSubmit` keeps one and asks for its newest run on mount — which
+ * here lands differently PER MODE:
  *
  * - **"After it uploads"** and **"Let the provider do it"** recover. Their input
  *   names a recording that is already stored, so a later load adopting the run
  *   is adopting something complete: the transcript arrives, the progress log
  *   replays, and nobody is asked to send a 600 MB file a second time.
  * - **"While it uploads" does not, and the hook REFUSES the option rather than
- *   ignoring it.** That run's input names an upload id this page load minted and
+ *   ignoring it** — `useWorkflowStream` omits `recover` from its options type
+ *   and mints no key. That run's input names an upload id this page load minted and
  *   is still filling, so a later load could only adopt a run waiting for bytes
  *   nobody is sending — and it is worse than useless: `workflows/stream.ts`
  *   fails a run whose upload stops growing (`MAX_IDLE_POLLS`), so the reload
@@ -171,10 +173,11 @@
  * The MODE is remembered too, and that is not decoration: without it a reload
  * opens on the default flow while the recovered run sits behind a radio nobody
  * pressed, so the reader sees an empty form and starts a second run — the exact
- * thing the key exists to prevent. The KEY is `useRunKey()`, which owns the
- * minting, the storage and the argument for the key being opaque rather than a
- * `?key=` parameter; `recover.ts` owns the mode, which is this page's own
- * concept, and the validation on the way back out of storage that turning a
+ * thing the key exists to prevent. The KEY is the hook's own — `use-run-key.ts`
+ * owns the minting, the storage and the argument for it being opaque rather
+ * than a `?key=` parameter, and the two submit hooks here share one because the
+ * slot is keyed by the PAGE; `recover.ts` owns the mode, which is this page's
+ * own concept, and the validation on the way back out of storage that turning a
  * stored string into a workflow name obliges.
  *
  * Two smaller consequences worth knowing. Both recovering hooks look up on
@@ -193,7 +196,6 @@ import {
   page,
   SubmitButton,
   UploadProgressBar,
-  useRunKey,
   useWorkflowRuns,
   useWorkflowStream,
   useWorkflowSubmit,
@@ -268,9 +270,6 @@ function TranscriptionDesk() {
   // piece of state for all three hooks, because it describes the UPLOAD and every
   // mode has one — see the module doc.
   const [parallel, setParallel] = useState(true);
-  // This tab's handle on its own runs — minted once and remembered, which is
-  // what a later load produces to find the run again.
-  const key = useRunKey();
   // Did THIS load press Transcribe? A reload cannot have, and it is the only way
   // the page can tell "working on what you just sent" from "picking up where you
   // left off" — the hooks report the run, not who asked for it.
@@ -279,22 +278,16 @@ function TranscriptionDesk() {
   // and that costs nothing here: none of them does anything until its `submit` is
   // called, and `useWorkflowRun` underneath them holds no id until then either.
   //
-  // `recover` is a constant `true` on the two that take it rather than
-  // `mode === …`: the lookup is a MOUNT-time act, so arming it when a mode is
-  // picked would re-adopt a run the reader had just cleared. The streaming hook
-  // takes neither half — it refuses `recover` by type, and recording a key it
-  // will never read back would be config nothing uses.
+  // The two submit hooks recover unconditionally rather than on `mode === …`:
+  // the lookup is a MOUNT-time act, so arming it when a mode is picked would
+  // re-adopt a run the reader had just cleared. They share ONE key without
+  // saying so — the hook's slot is keyed by the page — and `find` is scoped by
+  // workflow as well as by key, so the two modes recover separate runs. The
+  // streaming hook has neither half: it refuses `recover` by type, and mints no
+  // key it would never read back.
   const streamed = useWorkflowStream<typeof transcribe>(WORKFLOWS.streaming, { parallel });
-  const stored = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.classic, {
-    parallel,
-    key,
-    recover: true,
-  });
-  const batched = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.batch, {
-    parallel,
-    key,
-    recover: true,
-  });
+  const stored = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.classic, { parallel });
+  const batched = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.batch, { parallel });
   // The batch flow uploads the same way the classic one does — the id comes from the
   // store — so it is the SAME hook against a different workflow. Only the streaming
   // mode needs the other one, because only it needs the id before the bytes.

@@ -55,7 +55,7 @@
  *   AAI_PLATFORM_URL=… AAI_API_KEY=… node scripts/smoke-spawn.mjs
  *     [--timeout-seconds N] [--interval-seconds N]
  *
- * Its spec is `packages/aai-templates/smoke-spawn-gate.test.ts`. Every exported
+ * Its spec is `packages/aai-templates/src/smoke-spawn-gate.test.ts`. Every exported
  * function here exists to be driven from there: nothing above the CLI guard at
  * the bottom touches the network, the clock or `process.exit` on import.
  *

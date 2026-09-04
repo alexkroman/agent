@@ -63,10 +63,14 @@ function desk(
 
 describe("the desk itself", () => {
   test("has no web tools of its own — everything goes through a subagent", () => {
-    expect(authoredAgent.builtinTools ?? []).toEqual([]);
-    // And the researcher does, which is the split the template exists to show.
+    // Stated as the claim the test's name makes, rather than as "no builtins at
+    // all": giving the desk `run_code` is a reasonable edit, and it does not
+    // put the web in front of the desk.
+    expect(authoredAgent.builtinTools ?? []).not.toContain("web_search");
+    expect(authoredAgent.builtinTools ?? []).not.toContain("visit_webpage");
+    // And the subagents do, which is the split the template exists to show.
     expect(researcher.builtinTools).toContain("web_search");
-    expect(factChecker.builtinTools).toEqual(["web_search"]);
+    expect(factChecker.builtinTools).toContain("web_search");
   });
 
   test("gives the checker a tighter budget than the researcher", () => {

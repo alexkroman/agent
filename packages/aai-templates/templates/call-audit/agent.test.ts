@@ -182,15 +182,26 @@ describe("the declaration", () => {
   test("is a workflow app with the one workflow the page starts by name", () => {
     // The page calls `api.start("audit", …)`, so a rename here is a runtime 400
     // rather than a compile error. This is what pins it.
-    expect(Object.keys(agentDef.workflows ?? {})).toEqual(["audit"]);
+    // `toContain` rather than an exact key list: adding a second workflow is an
+    // invited edit and must not redden a test the author did not write. The
+    // NAME is still pinned, deliberately — the page starts a run by this
+    // string, so renaming the key is a runtime 400 rather than a compile
+    // error, and this pin is the only thing that says so. Rename it here and
+    // in `client.tsx` together.
+    expect(Object.keys(agentDef.workflows ?? {})).toContain("audit");
+    expect(agentDef.workflows?.audit).toBe(audit);
   });
 
-  test("declares no providers and exactly the one credential its steps read", () => {
+  test("declares the credential its steps read, so a deploy checks for it", () => {
     // A workflow app has no session, so nothing else in its config could name one
     // — and one AssemblyAI key covers transcription, the model and the voice.
     // Note what is NOT here: ffmpeg. `requiredEnv` checks the environment, and a
     // binary on `PATH` is not an environment variable.
-    expect(agentDef.requiredEnv).toEqual(["ASSEMBLYAI_API_KEY"]);
+    //
+    // `toContain` rather than an exact list: a step of your own that reads a
+    // second credential belongs in `requiredEnv` beside this one, and declaring
+    // it must not fail this test.
+    expect(agentDef.requiredEnv).toContain("ASSEMBLYAI_API_KEY");
   });
 
   test("takes the recording as an UPLOAD, which is what makes the form a file picker", () => {

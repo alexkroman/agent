@@ -1371,7 +1371,7 @@ The LLM-judge codegen suite (`studio-eval.test.ts`, vitest-evals) was
 removed in favour of a harness that drives the studio's REAL surface —
 create project, broker a sandbox session, stream a chat turn to the guest —
 rather than calling the codegen path directly. It is a case of the repo's
-**eval tier** now (`packages/aai-evals/starter.eval.test.ts`), which owns the
+**eval tier** now (`packages/aai-evals/src/starter.eval.test.ts`), which owns the
 runner, the repeats and the report:
 
 ```sh
@@ -1384,7 +1384,7 @@ Its own second runner — `run.mjs`/`report.mjs`/`regrade.mjs`, 745 lines of cas
 loop, verdict and reporter — is deleted, and so is the rest of
 `scripts/starter-eval/`. What survived is the GRADING, which is a different job
 from a case loop: it is
-`packages/aai-evals/starter-expectations.ts` today. See
+`packages/aai-evals/src/starter-expectations.ts` today. See
 `packages/aai-evals/CLAUDE.md` for the runner and why the tier does not gate.
 
 It spends real tokens on the caller's own key, so it is not in CI. Three
@@ -1393,7 +1393,7 @@ things it measures that the judge suite did not:
 - **Shippable, not just green.** The agent writes its own tests, so "the
   tests passed" is a measure it can satisfy by weakening an assertion. The
   primary verdict is instead whether the built agent covers the capabilities
-  the PROMPT enumerated (`packages/aai-evals/starter-expectations.ts`), checked
+  the PROMPT enumerated (`packages/aai-evals/src/starter-expectations.ts`), checked
   against the loaded config and agent.ts — neither of which the agent can
   edit to make the check pass.
 - **Cost**: tool calls, repair rounds (failed `test_agent` runs), wall

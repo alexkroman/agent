@@ -178,7 +178,7 @@
       "json": { "parser": { "allowComments": true } }
     },
     {
-      "includes": ["packages/*/contracts/compatibility/**"],
+      "includes": ["packages/*/src/contracts/compatibility/**"],
       "linter": { "rules": { "suspicious": { "noDeprecatedImports": "off" } } }
     },
     {
@@ -207,7 +207,7 @@
       }
     },
     {
-      "includes": ["packages/aai/sdk/**/*.ts", "packages/aai/sdk/**/*.tsx"],
+      "includes": ["packages/aai/src/sdk/**/*.ts", "packages/aai/src/sdk/**/*.tsx"],
       "linter": {
         "rules": {
           "style": {
@@ -236,8 +236,7 @@
     {
       "includes": [
         "packages/aai-templates/templates/**/*.ts",
-        "packages/aai-templates/templates/**/*.tsx",
-        "packages/aai-templates/scripts/**/*.ts"
+        "packages/aai-templates/templates/**/*.tsx"
       ],
       "linter": {
         "rules": {
@@ -288,7 +287,7 @@
       }
     },
     {
-      "includes": ["packages/aai-templates/*.ts"],
+      "includes": ["packages/aai-templates/src/*.ts"],
       "linter": {
         "rules": {
           "correctness": {
@@ -341,7 +340,7 @@
       }
     },
     {
-      "includes": ["packages/aai/sdk/types.ts"],
+      "includes": ["packages/aai/src/sdk/types.ts"],
       "linter": {
         "rules": {
           "suspicious": {

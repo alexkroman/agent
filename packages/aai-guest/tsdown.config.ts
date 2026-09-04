@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["harness.ts"],
+  entry: ["src/harness.ts"],
   platform: "node",
   format: "esm",
   target: "node22",

@@ -57,10 +57,14 @@ describe("health-assistant template", () => {
   test("both tools are discovered from tools/", () => {
     // `agent()` takes no `tools` field: a file in `tools/` IS the tool. A
     // template whose tools are never resolved ships a model with none.
-    expect(Object.keys(agentDef.tools ?? {}).sort()).toEqual([
-      "check_drug_interaction",
-      "medication_lookup",
-    ]);
+    // `arrayContaining` rather than an exact list: a tool you add is the edit
+    // this template invites, and it must not redden a test you did not write.
+    // Losing one of these two still fails, which is the regression worth
+    // catching — discovery silently finding nothing looks exactly like a
+    // template with no tools.
+    expect(Object.keys(agentDef.tools ?? {})).toEqual(
+      expect.arrayContaining(["check_drug_interaction", "medication_lookup"]),
+    );
   });
 });
 

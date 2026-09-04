@@ -1,4 +1,4 @@
-# packages/aai-server — what the platform's workflow tables may be indexed for
+# packages/aai-server — the platform tables' write budget and their retention
 
 A SIBLING of `packages/aai-server/CLAUDE.md`, for the reason
 [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md) beside it is one: Claude Code auto-loads
@@ -7,8 +7,9 @@ only `CLAUDE.md`, so nothing here is resident, and that guide is at 99% of the
 there, under "Queryable run state is not `workflow_runs`' job", because a
 decision somebody needs resident while editing a migration belongs in the
 resident guide. What is HERE is the evidence, which is reference: the index
-inventory as measured, and what three other durable-execution engines did with
-the same table.
+inventory as measured, what three other durable-execution engines did with the
+same table, and — a second question about the same rows — which of these tables
+are pruned on a timeframe and which are not.
 
 ## The write path's current cost, measured
 
@@ -85,3 +86,66 @@ Three things, and none of them is "the projection is more work":
   today), that read is by `(slug, run_id)` — a primary-key prefix — so it still
   needs no index. Anything that filters steps by `status` or `name` does, and is
   the point at which this decision has to be re-argued rather than extended.
+
+## Retention: twelve of the seventeen tables are pruned by time
+
+The claim "everything outside `auth` is pruned on some timeframe" is **false**,
+and `retention.test.ts` is the exact form of that answer: a verdict per table,
+with the table list DERIVED from `supabase/migrations`, so a new table cannot
+land without one and a deleted sweep fails the verdict that names it. Read the
+verdicts there rather than here — this section is the summary and the argument
+for the five exceptions.
+
+| Pruned by | Tables | Window |
+| --- | --- | --- |
+| `aai-sweep-rate-limits` | `studio_rate_limits` | `reset_at` |
+| `aai-sweep-studio-sessions` | `studio_sessions` | `expires_at` |
+| `aai-sweep-session-state` | `session_slots`, `session_events` | `SESSION_STATE_RETENTION` (2 days) |
+| `aai-sweep-upload-records` | `workflow_uploads` | `UPLOAD_RECORD_RETENTION` (7 days) |
+| `aai-sweep-workflow-runs` | `workflow_runs` + `workflow_steps`, `workflow_attempts`, `workflow_attempt_leases`, `workflow_sleeps`, `workflow_hooks` | 30 days after the run started, once terminal |
+| `aai-sweep-workflow-run-keys` | `workflow_run_keys` | when the run it names is gone |
+
+Outside `aai_platform`, `aai-sweep-cron-history` prunes
+`cron.job_run_details` and `aai-sweep-preview-archive` prunes
+`pgmq.a_aai_studio_preview`, both at 7 days; `aai-sweep-blob-gc` reclaims
+unreferenced `blobs/` and `uploads/` objects.
+
+**The terminal-run window bounds the table only because every run REACHES a
+terminal status**, which is a claim spanning SQL and TypeScript: the sweep's
+predicate is `status in ('completed', 'failed', 'cancelled')`, and the only
+platform-side writer of one is `abandonStalledRun` — bounded at
+`RECONCILE_MAX_ATTEMPTS` re-walks, `STALL_GRACE_MS` apart. Before
+`20260902120000` there was no such bound, so a run whose guest could never
+finish it was immortal AND uncollectable. Neither half's own tests can see the
+other, so the link is asserted here.
+
+**And every child of a run is a hand-written CTE in
+`sweep_terminal_workflow_runs`.** Those tables reference `agents`, not
+`workflow_runs`, so there is no cascade underneath them: a new child added
+without its own CTE leaks one row per retired run, forever. That is exactly what
+`workflow_attempt_leases` would have done, and the gate is what says so now.
+
+### The five that are NOT pruned by time
+
+Each is a position, not an oversight — which is why the verdict carries its
+EVIDENCE (a delete path in a named source file, or an `on delete cascade`) and
+the gate checks it:
+
+- `agents`, `studio_workspaces`, `studio_chats` — the author's own product: a
+  deployed agent, a studio project, its chat history. A timer here deletes
+  somebody's working agent while they are away from it. Note
+  `aai-sweep-orphan-previews` DOES delete `agents` rows and is still not
+  retention for the table: its predicate is the `%-preview` suffix, so it can
+  never reach an agent an author deployed.
+- `workflow_queue` — transient by construction and deliberately not by clock. A
+  parked `sleep()` message may be due months out, and expiring it cancels the
+  run; a message goes when it is delivered or its retry budget runs out
+  (`ack`, `fail`, `failUnreachable`).
+- `workflow_run_owner` — retired, written and read by nothing, owed a `drop`
+  (`RETIRED_OBJECTS` in `platform-schema.test.ts`). Its rows are frozen rather
+  than growing.
+
+Adding a table means adding a verdict. If it is `unpruned`, the reason belongs
+in the verdict, and the honest question to ask first is whether it is one of
+these five kinds — the author's own data, a queue, or something retired — since
+nothing else on this platform has an argument for growing forever.

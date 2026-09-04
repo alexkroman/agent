@@ -30,7 +30,13 @@ describe("embedded-assets template", () => {
     // `agent()` takes no `tools` field: a file in `tools/` IS the tool, and
     // nothing imports it. Discovery is what puts it in front of the model, so a
     // template whose tools are never resolved ships a model with no tools.
-    expect(Object.keys(agentDef.tools ?? {}).sort()).toEqual(["list_topics", "search_knowledge"]);
+    // `arrayContaining` rather than an exact list: adding a file to `tools/` is
+    // the edit this template most invites, and an exact list would redden on
+    // it. Losing one of these two is still a failure — that is the half worth
+    // asserting.
+    expect(Object.keys(agentDef.tools ?? {})).toEqual(
+      expect.arrayContaining(["list_topics", "search_knowledge"]),
+    );
   });
 });
 

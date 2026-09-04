@@ -16,7 +16,7 @@ export default defineConfig({
     // `integration-edge-cases.test.ts` in this package are deliberately UNIT
     // tests — only the `.integration.` / `.scenario.` INFIX decides the tier.
     exclude: [
-      "e2e*.test.ts",
+      "src/e2e*.test.ts",
       "**/*.integration.test.ts",
       "**/*.scenario.test.ts",
       "node_modules",
@@ -24,10 +24,10 @@ export default defineConfig({
     ],
     // Isolates the global config dir (API key + approved servers) from the
     // developer's real one — see _test-setup.ts.
-    setupFiles: [...sharedSetupFiles, "./_test-setup.ts"],
+    setupFiles: [...sharedSetupFiles, "./src/_test-setup.ts"],
     coverage: {
       // cli.ts is the process entry point — exercised by e2e, not unit tests.
-      exclude: [...sharedCoverageExclude, "cli.ts"],
+      exclude: [...sharedCoverageExclude, "src/cli.ts"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
       thresholds: { lines: 92, functions: 87, branches: 82, statements: 89 },

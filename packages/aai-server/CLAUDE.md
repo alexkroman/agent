@@ -761,212 +761,10 @@ Two rules from it that a reader of THIS package needs in front of them:
 
 ## Modal sandbox notes
 
-- **Three backends, selected by `sandbox-backend.ts`.** Guest sandboxes are
-  **remote Modal Sandboxes** (`modal-sandbox.ts`) in production, a **local
-  microVM** (`microsandbox-sandbox.ts`) in local dev, and a plain **child
-  process** (`subprocess-sandbox.ts`) only when named. The policy is three
-  rules: an explicit `SANDBOX_BACKEND` always wins (unknown values throw — a
-  silent fallback would look like the override not working); otherwise
-  not-local-dev → `modal`, unconditionally; otherwise → `microsandbox`.
-  `isLocalDev` is an explicit **`AAI_LOCAL_DEV=1`** and nothing
-  else, so `modal` is the DEFAULT and **production can never resolve the
-  host-local backend** — it fails loudly without
-  `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml` profile) rather
-  than degrading. There is **no fallback between backends at spawn time**: a
-  failed spawn is a failed spawn.
-
-  That sentinel was `!SUPABASE_STORAGE_BUCKET`, which inverted the rule it
-  exists for — see "Two questions, two sentinels" above, which owns the account.
-- **Every spawn failure is a `SandboxUnavailableError`** (`sandbox-errors.ts`)
-  — both Modal spawners, both subprocess spawners. It is a marker class, not a
-  message: the message stays the backend's technical one (`Modal sandbox spawn
-  failed: Sandbox operation timed out`), and `createErrorHandler` turns the
-  class into a **retryable 503** carrying one authored sentence
-  (`SANDBOX_UNAVAILABLE_MESSAGE`), logged at `warn` with the full `cause`
-  chain. Keeping the two apart is what lets the log stay specific while the
-  wire body leaks nothing.
-
-  The agent path always had this taxonomy — `brokerSessionUrl` answers 503 for
-  any spawn failure — but the STUDIO path had none, so a Modal capacity
-  timeout reached the shared handler as a bare `Error`: logged
-  `Unhandled error on /studio/projects/<x>/session`, answered
-  `500 Internal server error`. Both halves were wrong. The platform was not
-  broken, and the studio client (which retries 5xx) left the user staring at
-  "Internal server error" once its retries ran out, with no way to tell
-  "try again in a minute" from "this project is broken". `SandboxNameTakenError`
-  is deliberately NOT one of these — it is a routing signal the broker
-  catches, never an answer to a client.
-- **There IS a middle tier now, and the three objections it had to answer are
-  in `sandbox-backend.ts`'s module doc** — including the one that INVERTED (one
-  image recipe, so no second toolchain delivery mechanism). A stale
-  `SANDBOX_BACKEND=apple-container` still throws at boot.
-- **`subprocess` is opt-in now, not the local default.** It has **no isolation
-  at all** — tenant agent code and the studio agent's `bash`/`run_code` run with
-  the server's uid, filesystem and network — and boot says so unconditionally
-  (`assertSandboxBackendOrWarn`). It keeps the *shape* that catches integration
-  bugs and has no prerequisites, which is why it stays; `subprocess-sandbox.ts`
-  carries what it does and does not reproduce. The shared harness lifecycle
-  (exit fan-out, memoized cleanup, dial retry, stdio draining, port allocation)
-  lives in `warm-harness.ts` and is used by all three backends.
-- The guest base image defaults to `node:26-slim`; pin via
-  `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
-  Modal App sandboxes are created under (default `aai-server`). **Its major
-  tracks the SERVICE image's and `.node-version`, and that split floor decides
-  which Node 26 features may be used where — a rule `tsc` cannot enforce.** See
-  "The guest image's Node major, and the split floor it creates" in
-  `packages/aai-guest/CLAUDE.md`.
-- **Modal reports a `skopeo` manifest miss as `Image build for im-<id> failed
-  with the exception:` and then NOTHING** — no tag, no registry, no remedy — one
-  outage per image path so far, and the PINNED and CURRENT paths each failed a
-  different way. `resolvePinAcrossSources` probes Modal first and logs the ref;
-  a create escaping `SandboxUnavailableError` is a 500 where the taxonomy owes a
-  503 (see `translateSpawnFailure`). Both accounts, and the gate that no-op'd
-  over a broken publisher for three green deploys, are in
-  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
-- **The harness, the build toolchain, and the V8 compile cache are baked into
-  a snapshot image**, not written per spawn — with the toolchain LOCKED by a
-  committed lockfile so one `harness_image_tag` can only ever mean one tree.
-  That artifact is the guest's, so its construction, its two cache layers, and
-  the split install (`npm ci` for third-party, `npm install` for
-  `@alexkroman1/*`) are documented where it is owned: see "The snapshot image"
-  in `packages/aai-guest/CLAUDE.md`. The host half — `modal-harness-image.ts`,
-  the content-addressed tag, and per-deploy pinning via `harness_image_tag` —
-  stays here.
-- Sandboxes are created with open egress and a bounded lifetime
-  (`SANDBOX_TIMEOUT_SECS`, default 4h).
-- **Guest resources are a BURST RANGE: reserve the idle shape, cap the build
-  shape.** `SANDBOX_MEMORY_MB` / `SANDBOX_CPU` reserve;
-  `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT` cap. Modal constrains the
-  pair from both sides, so `parseSandboxLimitsFromEnv` reconciles them in one
-  place and **throws on a cap with no reservation**, naming the env var, rather
-  than letting the spawn die inside Modal on parameters the operator never set.
-  The range is set in ONE place — the guest-sandbox resources block in
-  `aai-server/modal_deploy.py` — and studio sandboxes inherit it. Why they must
-  stay two numbers, plus the measurement off a wedged production sandbox (RSS
-  flat at 1.29 GB, 453 CPU-seconds, zero I/O, no progress — it reads as a hung
-  build, never an OOM), is in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
-- **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
-  `preview`, `studio`, `studio-publish`) plus the `slug`
-  (studio sandboxes carry the project name), so the Modal dashboard can tell
-  a production voice agent from a preview deploy or a studio coding-agent
-  session. Every spawn knows its identity at creation. Observability only: nothing
-  may gate on these tags, and the `preview` role is inferred from the
-  `-preview` slug suffix (`PREVIEW_SLUG_SUFFIX`, defined once in the SDK's
-  slug contract — `aai/sdk/slug.ts`, reachable as `@alexkroman1/aai/utils` —
-  because three independent things key off it and a disagreement is silent
-  data loss: the deploy boundary rejects the suffix, the reaper deletes
-  agents carrying it, and the CLI refuses to derive a project name ending in
-  it. It lives in the SDK rather than aai-server because the CLI needs it and
-  cannot import a private package).
-- **The `-preview` opt-in is DECLARED by the caller, never inferred from the
-  slug.** `deployAgentBundle` rejects a requested `*-preview` slug unless
-  `allowPreviewSlug` is set, and only the studio's auto-preview deployer sets
-  it — it targets `<project>-preview` on purpose. Publish shares the very same
-  in-guest `aai deploy` invocation and must leave it unset. It used to ride on
-  that shared invocation unconditionally, reasoned as "harmless for a
-  production Publish, whose slug has no such suffix" — true only for
-  server-minted project names. A CLI push derives the project name from the
-  DIRECTORY, so a directory named `demo-preview` published straight through
-  the guard and got an agent the hourly sweep would delete. Inferring the
-  opt-in from the slug's shape would NOT have fixed it: a production Publish
-  of such a project passes exactly that slug.
-- **The guest snapshot image is resolved AT BOOT, not on the first spawn**
-  (`prewarmModal(harnessPath)` in modal-context.ts) — otherwise the Modal app
-  lookup and the harness image resolve, or right after every deploy BUILD, on
-  one unlucky user's first voice session or studio chat. A spawn racing the
-  prewarm joins the same memoized promise. Details in
-  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
-- **Readiness is Modal's readiness PROBE**, not host-side polling
-  (`GUEST_READINESS_PROBE` in modal-context.ts): every guest sandbox is
-  created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits
-  `sandbox.waitUntilReady()`. A TCP probe is exactly equivalent to the
-  `/health` 200 it replaced, and that equivalence is a property of the
-  harness's boot order rather than a guess: agent mode reads its boot files,
-  hash-verifies and LOADS the bundle, and only then calls `server.listen` — so
-  the port opening means "sessions can be served". A harness that listened
-  first would report ready before it could serve anything. The wait is always
-  raced against guest-process EXIT (`raceGuestExit` in warm-harness.ts): every
-  boot failure exits the process with its reason on stderr, and without the
-  race a readiness wait burns its whole budget and then blames the network.
-  The host-side `pollGuestHealth` remains for the subprocess backend, which
-  has no probes.
-
-  **The probe INTERVAL is dead time on every spawn**, which is why it is 100ms
-  and not Modal's more conversational default: the harness binds its port
-  somewhere between two evaluations, so a spawn waits half an interval on
-  average after the guest can already serve. The probe is a TCP connect to a
-  listening localhost port inside an otherwise-idle container, so the interval
-  buys nothing to offset that. It stops at 100ms rather than going lower
-  because the probe's RESULT still crosses Modal's control plane to reach the
-  host, and below ~100ms that propagation is what dominates. Was 250ms
-  (~125ms average waste).
-- **An agent spawn's steps are ordered by what they actually depend on**, not
-  by the order they read in. Two of them are only incidentally sequential and
-  must not be re-serialized (`modal-agent-sandbox.ts`):
-  - The bundle write and the env write target different paths and neither
-    reads the other, so they go together. Serialized, the tiny env write paid
-    a full Modal round trip queued behind the ~8 MB bundle's.
-  - `sb.tunnels()` needs nothing but the sandbox to exist, so it is issued
-    BEFORE the writes rather than beside the exec that follows them — its
-    round trip then runs inside the bundle write's window instead of after it.
-    It is `.catch`-contained at the point it is issued, because the await is
-    several statements away: a write that throws skips the await entirely, and
-    a tunnel lookup rejecting afterwards would be an unhandled rejection —
-    a failed spawn turning into a dead server process.
-
-  Both are pinned by tests that fail against the serialized shape, which they
-  have to be: the calls are ISSUED in the same order either way, so a
-  `write, write, exec` transcript reads identically whether or not anything
-  waited. The concurrency test asserts on writes in flight, not on sequence.
-- **Transport**: STUDIO guests get a WebSocket control channel the
-  host dials through the sandbox's Modal tunnel (`encryptedPorts: [8080]`;
-  JSON-RPC on `/ws`) once the probe reports ready — the dial's retry
-  (`GUEST_DIAL_TIMEOUT_MS`) stays as a backstop rather than the discovery
-  mechanism. AGENT guests get NO channel — readiness is the probe, and the
-  host probes `/manage/*` over plain HTTPS. Both are authenticated by a
-  per-sandbox bearer token minted at
-  spawn and delivered via the EXEC's env (never the sandbox's). The tunnel
-  URL is public; the token is what keeps the managed surfaces from being an
-  open door.
-- **The WEB service PREFERS the database's region; SANDBOXES stay unpinned.**
-  `modal_deploy.py`'s `REGIONS` is `["us-east-2", "us-east"]` — a FALLBACK
-  LIST, never a single value, because a bare `us-east-2` is what once left a
-  `deployed` app with zero tasks, zero bytes and no container logs at all. The
-  preference is earned: durable-run journal calls are sequential by
-  construction, so an unpinned container put ~460 ms on each — 14 calls and
-  ~7.3 s for one 300 KB transcription, against **31.4 ms** for the same calls
-  against a local Postgres. Supabase is `us-east-2`, and everything under the
-  broad `us-east` is tens of ms from it, so a spill still beats unpinned by two
-  orders of magnitude. **The fallback is that BROAD region, not a second
-  datacenter**: Modal answers `Regions us-east-1 are not supported` at DEPLOY
-  time, so that list shipped nothing while the app served the old revision.
-  `MODAL_SANDBOX_REGION` stays UNSET — a guest holds no host channel, so
-  pinning it buys only the ~117 ms guest→platform hop and costs the spawn
-  capacity whose exhaustion is `Sandbox operation timed out`. Both outage
-  accounts are in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md);
-  `modal-image-inputs.test.ts` pins the list, its first entry, that every entry
-  is deploy-accepted, and that it is actually passed.
-
-- **Orphan cleanup differs per mode.** STUDIO guests: the host's
-  WebSocket IS the liveness signal — a host that dies without teardown
-  drops its sockets, and the harness self-exits after
-  `HARNESS_ORPHAN_TIMEOUT_MS` with no host connected (constants in
-  `aai-guest/limits.ts`; the window also covers the boot gap before the
-  first dial). AGENT guests have no host socket, so they own their own
-  lifecycle instead: self-exit after `AGENT_IDLE_EXIT_MS` with zero
-  sessions (see `packages/aai-guest/CLAUDE.md`). Either way, once the exec has
-  exited, Modal's `idleTimeoutMs` (`SANDBOX_IDLE_TIMEOUT_SECS`, default
-  15 min) terminates the sandbox. These are backstops, not the normal
-  path: Modal delivers stop signals to the container's **Python** runtime,
-  never to a bare `subprocess.Popen` child, so `run_node`
-  (scripts/modal_image.py) forwards SIGTERM/SIGINT to the node process and
-  waits — that is the only reason `teardownSandboxes` (retire agent guests,
-  dispose the studio broker) runs on scale-in/redeploy at all.
-  There is NO host-side idle eviction: the guest owns idleness (agent-mode
-  self-exit; the studio broker keeps its own per-project idle sweep), and a
-  guest exit detaches its slot via `onSandboxLost`.
-- The server itself deploys to Modal too (`modal_deploy.py` in Key files) —
-  there is no Docker image or Fly.io deployment anymore.
+**Moved to [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md)**, which already owns the images
+and the sandbox backends. This guide was over the 120,000-char cap and that
+section is reference — a build recipe — rather than a rule that has to be
+resident.
 
 ## The local backend is a microVM
 
@@ -1019,7 +817,7 @@ through to `app.notFound`), once as a platform route serving GET and POST for a
 guest that also answered DELETE, so a Stop button worked in dev and 404'd on
 every deployed agent.
 
-So `GUEST_ROUTE_EXPOSURE` (`packages/aai-server/guest-routes.ts`) declares each
+So `GUEST_ROUTE_EXPOSURE` (`packages/aai-server/src/guest-routes.ts`) declares each
 route as `proxied` (with the methods the GUEST answers, plus the `suffix` when
 the platform path ends in a parameter), `direct-dial`, `host-only`, or
 `guest-internal` — dialled only from inside the container on loopback, which is
@@ -1449,7 +1247,7 @@ request URL").
 ### Durable workflows — `/:slug/.well-known/workflow/v1/webhook/:token`
 
 The Workflow DevKit runs entirely inside the guest (see
-`packages/aai/host/workflow-*.ts`); this is the platform's share of the DEVKIT's
+`packages/aai/src/host/workflow-*.ts`); this is the platform's share of the DEVKIT's
 own three routes — the tenant-facing API is separate, below — and which of the
 three gets a proxy is the decision worth keeping:
 
@@ -1775,8 +1573,8 @@ it.
 - `net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
   (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
 
-There is deliberately **no load or chaos tier.** `packages/aai-server/load/`
-and `packages/aai-server/adversarial/` (plus the `load-and-adversarial` CI job
+There is deliberately **no load or chaos tier.** `packages/aai-server/src/load/`
+and `packages/aai-server/src/adversarial/` (plus the `load-and-adversarial` CI job
 and `docker-compose.load.yml`) were deleted, because what they asserted had
 drifted away from what they claimed to test. The two "adversarial" tests
 deployed an agent whose tool body spun forever **and then never invoked it**,

@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai-ui",
-  "version": "13.2.0",
+  "version": "13.3.0",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -21,17 +21,17 @@
   ],
   "exports": {
     ".": {
-      "@dev/source": "./index.ts",
+      "@dev/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./client-dir": {
-      "@dev/source": "./client-dir.ts",
+      "@dev/source": "./src/client-dir.ts",
       "types": "./dist/client-dir.d.ts",
       "import": "./dist/client-dir.js"
     },
     "./internal": {
-      "@dev/source": "./internal.ts",
+      "@dev/source": "./src/internal.ts",
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
     },
@@ -39,7 +39,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsdown && tsc -p tsconfig.build.json && node build-default-client.ts",
+    "build": "tsdown && tsc -p tsconfig.build.json && node src/build-default-client.ts",
     "check:attw": "attw --pack --profile esm-only --exclude-entrypoints styles.css",
     "check:publint": "publint",
     "lint": "biome check .",

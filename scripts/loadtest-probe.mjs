@@ -13,7 +13,7 @@
 //   separate numbers. That split is what identified the `aai dev` Vite proxy
 //   stall: connect and upgrade were instant and `session.configured` was
 //   seconds late, which located the cost in the proxy's own dial rather than
-//   anywhere in the agent (see `packages/aai-cli/_dev-vite-config.ts`).
+//   anywhere in the agent (see `packages/aai-cli/src/_dev-vite-config.ts`).
 //
 //   EVERY FRAME, in order, with its arrival time — including the `error.reported`
 //   a browser shows as "Session failed to start" and nothing else. A missing

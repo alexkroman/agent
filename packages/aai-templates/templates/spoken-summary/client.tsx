@@ -37,14 +37,15 @@
  * in React state — so a refresh lost it while the recording carried on being
  * transcribed, summarized and spoken. The bytes were already stored, so the
  * expensive half had happened; what an empty form invites is somebody uploading
- * the recording again and paying for all four legs twice. `key` is the handle
- * that survives a reload, `recover: true` is what reads it back, and the upload
- * half is already the SDK's — picking the same file again sends only the windows
- * that did not land.
+ * the recording again and paying for all four legs twice. Both halves are the
+ * SDK's now and this page writes neither: `useWorkflowSubmit` records the run
+ * under a correlation KEY it keeps for this page and asks for it again on the
+ * next load, and picking the same file again sends only the windows that did
+ * not land.
  *
- * **The key is `useRunKey()`** — opaque, and in `sessionStorage`, which is the
- * same lifetime as that upload recall, so both halves of a reload make the same
- * promise. What that rules out is a `?key=` parameter, and it is worth being
+ * **That key is `useRunKey()`'s** — opaque, and in `sessionStorage`, which is
+ * the same lifetime as the upload recall, so both halves of a reload make the
+ * same promise. What it rules out is a `?key=` parameter, and it is worth being
  * plain about the trade because this template exists to produce something
  * sendable: a summary you can listen to is exactly the sort of thing somebody
  * forwards, and a URL is how people forward things. But there is no per-user
@@ -57,9 +58,9 @@
  * the recording would be worse again: two people summarizing one file would
  * recover each other's runs.
  *
- * A real app with accounts passes the account's own id instead, and then a
- * summary follows the person to another device — a promise only a login can
- * keep.
+ * A real app with accounts passes the account's own id as `key` instead, and
+ * then a summary follows the person to another device — a promise only a login
+ * can keep.
  */
 
 import "@alexkroman1/aai-ui/styles.css";
@@ -74,7 +75,6 @@ import {
   SubmitButton,
   UploadProgressBar,
   useDownloadUrl,
-  useRunKey,
   useWorkflowSubmit,
   WorkflowFields,
   WorkflowProgress,
@@ -128,20 +128,16 @@ function captionsUrl(text: string, durationMs: number): string {
 }
 
 export function App() {
-  // This tab's handle on its own summaries, in the store the upload recall uses
-  // — see the module doc for why a `?key=` is the wrong trade here.
-  const key = useRunKey();
   // Did THIS load start the run? A reload cannot have, and that is the only way
   // the page can tell "working on what you just sent" from "picking up where
   // you left off" — the hook reports the run, not who asked for it.
   const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
-  // `run.output` instead of `unknown`. Neither half of the recovery is useful
-  // alone: without `key` there is nothing to find the run by, and without
-  // `recover` the key is only ever written.
+  // `run.output` instead of `unknown`. The reload is the hook's own doing — see
+  // the module doc for why the key it mints is the right one for this page.
   const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = useWorkflowSubmit<
     typeof spokenSummary
-  >(WORKFLOW, { api, key, recover: true });
+  >(WORKFLOW, { api });
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the

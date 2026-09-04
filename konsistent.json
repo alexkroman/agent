@@ -16,7 +16,7 @@
   "conventions": [
     {
       "name": "workspace-package-layout",
-      "description": "Every package under packages/ carries the same four files. package.json and tsconfig.json are the build contract; CLAUDE.md is the package guide the root guide links (check:claude-md asserts the link); vitest.config.ts is where the suite is defined once, since the root config discovers suites by glob rather than declaring them.",
+      "description": "Every package under packages/ carries the same four files. package.json and tsconfig.json are the build contract; CLAUDE.md is the package guide the root guide links (check:claude-md asserts the link); vitest.config.ts is where the suite is defined once, since the root config discovers suites by glob rather than declaring them. The SOURCE ROOT (`src/`) is deliberately not asserted here and cannot be: `paths` is a discovery glob, so a package that lost its src/ would match nothing and pass — the same vacuous-pass shape konsistent-config.test.ts exists to catch. `check:package-layout` owns that half, from both sides (no .ts outside src/, and every package HAS a non-empty src/).",
       "paths": "packages/{packageName}",
       "must": {
         "haveType": "directory",
@@ -67,8 +67,8 @@
       "name": "barrel-files",
       "description": "A *-barrel.ts file is a pure re-export surface. A local declaration in one is a symbol with no home module, invisible to the follow-the-re-export-chain rule the import conventions rest on.",
       "paths": [
-        "packages/*/*-barrel.ts",
-        "packages/*/*/*-barrel.ts"
+        "packages/*/src/*-barrel.ts",
+        "packages/*/src/**/*-barrel.ts"
       ],
       "must": {
         "areBarrelFiles": true
@@ -78,9 +78,8 @@
       "name": "core-package-boundary",
       "description": "packages/aai is the base of the dependency graph \u2014 every other package depends on it and it depends on none of them.",
       "paths": [
-        "packages/aai/*.ts",
-        "packages/aai/host/**/*.ts",
-        "packages/aai/sdk/**/*.ts"
+        "packages/aai/src/*.ts",
+        "packages/aai/src/**/*.ts"
       ],
       "mustNot": {
         "importFrom": [
@@ -104,7 +103,7 @@
     {
       "name": "cli-package-boundary",
       "description": "The CLI must never import from the server or the guest. The one edge between them runs the other way (aai-guest imports the CLI's public build-hook subpaths), and it is a hard boundary because the CLI ships to users while the server and guest are private platform code.",
-      "paths": "packages/aai-cli/*.ts",
+      "paths": ["packages/aai-cli/src/*.ts", "packages/aai-cli/src/**/*.ts"],
       "mustNot": {
         "importFrom": [
           "aai-guest",
@@ -121,7 +120,7 @@
     {
       "name": "guest-package-boundary",
       "description": "The guest never imports server code \u2014 that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source.",
-      "paths": "packages/aai-guest/*.ts",
+      "paths": ["packages/aai-guest/src/*.ts", "packages/aai-guest/src/**/*.ts"],
       "mustNot": {
         "importFrom": [
           "aai-server",
@@ -137,11 +136,10 @@
       "name": "browser-package-boundary",
       "description": "aai-ui is a browser client. It may depend on the core SDK and nothing else in the workspace \u2014 a platform or CLI import here would pull server code into a browser bundle.",
       "paths": [
-        "packages/aai-ui/*.ts",
-        "packages/aai-ui/*.tsx",
-        "packages/aai-ui/components/**/*.ts",
-        "packages/aai-ui/components/**/*.tsx",
-        "packages/aai-ui/worklets/**/*.ts"
+        "packages/aai-ui/src/*.ts",
+        "packages/aai-ui/src/*.tsx",
+        "packages/aai-ui/src/**/*.ts",
+        "packages/aai-ui/src/**/*.tsx"
       ],
       "mustNot": {
         "importFrom": [
@@ -164,11 +162,8 @@
       "name": "runtime-package-boundary",
       "description": "aai-runtime is the published Node host runtime. It sits one level above the core SDK and below everything else: it may import @alexkroman1/aai and nothing else in the workspace. The CLI, the guest and the platform all depend on it, so an import in this direction would close a cycle \u2014 and it ships to users, so a private-package import here would be unresolvable in a consumer's install.",
       "paths": [
-        "packages/aai-runtime/*.ts",
-        "packages/aai-runtime/integration/**/*.ts",
-        "packages/aai-runtime/providers/**/*.ts",
-        "packages/aai-runtime/telephony/**/*.ts",
-        "packages/aai-runtime/transports/**/*.ts"
+        "packages/aai-runtime/src/*.ts",
+        "packages/aai-runtime/src/**/*.ts"
       ],
       "mustNot": {
         "importFrom": [
@@ -190,7 +185,7 @@
     {
       "name": "server-package-boundary",
       "description": "aai-server resolves aai-guest's BUILT ARTIFACT (aai-guest/harness, via createRequire().resolve) and must never import guest source. That is the other half of guest-package-boundary, and it was the half nothing checked: the guest is its own package precisely so the two cannot share modules, and a source import here would make the sandbox harness a library the server links against rather than an artifact it launches.",
-      "paths": "packages/aai-server/*.ts",
+      "paths": ["packages/aai-server/src/*.ts", "packages/aai-server/src/**/*.ts"],
       "mustNot": {
         "importFrom": [
           "aai-guest",
@@ -226,12 +221,12 @@
       "name": "llm-providers",
       "description": "Every LLM provider module exports the same three-symbol shape: a kind tag, the env var its key is read from, and the factory. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
       "paths": [
-        "packages/aai/sdk/providers/llm/{providerId}.ts",
-        "!packages/aai/sdk/providers/llm/assemblyai.ts",
-        "!packages/aai/sdk/providers/llm/from-string.ts",
-        "!packages/aai/sdk/providers/llm/gateway-models.ts",
-        "!packages/aai/sdk/providers/llm/*.test.ts",
-        "!packages/aai/sdk/providers/llm/model-options.ts"
+        "packages/aai/src/sdk/providers/llm/{providerId}.ts",
+        "!packages/aai/src/sdk/providers/llm/assemblyai.ts",
+        "!packages/aai/src/sdk/providers/llm/from-string.ts",
+        "!packages/aai/src/sdk/providers/llm/gateway-models.ts",
+        "!packages/aai/src/sdk/providers/llm/*.test.ts",
+        "!packages/aai/src/sdk/providers/llm/model-options.ts"
       ],
       "must": {
         "exportConstants": [
@@ -250,9 +245,9 @@
       "name": "stt-providers",
       "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
       "paths": [
-        "packages/aai/sdk/providers/stt/{providerId}.ts",
-        "!packages/aai/sdk/providers/stt/assemblyai.ts",
-        "!packages/aai/sdk/providers/stt/*.test.ts"
+        "packages/aai/src/sdk/providers/stt/{providerId}.ts",
+        "!packages/aai/src/sdk/providers/stt/assemblyai.ts",
+        "!packages/aai/src/sdk/providers/stt/*.test.ts"
       ],
       "must": {
         "exportConstants": [
@@ -273,9 +268,9 @@
       "name": "tts-providers",
       "description": "Every TTS provider module exports the STT shape plus a default voice \u2014 the one setting a TTS provider cannot infer. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
       "paths": [
-        "packages/aai/sdk/providers/tts/{providerId}.ts",
-        "!packages/aai/sdk/providers/tts/assemblyai.ts",
-        "!packages/aai/sdk/providers/tts/*.test.ts"
+        "packages/aai/src/sdk/providers/tts/{providerId}.ts",
+        "!packages/aai/src/sdk/providers/tts/assemblyai.ts",
+        "!packages/aai/src/sdk/providers/tts/*.test.ts"
       ],
       "must": {
         "exportConstants": [
@@ -297,8 +292,8 @@
       "name": "s2s-providers",
       "description": "S2S providers take the same kind/env-var pair as the pipeline providers, and declare Options as an interface like the other three stages. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here. The kind/env constants ARE stage-qualified on this stage, because both vendors here also occupy another one: `openai` is an LLM module too, so an unqualified OPENAI_KIND would collide across the two.",
       "paths": [
-        "packages/aai/sdk/providers/s2s/{providerId}.ts",
-        "!packages/aai/sdk/providers/s2s/*.test.ts"
+        "packages/aai/src/sdk/providers/s2s/{providerId}.ts",
+        "!packages/aai/src/sdk/providers/s2s/*.test.ts"
       ],
       "must": {
         "exportConstants": [
@@ -317,10 +312,10 @@
       "name": "channels",
       "description": "Every channel module exports the same four-symbol shape: a kind tag, the options interface a factory takes, the factory itself, and the `ChannelKind` VALUE that `sendToChannel` dispatches to. The kind value is what makes a channel a self-contained unit \u2014 `send.ts` imports that one name rather than a render function, an advice function and an options type, so adding a channel touches no shared file. A channel is a serializable DESTINATION descriptor, so the pattern mirrors the four provider stages \u2014 and the reason it is checked here rather than left to review is the reason it is checked there: the shape is repeated BY CONSTRUCTION, so the second one drifts from the first in a way no per-file tool can see. Unlike a provider there is no *_API_KEY_ENV: a channel's credential is the destination itself and is passed in, never read from the agent env, so there is no variable name to publish. The factory carries the `Channel` suffix every other symbol here already carried: a channel is outbound-only by construction, so an inbound Slack surface would be a different concept and `slack()` is the name it would want \u2014 the same collision that made `elevenlabs()` into `elevenLabsStt()`, settled before it costs anything.",
       "paths": [
-        "packages/aai/sdk/channels/{channelId}.ts",
-        "!packages/aai/sdk/channels/channel-types.ts",
-        "!packages/aai/sdk/channels/send.ts",
-        "!packages/aai/sdk/channels/*.test.ts"
+        "packages/aai/src/sdk/channels/{channelId}.ts",
+        "!packages/aai/src/sdk/channels/channel-types.ts",
+        "!packages/aai/src/sdk/channels/send.ts",
+        "!packages/aai/src/sdk/channels/*.test.ts"
       ],
       "must": {
         "exportConstants": [
@@ -380,13 +375,13 @@
       "name": "workflow-journal-backends",
       "description": "A `workflow-journal-<backend>.ts` file IS a journal backend, and it exports `create<Backend>Journal`. There are three \u2014 memory (the reference), postgres (a self-hoster's own DATABASE_URL) and platform (HTTP to aai-server) \u2014 one interface, and a review of the branch that added the third found five drifts between them, every one an edge case about ABSENCE. So the shape is checked here for the reason the provider and channel shapes are: it is repeated BY CONSTRUCTION, so the next one drifts from the first in a way no per-file tool can see. What this convention buys beyond naming is DISCOVERY \u2014 it makes a backend's factory name derivable from its filename, which is what lets `journal-conformance.test.ts` enumerate the backends out of the tree and fail when one is missing from `JOURNAL_BACKENDS`. Konsistent can state the shape and cannot state that set comparison, which is why the registration rule is the two together. The exclusions are the modules whose names match the glob and are NOT backends \u2014 the interface, its DDL, the five RECORDS it is an interface over, the `JournalConflictError` three of them raise (declared beside the contract rather than in it, for the file-length reason its own module doc gives), and the step CEILING, which is a policy over a journal's SIZE rather than a place to keep one. Note the sibling scan in `journal-conformance.test.ts` needs no such exclusion: it discovers a backend by looking for a `create*Journal` export, so a non-backend matching the glob is already invisible to it, and this rule is the only one reading the filename alone.",
       "paths": [
-        "packages/aai-runtime/workflow-journal-{backendId}.ts",
-        "!packages/aai-runtime/workflow-journal-types.ts",
-        "!packages/aai-runtime/workflow-journal-schema.ts",
-        "!packages/aai-runtime/workflow-journal-conflict.ts",
-        "!packages/aai-runtime/workflow-journal-records.ts",
-      "!packages/aai-runtime/workflow-journal-bound.ts",
-        "!packages/aai-runtime/workflow-journal-*.test.ts"
+        "packages/aai-runtime/src/workflow-journal-{backendId}.ts",
+        "!packages/aai-runtime/src/workflow-journal-types.ts",
+        "!packages/aai-runtime/src/workflow-journal-schema.ts",
+        "!packages/aai-runtime/src/workflow-journal-conflict.ts",
+        "!packages/aai-runtime/src/workflow-journal-records.ts",
+      "!packages/aai-runtime/src/workflow-journal-bound.ts",
+        "!packages/aai-runtime/src/workflow-journal-*.test.ts"
       ],
       "must": {
         "exportFunctions": [
@@ -398,11 +393,11 @@
       "name": "session-state-backends",
       "description": "A `session-state-<backend>.ts` file IS a session-state backend, and it exports `create<Backend>StateBackend`. There are three — memory (the reference), postgres (a self-hoster's own DATABASE_URL) and platform (HTTP to aai-server) — one interface with six methods, and the requirement that they AGREE was written down twice in prose, as a claim between implementations, while nothing compared them: the postgres spec is an SQL-text recorder, the platform spec an HTTP recorder, and the semantics were asserted for memory only, through the store above it. `session-state-conformance.ts` is the shared case list that closed that, and what this convention buys beyond naming is DISCOVERY for its registry: `session-state-conformance.test.ts` enumerates the backends out of the tree by FACTORY NAME (a name scan rather than the journal's filename scan, because the memory factory is re-exported from the module declaring the interface), so this rule is what keeps a fourth backend's factory name recognisable to that scan. Konsistent can state the shape and cannot state that set comparison, which is why the registration rule is the two together. The exclusions are the modules whose names match the glob and are not backends — the interface and its store, the grace-window sweep scheduler, and the conformance table's own case modules.",
       "paths": [
-        "packages/aai-runtime/session-state-{backendId}.ts",
-        "!packages/aai-runtime/session-state-store.ts",
-        "!packages/aai-runtime/session-state-sweeps.ts",
-        "!packages/aai-runtime/session-state-conformance*.ts",
-        "!packages/aai-runtime/session-state-*.test.ts"
+        "packages/aai-runtime/src/session-state-{backendId}.ts",
+        "!packages/aai-runtime/src/session-state-store.ts",
+        "!packages/aai-runtime/src/session-state-sweeps.ts",
+        "!packages/aai-runtime/src/session-state-conformance*.ts",
+        "!packages/aai-runtime/src/session-state-*.test.ts"
       ],
       "must": {
         "exportFunctions": [
@@ -414,7 +409,7 @@
       "name": "workflow-key-stores",
       "description": "`workflow-keys.ts` declares BOTH implementations of the correlation-key index, and this pins their names. It is the odd one of the three store-conformance registration rules and the shape is why: the journal's and session state's implementations live one per file, so those conventions derive a factory name from a FILENAME and a new backend cannot arrive under a name their sweeps do not recognise. Here there is one file and two factories, so there is no filename grammar to state — which is also the finding the conformance table came out of: `aai-server/store-conformance.ts` had exempted this contract on the ground that a shared case list could not span a package boundary, and both factories had been in one module of one package since the runtime split. What this rule buys is the other half of the same guarantee: `workflow-keys-conformance.test.ts` enumerates the stores out of the tree by FACTORY NAME and fails when one is missing from `WORKFLOW_KEY_STORES`, and this keeps the two names it scans for present in the module that registry claims. A rename now fails HERE, naming the file, rather than in a text sweep. Konsistent can state that the exports exist and cannot state the set comparison, which is why the registration rule is the two together. Note the path is a LITERAL rather than a glob with a captured segment: a `workflow-keys-{storeId}.ts` pattern would match the conformance table's own modules and would have to exclude every one of them, i.e. a convention whose only matches are its exclusions.",
       "paths": [
-        "packages/aai-runtime/workflow-keys.ts"
+        "packages/aai-runtime/src/workflow-keys.ts"
       ],
       "must": {
         "exportFunctions": [

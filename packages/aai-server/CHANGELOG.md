@@ -1,5 +1,32 @@
 # @alexkroman1/aai-server
 
+## 5.2.0
+
+### Minor Changes
+
+- 130898e: Carry every guest→platform call down one multiplexed WebSocket, with the five HTTP routes kept as the fallback. A deployed guest opens `WS /:slug/platform-socket` once per process and frames session state, upload records, the workflow journal, its key index and enqueues onto it; the platform turns each frame back into a real request through the same Hono app, so every route's status, body cap and bearer check are unchanged. A call the socket refuses before writing falls back to HTTP; one already written does not, so nothing is applied twice.
+
+### Patch Changes
+
+- aab5d81: Move every package's TypeScript under src/, and gate it.
+  
+  Source now lives in packages/<pkg>/src/; manifests, tsconfigs, tool configs, guides, etc/ and static assets stay at the package root. rootDir/include are scoped to src/, so a repo artifact can no longer be emitted into dist/ by accident. The published dist layout and every exports target are unchanged — only the @dev/source condition names src/.
+  
+  check:package-layout enforces it from both sides (no .ts outside src/, and every package has a non-empty src/), with corpus floors and a gate spec that A/Bs each half.
+- 78ed86c: Open a workflow delivery in ONE platform round trip, and place guest sandboxes where the platform database is.
+  
+  `execute` awaited `journal.getRun(runId)` and only then issued the step read, the wait read and the `running` compare-and-set — so every delivery paid two sequential round trips (~840 ms each on the platform arm) before a body could run. Nothing in that opening depends on the record: the three reads are pure functions of the run id and the set carries its own `expect`, so all four are now issued together. A set that loses is re-asked rather than believed — issued beside the record read it can reach the store ahead of a racing `start`'s `createRun` and decline a run that exists a moment later.
+  
+  `modal_deploy.py` also exports its own `REGIONS` list as `MODAL_SANDBOX_REGION`, so guests are placed in the platform's region instead of wherever Modal finds capacity: a durable run's journal calls are made by the guest, sequentially, at ~24 ms an operation out of region against ~2 ms in it. It is the LIST rather than a single region — a bare pin is what once made a spawn Modal could not schedule fail the session with `Sandbox operation timed out`.
+- Updated dependencies [14c54ac]
+- Updated dependencies [25e42e8]
+- Updated dependencies [78ed86c]
+- Updated dependencies [130898e]
+  - @alexkroman1/aai-runtime@13.3.0
+  - @alexkroman1/aai-ui@13.3.0
+  - aai-guest@0.5.17
+  - @alexkroman1/aai@13.3.0
+
 ## 5.1.1
 
 ### Patch Changes

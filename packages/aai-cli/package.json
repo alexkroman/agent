@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai-cli",
-  "version": "13.2.0",
+  "version": "13.3.0",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -20,22 +20,22 @@
   },
   "exports": {
     "./client-bundler": {
-      "@dev/source": "./client-bundler.ts",
+      "@dev/source": "./src/client-bundler.ts",
       "types": "./dist/client-bundler.d.ts",
       "import": "./dist/client-bundler.mjs"
     },
     "./worker-bundler": {
-      "@dev/source": "./worker-bundler.ts",
+      "@dev/source": "./src/worker-bundler.ts",
       "types": "./dist/worker-bundler.d.ts",
       "import": "./dist/worker-bundler.mjs"
     },
     "./typecheck": {
-      "@dev/source": "./typecheck.ts",
+      "@dev/source": "./src/typecheck.ts",
       "types": "./dist/typecheck.d.ts",
       "import": "./dist/typecheck.mjs"
     },
     "./project-config": {
-      "@dev/source": "./project-config.ts",
+      "@dev/source": "./src/project-config.ts",
       "types": "./dist/project-config.d.ts",
       "import": "./dist/project-config.mjs"
     }
@@ -49,8 +49,8 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "VITEST_PROFILE=e2e VITEST_SETUP=./_test-setup.ts VITEST_INCLUDE=e2e*.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_SETUP=./_test-setup.ts VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:e2e": "VITEST_PROFILE=e2e VITEST_SETUP=./src/_test-setup.ts VITEST_INCLUDE=src/e2e*.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_SETUP=./src/_test-setup.ts VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

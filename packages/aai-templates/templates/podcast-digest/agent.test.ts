@@ -103,15 +103,25 @@ const slackInput = (slackWebhookUrl: string) => ({
 
 describe("the declaration", () => {
   test("is a workflow app with one workflow and a static page", () => {
-    expect(agentDef.name).toBe("Podcast Digest");
-    expect(Object.keys(agentDef.workflows ?? {})).toEqual(["dailyDigest"]);
+    // Not the agent's name: renaming it is an invited edit, and pinning the
+    // literal here would fail a build in somebody else's project.
+    expect(agentDef.name).toBeTruthy();
+    // `toContain` rather than an exact key list: adding a second workflow is an
+    // invited edit and must not redden a test the author did not write. The
+    // NAME is still pinned, deliberately — the page starts a run by this
+    // string, so renaming the key is a runtime 400 rather than a compile
+    // error, and this pin is the only thing that says so. Rename it here and
+    // in `client.tsx` together.
+    expect(Object.keys(agentDef.workflows ?? {})).toContain("dailyDigest");
     expect(agentDef.workflows?.dailyDigest).toBe(dailyDigest);
   });
 
   test("names the one credential its steps read", () => {
     // A workflow app declares no providers, so nothing else in the config can
     // name this — which is what makes a deploy able to check for it.
-    expect(agentDef.requiredEnv).toEqual(["ASSEMBLYAI_API_KEY"]);
+    // `toContain`, so a step of your own that reads a second credential can be
+    // declared beside this one without failing a test you did not write.
+    expect(agentDef.requiredEnv).toContain("ASSEMBLYAI_API_KEY");
   });
 });
 

@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -10,6 +10,7 @@
     "allowImportingTsExtensions": false,
     "rewriteRelativeImportExtensions": true
   },
+  "include": ["src"],
   "exclude": [
     "node_modules",
     "dist",
@@ -19,7 +20,7 @@
     // frozen example into `dist/contracts/`. This package declares
     // `files: ["dist"]`, so unlike `aai` — whose bare `contracts/` ignore rule
     // catches it at any depth — that output would really have shipped.
-    "contracts",
+    "src/contracts",
     "**/*.test.ts",
     "**/*.test-d.ts",
     "**/_test-utils.ts",

@@ -143,15 +143,19 @@ function wavFile(
   return head;
 }
 
-describe("the agent declares its three workflows and nothing else", () => {
+describe("the agent declares its three workflows", () => {
   test("under the names the REST route resolves them by", () => {
     // The page starts a run by these strings, so a rename is a runtime 400 rather
     // than a compile error — which is what makes pinning them worth a test.
-    expect(Object.keys(agentDef.workflows ?? {})).toEqual([
-      "transcribe",
-      "transcribeStream",
-      "transcribeBatch",
-    ]);
+    // `arrayContaining` rather than an exact key list: a fourth desk of your own
+    // is an invited edit and must not redden a test you did not write. These
+    // three NAMES stay pinned, deliberately — the page starts a run by each
+    // string, so renaming one is a runtime 400 rather than a compile error, and
+    // this is the only thing that says so. Rename here and in `client.tsx`
+    // together.
+    expect(Object.keys(agentDef.workflows ?? {})).toEqual(
+      expect.arrayContaining(["transcribe", "transcribeStream", "transcribeBatch"]),
+    );
     expect(agentDef.workflows?.transcribe).toBe(transcribe);
     expect(agentDef.workflows?.transcribeStream).toBe(transcribeStream);
     expect(agentDef.workflows?.transcribeBatch).toBe(transcribeBatch);
@@ -168,8 +172,12 @@ describe("the agent declares its three workflows and nothing else", () => {
   });
 
   test("with no tools, because the interface is the page and the API", () => {
-    // The point of the template: a workflow app needs no conversation. A tool
-    // reappearing here would mean the voice path had crept back in.
+    // A PIN, deliberately, and the one assertion in this file you are expected
+    // to edit rather than satisfy. `workflowApp()` declares no session, so a
+    // tool has no conversation to be called from — a name appearing here means
+    // the voice path crept back in and the tool will never run. If you want a
+    // voice agent that STARTS a workflow, `research-workflow` is that template,
+    // and this line is what tells you you are on the wrong one.
     expect(Object.keys(agentDef.tools ?? {})).toEqual([]);
   });
 

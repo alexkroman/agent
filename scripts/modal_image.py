@@ -445,18 +445,27 @@ def run_node(entry: str, env: dict[str, str]) -> subprocess.Popen:
 def build_image(*, port: int, extra_env: dict[str, str] | None = None):
     """The shared image, parameterized only by per-app env.
 
-    Deliberately does NOT bake ``MODAL_SANDBOX_REGION``: guest sandboxes are
-    placed by Modal for CAPACITY. Pinning them to the service's own region
-    (once ``us-east-2``) bought co-location at the cost of restricting every
-    spawn to one region's free capacity, and a spawn that cannot be scheduled
-    in ~50s fails with ``Sandbox operation timed out`` out of ``tunnels()`` —
-    a studio chat or voice session that never starts. The RTT the pin was
-    added for is the smaller cost: agent guests hold no host channel at all
-    (clients dial the sandbox tunnel directly), so only the studio's
-    control-channel round trips pay it.
+    ``MODAL_SANDBOX_REGION`` is passed in by the caller (see
+    ``modal_deploy.py``), and what it must be is a LIST. This function used to
+    refuse to bake it at all, and the refusal was right about the failure and
+    wrong about the remedy: pinning guests to a SINGLE region (once
+    ``us-east-2``) confined every spawn to one region's spare capacity, and a
+    spawn Modal cannot schedule inside the ~50 s ``tunnels()`` wait fails with
+    ``Sandbox operation timed out`` — a studio chat or voice session that never
+    starts. That is the same shape, at the sandbox layer, as the zero-container
+    outage the web function's ``REGIONS`` list exists to prevent, and it takes
+    the same answer: a PREFERENCE with a spill, never one region.
 
-    ``MODAL_SANDBOX_REGION`` is still read by ``modal-sandbox-env.ts``, so an
-    operator can pin placement per environment without a code change.
+    What changed the trade is durable workflows. The old argument — "agent
+    guests hold no host channel at all, so only the studio's control-channel
+    RPCs pay the RTT" — is still true about VOICE and no longer decides it: a
+    run's journal is one ``POST /:slug/workflow-journal`` per operation and the
+    engine's are sequential by construction, so every guest→platform hop is
+    inside a run's wall clock. Measured on a deployed run, ~24 ms an operation
+    against ~2 ms in the platform's own region.
+
+    ``modal-sandbox-env.ts`` still parses it, so an operator can override the
+    placement per environment without a code change.
     """
     return (
         # ``add_python`` layers the Modal runtime's Python next to Node — the

@@ -20,11 +20,11 @@
  *
  * The signal is already trusted twice over in this tree, which is the argument
  * for enforcing it in tests rather than the argument against.
- * `packages/aai-guest/harness-leak-watch.ts` watches it AT RUNTIME in the guest
+ * `packages/aai-guest/src/harness-leak-watch.ts` watches it AT RUNTIME in the guest
  * — written because Node warns exactly ONCE per emitter (measured there: 500
  * listeners, one warning, at 11), which made the `streamTail` leak of #1203
  * expensive to diagnose from a log. And
- * `packages/aai/host/transports/pipeline-transport.ts` raises the threshold
+ * `packages/aai/src/host/transports/pipeline-transport.ts` raises the threshold
  * deliberately with `setMaxListeners(SESSION_SIGNAL_MAX_LISTENERS, …)` under a
  * comment calling it "A LEAK threshold, not a capacity one".
  *
@@ -39,7 +39,7 @@
  * gate gets muted rather than fixed. This one is different in kind: it can only
  * be emitted by our own `addListener` call, and it has no benign cause. Measured
  * over the whole unit run (536 files, 7998 tests): NINE occurrences, all nine in
- * `packages/aai-guest/harness-leak-watch.test.ts`, whose subject IS this warning
+ * `packages/aai-guest/src/harness-leak-watch.test.ts`, whose subject IS this warning
  * — see `EXPECTED` below. Every other suite in the repo is clean, so this is an
  * absolute rule in the sense the `guard-invariants` rules at zero are, rather
  * than a ratchet with a baseline to pay down.
@@ -58,7 +58,7 @@ const GATED = new Set(["MaxListenersExceededWarning"]);
  * The one legitimate reason to emit a gated warning: a suite whose SUBJECT is
  * the warning.
  *
- * `packages/aai-guest/harness-leak-watch.test.ts` drives the guest's runtime
+ * `packages/aai-guest/src/harness-leak-watch.test.ts` drives the guest's runtime
  * leak watcher by both synthesizing `process.emit("warning", …)` and attaching
  * 88 real listeners to a real emitter, so it trips this gate nine times by
  * construction — the gate reporting the one test written to exercise exactly
@@ -117,7 +117,7 @@ function failOnWarning(warning) {
       "\n" +
       "  setMaxListeners(SESSION_SIGNAL_MAX_LISTENERS, signal);\n" +
       "\n" +
-      "See `packages/aai/host/transports/pipeline-transport.ts`, which does\n" +
+      "See `packages/aai/src/host/transports/pipeline-transport.ts`, which does\n" +
       "exactly that under a comment explaining why the number is what it is.\n" +
       "The stack below is where the offending listener was added.",
     { cause: warning },

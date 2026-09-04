@@ -32,7 +32,7 @@ this split is critical for sandbox security:
 dependencies. Moving code from `sdk/` → `host/` is safe; moving `host/` →
 `sdk/` requires removing all Node.js imports first.
 
-The guest harness (`packages/aai-guest/harness.ts`) runs **Node** inside each
+The guest harness (`packages/aai-guest/src/harness.ts`) runs **Node** inside each
 Modal Sandbox — the same runtime as the host and `aai dev` — loading the agent's
 ESM bundle directly; the Modal sandbox (not a language runtime permission model)
 is the security boundary.
@@ -100,7 +100,7 @@ of subpath exports in `aai/package.json`:
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, and `assemblyAIPipeline()`/`assemblyAIS2s()`. One constant, `DEFAULT_SYSTEM_PROMPT`, because an author READS it. See "The root barrel is CURATED" above |
+| `@alexkroman1/aai` | `packages/aai/src/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, and `assemblyAIPipeline()`/`assemblyAIS2s()`. One constant, `DEFAULT_SYSTEM_PROMPT`, because an author READS it. See "The root barrel is CURATED" above |
 | `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published and why the module carries no test-runner dependency. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createStubWorkflows()` is the rejecting `ctx.workflows` it defaults to (the rejecting `db` is internal now — see the `aai:testing` bump below). Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`deployedAgent(def, { tools, systemPrompt })`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs, system prompt included. It takes the glob's RESULT rather than a directory (`import.meta.glob` expands against the file containing it and cannot take a variable), and a `readdir` + `import()` is refused: that resolves the tools through Node rather than the test runner and hands them a second copy of this SDK. Generic over `ToolBearingAgent`, which keeps `AgentDef` and the sixteen declarations behind it off this subpath's contract. Four more shipped for the templates, a spec being unable to import from a sibling: **`ok`/`okPosition`** unwrap a dialog tool's envelope and FAIL at the call quoting the refusal, where the cast they replace reads `undefined` off a `ToolFailure` and dies several assertions later; **`parseToolInput`/`toolInputIssues`** (plus `parseSchemaInput`/`schemaInputIssues` under them — 16 of the 18 converted sites validate a WORKFLOW's input) replace reaching through `["~standard"].validate`, which may be sync or async, so a missing `await` leaves `.issues` undefined and the negative test passes for the wrong reason; and **`stubTranscribe`**, staging a refusal as an HTTP STATUS so the SDK's own `transcribeFailure` sets `retryable`/`retryAfter` — a fake minting that error would assert the classification the spec is testing. `createToolContext` takes `ToolContextOverrides` (each field also accepting `undefined`, run through `omitUndefined`), because `Partial<ToolContext>` under `exactOptionalPropertyTypes` forced specs into the conditional spread rule 22 counts as debt; `runTool`'s args and ctx are optional, told apart by SHAPE (66 sites passed `{}`), an omitted context being a DISTINCT session. `stubUploads` answers `{ restore, writes, read }` like its three siblings rather than a bare thunk — the breaking change that dropped the `aai:testing` epoch. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` (direct) | `installStubGateway(replies, opts?)` — the fake above, installed as the global `fetch`, returning its call log. The one place a test-runner dependency is allowed, so the rule the subpath above states stays true: `vitest` is an OPTIONAL peer, and importing THIS is what pulls it. A helper belongs here only when its remaining content is the installation — the fake itself stays framework-agnostic next door |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, and the four narration formatters `formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`), plus `decodeHtmlEntities`. Twenty exports. The fifteen helpers are on the ROOT too, so this is the path for a tool body that wants one without naming the root; **the four formatters and `decodeHtmlEntities` are reachable only here**, and deliberately — their reader is BOTH a `workflows/*.ts` step and a `client.tsx` (a run narrates itself, a page renders the same run), and `/utils` is the path a browser bundle takes without pulling zod's graph. Non-localized permanently, each output pinned to the character in `format.test.ts`: `Intl` answers to the host's ICU default, so one run would render differently on a laptop and in a sandbox. The duplication they replace was a live bug — `call-audit` printed one 64-minute recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, two copies of one formatter in one template disagreeing about one run, because the `m:ss` shape is four lines and looks finished. `plural(n, one, many?)` returns the WORD, not the count. **It was 79**: the membership rule was a BUILD property (zod-free, so the CLI pays no startup cost), which is a fact about its graph rather than an audience, and three unrelated readers piled onto one import line. The STEP vocabulary is `/step` now, the platform contracts and wire helpers `/internal`. `createKeyedLock`'s `p-timeout` is the one exception to zero-dependency; its module doc owns it |
@@ -160,7 +160,7 @@ present in the `agent()` config:
   all-AssemblyAI pipeline (`assemblyAIPipeline()`) is injected by
   `defaultProviders` in `sdk/providers/_default-providers.ts`) uses
   `createPipelineTransport()` in
-  `packages/aai/host/transports/pipeline-transport.ts`. Here the host
+  `packages/aai/src/host/transports/pipeline-transport.ts`. Here the host
   drives the LLM loop itself via the Vercel AI SDK's `streamText`, and STT
   and TTS are pluggable providers imported from the `@alexkroman1/aai/stt`
   and `@alexkroman1/aai/tts` subpath exports.
@@ -176,7 +176,7 @@ present in the `agent()` config:
 
 - **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main
   export, or `openaiS2s()` from `@alexkroman1/aai/s2s`) uses
-  `createS2sTransport()` in `packages/aai/host/transports/s2s-transport.ts`.
+  `createS2sTransport()` in `packages/aai/src/host/transports/s2s-transport.ts`.
   The host opens a single WebSocket to AssemblyAI's speech-to-speech
   service; STT, the LLM loop, and TTS all run service-side and audio/events
   relay through that one socket. There is no way to reach S2S by omission —
@@ -1255,7 +1255,7 @@ The audio path depends on the session mode:
 
 ## Default values and magic numbers
 
-All numeric constants live in `packages/aai/sdk/constants.ts` (client-audio
+All numeric constants live in `packages/aai/src/sdk/constants.ts` (client-audio
 budgets are split into `sdk/client-audio-constants.ts` for file-length reasons
 and re-exported from `constants.ts`, so the import path is unchanged). Key
 defaults that affect agent behavior:

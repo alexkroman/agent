@@ -3,7 +3,13 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   // The *-bundler and typecheck modules are public subpath exports (the
   // guest sandbox builds and typechecks workspaces through them).
-  entry: ["cli.ts", "client-bundler.ts", "worker-bundler.ts", "typecheck.ts", "project-config.ts"],
+  entry: [
+    "src/cli.ts",
+    "src/client-bundler.ts",
+    "src/worker-bundler.ts",
+    "src/typecheck.ts",
+    "src/project-config.ts",
+  ],
   format: "esm",
   platform: "node",
   target: "node22",

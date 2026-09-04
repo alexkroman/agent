@@ -176,8 +176,8 @@ function nextValue(argv, flag) {
 function resolveRef(registry) {
   const program = [
     'import { readFileSync } from "node:fs";',
-    'import { localHarnessImageTag } from "../packages/aai-server/modal-harness-image.ts";',
-    'import { guestImageRef } from "../packages/aai-server/guest-image-source.ts";',
+    'import { localHarnessImageTag } from "../packages/aai-server/src/modal-harness-image.ts";',
+    'import { guestImageRef } from "../packages/aai-server/src/guest-image-source.ts";',
     // `-e` puts the FIRST user argument at argv[1] — there is no script path
     // in argv at all, so this is slice(1) and not the usual slice(2).
     "const [baseTag, harness, registry] = process.argv.slice(1);",

@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai-runtime",
-  "version": "13.2.0",
+  "version": "13.3.0",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -17,27 +17,27 @@
   ],
   "exports": {
     ".": {
-      "@dev/source": "./runtime-barrel.ts",
+      "@dev/source": "./src/runtime-barrel.ts",
       "types": "./dist/runtime-barrel.d.ts",
       "import": "./dist/runtime-barrel.js"
     },
     "./eval": {
-      "@dev/source": "./eval-barrel.ts",
+      "@dev/source": "./src/eval-barrel.ts",
       "types": "./dist/eval-barrel.d.ts",
       "import": "./dist/eval-barrel.js"
     },
     "./eval/vitest": {
-      "@dev/source": "./eval-vitest-barrel.ts",
+      "@dev/source": "./src/eval-vitest-barrel.ts",
       "types": "./dist/eval-vitest-barrel.d.ts",
       "import": "./dist/eval-vitest-barrel.js"
     },
     "./testing": {
-      "@dev/source": "./testing-barrel.ts",
+      "@dev/source": "./src/testing-barrel.ts",
       "types": "./dist/testing-barrel.d.ts",
       "import": "./dist/testing-barrel.js"
     },
     "./internal": {
-      "@dev/source": "./internal.ts",
+      "@dev/source": "./src/internal.ts",
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
     },
@@ -52,7 +52,7 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:integration": "VITEST_INCLUDE=integration/**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:integration": "VITEST_INCLUDE=src/integration/**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
     "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
     "typecheck": "tsc --noEmit"
   },

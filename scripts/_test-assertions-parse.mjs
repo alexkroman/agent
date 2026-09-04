@@ -19,6 +19,12 @@
  * paragraph ABOUT tests (three files here have one), and `/re/.test(x)`, which
  * produced five of the first run's eight reported offenders.
  *
+ * The walk and the line index it needs are `scripts/_ast-scan.mjs`'s now — that
+ * module is the same parse serving `guard-invariants`' node rules, and this
+ * gate was the precedent it generalized. What stays here is the `parseSync`
+ * call itself, because this gate's contract is to RETURN parse errors rather
+ * than throw on them, and the caller is what decides.
+ *
  * `oxc-parser` was already in the lockfile (hono, knip, `@vitest/coverage-v8`
  * and `rolldown-plugin-dts` all pull it); it is a root devDependency now
  * because importing a transitive one directly is a phantom dependency that
@@ -30,12 +36,14 @@
  * **It also sees a whole class the regex could not.** The old opener matched
  * `test(`, `it(`, and exactly one `.word(…)` in between (`test.each([…])(`) —
  * so `test.concurrent("…", fn)` was invisible to the gate, and eleven such
- * tests in `packages/aai-cli/e2e.test.ts` asserted nothing while it reported a
+ * tests in `packages/aai-cli/src/e2e.test.ts` asserted nothing while it reported a
  * clean run. Chains are walked here instead of enumerated, so `test.concurrent`,
  * `test.for`, `test.concurrent.for(…)` and `test.each\`…\`` all land.
  */
 
 import { parseSync } from "oxc-parser";
+
+import { lineIndexOf, walk } from "./_ast-scan.mjs";
 
 /** Call roots that open a test body. `describe` is a group, not a test. */
 export const TEST_NAMES = new Set(["test", "it"]);
@@ -52,27 +60,6 @@ export const TEST_NAMES = new Set(["test", "it"]);
  * hand.
  */
 export const ASSERTERS = new Set(["expect", "expectTypeOf", "assert"]);
-
-/**
- * Visit every node under `node`. A visitor returning `false` keeps the walk out
- * of that node's children, which is how a nested `test()` inside a helper is
- * counted once rather than twice.
- */
-function walk(node, visit) {
-  // Baselined against rule 17, twice over: a `scripts/*.mjs` gate cannot import
-  // the SDK's `isRecord`, and this guard must ADMIT arrays — an AST node's
-  // children are arrays, so narrowing them away would stop the walk at the
-  // first `body` or `arguments`.
-  if (node === null || typeof node !== "object") return;
-  if (Array.isArray(node)) {
-    for (const child of node) walk(child, visit);
-    return;
-  }
-  if (typeof node.type === "string" && visit(node) === false) return;
-  for (const key in node) {
-    if (key !== "type") walk(node[key], visit);
-  }
-}
 
 /**
  * The identifier a callee expression chains from — `test` for every one of
@@ -125,25 +112,6 @@ function titleOf(call, source) {
   return "(untitled)";
 }
 
-/** Offsets of every line start, so a position costs a binary search. */
-function lineStarts(source) {
-  const starts = [0];
-  for (let i = source.indexOf("\n"); i !== -1; i = source.indexOf("\n", i + 1)) starts.push(i + 1);
-  return starts;
-}
-
-/** 1-based line number for a character offset. */
-function lineAt(starts, offset) {
-  let low = 0;
-  let high = starts.length - 1;
-  while (low < high) {
-    const mid = (low + high + 1) >> 1;
-    if (starts[mid] <= offset) low = mid;
-    else high = mid - 1;
-  }
-  return low + 1;
-}
-
 /**
  * Every test call in one source file.
  *
@@ -160,12 +128,12 @@ export function findTests(filename, source) {
   if (parsed.errors.length > 0) {
     return { tests: [], errors: parsed.errors.map((e) => e.message) };
   }
-  const starts = lineStarts(source);
+  const { lineAt } = lineIndexOf(source);
   const tests = [];
   walk(parsed.program, (node) => {
     if (!callRootedIn(node, TEST_NAMES)) return;
     tests.push({
-      line: lineAt(starts, node.start),
+      line: lineAt(node.start),
       title: titleOf(node, source).replace(/\s+/g, " "),
       asserts: assertsSomewhere(node),
     });

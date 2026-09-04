@@ -41,7 +41,7 @@ export default defineConfig({
       // longer here at all: it is published from
       // `@alexkroman1/aai-runtime/eval` and unit-tested in that package against
       // a scripted model.)
-      exclude: [...sharedCoverageExclude, "studio-target.ts", "_gate.ts"],
+      exclude: [...sharedCoverageExclude, "src/studio-target.ts", "src/_gate.ts"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
       // Measured: 99.62 / 99.08 / 92.17 / 99.68.

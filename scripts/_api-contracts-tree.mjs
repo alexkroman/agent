@@ -79,7 +79,7 @@ const NON_AUTHORING_SUBPATHS = {
  * Authoring subpaths that no SHIPPED EXAMPLE is expected to exercise, and why.
  *
  * The second deny-list, read by `exampleFacingSubpaths` and through it by
- * `packages/aai-templates/template-api-coverage.test.ts`. It exists because
+ * `packages/aai-templates/src/template-api-coverage.test.ts`. It exists because
  * "authoring" covers two audiences that the contract system deliberately does
  * not separate — an agent author writing `agent.ts` and `client.tsx`, and a
  * host embedding the runtime — while the shipped examples only demonstrate the
@@ -163,7 +163,7 @@ function fixtureExtension(packageDir) {
  */
 function contractPackage(key) {
   const dir = join(PACKAGES_ROOT, key);
-  const contractRoot = join(dir, "contracts");
+  const contractRoot = join(dir, "src", "contracts");
   return {
     key,
     dir,
@@ -183,7 +183,7 @@ function contractPackage(key) {
 /**
  * The packages that carry contracts, discovered from the tree.
  *
- * Opting a package in is creating `contracts/entrypoints/` inside it; there is
+ * Opting a package in is creating `src/contracts/entrypoints/` inside it; there is
  * no list to join, for the reason `api-report.mjs` derives its entry points
  * from `package.json#exports` and this file derives its capabilities from the
  * entry-point directory. A hand-kept list of what is versioned is the thing
@@ -191,7 +191,7 @@ function contractPackage(key) {
  */
 export function contractPackages() {
   return readdirSync(PACKAGES_ROOT)
-    .filter((key) => existsSync(join(PACKAGES_ROOT, key, "contracts/entrypoints")))
+    .filter((key) => existsSync(join(PACKAGES_ROOT, key, "src/contracts/entrypoints")))
     .sort()
     .map((key) => contractPackage(key));
 }

@@ -34,6 +34,7 @@ import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+import { z } from 'zod';
 
 // @internal
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
@@ -66,7 +67,23 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }>;
 
 // @internal
+export function createPlatformSocket(opts: CreatePlatformSocketOptions): PlatformSocket;
+
+// @public (undocumented)
+type CreatePlatformSocketOptions = {
+    base: string;
+    token: string;
+    create?: CreatePlatformWebSocket | undefined;
+    logger?: Logger | undefined;
+};
+
+// @internal
 export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend;
+
+// @public
+type CreatePlatformWebSocket = (url: string, opts: {
+    headers: Record<string, string>;
+}) => HeaderWebSocket;
 
 // @internal
 export function createPostgresJournal(opts: {
@@ -156,6 +173,25 @@ export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse,
 }): boolean;
 
 // @public
+type HeaderWebSocket = {
+    readonly readyState: number;
+    readonly bufferedAmount?: number | undefined;
+    send(data: string): void;
+    close(code?: number): void;
+    addEventListener(type: "open", listener: () => void): void;
+    addEventListener(type: "message", listener: (event: {
+        data: unknown;
+    }) => void): void;
+    addEventListener(type: "close", listener: (event: {
+        code?: number;
+        reason?: string;
+    }) => void): void;
+    addEventListener(type: "error", listener: (event: {
+        message?: string;
+    }) => void): void;
+};
+
+// @public
 type HookRecord = {
     token: string;
     delivered: boolean;
@@ -228,8 +264,14 @@ type Logger = Record<LogLevel, LogFn>;
 // @public
 type LogLevel = "info" | "warn" | "error" | "debug";
 
+// @internal
+export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
+
 // @public
 export function parseBearer(header: string | null | undefined): string;
+
+// @internal
+export function parsePlatformFrame<T>(schema: z.ZodType<T>, text: string): T | undefined;
 
 // @internal
 export function parseTraceparent(header: string | null | undefined): TraceParent | undefined;
@@ -247,6 +289,9 @@ export const PLATFORM_ROUTES: {
 };
 
 // @internal
+export const PLATFORM_SOCKET_PATH = "/platform-socket";
+
+// @internal
 export type PlatformEndpoint = {
     base: string;
     token: string;
@@ -254,13 +299,56 @@ export type PlatformEndpoint = {
 };
 
 // @public
+export const PlatformInboundFrameSchema: z.ZodUnion<readonly [z.ZodObject<{
+    t: z.ZodLiteral<"req">;
+    id: z.ZodNumber;
+    route: z.ZodString;
+    traceparent: z.ZodOptional<z.ZodString>;
+    body: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    t: z.ZodLiteral<"ping">;
+    id: z.ZodNumber;
+}, z.core.$strip>]>;
+
+// @public
 export type PlatformQueueOptions = PlatformEndpoint;
+
+// @public (undocumented)
+export type PlatformReplyFrame = z.infer<typeof PlatformReplyFrameSchema>;
+
+// @public
+const PlatformReplyFrameSchema: z.ZodObject<{
+    t: z.ZodLiteral<"res">;
+    id: z.ZodNumber;
+    status: z.ZodNumber;
+    body: z.ZodString;
+}, z.core.$strip>;
 
 // @public
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
 // @public
 type PlatformSessionStateOptions = PlatformEndpoint;
+
+// @public (undocumented)
+export type PlatformSocket = {
+    isOpen(): boolean;
+    send(call: {
+        route: PlatformRoute;
+        body: string;
+        traceparent: string | undefined;
+    }): Promise<PlatformSocketReply>;
+    close(): void;
+};
+
+// @public
+type PlatformSocketReply = {
+    status: number;
+    body: string;
+};
+
+// @public
+export function platformSocketUrl(base: string): string;
 
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
