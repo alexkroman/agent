@@ -24,4 +24,12 @@ export default agent({
   // caller's callback number, and only its reference crosses to the browser.
   syncState: supportProjection,
   greeting: `${PRODUCT} support, you're through to the automated line. What's happened?`,
+  // A support line is a PHONE line, so this one declares the carrier its number
+  // is with. Nothing serves `WS /phone` without this — the route is an
+  // allow-list, and an agent that says nothing about carriers answers none — so
+  // point a Twilio number's webhook at the deployed agent's `/phone` and the
+  // call lands in an ordinary session. `true` admits every carrier the runtime
+  // ships a codec for; a list is the narrower statement, and it is the one to
+  // copy.
+  telephony: ["twilio"],
 });

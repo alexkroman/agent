@@ -74,6 +74,7 @@ function toAgentConfig(source: AgentConfigSource): {
   };
   sttPrompt?: string;
   systemPrompt: string;
+  telephony?: boolean | readonly ("twilio" | "telnyx")[];
   temperature?: number;
   text?: true;
   toolChoice?:   | "auto"
@@ -150,6 +151,7 @@ the runtime.
   };
   sttPrompt?: string;
   systemPrompt: string;
+  telephony?: boolean | readonly ("twilio" | "telnyx")[];
   temperature?: number;
   text?: true;
   toolChoice?:   | "auto"
@@ -324,6 +326,12 @@ optional sttPrompt?: string;
 
 ```ts
 systemPrompt: string;
+```
+
+##### telephony?
+
+```ts
+optional telephony?: boolean | readonly ("twilio" | "telnyx")[];
 ```
 
 ##### temperature?

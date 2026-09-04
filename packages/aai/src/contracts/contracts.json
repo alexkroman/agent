@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 20,
-    "supported": [18, 20],
+    "current": 21,
+    "supported": [18, 20, 21],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -193,8 +193,8 @@
     }
   },
   "testing": {
-    "current": 23,
-    "supported": [23],
+    "current": 24,
+    "supported": [24],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -217,7 +217,8 @@
       "19": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "20": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises ok, okPosition, mockWorkflows, MockWorkflowsOptions and the WorkflowCtx family, all renamed.",
       "21": "Renamed for naming consistency (API naming review): the bare names ok and okPosition became expectToolOk and expectDialogOk, mockWorkflows joined its six install* siblings as installStubWorkflows, and the WorkflowCtx family became WorkflowContext.",
-      "22": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+      "22": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
+      "23": "Collateral, and the same shape as the epoch 18 drop above: this report names AgentDef through deployedAgent's ToolBearingAgent, and AgentDef gained one OPTIONAL field, telephony — the carrier allow-list that decides whether an agent serves WS /phone. Additive: no caller must set it, no test helper's signature reads it, and nothing written at epoch 23 stops compiling. Dropped rather than retained because this surface has no external consumers and freezing 78 stub helpers to record a field none of them touches would be an example written for the gate rather than for a reader. The field itself IS frozen, at aai:agent, which is the capability that owns it."
     }
   },
   "tool": {

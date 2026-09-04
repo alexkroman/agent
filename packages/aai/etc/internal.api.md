@@ -356,6 +356,9 @@ type StreamOptions = {
 };
 
 // @public
+export const TELEPHONY_CARRIERS: readonly ["twilio", "telnyx"];
+
+// @public
 export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
 
 // @internal

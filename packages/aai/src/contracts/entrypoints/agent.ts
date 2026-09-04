@@ -25,6 +25,13 @@
  * host has always read off ANY descriptor generically, and which until now only
  * the four AssemblyAI options types could spell.
  *
+ * The two telephony types are here rather than on a capability of their own —
+ * `aai-runtime` has one by that name — because what they type is a FIELD of an
+ * agent declaration. `AgentDef.telephony` is what mounts `WS /phone`, so a
+ * change to the carrier vocabulary changes what declaring an agent looks like,
+ * which is exactly what this capability covers. The codecs that serve the
+ * declaration are the other package's business and are contracted there.
+ *
  * `ProviderDescriptor` is here because it is the only one of the five
  * descriptor types with no stage of its own: `AgentDef` names all four stages,
  * and the base they narrow used to be re-exported from every stage subpath —
@@ -74,6 +81,8 @@ export {
   type SessionEventType,
   type SharedAgentParams,
   type StaticAgentParams,
+  type TelephonyAccess,
+  type TelephonyCarrier,
   type TextAgentParams,
   type ToolChoice,
   workflowApp,

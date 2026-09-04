@@ -1191,7 +1191,18 @@ A carrier points a phone number at this route; it brokers the agent's sandbox
 and answers with the markup that tells the carrier to open a media stream
 against that sandbox's own `/phone` endpoint. From there the carrier talks to
 the guest directly and the platform is out of the path, exactly as it is for
-browser sessions. The guest half — the bridge, the codecs, the resampling — is
+browser sessions.
+
+**Whether the guest ANSWERS that stream is the agent's own declaration**, not
+this route's: `agent({ telephony: ["twilio"] })` is what mounts the guest's
+`/phone`, and an agent that declares nothing refuses the upgrade with a 404
+naming the reason. This route is unchanged by that and deliberately does not
+read the stored config to pre-empt it — the guest is the authority on what the
+guest serves, the same rule `/client-config` follows — so an undeclared agent's
+number gets TwiML, a refused upgrade, and a failed call in the carrier's own
+dashboard. The studio's Phone card carries the sentence that prevents it.
+
+The guest half — the bridge, the codecs, the resampling — is
 the SDK's code (`aai/host/telephony/`) and is documented below.
 
 **Why this route exists rather than pointing the carrier at

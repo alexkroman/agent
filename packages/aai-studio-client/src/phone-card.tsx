@@ -136,7 +136,7 @@ export function PhoneCard({ deployedSlug, secretNames, pendingSecrets }: PhoneCa
   return (
     <Card
       title="Phone number"
-      blurb="Point a phone number's voice webhook at one of these and calls to it reach this agent. Each carrier also needs its signing secret set in the Secrets pane before the platform will verify the calls are really from them."
+      blurb="Point a phone number's voice webhook at one of these and calls to it reach this agent — as long as agent.ts names the carrier: telephony: ['twilio'] is what makes the agent answer one, and an agent that declares none refuses the call. Each carrier also needs its signing secret set in the Secrets pane before the platform will verify the calls are really from them."
     >
       {deployedSlug === undefined ? (
         <p className="m-0 text-[13px] leading-5 text-muted">

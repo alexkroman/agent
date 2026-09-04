@@ -477,10 +477,13 @@ platform's TwiML webhook route stays in `packages/aai-server/CLAUDE.md`,
 
 `WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
 stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
-ordinary session. `createRuntimeServer` serves it by default, so `aai dev`, a
-self-hosted server and every deployed agent all answer phone calls with no
-per-agent configuration — the platform route above is only what points a carrier
-at it.
+ordinary session. **`createRuntimeServer` serves it only for the carriers the
+AGENT declares** (`agent({ telephony: ["twilio"] })`), so `aai dev`, a
+self-hosted server and every deployed sandbox answer the same set and a call
+refused after a deploy is refused on a laptop too. It used to be served by
+default for any voice agent, which meant a sandbox with no phone number
+answering both carriers' framing from boot; the platform route above is still
+only what points a carrier at it.
 
 **Nothing in the session stack knows about telephony, and that is the whole
 design.** `ServerSession` talks to a `ClientSink`; `wireSessionSocket` talks to

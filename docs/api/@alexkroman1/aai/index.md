@@ -1648,8 +1648,8 @@ through
 
 Declaring it is not decoration. `createRuntimeServer` refuses the voice surfaces
 for a static agent, so a page that has no session cannot be handed a socket
-that would never answer, and telephony defaults off for one — an agent with
-no `stt`/`llm`/`tts` has nothing to put on a phone call.
+that would never answer, and [AgentDef.telephony](#telephony) is a compile error
+on one — an agent with no `stt`/`llm`/`tts` has nothing to put on a call.
 
 The two are not exclusive at the FEATURE level: a `"voice"` agent may
 declare workflows and start them from a tool, and a `"static"` one may
@@ -1909,6 +1909,35 @@ System prompt driving the LLM.
 [DEFAULT\_SYSTEM\_PROMPT](#default_system_prompt) — the framework's own voice-agent
 prompt. It is assembled from parts, so it is the one default here whose
 VALUE cannot usefully be inlined; read the constant.
+
+##### telephony?
+
+```ts
+optional telephony?: TelephonyAccess;
+```
+
+Which phone carriers may open a media stream against this agent — and so
+whether `WS /phone` is served at all.
+
+###### Default Value
+
+none — the route is not mounted
+
+`true` admits every carrier the runtime ships a codec for; a list admits
+exactly those (`telephony: ["twilio"]` refuses a Telnyx stream); `false`
+and an absent field are the same refusal. See [TelephonyAccess](#telephonyaccess).
+
+Declaring it is what MOUNTS the route. It is the one surface an agent gets
+that is dialled from OUTSIDE the deployment — a carrier reaches it by a URL
+a phone number points at, not through the page this server hands a browser
+— so an agent with no phone number has no use for it, and used to serve
+both carriers' framing anyway from the moment it booted.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Support", telephony: ["twilio"] });
+```
 
 ##### temperature?
 
@@ -5354,10 +5383,40 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### TelephonyAccess
+
+```ts
+type TelephonyAccess = boolean | readonly TelephonyCarrier[];
+```
+
+What an agent declares about `WS /phone`.
+
+- `true` — every carrier this build ships a codec for (Twilio, Telnyx).
+- a list — exactly those (`["twilio"]` serves Twilio and refuses Telnyx).
+- `false`, `[]`, or an absent field — the route is not served at all.
+
+`false` and an empty list are the same refusal rather than two spellings of a
+mode: this is an allow-list, and an allow-list that admits nothing is not a
+surprise. What it is NOT is a claim about credentials — the carrier's own
+webhook signature is checked where the webhook lands, on the platform, and a
+carrier does not sign the WebSocket upgrade this gates.
+
+***
+
+### TelephonyCarrier
+
+```ts
+type TelephonyCarrier = "twilio" | "telnyx";
+```
+
+A phone carrier that can open a media stream against an agent.
+
+***
+
 ### TextAgentParams
 
 ```ts
-type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
+type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
   llm?: LlmProvider | string;
   maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
@@ -5365,6 +5424,7 @@ type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
   s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
   stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
   sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+  telephony?: "`telephony` admits a phone call, which is audio — a text agent has no audio path; remove it or remove `text`";
   text: true;
   tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
   voice?: "`voice` is pipeline-mode only — a text agent never speaks";
@@ -5433,6 +5493,12 @@ optional stt?: "`stt` cannot be combined with `text` — a text agent has no aud
 
 ```ts
 optional sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+```
+
+##### telephony?
+
+```ts
+optional telephony?: "`telephony` admits a phone call, which is audio — a text agent has no audio path; remove it or remove `text`";
 ```
 
 ##### text

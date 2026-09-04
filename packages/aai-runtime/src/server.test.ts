@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { SessionEventBody } from "@alexkroman1/aai/protocol";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { makeAgent, makeLogger, silentLogger } from "./_test-utils.ts";
@@ -384,7 +385,11 @@ describe("createRuntimeServer telephony route", () => {
 
   test("carries a call in both directions", async () => {
     const received: unknown[] = [];
-    server = createRuntimeServer({ runtime: echoRuntime(received), logger: silentLogger });
+    server = createRuntimeServer({
+      runtime: echoRuntime(received),
+      logger: silentLogger,
+      telephony: true,
+    });
     await server.listen(0);
 
     const socket = await openCarrier(`ws://localhost:${server.port}/phone`);
@@ -412,18 +417,61 @@ describe("createRuntimeServer telephony route", () => {
   });
 
   test("refuses an unknown carrier without upgrading", async () => {
-    server = createRuntimeServer({ runtime: echoRuntime([]), logger: silentLogger });
+    server = createRuntimeServer({
+      runtime: echoRuntime([]),
+      logger: silentLogger,
+      telephony: true,
+    });
     await server.listen(0);
 
+    // 400 rather than the 404 an undeclared carrier gets: the name is not a
+    // carrier at all, so there is no declaration that would admit it.
     const err = await refusal(`ws://localhost:${server.port}/phone?carrier=vonage`);
     expect(err.message).toContain("400");
   });
 
-  test("telephony: false removes the route", async () => {
+  test.each([
+    ["no declaration at all", undefined],
+    ["telephony: false", false as const],
+    ["an empty carrier list", [] as const],
+  ])("%s leaves the route unserved", async (_label, telephony) => {
     server = createRuntimeServer({
       runtime: echoRuntime([]),
       logger: silentLogger,
-      telephony: false,
+      ...omitUndefined({ telephony }),
+    });
+    await server.listen(0);
+
+    const err = await refusal(`ws://localhost:${server.port}/phone`);
+    expect(err.message).toContain("404");
+  });
+
+  test("a carrier LIST serves the named carrier and refuses the other", async () => {
+    // The half of the declaration a boolean cannot express, and the reason it
+    // is a list: an agent whose number is with one carrier serves one framing.
+    // The undeclared carrier gets 404 rather than 400 — it is a real carrier
+    // this build can serve, just not for this agent.
+    server = createRuntimeServer({
+      runtime: echoRuntime([]),
+      logger: silentLogger,
+      telephony: ["telnyx"],
+    });
+    await server.listen(0);
+
+    const socket = await openCarrier(`ws://localhost:${server.port}/phone?carrier=telnyx`);
+    socket.close();
+    const err = await refusal(`ws://localhost:${server.port}/phone?carrier=twilio`);
+    expect(err.message).toContain("404");
+  });
+
+  test("an absent ?carrier= resolves to Twilio, and a Telnyx-only agent refuses it", async () => {
+    // `carrierByName` defaults to Twilio for hand-written TwiML, so the default
+    // meets the allow-list rather than bypassing it — the case a Telnyx-only
+    // deployment would otherwise debug as a socket that says nothing.
+    server = createRuntimeServer({
+      runtime: echoRuntime([]),
+      logger: silentLogger,
+      telephony: ["telnyx"],
     });
     await server.listen(0);
 

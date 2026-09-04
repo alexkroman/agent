@@ -65,6 +65,19 @@ export type AgentDef = {
    * has none; absent reads as `"voice"`, as it does everywhere else.
    */
   page?: "voice" | "static";
+  /**
+   * Which phone carriers may open a media stream on `WS /phone` — read here so
+   * the harness can pass the declaration to `createRuntimeServer`, which serves
+   * the route for exactly those carriers and refuses every other upgrade.
+   *
+   * Spelled out rather than imported for this file's stated reason (no
+   * workspace imports), and optional for `page`'s: it MIRRORS the SDK's
+   * `AgentDef`, and a bundle built with an older SDK carries none — which reads
+   * as no carrier, the same refusal an explicit `false` makes. A carrier name a
+   * newer SDK adds is carried at run time regardless, the bundle's agent being
+   * asserted to this type rather than validated against it.
+   */
+  telephony?: boolean | readonly ("twilio" | "telnyx")[];
 };
 
 // ---- Bundle-shipped runtime --------------------------------------------------

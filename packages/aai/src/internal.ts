@@ -191,6 +191,13 @@ export {
 // zod's graph into every importer of this subpath — the startup cost the
 // `/utils` module doc has always guarded, now guarded here too.
 export { formatSchemaIssues } from "./sdk/standard-schema.ts";
+// The carrier vocabulary an agent's `telephony` declaration is written in.
+// The TYPES are authoring API and live on the root barrel beside `AgentDef`;
+// this is the list as a VALUE, which `aai-runtime` needs to resolve a
+// declaration into the routes it serves and to pin `CARRIER_CODECS` to the
+// same names. A value on the root barrel would be an authoring export nothing
+// in an `agent.ts` has a use for.
+export { TELEPHONY_CARRIERS } from "./sdk/telephony-config.ts";
 /**
  * The SERVER's half of the workflow HTTP API.
  *

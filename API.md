@@ -374,6 +374,10 @@ const AgentConfigSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        telnyx: "telnyx";
+        twilio: "twilio";
+    }>>>]>>;
 }, z.core.$strip>;
 
 // @public
@@ -1924,6 +1928,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
@@ -2739,7 +2744,13 @@ export interface SubagentToolCall {
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
-export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
+export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
+
+// @public
+export type TelephonyCarrier = "twilio" | "telnyx";
+
+// @public
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
     text: true;
     llm?: LlmProvider | string;
     stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
@@ -2749,6 +2760,7 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
     minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
     maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
     sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+    telephony?: "`telephony` admits a phone call, which is audio — a text agent has no audio path; remove it or remove `text`";
     page?: "voice" | StaticFrontDoorMisuse;
 } & {
     [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text">;
@@ -2833,7 +2845,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
@@ -3276,6 +3288,9 @@ type StreamOptions = {
 };
 
 // @public
+export const TELEPHONY_CARRIERS: readonly ["twilio", "telnyx"];
+
+// @public
 export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
 
 // @internal
@@ -3594,6 +3609,10 @@ export const AgentConfigSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        telnyx: "telnyx";
+        twilio: "twilio";
+    }>>>]>>;
 }, z.core.$strip>;
 
 // @public
@@ -3628,6 +3647,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
@@ -4077,6 +4097,12 @@ interface SubagentToolCall {
     input: unknown;
     name: string;
 }
+
+// @public
+type TelephonyAccess = boolean | readonly TelephonyCarrier[];
+
+// @public
+type TelephonyCarrier = "twilio" | "telnyx";
 
 // @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
@@ -5355,6 +5381,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
@@ -6089,6 +6116,12 @@ interface SubagentToolCall {
     input: unknown;
     name: string;
 }
+
+// @public
+type TelephonyAccess = boolean | readonly TelephonyCarrier[];
+
+// @public
+type TelephonyCarrier = "twilio" | "telnyx";
 
 // @public
 export type TestToolContext = ToolContext & {
@@ -7931,6 +7964,7 @@ import { SttOpenOptions } from '@alexkroman1/aai/host-internal';
 import type { SttProvider } from '@alexkroman1/aai/stt';
 import { SttSession } from '@alexkroman1/aai/host-internal';
 import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
+import type { TelephonyAccess } from '@alexkroman1/aai';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
@@ -7981,14 +8015,14 @@ export interface AgentServerOptions extends SharedServerOptions {
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
-    telephony?: boolean | undefined;
+    telephony?: TelephonyAccess | undefined;
     uploadBroker?: string | undefined;
 }
 
 // @public
 export const CARRIER_CODECS: {
-    readonly [twilioCodec.name]: CarrierCodec;
-    readonly [telnyxCodec.name]: CarrierCodec;
+    readonly twilio: CarrierCodec;
+    readonly telnyx: CarrierCodec;
 };
 
 // @public
@@ -8490,7 +8524,7 @@ export type RuntimeServerOptions = {
     upgrade?: ((req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean) | undefined;
     request?: ((req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean) | undefined;
     page?: "voice" | "static";
-    telephony?: boolean;
+    telephony?: TelephonyAccess;
 };
 
 // @public

@@ -9,7 +9,7 @@
  */
 
 import type http from "node:http";
-import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentDef, TelephonyAccess } from "@alexkroman1/aai";
 import type { Logger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
 
@@ -131,22 +131,28 @@ export type RuntimeServerOptions = {
    * `"voice"`.
    *
    * `"static"` turns off the voice surfaces rather than merely not advertising
-   * them: `/websocket` is declined with a reason, and telephony defaults OFF (an
-   * agent with no `stt`/`llm`/`tts` has nothing to put on a call). It is
-   * reported in `GET /client-config` so a browser knows before it dials.
+   * them: `/websocket` is declined with a reason. It is reported in
+   * `GET /client-config` so a browser knows before it dials. (Telephony is off
+   * for a static agent because it is off for EVERY agent that does not declare
+   * a carrier — see `telephony` below.)
    */
   page?: "voice" | "static";
   /**
-   * Serve carrier media streams on `WS /phone` (Twilio, Telnyx — see
-   * `telephony/carriers.ts`). Defaults to true for a voice agent, and to FALSE
-   * for a `page: "static"` one.
+   * Which phone carriers may open a media stream on `WS /phone` — see
+   * `AgentDef.telephony`. Defaults to NONE: the route refuses every upgrade
+   * unless something declares a carrier.
    *
-   * On by default because it grants exactly what `/websocket` beside it
-   * already grants — the same session, agent and credentials — so it is not
-   * the kind of surface the loopback bind and the host-mode flag are
-   * fail-closed about. Set false to remove the route.
+   * `createAgentServer` reads the declaration off the agent, which is where it
+   * belongs; this is the same statement for an embedder that hands in a runtime
+   * rather than an agent, and it is what that door forwards.
+   *
+   * It used to default ON for any voice agent, on the argument that the route
+   * grants exactly what `/websocket` beside it grants — the same session, agent
+   * and credentials. True, and beside the point: this is the one door dialled
+   * from OUTSIDE the deployment, by a carrier following a phone number, and an
+   * agent with no phone number was serving it without ever saying so.
    */
-  telephony?: boolean;
+  telephony?: TelephonyAccess;
 };
 
 /** Handle returned by {@link createRuntimeServer}. */

@@ -4,63 +4,20 @@
  */
 
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+// Imported as well as re-exported below, for the reason `ToolDef` is: a
+// re-export does not bring the name into this module's scope, and
+// `AgentDef.builtinTools` needs it.
+import type { BuiltinTool } from "./builtin-tools.ts";
 import type { McpServers } from "./mcp-config.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type { SessionEventHandlers } from "./session-events.ts";
 import type { StateProjection } from "./session-state.ts";
+import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolDef`.
-import type { ToolDef } from "./tool-def.ts";
+import type { ToolChoice, ToolDef } from "./tool-def.ts";
 import type { WorkflowDef } from "./workflow.ts";
-
-/**
- * Identifier for a built-in server-side tool.
- *
- * Built-in tools run on the host process (not inside the sandboxed worker)
- * and provide capabilities like web search, code execution, and API access.
- *
- * - `"web_search"` — Search the web for current information, facts, or news.
- * - `"visit_webpage"` — Fetch a URL and return its content as clean text.
- * - `"get_page_design"` — Fetch a URL's raw HTML and CSS (markup, style blocks,
- *   linked stylesheets) to study or mimic a site's visual design.
- * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
- * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
- * - `"think"` — Private no-op scratchpad for policy checks and planning (never spoken).
- * - `"remember"` — Save a confirmed fact (ID, code, date) to private session notes.
- * - `"recall"` — Read back facts saved with `remember`.
- * - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
- *
- * When `builtinTools` is not set, NONE are enabled
- * (`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
- * asks for rather than something it has to notice and switch off. Name the
- * ones you want; `[]` and omitting the field mean the same thing.
- *
- * @public
- */
-export type BuiltinTool =
-  | "web_search"
-  | "visit_webpage"
-  | "get_page_design"
-  | "fetch_json"
-  | "run_code"
-  | "think"
-  | "remember"
-  | "recall"
-  | "calculate";
-
-/**
- * How the LLM should select tools during a turn. Mirrors the Vercel AI
- * SDK's `toolChoice`.
- *
- * - `"auto"` — The model decides whether to call a tool (default).
- * - `"required"` — The model must call at least one tool each step.
- * - `"none"` — The model may not call tools this session.
- * - `{ type: "tool", toolName }` — The model must call the named tool.
- *
- * @public
- */
-export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };
 
 /**
  * A single message in the conversation history.
@@ -78,6 +35,12 @@ export type Message = {
 };
 
 export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+/**
+ * The built-in tool vocabulary. A re-export because this module is the import
+ * path everything already uses; the union itself moved when this file reached
+ * the source-length cap.
+ */
+export type { BuiltinTool } from "./builtin-tools.ts";
 // The MCP declaration an `agent.ts` writes. The client that reads it is
 // `withMcpTools` on `@alexkroman1/aai-runtime` — this package opens no sockets.
 export {
@@ -99,6 +62,12 @@ export {
  * `./agent-defaults.ts` inside this package.
  */
 export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
+/**
+ * The phone-carrier declaration `AgentDef.telephony` is written in. A type a
+ * public signature mentions has to be reachable from the same page as the
+ * signature, which is this one.
+ */
+export type { TelephonyAccess, TelephonyCarrier } from "./telephony-config.ts";
 /**
  * What a tool's `execute` is handed. Kept as a re-export because this module is
  * the import path everything already uses, and because a tool author reads
@@ -126,7 +95,7 @@ export type DefaultToolResult = any;
  * the import path everything already uses, and a tool author reads
  * `ToolContext`, `ToolDef` and the two inference helpers together.
  */
-export type { InferToolInput, InferToolOutput, ToolDef } from "./tool-def.ts";
+export type { InferToolInput, InferToolOutput, ToolChoice, ToolDef } from "./tool-def.ts";
 
 /**
  * Fully resolved agent definition.
@@ -271,14 +240,36 @@ export interface AgentDef extends PipelineVoiceTuning {
    *
    * Declaring it is not decoration. `createRuntimeServer` refuses the voice surfaces
    * for a static agent, so a page that has no session cannot be handed a socket
-   * that would never answer, and telephony defaults off for one — an agent with
-   * no `stt`/`llm`/`tts` has nothing to put on a phone call.
+   * that would never answer, and {@link AgentDef.telephony} is a compile error
+   * on one — an agent with no `stt`/`llm`/`tts` has nothing to put on a call.
    *
    * The two are not exclusive at the FEATURE level: a `"voice"` agent may
    * declare workflows and start them from a tool, and a `"static"` one may
    * declare tools it never reaches. This field is only about the surface.
    */
   page?: "voice" | "static";
+  /**
+   * Which phone carriers may open a media stream against this agent — and so
+   * whether `WS /phone` is served at all.
+   * @defaultValue none — the route is not mounted
+   *
+   * `true` admits every carrier the runtime ships a codec for; a list admits
+   * exactly those (`telephony: ["twilio"]` refuses a Telnyx stream); `false`
+   * and an absent field are the same refusal. See {@link TelephonyAccess}.
+   *
+   * Declaring it is what MOUNTS the route. It is the one surface an agent gets
+   * that is dialled from OUTSIDE the deployment — a carrier reaches it by a URL
+   * a phone number points at, not through the page this server hands a browser
+   * — so an agent with no phone number has no use for it, and used to serve
+   * both carriers' framing anyway from the moment it booted.
+   *
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   *
+   * export default agent({ name: "Support", telephony: ["twilio"] });
+   * ```
+   */
+  telephony?: TelephonyAccess;
   /**
    * Project per-session state to the browser client, so a custom UI can
    * render it without the agent hand-rolling a sync channel.

@@ -358,7 +358,7 @@ export type S2sAgentParams = SharedAgentParams & {
  * sentence in place of a bare excess-property error, so the diagnostic names the
  * rule and what to do about it. Never pass one as a string.
  */
-export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
   /** See {@link AgentDef.text} — the explicit opt-in to text mode. */
   text: true;
   /**
@@ -374,6 +374,7 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
   minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+  telephony?: "`telephony` admits a phone call, which is audio — a text agent has no audio path; remove it or remove `text`";
   /**
    * See {@link AgentDef.page}. A text agent has no browser front door of its
    * own — it is driven by `createTextAgent`, not by a page.

@@ -83,6 +83,10 @@ const AgentConfigSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        telnyx: "telnyx";
+        twilio: "twilio";
+    }>>>]>>;
 }, z.core.$strip>;
 
 // @public

@@ -1,5 +1,5 @@
 {
-  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 340 left. The value is always 1 — see scripts/check-module-tests.mjs.",
+  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 337 left. The value is always 1 — see scripts/check-module-tests.mjs.",
   "modules-without-tests": {
     "packages/aai-cli/src/_deploy.ts": 1,
     "packages/aai-cli/src/_mock-api.ts": 1,
@@ -101,7 +101,6 @@
     "packages/aai-runtime/src/session-state-memory.ts": 1,
     "packages/aai-runtime/src/session-state-sweeps.ts": 1,
     "packages/aai-runtime/src/session-tool-steps.ts": 1,
-    "packages/aai-runtime/src/telephony/telephony-server.ts": 1,
     "packages/aai-runtime/src/tool-call-repair.ts": 1,
     "packages/aai-runtime/src/transports/_pipeline-transport-harness.ts": 1,
     "packages/aai-runtime/src/transports/_transport-recorder.ts": 1,

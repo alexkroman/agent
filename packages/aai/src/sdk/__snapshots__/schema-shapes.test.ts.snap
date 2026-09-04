@@ -25,6 +25,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "stt",
   "sttPrompt",
   "systemPrompt",
+  "telephony",
   "temperature",
   "text",
   "toolChoice",

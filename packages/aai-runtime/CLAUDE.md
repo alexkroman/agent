@@ -86,7 +86,10 @@ that did keep a directory — `providers/`, `transports/`, `telephony/`.
 
 `WS /phone` (`telephony/`) runs a carrier's media stream — Twilio Media
 Streams, Telnyx media streaming — as an ordinary session, served by
-`createRuntimeServer` with no per-agent configuration. **The whole account is in
+`createRuntimeServer` for exactly the carriers `AgentDef.telephony` names and
+for none if it names nothing (`enabledCarriers` in `telephony-server.ts` is the
+one resolution of that declaration, and the boot line prints what it returns).
+**The whole account is in
 `packages/aai-guest/CLAUDE.md`, "A phone call is an ordinary session"** — the
 shim design and the rule that no telephony branch may exist below the bridge,
 the four decisions above the bridge (pacing, LEARNED rates, low-pass before
@@ -340,10 +343,12 @@ A front door has a failure mode the pair underneath does not: an option it does
 not carry is unreachable, because dropping back to `createRuntime` +
 `createRuntimeServer` to set one means restating by hand every field the wrapper
 derives — the silent drop the wrapper exists to prevent. `telephony` was the
-sharp instance. It defaults to `!isStatic` in `createRuntimeServer`, `createAgentServer`
+sharp instance. It defaulted to `!isStatic` in `createRuntimeServer`, `createAgentServer`
 did not forward it, so every server built through the documented door — the
 scaffold's `server.mjs` included — mounted an unauthenticated `WS /phone` with no
-way to switch it off. `page` was worse: the AGENT declares it, and nothing
+way to switch it off. It is a DECLARATION now, read off the agent like `page`
+and defaulting to no carrier at all. `page` was worse: the AGENT declares it,
+and nothing
 carried the declaration through, so a `page: "static"` agent still got the voice
 surfaces and a voice `GET /client-config`. It is read off the agent now, beside
 `name` and `greeting`, with an explicit field still winning.

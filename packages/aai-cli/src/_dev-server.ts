@@ -374,11 +374,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // Served pre-connection via GET /client-config.
       greeting: agentDef.greeting,
       // A workflow app's declaration, honoured by the dev server exactly as the
-      // deployed guest honours it: `/websocket` is declined with a reason and
-      // telephony defaults off. Parity matters more here than usual, because a
-      // page mounted with `mountClient()` by mistake fails identically in both
-      // places instead of only after a deploy.
-      ...omitUndefined({ page: agentDef.page }),
+      // deployed guest honours it: `/websocket` is declined with a reason.
+      // Parity matters more here than usual, because a page mounted with
+      // `mountClient()` by mistake fails identically in both places instead of
+      // only after a deploy.
+      //
+      // `telephony` rides along for the same reason and is the sharper half of
+      // it: an agent that declares a carrier serves `/phone` here, one that
+      // does not serves it nowhere, and a carrier pointed at an `aai dev`
+      // tunnel gets the same 404 it would get after a deploy.
+      ...omitUndefined({ page: agentDef.page, telephony: agentDef.telephony }),
       // The PLATFORM's delivery door, and `aai dev` deliberately supplies no
       // `allowRemote`, so it answers 401. That is correct rather than an
       // omission: there is no queue outside this process — the engine's

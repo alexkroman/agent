@@ -28,6 +28,7 @@ import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
+import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
 import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
 
@@ -205,6 +206,18 @@ export const AgentConfigSchema = z.object({
   // CLI's build, the studio's preview. The `workflows` record beside it is
   // host-only for the opposite reason: those are functions.
   page: z.enum(["voice", "static"]).optional(),
+  /**
+   * Which carriers may open a media stream against this agent — see
+   * `AgentDef.telephony`. Serializable for the same reason `page` is: it is a
+   * DECLARATION about the agent's surface rather than a function, so every
+   * consumer of a stored config (the studio's preview, a deploy's validation)
+   * can see which front doors this agent has without running it.
+   *
+   * The names are VALIDATED rather than trusted — the carrier list crosses the
+   * boundary, and a config carrying a carrier no build ships a codec for would
+   * otherwise become a route that mounts and answers nothing.
+   */
+  telephony: z.union([z.boolean(), z.array(z.enum(TELEPHONY_CARRIERS)).readonly()]).optional(),
 });
 
 /**

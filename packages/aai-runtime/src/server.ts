@@ -32,7 +32,7 @@ import { routeMatches, SERVER_ROUTES, WORKFLOW_CALLBACK_ROUTES } from "./server-
 import { serveStatic } from "./server-static.ts";
 import { declineSocket } from "./session-decline.ts";
 import { createSessionEventsApi, SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
-import { handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
+import { enabledCarriers, handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
 import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
 import { answerHandlerFailure, sendJson } from "./workflow-api-http.ts";
 import { serveFetch } from "./workflow-http-adapter.ts";
@@ -309,12 +309,21 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
     if (options.upgrade?.(req, socket, head)) return;
 
     const url = requestPath(req.url);
-    // A static agent declares no STT/LLM/TTS, so a carrier stream has nothing to
-    // talk to — the default follows the declaration rather than making every
-    // workflow app remember to switch it off. An explicit `telephony: true`
-    // still wins, since the field is the more specific statement.
-    const telephony = options.telephony ?? !isStatic;
-    if (handleTelephonyUpgrade({ req, socket, head, wss, runtime, logger, enabled: telephony })) {
+    // Resolved once per upgrade rather than hoisted, for the same reason `page`
+    // is read off `options` here: this server is rebuilt on every `aai dev` file
+    // save, so a captured value is a declaration one edit stale. Empty is the
+    // default — `/phone` serves the carriers something DECLARED and no others.
+    if (
+      handleTelephonyUpgrade({
+        req,
+        socket,
+        head,
+        wss,
+        runtime,
+        logger,
+        carriers: enabledCarriers(options.telephony),
+      })
+    ) {
       return;
     }
     if (isStatic && routeMatches(SERVER_ROUTES.session, url)) {

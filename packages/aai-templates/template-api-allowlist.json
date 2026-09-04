@@ -67,6 +67,8 @@
     "StepSchemaOptions",
     "SttProvider",
     "SubagentDef",
+    "TelephonyAccess",
+    "TelephonyCarrier",
     "TextAgentParams",
     "ToolChoice",
     "TtsProvider",
