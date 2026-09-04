@@ -1,0 +1,23 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "server",
+  "epoch": 17,
+  "sha256": "a781037f2024221cf3486824d0483e4f1209efbde294953b8e7dd45c0eb5c258",
+  "exports": [
+    "AgentEnv",
+    "AgentServer",
+    "AgentServerOptions",
+    "DEFAULT_LISTEN_HOST",
+    "HostCredentialEnv",
+    "HostServerOptions",
+    "HostSessionDefaults",
+    "ProviderEnv",
+    "RuntimeServerOptions",
+    "SharedServerOptions",
+    "createAgentServer",
+    "createHostServer",
+    "createRuntimeServer",
+    "requiredProviderEnvVars",
+    "withHostCredentialFallback"
+  ]
+}
