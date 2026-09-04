@@ -9,6 +9,7 @@ import {
   type McpServers,
   mcpToolName,
 } from "./mcp-config.ts";
+import { formatSchemaIssues } from "./standard-schema.ts";
 
 const VALID: AgentConfig = {
   name: "Docs",
@@ -83,6 +84,28 @@ describe("AgentConfigSchema.mcpServers", () => {
     ],
   ])("rejects %s", (_label, mcpServers) => {
     expect(AgentConfigSchema.safeParse({ ...VALID, mcpServers }).success).toBe(false);
+  });
+
+  // Rejecting is half of it: the key rule exists to fail where the author can
+  // still see their own `agent.ts`, which it only does if the message SAYS the
+  // rule. Zod nests a record key's own issues one level down, so for a while
+  // the author got `mcpServers.my-docs: Invalid key in record` and none of the
+  // grammar the schema spells out — the rejection was asserted, the message was
+  // not, and every case above passed throughout.
+  test("names the key grammar, not just that the key is invalid", () => {
+    const result = AgentConfigSchema.safeParse({
+      ...VALID,
+      mcpServers: { "my-docs": { url: "https://a.example/mcp" } },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const formatted = formatSchemaIssues(result.error.issues);
+    // Where it is...
+    expect(formatted).toContain("mcpServers.my-docs");
+    // ...that it is the KEY rather than the value — the path cannot say so...
+    expect(formatted).toContain("Invalid key in record");
+    // ...and what a legal key looks like.
+    expect(formatted).toContain("at most 24 characters");
   });
 
   test("accepts a reviewed tool baseline", () => {

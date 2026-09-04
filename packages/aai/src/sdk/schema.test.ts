@@ -214,4 +214,51 @@ describe("~standard validation / formatSchemaIssues", () => {
       );
     }
   });
+
+  // A record's KEY fails one level down: zod reports `invalid_key` with a
+  // generic message of its own and nests the key schema's issues — the custom
+  // `error` its author wrote included — under `issues`. Reading only the parent
+  // printed `mcpServers.my-docs: Invalid key in record`, throwing away the one
+  // sentence written to tell the author what a legal key is.
+  test("descends into a record key's nested issues", async () => {
+    const schema = z.object({
+      mcpServers: z.record(
+        z.string().regex(/^[a-z][a-z0-9_]{0,23}$/, { error: "keys are lowercase and _-joined" }),
+        z.object({ url: z.string() }),
+      ),
+    });
+    const result = await schema["~standard"].validate({
+      mcpServers: { "my-docs": { url: "https://a.example/mcp" } },
+    });
+    expect(result.issues).toBeDefined();
+    if (!result.issues) return;
+    expect(formatSchemaIssues(result.issues)).toBe(
+      "mcpServers.my-docs: Invalid key in record — keys are lowercase and _-joined",
+    );
+  });
+
+  // A cause is APPENDED where a union branch REPLACES, and this is why: the
+  // path is identical for a bad key and a bad value, so the parent's message is
+  // the only thing that distinguishes them. Dropping it would make the two
+  // failures below indistinguishable.
+  test("keeps the parent message, which is what says KEY rather than value", () => {
+    const formatted = formatSchemaIssues([
+      {
+        message: "Invalid key in record",
+        path: ["mcpServers", "my-docs"],
+        issues: [{ message: "keys are lowercase", path: [] }],
+      },
+    ]);
+    expect(formatted).toBe("mcpServers.my-docs: Invalid key in record — keys are lowercase");
+    // The label is printed once, not once per level.
+    expect(formatted.match(/my-docs/g)).toHaveLength(1);
+  });
+
+  test("falls back to the parent message when `issues` is not issue-shaped", () => {
+    for (const issues of ["not an array", [], [{ nope: 1 }], null, 7]) {
+      expect(
+        formatSchemaIssues([{ message: "Invalid key in record", path: ["docs"], issues }]),
+      ).toBe("docs: Invalid key in record");
+    }
+  });
 });

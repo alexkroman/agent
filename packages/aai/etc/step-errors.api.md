@@ -68,6 +68,7 @@ export function sendToChannelClassified(channel: Channel, message: ChannelMessag
 // @public
 interface StandardSchemaIssue {
     readonly errors?: unknown;
+    readonly issues?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)
