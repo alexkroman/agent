@@ -146,6 +146,41 @@ function errorMessage(err: unknown): string;
 
 Extract an error message from an unknown thrown value.
 
+**It never answers with an empty string.** That is the contract, and it is
+worth stating as one: `SessionError.message` is rendered directly by a
+browser client, so `""` paints a banner that says an error occurred and
+refuses to say what — strictly worse than a generic sentence, because an
+absent message reads as absence rather than as a problem.
+
+The shape that produced one is not exotic, it is the FIRST failure a new
+project hits. The AI SDK builds an `APICallError` whose `message` is
+`response.statusText` whenever the provider's error body does not match the
+schema it expected (`createJsonErrorResponseHandler`), and a reason phrase is
+optional in HTTP/1.1 and does not exist at all in HTTP/2 — so a rejected API
+key arrived as `{"code":"llm","message":"","fatal":false}` with the status,
+the URL, and the provider's own explanation all sitting unread on the error
+object.
+
+So a value that says nothing on its own is read one level down, in this
+order: the HTTP fields an `APICallError`-shaped failure carries (the status,
+the host that answered, the sentence in the response body), then `cause`,
+then an `AggregateError`'s members. Detection is STRUCTURAL for the same
+reason the schema-issue reading below it is — this module is published,
+zod-free, and may not import `ai` to ask `APICallError.isInstance` — and it
+costs nothing: a numeric `statusCode` beside a `responseBody` is the shape,
+whoever built it.
+
+An error that DOES state something keeps its own words — an HTTP failure has
+the status appended to them, since `Unauthorized` alone answers neither "which
+provider" nor "refused or fell over", and everything else is returned
+verbatim. One message is replaced outright, and it has precedent:
+`fetch failed` (and the browser's `failed to fetch`) is
+Node's own placeholder, with the reason — `ECONNREFUSED`, a DNS failure, a
+certificate rejection — one level down in `cause`. The AI SDK makes exactly
+this substitution for its own calls (`handleFetchError`, which rewrites the
+pair as "Cannot connect to API: …"); this extends the same reading to every
+direct `fetch` in the SDK.
+
 #### Parameters
 
 ##### err

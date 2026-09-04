@@ -28,15 +28,18 @@ someone's laptop.
 `run_code` is deliberately NOT here. It exists to run code the MODEL wrote;
 tool code that wants to compute something can just compute it.
 
-Two shapes of every call, and a permissive return type, both for the same
+Two shapes of every call, and a permissive result, both for the same
 reason: the first version of this module took only positional arguments
 and returned `Promise<unknown>`, and in the very next eval EVERY call site
 had to cast — `const data: any = await fetchJson(url)`,
 `(await webSearch(query)) as any[]`. That is the mistake `useToolResult`
 and `ToolCallInfo.args` had already been fixed for, reintroduced in a new
 API hours later. A remote JSON body is not knowable by the framework, so
-`unknown` buys no safety here — it only makes correct code fail to compile.
-Pass a type argument (`fetchJson<Quote>(url)`) for real checking.
+`unknown` buys no safety here — it only makes correct code fail to compile,
+and it does not stop at the first read: `isToolFailure` narrows an `unknown`
+to `ToolFailure` on the true side and to `unknown` on the false one, so the
+cast comes back one line later. Pass a type argument
+(`fetchJson<Quote>(url)`) for real checking.
 
 The object form exists because agents reach for the shape they already
 know from the model-facing builtin (`{ query, max_results }`), and guessing
@@ -60,18 +63,30 @@ were both reporting "No results." for every search, with the 403 nowhere.
 cannot see a returned value, so it never ran.
 
 So the return type is `T | ToolFailure` and `isToolFailure`
-(`@alexkroman1/aai/utils`) is how a
-caller narrows it. Note this only bites a caller that NAMED a type: `T`
-defaults to `DefaultToolResult`, which is `any`, and `any | ToolFailure` is
-`any` — so the loose call sites the permissive-return-type note above exists
-for are unaffected, and the ones precise enough to have a shape get checked.
+(`@alexkroman1/aai/utils`) is how a caller narrows it.
+
+**`T` therefore must not default to `any`.** It did — to
+`DefaultToolResult` — and `any | ToolFailure` is `any`, so the union the
+paragraph above exists for was erased for exactly the callers that never
+named a shape, i.e. the three that shipped the bug. `const a = await
+fetchJson(url); a.no.such.field` was zero errors.
+
+The default is `Record<string, DefaultToolResult>` instead — the shape
+`ToolCallInfo.args` already uses, and the only one that keeps BOTH
+properties. The union survives, so the first field read off an unnarrowed
+result fails with `Property 'price' does not exist on type 'ToolFailure'`,
+which names the thing that was forgotten; and past the narrowing a field is
+`any` again, so the loose call sites the permissive-result note above exists
+for still compile with no cast. What it costs is a JSON body that is not an
+object — a top-level array, a bare string — which needs the type argument
+(`fetchJson<Item[]>(url)`) it should be naming anyway.
 
 ## Functions
 
 ### fetchJson()
 
 ```ts
-function fetchJson<T = any>(url: 
+function fetchJson<T = UntypedJsonBody>(url: 
   | string
   | {
   headers?: Record<string, string>;
@@ -91,7 +106,7 @@ oversized body, matching what the model-facing builtin returns. Narrow it with
 
 ##### T
 
-`T` = `any`
+`T` = [`UntypedJsonBody`](#untypedjsonbody)
 
 #### Parameters
 
@@ -118,7 +133,7 @@ oversized body, matching what the model-facing builtin returns. Narrow it with
 ### visitWebpage()
 
 ```ts
-function visitWebpage<T = any>(url: 
+function visitWebpage<T = UntypedJsonBody>(url: 
   | string
   | {
   url: string;
@@ -134,7 +149,7 @@ Answers `{ error }` for a page it could not read — narrow with
 
 ##### T
 
-`T` = `any`
+`T` = [`UntypedJsonBody`](#untypedjsonbody)
 
 #### Parameters
 
@@ -158,7 +173,7 @@ Answers `{ error }` for a page it could not read — narrow with
 ### webSearch()
 
 ```ts
-function webSearch<T = any>(query: 
+function webSearch<T = UntypedJsonBody>(query: 
   | string
   | {
   maxResults?: number;
@@ -177,7 +192,7 @@ a different claim and the one this repo shipped twice.
 
 ##### T
 
-`T` = `any`
+`T` = [`UntypedJsonBody`](#untypedjsonbody)
 
 #### Parameters
 
@@ -204,12 +219,9 @@ a different claim and the one this repo shipped twice.
 ```ts
 type CallOptions = {
   fetch?: typeof globalThis.fetch;
+  signal?: AbortSignal;
 };
 ```
-
-`fetch` is for TESTS, and callers must leave it unset — same rule as
-`safeFetch`'s. Naming an implementation is how you accidentally opt out of
-the screening this whole module exists to keep.
 
 #### Properties
 
@@ -218,3 +230,47 @@ the screening this whole module exists to keep.
 ```ts
 optional fetch?: typeof globalThis.fetch;
 ```
+
+For TESTS, and callers must leave it unset — same rule as `safeFetch`'s.
+Naming an implementation is how you accidentally opt out of the screening
+this whole module exists to keep.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Cancel the request — pass `ctx.signal`, which a tool always has.
+
+A page fetch and a search are the two slowest things a tool does and the
+ones a barge-in most wants back, and without this the only way to abort one
+was to abandon these wrappers for a raw `fetch` — i.e. to opt out of the
+screening, the header stripping and the size caps at the same time. That is
+the whole reason the option is here: the compliant path must not be the one
+that gives up the safe fetch.
+
+An abort REJECTS (fetch's own `AbortError`) rather than answering
+`{ error }`. The failure-as-a-result contract above is about telling the
+MODEL something useful, and a cancelled turn has no model left to tell —
+the tool's own `await` is being unwound. Same shape as the existing
+per-request timeout, which has always thrown.
+
+***
+
+### UntypedJsonBody
+
+```ts
+type UntypedJsonBody = Record<string, DefaultToolResult>;
+```
+
+What an unparameterized call answers with — see the module doc for why this
+rather than `DefaultToolResult` (which is `any`, and absorbs the
+`| ToolFailure` the whole contract is carried by) or `unknown` (which
+survives the narrowing and makes every read a cast).
+
+EXPORTED because it is the declared default of all three functions below, so
+it is part of what a caller reads back and part of what they are overriding
+when they pass a `T`. Left unexported it was a name in three public
+signatures that resolved to nothing a reader could follow — which TypeDoc
+reports as a warning and the docs build turns into a failure.

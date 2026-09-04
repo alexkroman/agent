@@ -99,8 +99,14 @@ type BuiltinArgs = Record<string, unknown>;
  * rather than `DefaultToolResult` (which is `any`, and absorbs the
  * `| ToolFailure` the whole contract is carried by) or `unknown` (which
  * survives the narrowing and makes every read a cast).
+ *
+ * EXPORTED because it is the declared default of all three functions below, so
+ * it is part of what a caller reads back and part of what they are overriding
+ * when they pass a `T`. Left unexported it was a name in three public
+ * signatures that resolved to nothing a reader could follow — which TypeDoc
+ * reports as a warning and the docs build turns into a failure.
  */
-type UntypedJsonBody = Record<string, DefaultToolResult>;
+export type UntypedJsonBody = Record<string, DefaultToolResult>;
 
 export type CallOptions = {
   /**

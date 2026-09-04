@@ -27,7 +27,7 @@ type ToolFailure = {
 };
 
 // @public
-type UntypedJsonBody = Record<string, DefaultToolResult>;
+export type UntypedJsonBody = Record<string, DefaultToolResult>;
 
 // @public
 export function visitWebpage<T = UntypedJsonBody>(url: string | ({

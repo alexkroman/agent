@@ -722,6 +722,7 @@
   ],
   "@alexkroman1/aai/tools": [
     "CallOptions",
+    "UntypedJsonBody",
     "fetchJson",
     "visitWebpage",
     "webSearch"

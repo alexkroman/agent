@@ -383,7 +383,7 @@
     "WorkflowCtxRecorder"
   ],
   "@alexkroman1/aai/testing/vitest": ["MockWorkflowsOptions"],
-  "@alexkroman1/aai/tools": ["CallOptions"],
+  "@alexkroman1/aai/tools": ["CallOptions", "UntypedJsonBody"],
   "@alexkroman1/aai/tts": [
     "ASSEMBLYAI_TTS_LANGUAGES",
     "AssemblyAITtsLanguage",

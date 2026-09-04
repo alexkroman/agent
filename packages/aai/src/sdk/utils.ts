@@ -93,9 +93,10 @@ export { safeJsonParse } from "./safe-json-parse.ts";
  * order: the HTTP fields an `APICallError`-shaped failure carries (the status,
  * the host that answered, the sentence in the response body), then `cause`,
  * then an `AggregateError`'s members. Detection is STRUCTURAL for the same
- * reason {@link schemaIssuesOf} is — this module is published, zod-free, and
- * may not import `ai` to ask `APICallError.isInstance` — and it costs nothing:
- * a numeric `statusCode` beside a `responseBody` is the shape, whoever built it.
+ * reason the schema-issue reading below it is — this module is published,
+ * zod-free, and may not import `ai` to ask `APICallError.isInstance` — and it
+ * costs nothing: a numeric `statusCode` beside a `responseBody` is the shape,
+ * whoever built it.
  *
  * An error that DOES state something keeps its own words — an HTTP failure has
  * the status appended to them, since `Unauthorized` alone answers neither "which

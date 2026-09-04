@@ -42,8 +42,12 @@ describe("loadFailureText", () => {
   });
 
   test("a definite failure with no message still says what could not be loaded", () => {
+    // `errorMessage` names the class and says the error carried no message,
+    // which is what the local "unknown error" placeholder used to stand in for
+    // and is strictly more than it said. The placeholder is still the floor for
+    // a value that answers nothing at all.
     expect(loadFailureText(new ApiError(400, ""), "Could not load your account").message).toBe(
-      "Could not load your account: unknown error",
+      "Could not load your account: Error (no message)",
     );
   });
 });

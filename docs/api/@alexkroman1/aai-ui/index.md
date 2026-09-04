@@ -1799,7 +1799,9 @@ function Total({ amount }: { amount: string }) {
 #### Call Signature
 
 ```ts
-function useToolCallStart(toolName: string, callback: (toolCall: ToolCallInfo) => void): void;
+function useToolCallStart<A = Record<string, any>>(toolName: string, callback: (toolCall: Omit<ToolCallInfo, "args"> & {
+  args: A;
+}) => void): void;
 ```
 
 Fire a callback when ONE named tool starts, before its result arrives.
@@ -1807,6 +1809,27 @@ Fire a callback when ONE named tool starts, before its result arrives.
 A start is a MOMENT rather than a value, so unlike [useToolResult](#usetoolresult)
 this never replays: a component that mounts mid-session learns nothing about
 calls that started before it.
+
+##### Type Parameters
+
+###### A
+
+`A` = `Record`\<`string`, `any`\>
+
+The tool's ARGUMENT shape. Defaults to
+  `ToolCallInfo["args"]`, which is `Record<string, any>` — so an
+  un-parameterized call behaves exactly as it always has, and
+  `toolCall.args.totally_made_up_field` still compiles. That default is a
+  property of [ToolCallInfo](#toolcallinfo) rather than a choice made here (its doc
+  carries the argument, and the escape hatch it recommends —
+  `args as { url: string }` — is what this type parameter replaces); until
+  that field is tightened there is nothing stricter for this hook to fall
+  back to. What was missing was any way to opt IN: there was no type
+  parameter at all, so a custom client could not check args even when it
+  knew the shape. Name it — `useToolCallStart<{ query: string }>(…)` — or
+  derive it from the tool with a TYPE-ONLY import, which is erased and so
+  pulls no host code into the browser graph:
+  `useToolCallStart<InferToolInput<typeof search>>("search", …)`.
 
 ##### Parameters
 
@@ -1818,7 +1841,9 @@ Only calls of this tool fire the callback.
 
 ###### callback
 
-(`toolCall`: [`ToolCallInfo`](#toolcallinfo)) => `void`
+(`toolCall`: `Omit`\<[`ToolCallInfo`](#toolcallinfo), `"args"`\> & \{
+  `args`: `A`;
+\}) => `void`
 
 Called with the pending call.
 
@@ -1842,17 +1867,32 @@ function Searching() {
 #### Call Signature
 
 ```ts
-function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
+function useToolCallStart<A = Record<string, any>>(callback: (toolCall: Omit<ToolCallInfo, "args"> & {
+  args: A;
+}) => void): void;
 ```
 
 Fire a callback when ANY tool call starts — read the tool's name off the
 call itself (`toolCall.name`).
 
+##### Type Parameters
+
+###### A
+
+`A` = `Record`\<`string`, `any`\>
+
+The tool's ARGUMENT shape; see the filtered overload. On the
+  unfiltered form every tool's call arrives, so naming one shape here is
+  only right for a page that switches on `toolCall.name` and narrows it
+  itself — the default is the honest answer for a log renderer.
+
 ##### Parameters
 
 ###### callback
 
-(`toolCall`: [`ToolCallInfo`](#toolcallinfo)) => `void`
+(`toolCall`: `Omit`\<[`ToolCallInfo`](#toolcallinfo), `"args"`\> & \{
+  `args`: `A`;
+\}) => `void`
 
 Called with the pending call.
 
@@ -1880,7 +1920,7 @@ function Activity() {
 #### Call Signature
 
 ```ts
-function useToolResult<R = any>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
+function useToolResult<R = unknown>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
 ```
 
 Fire a callback when ONE named tool settles, with its parsed JSON result.
@@ -1896,11 +1936,22 @@ than a moment. Each call fires exactly once per hook instance.
 
 ###### R
 
-`R` = `any`
+`R` = `unknown`
 
-The result shape. Defaults to [DefaultToolResult](../aai/index.md#defaulttoolresult)
-  (`any`) so the ordinary untyped spelling compiles; pass the shape —
-  `useToolResult<Quote>(…)` — for real checking.
+The result shape. Defaults to `unknown`, NOT to
+  [DefaultToolResult](../aai/index.md#defaulttoolresult) (`any`): the return type is inferred perfectly
+  at `tool()` and this hook is the one place a client reads it, so an `any`
+  default threw the whole inference away exactly where it was wanted —
+  `useToolResult("get_order", (r) => r.a.b.c.d.e)` reported nothing. It is
+  the tool's own shape that belongs here, and the spelling that costs a
+  browser bundle nothing is a TYPE-ONLY import of the tool module:
+  `import type getOrder from "./tools/get_order.ts"` is erased, so
+  `useToolResult<InferToolOutput<typeof getOrder>>(…)` pulls no host code
+  into the client graph. `useToolResult<Quote>(…)` against a hand-written
+  shape is the other spelling. [DefaultToolResult](../aai/index.md#defaulttoolresult) itself stays `any`
+  — see `ToolCallInfo.args` for why a value the framework cannot see is
+  typed that way at REST; the argument does not extend to a call site whose
+  whole job is to name the shape.
 
 ##### Parameters
 
@@ -1938,7 +1989,7 @@ function QuoteCard() {
 #### Call Signature
 
 ```ts
-function useToolResult<R = any>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
+function useToolResult<R = unknown>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
 ```
 
 Fire a callback when ANY tool call settles — the tool's name is the
@@ -1951,9 +2002,12 @@ did rather than reacting to one tool.
 
 ###### R
 
-`R` = `any`
+`R` = `unknown`
 
-The result shape. Defaults to [DefaultToolResult](../aai/index.md#defaulttoolresult).
+The result shape. Defaults to `unknown`, for the reason the
+  filtered overload's `@typeParam` gives. A log renderer is the one caller
+  that legitimately wants no shape, and `unknown` is what it should say:
+  `JSON.stringify(result)` takes it unchanged.
 
 ##### Parameters
 
@@ -3815,6 +3869,7 @@ Toggle between connected and disconnected states (after `start()`).
 ```ts
 type SessionError = {
   code: SessionErrorCode;
+  fatal: boolean;
   message: string;
 };
 ```
@@ -3830,6 +3885,25 @@ readonly code: SessionErrorCode;
 ```
 
 The category of the error.
+
+##### fatal
+
+```ts
+readonly fatal: boolean;
+```
+
+Whether the session is OVER.
+
+`false` means surface the message and keep the session interactive — a
+turn-level failure over a server that kept running. `true` means the call
+is dead and the microphone has been released.
+
+Required rather than optional, because the wire always carries it
+(`error.reported` declares `fatal: z.boolean()`) and a client that cannot
+tell the two apart has to guess which banner to render. It was dropped one
+line before reaching here for long enough that this type's own doc, and
+the reference page generated from it, described a field that did not
+exist.
 
 ##### message
 
