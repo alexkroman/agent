@@ -795,10 +795,10 @@ O(n²) copy of a log the reader can only see one frame of at a time.
 The write half is the author's, and it is `getWritable()` from `workflow`
 (imported directly, like `sleep`) called from a STEP and never from the body —
 the body replays from the top, so a line written there is re-emitted on every
-resume. Both page templates carry the same six-line `stepReport()` helper, which is
-best-effort deliberately: a run must not fail because its narration could not be
-written, and that is also what keeps a step callable from a spec, where there is
-no run and `getWritable()` throws by design.
+resume. Both page templates carry the same six-line `stepReport()` helper, which
+is best-effort deliberately: a run must not fail because its narration could not
+be written, and that is also what keeps a step callable from a spec, where there
+is no run and `getWritable()` throws by design.
 
 **`<WorkflowProgress runId>` is the rendered half**, and it holds the three
 rules a page kept re-deriving: render nothing until the agent HAS a stream and
@@ -877,12 +877,12 @@ engine, which is what keeps the rule above meaning what it says.
 **Bytes go in once and are read by window.** The body is the file itself — the
 name rides in `?name=`, the type in `Content-Type`, so there is no multipart
 envelope to parse and one chunk is in memory at a time. A step then reads what
-it needs with `stepReadUpload(id, { start, end })` (`@alexkroman1/aai/utils`), which
-is IN-PROCESS: the DevKit dispatches a step to the same server that stored the
-upload, so the store is handed over through a `Symbol.for` slot exactly as the
-agent env is (`publishUploadReader`, published by `createRuntimeServer`). Sixty steps
-therefore move a recording once between them, and a resumed run re-reads only
-its own window.
+it needs with `stepReadUpload(id, { start, end })` (`@alexkroman1/aai/utils`),
+which is IN-PROCESS: the DevKit dispatches a step to the same server that stored
+the upload, so the store is handed over through a `Symbol.for` slot exactly as
+the agent env is (`publishUploadReader`, published by `createRuntimeServer`).
+Sixty steps therefore move a recording once between them, and a resumed run
+re-reads only its own window.
 
 **An upload needs the database, and this is the one part of a workflow app
 that does.** Runs themselves fall back to the Local World with none
@@ -1232,20 +1232,20 @@ primitives" in the root guide.
 
 ### `stepReport()` writes to the page AND the server log
 
-`stepReport(line)` (`@alexkroman1/aai/utils`) is what a step says about itself. It
-replaced the twelve-line `getWritable()` helper each of the three workflow
+`stepReport(line)` (`@alexkroman1/aai/utils`) is what a step says about itself.
+It replaced the twelve-line `getWritable()` helper each of the three workflow
 templates had copied — this guide's own note said extracting it was not worth
-minting a subpath for, which was true of the helper and false of the FEATURE:
-a workflow app answered requests and then did minutes of work with nothing in
-the server log naming any of it, so "is it stuck, or is segment 41 of 60 slow?"
-was unanswerable without a browser open.
+minting a subpath for, which was true of the helper and false of the FEATURE: a
+workflow app answered requests and then did minutes of work with nothing in the
+server log naming any of it, so "is it stuck, or is segment 41 of 60 slow?" was
+unanswerable without a browser open.
 
 One call reaches both readers. The stream half is unchanged (`getWritable()`,
 read back by `useWorkflowProgress`); the log half is a `logger.info` line on the
 same server. `host/workflow-report.ts` is the published half and
-`createRuntimeServer` publishes it, so the two mechanisms have one wiring point — the
-same slot trick uploads use, and for the same reason (`/utils` is on the CLI's
-zero-dependency startup path and may not import the DevKit).
+`createRuntimeServer` publishes it, so the two mechanisms have one wiring point
+— the same slot trick uploads use, and for the same reason (`/utils` is on the
+CLI's zero-dependency startup path and may not import the DevKit).
 
 **The ATTEMPT is part of the line, not just the log.** `getStepMetadata()` names
 the step and its attempt, and past the first the reporter appends
@@ -1255,28 +1255,28 @@ a wedged one.
 
 ### `stepEmit()` is the other channel, and it makes a run's ANSWER streamable
 
-`stepReport()` writes a sentence for a person. **`stepEmit(namespace, chunk)`** writes a
-VALUE for a program, into a stream named by the caller — which is what lets a long
-fan-out hand over each result as it lands. Without it a run's partial results have
-nowhere to go: a snapshot carries a status and, once terminal, an output, so a
-sixty-segment transcription that has finished forty of them has forty answers and
-no way to show any of them.
+`stepReport()` writes a sentence for a person. **`stepEmit(namespace, chunk)`**
+writes a VALUE for a program, into a stream named by the caller — which is what
+lets a long fan-out hand over each result as it lands. Without it a run's
+partial results have nowhere to go: a snapshot carries a status and, once
+terminal, an output, so a sixty-segment transcription that has finished forty of
+them has forty answers and no way to show any of them.
 
 The READ half already existed and needed nothing: `streamOutput({ namespace })`
 and `useWorkflowProgress<T>(runId, { namespace })` have taken one since they were
 written. What was missing was the write.
 
-**The namespace is REQUIRED, and that is the point of the argument.** The default
-stream is `stepReport()`'s, and a page renders those chunks verbatim — an object in
-there is `[object Object]` in the middle of the progress log. A named stream is
-also what lets `useWorkflowProgress<T>` be typed at all, since a subscription
-then carries one shape.
+**The namespace is REQUIRED, and that is the point of the argument.** The
+default stream is `stepReport()`'s, and a page renders those chunks verbatim —
+an object in there is `[object Object]` in the middle of the progress log. A
+named stream is also what lets `useWorkflowProgress<T>` be typed at all, since a
+subscription then carries one shape.
 
-Everything else is `stepReport()`'s rule: call it from a STEP (a body replays), it is
-best-effort, and the chunks are RETAINED with the run so a reader that arrives
-late gets the whole stream. It is NOT logged — a structured chunk per item would
-bury the narration beside it — which is the one place the two paths differ inside
-`host/workflow-report.ts`.
+Everything else is `stepReport()`'s rule: call it from a STEP (a body replays),
+it is best-effort, and the chunks are RETAINED with the run so a reader that
+arrives late gets the whole stream. It is NOT logged — a structured chunk per
+item would bury the narration beside it — which is the one place the two paths
+differ inside `host/workflow-report.ts`.
 
 `transcription-workflow` is the worked example on both ends: each segment is
 emitted as it lands, and the page stitches whatever has arrived with the RUN's own

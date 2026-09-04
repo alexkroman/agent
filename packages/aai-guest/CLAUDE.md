@@ -470,9 +470,10 @@ which is exactly the old behaviour, and boot announces it.
 
 The SDK's `aai/host/telephony/` — so `packages/aai/CLAUDE.md` owns the code, and
 this guide holds the detail because the process that serves `/phone` in
-production is this harness (and, under `aai dev`, the same `createRuntimeServer`). Both
-of the other guides are at their length caps; the platform's TwiML webhook route
-stays in `packages/aai-server/CLAUDE.md`, "Telephony".
+production is this harness (and, under `aai dev`, the same
+`createRuntimeServer`). Both of the other guides are at their length caps; the
+platform's TwiML webhook route stays in `packages/aai-server/CLAUDE.md`,
+"Telephony".
 
 `WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
 stream — Twilio Media Streams, Telnyx media streaming — and runs it as an

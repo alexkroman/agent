@@ -211,14 +211,14 @@ template is a user's project and had no way to ask this question at all — see
 `packages/aai-runtime/CLAUDE.md`. What stays here is the half that is a promise
 about a NOISY instrument: the recording runner, the spread report, and the
 assertion vocabulary. `assertions.ts` imports `TURN_ENDS`, `saidIn` and
-`toolCallsInEvents` from the published subpath rather than restating them, which is the
-same one-declaration rule that section records being bitten by twice, now across
-a package boundary. What is REAL: `createRuntime`, the pipeline transport, the
-LLM on a live key, the tool executor, `ctx` and its slots, history trimming, the
-step budget, and the session event stream. What is not, stated rather than
-papered over: `ws-handler.ts`, the audio pacer, and frame ordering — all of which
-have unit and scenario coverage, where "given this utterance, did the agent do
-the right thing" had none.
+`toolCallsInEvents` from the published subpath rather than restating them, which
+is the same one-declaration rule that section records being bitten by twice, now
+across a package boundary. What is REAL: `createRuntime`, the pipeline
+transport, the LLM on a live key, the tool executor, `ctx` and its slots,
+history trimming, the step budget, and the session event stream. What is not,
+stated rather than papered over: `ws-handler.ts`, the audio pacer, and frame
+ordering — all of which have unit and scenario coverage, where "given this
+utterance, did the agent do the right thing" had none.
 
 **The fakes go in through `registerSttKind`/`registerTtsKind` on
 `@alexkroman1/aai-runtime`.** That seam's own doc gives the reason: a fake
@@ -257,12 +257,13 @@ The declaration crossing a package boundary is what makes the rule hold now that
 the target is published.
 
 **`openEvalSession` releases the fake stages when its own setup throws.**
-`installStubSpeechProviders()` registers a PROCESS-GLOBAL kind pair and the only thing
-that unregisters it is the handle the function returns, so a runtime that would
-not start, or a greeting that timed out, left the pair registered for the
-worker's life with nobody holding a release. `runEval` catches the throw and runs
-the next repeat, which is what made it compound — `AAI_EVAL_REPEAT=5` against a
-failing agent orphaned five pairs. The runtime is shut down on that path too.
+`installStubSpeechProviders()` registers a PROCESS-GLOBAL kind pair and the only
+thing that unregisters it is the handle the function returns, so a runtime that
+would not start, or a greeting that timed out, left the pair registered for the
+worker's life with nobody holding a release. `runEval` catches the throw and
+runs the next repeat, which is what made it compound — `AAI_EVAL_REPEAT=5`
+against a failing agent orphaned five pairs. The runtime is shut down on that
+path too.
 
 ## The studio starter eval
 

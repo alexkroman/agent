@@ -328,8 +328,8 @@ Two things the old wiring's failure taught, which still hold:
   `workflow-journal-postgres.ts`.
 
 **The other half is the delivery door.** `createAgentServer` composes
-`handleWorkflowRequest` into `createRuntimeServer`'s `request` hook, so this door is
-wired identically to `aai dev`'s and the harness's — but it supplies no
+`handleWorkflowRequest` into `createRuntimeServer`'s `request` hook, so this
+door is wired identically to `aai dev`'s and the harness's — but it supplies no
 `allowRemote`, so `POST /workflow-queue` answers 401. That is correct: a
 self-hosted server has no platform-owned queue to be vouched for by, and the
 engine's own in-process timers are what deliver. What the composition buys is
@@ -353,20 +353,20 @@ surfaces and a voice `GET /client-config`. It is read off the agent now, beside
 `name` and `greeting`, with an explicit field still winning.
 
 **`env` was the third, and it is why "belongs to the other door" is not a safe
-reason to drop an option.** This guide used to call `RuntimeServerOptions.env` half of
-"the host-mode pair" and leave it out on that ground: host mode is
+reason to drop an option.** This guide used to call `RuntimeServerOptions.env`
+half of "the host-mode pair" and leave it out on that ground: host mode is
 `createHostServer`'s business, so an env on this door looked like an option for
-a feature this door does not have. But `createRuntimeServer` reads FOUR things out of
-that record and only one of them is the host gate — `AAI_WORKFLOW_API_TOKEN`,
-documented in `workflow-api.ts` as what CLOSES `/workflows/*`;
-`AAI_SESSION_EVENTS_TOKEN`, the same shape one route over; and `DATABASE_URL`,
-which is where a workflow upload's RECORD lives. So an operator who set the
-token was still serving the workflow API, and its upload WRITE routes, wide
-open, and an operator with a provisioned database still had uploads land in
-this process's temp directory and vanish before a resumed run could read them.
-The guest harness had the identical bug with the identical three symptoms — it
-called `createRuntimeServer` with no `env` at all — which is the tell that the
-classification was wrong rather than the wiring.
+a feature this door does not have. But `createRuntimeServer` reads FOUR things
+out of that record and only one of them is the host gate —
+`AAI_WORKFLOW_API_TOKEN`, documented in `workflow-api.ts` as what CLOSES
+`/workflows/*`; `AAI_SESSION_EVENTS_TOKEN`, the same shape one route over; and
+`DATABASE_URL`, which is where a workflow upload's RECORD lives. So an operator
+who set the token was still serving the workflow API, and its upload WRITE
+routes, wide open, and an operator with a provisioned database still had uploads
+land in this process's temp directory and vanish before a resumed run could read
+them. The guest harness had the identical bug with the identical three symptoms
+— it called `createRuntimeServer` with no `env` at all — which is the tell that
+the classification was wrong rather than the wiring.
 
 It is forwarded now, minus the gate, through `agentServerEnv` (`server-env.ts`,
 shared with the guest so the filter has one spelling): `?host=1` lets a caller
@@ -374,18 +374,19 @@ supply its own agent definition and run it on the operator's credentials, so
 that key arriving with the other three would turn one secret into an
 unauthenticated surface. `hostBaseAgent` really does belong to the other door.
 **And the lesson for the next option is where the test went**: the token WAS
-covered, by a spec that called `createRuntimeServer` directly, which is exactly why the
-wrapper's version survived it. A forwarding spec has to take the door a caller
-takes.
+covered, by a spec that called `createRuntimeServer` directly, which is exactly
+why the wrapper's version survived it. A forwarding spec has to take the door a
+caller takes.
 
 **`journal` was the fourth, and it is why this is a CHECK now rather than a
-rule.** `RuntimeOptions.journal` takes a host-supplied `JournalStore` — the whole
-point being that a deployment which already owns a database keeps its durable
-runs there — and this door did not forward it, so the only way to supply one was
-to drop back to `createRuntime` + `createRuntimeServer` and restate by hand every field
-the wrapper derives. Found writing `contracts/compatibility/server/v8.ts`, which
-could not name `AgentServerOptions["journal"]` while the option was nonetheless
-IN this capability's report (the `agent: RuntimeOptions["agent"]` rollup).
+rule.** `RuntimeOptions.journal` takes a host-supplied `JournalStore` — the
+whole point being that a deployment which already owns a database keeps its
+durable runs there — and this door did not forward it, so the only way to supply
+one was to drop back to `createRuntime` + `createRuntimeServer` and restate by
+hand every field the wrapper derives. Found writing
+`contracts/compatibility/server/v8.ts`, which could not name
+`AgentServerOptions["journal"]` while the option was nonetheless IN this
+capability's report (the `agent: RuntimeOptions["agent"]` rollup).
 
 **`agent-server-forwarding.ts` is what stops a fifth.** Every `RuntimeOptions`
 member is either on `AgentServerOptions` or on an explicit
@@ -870,9 +871,9 @@ argument** — the two differences from the DevKit's `getStepMetadata()`, and wh
 
 What is this package's: `installWorkflowSupport` publishes the reader
 (`createStepInfoReader` in `workflow-report.ts`) into a `Symbol.for` slot like
-`stepReport()`'s, because the answer lives in this package's `AsyncLocalStorage` and
-`/step` rides the browser bundle. It derives `isLastAttempt` with `>=` and not
-`===`, since a burned boot can push the count past the ceiling and that is
+`stepReport()`'s, because the answer lives in this package's `AsyncLocalStorage`
+and `/step` rides the browser bundle. It derives `isLastAttempt` with `>=` and
+not `===`, since a burned boot can push the count past the ceiling and that is
 exactly the try a body most wants to degrade on. And the EVAL engine fills the
 slot with a first-and-only attempt rather than leaving it empty — unfilled means
 `undefined`, which a body reads as "no run", so a step that degrades on its last
@@ -970,13 +971,13 @@ grammar a BOUNDARY — an id that would escape the store never reaches one, whic
 verb asked. A well-formed id nothing stored is still a 404: "malformed" and
 "reclaimed" are different answers and a client acts differently on each.
 
-One store (`_upload-store-blobs.ts`) over two interfaces — `UploadRecords`
-for the record, `UploadBackend` for one object per `UPLOAD_PART_BYTES` window — and
+One store (`_upload-store-blobs.ts`) over two interfaces — `UploadRecords` for
+the record, `UploadBackend` for one object per `UPLOAD_PART_BYTES` window — and
 it names neither's home. It used to hold the bytes itself, a `bytea` row per
-megabyte or a file per upload under `aai dev`, and **`_upload-blobs.ts`
-carries the four costs that got them out of Postgres** — storage price, WAL and
-backup amplification, the app's own queries sharing their pool, and the
-platform's forward reading a slow drain as a dead guest.
+megabyte or a file per upload under `aai dev`, and **`_upload-blobs.ts` carries
+the four costs that got them out of Postgres** — storage price, WAL and backup
+amplification, the app's own queries sharing their pool, and the platform's
+forward reading a slow drain as a dead guest.
 
 **The pairing follows the WORLD, off the same `DATABASE_URL`: an upload must
 be at least as durable as the runs that read it.** With a database the record
@@ -1138,9 +1139,9 @@ answers 503 with `Retry-After: 1`. Three properties are decisions:
 
 ## A deployed guest has TWO copies of this package
 
-The harness bundles its own `aai-runtime` and calls `createRuntimeServer` from it; the
-agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`, so a deployed
-agent runs the SDK version it was tested against
+The harness bundles its own `aai-runtime` and calls `createRuntimeServer` from
+it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`, so a
+deployed agent runs the SDK version it was tested against
 (`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both are loaded in one
 process, and **anything this package uses to rendezvous between them has to be
 keyed on `globalThis`, not on a module-level value.**
@@ -1187,9 +1188,9 @@ composed from `getWorkflowMetadata().url`, i.e. `http://localhost:<port>` off
 the running process, which names the inside of a sandbox that has self-exited by
 the time a payment provider calls back.
 
-**The route is mounted in `createRuntimeServer`, and that is a correction rather than a
-detail.** It used to be mounted by `createWorkflowSurface`, which returns early
-unless the bundle carries both `workflowCode` and `stepCode` — the DevKit
+**The route is mounted in `createRuntimeServer`, and that is a correction rather
+than a detail.** It used to be mounted by `createWorkflowSurface`, which returns
+early unless the bundle carries both `workflowCode` and `stepCode` — the DevKit
 transform's output. When the replay engine replaced the DevKit those strings
 stopped being produced and the route mounted on NO door, so every callback a
 deployed run had handed out answered 404 permanently.
@@ -1199,8 +1200,8 @@ is indistinguishable from a payer who never paid, so it reports as healthily
 suspended and the failure lands weeks later on somebody else's server, on a URL
 nobody can re-issue. Two properties keep it closed:
 
-- **It hangs off `createRuntimeServer`**, which every front door goes through — `aai
-  dev`, a self-hosted `server.mjs`, a deployed guest — so it cannot come to
+- **It hangs off `createRuntimeServer`**, which every front door goes through —
+  `aai dev`, a self-hosted `server.mjs`, a deployed guest — so it cannot come to
   depend on a build artifact again.
 - **It reads `runtime.workflows` through a LAZY getter**, like the workflow API
   beside it, because the guest builds its runtime on the first request that

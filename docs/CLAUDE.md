@@ -608,8 +608,9 @@ each is a decision worth making rather than inheriting.
 - **`uploads` publishes a store TYPE and two blob implementations with no
   contracted way to join them** — `createUploadStore` and `resolveUploadBlobs`
   are `@internal`, so they are on `/internal` and the template has to take the
-  store as a parameter. Honest for an embedder handed one by `createRuntimeServer`, and
-  it means the capability cannot show its own end-to-end wiring.
+  store as a parameter. Honest for an embedder handed one by
+  `createRuntimeServer`, and it means the capability cannot show its own
+  end-to-end wiring.
 - **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
   contracted and `createWorkflowClient` is on `/internal`, so a template can
   assemble the bag and not hand it to anything. Its `logger` field is required
@@ -633,13 +634,13 @@ each is a decision worth making rather than inheriting.
   of ours.
 
 And one real defect the templates caught, now FIXED: **`SharedServerOptions`
-could not be spread into `RuntimeServerOptions`.** Its fields were optional WITHOUT
-`| undefined`, so under `exactOptionalPropertyTypes` `{...hooks}` widens each to
-`T | undefined` and `createRuntimeServer` rejected it (TS2379) — while the three wrapper
-doors exist precisely so one hook bag can reach all of them. The fix is on the
-TARGET side, which is where an A/B locates it: `RuntimeServerOptions`' `logger`,
-`upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
-bag. Do not narrow them back.
+could not be spread into `RuntimeServerOptions`.** Its fields were optional
+WITHOUT `| undefined`, so under `exactOptionalPropertyTypes` `{...hooks}` widens
+each to `T | undefined` and `createRuntimeServer` rejected it (TS2379) — while
+the three wrapper doors exist precisely so one hook bag can reach all of them.
+The fix is on the TARGET side, which is where an A/B locates it:
+`RuntimeServerOptions`' `logger`, `upgrade` and `request` accept `undefined`,
+and `createAgentServer` spreads the bag. Do not narrow them back.
 
 ### A new CONTRACT package owes four things
 

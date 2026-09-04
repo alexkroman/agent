@@ -353,11 +353,11 @@ each. `solo-rpg` also lost a FIELD: `phase: "genre" | "playing"` was
 `initialized` spelled twice and neither gated anything.
 
 **A spec is what makes the gate true.** Each of the three drives its gated tools
-through `expectToolOk`/`expectDialogOk` (`@alexkroman1/aai/testing`) — the unwrap four template
-specs had written byte-identically, and the reason each conversion cost two lines
-rather than twenty-four. Pin the POSITION as well
-as the refusal: that a tool refuses in the wrong state is half of it, and that
-the position moved (and did NOT move on a failure) is the half a dead transition
+through `expectToolOk`/`expectDialogOk` (`@alexkroman1/aai/testing`) — the
+unwrap four template specs had written byte-identically, and the reason each
+conversion cost two lines rather than twenty-four. Pin the POSITION as well as
+the refusal: that a tool refuses in the wrong state is half of it, and that the
+position moved (and did NOT move on a failure) is the half a dead transition
 hides in.
 
 ### A rule the model can skip is not a rule: `retail`'s confirmation gate
@@ -460,8 +460,8 @@ grow, twice:
   no turn to be part of and has to return a VALUE. `sdk/step-speak.ts` and
   `host/step-speak.ts` carry the argument, including why the one-socket exchange
   reuses nothing from the session opener.
-- **`stepWriteUpload`** is `stepReadUpload`'s other direction. A run's OUTPUT is read
-  back as JSON, so audio cannot travel in one — the same rule that keeps a
+- **`stepWriteUpload`** is `stepReadUpload`'s other direction. A run's OUTPUT is
+  read back as JSON, so audio cannot travel in one — the same rule that keeps a
   recording's bytes out of a run's INPUT, arriving at the other end of the run.
 - **`api.download(id)`** is the browser half, and it answers a `Blob` rather
   than a URL for a reason a page cannot discover on its own: the byte route
@@ -1222,16 +1222,15 @@ Three things the templates now demonstrate rather than restate:
 — so every `file` step still writes nothing and carries `_`-prefixed parameters
 rather than naming a call it cannot make.
 
-**`stepReport()` was the one helper copied three times, and it is the SDK's now** —
-`@alexkroman1/aai/step`, used by every workflow template. The objection recorded
-here (it needed a writable stream out of the workflow engine, which that subpath
-may not import) was answered by the same `Symbol.for` slot `stepEnv` uses:
-`createRuntimeServer` publishes a reporter and the helper stays dependency-free. What
-forced the question was
-not the duplication but the second reader — a step's narration now also reaches
-the SERVER LOG, with the attempt number appended past the first, so a retrying
-fan-out is legible without a page open. `packages/aai-ui/CLAUDE.md` carries the
-argument.
+**`stepReport()` was the one helper copied three times, and it is the SDK's
+now** — `@alexkroman1/aai/step`, used by every workflow template. The objection
+recorded here (it needed a writable stream out of the workflow engine, which
+that subpath may not import) was answered by the same `Symbol.for` slot
+`stepEnv` uses: `createRuntimeServer` publishes a reporter and the helper stays
+dependency-free. What forced the question was not the duplication but the second
+reader — a step's narration now also reaches the SERVER LOG, with the attempt
+number appended past the first, so a retrying fan-out is legible without a page
+open. `packages/aai-ui/CLAUDE.md` carries the argument.
 
 The same sweep took two more copies with it: `isTransientStatus` (the
 408/429/5xx split each template had spelled out) and `retryAfter`, which is what

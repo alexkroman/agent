@@ -866,15 +866,15 @@ guess is not trusted where egress is real.
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
-The SDK's `createRuntimeServer` (`packages/aai/src/host/server.ts`) is what `aai dev` runs,
-and its defaults are documented here because this is the caller that owns
-`AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`. The two fail-closed
-defaults are summarised in `packages/aai/CLAUDE.md`, "Self-hosted server
-defaults"; the argument is below.
+The SDK's `createRuntimeServer` (`packages/aai/src/host/server.ts`) is what
+`aai dev` runs, and its defaults are documented here because this is the caller
+that owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`. The two
+fail-closed defaults are summarised in `packages/aai/CLAUDE.md`, "Self-hosted
+server defaults"; the argument is below.
 
-`createRuntimeServer` has no request authentication of its own — it is the `aai dev`
-backend, not the managed platform. Two defaults exist because of that, and
-both are fail-closed:
+`createRuntimeServer` has no request authentication of its own — it is the
+`aai dev` backend, not the managed platform. Two defaults exist because of that,
+and both are fail-closed:
 
 - **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` defaults to
   `127.0.0.1`. Pass `"0.0.0.0"` deliberately to expose it; binding every

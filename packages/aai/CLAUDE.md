@@ -617,9 +617,9 @@ it honours, and the two bracketing requests that are retried with it.
 
 `AgentDef.page` declares an agent's front door: `"voice"` (the default, and what
 absent means) or `"static"` — a page over the workflow HTTP API that
-`createRuntimeServer` mounts, declared with `workflowApp()` (`sdk/define.ts`, the fourth
-arm of `AgentParams`), which refuses the fields such an app cannot use. **This
-guide is AT its cap: the author-facing half is "Workflow apps" in
+`createRuntimeServer` mounts, declared with `workflowApp()` (`sdk/define.ts`,
+the fourth arm of `AgentParams`), which refuses the fields such an app cannot
+use. **This guide is AT its cap: the author-facing half is "Workflow apps" in
 `packages/aai-ui/CLAUDE.md`.** Three authoring types on `/workflow-api` are
 worth stating here, because each replaced a hazard templates were re-deriving.
 
@@ -1160,9 +1160,10 @@ the stack rejects before a handler cuts the path apart. Those five sites sat in
 three different accidental safety regimes — one caught explicitly, three inside
 an `async` router whose rejection is answered 500, and **one fully synchronous**
 (`webhookToken` → `pickWorkflowHandler` → `handleWorkflowRequest`, called from
-`createRuntimeServer`'s `options.request?.(…)` hook with no `try`). That one reached the
-guest's `uncaughtException` guard and `process.exit(4)`, unauthenticated, taking
-every concurrent voice session on the sandbox down with it.
+`createRuntimeServer`'s `options.request?.(…)` hook with no `try`). That one
+reached the guest's `uncaughtException` guard and `process.exit(4)`,
+unauthenticated, taking every concurrent voice session on the sandbox down with
+it.
 
 So the decode is a FUNCTION with a stated contract rather than an expression
 repeated with different luck: `undefined` means "this is not a decodable path
@@ -1298,11 +1299,11 @@ re-checking if one of them shows unexplained per-session memory.
 
 ## Self-hosted server defaults (`aai/host/server.ts`)
 
-`createRuntimeServer` has no request authentication of its own — it is the `aai dev`
-backend, not the managed platform — so two defaults are fail-closed: it **binds
-loopback** (`127.0.0.1`; pass `"0.0.0.0"` deliberately, and `aai dev` exposes
-`AAI_DEV_HOST` for setups where loopback isn't reachable), and **host mode is
-opt-in** behind an explicit `AAI_ALLOW_HOST`. `createHostServer`
+`createRuntimeServer` has no request authentication of its own — it is the
+`aai dev` backend, not the managed platform — so two defaults are fail-closed:
+it **binds loopback** (`127.0.0.1`; pass `"0.0.0.0"` deliberately, and `aai dev`
+exposes `AAI_DEV_HOST` for setups where loopback isn't reachable), and **host
+mode is opt-in** behind an explicit `AAI_ALLOW_HOST`. `createHostServer`
 (`host/host-server.ts`) is the host-only server in one call; its module doc
 carries the three ways the hand-rolled version was wrong.
 
