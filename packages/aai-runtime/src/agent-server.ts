@@ -39,14 +39,41 @@
  * Import via `@alexkroman1/aai-runtime`. See `examples/self-hosted-server`.
  */
 
+import type http from "node:http";
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
+import { consoleLogger } from "./runtime-config.ts";
 import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";
 import { agentServerEnv } from "./server-env.ts";
+import { routeMatches, SERVER_ROUTES, type ServerRoute } from "./server-routes.ts";
 import { handleWorkflowRequest } from "./workflow-serve.ts";
+
+/**
+ * `HEAD /health` — the verb the health route did not answer.
+ *
+ * {@link SERVER_ROUTES}`.health` declares `GET` alone, so a HEAD fell past the
+ * dispatch, past the embedder hook, past static serving, and out of the 404 at
+ * the end: `GET /health` 200, `HEAD /health` 404, on the one route an operator
+ * points a probe at. HEAD is what a load balancer sends by DEFAULT — HAProxy's
+ * `option httpchk`, several ALB and nginx checks — so the deployment that most
+ * needs a health check is the one that was told there is none.
+ *
+ * A HEAD answer is the GET's headers with no body (RFC 9110), and Node drops
+ * the body of a HEAD response itself, so there is nothing here to keep in step
+ * with what `GET /health` serializes.
+ *
+ * Claimed through this door's `request` hook rather than in `createServer`,
+ * which is not this package's to widen from here. If that dispatch ever adds
+ * the verb, this stops being REACHED rather than starting to disagree — the
+ * health route is matched there before any hook runs.
+ */
+const HEALTH_HEAD_ROUTE = {
+  ...SERVER_ROUTES.health,
+  methods: ["HEAD"],
+} as const satisfies ServerRoute;
 
 /** Configuration for {@link createAgentServer}. */
 // An interface rather than an intersection: TypeDoc documents inherited
@@ -195,6 +222,74 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     ...omitUndefined({ providerEnv, db, journal, publicUrl, logger: hooks.logger }),
   });
 
+  /**
+   * What this door will actually mount, decided HERE rather than in
+   * `createServer`.
+   *
+   * `page` was already resolved here (the agent declares it); `telephony`'s
+   * `?? !isStatic` lived one layer down, so this function could not say which
+   * routes it was about to serve. The boot line below NAMES them, and a line
+   * that re-derives a default is a line that can lie — so the value is resolved
+   * once and FORWARDED, which makes the log and the mount one decision instead
+   * of two that agree today.
+   *
+   * This is the one place the `listen()` comment's rule — forward, never
+   * re-default — is broken on purpose, and what pays for it is
+   * `agent-server.test.ts`, which probes every route the line names (and the
+   * absence of every route it omits) over the wire. If `createServer`'s default
+   * moves, that spec fails rather than the log quietly becoming false.
+   */
+  const effectivePage = page ?? agent.page;
+  const isStatic = effectivePage === "static";
+  const servesTelephony = telephony ?? !isStatic;
+  const servesWorkflows = Object.keys(agent.workflows ?? {}).length > 0;
+
+  /**
+   * Answer `HEAD /health` — see {@link HEALTH_HEAD_ROUTE}.
+   *
+   * Headers only. Node drops a HEAD response's body itself, so writing one
+   * would be a second copy of `GET /health`'s payload that nothing on the wire
+   * could ever disagree with.
+   */
+  function answerHealthHead(res: http.ServerResponse, url: string, method: string): boolean {
+    if (!routeMatches(HEALTH_HEAD_ROUTE, url, method)) return false;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end();
+    return true;
+  }
+
+  /**
+   * The routes this server answers, as an operator would probe them.
+   *
+   * Undocumented until now, and recovered the hard way: the WebSocket paths
+   * appear in no guide, so somebody containerizing an agent found `/websocket`
+   * and `/phone` by grepping the minified client bundle. A boot line is where
+   * that belongs — it is what an operator already reads, it cannot drift out of
+   * date the way a guide can, and it states what THIS deployment mounts rather
+   * than what the product can mount.
+   *
+   * `/session-events/:id` and `POST /workflow-queue` are deliberately absent:
+   * both are mounted and both refuse everything unless something this door does
+   * not decide is true (`AAI_SESSION_EVENTS_TOKEN` is set; a platform vouches
+   * for the caller, which a self-hosted server has none of). Each 404s or 401s
+   * naming its own reason, which is a better place to learn it than a line
+   * advertising a surface the deployment does not have.
+   */
+  function servedRoutes(): { http: string[]; ws: string[] } {
+    const httpRoutes = [
+      `GET,HEAD ${SERVER_ROUTES.health.path}`,
+      `GET ${SERVER_ROUTES.clientConfig.path}`,
+      `GET ${SERVER_ROUTES.root.path}${clientDir === undefined ? "" : " (static assets)"}`,
+    ];
+    // Mounted unconditionally, but with no declared workflow every route under
+    // it 404s naming the reason — so listing it would advertise a surface this
+    // agent does not have.
+    if (servesWorkflows) httpRoutes.push(`${SERVER_ROUTES.workflows.path}/*`);
+    const wsRoutes: string[] = isStatic ? [] : [SERVER_ROUTES.session.path];
+    if (servesTelephony) wsRoutes.push(`${SERVER_ROUTES.phone.path}?carrier=<name>`);
+    return { http: httpRoutes, ws: wsRoutes };
+  }
+
   const server = createServer({
     runtime,
     // The agent's env, MINUS the host-mode gate: `createServer` reads the two
@@ -205,11 +300,15 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // `page` joins them, and an explicit one still wins: the field is the more
     // specific statement, the same rule `telephony` follows in `createServer`.
     name: agent.name,
+    // Resolved above rather than left to the layer underneath — see
+    // `servedRoutes`. `telephony` is no longer `omitUndefined`'d: it is always a
+    // boolean by the time it gets here, and the value passed is the one the boot
+    // line names.
+    telephony: servesTelephony,
     ...omitUndefined({
       greeting: agent.greeting,
-      page: page ?? agent.page,
+      page: effectivePage,
       clientDir,
-      telephony,
       uploadBroker,
     }),
     // The hook bag, SPREAD — legal only because every field on
@@ -232,6 +331,11 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // answers 401 rather than declining. Every other request returns false and
     // reaches the caller's hook.
     request: (req, res, url, method) =>
+      // `HEAD /health` first, for the reason the route constant carries: the
+      // dispatch underneath claims `GET /health` before any hook runs and lets
+      // the other verb fall through to a 404, which is the verb a load balancer
+      // sends by default.
+      answerHealthHead(res, url, method) ||
       handleWorkflowRequest(
         req,
         res,
@@ -291,6 +395,9 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       // resolves no world, so there is no window and no port-0 special case.
       publishWorkflowStepEnv();
       await server.listen(...args);
+      // After the bind, so a server that could not take the port advertises
+      // nothing.
+      (hooks.logger ?? consoleLogger).info("Serving", servedRoutes());
     },
   };
 }

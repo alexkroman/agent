@@ -107,7 +107,14 @@ export type ServerRoute =
  * @internal
  */
 export const SERVER_ROUTES = {
-  health: { transport: "http", path: HEALTH_PATH, match: "exact", methods: ["GET"] },
+  // HEAD as well as GET: a load balancer's default probe is often HEAD
+  // (HAProxy's `option httpchk`, several ALB and nginx configs), and answering
+  // 404 to it takes the whole deployment out of rotation while `GET /health`
+  // reports ok. Declared HERE rather than only at `createAgentServer`'s door,
+  // because `aai dev`, the guest harness and `createHostServer` all call
+  // `createServer` directly and would each have kept the 404. Node drops a
+  // HEAD response's body itself, so the one handler serves both verbs.
+  health: { transport: "http", path: HEALTH_PATH, match: "exact", methods: ["GET", "HEAD"] },
   clientConfig: {
     transport: "http",
     path: CLIENT_CONFIG_ROUTE,

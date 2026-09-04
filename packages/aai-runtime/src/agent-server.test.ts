@@ -30,6 +30,7 @@ import { z } from "zod";
 import { AGENT_SERVER_ENV as ENV, withServer } from "./_agent-server-test-utils.ts";
 import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
+import type { Logger } from "./runtime-config.ts";
 
 describe("createAgentServer", () => {
   test("serves the agent's own name and greeting without being told them", async () => {
@@ -119,6 +120,36 @@ describe("createAgentServer", () => {
       // Stated, not absent: the override is what decides the front door, and a
       // reader should not have to infer it from a missing key.
       expect(config.page).toBe("voice");
+    });
+  });
+
+  test("HEAD /health answers, which is the verb a load-balancer check sends", async () => {
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer({ agent: myAgent }, async (baseUrl) => {
+      // 404 before this: the route table declares GET alone, so HEAD fell all
+      // the way through the dispatch — on the one route an operator points a
+      // probe at, refusing the verb HAProxy's `option httpchk` and several ALB
+      // and nginx checks send by default.
+      const head = await fetch(`${baseUrl}/health`, { method: "HEAD" });
+      expect(head.status).toBe(200);
+      // The headers a GET would send (RFC 9110) and no body — Node drops a HEAD
+      // response's body itself, which is why nothing here serializes one.
+      expect(head.headers.get("content-type")).toBe("application/json");
+      expect(await head.text()).toBe("");
+      // And the verb that already worked still does.
+      expect((await fetch(`${baseUrl}/health`)).status).toBe(200);
+    });
+  });
+
+  test("and HEAD claims nothing else — a miss is still a miss", async () => {
+    // The handler goes in front of the embedder hook, so an over-broad match
+    // would silently swallow somebody else's route rather than fail visibly.
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer({ agent: myAgent }, async (baseUrl) => {
+      expect((await fetch(`${baseUrl}/health/deep`, { method: "HEAD" })).status).toBe(404);
+      expect((await fetch(`${baseUrl}/nope`, { method: "HEAD" })).status).toBe(404);
     });
   });
 
@@ -235,6 +266,165 @@ describe("the env this door forwards to the server", () => {
         // The server's own refusal, which is what `isHostAllowed` answering false
         // looks like on the wire — not a host session waiting for a config frame.
         expect(refusal).toContain("host mode is not enabled on this server");
+      },
+    );
+  });
+});
+
+/**
+ * The `Serving` boot line, and the probes that keep it HONEST.
+ *
+ * The line exists because the WebSocket paths were documented nowhere — the
+ * operator who reported this found `/websocket` and `/phone` by grepping the
+ * minified client bundle. A boot line that merely LOOKS right is the same
+ * problem one layer along, and this door re-derives `telephony`'s default to
+ * produce it (see `servedRoutes`), so each case asserts the line against what
+ * the port really answers rather than against a second copy of the expectation.
+ *
+ * What is probed is everything that costs no SESSION: a voice `/websocket`
+ * would dial a real provider, which is this file's tier boundary, so its
+ * presence on the line is asserted here and its behaviour in
+ * `agent-server.scenario.test.ts`. The static case is probed in full — that
+ * upgrade is declined rather than served.
+ */
+describe("the boot line names what this door mounts", () => {
+  /** Values off one `Serving` line, with nothing narrowed by a cast. */
+  function servingCapture(): {
+    logger: Logger;
+    http: () => string[];
+    ws: () => string[];
+  } {
+    let line: Record<string, unknown> | undefined;
+    const strings = (value: unknown): string[] =>
+      Array.isArray(value) ? value.filter((one) => typeof one === "string") : [];
+    return {
+      logger: {
+        ...silentLogger,
+        info: (message: string, context?: Record<string, unknown>) => {
+          if (message === "Serving") line = context;
+        },
+      },
+      http: () => strings(line?.http),
+      ws: () => strings(line?.ws),
+    };
+  }
+
+  /**
+   * What `/phone` answers for a carrier that does not exist: `400` when the
+   * route is mounted (the route itself refuses the name), `404` when it is not.
+   * The two statuses are what make this a probe of MOUNTING rather than of
+   * carrier parsing.
+   *
+   * The carrier is named deliberately. `carrierByName` treats an ABSENT one as
+   * Twilio, so a bare `/phone` against a mounted route completes the upgrade
+   * and starts a real session — which dials a real provider and is this file's
+   * tier boundary. Measured: the bare form hangs the spec out to its timeout
+   * behind three streaming connect retries.
+   */
+  function phoneRefusalMessage(baseUrl: string): Promise<string> {
+    const url = `${baseUrl.replace("http", "ws")}/phone?carrier=no-such-carrier`;
+    return new Promise<string>((resolve) =>
+      new NodeWebSocket(url).once("error", (err: Error) => resolve(err.message)),
+    );
+  }
+
+  test("a voice agent: health answers both verbs, and /phone is mounted", async () => {
+    const capture = servingCapture();
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer({ agent: myAgent, logger: capture.logger }, async (baseUrl) => {
+      expect(capture.http()).toEqual([
+        "GET,HEAD /health",
+        "GET /client-config",
+        "GET /",
+        // No workflow is declared, so `/workflows/*` is not advertised.
+      ]);
+      expect(capture.ws()).toEqual(["/websocket", "/phone?carrier=<name>"]);
+
+      // Every HTTP route the line names, answered.
+      expect((await fetch(`${baseUrl}/health`, { method: "HEAD" })).status).toBe(200);
+      expect((await fetch(`${baseUrl}/health`)).status).toBe(200);
+      expect((await fetch(`${baseUrl}/client-config`)).status).toBe(200);
+      expect((await fetch(`${baseUrl}/`)).status).toBe(200);
+      // And the one it does not: with no declared workflow the API 404s, which
+      // is why listing it would advertise a surface this agent does not have.
+      expect((await fetch(`${baseUrl}/workflows`)).status).toBe(404);
+      // Mounted — an unknown carrier is refused by the route rather than by the
+      // 404 an unmounted one gives.
+      expect(await phoneRefusalMessage(baseUrl)).toContain("400");
+    });
+  });
+
+  test("a workflow app: no voice routes on the line, and none on the port", async () => {
+    const capture = servingCapture();
+    const app = workflowApp({ name: "Digest", workflows: {} });
+
+    await withServer({ agent: app, logger: capture.logger }, async (baseUrl) => {
+      expect(capture.ws()).toEqual([]);
+      expect(await phoneRefusalMessage(baseUrl)).toContain("404");
+      // `/websocket` is COMPLETED and then declined with a reason rather than
+      // 404'd, so the absence has to be read off the decline.
+      const declined = await withDeadline(
+        new Promise<string>((resolve) => {
+          const ws = new NodeWebSocket(`${baseUrl.replace("http", "ws")}/websocket`);
+          ws.once("message", (data: Buffer) => resolve(data.toString()));
+          ws.once("close", () => resolve("closed"));
+        }),
+        "the static agent's /websocket upgrade was never answered",
+      );
+      expect(declined).toContain("static page");
+    });
+  });
+
+  test("telephony: false takes /phone off the line as well as off the port", async () => {
+    // The pair the line exists to keep together: the option is resolved here and
+    // forwarded, so the log cannot report a route the mount does not make.
+    const capture = servingCapture();
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer(
+      { agent: myAgent, telephony: false, logger: capture.logger },
+      async (baseUrl) => {
+        expect(capture.ws()).toEqual(["/websocket"]);
+        expect(await phoneRefusalMessage(baseUrl)).toContain("404");
+      },
+    );
+  });
+
+  test("a declared workflow puts /workflows on the line, and it answers", async () => {
+    const capture = servingCapture();
+    const app = workflowApp({
+      name: "Digest",
+      workflows: {
+        echo: workflow({
+          description: "Echo the input back.",
+          input: z.object({ text: z.string() }),
+          run: async ({ text }) => {
+            "use workflow";
+            return text;
+          },
+        }),
+      },
+    });
+
+    await withServer({ agent: app, logger: capture.logger }, async (baseUrl) => {
+      expect(capture.http()).toContain("/workflows/*");
+      const listed = await fetch(`${baseUrl}/workflows`);
+      expect(listed.status).toBe(200);
+      await listed.text();
+    });
+  });
+
+  test("a clientDir says so, because an operator reads / differently then", async () => {
+    const capture = servingCapture();
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer(
+      // The directory need not exist for the CLAIM to be right: what changes is
+      // that `/` is this project's own build rather than the placeholder shell.
+      { agent: myAgent, clientDir: "/nonexistent-client-dir", logger: capture.logger },
+      async () => {
+        expect(capture.http()).toContain("GET / (static assets)");
       },
     );
   });
