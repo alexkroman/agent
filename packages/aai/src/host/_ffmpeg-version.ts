@@ -24,9 +24,9 @@ import { runFfmpeg } from "./ffmpeg.ts";
  * `undefined`; a binary that is present and broken throws, because that is a
  * real failure and swallowing it would report the same thing as an absence.
  */
-export async function ffmpegVersion(opts: FfmpegRunOptions = {}): Promise<string | undefined> {
+export async function ffmpegVersion(options: FfmpegRunOptions = {}): Promise<string | undefined> {
   try {
-    const { stdout } = await runFfmpeg(["-hide_banner", "-version"], opts);
+    const { stdout } = await runFfmpeg(["-hide_banner", "-version"], options);
     // A real ffmpeg's first line is `ffmpeg version N.N …`; the fallback is
     // there so a present-but-silent binary never reads as an ABSENT one, which
     // is the only distinction this function promises.

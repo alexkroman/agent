@@ -35,7 +35,7 @@ export type HeaderWebSocket = {
 
 export type CreateHeaderWebSocket = (
   url: string,
-  opts: { headers: Record<string, string> },
+  options: { headers: Record<string, string> },
 ) => HeaderWebSocket;
 
 /**
@@ -66,8 +66,8 @@ export type CreateHeaderWebSocket = (
 export const PROVIDER_WS_OPTIONS = { perMessageDeflate: false } as const;
 
 // Node's native WebSocket doesn't support custom headers; the `ws` package does.
-export const defaultCreateHeaderWebSocket: CreateHeaderWebSocket = (url, opts) =>
-  openHeaderWebSocket(url, opts);
+export const defaultCreateHeaderWebSocket: CreateHeaderWebSocket = (url, options) =>
+  openHeaderWebSocket(url, options);
 
 /**
  * The same client, with a frame cap.
@@ -89,11 +89,11 @@ export const defaultCreateHeaderWebSocket: CreateHeaderWebSocket = (url, opts) =
  */
 export function openHeaderWebSocket(
   url: string,
-  opts: { headers: Record<string, string>; maxPayload?: number | undefined },
+  options: { headers: Record<string, string>; maxPayload?: number | undefined },
 ): HeaderWebSocket {
   return new WsWebSocket(url, {
-    headers: opts.headers,
-    ...omitUndefined({ maxPayload: opts.maxPayload }),
+    headers: options.headers,
+    ...omitUndefined({ maxPayload: options.maxPayload }),
     ...PROVIDER_WS_OPTIONS,
   }) as unknown as HeaderWebSocket;
 }

@@ -66,7 +66,7 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
-export function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
+export function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
     stt: SttProvider;
     llm: LlmProvider;
     tts: TtsProvider;
@@ -81,7 +81,7 @@ export interface AssemblyAIPipelineOptions {
 }
 
 // @public
-export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
+export function assemblyAIS2s(options?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
 export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
@@ -285,7 +285,7 @@ export function isRecord(value: unknown): value is Record<string, unknown>;
 export function isToolFailure(value: unknown): value is ToolFailure;
 
 // @public (undocumented)
-export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
+export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;
 };
 
@@ -443,7 +443,7 @@ export function requireEnv(ctx: {
 }, name: string): string;
 
 // @public
-export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
+export function resolveOne<T>(candidates: readonly T[], spoken: string, options: ResolveOneOptions<T>): T | ToolFailure;
 
 // @public
 export interface ResolveOneOptions<T> {
@@ -453,7 +453,7 @@ export interface ResolveOneOptions<T> {
 }
 
 // @public
-export function responseErrorMessage(res: Response, label?: string): Promise<string>;
+export function responseErrorMessage(response: Response, label?: string): Promise<string>;
 
 // @public
 export type S2sAgentParams = SharedAgentParams & {
@@ -924,7 +924,7 @@ type WakeUpOptions = {
 };
 
 // @public
-export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;
 
 // @public
 export function workflow<P extends ToolInputSchema = ToolInputSchema, O extends StandardSchemaV1 = StandardSchemaV1>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
@@ -951,7 +951,7 @@ export type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;

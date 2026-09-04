@@ -8,7 +8,7 @@
 export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 
 // @public
-export function assemblyAIStt(opts?: AssemblyAISttOptions): SttProvider;
+export function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
 
 // @public
 export interface AssemblyAISttOptions extends ProviderCredentialOptions {
@@ -28,7 +28,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
 export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
 
 // @public
-export function deepgramStt(opts?: DeepgramSttOptions): SttProvider;
+export function deepgramStt(options?: DeepgramSttOptions): SttProvider;
 
 // @public
 export interface DeepgramSttOptions extends ProviderCredentialOptions {
@@ -38,7 +38,7 @@ export interface DeepgramSttOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function elevenLabsStt(opts?: ElevenLabsSttOptions): SttProvider;
+export function elevenLabsStt(options?: ElevenLabsSttOptions): SttProvider;
 
 // @public
 export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
@@ -60,7 +60,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function sonioxStt(opts?: SonioxSttOptions): SttProvider;
+export function sonioxStt(options?: SonioxSttOptions): SttProvider;
 
 // @public
 export interface SonioxSttOptions extends ProviderCredentialOptions {

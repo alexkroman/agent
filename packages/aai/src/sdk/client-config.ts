@@ -62,7 +62,7 @@ export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
  * platform's per-slug handler, the CLI dev server) goes through this, so a
  * surface rule can't drift between them.
  */
-export function buildClientConfig(src: {
+export function buildClientConfig(source: {
   name?: string | undefined;
   greeting?: string | undefined;
   sessionUrl?: string | undefined;
@@ -70,10 +70,10 @@ export function buildClientConfig(src: {
 }): ClientConfigResponse {
   return {
     ...omitUndefined({
-      name: src.name,
-      greeting: src.greeting,
-      sessionUrl: src.sessionUrl,
+      name: source.name,
+      greeting: source.greeting,
+      sessionUrl: source.sessionUrl,
     }),
-    page: src.page ?? "voice",
+    page: source.page ?? "voice",
   };
 }

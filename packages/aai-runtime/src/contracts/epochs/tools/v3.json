@@ -1,0 +1,22 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "tools",
+  "epoch": 3,
+  "sha256": "ae5b5a3bd5450a3d2af9ae18bd22ae9fc13936f247159ec18e37e348b2a4209c",
+  "exports": [
+    "MCP_CONNECT_TIMEOUT_MS",
+    "McpCallResult",
+    "McpConnectOptions",
+    "McpDrift",
+    "McpInputSchema",
+    "McpServerStatus",
+    "McpSession",
+    "McpSessionOpener",
+    "McpToolSurface",
+    "McpToolsOptions",
+    "McpTrust",
+    "ResolvedMcpServer",
+    "withMcpTools",
+    "withToolsDir"
+  ]
+}

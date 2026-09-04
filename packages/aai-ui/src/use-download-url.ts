@@ -70,7 +70,7 @@ const PENDING: UseDownloadUrlResult = { pending: true };
  * @param uploadId - The id a completed run reported, or `undefined` before one
  *   exists — which is what a page passes straight through while it waits, and
  *   reports as idle rather than pending.
- * @param opts - See {@link UseDownloadUrlOptions}.
+ * @param options - See {@link UseDownloadUrlOptions}.
  * @returns See {@link UseDownloadUrlResult}.
  *
  * @example
@@ -96,13 +96,13 @@ const PENDING: UseDownloadUrlResult = { pending: true };
  */
 export function useDownloadUrl(
   uploadId: string | undefined,
-  opts: UseDownloadUrlOptions = {},
+  options: UseDownloadUrlOptions = {},
 ): UseDownloadUrlResult {
   const [state, setState] = useState<UseDownloadUrlResult>(IDLE);
 
   // The client through a ref — see `_workflow-api-ref.ts`. A page that builds
   // one in render must not restart this download on every frame.
-  const getClient = useWorkflowApiRef(opts.api);
+  const getClient = useWorkflowApiRef(options.api);
 
   useEffect(() => {
     if (uploadId === undefined) {

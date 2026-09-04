@@ -56,7 +56,7 @@ one interface with four reference pages was three too many.
 ### openAIS2s()
 
 ```ts
-function openAIS2s(opts?: OpenAIS2sOptions): S2sProvider;
+function openAIS2s(options?: OpenAIS2sOptions): S2sProvider;
 ```
 
 Build an OpenAI Realtime S2S descriptor — the explicit opt-in to
@@ -65,7 +65,7 @@ host-side from the agent's env (`OPENAI_API_KEY`).
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`OpenAIS2sOptions`](#openais2soptions)
 

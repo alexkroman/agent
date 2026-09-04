@@ -1,0 +1,19 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "stt",
+  "epoch": 2,
+  "sha256": "7a2c91c1b5e5c38540b12d7124262ce6d31714b46e53b98c32896b19a555eff5",
+  "exports": [
+    "ASSEMBLYAI_STT_EU_URL",
+    "AssemblyAISttOptions",
+    "DEEPGRAM_DEFAULT_ENDPOINTING_MS",
+    "DeepgramSttOptions",
+    "ElevenLabsSttOptions",
+    "SonioxSttOptions",
+    "SttProvider",
+    "assemblyAIStt",
+    "deepgramStt",
+    "elevenLabsStt",
+    "sonioxStt"
+  ]
+}

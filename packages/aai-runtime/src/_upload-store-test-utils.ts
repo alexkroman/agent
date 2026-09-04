@@ -81,7 +81,7 @@ type FakeRow = {
  * (`createMemoryUploadBackend`) and coverage is one `jsonb` column the store merges
  * in JavaScript, so there is nothing left here but rows.
  */
-export function recordingDb(opts: { refuse?: string } = {}) {
+export function recordingDb(options: { refuse?: string } = {}) {
   const sql: string[] = [];
   /**
    * Every statement's PARAMETERS, so a spec can assert what the database was asked
@@ -199,7 +199,8 @@ export function recordingDb(opts: { refuse?: string } = {}) {
       sql.push(text.replace(/\s+/g, " ").trim());
       params.push(params_);
       // One statement the store is allowed to lose — see the spec that names it.
-      if (opts.refuse && text.includes(opts.refuse)) throw new Error(`refused: ${opts.refuse}`);
+      if (options.refuse && text.includes(options.refuse))
+        throw new Error(`refused: ${options.refuse}`);
       // First match wins, so the handlers are ordered narrowest-first wherever one
       // statement's text contains another's.
       return (handlers.find((handler) => text.includes(handler.when))?.run(params_) ?? []) as T[];
@@ -218,8 +219,8 @@ export function recordingDb(opts: { refuse?: string } = {}) {
  * window read and a length, so `createMemoryUploadBackend` is equivalent to a bucket
  * by construction, and the record has exactly one implementation to test.
  */
-export function memoryStore(opts: { refuse?: string; maxBytes?: number } = {}) {
-  const recorder = recordingDb(omitUndefined({ refuse: opts.refuse }));
+export function memoryStore(options: { refuse?: string; maxBytes?: number } = {}) {
+  const recorder = recordingDb(omitUndefined({ refuse: options.refuse }));
   const inner = createMemoryUploadBackend();
   /**
    * Every byte operation, in order, as `"<verb> <key>"`.
@@ -247,7 +248,7 @@ export function memoryStore(opts: { refuse?: string; maxBytes?: number } = {}) {
   const store = createUploadStore({
     db: recorder.db,
     blobs,
-    ...omitUndefined({ maxBytes: opts.maxBytes }),
+    ...omitUndefined({ maxBytes: options.maxBytes }),
   });
   /** Keys the bucket really holds, so a spec can ask about the byte LAYOUT. */
   const stored = async (id: string): Promise<{ at: number; bytes: number }[]> => {

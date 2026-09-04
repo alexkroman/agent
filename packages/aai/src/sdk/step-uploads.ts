@@ -405,7 +405,7 @@ export async function stepUploadInfo(id: string): Promise<UploadInfo> {
  */
 export async function stepReadUpload(
   id: string,
-  opts: ReadUploadOptions = {},
+  options: ReadUploadOptions = {},
 ): Promise<UploadSlice> {
   // ONE look-up of the record, not two — see {@link OpenUpload}. The clamp below
   // is unchanged and still runs HERE rather than in the store: it is the reader's
@@ -413,9 +413,9 @@ export async function stepReadUpload(
   const held = await openUpload(id);
   if (!held) throw new Error(`No upload with id ${id}`);
   const { info } = held;
-  const ceiling = readableEnd(info, opts.start ?? 0);
-  const start = clamp(opts.start ?? 0, 0, ceiling);
-  const end = clamp(opts.end ?? info.size, start, ceiling);
+  const ceiling = readableEnd(info, options.start ?? 0);
+  const start = clamp(options.start ?? 0, 0, ceiling);
+  const end = clamp(options.end ?? info.size, start, ceiling);
   // An empty window is answered without touching the store: it is a legal ask
   // (a zero-length trailing segment) and every backend would have to special
   // case it anyway.

@@ -115,7 +115,7 @@ type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions &
 };
 
 // @public
-export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
 // @public
 type StepGenerateOptions = {
@@ -129,23 +129,23 @@ type StepGenerateOptions = {
 };
 
 // @public
-export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string>;
 
 // @public
-export function stepTranscribePollOrFail(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+export function stepTranscribePollOrFail(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 
 // @public
-export function stepTranscribeSubmitOrFail(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+export function stepTranscribeSubmitOrFail(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
     id: string;
 }>;
 
 // @public
-export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
+export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], options?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 
 // @public
-export function stepTranscribeUploadOrFail(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+export function stepTranscribeUploadOrFail(uploadId: string, options?: TranscribeRequestOptions): Promise<{
     audioUrl: string;
 }>;
 

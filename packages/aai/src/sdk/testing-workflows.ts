@@ -5,7 +5,7 @@
  *
  * Both existed in two templates apiece, and the snapshot builder is the one
  * that matters: `WorkflowRunSnapshot` is DISCRIMINATED on `status`, so
- * `{ ...base, ...over }` does not inhabit it and every hand-rolled version ended
+ * `{ ...base, ...overrides }` does not inhabit it and every hand-rolled version ended
  * in `as WorkflowRunSnapshot`. That cast is the exact failure
  * {@link createToolContext} and {@link createStubWorkflows} exist to remove: it
  * keeps compiling when the union gains a member or a member gains a field, so
@@ -60,24 +60,25 @@ const DEFAULT_CREATED_AT = Date.UTC(2026, 0, 1);
  * @public
  */
 export function createRunSnapshot<R = unknown>(
-  over: RunSnapshotOverrides<R> = {},
+  overrides: RunSnapshotOverrides<R> = {},
 ): WorkflowRunSnapshot<R> {
   const base: WorkflowRunBase = {
-    runId: over.runId ?? DEFAULT_RUN_ID,
-    workflow: over.workflow ?? DEFAULT_WORKFLOW,
-    createdAt: over.createdAt ?? DEFAULT_CREATED_AT,
-    ...omitUndefined({ key: over.key }),
+    runId: overrides.runId ?? DEFAULT_RUN_ID,
+    workflow: overrides.workflow ?? DEFAULT_WORKFLOW,
+    createdAt: overrides.createdAt ?? DEFAULT_CREATED_AT,
+    ...omitUndefined({ key: overrides.key }),
   };
-  if (!("status" in over) || over.status === undefined) return { ...base, status: "running" };
-  switch (over.status) {
+  if (!("status" in overrides) || overrides.status === undefined)
+    return { ...base, status: "running" };
+  switch (overrides.status) {
     case "completed":
-      return { ...base, status: "completed", output: over.output };
+      return { ...base, status: "completed", output: overrides.output };
     case "failed":
-      return { ...base, status: "failed", error: over.error };
+      return { ...base, status: "failed", error: overrides.error };
     case "cancelled":
       return { ...base, status: "cancelled" };
     default:
-      return { ...base, status: over.status };
+      return { ...base, status: overrides.status };
   }
 }
 

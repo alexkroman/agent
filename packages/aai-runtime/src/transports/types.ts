@@ -110,7 +110,7 @@ export type TransportCallbacks = {
 };
 
 /** Per-error options a transport may attach — the shape `onError` takes. */
-export type EmitErrorOpts = { fatal?: boolean };
+export type EmitErrorOptions = { fatal?: boolean };
 
 /**
  * A transport's own error reporter, threaded into its internals.
@@ -122,7 +122,11 @@ export type EmitErrorOpts = { fatal?: boolean };
  *
  * @internal
  */
-export type EmitError = (code: SessionErrorCode, message: string, opts?: EmitErrorOpts) => void;
+export type EmitError = (
+  code: SessionErrorCode,
+  message: string,
+  options?: EmitErrorOptions,
+) => void;
 
 /** Per-send options for {@link SendTtsText}. */
 export type SendTtsOptions = {
@@ -153,7 +157,7 @@ export type SendTtsOptions = {
  *
  * @internal
  */
-export type SendTtsText = (text: string, opts?: SendTtsOptions) => void;
+export type SendTtsText = (text: string, options?: SendTtsOptions) => void;
 
 /**
  * Minimal config a transport may receive at construction time.

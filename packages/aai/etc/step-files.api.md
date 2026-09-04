@@ -5,7 +5,7 @@
 ```ts
 
 // @public
-export function readUploadToFile(uploadId: string, path: string, opts?: ReadUploadToFileOptions): Promise<number>;
+export function readUploadToFile(uploadId: string, path: string, options?: ReadUploadToFileOptions): Promise<number>;
 
 // @public
 export type ReadUploadToFileOptions = {
@@ -37,7 +37,7 @@ type UploadRange = {
 };
 
 // @public
-export function withTempDir<T>(work: (dir: string) => Promise<T>, opts?: WithTempDirOptions): Promise<T>;
+export function withTempDir<T>(work: (dir: string) => Promise<T>, options?: WithTempDirOptions): Promise<T>;
 
 // @public
 export type WithTempDirOptions = {
@@ -45,7 +45,7 @@ export type WithTempDirOptions = {
 };
 
 // @public
-export function writeUploadFromFile(path: string, opts?: WriteUploadFromFileOptions): Promise<UploadInfo>;
+export function writeUploadFromFile(path: string, options?: WriteUploadFromFileOptions): Promise<UploadInfo>;
 
 // @public
 export type WriteUploadFromFileOptions = WriteUploadOptions & {

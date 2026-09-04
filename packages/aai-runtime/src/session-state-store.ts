@@ -362,11 +362,11 @@ async function commitPending(
  *
  * @internal
  */
-export function createSessionStateStore(opts: {
+export function createSessionStateStore(options: {
   backend: SessionStateBackend;
   logger?: Logger | undefined;
 }): SessionStateStore {
-  const { backend, logger } = opts;
+  const { backend, logger } = options;
   const sessions = new Map<string, SessionEntry>();
 
   const entryFor = (sessionId: string): SessionEntry =>

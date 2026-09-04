@@ -62,7 +62,7 @@ which is what you hand the opener to.
 ### assemblyAITts()
 
 ```ts
-function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
+function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
 ```
 
 Build an AssemblyAI streaming-TTS descriptor.
@@ -77,7 +77,7 @@ imported side by side without aliasing.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`AssemblyAITtsOptions`](#assemblyaittsoptions)
 
@@ -108,7 +108,7 @@ reports ready and never speaks.
 ### cartesiaTts()
 
 ```ts
-function cartesiaTts(opts?: CartesiaTtsOptions): TtsProvider;
+function cartesiaTts(options?: CartesiaTtsOptions): TtsProvider;
 ```
 
 Build a Cartesia TTS descriptor for pipeline mode. The API key is resolved
@@ -116,7 +116,7 @@ host-side from the agent's env (`CARTESIA_API_KEY`).
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`CartesiaTtsOptions`](#cartesiattsoptions)
 
@@ -142,7 +142,7 @@ export default agent({
 ### rimeTts()
 
 ```ts
-function rimeTts(opts?: RimeTtsOptions): TtsProvider;
+function rimeTts(options?: RimeTtsOptions): TtsProvider;
 ```
 
 Build a Rime TTS descriptor for pipeline mode. The API key is resolved
@@ -150,7 +150,7 @@ host-side from the agent's env (`RIME_API_KEY`).
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`RimeTtsOptions`](#rimettsoptions)
 

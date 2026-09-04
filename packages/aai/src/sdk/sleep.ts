@@ -124,12 +124,12 @@ export type SleepTimerOptions = {
 };
 
 /**
- * Resolve after `ms` milliseconds, or as soon as `opts.signal` aborts.
+ * Resolve after `ms` milliseconds, or as soon as `options.signal` aborts.
  *
  * @internal
  */
-export function sleep(ms: number, opts: SleepTimerOptions = {}): Promise<void> {
-  const { signal, unref } = opts;
+export function sleep(ms: number, options: SleepTimerOptions = {}): Promise<void> {
+  const { signal, unref } = options;
   if (signal?.aborted === true) return Promise.resolve();
   return new Promise<void>((resolve) => {
     // Declared before the timer so `onAbort` can name it; the timer callback

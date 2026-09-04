@@ -172,7 +172,7 @@ function pollUntilTerminal<R>(
  *   type-only import of `agent.ts` is erased, so it costs the bundle nothing.
  * @param runId - The run to watch. `undefined` costs nothing, so a page may
  *   pass its state straight through before a run exists.
- * @param opts - `api` when the page holds its own client; `intervalMs` to
+ * @param options - `api` when the page holds its own client; `intervalMs` to
  *   change the poll interval the stream falls back to.
  * @returns The latest snapshot, the last read's error, and whether the watch
  *   is still going — see {@link UseWorkflowRunResult}.
@@ -181,9 +181,9 @@ function pollUntilTerminal<R>(
  */
 export function useWorkflowRun<R = unknown>(
   runId: string | undefined,
-  opts: { api?: WorkflowApi; intervalMs?: number } = {},
+  options: { api?: WorkflowApi; intervalMs?: number } = {},
 ): UseWorkflowRunResult<R> {
-  const { api, intervalMs = DEFAULT_WORKFLOW_POLL_MS } = opts;
+  const { api, intervalMs = DEFAULT_WORKFLOW_POLL_MS } = options;
   const [run, setRun] = useState<WorkflowRun<R> | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   /**

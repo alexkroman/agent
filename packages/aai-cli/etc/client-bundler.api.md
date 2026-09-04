@@ -7,7 +7,7 @@
 import { PluginOption } from 'vite';
 
 // @internal
-export function buildClient(cwd: string, opts?: BuildClientOptions): Promise<Record<string, string>>;
+export function buildClient(cwd: string, options?: BuildClientOptions): Promise<Record<string, string>>;
 
 // @internal
 export type BuildClientOptions = {

@@ -435,7 +435,7 @@ session.start();
 ### createWorkflowApi()
 
 ```ts
-function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
+function createWorkflowApi(options?: WorkflowApiOptions): WorkflowApi;
 ```
 
 Create a workflow API client aimed at the agent serving this page.
@@ -447,7 +447,7 @@ reads as though it were free.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`WorkflowApiOptions`](#workflowapioptions)
 
@@ -1710,7 +1710,7 @@ function Transcript() {
 ### useDownloadUrl()
 
 ```ts
-function useDownloadUrl(uploadId: string | undefined, opts?: UseDownloadUrlOptions): UseDownloadUrlResult;
+function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
 ```
 
 Read an upload's bytes and hand back a URL a DOM element can use.
@@ -1725,7 +1725,7 @@ The id a completed run reported, or `undefined` before one
   exists — which is what a page passes straight through while it waits, and
   reports as idle rather than pending.
 
-##### opts?
+##### options?
 
 [`UseDownloadUrlOptions`](#usedownloadurloptions)
 
@@ -2396,7 +2396,7 @@ function LiveTranscript() {
 ### useWorkflowProgress()
 
 ```ts
-function useWorkflowProgress<T = string>(runId: string | undefined, opts?: {
+function useWorkflowProgress<T = string>(runId: string | undefined, options?: {
   api?: WorkflowApi;
   intervalMs?: number;
   namespace?: string;
@@ -2427,7 +2427,7 @@ What the workflow writes. Defaults to `string`, which is what
 
 `string` \| `undefined`
 
-##### opts?
+##### options?
 
 ###### api?
 
@@ -2471,7 +2471,7 @@ function Progress({ runId }: { runId?: string }) {
 ### useWorkflowRun()
 
 ```ts
-function useWorkflowRun<R = unknown>(runId: string | undefined, opts?: {
+function useWorkflowRun<R = unknown>(runId: string | undefined, options?: {
   api?: WorkflowApi;
   intervalMs?: number;
 }): UseWorkflowRunResult<R>;
@@ -2517,7 +2517,7 @@ The workflow's output type. Supplying it is what makes
 The run to watch. `undefined` costs nothing, so a page may
   pass its state straight through before a run exists.
 
-##### opts?
+##### options?
 
 `api` when the page holds its own client; `intervalMs` to
   change the poll interval the stream falls back to.
@@ -2572,7 +2572,7 @@ function RunPanel({ runId }: { runId: string | undefined }) {
 ### useWorkflowRuns()
 
 ```ts
-function useWorkflowRuns<R = unknown>(workflow: string | undefined, opts?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+function useWorkflowRuns<R = unknown>(workflow: string | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 ```
 
 Read a workflow's recent runs.
@@ -2592,7 +2592,7 @@ The workflow's output type, so a completed run's `output` is
 
 `string` \| `undefined`
 
-##### opts?
+##### options?
 
 [`UseWorkflowRunsOptions`](#useworkflowrunsoptions)
 
@@ -2616,7 +2616,7 @@ function History() {
 ### useWorkflows()
 
 ```ts
-function useWorkflows(opts?: UseWorkflowsOptions): UseWorkflowsResult;
+function useWorkflows(options?: UseWorkflowsOptions): UseWorkflowsResult;
 ```
 
 Read the agent's declared workflows.
@@ -2631,7 +2631,7 @@ declares no workflows" about an agent that was merely unreachable.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`UseWorkflowsOptions`](#useworkflowsoptions)
 
@@ -2675,7 +2675,7 @@ function WorkflowPicker({ onPick }: { onPick: (name: string) => void }) {
 ### useWorkflowStream()
 
 ```ts
-function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 ```
 
 Start a workflow run and stream a file into it while it works.
@@ -2697,7 +2697,7 @@ either way. What differs is only WHEN the id becomes valid.
 
 `string`
 
-##### opts?
+##### options?
 
 [`UseWorkflowStreamOptions`](#useworkflowstreamoptions)
 
@@ -2722,7 +2722,7 @@ const { submit, run, upload, pending, error } = useWorkflowStream("transcribe");
 ### useWorkflowSubmit()
 
 ```ts
-function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 ```
 
 Start a workflow from a form, and follow the run it creates.
@@ -2751,7 +2751,7 @@ The workflow DEFINITION, which types both halves of the
 
 `string`
 
-##### opts?
+##### options?
 
 [`UseWorkflowSubmitOptions`](#useworkflowsubmitoptions)
 

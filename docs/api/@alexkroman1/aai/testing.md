@@ -77,7 +77,7 @@ const workflows = createStubWorkflows({
 ### createRunSnapshot()
 
 ```ts
-function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
 ```
 
 Build a [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot) — the right arm of the union, without a
@@ -94,7 +94,7 @@ one reads back.
 
 #### Parameters
 
-##### over?
+##### overrides?
 
 [`RunSnapshotOverrides`](#runsnapshotoverrides)\<`R`\>
 
@@ -807,7 +807,7 @@ const ctx = createToolContext({ delegate: desk.delegate });
 ### stubGateway()
 
 ```ts
-function stubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGateway;
+function stubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGateway;
 ```
 
 Build a fake LLM gateway answering `replies` in order.
@@ -826,7 +826,7 @@ rather than on the code.
 
 Completion contents, in order. A bare string is one reply.
 
-##### opts?
+##### options?
 
 [`StubGatewayOptions`](#stubgatewayoptions)
 
@@ -857,7 +857,7 @@ test("summarize sends the article and returns the headline", async () => {
 ### stubGatewayRoute()
 
 ```ts
-function stubGatewayRoute(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayRoute;
+function stubGatewayRoute(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayRoute;
 ```
 
 A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot
@@ -907,7 +907,7 @@ expect(model.calls[0]?.prompt).toContain("the brief");
 Completion contents, in order; the last repeats. A bare
   string is one reply.
 
-##### opts?
+##### options?
 
 [`StubGatewayOptions`](#stubgatewayoptions)
 

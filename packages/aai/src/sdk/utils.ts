@@ -402,8 +402,8 @@ export function isToolFailure(value: unknown): value is ToolFailure {
  *
  * @public
  */
-export async function responseErrorMessage(res: Response, label?: string): Promise<string> {
-  const text = await res.text().catch(() => "");
+export async function responseErrorMessage(response: Response, label?: string): Promise<string> {
+  const text = await response.text().catch(() => "");
   const body = safeJsonParse(text);
   if (isRecord(body)) {
     const { error } = body;
@@ -411,7 +411,7 @@ export async function responseErrorMessage(res: Response, label?: string): Promi
     // which at least says what happened.
     if (typeof error === "string" && error !== "") return error;
   }
-  return statusWithPreview(res.status, text, label);
+  return statusWithPreview(response.status, text, label);
 }
 
 /**

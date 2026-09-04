@@ -141,12 +141,12 @@ step's whole budget to arrive at the same failure several seconds later.
 ```ts
 function mapConcurrent<T, R>(
    items: readonly T[], 
-   size: number, 
+   width: number, 
    run: (item: T, index: number) => R | Promise<R>
 ): Promise<R[]>;
 ```
 
-Map `items` through `run`, at most `size` at a time, in a replay-safe order.
+Map `items` through `run`, at most `width` at a time, in a replay-safe order.
 
 Results come back in ITEM order however the individual calls settle, so it
 substitutes directly for `Promise.all(items.map(run))` where a bound is
@@ -178,14 +178,14 @@ readonly `T`[]
 
 What to map. An empty list runs nothing and resolves `[]`.
 
-##### size
+##### width
 
 `number`
 
 Most calls in flight at once. Rounded down, and floored at 1.
-  A size of zero would otherwise start no slot at all — a hang, not an error,
+  A width of zero would otherwise start no slot at all — a hang, not an error,
   and a hang inside a workflow body is a run that never completes. A
-  non-finite size is worse and needs the same floor for a different reason:
+  non-finite width is worse and needs the same floor for a different reason:
   `Math.min(NaN, n)` is `NaN`, so `Array.from({ length: NaN })` is empty and
   the map silently does NOTHING, which reads as an empty input.
 
@@ -559,7 +559,7 @@ retried until the attempts run out. It also turns a non-2xx into a throw, which 
 ### stepGenerate()
 
 ```ts
-function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+function stepGenerate(prompt: string, options?: StepGenerateOptions): Promise<string>;
 ```
 
 Ask the AssemblyAI LLM Gateway one question and return its reply.
@@ -579,7 +579,7 @@ failure — a `404` that means "already deleted".
 
 The user message.
 
-##### opts?
+##### options?
 
 [`StepGenerateOptions`](#stepgenerateoptions)
 
@@ -621,7 +621,7 @@ On EVERY failure of this call, which is the point
 ### stepGenerateJson()
 
 ```ts
-function stepGenerateJson<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+function stepGenerateJson<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 ```
 
 Ask the model for JSON and return it validated.
@@ -652,7 +652,7 @@ The user message. The SHAPE belongs in `system` — this says
   nothing about JSON on the caller's behalf, because the wording that gets a
   model to comply is part of the prompt a template is demonstrating.
 
-##### opts
+##### options
 
 [`StepGenerateJsonOptions`](#stepgeneratejsonoptions)\<`S`\>
 
@@ -720,7 +720,7 @@ answer cannot change and reads as though it could.
 ### stepReadUpload()
 
 ```ts
-function stepReadUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+function stepReadUpload(id: string, options?: ReadUploadOptions): Promise<UploadSlice>;
 ```
 
 Read a window of an uploaded file.
@@ -742,7 +742,7 @@ caller learns which it got.
 
 `string`
 
-##### opts?
+##### options?
 
 [`ReadUploadOptions`](#readuploadoptions)
 
@@ -856,7 +856,7 @@ when the id names no upload, exactly as [stepUploadInfo](#stepuploadinfo) does.
 ### stepSpeak()
 
 ```ts
-function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
+function stepSpeak(text: string, options?: SpeakOptions): Promise<SpokenAudio>;
 ```
 
 Speak `text`, and answer with the whole utterance as a WAV.
@@ -872,7 +872,7 @@ What to say. Refused when it is blank: a synthesizer answers
   on somebody's page rather than an error, and no retry finds the missing
   words.
 
-##### opts?
+##### options?
 
 [`SpeakOptions`](#speakoptions)
 
@@ -913,18 +913,18 @@ export async function narrate(summary: string): Promise<string> {
 ### stepTranscribePoll()
 
 ```ts
-function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+function stepTranscribePoll(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 ```
 
 Ask once whether a job has finished, and read it when it has.
 
 #### Parameters
 
-##### id
+##### transcriptId
 
 `string`
 
-##### opts?
+##### options?
 
 [`TranscribeRequestOptions`](#transcriberequestoptions)
 
@@ -962,7 +962,7 @@ retried until the attempts run out.
 ### stepTranscribeSubmit()
 
 ```ts
-function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+function stepTranscribeSubmit(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
   id: string;
 }>;
 ```
@@ -979,7 +979,7 @@ What to transcribe. [stepTranscribeUpload](#steptranscribeupload)'s answer,
   or any URL the service can reach — a recording already sitting in a bucket
   never needs to pass through this process at all.
 
-##### opts?
+##### options?
 
 [`TranscribeSubmitOptions`](#transcribesubmitoptions)
 
@@ -1039,7 +1039,7 @@ retried until the attempts run out.
 ```ts
 function stepTranscribeSync(bytes: 
   | Uint8Array<ArrayBufferLike>
-  | readonly Uint8Array<ArrayBufferLike>[], opts?: TranscribeSyncOptions): Promise<{
+  | readonly Uint8Array<ArrayBufferLike>[], options?: TranscribeSyncOptions): Promise<{
   text: string;
 }>;
 ```
@@ -1067,7 +1067,7 @@ A whole file, header included. The endpoint decodes each
   `[wavHeader(format, window.byteLength), window]` rather than joining the two
   into a buffer this function would then copy into the body a second time.
 
-##### opts?
+##### options?
 
 [`TranscribeSyncOptions`](#transcribesyncoptions)
 
@@ -1126,7 +1126,7 @@ export async function transcribeClip(uploadId: string): Promise<string> {
 ### stepTranscribeUpload()
 
 ```ts
-function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+function stepTranscribeUpload(uploadId: string, options?: TranscribeRequestOptions): Promise<{
   audioUrl: string;
 }>;
 ```
@@ -1155,7 +1155,7 @@ doc carries why that is a refusal rather than a wait.
 An upload in the agent's own store, as `stepWriteUpload` or a
   page's `api.upload(file)` produced. Must be complete.
 
-##### opts?
+##### options?
 
 [`TranscribeRequestOptions`](#transcriberequestoptions)
 
@@ -1309,7 +1309,7 @@ when `token` is empty: that composes to the route's own
 function stepWriteUpload(bytes: 
   | Uint8Array<ArrayBufferLike>
   | readonly Uint8Array<ArrayBufferLike>[]
-| AsyncIterable<Uint8Array<ArrayBufferLike>, any, any>, opts?: WriteUploadOptions): Promise<UploadInfo>;
+| AsyncIterable<Uint8Array<ArrayBufferLike>, any, any>, options?: WriteUploadOptions): Promise<UploadInfo>;
 ```
 
 Store a file a step PRODUCED, and answer with the record naming it.
@@ -1351,7 +1351,7 @@ The file. A LIST is stored in order and an async iterable is
   streamed, so a step producing something large — a long recording, a
   concatenation of many utterances — never has to hold it whole.
 
-##### opts?
+##### options?
 
 [`WriteUploadOptions`](#writeuploadoptions)
 
@@ -1474,7 +1474,7 @@ try {
 ##### Constructor
 
 ```ts
-new StepGenerateError(message: string, opts: {
+new StepGenerateError(message: string, options: {
   cause?: unknown;
   retryable: boolean;
   retryAfter?: Date;
@@ -1488,7 +1488,7 @@ new StepGenerateError(message: string, opts: {
 
 `string`
 
-###### opts
+###### options
 
 ###### cause?
 

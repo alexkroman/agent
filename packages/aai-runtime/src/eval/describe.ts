@@ -196,7 +196,7 @@ const truthy = (value: string | undefined): boolean =>
  */
 export function resolveEvalMode(
   agent: AgentDef,
-  env: Record<string, string | undefined> = process.env,
+  hostEnv: Record<string, string | undefined> = process.env,
   /**
    * What the CASE overrides, which decides the credential question with it.
    *
@@ -214,7 +214,7 @@ export function resolveEvalMode(
   // rather than present-and-undefined, which `exactOptionalPropertyTypes` makes
   // a different type.
   const effective: AgentDef = { ...agent, ...omitUndefined({ llm: overrides?.llm }) };
-  return modeFrom(evalCredentials(effective, env), env);
+  return modeFrom(evalCredentials(effective, hostEnv), hostEnv);
 }
 
 /**
@@ -230,21 +230,21 @@ export function resolveEvalMode(
  */
 export function resolveWorkflowEvalMode(
   agent: AgentDef,
-  env: Record<string, string | undefined> = process.env,
+  hostEnv: Record<string, string | undefined> = process.env,
 ): { mode: EvalMode; reason: string } {
-  return modeFrom(evalWorkflowCredentials(agent, env), env);
+  return modeFrom(evalWorkflowCredentials(agent, hostEnv), hostEnv);
 }
 
 /** The mode decision itself, shared by both gates above. */
 function modeFrom(
   creds: EvalCredentials,
-  env: Record<string, string | undefined>,
+  hostEnv: Record<string, string | undefined>,
 ): { mode: EvalMode; reason: string } {
-  if (truthy(env.AAI_EVAL_STUB)) {
+  if (truthy(hostEnv.AAI_EVAL_STUB)) {
     return { mode: "stub", reason: "AAI_EVAL_STUB is set" };
   }
   if (creds.ready) return { mode: "live", reason: "a provider credential is set" };
-  if (truthy(env.AAI_REQUIRE_EVAL)) {
+  if (truthy(hostEnv.AAI_REQUIRE_EVAL)) {
     throw new Error(
       `AAI_REQUIRE_EVAL is set but this eval cannot run live: ${creds.reason}. ` +
         "Unset it to fall back to the scripted model, or supply the credential.",
@@ -397,9 +397,9 @@ function hasWorkflows(agent: AgentDef): boolean {
  * the cause's message, which is the part that says what to change.
  */
 function checkedGenerate(generate: HostGenerateFn): HostGenerateFn {
-  return async (options, callOpts) => {
+  return async (options, callOptions) => {
     try {
-      return await generate(options, callOpts);
+      return await generate(options, callOptions);
     } catch (cause) {
       if (!(cause instanceof GenerateSchemaMismatchError)) throw cause;
       throw new Error(

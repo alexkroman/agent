@@ -45,6 +45,6 @@ export interface GoogleLlmOptions extends ModelOptions {}
  * });
  * ```
  */
-export function googleLlm(opts: GoogleLlmOptions): LlmProvider {
-  return { kind: GOOGLE_KIND, options: { ...opts } };
+export function googleLlm(options: GoogleLlmOptions): LlmProvider {
+  return { kind: GOOGLE_KIND, options: { ...options } };
 }

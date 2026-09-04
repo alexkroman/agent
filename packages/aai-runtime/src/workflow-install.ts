@@ -97,7 +97,7 @@ type WorkflowSupport = {
  *
  * @internal
  */
-export function installWorkflowSupport(opts: {
+export function installWorkflowSupport(options: {
   /**
    * The agent's env. Read for `DATABASE_URL`, the upload cap, and the three
    * `AAI_UPLOAD_STORAGE_*` keys — nothing else. Taking the RECORD rather than the
@@ -129,23 +129,25 @@ export function installWorkflowSupport(opts: {
   // 0.43s (`_upload-blobs.ts`, "The pool"). What is left here is one small
   // `update` naming a window that landed — a round trip, like every other
   // statement on this pool.
-  const databaseUrl = opts.env?.DATABASE_URL;
+  const databaseUrl = options.env?.DATABASE_URL;
   const db: CloseableDb | undefined = databaseUrl ? openAppDb(databaseUrl) : undefined;
   // A value that is not a positive number is IGNORED rather than treated as zero: a
   // typo'd env var must not make every upload fail as "too large". An operator knob
   // rather than a tuning one: what it bounds is how much of their storage one upload
   // may take, and only they know that.
-  const maxBytes = positiveBytes(opts.env?.[MAX_UPLOAD_BYTES_ENV]);
+  const maxBytes = positiveBytes(options.env?.[MAX_UPLOAD_BYTES_ENV]);
   // The local directory is resolved WHETHER OR NOT it is used, because asking for it
   // is free and the alternative is a conditional whose two arms drift. `db` is what
   // decides: `createUploadStore` ignores `localDir` when there is a database, and a
   // bucket when there is not (its own doc carries why each is right).
   const localDir = localWorkflowDataDir();
-  const blobs = resolveUploadBlobs(omitUndefined({ env: opts.env, broker: opts.uploadBroker }));
+  const blobs = resolveUploadBlobs(
+    omitUndefined({ env: options.env, broker: options.uploadBroker }),
+  );
   // The PLATFORM's record home, when there is one. Resolved from the same two env
   // keys the workflow world uses, so an upload's record and a run's queue can never
   // disagree about whether this guest is deployed — which they DID, because this
-  // read `opts.env` (the agent's own) where those keys never appear, so a deployed
+  // read `options.env` (the agent's own) where those keys never appear, so a deployed
   // guest announced "workflow uploads are LOCAL … no platform" one line after the
   // harness announced the platform world. See `platformGuestOptions`.
   const platform = platformGuestOptions();
@@ -154,7 +156,7 @@ export function installWorkflowSupport(opts: {
   // (see `close()` below). Every platform client prefers it and falls back to
   // HTTP until it is open, so this is a latency decision rather than a
   // durability one — `platform-socket.ts` carries the argument.
-  if (platform) ensurePlatformSocket(platform, { logger: opts.logger });
+  if (platform) ensurePlatformSocket(platform, { logger: options.logger });
   const store = createUploadStore({
     db,
     localDir,
@@ -188,7 +190,7 @@ export function installWorkflowSupport(opts: {
     // the predicate is DERIVED from the default rather than sniffed — see
     // `isPerProcessDataDir`. What stays unconditional is the recommendation: a
     // directory beside the project is a save, not durability.
-    opts.logger.info(
+    options.logger.info(
       `workflow uploads are LOCAL (${localDir}): no platform and no DATABASE_URL. ` +
         (isPerProcessDataDir(localDir)
           ? "That directory belongs to this process, so an upload does not outlive it — " +
@@ -200,7 +202,7 @@ export function installWorkflowSupport(opts: {
     );
   }
   publishUploadReader(store);
-  publishStepReporter(createStepReporter(opts.logger));
+  publishStepReporter(createStepReporter(options.logger));
   // The reader behind `stepInfo()`, published beside the reporter because both
   // read the same `AsyncLocalStorage` and both are filled once per server. An
   // unpublished one answers `undefined`, which a body reads as "not retrying" —
@@ -221,7 +223,7 @@ export function installWorkflowSupport(opts: {
     // The BROKER is still required — a self-hosted agent with its own bucket holds
     // the credential itself, and no platform route serves its windows — but it is no
     // longer sufficient: the store has to be the arm that reads that bucket.
-    directParts: Boolean(opts.uploadBroker?.trim()) && uploadBytesAreRemote({ db, blobs }),
+    directParts: Boolean(options.uploadBroker?.trim()) && uploadBytesAreRemote({ db, blobs }),
     async close(): Promise<void> {
       // Settled rather than awaited in sequence, and never rejecting: this runs
       // inside `AgentServer.close()`, where one pool refusing to drain must not

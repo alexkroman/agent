@@ -174,9 +174,9 @@ export interface ResolveOneOptions<T> {
 export function resolveOne<T>(
   candidates: readonly T[],
   spoken: string,
-  opts: ResolveOneOptions<T>,
+  options: ResolveOneOptions<T>,
 ): T | ToolFailure {
-  const label = opts.label ?? "option";
+  const label = options.label ?? "option";
   if (candidates.length === 0) {
     return toolFailure(`There is no ${label} to choose from.`);
   }
@@ -191,17 +191,17 @@ export function resolveOne<T>(
     // The other two picks in this function already read it this way.
     if (picked === undefined) {
       return toolFailure(
-        `There is no such ${label} — there ${count(candidates.length, label)}: ${list(candidates, opts.describe)}.`,
+        `There is no such ${label} — there ${count(candidates.length, label)}: ${list(candidates, options.describe)}.`,
       );
     }
     return picked;
   }
 
-  if (opts.score) {
+  if (options.score) {
     // Captured once: inside this branch the scorer is known to be there, and
-    // re-reading `opts.score?.()` per candidate spells an absence that cannot
+    // re-reading `options.score?.()` per candidate spells an absence that cannot
     // happen here as a score of zero.
-    const score = opts.score;
+    const score = options.score;
     const text = spoken.toLowerCase();
     const scored = candidates.map((candidate) => ({
       candidate,
@@ -215,14 +215,14 @@ export function resolveOne<T>(
     for (const one of scored) best = Math.max(best, one.score);
     if (best <= 0) {
       return toolFailure(
-        `No ${label} matches "${spoken}". Ask which one: ${list(candidates, opts.describe)}.`,
+        `No ${label} matches "${spoken}". Ask which one: ${list(candidates, options.describe)}.`,
       );
     }
     const winners = scored.filter((one) => one.score === best).map((one) => one.candidate);
     const winner = winners[0];
     if (winners.length === 1 && winner !== undefined) return winner;
     return toolFailure(
-      `"${spoken}" matches ${winners.length} ${label}s. Ask which one: ${list(winners, opts.describe)}.`,
+      `"${spoken}" matches ${winners.length} ${label}s. Ask which one: ${list(winners, options.describe)}.`,
     );
   }
 
@@ -230,7 +230,7 @@ export function resolveOne<T>(
   if (candidates.length === 1 && only !== undefined) return only;
 
   return toolFailure(
-    `That is ambiguous — ${candidates.length} ${label}s match. Ask which one: ${list(candidates, opts.describe)}.`,
+    `That is ambiguous — ${candidates.length} ${label}s match. Ask which one: ${list(candidates, options.describe)}.`,
   );
 }
 

@@ -44,9 +44,9 @@ describe("PipelineTransport", () => {
       });
       const t = createPipelineTransport(opts);
       await t.start();
-      expect(stt.last()?.opts.sampleRate).toBe(8000);
-      expect(stt.last()?.opts.apiKey).toBe("MY_STT_KEY");
-      expect(stt.last()?.opts.sttPrompt).toBe("be brief");
+      expect(stt.last()?.options.sampleRate).toBe(8000);
+      expect(stt.last()?.options.apiKey).toBe("MY_STT_KEY");
+      expect(stt.last()?.options.sttPrompt).toBe("be brief");
       await t.stop();
     });
 
@@ -56,7 +56,7 @@ describe("PipelineTransport", () => {
       });
       const t = createPipelineTransport(opts);
       await t.start();
-      expect(stt.last()?.opts.agentContext).toBe("Hi there!");
+      expect(stt.last()?.options.agentContext).toBe("Hi there!");
       await t.stop();
     });
   });
@@ -590,7 +590,7 @@ describe("session signal listener budget", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    const signal = stt.last()?.opts.signal;
+    const signal = stt.last()?.options.signal;
     expect(signal).toBeDefined();
     // A signal nobody opted in answers Node's default of 10, so a distinct
     // finite value is the observable proof the call happened.
@@ -603,7 +603,7 @@ describe("session signal listener budget", () => {
     const { opts, stt } = makeOpts();
     const t = createPipelineTransport(opts);
     await t.start();
-    const signal = stt.last()?.opts.signal as AbortSignal;
+    const signal = stt.last()?.options.signal as AbortSignal;
     stt.last()?.fireFinal("hello there");
     await vi.advanceTimersByTimeAsync(50);
 

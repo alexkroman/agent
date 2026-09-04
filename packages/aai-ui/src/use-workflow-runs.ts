@@ -79,9 +79,9 @@ export type UseWorkflowRunsResult<R = unknown> = {
  */
 export function useWorkflowRuns<R = unknown>(
   workflow: string | undefined,
-  opts: UseWorkflowRunsOptions = {},
+  options: UseWorkflowRunsOptions = {},
 ): UseWorkflowRunsResult<R> {
-  const { api, limit, key, skip = false } = opts;
+  const { api, limit, key, skip = false } = options;
   const [runs, setRuns] = useState<WorkflowRun<R>[]>([]);
   const [loading, setLoading] = useState(!skip && workflow !== undefined);
   const [error, setError] = useState<string | undefined>(undefined);

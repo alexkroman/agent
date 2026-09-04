@@ -58,8 +58,8 @@ export interface SonioxSttOptions extends ProviderCredentialOptions {
  * Unset, `languages` is omitted from the request and Soniox
  * auto-detects — which is not the same as English.
  */
-export function sonioxStt(opts: SonioxSttOptions = {}): SttProvider {
-  return { kind: SONIOX_KIND, options: { ...opts } };
+export function sonioxStt(options: SonioxSttOptions = {}): SttProvider {
+  return { kind: SONIOX_KIND, options: { ...options } };
 }
 
 /** Streaming model used when the descriptor names none. */
@@ -70,13 +70,15 @@ export const SONIOX_DEFAULT_MODEL = "stt-rt-v3";
  * options with every host-side default filled in. Shared by the opener and
  * the runtime's "Session mode resolved" log.
  */
-export function resolveSonioxSttSettings(opts: SonioxSttOptions): {
+export function resolveSonioxSttSettings(options: SonioxSttOptions): {
   model: string;
   languageHints?: readonly string[];
 } {
   return {
-    model: opts.model ?? SONIOX_DEFAULT_MODEL,
+    model: options.model ?? SONIOX_DEFAULT_MODEL,
     // Omitted unless set: absent means auto-detect, which is not "English".
-    ...(opts.languages && opts.languages.length > 0 ? { languageHints: opts.languages } : {}),
+    ...(options.languages && options.languages.length > 0
+      ? { languageHints: options.languages }
+      : {}),
   };
 }

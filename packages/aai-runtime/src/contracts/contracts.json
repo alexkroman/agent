@@ -1,22 +1,24 @@
 {
   "db": {
-    "current": 7,
-    "supported": [5, 6, 7],
+    "current": 8,
+    "supported": [5, 6, 8],
     "dropped": {
       "1": "additive: CreatePostgresDbOptions gains optional connectTimeoutSeconds and queryTimeoutMs (network-partition query bound); backward-compatible, and aai-runtime has no external consumer to keep an epoch-1 template for",
       "2": "Epoch 2 promised SweepSkip, which the surface no longer exports — and epoch 4 was dropped for exactly that removal. It read as supported only because its frozen example never named the type, so the retain was a claim nothing could have detected: a consumer naming SweepSkip has not compiled since it went. Dropped rather than narrowed, because aai-runtime has no external consumer to keep an epoch-2 template for.",
       "3": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
-      "4": "SweepSkip is REMOVED. It described what the graphile-worker lock sweep reports when it declines, and that sweep went with the Workflow DevKit — there is no mechanism left for the name to describe. A consumer naming the type no longer compiles, which is what makes this a drop rather than a retain."
+      "4": "SweepSkip is REMOVED. It described what the graphile-worker lock sweep reports when it declines, and that sweep went with the Workflow DevKit — there is no mechanism left for the name to describe. A consumer naming the type no longer compiles, which is what makes this a drop rather than a retain.",
+      "7": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
     }
   },
   "eval": {
-    "current": 5,
-    "supported": [5],
+    "current": 6,
+    "supported": [6],
     "dropped": {
       "1": "The eval workflow engine's WorkflowCtx gained sleep (recorded, not taken) and waitFor (refused with a named message, a hook's payload coming from outside the run). Its types also moved to workflow-engine-types.ts under the 500-line cap, which the rollup's provenance shows.",
       "2": "EvalSleep carries the wait's label, so a workflow eval can assert which of a body's waits it reached rather than only a duration.",
       "3": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises the Fake* speech doubles and toolCallsIn, now Stub* and toolCallsInEvents.",
-      "4": "Renamed for naming consistency (API naming review): the eval speech doubles joined the repo's single Stub vocabulary (FakeSpeech -> StubSpeechProviders and family), since Fake vs Stub carried no meaning while the shared word Speech did. callsIn and toolCallsIn, which differed only in what they took, became toolCallsInTurns and toolCallsInEvents."
+      "4": "Renamed for naming consistency (API naming review): the eval speech doubles joined the repo's single Stub vocabulary (FakeSpeech -> StubSpeechProviders and family), since Fake vs Stub carried no meaning while the shared word Speech did. callsIn and toolCallsIn, which differed only in what they took, became toolCallsInTurns and toolCallsInEvents.",
+      "5": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
     }
   },
   "keys": {
@@ -27,20 +29,23 @@
     }
   },
   "logging": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
-  },
-  "providers": {
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "Renamed for naming consistency (API naming review): S2SConfig -> S2sConfig, the lone S2S spelling among seven S2s."
+      "1": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+    }
+  },
+  "providers": {
+    "current": 3,
+    "supported": [3],
+    "dropped": {
+      "1": "Renamed for naming consistency (API naming review): S2SConfig -> S2sConfig, the lone S2S spelling among seven S2s.",
+      "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
     }
   },
   "runtime": {
-    "current": 12,
-    "supported": [12],
+    "current": 13,
+    "supported": [13],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
@@ -52,12 +57,13 @@
       "8": "JournalStore gained a required readStep(runId, key) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers ONE settled step by key, undefined when it has not settled, and both shipped databases key the table (run_id, key) so it is an index seek.",
       "9": "JournalStore gained a required readSleeps(runId) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers EVERY durable wait of a run, ordered by key, as SleepEntry (a SleepRecord plus its key), and both shipped databases key the sleeps table (run_id, key) so it is a range scan already in that order. It is what stops a replay re-claiming every elapsed sleep it walks past — measured in production at 2,675 journal POSTs on one run, rising +1 per delivery across 69 deliveries.",
       "10": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises decliningRuntime and SkipGreeting, now rejectingRuntime and SkipGreetingOption.",
-      "11": "Renamed for naming consistency (API naming review): decliningRuntime -> rejectingRuntime, pairing with the existing rejectingWorkflows, and SkipGreeting -> SkipGreetingOption, a boolean-or-thunk union named as a verb."
+      "11": "Renamed for naming consistency (API naming review): decliningRuntime -> rejectingRuntime, pairing with the existing rejectingWorkflows, and SkipGreeting -> SkipGreetingOption, a boolean-or-thunk union named as a verb.",
+      "12": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
     }
   },
   "server": {
-    "current": 14,
-    "supported": [14],
+    "current": 15,
+    "supported": [15],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
@@ -71,62 +77,74 @@
       "10": "JournalStore gained a required readStep(runId, key) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers ONE settled step by key, undefined when it has not settled, and both shipped databases key the table (run_id, key) so it is an index seek.",
       "11": "JournalStore gained a required readSleeps(runId) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers EVERY durable wait of a run, ordered by key, as SleepEntry (a SleepRecord plus its key), and both shipped databases key the sleeps table (run_id, key) so it is a range scan already in that order. It is what stops a replay re-claiming every elapsed sleep it walks past — measured in production at 2,675 journal POSTs on one run, rising +1 per delivery across 69 deliveries.",
       "12": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises createServer, ServerOptions and PassthroughServerOptions, all renamed.",
-      "13": "Renamed for naming consistency (API naming review): createServer -> createRuntimeServer so the generic name stops reading as the default when createAgentServer is the documented front door; ServerOptions -> RuntimeServerOptions follows it, and PassthroughServerOptions -> SharedServerOptions matches the existing SharedAgentParams."
+      "13": "Renamed for naming consistency (API naming review): createServer -> createRuntimeServer so the generic name stops reading as the default when createAgentServer is the documented front door; ServerOptions -> RuntimeServerOptions follows it, and PassthroughServerOptions -> SharedServerOptions matches the existing SharedAgentParams.",
+      "14": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
     }
   },
   "session": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "Renamed for naming consistency (API naming review): SessionCore -> ServerSession, resolving the one cross-package collision on the published surface, where aai-ui exported a SessionCore meaning the browser session."
-    }
-  },
-  "session-state": {
-    "current": 3,
-    "supported": [1, 2, 3],
-    "dropped": {}
-  },
-  "telephony": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "Its frozen example imported 5 of the 13 names epoch 1 promised, and the one name whose signature moved into epoch 2 — startTelephonySession, which is how this capability's report reaches the runtime facade — is one that example did not name. So the retain documented a compatibility it structurally could not test. Dropped rather than backed by a second example, because aai-runtime has no external consumer to keep an epoch-1 template for."
-    }
-  },
-  "testing": {
-    "current": 5,
-    "supported": [4, 5],
-    "dropped": {
-      "1": "Additive only: RunRecord gained codeVersion and StepEntry gained startedAt, both OPTIONAL, and both reach this capability's report because runWorkflow answers a run and its steps. Nothing in epoch 1 stops compiling — no caller must set either field, and a caller reading a run or a step is not broken by one more optional member. Dropped rather than retained on the pre-release grounds epoch 1 of every capability here carries: this package has no external consumers, so no superseded authoring style is owed a frozen compiling example — and this capability landed one day before the bump, so an epoch-1 template would be a starter nobody ever wrote against.",
-      "2": "JournalStore gained a required readStep(runId, key) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers ONE settled step by key, undefined when it has not settled, and both shipped databases key the table (run_id, key) so it is an index seek.",
-      "3": "JournalStore gained a required readSleeps(runId) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers EVERY durable wait of a run, ordered by key, as SleepEntry (a SleepRecord plus its key), and both shipped databases key the sleeps table (run_id, key) so it is a range scan already in that order. It is what stops a replay re-claiming every elapsed sleep it walks past — measured in production at 2,675 journal POSTs on one run, rising +1 per delivery across 69 deliveries."
-    }
-  },
-  "text": {
-    "current": 4,
-    "supported": [4],
-    "dropped": {
-      "1": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
-      "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example. `TextTurnOptions.system` is `systemPrompt` — the last place the system prompt had a second name, now that the `agent({ system })` alias is gone."
-    }
-  },
-  "tools": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
-  },
-  "uploads": {
     "current": 3,
     "supported": [3],
     "dropped": {
+      "1": "Renamed for naming consistency (API naming review): SessionCore -> ServerSession, resolving the one cross-package collision on the published surface, where aai-ui exported a SessionCore meaning the browser session.",
+      "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+    }
+  },
+  "session-state": {
+    "current": 4,
+    "supported": [1, 2, 4],
+    "dropped": {
+      "3": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+    }
+  },
+  "telephony": {
+    "current": 3,
+    "supported": [3],
+    "dropped": {
+      "1": "Its frozen example imported 5 of the 13 names epoch 1 promised, and the one name whose signature moved into epoch 2 — startTelephonySession, which is how this capability's report reaches the runtime facade — is one that example did not name. So the retain documented a compatibility it structurally could not test. Dropped rather than backed by a second example, because aai-runtime has no external consumer to keep an epoch-1 template for.",
+      "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+    }
+  },
+  "testing": {
+    "current": 6,
+    "supported": [4, 6],
+    "dropped": {
+      "1": "Additive only: RunRecord gained codeVersion and StepEntry gained startedAt, both OPTIONAL, and both reach this capability's report because runWorkflow answers a run and its steps. Nothing in epoch 1 stops compiling — no caller must set either field, and a caller reading a run or a step is not broken by one more optional member. Dropped rather than retained on the pre-release grounds epoch 1 of every capability here carries: this package has no external consumers, so no superseded authoring style is owed a frozen compiling example — and this capability landed one day before the bump, so an epoch-1 template would be a starter nobody ever wrote against.",
+      "2": "JournalStore gained a required readStep(runId, key) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers ONE settled step by key, undefined when it has not settled, and both shipped databases key the table (run_id, key) so it is an index seek.",
+      "3": "JournalStore gained a required readSleeps(runId) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers EVERY durable wait of a run, ordered by key, as SleepEntry (a SleepRecord plus its key), and both shipped databases key the sleeps table (run_id, key) so it is a range scan already in that order. It is what stops a replay re-claiming every elapsed sleep it walks past — measured in production at 2,675 journal POSTs on one run, rising +1 per delivery across 69 deliveries.",
+      "5": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+    }
+  },
+  "text": {
+    "current": 5,
+    "supported": [5],
+    "dropped": {
+      "1": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
+      "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example. `TextTurnOptions.system` is `systemPrompt` — the last place the system prompt had a second name, now that the `agent({ system })` alias is gone.",
+      "4": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+    }
+  },
+  "tools": {
+    "current": 3,
+    "supported": [1, 3],
+    "dropped": {
+      "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+    }
+  },
+  "uploads": {
+    "current": 4,
+    "supported": [4],
+    "dropped": {
       "1": "UploadStore gained a required `open(id)`: the byte route reads one window per chunk and every one of them resolved the record for itself, so a range download cost a look-up per megabyte. An epoch-1 IMPLEMENTOR of UploadStore no longer compiles; a caller of createUploadStore is unaffected. UploadReader.open is optional for exactly that reason, so no published fake breaks.",
-      "2": "Renamed for naming consistency (API naming review): the upload storage driver is an UploadBackend, matching the SessionStateBackend it sits beside, rather than UploadBlobs; UploadStore keeps its name as the facade."
+      "2": "Renamed for naming consistency (API naming review): the upload storage driver is an UploadBackend, matching the SessionStateBackend it sits beside, rather than UploadBlobs; UploadStore keeps its name as the facade.",
+      "3": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
     }
   },
   "workflow": {
-    "current": 3,
-    "supported": [1, 2, 3],
-    "dropped": {}
+    "current": 4,
+    "supported": [1, 2, 4],
+    "dropped": {
+      "3": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+    }
   }
 }

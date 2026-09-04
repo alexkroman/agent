@@ -51,7 +51,7 @@ type JournalStore = {
 type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (msg: string, ctx?: LogContext) => void;
+type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 type Logger = Record<LogLevel, LogFn>;

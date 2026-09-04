@@ -60,10 +60,10 @@ export interface RimeTtsOptions extends ProviderCredentialOptions {
  * });
  * ```
  */
-export function rimeTts(opts: RimeTtsOptions = {}): TtsProvider {
+export function rimeTts(options: RimeTtsOptions = {}): TtsProvider {
   return {
     kind: RIME_KIND,
-    options: { ...opts, voice: opts.voice ?? RIME_DEFAULT_VOICE },
+    options: { ...options, voice: options.voice ?? RIME_DEFAULT_VOICE },
   };
 }
 
@@ -78,14 +78,14 @@ export const RIME_DEFAULT_LANGUAGE = "eng";
  * options with every host-side default filled in. Shared by the opener and
  * the runtime's "Session mode resolved" log.
  */
-export function resolveRimeTtsSettings(opts: RimeTtsOptions): {
+export function resolveRimeTtsSettings(options: RimeTtsOptions): {
   voice: string;
   model: string;
   language: string;
 } {
   return {
-    voice: opts.voice ?? RIME_DEFAULT_VOICE,
-    model: opts.model ?? RIME_DEFAULT_MODEL,
-    language: opts.language ?? RIME_DEFAULT_LANGUAGE,
+    voice: options.voice ?? RIME_DEFAULT_VOICE,
+    model: options.model ?? RIME_DEFAULT_MODEL,
+    language: options.language ?? RIME_DEFAULT_LANGUAGE,
   };
 }

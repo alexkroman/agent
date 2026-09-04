@@ -134,7 +134,7 @@ export function isSlackWebhookUrl(value: string): boolean;
 export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
-export function registerChannelHandler(kind: ChannelHandler): void;
+export function registerChannelHandler(handler: ChannelHandler): void;
 
 // @public
 export function registeredChannelKindNames(): readonly string[];
@@ -183,7 +183,7 @@ export function ffmpegBaseArgs(options?: {
 
 // @public
 export class FfmpegError extends Error {
-    constructor(opts: {
+    constructor(options: {
         kind: FfmpegFailureKind;
         message: string;
         binary: string;
@@ -265,7 +265,7 @@ export type MediaStreamInfo = {
 };
 
 // @public
-export function probeMedia(source: FfmpegSource, opts?: ProbeOptions): Promise<MediaInfo>;
+export function probeMedia(source: FfmpegSource, options?: ProbeOptions): Promise<MediaInfo>;
 
 // @public (undocumented)
 export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
@@ -273,16 +273,16 @@ export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
 };
 
 // @public
-export function runFfmpeg(args: readonly string[], opts?: FfmpegRunOptions): Promise<FfmpegRunResult>;
+export function runFfmpeg(args: readonly string[], options?: FfmpegRunOptions): Promise<FfmpegRunResult>;
 
 // @public
-export function transcodeToWav(source: FfmpegSource, opts?: TranscodeToWavOptions): Promise<Uint8Array>;
+export function transcodeToWav(source: FfmpegSource, options?: TranscodeToWavOptions): Promise<Uint8Array>;
 
 // @public (undocumented)
 export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "stdin">;
 
 // @public
-export function wavEncodeArgs(opts?: WavEncodeOptions): string[];
+export function wavEncodeArgs(options?: WavEncodeOptions): string[];
 
 // @public (undocumented)
 export type WavEncodeOptions = {
@@ -711,7 +711,7 @@ export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s
 export function assertUploadToken(id: string): void;
 
 // @public
-export function buildSystemPrompt(config: AgentConfig, opts: {
+export function buildSystemPrompt(config: AgentConfig, options: {
     hasTools: boolean;
     voice?: boolean;
     toolGuidance?: readonly string[] | undefined;
@@ -887,7 +887,7 @@ export interface Epoch {
 }
 
 // @public
-export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], opts?: ExecuteToolOptions) => Promise<string>;
+export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], options?: ExecuteToolOptions) => Promise<string>;
 
 // @public
 export interface ExecuteToolOptions {
@@ -919,7 +919,7 @@ type FfmpegRunOptions = {
 };
 
 // @public
-export function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
+export function ffmpegVersion(options?: FfmpegRunOptions): Promise<string | undefined>;
 
 // @public
 export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
@@ -942,7 +942,7 @@ export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
 export const GATEWAY_KIND: "gateway";
 
 // @public
-export function gatewayModelIds(opts?: {
+export function gatewayModelIds(options?: {
     eu?: boolean;
 }): AssemblyAIGatewayModel[];
 
@@ -1212,13 +1212,13 @@ export function requestPath(rawUrl: string | undefined): string;
 export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 
 // @public
-export function resolveAllBuiltins(names: readonly string[], opts?: BuiltinToolOptions): ResolvedBuiltins;
+export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
 // @internal
 export function resolveAndAssertPublic(url: string, lookupFn?: DnsLookup): Promise<string | null>;
 
 // @public
-export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
+export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     model: string;
     minTurnSilenceMs: number;
     maxTurnSilenceMs: number;
@@ -1235,18 +1235,18 @@ export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
 export function resolveAssemblyAITtsLanguage(code: string): string | undefined;
 
 // @public
-export function resolveAssemblyAITtsSettings(opts: AssemblyAITtsOptions): {
+export function resolveAssemblyAITtsSettings(options: AssemblyAITtsOptions): {
     voice: string;
     language?: string;
 };
 
 // @internal
-export function resolveBuiltin(name: string, opts?: BuiltinToolOptions): (ToolDef & {
+export function resolveBuiltin(name: string, options?: BuiltinToolOptions): (ToolDef & {
     guidance?: string;
 }) | undefined;
 
 // @public
-export function resolveCartesiaTtsSettings(opts: CartesiaTtsOptions): {
+export function resolveCartesiaTtsSettings(options: CartesiaTtsOptions): {
     voice: string;
     model: string;
     language: string;
@@ -1260,27 +1260,27 @@ export type ResolvedBuiltins = {
 };
 
 // @public
-export function resolveDeepgramSttSettings(opts: DeepgramSttOptions): {
+export function resolveDeepgramSttSettings(options: DeepgramSttOptions): {
     model: string;
     language: string;
     endpointingMs: number;
 };
 
 // @public
-export function resolveElevenLabsSttSettings(opts: ElevenLabsSttOptions): {
+export function resolveElevenLabsSttSettings(options: ElevenLabsSttOptions): {
     model: string;
     languageCode?: string;
 };
 
 // @public
-export function resolveRimeTtsSettings(opts: RimeTtsOptions): {
+export function resolveRimeTtsSettings(options: RimeTtsOptions): {
     voice: string;
     model: string;
     language: string;
 };
 
 // @public
-export function resolveSonioxSttSettings(opts: SonioxSttOptions): {
+export function resolveSonioxSttSettings(options: SonioxSttOptions): {
     model: string;
     languageHints?: readonly string[];
 };
@@ -1340,7 +1340,7 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 type SessionMode = "s2s" | "pipeline" | "text";
 
 // @internal
-export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
+export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public
 type SleepOptions = {
@@ -1526,7 +1526,7 @@ export interface SttOpener {
     // (undocumented)
     readonly name: string;
     // (undocumented)
-    open(opts: SttOpenOptions): Promise<SttSession>;
+    open(options: SttOpenOptions): Promise<SttSession>;
 }
 
 // @public
@@ -1643,7 +1643,7 @@ export interface TtsOpener {
     // (undocumented)
     readonly name: string;
     // (undocumented)
-    open(opts: TtsOpenOptions): Promise<TtsSession>;
+    open(options: TtsOpenOptions): Promise<TtsSession>;
 }
 
 // @public
@@ -1761,7 +1761,7 @@ type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
@@ -1958,7 +1958,7 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
-export function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
+export function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
     stt: SttProvider;
     llm: LlmProvider;
     tts: TtsProvider;
@@ -1973,7 +1973,7 @@ export interface AssemblyAIPipelineOptions {
 }
 
 // @public
-export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
+export function assemblyAIS2s(options?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
 export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
@@ -2177,7 +2177,7 @@ export function isRecord(value: unknown): value is Record<string, unknown>;
 export function isToolFailure(value: unknown): value is ToolFailure;
 
 // @public (undocumented)
-export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
+export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;
 };
 
@@ -2335,7 +2335,7 @@ export function requireEnv(ctx: {
 }, name: string): string;
 
 // @public
-export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
+export function resolveOne<T>(candidates: readonly T[], spoken: string, options: ResolveOneOptions<T>): T | ToolFailure;
 
 // @public
 export interface ResolveOneOptions<T> {
@@ -2345,7 +2345,7 @@ export interface ResolveOneOptions<T> {
 }
 
 // @public
-export function responseErrorMessage(res: Response, label?: string): Promise<string>;
+export function responseErrorMessage(response: Response, label?: string): Promise<string>;
 
 // @public
 export type S2sAgentParams = SharedAgentParams & {
@@ -2816,7 +2816,7 @@ type WakeUpOptions = {
 };
 
 // @public
-export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;
 
 // @public
 export function workflow<P extends ToolInputSchema = ToolInputSchema, O extends StandardSchemaV1 = StandardSchemaV1>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
@@ -2843,7 +2843,7 @@ export type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
@@ -3206,7 +3206,7 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
-export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
+export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public
 type SleepOptions = {
@@ -3320,7 +3320,7 @@ type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
@@ -3408,7 +3408,7 @@ export const WS_OPEN = 1;
 
 ```ts
 // @public
-export function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
+export function anthropicLlm(options: AnthropicLlmOptions): LlmProvider;
 
 // @public
 export interface AnthropicLlmOptions extends ModelOptions {
@@ -3427,7 +3427,7 @@ export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1
 export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
 
 // @public
-export function assemblyAILlm(opts?: AssemblyAILlmOptions): LlmProvider;
+export function assemblyAILlm(options?: AssemblyAILlmOptions): LlmProvider;
 
 // @public
 export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
@@ -3441,21 +3441,21 @@ export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
-export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
+export function gatewayLlm(options: GatewayLlmOptions): LlmProvider;
 
 // @public
 export interface GatewayLlmOptions extends ModelOptions {
 }
 
 // @public
-export function googleLlm(opts: GoogleLlmOptions): LlmProvider;
+export function googleLlm(options: GoogleLlmOptions): LlmProvider;
 
 // @public
 export interface GoogleLlmOptions extends ModelOptions {
 }
 
 // @public
-export function groqLlm(opts: GroqLlmOptions): LlmProvider;
+export function groqLlm(options: GroqLlmOptions): LlmProvider;
 
 // @public
 export interface GroqLlmOptions extends ModelOptions {
@@ -3467,7 +3467,7 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export function mistralLlm(opts: MistralLlmOptions): LlmProvider;
+export function mistralLlm(options: MistralLlmOptions): LlmProvider;
 
 // @public
 export interface MistralLlmOptions extends ModelOptions {
@@ -3479,7 +3479,7 @@ export interface ModelOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function openAILlm(opts: OpenAILlmOptions): LlmProvider;
+export function openAILlm(options: OpenAILlmOptions): LlmProvider;
 
 // @public
 export interface OpenAILlmOptions extends ModelOptions {
@@ -3489,7 +3489,7 @@ export interface OpenAILlmOptions extends ModelOptions {
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 // @public
-export function openRouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
+export function openRouterLlm(options: OpenRouterLlmOptions): LlmProvider;
 
 // @public
 export interface OpenRouterLlmOptions extends ModelOptions {
@@ -3509,7 +3509,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function xAILlm(opts: XAILlmOptions): LlmProvider;
+export function xAILlm(options: XAILlmOptions): LlmProvider;
 
 // @public
 export interface XAILlmOptions extends ModelOptions {
@@ -4173,7 +4173,7 @@ type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
@@ -4257,7 +4257,7 @@ type WorkflowSummary = {
 import { z } from 'zod';
 
 // @public
-export function buildClientConfig(src: {
+export function buildClientConfig(source: {
     name?: string | undefined;
     greeting?: string | undefined;
     sessionUrl?: string | undefined;
@@ -4293,7 +4293,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
 // @public
 export interface ClientSink {
     close?(reason?: string): void;
-    event(e: SessionEvent): void;
+    event(event: SessionEvent): void;
     readonly open: boolean;
     playAudioChunk(chunk: Uint8Array): void;
 }
@@ -4606,7 +4606,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 
 ```ts
 // @public
-export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
+export function assemblyAIS2s(options?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
 export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
@@ -4616,7 +4616,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function openAIS2s(opts?: OpenAIS2sOptions): S2sProvider;
+export function openAIS2s(options?: OpenAIS2sOptions): S2sProvider;
 
 // @public
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {
@@ -4651,7 +4651,7 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 ```ts
 // @public
-export function slugifyName(input: string, maxLen: number): string;
+export function slugifyName(name: string, maxLength: number): string;
 ```
 
 ## `@alexkroman1/aai/step`
@@ -4667,7 +4667,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 export function isTransientStatus(status: number): boolean;
 
 // @public
-export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+export function mapConcurrent<T, R>(items: readonly T[], width: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
 
 // @public
 export type MultipartBody = {
@@ -4787,11 +4787,11 @@ export type StepFetchInit = {
 };
 
 // @public
-export function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+export function stepGenerate(prompt: string, options?: StepGenerateOptions): Promise<string>;
 
 // @public
 export class StepGenerateError extends Error {
-    constructor(message: string, opts: {
+    constructor(message: string, options: {
         status?: number | undefined;
         retryable: boolean;
         retryAfter?: Date | undefined;
@@ -4803,7 +4803,7 @@ export class StepGenerateError extends Error {
 }
 
 // @public
-export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
 // @public
 export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
@@ -4834,7 +4834,7 @@ export type StepInfo = {
 export function stepInfo(): StepInfo | undefined;
 
 // @public
-export function stepReadUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+export function stepReadUpload(id: string, options?: ReadUploadOptions): Promise<UploadSlice>;
 
 // @public
 export function stepReport(line: string): Promise<void>;
@@ -4843,23 +4843,23 @@ export function stepReport(line: string): Promise<void>;
 export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
 
 // @public
-export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
+export function stepSpeak(text: string, options?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public
-export function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+export function stepTranscribePoll(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 
 // @public
-export function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+export function stepTranscribeSubmit(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
     id: string;
 }>;
 
 // @public
-export function stepTranscribeSync(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
+export function stepTranscribeSync(bytes: Uint8Array | readonly Uint8Array[], options?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 
 // @public
-export function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+export function stepTranscribeUpload(uploadId: string, options?: TranscribeRequestOptions): Promise<{
     audioUrl: string;
 }>;
 
@@ -4878,7 +4878,7 @@ export function stepUploadInfo(id: string): Promise<UploadInfo>;
 export function stepWebhookUrl(token: string): string;
 
 // @public
-export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
+export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, options?: WriteUploadOptions): Promise<UploadInfo>;
 
 // @public
 export function stripJsonFence(reply: string): string;
@@ -5115,7 +5115,7 @@ type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions &
 };
 
 // @public
-export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
 // @public
 type StepGenerateOptions = {
@@ -5129,23 +5129,23 @@ type StepGenerateOptions = {
 };
 
 // @public
-export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string>;
 
 // @public
-export function stepTranscribePollOrFail(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+export function stepTranscribePollOrFail(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 
 // @public
-export function stepTranscribeSubmitOrFail(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+export function stepTranscribeSubmitOrFail(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
     id: string;
 }>;
 
 // @public
-export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
+export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], options?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 
 // @public
-export function stepTranscribeUploadOrFail(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+export function stepTranscribeUploadOrFail(uploadId: string, options?: TranscribeRequestOptions): Promise<{
     audioUrl: string;
 }>;
 
@@ -5204,7 +5204,7 @@ type Transcript = {
 
 ```ts
 // @public
-export function readUploadToFile(uploadId: string, path: string, opts?: ReadUploadToFileOptions): Promise<number>;
+export function readUploadToFile(uploadId: string, path: string, options?: ReadUploadToFileOptions): Promise<number>;
 
 // @public
 export type ReadUploadToFileOptions = {
@@ -5236,7 +5236,7 @@ type UploadRange = {
 };
 
 // @public
-export function withTempDir<T>(work: (dir: string) => Promise<T>, opts?: WithTempDirOptions): Promise<T>;
+export function withTempDir<T>(work: (dir: string) => Promise<T>, options?: WithTempDirOptions): Promise<T>;
 
 // @public
 export type WithTempDirOptions = {
@@ -5244,7 +5244,7 @@ export type WithTempDirOptions = {
 };
 
 // @public
-export function writeUploadFromFile(path: string, opts?: WriteUploadFromFileOptions): Promise<UploadInfo>;
+export function writeUploadFromFile(path: string, options?: WriteUploadFromFileOptions): Promise<UploadInfo>;
 
 // @public
 export type WriteUploadFromFileOptions = WriteUploadOptions & {
@@ -5265,7 +5265,7 @@ type WriteUploadOptions = {
 export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 
 // @public
-export function assemblyAIStt(opts?: AssemblyAISttOptions): SttProvider;
+export function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
 
 // @public
 export interface AssemblyAISttOptions extends ProviderCredentialOptions {
@@ -5285,7 +5285,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
 export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
 
 // @public
-export function deepgramStt(opts?: DeepgramSttOptions): SttProvider;
+export function deepgramStt(options?: DeepgramSttOptions): SttProvider;
 
 // @public
 export interface DeepgramSttOptions extends ProviderCredentialOptions {
@@ -5295,7 +5295,7 @@ export interface DeepgramSttOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function elevenLabsStt(opts?: ElevenLabsSttOptions): SttProvider;
+export function elevenLabsStt(options?: ElevenLabsSttOptions): SttProvider;
 
 // @public
 export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
@@ -5317,7 +5317,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function sonioxStt(opts?: SonioxSttOptions): SttProvider;
+export function sonioxStt(options?: SonioxSttOptions): SttProvider;
 
 // @public
 export interface SonioxSttOptions extends ProviderCredentialOptions {
@@ -5379,7 +5379,7 @@ type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_j
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
 
 // @public
-export function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+export function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
 
 // @public
 export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
@@ -5885,7 +5885,7 @@ export interface StubGateway {
 }
 
 // @public
-export function stubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGateway;
+export function stubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGateway;
 
 // @public
 export interface StubGatewayCall {
@@ -5909,7 +5909,7 @@ export interface StubGatewayRoute {
 }
 
 // @public
-export function stubGatewayRoute(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayRoute;
+export function stubGatewayRoute(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayRoute;
 
 // @public
 export interface StubGenerate {
@@ -6181,7 +6181,7 @@ type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
@@ -6317,7 +6317,7 @@ type FindOptions = {
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
-export function installStubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayCall[];
+export function installStubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayCall[];
 
 // @public
 export function installStubReporter(): StubReporter;
@@ -6569,7 +6569,7 @@ type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
@@ -6707,7 +6707,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
-export function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
+export function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
 
 // @public
 export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
@@ -6735,7 +6735,7 @@ export interface AssemblyAITtsVoiceInfo {
 export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 
 // @public
-export function cartesiaTts(opts?: CartesiaTtsOptions): TtsProvider;
+export function cartesiaTts(options?: CartesiaTtsOptions): TtsProvider;
 
 // @public
 export interface CartesiaTtsOptions extends ProviderCredentialOptions {
@@ -6761,7 +6761,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 export const RIME_DEFAULT_VOICE = "cove";
 
 // @public
-export function rimeTts(opts?: RimeTtsOptions): TtsProvider;
+export function rimeTts(options?: RimeTtsOptions): TtsProvider;
 
 // @public
 export interface RimeTtsOptions extends ProviderCredentialOptions {
@@ -6810,7 +6810,7 @@ export function isRecord(value: unknown): value is Record<string, unknown>;
 export function isToolFailure(value: unknown): value is ToolFailure;
 
 // @public (undocumented)
-export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
+export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;
 };
 
@@ -6838,7 +6838,7 @@ export function plural(n: number, one: string, many?: string): string;
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
-export function responseErrorMessage(res: Response, label?: string): Promise<string>;
+export function responseErrorMessage(response: Response, label?: string): Promise<string>;
 
 // @public
 export function safeJsonParse(text: string): unknown;
@@ -6852,7 +6852,7 @@ export type ToolFailure = {
 export function toolFailure(message: string): ToolFailure;
 
 // @public
-export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;
 ```
 
 ## `@alexkroman1/aai/workflow-api`
@@ -6890,10 +6890,10 @@ const ClientConfigResponseSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export function createAgentClient(opts: WorkflowApiClientOptions): AgentClient;
+export function createAgentClient(options: WorkflowApiClientOptions): AgentClient;
 
 // @public
-export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
+export function createWorkflowApiClient(options: WorkflowApiClientOptions): WorkflowApi;
 
 // @public
 export type EventStreamFrame = {
@@ -7116,7 +7116,7 @@ export type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
@@ -7213,7 +7213,7 @@ export type WorkflowSummary = {
 
 ```ts
 // @public (undocumented)
-export function decodeWorkspaceText(buf: Uint8Array): string | null;
+export function decodeWorkspaceText(bytes: Uint8Array): string | null;
 
 // @public
 export const IGNORED_WORKSPACE_DIRS: ReadonlySet<string>;
@@ -7237,12 +7237,12 @@ export const MAX_WORKSPACE_FILE_BYTES = 256000;
 export const MAX_WORKSPACE_FILES = 100;
 
 // @public
-export function snapshotWorkspaceFiles(dir: string, opts?: WorkspaceWalkOptions & {
+export function snapshotWorkspaceFiles(dir: string, options?: WorkspaceWalkOptions & {
     subject?: string | undefined;
 }): Promise<WorkspaceSnapshot>;
 
 // @public
-export function walkWorkspaceFiles(dir: string, opts?: WorkspaceWalkOptions): Promise<string[]>;
+export function walkWorkspaceFiles(dir: string, options?: WorkspaceWalkOptions): Promise<string[]>;
 
 // @public (undocumented)
 export type WorkspaceSnapshot = {
@@ -7262,7 +7262,7 @@ export type WorkspaceWalkOptions = {
 import { PluginOption } from 'vite';
 
 // @internal
-export function buildClient(cwd: string, opts?: BuildClientOptions): Promise<Record<string, string>>;
+export function buildClient(cwd: string, options?: BuildClientOptions): Promise<Record<string, string>>;
 
 // @internal
 export type BuildClientOptions = {
@@ -7323,7 +7323,7 @@ export type TypecheckResult = {
 import { PluginOption } from 'vite';
 
 // @internal
-export function buildWorker(cwd: string, opts?: BuildWorkerOptions): Promise<string>;
+export function buildWorker(cwd: string, options?: BuildWorkerOptions): Promise<string>;
 
 // @internal
 export type BuildWorkerOptions = {
@@ -7492,10 +7492,10 @@ export type EvalWorkflows = {
     readonly client: WorkflowClient;
     run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
     run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
-    settle<R>(runId: string, of: AnyWorkflowDef<R>, options?: {
+    settle<R>(runId: string, workflow: AnyWorkflowDef<R>, options?: {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun<R>>;
-    settle(runId: string, of?: undefined, options?: {
+    settle(runId: string, workflow?: undefined, options?: {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun>;
     runs(): Promise<readonly EvalWorkflowRun[]>;
@@ -7516,7 +7516,7 @@ export type EvalWorkflowsOptions = {
 };
 
 // @internal
-type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -7536,7 +7536,7 @@ export function lastStateIn(events: readonly SessionEvent[]): unknown;
 type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (msg: string, ctx?: LogContext) => void;
+type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 type Logger = Record<LogLevel, LogFn>;
@@ -7545,10 +7545,10 @@ type Logger = Record<LogLevel, LogFn>;
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
-export function openEvalSession(opts: EvalSessionOptions): Promise<EvalSession>;
+export function openEvalSession(options: EvalSessionOptions): Promise<EvalSession>;
 
 // @public
-export function openEvalWorkflows(opts: EvalWorkflowsOptions): EvalWorkflows;
+export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
 
 export { RunCodeExecutor }
 
@@ -7788,10 +7788,10 @@ type EvalWorkflows = {
     readonly client: WorkflowClient;
     run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
     run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
-    settle<R>(runId: string, of: AnyWorkflowDef<R>, options?: {
+    settle<R>(runId: string, workflow: AnyWorkflowDef<R>, options?: {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun<R>>;
-    settle(runId: string, of?: undefined, options?: {
+    settle(runId: string, workflow?: undefined, options?: {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun>;
     runs(): Promise<readonly EvalWorkflowRun[]>;
@@ -7821,7 +7821,7 @@ export type EvalWorkflowTestContext = {
 };
 
 // @internal
-type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -7829,7 +7829,7 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (msg: string, ctx?: LogContext) => void;
+type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 type Logger = Record<LogLevel, LogFn>;
@@ -7838,7 +7838,7 @@ type Logger = Record<LogLevel, LogFn>;
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
-export function resolveEvalMode(agent: AgentDef, env?: Record<string, string | undefined>,
+export function resolveEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>,
 overrides?: {
     readonly llm?: LlmProvider;
 }): {
@@ -7847,7 +7847,7 @@ overrides?: {
 };
 
 // @public
-export function resolveWorkflowEvalMode(agent: AgentDef, env?: Record<string, string | undefined>): {
+export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>): {
     mode: EvalMode;
     reason: string;
 };
@@ -7928,7 +7928,7 @@ export { AgentEnv }
 
 // @public
 export type AgentRuntime = {
-    startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
+    startSession(ws: SessionWebSocket, options?: SessionStartOptions): void;
     shutdown(): Promise<void>;
     readonly readyConfig: ReadyConfig;
     readonly workflows?: WorkflowClient | undefined;
@@ -8014,7 +8014,7 @@ export type CloseableDb = Db & {
 export function createAgentServer(options: AgentServerOptions): AgentServer;
 
 // @public (undocumented)
-type CreateHeaderWebSocket = (url: string, opts: {
+type CreateHeaderWebSocket = (url: string, options: {
     headers: Record<string, string>;
 }) => HeaderWebSocket;
 
@@ -8022,10 +8022,10 @@ type CreateHeaderWebSocket = (url: string, opts: {
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
 // @public
-export function createHttpUploadBackend(opts: HttpUploadBackendOptions): UploadBackend;
+export function createHttpUploadBackend(options: HttpUploadBackendOptions): UploadBackend;
 
 // @public (undocumented)
-export function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
+export function createLogBuffer(options?: LogBufferOptions): LogBuffer;
 
 // @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
@@ -8037,7 +8037,7 @@ export function createMemoryUploadBackend(): UploadBackend;
 type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
 
 // @public
-export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
+export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb;
 
 // @public
 export type CreatePostgresDbOptions = {
@@ -8055,7 +8055,7 @@ export type CreatePostgresDbOptions = {
 export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 
 // @public
-export function createRuntime(opts: RuntimeOptions): Runtime;
+export function createRuntime(options: RuntimeOptions): Runtime;
 
 // @public
 export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
@@ -8064,10 +8064,10 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
 type CreateS2sWebSocket = CreateHeaderWebSocket;
 
 // @public
-export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
+export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
 
 // @public
-export function createTextAgent(opts: TextAgentOptions): TextAgent;
+export function createTextAgent(options: TextAgentOptions): TextAgent;
 
 // @public
 export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
@@ -8088,13 +8088,13 @@ export const DEFAULT_LOG_PAGE_LINES = 500;
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
 
 // @public
-export function ensureSessionStateSchema(opts: {
+export function ensureSessionStateSchema(options: {
     url: string;
     logger: Logger;
 }): Promise<boolean>;
 
 // @public
-export function ensureWorkflowJournalSchema(opts: {
+export function ensureWorkflowJournalSchema(options: {
     url: string;
     logger: Logger;
 }): Promise<boolean>;
@@ -8138,7 +8138,7 @@ type HookRecord = {
 export { HostCredentialEnv }
 
 // @internal
-type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -8214,7 +8214,7 @@ export type LogBufferOptions = {
 export type LogContext = Record<string, unknown>;
 
 // @public
-export type LogFn = (msg: string, ctx?: LogContext) => void;
+export type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 export type Logger = Record<LogLevel, LogFn>;
@@ -8407,7 +8407,7 @@ type RunStatus = WorkflowRunStatus;
 export type Runtime = AgentRuntime & {
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
-    createSession(opts: {
+    createSession(options: {
         id: string;
         agent: string;
         client: ClientSink;
@@ -8432,7 +8432,7 @@ export type RuntimeOptions = {
     shutdownTimeoutMs?: number | undefined;
     executeTool?: ExecuteTool | undefined;
     toolSchemas?: ToolSchema[] | undefined;
-    onToolResult?: ((msg: {
+    onToolResult?: ((message: {
         toolCallId: string;
         result: string;
         error?: string;
@@ -8482,7 +8482,7 @@ export type ServerSession = {
     start(): Promise<void>;
     stop(): Promise<void>;
     readonly faultCode: string | undefined;
-    command(cmd: SessionCommand): void;
+    command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
@@ -8595,7 +8595,7 @@ type SleepRecord = {
 };
 
 // @public
-export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
+export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, options: {
     carrier: CarrierCodec;
     logger?: Logger;
 }): void;
@@ -8684,7 +8684,7 @@ export interface TextTurnOptions {
     onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
     prepareStep?: PrepareStepFunction<ToolSet>;
     signal?: AbortSignal;
-    stopWhen?: readonly ((opts: {
+    stopWhen?: readonly ((options: {
         steps: readonly StepResult<ToolSet>[];
     }) => boolean | PromiseLike<boolean>)[];
     systemPrompt?: string;
@@ -8732,7 +8732,7 @@ export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
 
 // @public
 export type UploadBackend = {
-    put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
+    put(key: string, body: AsyncIterable<Uint8Array>, options?: {
         type?: string | undefined;
         limit?: number | undefined;
     }): Promise<number>;
@@ -8758,13 +8758,13 @@ export const UPLOADS_TABLE = "aai_workflow_uploads";
 // @public
 export type UploadStore = UploadReader & {
     open(id: string): Promise<OpenUpload | undefined>;
-    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
-    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
-    beginParts(id: string, meta: UploadMeta, total: number, opts?: {
+    beginParts(id: string, meta: UploadMeta, total: number, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
     writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
@@ -8886,7 +8886,7 @@ import { z } from 'zod';
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
 
 // @internal
-export function applyWorkflowJournalDdl(opts: {
+export function applyWorkflowJournalDdl(options: {
     db: Db;
     logger: Logger;
 }): Promise<boolean>;
@@ -8900,10 +8900,10 @@ export { CONTAINED_ENV }
 export function createMemoryJournal(): JournalStore;
 
 // @internal
-export function createPlatformJournal(opts: PlatformEndpoint): JournalStore;
+export function createPlatformJournal(options: PlatformEndpoint): JournalStore;
 
 // @internal
-export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName: string, message: unknown, queueOpts?: {
+export function createPlatformQueueSend(options: PlatformQueueOptions): (queueName: string, message: unknown, queueOptions?: {
     deploymentId?: string | undefined;
     idempotencyKey?: string | undefined;
     headers?: Record<string, string> | undefined;
@@ -8913,7 +8913,7 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }>;
 
 // @internal
-export function createPlatformSocket(opts: CreatePlatformSocketOptions): PlatformSocket;
+export function createPlatformSocket(options: CreatePlatformSocketOptions): PlatformSocket;
 
 // @public (undocumented)
 type CreatePlatformSocketOptions = {
@@ -8924,37 +8924,37 @@ type CreatePlatformSocketOptions = {
 };
 
 // @internal
-export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend;
+export function createPlatformStateBackend(options: PlatformSessionStateOptions): SessionStateBackend;
 
 // @public
-type CreatePlatformWebSocket = (url: string, opts: {
+type CreatePlatformWebSocket = (url: string, options: {
     headers: Record<string, string>;
 }) => HeaderWebSocket;
 
 // @internal
-export function createPostgresJournal(opts: {
+export function createPostgresJournal(options: {
     db: Db;
 }): JournalStore;
 
 // @internal
-export function createPostgresStateBackend(opts: {
+export function createPostgresStateBackend(options: {
     db: Db;
 }): SessionStateBackend;
 
 // @internal
-export function createSessionEventStream(opts: {
+export function createSessionEventStream(options: {
     backend: SessionStateBackend;
     logger?: Logger | undefined;
 }): SessionEventStream;
 
 // @internal
-export function createSessionStateStore(opts: {
+export function createSessionStateStore(options: {
     backend: SessionStateBackend;
     logger?: Logger | undefined;
 }): SessionStateStore;
 
 // @internal
-export function createUploadStore(opts: {
+export function createUploadStore(options: {
     db?: Db | undefined;
     blobs?: UploadBackend | undefined;
     localDir?: string | undefined;
@@ -8984,7 +8984,7 @@ type EnqueueBody = {
 };
 
 // @internal
-export function enqueueToPlatform(opts: PlatformQueueOptions, body: EnqueueBody): Promise<string>;
+export function enqueueToPlatform(options: PlatformQueueOptions, body: EnqueueBody): Promise<string>;
 
 // @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
@@ -9012,7 +9012,7 @@ type ExecuteToolCallOptions = {
 };
 
 // @internal
-export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
+export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, options?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
     logger?: Logger | undefined;
     deliver?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
@@ -9046,7 +9046,7 @@ type HookRecord = {
 };
 
 // @internal
-type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -9102,7 +9102,7 @@ export function loadSessionStateConformance(): Promise<SessionStateConformanceSu
 type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (msg: string, ctx?: LogContext) => void;
+type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 type Logger = Record<LogLevel, LogFn>;
@@ -9306,7 +9306,7 @@ type ServerSession = {
     start(): Promise<void>;
     stop(): Promise<void>;
     readonly faultCode: string | undefined;
-    command(cmd: SessionCommand): void;
+    command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
@@ -9469,7 +9469,7 @@ export { UPLOAD_TOKEN_RE }
 
 // @public
 type UploadBackend = {
-    put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
+    put(key: string, body: AsyncIterable<Uint8Array>, options?: {
         type?: string | undefined;
         limit?: number | undefined;
     }): Promise<number>;
@@ -9486,13 +9486,13 @@ type UploadMeta = {
 // @public
 type UploadStore = UploadReader & {
     open(id: string): Promise<OpenUpload | undefined>;
-    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
-    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
-    beginParts(id: string, meta: UploadMeta, total: number, opts?: {
+    beginParts(id: string, meta: UploadMeta, total: number, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
     writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
@@ -9500,7 +9500,7 @@ type UploadStore = UploadReader & {
 };
 
 // @internal
-export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
+export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOptions): void;
 
 // @internal
 export const WORKFLOW_API_METHODS: readonly string[];
@@ -9598,7 +9598,7 @@ type JournalStore = {
 type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (msg: string, ctx?: LogContext) => void;
+type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 type Logger = Record<LogLevel, LogFn>;
@@ -9899,7 +9899,7 @@ export type ConversationItem = {
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
-export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
+export function createWorkflowApi(options?: WorkflowApiOptions): WorkflowApi;
 
 // @public
 export function Facts(input: FactsProps): ReactNode;
@@ -10166,7 +10166,7 @@ export type UseConversationResult = {
 };
 
 // @public
-export function useDownloadUrl(uploadId: string | undefined, opts?: UseDownloadUrlOptions): UseDownloadUrlResult;
+export function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
 
 // @public
 export type UseDownloadUrlOptions = {
@@ -10233,7 +10233,7 @@ export interface UseUserTranscriptResult {
 }
 
 // @public
-export function useWorkflowProgress<T = string>(runId: string | undefined, opts?: {
+export function useWorkflowProgress<T = string>(runId: string | undefined, options?: {
     api?: WorkflowApi;
     namespace?: string;
     startIndex?: number;
@@ -10249,7 +10249,7 @@ export type UseWorkflowProgressResult<T = string> = {
 };
 
 // @public
-export function useWorkflowRun<R = unknown>(runId: string | undefined, opts?: {
+export function useWorkflowRun<R = unknown>(runId: string | undefined, options?: {
     api?: WorkflowApi;
     intervalMs?: number;
 }): UseWorkflowRunResult<R>;
@@ -10262,7 +10262,7 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflowRuns<R = unknown>(workflow: string | undefined, opts?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+export function useWorkflowRuns<R = unknown>(workflow: string | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 
 // @public
 export type UseWorkflowRunsOptions = {
@@ -10281,7 +10281,7 @@ export type UseWorkflowRunsResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflows(opts?: UseWorkflowsOptions): UseWorkflowsResult;
+export function useWorkflows(options?: UseWorkflowsOptions): UseWorkflowsResult;
 
 // @public
 export type UseWorkflowsOptions = {
@@ -10297,13 +10297,13 @@ export type UseWorkflowsResult = {
 };
 
 // @public
-export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
 
 // @public
-export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowSubmitOptions = {

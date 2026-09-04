@@ -47,7 +47,7 @@ export type KeyedLockOptions = {
   timeoutMs?: number | undefined;
 };
 
-export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
+export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
   /** Number of keys currently held or queued. Exposed for tests and metrics. */
   readonly size: number;
 };
@@ -64,7 +64,7 @@ export function createKeyedLock(): KeyedLock {
   // newer acquirer's.
   const tails = createOwnedMap<string, Promise<void>>();
 
-  const lock = (key: string, opts?: KeyedLockOptions): Promise<() => void> => {
+  const lock = (key: string, options?: KeyedLockOptions): Promise<() => void> => {
     const prev = tails.get(key) ?? Promise.resolve();
     const { promise: released, resolve } = Promise.withResolvers<void>();
     const tail = prev.then(() => released);
@@ -79,7 +79,7 @@ export function createKeyedLock(): KeyedLock {
         resolve();
       };
     });
-    const timeoutMs = opts?.timeoutMs;
+    const timeoutMs = options?.timeoutMs;
     if (timeoutMs === undefined) return acquired;
     return pTimeout(acquired, {
       milliseconds: Math.max(1, timeoutMs),
@@ -100,12 +100,12 @@ export function createKeyedLock(): KeyedLock {
 
 /** Run `fn` while holding a keyed lock, releasing it in every outcome. */
 export const withLock = <T>(
-  lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>,
+  lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>,
   key: string,
   fn: () => Promise<T>,
-  opts?: KeyedLockOptions,
+  options?: KeyedLockOptions,
 ): Promise<T> =>
-  lock(key, opts).then(async (release) => {
+  lock(key, options).then(async (release) => {
     try {
       return await fn();
     } finally {

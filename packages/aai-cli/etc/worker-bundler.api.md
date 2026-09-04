@@ -7,7 +7,7 @@
 import { PluginOption } from 'vite';
 
 // @internal
-export function buildWorker(cwd: string, opts?: BuildWorkerOptions): Promise<string>;
+export function buildWorker(cwd: string, options?: BuildWorkerOptions): Promise<string>;
 
 // @internal
 export type BuildWorkerOptions = {

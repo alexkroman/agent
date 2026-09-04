@@ -413,9 +413,9 @@ export const WORKFLOW_API_METHODS: readonly string[] = [
  * @internal
  */
 export function createWorkflowApi(
-  opts: WorkflowApiOptions,
+  options: WorkflowApiOptions,
 ): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
-  const { engine: resolveEngine, token, logger, uploads, directParts } = opts;
+  const { engine: resolveEngine, token, logger, uploads, directParts } = options;
 
   async function route(
     req: http.IncomingMessage,

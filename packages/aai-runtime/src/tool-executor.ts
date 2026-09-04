@@ -135,8 +135,8 @@ type ExecuteToolCallOptions = {
 // `ExecuteToolCallOptions.signal` is the turn signal and is optional, but the
 // context's signal is the per-call controller `executeToolCall` always builds,
 // which is what makes `ToolContext.signal` non-optional.
-function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
-  const { env, slots, messages, sessionId, send, signal, generate, subagents, workflows } = opts;
+function buildToolContext(options: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
+  const { env, slots, messages, sessionId, send, signal, generate, subagents, workflows } = options;
   return {
     env,
     // A caller with no session gets its own detached store rather than a shared
@@ -172,7 +172,7 @@ function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }
       if (!subagents) {
         return Promise.reject(new Error("delegate is not available in this execution context"));
       }
-      const { tool: _tool, ...defaults } = opts;
+      const { tool: _tool, ...defaults } = options;
       return subagents(subagent, delegateOpts, { ...defaults, signal });
     }) satisfies DelegateFn,
     messages: messages ?? [],

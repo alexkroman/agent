@@ -267,8 +267,8 @@ function ffmpegFailureKind(cause: unknown): string | undefined {
  *
  * @public
  */
-export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string> {
-  return stepGenerate(prompt, opts).catch(throwStepError);
+export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string> {
+  return stepGenerate(prompt, options).catch(throwStepError);
 }
 
 /**
@@ -287,9 +287,9 @@ export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): 
  */
 export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(
   prompt: string,
-  opts: StepGenerateJsonOptions<S>,
+  options: StepGenerateJsonOptions<S>,
 ): Promise<InferSchemaOutput<S>> {
-  return stepGenerateJson(prompt, opts).catch(throwStepError);
+  return stepGenerateJson(prompt, options).catch(throwStepError);
 }
 
 /**
@@ -307,9 +307,9 @@ export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(
  */
 export function stepTranscribeSyncOrFail(
   bytes: Uint8Array | readonly Uint8Array[],
-  opts?: TranscribeSyncOptions,
+  options?: TranscribeSyncOptions,
 ): Promise<{ text: string }> {
-  return stepTranscribeSync(bytes, opts).catch(throwStepError);
+  return stepTranscribeSync(bytes, options).catch(throwStepError);
 }
 
 /**
@@ -321,9 +321,9 @@ export function stepTranscribeSyncOrFail(
  */
 export function stepTranscribeUploadOrFail(
   uploadId: string,
-  opts?: TranscribeRequestOptions,
+  options?: TranscribeRequestOptions,
 ): Promise<{ audioUrl: string }> {
-  return stepTranscribeUpload(uploadId, opts).catch(throwStepError);
+  return stepTranscribeUpload(uploadId, options).catch(throwStepError);
 }
 
 /**
@@ -338,9 +338,9 @@ export function stepTranscribeUploadOrFail(
  */
 export function stepTranscribeSubmitOrFail(
   audioUrl: string,
-  opts?: TranscribeSubmitOptions,
+  options?: TranscribeSubmitOptions,
 ): Promise<{ id: string }> {
-  return stepTranscribeSubmit(audioUrl, opts).catch(throwStepError);
+  return stepTranscribeSubmit(audioUrl, options).catch(throwStepError);
 }
 
 /**
@@ -354,10 +354,10 @@ export function stepTranscribeSubmitOrFail(
  * @public
  */
 export function stepTranscribePollOrFail(
-  id: string,
-  opts?: TranscribeRequestOptions,
+  transcriptId: string,
+  options?: TranscribeRequestOptions,
 ): Promise<TranscribeProgress> {
-  return stepTranscribePoll(id, opts).catch(throwStepError);
+  return stepTranscribePoll(transcriptId, options).catch(throwStepError);
 }
 
 /**

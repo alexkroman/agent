@@ -44,7 +44,7 @@ const sockets = new Map<string, PlatformSocket>();
  * @internal
  */
 export function ensurePlatformSocket(
-  opts: PlatformEndpoint,
+  options: PlatformEndpoint,
   extra: {
     logger?: Logger | undefined;
     create?: CreatePlatformWebSocket | undefined;
@@ -61,16 +61,16 @@ export function ensurePlatformSocket(
     socket?: PlatformSocket | undefined;
   } = {},
 ): PlatformSocket {
-  const existing = sockets.get(opts.base);
+  const existing = sockets.get(options.base);
   if (existing !== undefined) return existing;
   const socket =
     extra.socket ??
     createPlatformSocket({
-      base: opts.base,
-      token: opts.token,
+      base: options.base,
+      token: options.token,
       ...extra,
     });
-  sockets.set(opts.base, socket);
+  sockets.set(options.base, socket);
   return socket;
 }
 
@@ -78,7 +78,7 @@ export function ensurePlatformSocket(
  * The open socket for this endpoint, or `undefined` when a caller should use HTTP.
  *
  * Keyed on the registry alone and NOT on whether the caller declared an
- * `opts.fetch`. That was the first shape and it is wrong in both directions: it
+ * `options.fetch`. That was the first shape and it is wrong in both directions: it
  * makes the HTTP seam mean two things, and — the reason it did not survive
  * review — it makes the FALLBACK unreachable from a spec, since a spec that
  * declares a fetch to observe the fallback would thereby switch the socket off.
@@ -88,8 +88,8 @@ export function ensurePlatformSocket(
  *
  * @internal
  */
-export function platformSocketFor(opts: PlatformEndpoint): PlatformSocket | undefined {
-  const socket = sockets.get(opts.base);
+export function platformSocketFor(options: PlatformEndpoint): PlatformSocket | undefined {
+  const socket = sockets.get(options.base);
   return socket?.isOpen() === true ? socket : undefined;
 }
 

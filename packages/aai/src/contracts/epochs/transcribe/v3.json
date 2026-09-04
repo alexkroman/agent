@@ -1,0 +1,26 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "transcribe",
+  "epoch": 3,
+  "sha256": "aa17103a72e93f7809b6f0336fa40d8b7428314a77b8dc287851b4ed979d8913",
+  "exports": [
+    "TRANSCRIBE_API",
+    "TRANSCRIBE_MODELS",
+    "TRANSCRIBE_SYNC_ENDPOINT",
+    "TRANSCRIBE_SYNC_MODEL",
+    "TRANSCRIBE_SYNC_TIMEOUT_MS",
+    "TRANSCRIBE_TIMEOUT_MS",
+    "TRANSCRIBE_UPLOAD_TIMEOUT_MS",
+    "TRANSCRIBE_WINDOW_BYTES",
+    "TranscribeError",
+    "TranscribeProgress",
+    "TranscribeRequestOptions",
+    "TranscribeSubmitOptions",
+    "TranscribeSyncOptions",
+    "Transcript",
+    "stepTranscribePoll",
+    "stepTranscribeSubmit",
+    "stepTranscribeSync",
+    "stepTranscribeUpload"
+  ]
+}

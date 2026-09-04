@@ -45,7 +45,7 @@ type SttErrorCode = "stt_stream_error" | "stt_connect_failed" | "stt_auth_failed
 
 export type FakeSttSession = SttSession & {
   readonly emitter: Emitter<SttEvents>;
-  readonly opts: SttOpenOptions;
+  readonly options: SttOpenOptions;
   readonly audioFrames: Int16Array[];
   readonly closed: { value: boolean };
   readonly updateAgentContext: ReturnType<typeof vi.fn<(text: string) => void>>;
@@ -68,13 +68,13 @@ export function createFakeSttProvider(): FakeSttProvider {
     name: "fake-stt",
     sessions,
     last: () => sessions.at(-1),
-    async open(opts: SttOpenOptions): Promise<SttSession> {
+    async open(options: SttOpenOptions): Promise<SttSession> {
       const emitter = createNanoEvents<SttEvents>();
       const audioFrames: Int16Array[] = [];
       const closed = { value: false };
       const session: FakeSttSession = {
         emitter,
-        opts,
+        options,
         audioFrames,
         closed,
         sendAudio: vi.fn((pcm: Int16Array) => {
@@ -129,7 +129,7 @@ export function recordingTts(spoken: string[]): TtsSession {
 
 export type FakeTtsSession = TtsSession & {
   readonly emitter: Emitter<TtsEvents>;
-  readonly opts: TtsOpenOptions;
+  readonly options: TtsOpenOptions;
   readonly textChunks: string[];
   readonly closed: { value: boolean };
   readonly sendText: ReturnType<typeof vi.fn<(text: string) => void>>;
@@ -161,7 +161,7 @@ export function createFakeTtsProvider(
     name: "fake-tts",
     sessions,
     last: () => sessions.at(-1),
-    async open(opts: TtsOpenOptions): Promise<TtsSession> {
+    async open(options: TtsOpenOptions): Promise<TtsSession> {
       const emitter = createNanoEvents<TtsEvents>();
       const textChunks: string[] = [];
       const closed = { value: false };
@@ -176,7 +176,7 @@ export function createFakeTtsProvider(
       });
       const session: FakeTtsSession = {
         emitter,
-        opts,
+        options,
         textChunks,
         closed,
         sendText,

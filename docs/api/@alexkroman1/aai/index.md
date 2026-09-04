@@ -120,7 +120,7 @@ to swap individual stages (unset stages keep the AssemblyAI default), and
 ### assemblyAIPipeline()
 
 ```ts
-function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
+function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
   llm: LlmProvider;
   stt: SttProvider;
   tts: TtsProvider;
@@ -134,7 +134,7 @@ guaranteed to have — so this configuration runs the moment it is deployed.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`AssemblyAIPipelineOptions`](#assemblyaipipelineoptions)
 
@@ -171,7 +171,7 @@ tts: TtsProvider;
 ### assemblyAIS2s()
 
 ```ts
-function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
+function assemblyAIS2s(options?: AssemblyAIS2sOptions): S2sProvider;
 ```
 
 Select AssemblyAI's speech-to-speech (Voice Agent API) session mode.
@@ -179,7 +179,7 @@ STT, the LLM loop, and TTS all run service-side over one socket.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`AssemblyAIS2sOptions`](#assemblyais2soptions)
 
@@ -649,7 +649,7 @@ export default tool({
 function resolveOne<T>(
    candidates: readonly T[], 
    spoken: string, 
-   opts: ResolveOneOptions<T>
+   options: ResolveOneOptions<T>
 ): ToolFailure | T;
 ```
 
@@ -687,7 +687,7 @@ readonly `T`[]
 
 `string`
 
-##### opts
+##### options
 
 [`ResolveOneOptions`](#resolveoneoptions)\<`T`\>
 
@@ -4444,7 +4444,7 @@ in a custom client so the rendered shape has a single source of truth.
 ### KeyedLock
 
 ```ts
-type KeyedLock = (key: string, opts?: KeyedLockOptions) => Promise<() => void> & {
+type KeyedLock = (key: string, options?: KeyedLockOptions) => Promise<() => void> & {
   size: number;
 };
 ```
@@ -6111,7 +6111,7 @@ find(
 ###### Call Signature
 
 ```ts
-get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<
+get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<
   | WorkflowRunSnapshot<R>
 | undefined>;
 ```
@@ -6135,7 +6135,7 @@ which workflow it belongs to.
 
 `string`
 
-###### of
+###### workflow
 
 [`AnyWorkflowDef`](workflow-api.md#anyworkflowdef)\<`R`\>
 
@@ -7390,7 +7390,7 @@ themselves, and even that loses: the native tool wins and the drop is logged
 ### withLock
 
 ```ts
-const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;
 ```
 
 Run `fn` while holding a keyed lock, releasing it in every outcome.
@@ -7405,7 +7405,7 @@ Run `fn` while holding a keyed lock, releasing it in every outcome.
 
 ##### lock
 
-(`key`: `string`, `opts?`: [`KeyedLockOptions`](#keyedlockoptions)) => `Promise`\<() => `void`\>
+(`key`: `string`, `options?`: [`KeyedLockOptions`](#keyedlockoptions)) => `Promise`\<() => `void`\>
 
 ##### key
 
@@ -7415,7 +7415,7 @@ Run `fn` while holding a keyed lock, releasing it in every outcome.
 
 () => `Promise`\<`T`\>
 
-##### opts?
+##### options?
 
 [`KeyedLockOptions`](#keyedlockoptions)
 

@@ -36,10 +36,10 @@ const ClientConfigResponseSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export function createAgentClient(opts: WorkflowApiClientOptions): AgentClient;
+export function createAgentClient(options: WorkflowApiClientOptions): AgentClient;
 
 // @public
-export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
+export function createWorkflowApiClient(options: WorkflowApiClientOptions): WorkflowApi;
 
 // @public
 export type EventStreamFrame = {
@@ -262,7 +262,7 @@ export type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;

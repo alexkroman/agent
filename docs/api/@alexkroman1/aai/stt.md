@@ -75,7 +75,7 @@ which is what you hand the opener to.
 ### assemblyAIStt()
 
 ```ts
-function assemblyAIStt(opts?: AssemblyAISttOptions): SttProvider;
+function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
 ```
 
 Build an AssemblyAI STT descriptor.
@@ -90,7 +90,7 @@ side by side without aliasing.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`AssemblyAISttOptions`](#assemblyaisttoptions)
 
@@ -120,7 +120,7 @@ Pinning `languages` to one code turns code-switching OFF. Unset means
 ### deepgramStt()
 
 ```ts
-function deepgramStt(opts?: DeepgramSttOptions): SttProvider;
+function deepgramStt(options?: DeepgramSttOptions): SttProvider;
 ```
 
 Build a Deepgram STT descriptor.
@@ -131,7 +131,7 @@ descriptor stays free of secrets and safe to serialize.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`DeepgramSttOptions`](#deepgramsttoptions)
 
@@ -160,7 +160,7 @@ auto-detect: `"en"` is sent for you. Name the code you mean.
 ### elevenLabsStt()
 
 ```ts
-function elevenLabsStt(opts?: ElevenLabsSttOptions): SttProvider;
+function elevenLabsStt(options?: ElevenLabsSttOptions): SttProvider;
 ```
 
 Build an ElevenLabs Scribe STT descriptor.
@@ -171,7 +171,7 @@ the descriptor stays free of secrets and safe to serialize.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`ElevenLabsSttOptions`](#elevenlabssttoptions)
 
@@ -200,7 +200,7 @@ auto-detects — which is not the same as English.
 ### sonioxStt()
 
 ```ts
-function sonioxStt(opts?: SonioxSttOptions): SttProvider;
+function sonioxStt(options?: SonioxSttOptions): SttProvider;
 ```
 
 Build a Soniox STT descriptor.
@@ -211,7 +211,7 @@ descriptor stays free of secrets and safe to serialize.
 
 #### Parameters
 
-##### opts?
+##### options?
 
 [`SonioxSttOptions`](#sonioxsttoptions)
 

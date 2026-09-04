@@ -92,8 +92,8 @@ export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
  * Deepgram is the one STT vendor here whose unset `language` is not
  * auto-detect: `"en"` is sent for you. Name the code you mean.
  */
-export function deepgramStt(opts: DeepgramSttOptions = {}): SttProvider {
-  return { kind: DEEPGRAM_KIND, options: { ...opts } };
+export function deepgramStt(options: DeepgramSttOptions = {}): SttProvider {
+  return { kind: DEEPGRAM_KIND, options: { ...options } };
 }
 
 /** Streaming model used when the descriptor names none. */
@@ -108,14 +108,14 @@ export const DEEPGRAM_DEFAULT_LANGUAGE = "en";
  * the runtime's "Session mode resolved" log, so the reported settings are by
  * construction the ones dialled.
  */
-export function resolveDeepgramSttSettings(opts: DeepgramSttOptions): {
+export function resolveDeepgramSttSettings(options: DeepgramSttOptions): {
   model: string;
   language: string;
   endpointingMs: number;
 } {
   return {
-    model: opts.model ?? DEEPGRAM_DEFAULT_MODEL,
-    language: opts.language ?? DEEPGRAM_DEFAULT_LANGUAGE,
-    endpointingMs: opts.endpointing ?? DEEPGRAM_DEFAULT_ENDPOINTING_MS,
+    model: options.model ?? DEEPGRAM_DEFAULT_MODEL,
+    language: options.language ?? DEEPGRAM_DEFAULT_LANGUAGE,
+    endpointingMs: options.endpointing ?? DEEPGRAM_DEFAULT_ENDPOINTING_MS,
   };
 }

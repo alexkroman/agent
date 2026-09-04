@@ -249,7 +249,7 @@ export function queueNameKind(queueName: string | null): "workflow" | "step" | u
 export async function deliverQueueMessage(
   deliver: (runId: string) => Promise<unknown>,
   request: Request,
-  opts: {
+  options: {
     /**
      * Where a PARK is reported — see {@link reportPark}.
      *
@@ -275,7 +275,7 @@ export async function deliverQueueMessage(
     // is both correct and indistinguishable from a hang — and the report is what
     // computes the delay, so the line and this body carry the same number. See
     // {@link reportPark} and {@link queueDeliveryBusySeconds}.
-    return Response.json({ timeoutSeconds: reportPark(opts.logger, runId, startedAt) });
+    return Response.json({ timeoutSeconds: reportPark(options.logger, runId, startedAt) });
   }
   walking.set(runId, Date.now());
   try {

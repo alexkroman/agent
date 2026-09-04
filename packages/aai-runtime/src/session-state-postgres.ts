@@ -236,13 +236,13 @@ export function sessionStateDdl(schema?: string): string[] {
  *
  * @public
  */
-export async function ensureSessionStateSchema(opts: {
+export async function ensureSessionStateSchema(options: {
   url: string;
   logger: Logger;
 }): Promise<boolean> {
-  const db = createPostgresDb({ url: opts.url, max: 1 });
+  const db = createPostgresDb({ url: options.url, max: 1 });
   try {
-    return await applySessionStateDdl({ db, logger: opts.logger });
+    return await applySessionStateDdl({ db, logger: options.logger });
   } finally {
     await db.close().catch(() => undefined);
   }
@@ -261,15 +261,15 @@ export async function ensureSessionStateSchema(opts: {
  *
  * @internal
  */
-export async function applySessionStateDdl(opts: { db: Db; logger: Logger }): Promise<boolean> {
+export async function applySessionStateDdl(options: { db: Db; logger: Logger }): Promise<boolean> {
   try {
     // Sequentially, not `Promise.all`: two `create table if not exists` racing on
     // one connection is a needless way to meet Postgres's own catalog locks, and
     // there are two statements.
-    for (const statement of sessionStateDdl()) await opts.db.query(statement);
+    for (const statement of sessionStateDdl()) await options.db.query(statement);
     return true;
   } catch (err) {
-    opts.logger.warn(
+    options.logger.warn(
       `could not ensure the session-state tables (${SESSION_STATE_TABLE}, ${SESSION_EVENT_TABLE}) ` +
         `in DATABASE_URL: ${errorMessage(err)}. Sessions will fail to start unless a migration ` +
         "has already created them.",
@@ -305,8 +305,8 @@ from ${SESSION_EVENT_TABLE} where session_id = $1`;
  *
  * @internal
  */
-export function createPostgresStateBackend(opts: { db: Db }): SessionStateBackend {
-  const { db } = opts;
+export function createPostgresStateBackend(options: { db: Db }): SessionStateBackend {
+  const { db } = options;
   // No DDL here, deliberately: the tables come with the schema
   // (`sessionStateDdl`, applied by the platform when an app's database is
   // provisioned). This backend used to `create table if not exists` on both the

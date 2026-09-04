@@ -47,7 +47,7 @@ export type ExecuteTool = (
   args: Readonly<Record<string, unknown>>,
   sessionId?: string,
   messages?: readonly Message[],
-  opts?: ExecuteToolOptions,
+  options?: ExecuteToolOptions,
 ) => Promise<string>;
 
 // ─── AgentConfig ────────────────────────────────────────────────────────────

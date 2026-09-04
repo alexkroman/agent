@@ -44,6 +44,6 @@ export interface GroqLlmOptions extends ModelOptions {}
  * });
  * ```
  */
-export function groqLlm(opts: GroqLlmOptions): LlmProvider {
-  return { kind: GROQ_KIND, options: { ...opts } };
+export function groqLlm(options: GroqLlmOptions): LlmProvider {
+  return { kind: GROQ_KIND, options: { ...options } };
 }

@@ -37,7 +37,7 @@ import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
  */
 export type HostGenerateFn = (
   options: GenerateOptions,
-  callOpts?: { signal?: AbortSignal | undefined },
+  callOptions?: { signal?: AbortSignal | undefined },
 ) => Promise<GenerateResult>;
 
 /**
@@ -220,7 +220,7 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
     return modelFor(descriptor);
   };
 
-  return async (options, callOpts): Promise<GenerateResult> => {
+  return async (options, callOptions): Promise<GenerateResult> => {
     const model = resolveModel(options.llm ? normalizeLlm(options.llm) : opts.llm);
     const common = {
       model,
@@ -229,7 +229,7 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
         system: options.system,
         temperature: options.temperature,
         maxOutputTokens: options.maxOutputTokens,
-        abortSignal: callOpts?.signal,
+        abortSignal: callOptions?.signal,
       }),
     };
     if (options.schema !== undefined) {

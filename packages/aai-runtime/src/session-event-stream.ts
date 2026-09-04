@@ -177,11 +177,11 @@ export function stampSessionEvent(body: SessionEventBody, now = Date.now()): Ses
  *
  * @internal
  */
-export function createSessionEventStream(opts: {
+export function createSessionEventStream(options: {
   backend: SessionStateBackend;
   logger?: Logger | undefined;
 }): SessionEventStream {
-  const { backend, logger } = opts;
+  const { backend, logger } = options;
   const sessions = new Map<string, StreamEntry>();
 
   const entryFor = (sessionId: string): StreamEntry =>

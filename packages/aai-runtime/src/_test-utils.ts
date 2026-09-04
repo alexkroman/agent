@@ -155,7 +155,7 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 export function makeMockCore(overrides?: Partial<ServerSession>): ServerSession {
   return {
     id: "test",
-    // A healthy session by default, so an override is what opts a spec into the
+    // A healthy session by default, so an override is what options a spec into the
     // fault path. Not a spy: it is a readonly value on the real type.
     faultCode: undefined,
     configure: vi.fn(),
@@ -197,16 +197,16 @@ export function makeMockHandle(): S2sHandle {
  */
 export function makeEmitter(
   client: ClientSink,
-  opts?: { sessionId?: string; hooks?: SessionEventHookDeps },
+  options?: { sessionId?: string; hooks?: SessionEventHookDeps },
 ): { emitter: SessionEmitter; stream: SessionEventStream; sessionId: string } {
-  const sessionId = opts?.sessionId ?? "test-session";
+  const sessionId = options?.sessionId ?? "test-session";
   const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
   return {
     emitter: createSessionEmitter({
       sessionId,
       client,
       stream,
-      ...omitUndefined({ hooks: opts?.hooks }),
+      ...omitUndefined({ hooks: options?.hooks }),
     }),
     stream,
     sessionId,
@@ -433,7 +433,7 @@ export function fireFixtureMessage(callbacks: S2sCallbacks, msg: Record<string, 
  *
  * Call `cleanup()` in afterEach to restore the spy.
  */
-export function createFixtureSession(agent: AgentDef, opts?: { env?: Record<string, string> }) {
+export function createFixtureSession(agent: AgentDef, options?: { env?: Record<string, string> }) {
   let capturedCallbacks: S2sCallbacks | null = null;
   const fakeHandle = makeMockHandle();
 
@@ -455,7 +455,7 @@ export function createFixtureSession(agent: AgentDef, opts?: { env?: Record<stri
       agent.stt != null || agent.llm != null || agent.tts != null || agent.s2s != null
         ? agent
         : { ...agent, s2s: assemblyAIS2s() },
-    env: opts?.env ?? {},
+    env: options?.env ?? {},
     logger: silentLogger,
   });
 

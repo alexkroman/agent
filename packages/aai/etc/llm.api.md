@@ -5,7 +5,7 @@
 ```ts
 
 // @public
-export function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
+export function anthropicLlm(options: AnthropicLlmOptions): LlmProvider;
 
 // @public
 export interface AnthropicLlmOptions extends ModelOptions {
@@ -24,7 +24,7 @@ export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1
 export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
 
 // @public
-export function assemblyAILlm(opts?: AssemblyAILlmOptions): LlmProvider;
+export function assemblyAILlm(options?: AssemblyAILlmOptions): LlmProvider;
 
 // @public
 export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
@@ -38,21 +38,21 @@ export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
-export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
+export function gatewayLlm(options: GatewayLlmOptions): LlmProvider;
 
 // @public
 export interface GatewayLlmOptions extends ModelOptions {
 }
 
 // @public
-export function googleLlm(opts: GoogleLlmOptions): LlmProvider;
+export function googleLlm(options: GoogleLlmOptions): LlmProvider;
 
 // @public
 export interface GoogleLlmOptions extends ModelOptions {
 }
 
 // @public
-export function groqLlm(opts: GroqLlmOptions): LlmProvider;
+export function groqLlm(options: GroqLlmOptions): LlmProvider;
 
 // @public
 export interface GroqLlmOptions extends ModelOptions {
@@ -64,7 +64,7 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export function mistralLlm(opts: MistralLlmOptions): LlmProvider;
+export function mistralLlm(options: MistralLlmOptions): LlmProvider;
 
 // @public
 export interface MistralLlmOptions extends ModelOptions {
@@ -76,7 +76,7 @@ export interface ModelOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function openAILlm(opts: OpenAILlmOptions): LlmProvider;
+export function openAILlm(options: OpenAILlmOptions): LlmProvider;
 
 // @public
 export interface OpenAILlmOptions extends ModelOptions {
@@ -86,7 +86,7 @@ export interface OpenAILlmOptions extends ModelOptions {
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 // @public
-export function openRouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
+export function openRouterLlm(options: OpenRouterLlmOptions): LlmProvider;
 
 // @public
 export interface OpenRouterLlmOptions extends ModelOptions {
@@ -106,7 +106,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function xAILlm(opts: XAILlmOptions): LlmProvider;
+export function xAILlm(options: XAILlmOptions): LlmProvider;
 
 // @public
 export interface XAILlmOptions extends ModelOptions {

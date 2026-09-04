@@ -169,13 +169,13 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
  */
 export async function stepTranscribeSync(
   bytes: Uint8Array | readonly Uint8Array[],
-  opts: TranscribeSyncOptions = {},
+  options: TranscribeSyncOptions = {},
 ): Promise<{ text: string }> {
-  const filename = opts.filename ?? "audio.wav";
+  const filename = options.filename ?? "audio.wav";
   const part = multipartBody({
     name: "audio",
     filename,
-    type: opts.type ?? "audio/wav",
+    type: options.type ?? "audio/wav",
     bytes,
   });
 
@@ -189,14 +189,17 @@ export async function stepTranscribeSync(
     headers: {
       // The raw key — this endpoint takes it unprefixed, and a `Bearer ` in
       // front of it is a 401 that reads like a wrong key.
-      Authorization: transcribeKey(opts),
-      "X-AAI-Model": opts.model ?? TRANSCRIBE_SYNC_MODEL,
+      Authorization: transcribeKey(options),
+      "X-AAI-Model": options.model ?? TRANSCRIBE_SYNC_MODEL,
       ...part.headers,
     },
     body: part.body,
-    signal: transcribeSignal({ ...opts, timeoutMs: opts.timeoutMs ?? TRANSCRIBE_SYNC_TIMEOUT_MS }),
+    signal: transcribeSignal({
+      ...options,
+      timeoutMs: options.timeoutMs ?? TRANSCRIBE_SYNC_TIMEOUT_MS,
+    }),
   });
-  if (!response.ok) throw await transcribeFailure(response, opts.label ?? filename);
+  if (!response.ok) throw await transcribeFailure(response, options.label ?? filename);
 
   const body = (await response.json()) as { text?: string };
   return { text: (body.text ?? "").trim() };

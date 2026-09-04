@@ -284,10 +284,10 @@ export type EvalSessionOptions = {
  *   text seam to drive it from, and quietly running it as a pipeline agent would
  *   evaluate a configuration nobody deployed.
  */
-export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSession> {
-  if (opts.agent.s2s !== undefined) {
+export async function openEvalSession(options: EvalSessionOptions): Promise<EvalSession> {
+  if (options.agent.s2s !== undefined) {
     throw new Error(
-      `Agent "${opts.agent.name}" declares an s2s provider, which owns the whole ` +
+      `Agent "${options.agent.name}" declares an s2s provider, which owns the whole ` +
         "turn — a text-driven eval has no seam to drive it from. Evaluate a " +
         "pipeline (stt/llm/tts) configuration, or drive the deployed agent with audio.",
     );
@@ -302,7 +302,7 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
   // runs the next repeat is exactly what makes the leak compound.
   const fake = installStubSpeechProviders();
   try {
-    return await openWithFakes(opts, fake);
+    return await openWithFakes(options, fake);
   } catch (err) {
     fake.release();
     throw err;
@@ -310,7 +310,7 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
 }
 
 async function openWithFakes(
-  opts: EvalSessionOptions,
+  options: EvalSessionOptions,
   fake: StubSpeechProviders,
 ): Promise<EvalSession> {
   const events: SessionEvent[] = [];
@@ -325,14 +325,19 @@ async function openWithFakes(
     },
   };
 
-  const turnTimeoutMs = opts.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
-  const providerEnv = opts.providerEnv ?? withHostCredentialFallback({ ...opts.env });
+  const turnTimeoutMs = options.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
+  const providerEnv = options.providerEnv ?? withHostCredentialFallback({ ...options.env });
   const runtime = createRuntime({
     // `omitUndefined`, not `...omitUndefined({ llm })`: the conditional spread
     // of an object literal is the idiom `guard-invariants` rule 2 exists to keep
     // out, and the truthiness spelling is the one its regex cannot see.
-    agent: { ...opts.agent, stt: fake.stt, tts: fake.tts, ...omitUndefined({ llm: opts.llm }) },
-    env: { ...opts.env, ...fake.env },
+    agent: {
+      ...options.agent,
+      stt: fake.stt,
+      tts: fake.tts,
+      ...omitUndefined({ llm: options.llm }),
+    },
+    env: { ...options.env, ...fake.env },
     providerEnv: { ...providerEnv, ...fake.env },
     // Absent, the runtime builds its own over the DevKit — which is right
     // everywhere but here. See `EvalSessionOptions.workflows`.
@@ -340,13 +345,13 @@ async function openWithFakes(
     // One `omitUndefined` over the four optional seams rather than four
     // conditional spreads: `guard-invariants` rule 2.
     ...omitUndefined({
-      workflows: opts.workflows,
-      runCode: opts.runCode,
-      fetch: opts.fetch,
-      toolTimeoutMs: opts.toolTimeoutMs,
-      generate: opts.generate,
+      workflows: options.workflows,
+      runCode: options.runCode,
+      fetch: options.fetch,
+      toolTimeoutMs: options.toolTimeoutMs,
+      generate: options.generate,
     }),
-    logger: opts.logger ?? silentLogger,
+    logger: options.logger ?? silentLogger,
   });
 
   // The RESOLVED set — the agent's own tools plus whichever builtins it enabled,
@@ -393,7 +398,7 @@ async function openWithFakes(
   const sessionId = `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const session = runtime.createSession({
     id: sessionId,
-    agent: opts.agent.name,
+    agent: options.agent.name,
     client: sink,
   });
 
@@ -407,7 +412,7 @@ async function openWithFakes(
     // would.
     const greetingFrom = events.length;
     session.command({ type: "audio_ready" });
-    if (opts.agent.greeting !== undefined && opts.agent.greeting !== "") {
+    if (options.agent.greeting !== undefined && options.agent.greeting !== "") {
       await waitFor(
         "the greeting",
         (since) => since.some((e) => TURN_ENDS.has(e.type)),

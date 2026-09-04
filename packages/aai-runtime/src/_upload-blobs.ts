@@ -96,7 +96,7 @@ export type UploadBackend = {
   put(
     key: string,
     body: AsyncIterable<Uint8Array>,
-    opts?: { type?: string | undefined; limit?: number | undefined },
+    options?: { type?: string | undefined; limit?: number | undefined },
   ): Promise<number>;
   /**
    * Read `[start, end)` of one object.
@@ -133,8 +133,8 @@ export type UploadBackend = {
 export function createMemoryUploadBackend(): UploadBackend {
   const objects = new Map<string, Uint8Array>();
   return {
-    async put(key, body, opts): Promise<number> {
-      const bytes = await collectCapped(body, opts?.limit);
+    async put(key, body, options): Promise<number> {
+      const bytes = await collectCapped(body, options?.limit);
       objects.set(key, bytes);
       return bytes.length;
     },

@@ -46,6 +46,6 @@ export interface AnthropicLlmOptions extends ModelOptions {}
  * });
  * ```
  */
-export function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider {
-  return { kind: ANTHROPIC_KIND, options: { ...opts } };
+export function anthropicLlm(options: AnthropicLlmOptions): LlmProvider {
+  return { kind: ANTHROPIC_KIND, options: { ...options } };
 }

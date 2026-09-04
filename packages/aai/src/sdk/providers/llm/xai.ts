@@ -44,6 +44,6 @@ export interface XAILlmOptions extends ModelOptions {}
  * });
  * ```
  */
-export function xAILlm(opts: XAILlmOptions): LlmProvider {
-  return { kind: XAI_KIND, options: { ...opts } };
+export function xAILlm(options: XAILlmOptions): LlmProvider {
+  return { kind: XAI_KIND, options: { ...options } };
 }

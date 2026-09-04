@@ -49,10 +49,10 @@ export interface CartesiaTtsOptions extends ProviderCredentialOptions {
  * });
  * ```
  */
-export function cartesiaTts(opts: CartesiaTtsOptions = {}): TtsProvider {
+export function cartesiaTts(options: CartesiaTtsOptions = {}): TtsProvider {
   return {
     kind: CARTESIA_KIND,
-    options: { ...opts, voice: opts.voice ?? CARTESIA_DEFAULT_VOICE },
+    options: { ...options, voice: options.voice ?? CARTESIA_DEFAULT_VOICE },
   };
 }
 
@@ -68,14 +68,14 @@ export const CARTESIA_DEFAULT_LANGUAGE = "en";
  * the runtime's "Session mode resolved" log, so the reported settings are by
  * construction the ones dialled.
  */
-export function resolveCartesiaTtsSettings(opts: CartesiaTtsOptions): {
+export function resolveCartesiaTtsSettings(options: CartesiaTtsOptions): {
   voice: string;
   model: string;
   language: string;
 } {
   return {
-    voice: opts.voice ?? CARTESIA_DEFAULT_VOICE,
-    model: opts.model ?? CARTESIA_DEFAULT_MODEL,
-    language: opts.language ?? CARTESIA_DEFAULT_LANGUAGE,
+    voice: options.voice ?? CARTESIA_DEFAULT_VOICE,
+    model: options.model ?? CARTESIA_DEFAULT_MODEL,
+    language: options.language ?? CARTESIA_DEFAULT_LANGUAGE,
   };
 }

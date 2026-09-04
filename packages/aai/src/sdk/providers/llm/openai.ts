@@ -44,6 +44,6 @@ export interface OpenAILlmOptions extends ModelOptions {}
  * });
  * ```
  */
-export function openAILlm(opts: OpenAILlmOptions): LlmProvider {
-  return { kind: OPENAI_KIND, options: { ...opts } };
+export function openAILlm(options: OpenAILlmOptions): LlmProvider {
+  return { kind: OPENAI_KIND, options: { ...options } };
 }

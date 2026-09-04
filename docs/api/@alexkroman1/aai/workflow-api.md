@@ -48,7 +48,7 @@ outcome than a wide subpath.
 ### createAgentClient()
 
 ```ts
-function createAgentClient(opts: WorkflowApiClientOptions): AgentClient;
+function createAgentClient(options: WorkflowApiClientOptions): AgentClient;
 ```
 
 Create a client for one agent.
@@ -59,7 +59,7 @@ that re-runs.
 
 #### Parameters
 
-##### opts
+##### options
 
 [`WorkflowApiClientOptions`](#workflowapiclientoptions)
 
@@ -72,7 +72,7 @@ that re-runs.
 ### createWorkflowApiClient()
 
 ```ts
-function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
+function createWorkflowApiClient(options: WorkflowApiClientOptions): WorkflowApi;
 ```
 
 Create a workflow API client.
@@ -85,7 +85,7 @@ new `fetch` closure every time and reads as though it were free.
 
 #### Parameters
 
-##### opts
+##### options
 
 [`WorkflowApiClientOptions`](#workflowapiclientoptions)
 

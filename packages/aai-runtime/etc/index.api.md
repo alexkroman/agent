@@ -65,7 +65,7 @@ export { AgentEnv }
 
 // @public
 export type AgentRuntime = {
-    startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
+    startSession(ws: SessionWebSocket, options?: SessionStartOptions): void;
     shutdown(): Promise<void>;
     readonly readyConfig: ReadyConfig;
     readonly workflows?: WorkflowClient | undefined;
@@ -151,7 +151,7 @@ export type CloseableDb = Db & {
 export function createAgentServer(options: AgentServerOptions): AgentServer;
 
 // @public (undocumented)
-type CreateHeaderWebSocket = (url: string, opts: {
+type CreateHeaderWebSocket = (url: string, options: {
     headers: Record<string, string>;
 }) => HeaderWebSocket;
 
@@ -159,10 +159,10 @@ type CreateHeaderWebSocket = (url: string, opts: {
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
 // @public
-export function createHttpUploadBackend(opts: HttpUploadBackendOptions): UploadBackend;
+export function createHttpUploadBackend(options: HttpUploadBackendOptions): UploadBackend;
 
 // @public (undocumented)
-export function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
+export function createLogBuffer(options?: LogBufferOptions): LogBuffer;
 
 // @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
@@ -174,7 +174,7 @@ export function createMemoryUploadBackend(): UploadBackend;
 type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
 
 // @public
-export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
+export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb;
 
 // @public
 export type CreatePostgresDbOptions = {
@@ -192,7 +192,7 @@ export type CreatePostgresDbOptions = {
 export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 
 // @public
-export function createRuntime(opts: RuntimeOptions): Runtime;
+export function createRuntime(options: RuntimeOptions): Runtime;
 
 // @public
 export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
@@ -201,10 +201,10 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
 type CreateS2sWebSocket = CreateHeaderWebSocket;
 
 // @public
-export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
+export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
 
 // @public
-export function createTextAgent(opts: TextAgentOptions): TextAgent;
+export function createTextAgent(options: TextAgentOptions): TextAgent;
 
 // @public
 export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
@@ -225,13 +225,13 @@ export const DEFAULT_LOG_PAGE_LINES = 500;
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
 
 // @public
-export function ensureSessionStateSchema(opts: {
+export function ensureSessionStateSchema(options: {
     url: string;
     logger: Logger;
 }): Promise<boolean>;
 
 // @public
-export function ensureWorkflowJournalSchema(opts: {
+export function ensureWorkflowJournalSchema(options: {
     url: string;
     logger: Logger;
 }): Promise<boolean>;
@@ -275,7 +275,7 @@ type HookRecord = {
 export { HostCredentialEnv }
 
 // @internal
-type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -351,7 +351,7 @@ export type LogBufferOptions = {
 export type LogContext = Record<string, unknown>;
 
 // @public
-export type LogFn = (msg: string, ctx?: LogContext) => void;
+export type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
 export type Logger = Record<LogLevel, LogFn>;
@@ -544,7 +544,7 @@ type RunStatus = WorkflowRunStatus;
 export type Runtime = AgentRuntime & {
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
-    createSession(opts: {
+    createSession(options: {
         id: string;
         agent: string;
         client: ClientSink;
@@ -569,7 +569,7 @@ export type RuntimeOptions = {
     shutdownTimeoutMs?: number | undefined;
     executeTool?: ExecuteTool | undefined;
     toolSchemas?: ToolSchema[] | undefined;
-    onToolResult?: ((msg: {
+    onToolResult?: ((message: {
         toolCallId: string;
         result: string;
         error?: string;
@@ -619,7 +619,7 @@ export type ServerSession = {
     start(): Promise<void>;
     stop(): Promise<void>;
     readonly faultCode: string | undefined;
-    command(cmd: SessionCommand): void;
+    command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
@@ -732,7 +732,7 @@ type SleepRecord = {
 };
 
 // @public
-export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
+export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, options: {
     carrier: CarrierCodec;
     logger?: Logger;
 }): void;
@@ -821,7 +821,7 @@ export interface TextTurnOptions {
     onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
     prepareStep?: PrepareStepFunction<ToolSet>;
     signal?: AbortSignal;
-    stopWhen?: readonly ((opts: {
+    stopWhen?: readonly ((options: {
         steps: readonly StepResult<ToolSet>[];
     }) => boolean | PromiseLike<boolean>)[];
     systemPrompt?: string;
@@ -869,7 +869,7 @@ export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
 
 // @public
 export type UploadBackend = {
-    put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
+    put(key: string, body: AsyncIterable<Uint8Array>, options?: {
         type?: string | undefined;
         limit?: number | undefined;
     }): Promise<number>;
@@ -895,13 +895,13 @@ export const UPLOADS_TABLE = "aai_workflow_uploads";
 // @public
 export type UploadStore = UploadReader & {
     open(id: string): Promise<OpenUpload | undefined>;
-    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
-    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
-    beginParts(id: string, meta: UploadMeta, total: number, opts?: {
+    beginParts(id: string, meta: UploadMeta, total: number, options?: {
         limit?: number;
     }): Promise<UploadInfo>;
     writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;

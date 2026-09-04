@@ -21,7 +21,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
-export function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
+export function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
 
 // @public
 export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
@@ -49,7 +49,7 @@ export interface AssemblyAITtsVoiceInfo {
 export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 
 // @public
-export function cartesiaTts(opts?: CartesiaTtsOptions): TtsProvider;
+export function cartesiaTts(options?: CartesiaTtsOptions): TtsProvider;
 
 // @public
 export interface CartesiaTtsOptions extends ProviderCredentialOptions {
@@ -75,7 +75,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 export const RIME_DEFAULT_VOICE = "cove";
 
 // @public
-export function rimeTts(opts?: RimeTtsOptions): TtsProvider;
+export function rimeTts(options?: RimeTtsOptions): TtsProvider;
 
 // @public
 export interface RimeTtsOptions extends ProviderCredentialOptions {

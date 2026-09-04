@@ -104,11 +104,11 @@ export const DEFAULT_LOG_PAGE_LINES = 500;
 /** Appended to a line cut at {@link LogBufferOptions.maxLineBytes}. */
 export const LOG_LINE_TRUNCATED = "… [truncated]";
 
-export function createLogBuffer(opts: LogBufferOptions = {}): LogBuffer {
-  const maxLines = Math.max(1, opts.maxLines ?? DEFAULT_LOG_BUFFER_LINES);
-  const maxLineBytes = Math.max(16, opts.maxLineBytes ?? DEFAULT_LOG_LINE_BYTES);
-  const maxPageLines = Math.max(1, opts.maxPageLines ?? DEFAULT_LOG_PAGE_LINES);
-  const now = opts.now ?? Date.now;
+export function createLogBuffer(options: LogBufferOptions = {}): LogBuffer {
+  const maxLines = Math.max(1, options.maxLines ?? DEFAULT_LOG_BUFFER_LINES);
+  const maxLineBytes = Math.max(16, options.maxLineBytes ?? DEFAULT_LOG_LINE_BYTES);
+  const maxPageLines = Math.max(1, options.maxPageLines ?? DEFAULT_LOG_PAGE_LINES);
+  const now = options.now ?? Date.now;
 
   const lines: LogLine[] = [];
   /** Next seq to assign. `lines[0].seq` is `nextSeq - lines.length` while full. */

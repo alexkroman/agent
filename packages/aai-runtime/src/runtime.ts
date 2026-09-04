@@ -55,7 +55,7 @@ export type {
  * owns per-session transports: pipeline mode (STT → LLM → TTS, the default)
  * or S2S mode when the agent declares an `s2s` descriptor.
  *
- * @param opts - Runtime configuration. See {@link RuntimeOptions}.
+ * @param options - Runtime configuration. See {@link RuntimeOptions}.
  * @returns A {@link Runtime} with tool execution, schemas, and session
  *   management.
  *
@@ -73,7 +73,7 @@ export type {
  *
  * @public
  */
-export function createRuntime(opts: RuntimeOptions): Runtime {
+export function createRuntime(options: RuntimeOptions): Runtime {
   const {
     agent,
     env,
@@ -83,16 +83,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     s2sConfig: requestedS2sConfig = DEFAULT_S2S_CONFIG,
     sessionStartTimeoutMs,
     shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
-  } = opts;
+  } = options;
   // Providers may come from RuntimeOptions (platform path passes them
   // explicitly) or from the agent's own `stt`/`llm`/`tts` fields (the `aai
-  // dev` path calls createRuntime({ agent, env }) with no provider opts).
-  const effectiveProviders = resolveEffectiveProviders(opts, agent);
+  // dev` path calls createRuntime({ agent, env }) with no provider options).
+  const effectiveProviders = resolveEffectiveProviders(options, agent);
 
   const slug = agent.name;
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
-  const providerEnv = opts.providerEnv ?? env;
+  const providerEnv = options.providerEnv ?? env;
   // ctx.db: a caller-injected Db wins (the platform passes one when storage
   // is enabled for the app); otherwise a DATABASE_URL in the provider env
   // (self-hosted `aai dev` reads the project .env) connects one here.
@@ -109,8 +109,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // `sdk/app-db-budget.ts`). Closing it below stays right — the pool outlives
   // this lease only while somebody else still holds one.
   const ownedDb =
-    !opts.db && providerEnv.DATABASE_URL ? openAppDb(providerEnv.DATABASE_URL) : undefined;
-  const resolvedDb = opts.db ?? ownedDb;
+    !options.db && providerEnv.DATABASE_URL ? openAppDb(providerEnv.DATABASE_URL) : undefined;
+  const resolvedDb = options.db ?? ownedDb;
 
   // Validate against the *effective* providers, not the agent's own fields.
   // Providers may arrive as runtime options rather than on the agent object,
@@ -183,12 +183,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // makes the executor's rejecting stub name the right reason.
   // A caller-supplied client wins, and exactly one has one: an eval, whose
   // bodies were never through the WDK compiler. See `RuntimeOptions.workflows`.
-  // `opts.journal` reaches the MEMORY arm of the choice below and no other: a
+  // `options.journal` reaches the MEMORY arm of the choice below and no other: a
   // runtime rebuilt per save must not rebuild the runs under it.
-  const builtWorkflows = opts.workflows
+  const builtWorkflows = options.workflows
     ? undefined
-    : buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger, opts.journal);
-  const workflows = opts.workflows ?? builtWorkflows?.client;
+    : buildWorkflowClient(agent, resolvedDb, options.publicUrl, logger, options.journal);
+  const workflows = options.workflows ?? builtWorkflows?.client;
 
   // Watches runs a tool asked to be told about (`start(…, { notify })`) and
   // makes the agent say so — see `workflow-notify.ts`. The session map is the
@@ -202,7 +202,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot, commitSessionState } =
     setupTools({
       agent,
-      opts,
+      options,
       ...omitUndefined({ notifier }),
       llm: effectiveProviders.llm,
       env,
@@ -303,7 +303,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     const isPipeline = pipelineProviders() !== null;
     // Relay (host) mode: the relay `executeTool` emits the client-facing
     // `tool.called` itself (mirrors the `relayed` flag session-core passes on).
-    const isRelay = Boolean(opts.onToolResult);
+    const isRelay = Boolean(options.onToolResult);
     const systemPrompt = systemPromptForToday();
 
     // Late-bound reference: callbacks are constructed before ServerSession exists,
@@ -344,7 +344,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       executeTool,
       transport,
       logger,
-      ...omitUndefined({ onToolResult: opts.onToolResult }),
+      ...omitUndefined({ onToolResult: options.onToolResult }),
     });
 
     // Hydration on the way in, reclamation on the way out — see
@@ -426,7 +426,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // The workflow engine's pending deliveries, for the same reason: a rebuilt
     // runtime would otherwise leave the previous engine's timers executing
     // bodies from a build that is gone. Only an engine THIS runtime built —
-    // a caller-supplied `opts.workflows` is the caller's to stop.
+    // a caller-supplied `options.workflows` is the caller's to stop.
     builtWorkflows?.stop();
     // Force-close on timeout skips the per-session stop wrapper's state cleanup
     // (its sink-identity check fails against the cleared map), so clear the cache

@@ -49,7 +49,7 @@ type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_j
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
 
 // @public
-export function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+export function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
 
 // @public
 export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
@@ -555,7 +555,7 @@ export interface StubGateway {
 }
 
 // @public
-export function stubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGateway;
+export function stubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGateway;
 
 // @public
 export interface StubGatewayCall {
@@ -579,7 +579,7 @@ export interface StubGatewayRoute {
 }
 
 // @public
-export function stubGatewayRoute(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayRoute;
+export function stubGatewayRoute(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayRoute;
 
 // @public
 export interface StubGenerate {
@@ -851,7 +851,7 @@ type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
     start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
-    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;

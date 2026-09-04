@@ -86,9 +86,9 @@ export type PlatformDispatchOptions = {
  * @internal
  */
 export function createPlatformDispatch(
-  opts: PlatformDispatchOptions,
+  options: PlatformDispatchOptions,
 ): (runId: string, at?: number) => Promise<void> {
-  const send = createPlatformQueueSend(opts.platform);
+  const send = createPlatformQueueSend(options.platform);
   return async (runId, at) => {
     // Rounded UP so a delivery is never earlier than the deadline the body
     // computed: a sleep that wakes early re-reads its own stored `wakeAt`, finds it
@@ -121,7 +121,7 @@ export function createPlatformDispatch(
       // rejection: the caller that CANNOT act on it — a `start`, which is a tool
       // call away — leaves this line as the only trace, and see the module doc
       // for why that case is recoverable by hand and nothing else.
-      opts.logger.error?.(
+      options.logger.error?.(
         "Workflow delivery could not be queued; run is not scheduled",
         omitUndefined({ runId, wakeAt: at, error: errorMessage(err) }),
       );

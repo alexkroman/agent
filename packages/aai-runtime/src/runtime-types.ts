@@ -57,7 +57,7 @@ export type SessionStartOptions = {
  * Implemented by {@link createRuntime} and the platform sandbox.
  */
 export type AgentRuntime = {
-  startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
+  startSession(ws: SessionWebSocket, options?: SessionStartOptions): void;
   shutdown(): Promise<void>;
   readonly readyConfig: ReadyConfig;
   /**
@@ -270,7 +270,7 @@ export type RuntimeOptions = {
    * a relay `executeTool` + `toolSchemas`. See host-mode.ts.
    */
   onToolResult?:
-    | ((msg: { toolCallId: string; result: string; error?: string }) => void)
+    | ((message: { toolCallId: string; result: string; error?: string }) => void)
     | undefined;
   /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
   toolGuidance?: string[] | undefined;
@@ -344,7 +344,7 @@ export type Runtime = AgentRuntime & {
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
   /** Create a new voice session for a connected client (lower-level than startSession). */
-  createSession(opts: {
+  createSession(options: {
     id: string;
     agent: string;
     client: ClientSink;

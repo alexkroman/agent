@@ -111,13 +111,13 @@ export function payloadRunId(message: unknown): string | undefined {
  * @internal
  */
 export async function enqueueToPlatform(
-  opts: PlatformQueueOptions,
+  options: PlatformQueueOptions,
   body: EnqueueBody,
 ): Promise<string> {
   // The error carries the platform's own reply: it answers 400 naming the field it
   // rejected, and 501 when the deployment has no queue at all. Without it the only
   // record is a status code on a step that failed for no stated reason.
-  const text = await platformPost(opts, {
+  const text = await platformPost(options, {
     route: PLATFORM_ROUTES.workflowEnqueue,
     label: "enqueue",
     timeoutMs: ENQUEUE_TIMEOUT_MS,
@@ -156,17 +156,17 @@ function messageIdOf(text: string): string | undefined {
  *
  * @internal
  */
-export function createPlatformQueueSend(opts: PlatformQueueOptions): (
+export function createPlatformQueueSend(options: PlatformQueueOptions): (
   queueName: string,
   message: unknown,
-  queueOpts?: {
+  queueOptions?: {
     deploymentId?: string | undefined;
     idempotencyKey?: string | undefined;
     headers?: Record<string, string> | undefined;
     delaySeconds?: number | undefined;
   },
 ) => Promise<{ messageId: string | null }> {
-  return async (queueName, message, queueOpts = {}) => {
+  return async (queueName, message, queueOptions = {}) => {
     const runId = payloadRunId(message);
     if (runId === undefined) {
       // Loud, and it fails the step rather than inventing a key. A payload with no
@@ -174,7 +174,7 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (
       // one guarantee the platform's claim provides.
       throw new Error(`queue payload for ${queueName} carries no run id`);
     }
-    const messageId = await enqueueToPlatform(opts, {
+    const messageId = await enqueueToPlatform(options, {
       queueName,
       runId,
       // devalue's output is binary, and the platform's payload column is jsonb
@@ -182,7 +182,7 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (
       // The inner encoding is the DevKit's own tagged-envelope JSON, which is what
       // their `createQueueHandler` reads back (`workflow-typed-json.ts`).
       data: Buffer.from(encodeTypedJson(message)).toString("base64"),
-      ...queueOpts,
+      ...queueOptions,
     });
     return { messageId };
   };

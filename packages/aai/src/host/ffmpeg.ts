@@ -169,13 +169,17 @@ export function ffmpegBaseArgs(options: { loglevel?: string } = {}): string[] {
  */
 export function runFfmpeg(
   args: readonly string[],
-  opts: FfmpegRunOptions = {},
+  options: FfmpegRunOptions = {},
 ): Promise<FfmpegRunResult> {
-  return spawnFfmpeg(resolveBinary(FFMPEG_PATH_ENV, "FFMPEG_PATH", "ffmpeg", opts.binary), args, {
-    ...opts,
-    installHint: "ffmpeg",
-    pathEnv: FFMPEG_PATH_ENV,
-  });
+  return spawnFfmpeg(
+    resolveBinary(FFMPEG_PATH_ENV, "FFMPEG_PATH", "ffmpeg", options.binary),
+    args,
+    {
+      ...options,
+      installHint: "ffmpeg",
+      pathEnv: FFMPEG_PATH_ENV,
+    },
+  );
 }
 
 export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
@@ -202,11 +206,11 @@ export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
  */
 export async function probeMedia(
   source: FfmpegSource,
-  opts: ProbeOptions = {},
+  options: ProbeOptions = {},
 ): Promise<MediaInfo> {
   const { input, stdin } = sourceArgs(source);
   const { stdout } = await spawnFfmpeg(
-    resolveBinary(FFPROBE_PATH_ENV, "FFPROBE_PATH", "ffprobe", opts.binary),
+    resolveBinary(FFPROBE_PATH_ENV, "FFPROBE_PATH", "ffprobe", options.binary),
     [
       "-hide_banner",
       "-v",
@@ -218,7 +222,7 @@ export async function probeMedia(
       input,
     ],
     {
-      ...opts,
+      ...options,
       ...omitUndefined({ stdin }),
       installHint: "ffprobe (part of the ffmpeg package)",
       // Named by the CALLER, so a `binary: "/opt/ffprobe"` override still
@@ -257,14 +261,14 @@ export type WavEncodeOptions = {
  * ]);
  * ```
  */
-export function wavEncodeArgs(opts: WavEncodeOptions = {}): string[] {
-  const bits = opts.bitsPerSample ?? 16;
+export function wavEncodeArgs(options: WavEncodeOptions = {}): string[] {
+  const bits = options.bitsPerSample ?? 16;
   return [
     "-vn",
     "-c:a",
     `pcm_s${bits}le`,
-    ...(opts.channels === undefined ? [] : ["-ac", String(opts.channels)]),
-    ...(opts.sampleRate === undefined ? [] : ["-ar", String(opts.sampleRate)]),
+    ...(options.channels === undefined ? [] : ["-ac", String(options.channels)]),
+    ...(options.sampleRate === undefined ? [] : ["-ar", String(options.sampleRate)]),
     "-f",
     "wav",
   ];
@@ -290,12 +294,12 @@ export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "s
  */
 export async function transcodeToWav(
   source: FfmpegSource,
-  opts: TranscodeToWavOptions = {},
+  options: TranscodeToWavOptions = {},
 ): Promise<Uint8Array> {
   const { input, stdin } = sourceArgs(source);
   const { stdout } = await runFfmpeg(
-    [...ffmpegBaseArgs(), "-i", input, ...wavEncodeArgs(opts), "pipe:1"],
-    { ...opts, ...omitUndefined({ stdin }) },
+    [...ffmpegBaseArgs(), "-i", input, ...wavEncodeArgs(options), "pipe:1"],
+    { ...options, ...omitUndefined({ stdin }) },
   );
   return stdout;
 }

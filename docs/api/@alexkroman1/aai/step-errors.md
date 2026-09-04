@@ -196,7 +196,7 @@ a `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 ### stepGenerateJsonOrFail()
 
 ```ts
-function stepGenerateJsonOrFail<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+function stepGenerateJsonOrFail<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 ```
 
 `stepGenerateJson`, with its failure classified — see
@@ -221,7 +221,7 @@ next attempt.
 
 `string`
 
-##### opts
+##### options
 
 [`StepGenerateJsonOptions`](step.md#stepgeneratejsonoptions)\<`S`\>
 
@@ -238,7 +238,7 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 ### stepGenerateOrFail()
 
 ```ts
-function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string>;
 ```
 
 `stepGenerate`, with its failure classified — the whole of what the wrapper
@@ -257,7 +257,7 @@ the explicit `.catch((err) => throwStepError(err, …))`.
 
 `string`
 
-##### opts?
+##### options?
 
 [`StepGenerateOptions`](step.md#stepgenerateoptions)
 
@@ -284,7 +284,7 @@ export async function summarize(text: string): Promise<string> {
 ### stepTranscribePollOrFail()
 
 ```ts
-function stepTranscribePollOrFail(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+function stepTranscribePollOrFail(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 ```
 
 `stepTranscribePoll`, with its failure classified — see
@@ -295,11 +295,11 @@ nothing about the job's own status.
 
 #### Parameters
 
-##### id
+##### transcriptId
 
 `string`
 
-##### opts?
+##### options?
 
 [`TranscribeRequestOptions`](step.md#transcriberequestoptions)
 
@@ -316,7 +316,7 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 ### stepTranscribeSubmitOrFail()
 
 ```ts
-function stepTranscribeSubmitOrFail(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+function stepTranscribeSubmitOrFail(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
   id: string;
 }>;
 ```
@@ -333,7 +333,7 @@ and not the other and the run gives up in one place and never in the other.
 
 `string`
 
-##### opts?
+##### options?
 
 [`TranscribeSubmitOptions`](step.md#transcribesubmitoptions)
 
@@ -354,7 +354,7 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 ```ts
 function stepTranscribeSyncOrFail(bytes: 
   | Uint8Array<ArrayBufferLike>
-  | readonly Uint8Array<ArrayBufferLike>[], opts?: TranscribeSyncOptions): Promise<{
+  | readonly Uint8Array<ArrayBufferLike>[], options?: TranscribeSyncOptions): Promise<{
   text: string;
 }>;
 ```
@@ -375,7 +375,7 @@ never going to transcribe.
   \| `Uint8Array`\<`ArrayBufferLike`\>
   \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
 
-##### opts?
+##### options?
 
 [`TranscribeSyncOptions`](step.md#transcribesyncoptions)
 
@@ -394,7 +394,7 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 ### stepTranscribeUploadOrFail()
 
 ```ts
-function stepTranscribeUploadOrFail(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+function stepTranscribeUploadOrFail(uploadId: string, options?: TranscribeRequestOptions): Promise<{
   audioUrl: string;
 }>;
 ```
@@ -408,7 +408,7 @@ function stepTranscribeUploadOrFail(uploadId: string, opts?: TranscribeRequestOp
 
 `string`
 
-##### opts?
+##### options?
 
 [`TranscribeRequestOptions`](step.md#transcriberequestoptions)
 

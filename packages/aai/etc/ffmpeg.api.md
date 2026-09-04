@@ -11,7 +11,7 @@ export function ffmpegBaseArgs(options?: {
 
 // @public
 export class FfmpegError extends Error {
-    constructor(opts: {
+    constructor(options: {
         kind: FfmpegFailureKind;
         message: string;
         binary: string;
@@ -93,7 +93,7 @@ export type MediaStreamInfo = {
 };
 
 // @public
-export function probeMedia(source: FfmpegSource, opts?: ProbeOptions): Promise<MediaInfo>;
+export function probeMedia(source: FfmpegSource, options?: ProbeOptions): Promise<MediaInfo>;
 
 // @public (undocumented)
 export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
@@ -101,16 +101,16 @@ export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
 };
 
 // @public
-export function runFfmpeg(args: readonly string[], opts?: FfmpegRunOptions): Promise<FfmpegRunResult>;
+export function runFfmpeg(args: readonly string[], options?: FfmpegRunOptions): Promise<FfmpegRunResult>;
 
 // @public
-export function transcodeToWav(source: FfmpegSource, opts?: TranscodeToWavOptions): Promise<Uint8Array>;
+export function transcodeToWav(source: FfmpegSource, options?: TranscodeToWavOptions): Promise<Uint8Array>;
 
 // @public (undocumented)
 export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "stdin">;
 
 // @public
-export function wavEncodeArgs(opts?: WavEncodeOptions): string[];
+export function wavEncodeArgs(options?: WavEncodeOptions): string[];
 
 // @public (undocumented)
 export type WavEncodeOptions = {

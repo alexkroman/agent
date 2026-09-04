@@ -113,8 +113,8 @@ const SELECT_RUN = `select run_id, workflow, status, created_at, input::text as 
  *
  * @internal
  */
-export function createPostgresJournal(opts: { db: Db }): JournalStore {
-  const { db } = opts;
+export function createPostgresJournal(options: { db: Db }): JournalStore {
+  const { db } = options;
 
   return {
     async createRun(record: RunRecord): Promise<void> {

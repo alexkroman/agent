@@ -84,7 +84,7 @@ export function isSlackWebhookUrl(value: string): boolean;
 export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
-export function registerChannelHandler(kind: ChannelHandler): void;
+export function registerChannelHandler(handler: ChannelHandler): void;
 
 // @public
 export function registeredChannelKindNames(): readonly string[];

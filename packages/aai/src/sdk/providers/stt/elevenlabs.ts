@@ -58,8 +58,8 @@ export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
  * Unset, `language` is omitted from the request and Scribe
  * auto-detects — which is not the same as English.
  */
-export function elevenLabsStt(opts: ElevenLabsSttOptions = {}): SttProvider {
-  return { kind: ELEVENLABS_KIND, options: { ...opts } };
+export function elevenLabsStt(options: ElevenLabsSttOptions = {}): SttProvider {
+  return { kind: ELEVENLABS_KIND, options: { ...options } };
 }
 
 /** Streaming model used when the descriptor names none. */
@@ -70,13 +70,13 @@ export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
  * options with every host-side default filled in. Shared by the opener and
  * the runtime's "Session mode resolved" log.
  */
-export function resolveElevenLabsSttSettings(opts: ElevenLabsSttOptions): {
+export function resolveElevenLabsSttSettings(options: ElevenLabsSttOptions): {
   model: string;
   languageCode?: string;
 } {
   return {
-    model: opts.model ?? ELEVENLABS_DEFAULT_MODEL,
+    model: options.model ?? ELEVENLABS_DEFAULT_MODEL,
     // Omitted unless set: absent means auto-detect, which is not "English".
-    ...(opts.language ? { languageCode: opts.language } : {}),
+    ...(options.language ? { languageCode: options.language } : {}),
   };
 }

@@ -149,11 +149,11 @@ const CONFLICT_METHODS = new Set(["claimHook"]);
  * stays registered rather than being replaced.
  */
 async function call(
-  opts: PlatformEndpoint,
+  options: PlatformEndpoint,
   method: string,
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  return await platformResult(opts, {
+  return await platformResult(options, {
     route: PLATFORM_ROUTES.workflowJournal,
     pathSegment: method,
     label: `workflow-journal ${method}`,
@@ -284,17 +284,17 @@ function toSleep(value: Record<string, unknown>): SleepRecord {
  *
  * @internal
  */
-export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
+export function createPlatformJournal(options: PlatformEndpoint): JournalStore {
   // The two reads that are pure functions of a run id, so concurrent callers
   // share one round trip — see `_journal-shared-reads.ts` for what
   // issues them at once and why this is a coalescer rather than a cache. Built
   // per client, so two journals never share an entry.
   const sharedGetRun = shareByKey(
     async (runId: string): Promise<RunRecord | undefined> =>
-      toRun(await call(opts, "getRun", { runId })),
+      toRun(await call(options, "getRun", { runId })),
   );
   const sharedReadSteps = shareByKey(async (runId: string): Promise<StepEntry[]> => {
-    const rows = await call(opts, "readSteps", { runId });
+    const rows = await call(options, "readSteps", { runId });
     if (!Array.isArray(rows)) return [];
     return rows.flatMap((row) => {
       const step = toStep(row);
@@ -305,7 +305,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
   // same moment as the step read — so overlapping walks of one run share it for
   // exactly the reason they share that one.
   const sharedReadSleeps = shareByKey(async (runId: string): Promise<SleepEntry[]> => {
-    const rows = await call(opts, "readSleeps", { runId });
+    const rows = await call(options, "readSleeps", { runId });
     if (!Array.isArray(rows)) return [];
     // A row with no `key` is DROPPED rather than guessed at: an absent wait
     // round-trips through `claimSleep`, which is what happened before this read
@@ -317,7 +317,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
 
   return {
     async createRun(record: RunRecord): Promise<void> {
-      await call(opts, "createRun", {
+      await call(options, "createRun", {
         runId: record.runId,
         workflow: record.workflow,
         status: record.status,
@@ -332,7 +332,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
     },
 
     async listRuns(workflow: string, limit: number): Promise<RunRecord[]> {
-      const rows = await call(opts, "listRuns", { workflow, limit });
+      const rows = await call(options, "listRuns", { workflow, limit });
       if (!Array.isArray(rows)) return [];
       // A row that will not parse is DROPPED rather than guessed at: the caller is
       // a listing, and one malformed row must not fail the page.
@@ -349,7 +349,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       expect?: readonly RunStatus[],
     ): Promise<boolean> {
       return (
-        (await call(opts, "setStatus", {
+        (await call(options, "setStatus", {
           runId,
           status: next,
           output: encode(patch?.output),
@@ -375,7 +375,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       // failing to read it re-runs a step, which is what at-least-once already
       // permits; `appendStep`'s answer decides what a double execution RETURNS,
       // where a guess is a divergence.
-      return toStep(await call(opts, "readStep", { runId, key }));
+      return toStep(await call(options, "readStep", { runId, key }));
     },
 
     async claimAttempt(
@@ -384,7 +384,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       holder: string,
       leaseMs: number,
     ): Promise<number> {
-      const n = await call(opts, "claimAttempt", { runId, key, holder, leaseMs });
+      const n = await call(options, "claimAttempt", { runId, key, holder, leaseMs });
       if (typeof n !== "number") {
         // Never invented. An attempt number the caller made up is a ceiling that
         // does not hold, which is the one thing this primitive exists to provide.
@@ -397,7 +397,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       // Nothing to validate: the answer is that the release happened, and the
       // call rejects when it did not. A charge that is not given back only
       // brings a step's ceiling closer, which is the safe direction.
-      await call(opts, "releaseAttempt", { runId, key, holder });
+      await call(options, "releaseAttempt", { runId, key, holder });
     },
 
     async claimSleep(
@@ -407,7 +407,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       correlationId: string | undefined,
       kind: SleepRecord["kind"] = "sleep",
     ): Promise<SleepRecord> {
-      const row = await call(opts, "claimSleep", { runId, key, wakeAt, correlationId, kind });
+      const row = await call(options, "claimSleep", { runId, key, wakeAt, correlationId, kind });
       if (!isRecord(row))
         throw new Error(`workflow-journal claimSleep answered nothing for ${key}`);
       return toSleep(row);
@@ -424,12 +424,12 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       // `now` crosses the wire because the engine's clock is the one that decides
       // whether a wait has elapsed. Letting the DATABASE compare against its own
       // would put a second clock in the one place replay determinism rests on.
-      const woken = await call(opts, "wakeSleeps", { runId, now: Date.now(), correlationIds });
+      const woken = await call(options, "wakeSleeps", { runId, now: Date.now(), correlationIds });
       return typeof woken === "number" ? woken : 0;
     },
 
     async claimHook(runId: string, key: string, token: string): Promise<HookRecord> {
-      const row = await call(opts, "claimHook", { runId, key, token });
+      const row = await call(options, "claimHook", { runId, key, token });
       if (!isRecord(row)) throw new Error(`workflow-journal claimHook answered nothing for ${key}`);
       return {
         token: String(row.token),
@@ -445,16 +445,16 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       // answered branch, which re-reads the hook and returns whatever is really
       // stored. Guessing `true` would be the divergence this method exists to
       // close, arriving by a different route.
-      return (await call(opts, "closeHook", { runId, key })) === true;
+      return (await call(options, "closeHook", { runId, key })) === true;
     },
 
     async deliverHook(token: string, payload: unknown): Promise<string | undefined> {
-      const runId = await call(opts, "deliverHook", { token, payload: encode(payload) });
+      const runId = await call(options, "deliverHook", { token, payload: encode(payload) });
       return typeof runId === "string" ? runId : undefined;
     },
 
     async appendStep(runId: string, entry: StepEntry): Promise<StepEntry> {
-      const row = await call(opts, "appendStep", {
+      const row = await call(options, "appendStep", {
         runId,
         entry: {
           key: entry.key,

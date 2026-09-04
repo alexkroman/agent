@@ -87,9 +87,9 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  */
 export function installStubGateway(
   replies: string | readonly string[],
-  opts: StubGatewayOptions = {},
+  options: StubGatewayOptions = {},
 ): StubGatewayCall[] {
-  const gateway = stubGateway(replies, opts);
+  const gateway = stubGateway(replies, options);
   vi.stubGlobal("fetch", gateway.fetch);
   return gateway.calls;
 }

@@ -400,10 +400,10 @@ export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
  * nowhere else — an unrecognised one leaves an agent that connects,
  * reports ready and never speaks.
  */
-export function assemblyAITts(opts: AssemblyAITtsOptions = {}): TtsProvider {
+export function assemblyAITts(options: AssemblyAITtsOptions = {}): TtsProvider {
   return {
     kind: ASSEMBLYAI_TTS_KIND,
-    options: { ...opts, voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE },
+    options: { ...options, voice: options.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE },
   };
 }
 
@@ -416,14 +416,14 @@ export function assemblyAITts(opts: AssemblyAITtsOptions = {}): TtsProvider {
  * reports ready and is permanently silent — which is exactly the failure that
  * wants the resolved voice printed once at startup.
  */
-export function resolveAssemblyAITtsSettings(opts: AssemblyAITtsOptions): {
+export function resolveAssemblyAITtsSettings(options: AssemblyAITtsOptions): {
   voice: string;
   language?: string;
 } {
   return {
-    voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
+    voice: options.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
     // Omitted unless set: every voice speaks one language, so the server
     // infers it, and a mismatched pair is worse than no hint.
-    ...omitUndefined({ language: opts.language }),
+    ...omitUndefined({ language: options.language }),
   };
 }
