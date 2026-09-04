@@ -182,9 +182,17 @@ than chosen: handed an unbundled project, Deno Deploy caches the dependency
 graph of `@alexkroman1/aai-cli` — a build toolchain — and dies at its 1024 MiB
 limit before reaching any of our code. So `.aai/deno/` carries a bundled
 server, the built worker, the browser client and `.env.example`, with no install
-step. Detection reads BOTH `DENO_DEPLOY` and `DENO_DEPLOYMENT_ID`: `std-env`
-treats the pair as one test and Nitro's own Deno preset reads the second, so
-either alone is half the signal.
+step. Detection reads BOTH `DENO_DEPLOY` and `DENO_DEPLOYMENT_ID`, because neither
+covers both GENERATIONS of the platform: Deno Deploy Classic sets
+`DENO_DEPLOYMENT_ID` and `DENO_REGION` and no `DENO_DEPLOY` at all, so reading
+only the latter left Classic undetectable. It DOES fire where Deno Deploy's git
+integration builds on its own infrastructure — those variables are set during a
+build, its reference carving out only `DENO_TIMELINE` — which is the same
+zero-config property `VERCEL` gives. It cannot fire for the local flow, and the
+reason is ordering rather than a missing marker: `deno deploy` uploads a
+directory whose build finished on your machine before the upload command ran.
+Nitro has the identical hole and answers it the same way, passing
+`NITRO_PRESET=deno_deploy` explicitly in its own docs.
 
 **Its scenario suite needs a real `deno`, so CI pins one.**
 `_deno-output.scenario.test.ts`'s portability case copies the output to a

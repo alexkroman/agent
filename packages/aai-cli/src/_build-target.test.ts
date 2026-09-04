@@ -46,10 +46,11 @@ describe("resolveBuildTarget", () => {
     // for this target — `deno deploy` uploads a directory built on the
     // developer's own machine — so detection is convenience, not the mechanism.
     expect(resolveBuildTarget(undefined, { DENO_DEPLOY: "true" })).toBe("deno");
-    // Both of Deno Deploy's markers, because either alone is half the signal —
-    // `std-env` tests the pair as one, and this is the half Nitro's own preset
-    // reads. Asserted separately from the map-consistency test below, which
-    // derives from `TARGET_ENV_MARKERS` and so cannot notice a missing key.
+    // Both of Deno Deploy's markers, because neither covers both GENERATIONS
+    // of the platform: Classic sets `DENO_DEPLOYMENT_ID` and no `DENO_DEPLOY`,
+    // so reading only the latter left Classic undetectable. Asserted separately
+    // from the map-consistency test below, which derives from
+    // `TARGET_ENV_MARKERS` and so cannot notice a missing key.
     expect(resolveBuildTarget(undefined, { DENO_DEPLOYMENT_ID: "abc123" })).toBe("deno");
   });
 
