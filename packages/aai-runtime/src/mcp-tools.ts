@@ -390,12 +390,18 @@ function acceptServer(
  * await server.listen(3000);
  * ```
  *
- * Never rejects for a server's sake — read {@link McpToolSurface.servers} for
- * what happened, including the fingerprints to pin. It CAN throw for a mistake
- * in this process: `withTools` refuses a name the agent already declares, which
- * after the prefix means the author wrote a `tools/mcp_<server>_<tool>.ts` file
- * of their own. That one is worth failing on, because it is not recoverable at
- * runtime and the message names both files.
+ * Never rejects — read {@link McpToolSurface.servers} for what happened,
+ * including the fingerprints to pin. A server that is down, refused by the SSRF
+ * screen, or missing its `tokenEnv` costs its own tools and nothing else.
+ *
+ * **A name a server cannot have does not fail the call either.** `taken` is
+ * seeded from `def.tools` before any server is registered, so a remote tool
+ * whose prefixed name the agent already declares — which after the prefix means
+ * the author wrote a `tools/mcp_<server>_<tool>.ts` file of their own — is
+ * dropped by `registerTools` with a warning naming both, and the agent's own
+ * tool wins. `withTools` therefore never sees a colliding key, and its throw is
+ * unreachable from here; this doc used to promise that throw, which was the one
+ * claim about this function a manual test could falsify.
  *
  * @public
  */

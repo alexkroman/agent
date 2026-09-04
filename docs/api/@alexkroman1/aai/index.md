@@ -454,7 +454,7 @@ them would make whole servers unusable for a spelling.
 
 Truncation at [MCP\_TOOL\_NAME\_MAX](#mcp_tool_name_max) is the one lossy step, and it is why
 the caller must still dedupe: two long remote names can land on one truncated
-name. `mergeMcpTools` resolves that the same way it resolves every other
+name. `registerTools` resolves that the same way it resolves every other
 collision — first wins in a sorted order, the loser is dropped and logged —
 rather than silently overwriting.
 
@@ -7363,7 +7363,7 @@ publishes its own tool names, so without a prefix a server could publish
 stood — the model would call it and nothing would say so. With the prefix,
 shadowing a native tool takes an author writing a `tools/mcp_*.ts` file
 themselves, and even that loses: the native tool wins and the drop is logged
-(see `mergeMcpTools`).
+(`registerTools`, in `@alexkroman1/aai-runtime`'s `mcp-tools.ts`).
 
 ***
 

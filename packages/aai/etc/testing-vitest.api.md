@@ -61,6 +61,7 @@ type SleepOptions = {
 // @public
 interface StandardSchemaIssue {
     readonly errors?: unknown;
+    readonly issues?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)
