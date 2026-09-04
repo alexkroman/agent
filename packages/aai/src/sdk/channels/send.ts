@@ -10,10 +10,10 @@
  * the vendors out of the shared path. This module used to hold Slack's
  * option-narrowing and four Slack imports beside the table, which made a
  * second channel an edit to a file that has nothing to do with it. A channel
- * is a {@link ChannelKind} VALUE now, declared in the module that owns the
+ * is a {@link ChannelHandler} VALUE now, declared in the module that owns the
  * platform, and the ones the SDK ships are registered below.
  *
- * {@link registerChannelKind} is the same door `registerSttKind` opens one
+ * {@link registerChannelHandler} is the same door `registerSttKind` opens one
  * layer up: a host or an agent project can add a destination the SDK does not
  * ship without waiting for one.
  *
@@ -35,9 +35,9 @@
 import { stepFetch } from "../step-fetch.ts";
 import { isTransientStatus, retryAfter } from "../step-retry.ts";
 import { responseErrorMessage } from "../utils.ts";
-import type { Channel, ChannelKind, ChannelMessage, ChannelPayload } from "./channel-types.ts";
+import type { Channel, ChannelHandler, ChannelMessage, ChannelPayload } from "./channel-types.ts";
 import { ChannelDeliveryError } from "./channel-types.ts";
-import { SLACK_CHANNEL } from "./slack.ts";
+import { SLACK_CHANNEL_HANDLER } from "./slack.ts";
 
 /**
  * A platform is not slow. A post that has not answered in 30s is not going to,
@@ -45,7 +45,7 @@ import { SLACK_CHANNEL } from "./slack.ts";
  */
 export const CHANNEL_POST_TIMEOUT_MS = 30_000;
 
-const CHANNEL_KINDS = new Map<string, ChannelKind>();
+const CHANNEL_KINDS = new Map<string, ChannelHandler>();
 
 /**
  * Register a channel kind, so `sendToChannel` can dispatch a descriptor
@@ -67,25 +67,25 @@ const CHANNEL_KINDS = new Map<string, ChannelKind>();
  *
  * @public
  */
-export function registerChannelKind(kind: ChannelKind): void {
+export function registerChannelHandler(kind: ChannelHandler): void {
   CHANNEL_KINDS.set(kind.kind, kind);
 }
 
 /** The tags {@link sendToChannel} can dispatch, in registration order. */
-export function registeredChannelKinds(): readonly string[] {
+export function registeredChannelKindNames(): readonly string[] {
   return [...CHANNEL_KINDS.keys()];
 }
 
-registerChannelKind(SLACK_CHANNEL);
+registerChannelHandler(SLACK_CHANNEL_HANDLER);
 
-function handlerFor(channel: Channel): ChannelKind {
+function handlerFor(channel: Channel): ChannelHandler {
   const handler = CHANNEL_KINDS.get(channel.kind);
   if (handler === undefined) {
     throw new Error(
       `Unknown channel kind ${JSON.stringify(channel.kind)}. ` +
-        `Registered kinds: ${registeredChannelKinds().join(", ") || "(none)"}. ` +
+        `Registered kinds: ${registeredChannelKindNames().join(", ") || "(none)"}. ` +
         "A kind is registered by importing the module that declares it, or by " +
-        "calling `registerChannelKind` — a run resumed in a fresh worker has " +
+        "calling `registerChannelHandler` — a run resumed in a fresh worker has " +
         "imported neither unless the agent's entry does it at module load.",
     );
   }
@@ -112,7 +112,7 @@ export function renderChannelPayload(channel: Channel, message: ChannelMessage):
  * @throws {Error} when `channel.kind` names no known channel.
  * @public
  */
-export function channelAdvice(channel: Channel, detail: string): string {
+export function explainChannelFailure(channel: Channel, detail: string): string {
   return handlerFor(channel).advice(channel.options, detail);
 }
 
@@ -167,7 +167,7 @@ export async function sendToChannel(channel: Channel, message: ChannelMessage): 
   throw new ChannelDeliveryError(
     retryable
       ? `${channel.kind} channel post failed: HTTP ${response.status}. ${detail}`
-      : `${channelAdvice(channel, detail)} (HTTP ${response.status})`,
+      : `${explainChannelFailure(channel, detail)} (HTTP ${response.status})`,
     {
       channelKind: channel.kind,
       status: response.status,

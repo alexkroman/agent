@@ -1,11 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** OpenAI Realtime S2S descriptor — host transport resolves at session start. */
 
-// The module is `s2s/openai.ts` and its symbols are `openaiS2s` /
-// `OpenAIS2sOptions`, so both konsistent case maps derive them from the plain
+// The module is `s2s/openai.ts` and its symbols are `openAIS2s` /
+// `OpenAIS2sOptions`, so both konsistent case names derive them from the plain
 // vendor id: `openai: OpenAI` in `kebabToPascalMap` gives `OpenAIS2sOptions`,
-// the `openai: openai` identity entry in `kebabToCamelMap` gives `openaiS2s`,
-// and the STAGE comes from the convention's suffix rather than from the id.
+// and — with no identity entry in `kebabToCamelMap` to suppress it — the same
+// map derives the camel form `openAI`, giving `openAIS2s`. The STAGE comes
+// from the convention's suffix rather than from the id.
 //
 // It used to be `s2s/openai-realtime.ts` exporting `openaiRealtime` /
 // `OpenaiRealtimeOptions`, and that `Openai` spelling was a derivation
@@ -41,7 +42,7 @@ export type OpenAIS2sVoice =
   | "shimmer"
   | "verse";
 
-/** Options for {@link openaiS2s}. */
+/** Options for {@link openAIS2s}. */
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {
   /** Realtime model identifier. Default applied by the host (currently `"gpt-realtime-2"`). */
   model?: string;
@@ -59,17 +60,17 @@ export interface OpenAIS2sOptions extends ProviderCredentialOptions {
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { openaiS2s } from "@alexkroman1/aai/s2s";
+ * import { openAIS2s } from "@alexkroman1/aai/s2s";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   s2s: openaiS2s({ model: "gpt-realtime", voice: "marin" }),
+ *   s2s: openAIS2s({ model: "gpt-realtime", voice: "marin" }),
  * });
  * ```
  *
  * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline.
  */
-export function openaiS2s(opts: OpenAIS2sOptions = {}): S2sProvider {
+export function openAIS2s(opts: OpenAIS2sOptions = {}): S2sProvider {
   return { kind: OPENAI_S2S_KIND, options: { ...opts } };
 }

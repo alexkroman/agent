@@ -37,7 +37,7 @@
 
 import type {
   Channel,
-  ChannelKind,
+  ChannelHandler,
   ChannelMessage,
   ChannelPayload,
   ChannelSection,
@@ -298,7 +298,7 @@ function truncate(text: string, max: number): string {
  * behind it was never published — and nothing in Slack's generic message says
  * so.
  */
-export function slackChannelAdvice(options: SlackChannelOptions, detail: string): string {
+export function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string {
   if (isSlackWorkflowTriggerUrl(options.webhookUrl)) {
     if (detail.includes("workflow_not_published")) {
       return "That Slack workflow trigger exists but its workflow is not published. Publish it in Slack, then start a new run.";
@@ -333,7 +333,7 @@ function slackOptions(options: Record<string, unknown>): SlackChannelOptions {
 }
 
 /**
- * Slack as a {@link ChannelKind} — what `sendToChannel` dispatches to for a
+ * Slack as a {@link ChannelHandler} — what `sendToChannel` dispatches to for a
  * `"slack"` descriptor.
  *
  * Exported so a host that assembles its own channel set can name it, and so
@@ -343,8 +343,8 @@ function slackOptions(options: Record<string, unknown>): SlackChannelOptions {
  *
  * @public
  */
-export const SLACK_CHANNEL: ChannelKind = {
+export const SLACK_CHANNEL_HANDLER: ChannelHandler = {
   kind: SLACK_CHANNEL_KIND,
   render: (message, options) => renderSlackChannelPayload(message, slackOptions(options)),
-  advice: (options, detail) => slackChannelAdvice(slackOptions(options), detail),
+  advice: (options, detail) => explainSlackChannelFailure(slackOptions(options), detail),
 };

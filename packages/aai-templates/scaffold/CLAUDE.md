@@ -887,7 +887,7 @@ it with `aai secret put`. A channel's credential is its DESTINATION and is
 passed in, which is why no channel reads an env var of its own. `ChannelMessage`
 is rendered per platform, so the same message is legal on a channel kind added
 later; `isSlackWebhookUrl` / `isSlackWorkflowTriggerUrl` validate a pasted URL
-before a run depends on it, and `channelAdvice` turns a refusal into a sentence
+before a run depends on it, and `explainChannelFailure` turns a refusal into a sentence
 a person can act on. `podcast-digest` is the worked example.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
@@ -1293,12 +1293,12 @@ API keys require it; the US endpoints reject them. Example:
 | Factory         | SDK package         | Env var                        |
 | --------------- | ------------------- | ------------------------------ |
 | `anthropicLlm`  | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
-| `openaiLlm`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
+| `openAILlm`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
 | `googleLlm`     | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
 | `mistralLlm`    | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
-| `xaiLlm`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
+| `xAILlm`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
 | `groqLlm`       | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
-| `openrouterLlm` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
+| `openRouterLlm` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
 | `gatewayLlm`    | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
 | `assemblyAILlm` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
@@ -1308,10 +1308,10 @@ shared by all of them except `assemblyAILlm`. Example:
 because a third-party vendor's catalog is not this SDK's to default from;
 `assemblyAILlm()` is the one bare call, since it has a default model.
 
-`openrouterLlm` routes through [OpenRouter](https://openrouter.ai) — an
+`openRouterLlm` routes through [OpenRouter](https://openrouter.ai) — an
 OpenAI-compatible endpoint fronting hundreds of models addressed as
 `"creator/model"`, e.g.
-`openrouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" })`. It needs
+`openRouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" })`. It needs
 no extra SDK install (it reuses the `@ai-sdk/openai` client).
 
 `gatewayLlm` routes through the [Vercel AI

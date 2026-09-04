@@ -5,7 +5,7 @@ import { installStubStepFetch } from "../testing-vitest.ts";
 import { ChannelDeliveryError } from "./channel-types.ts";
 import {
   CHANNEL_POST_TIMEOUT_MS,
-  channelAdvice,
+  explainChannelFailure,
   renderChannelPayload,
   sendToChannel,
 } from "./send.ts";
@@ -157,17 +157,17 @@ describe("rendering, which is where the two webhook shapes diverge", () => {
 
 describe("the advice a refusal deserves", () => {
   test("names the unpublished-workflow case, which no generic message explains", () => {
-    const advice = channelAdvice(slackChannel({ webhookUrl: TRIGGER }), "workflow_not_published");
+    const advice = explainChannelFailure(slackChannel({ webhookUrl: TRIGGER }), "workflow_not_published");
     expect(advice).toContain("not published");
   });
 
   test("points a trigger caller at the variable name", () => {
-    const advice = channelAdvice(slackChannel({ webhookUrl: TRIGGER }), "invalid_arguments");
+    const advice = explainChannelFailure(slackChannel({ webhookUrl: TRIGGER }), "invalid_arguments");
     expect(advice).toContain("text parameter");
   });
 
   test("tells an incoming-webhook caller to check the webhook, not the workflow", () => {
-    const advice = channelAdvice(slackChannel({ webhookUrl: INCOMING }), "invalid_payload");
+    const advice = explainChannelFailure(slackChannel({ webhookUrl: INCOMING }), "invalid_payload");
     expect(advice).toContain("revoked");
     expect(advice).not.toContain("workflow");
   });

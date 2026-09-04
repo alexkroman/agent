@@ -1,6 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
-import { assemblyAIS2s, openaiS2s } from "@alexkroman1/aai/s2s";
+import { assemblyAIS2s, openAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt, deepgramStt, elevenLabsStt, sonioxStt } from "@alexkroman1/aai/stt";
 import { ASSEMBLYAI_TTS_VOICES, assemblyAITts, cartesiaTts, rimeTts } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
@@ -99,7 +99,7 @@ describe("swapping any other stage", () => {
   test("S2S: an explicit opt-in, and it REPLACES the pipeline rather than joining it", () => {
     for (const [s2s, kind] of [
       [assemblyAIS2s(), "assemblyai"],
-      [openaiS2s({ voice: "alloy" }), "openai-realtime"],
+      [openAIS2s({ voice: "alloy" }), "openai-realtime"],
     ] as const) {
       const config = toAgentConfig(agent({ name: "Line", s2s }));
       expect(config.s2s?.kind).toBe(kind);

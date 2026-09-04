@@ -9,7 +9,7 @@
  * ## This suite had never executed, in either arm
  *
  * It gated on all three API keys and then built `createRuntime({ env })`
- * carrying only two of them while declaring `llm: openaiLlm(...)`. `resolveLlm`
+ * carrying only two of them while declaring `llm: openAILlm(...)`. `resolveLlm`
  * reads the AGENT env and nothing else (see `resolveApiKey`'s doc: there is
  * deliberately no `process.env` fallback), so the credentialed arm threw
  * `OpenAI LLM: missing API key` at `session.start()` — and the shell exports
@@ -49,7 +49,7 @@ import {
   CARTESIA_API_KEY_ENV,
   OPENAI_API_KEY_ENV,
 } from "@alexkroman1/aai/host-internal";
-import { openaiLlm } from "@alexkroman1/aai/llm";
+import { openAILlm } from "@alexkroman1/aai/llm";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { cartesiaTts } from "@alexkroman1/aai/tts";
@@ -143,7 +143,7 @@ describe.skipIf(missing.length > 0 && !requireStack)(
         // Descriptors, not pre-resolved openers — so this exercises the same
         // resolution path (and API-key routing) a deployed agent takes.
         stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-        llm: openaiLlm({ model: "gpt-4o-mini" }),
+        llm: openAILlm({ model: "gpt-4o-mini" }),
         tts: cartesiaTts({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
         logger: consoleLogger,
       });

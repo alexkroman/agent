@@ -113,9 +113,9 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `SessionCommand`, `SessionEvent` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + options (`assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt`) |
-| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openaiLlm`, `googleLlm`, `mistralLlm`, `xaiLlm`, `groqLlm`, `openrouterLlm`, `gatewayLlm`, `assemblyAILlm`); eight of the nine take one shared `ModelOptions` rather than eight byte-identical `{ model: string }` interfaces |
+| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `gatewayLlm`, `assemblyAILlm`); eight of the nine take one shared `ModelOptions` rather than eight byte-identical `{ model: string }` interfaces |
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesiaTts`, `rimeTts`, `assemblyAITts`), and the voice catalog |
-| `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openaiS2s`; the root re-exports `assemblyAIS2s`) |
+| `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openAIS2s`; the root re-exports `assemblyAIS2s`) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
 | `@alexkroman1/aai/ffmpeg` | `host/ffmpeg.ts` (direct) | ffmpeg from a step — `runFfmpeg`/`probeMedia`/`transcodeToWav`; why, in `aai-guest/CLAUDE.md`. **Node-only** — see the note below the table |
 | `@alexkroman1/aai/html` | `host/html.ts` (direct) | Somebody else's markup, from a step: `htmlToText`, `parseFeed` (RSS/Atom/RDF), `pageMetadata`. Delegates to `htmlparser2`/`html-to-text`, already carried here for `page-design.ts`/`web-search.ts`/`builtin-tools.ts` and exposed by no subpath — so both scraping templates had written ~65 lines of parser. **Node-only** — see below. Three functions, not a toolkit: a step wanting the DOM adds `htmlparser2` itself. `decodeHtmlEntities` stays on `/utils`, unsuperseded — six entities, no dependency, for a `client.tsx` |
@@ -175,7 +175,7 @@ present in the `agent()` config:
   against the one that needs a deterministic spec.
 
 - **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main
-  export, or `openaiS2s()` from `@alexkroman1/aai/s2s`) uses
+  export, or `openAIS2s()` from `@alexkroman1/aai/s2s`) uses
   `createS2sTransport()` in `packages/aai/src/host/transports/s2s-transport.ts`.
   The host opens a single WebSocket to AssemblyAI's speech-to-speech
   service; STT, the LLM loop, and TTS all run service-side and audio/events
@@ -353,12 +353,12 @@ Reference providers shipped today:
   descriptor; the `@ai-sdk/*` package is only imported by the host-side
   resolver (`host/providers/resolve.ts`), never by the agent bundle:
   - `anthropicLlm({ model })` — `ANTHROPIC_API_KEY`
-  - `openaiLlm({ model })` — `OPENAI_API_KEY`
+  - `openAILlm({ model })` — `OPENAI_API_KEY`
   - `googleLlm({ model })` — `GOOGLE_GENERATIVE_AI_API_KEY`
   - `mistralLlm({ model })` — `MISTRAL_API_KEY`
-  - `xaiLlm({ model })` — `XAI_API_KEY`
+  - `xAILlm({ model })` — `XAI_API_KEY`
   - `groqLlm({ model })` — `GROQ_API_KEY`
-  - `openrouterLlm({ model })` — `OPENROUTER_API_KEY`; and
+  - `openRouterLlm({ model })` — `OPENROUTER_API_KEY`; and
   - `gatewayLlm({ model })` — `AI_GATEWAY_API_KEY`. Both are AGGREGATORS
     addressed as `"creator/model"`, and neither needs an extra `@ai-sdk/*`
     dependency (`@ai-sdk/openai`'s `.chat()` client repointed, and

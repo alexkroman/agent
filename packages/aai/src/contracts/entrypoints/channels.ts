@@ -2,8 +2,8 @@
 /**
  * Capability contract: `channels`.
  *
- * `ChannelKind` and `registerChannelKind` are the EXTENSION POINT, and they are
- * why this capability should stay stable as channels are added: a new
+ * `ChannelHandler` and `registerChannelHandler` are the EXTENSION POINT, and
+ * they are why this capability should stay stable as channels are added: a new
  * destination is a value of that shape declared in its own module, not a field
  * on the shared message and not an entry in a table inside `send.ts`. What a
  * platform alone can do lives in that kind's own options type, which no
@@ -29,24 +29,24 @@ export {
   type Channel,
   ChannelDeliveryError,
   type ChannelDescriptor,
-  type ChannelKind,
+  type ChannelHandler,
   type ChannelMessage,
   type ChannelPayload,
   type ChannelSection,
-  channelAdvice,
   escapeSlackMrkdwn,
+  explainChannelFailure,
+  explainSlackChannelFailure,
   isSlackWebhookUrl,
   isSlackWorkflowTriggerUrl,
-  registerChannelKind,
-  registeredChannelKinds,
+  registerChannelHandler,
+  registeredChannelKindNames,
   renderChannelPayload,
   renderSlackChannelPayload,
   renderSlackPlainText,
-  SLACK_CHANNEL,
+  SLACK_CHANNEL_HANDLER,
   SLACK_CHANNEL_KIND,
   type SlackChannel,
   type SlackChannelOptions,
   sendToChannel,
   slackChannel,
-  slackChannelAdvice,
 } from "../../sdk/channels-barrel.ts";

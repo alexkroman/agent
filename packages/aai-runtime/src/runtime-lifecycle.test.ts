@@ -6,7 +6,7 @@
 import { sessionSlot } from "@alexkroman1/aai";
 import { SESSION_RESUME_GRACE_MS } from "@alexkroman1/aai/host-internal";
 import type { S2sProvider } from "@alexkroman1/aai/s2s";
-import { openaiS2s } from "@alexkroman1/aai/s2s";
+import { openAIS2s } from "@alexkroman1/aai/s2s";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { MockWebSocket } from "./_mock-ws.ts";
@@ -610,7 +610,7 @@ describe("Runtime — session routing", () => {
     await session.stop();
   });
 
-  test("agent.s2s = openaiS2s() routes to OpenAI Realtime transport", async () => {
+  test("agent.s2s = openAIS2s() routes to OpenAI Realtime transport", async () => {
     type Listener = (ev: unknown) => void;
     const listeners: Record<string, Listener[]> = {
       open: [],
@@ -637,7 +637,7 @@ describe("Runtime — session routing", () => {
     );
 
     const runtime = createRuntime({
-      agent: makeAgent({ s2s: openaiS2s({ model: "gpt-realtime" }) }),
+      agent: makeAgent({ s2s: openAIS2s({ model: "gpt-realtime" }) }),
       env: { OPENAI_API_KEY: "sk-test" },
       logger: silentLogger,
       createOpenaiRealtimeWebSocket,

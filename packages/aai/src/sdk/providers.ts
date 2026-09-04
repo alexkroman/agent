@@ -109,7 +109,7 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 /**
  * Descriptor for an S2S provider. Returned by `assemblyAIS2s(...)` (root
- * export) or `openaiS2s(...)` from `@alexkroman1/aai/s2s`.
+ * export) or `openAIS2s(...)` from `@alexkroman1/aai/s2s`.
  */
 export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
   /** Compile-time stage tag; never present at runtime. */

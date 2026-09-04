@@ -414,7 +414,7 @@ export interface AgentDef extends PipelineVoiceTuning {
   /**
    * Pluggable S2S provider descriptor — the explicit opt-in to
    * speech-to-speech mode (e.g. `assemblyAIS2s()` for AssemblyAI's Voice
-   * Agent API, or `openaiS2s()`). Unset, the agent runs the default
+   * Agent API, or `openAIS2s()`). Unset, the agent runs the default
    * cascaded pipeline. Mutually exclusive with the `stt`/`llm`/`tts`
    * pipeline triple.
    */

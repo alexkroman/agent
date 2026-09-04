@@ -529,10 +529,12 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   literal prefix exists (plus that each convention is named, described, and
   declares at least one predicate). And **the case maps compose**:
   `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
-  declaring `openai: OpenAI` for the type names silently turns the expected
-  factory name into `openAI`. The identity entries in `kebabToCamelMap`
-  (`openai: openai`, `openrouterLlm`, `elevenlabs`) look redundant and are what
-  keep `openai()` right.
+  declaring `openai: OpenAI` for the type names also makes the expected factory
+  name `openAILlm`. That derivation is the one to want, and the identity entries
+  that used to suppress it (`openai: openai`, `openrouter: openrouter`) are gone
+  — they existed only to keep the lowercase `openaiLlm`/`openrouterLlm`
+  spellings, which the API naming review renamed. `elevenlabs: elevenLabs`
+  stays, being a real override rather than an identity.
 
   The version is pinned **exactly** (`1.0.0-beta.4`, the registry's `latest`)
   rather than caret-ranged: a `^` range over a prerelease drifts onto
