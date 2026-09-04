@@ -242,26 +242,70 @@ const blocksOf = (convention: Convention): MustBlock[] => {
  * use. Leading `!` is stripped by the caller; polarity is not this function's
  * question.
  */
-const patternToRegExp = (pattern: string): RegExp => {
-  // The sentinels are spelled `\u0000` and NOT as raw NUL bytes. One literal
-  // NUL makes the whole file BINARY to `git grep`, which silently exempts it
-  // from every guard-invariants line rule and every check-escape-hatches
-  // pattern — and the corpus floor cannot see it, because the file is still
-  // present in `git ls-files`. That has now happened three times in this repo
-  // (`host/workflow-notify.ts`, `host/workflow-keys.ts`, and here); the third
-  // is what `assertScanCorpus`'s `git ls-files` vs `git grep -lI` diff now
-  // catches. The escape is byte-identical at runtime.
-  const body = pattern
-    .replace(/^!/, "")
-    // Escape everything a regex would read, EXCEPT the three magic forms.
+/**
+ * One glob segment's worth of literal text, with `*` and `**` translated.
+ *
+ * The sentinels are spelled `\u0000` and NOT as raw NUL bytes. One literal
+ * NUL makes the whole file BINARY to `git grep`, which silently exempts it
+ * from every guard-invariants line rule and every check-escape-hatches
+ * pattern — and the corpus floor cannot see it, because the file is still
+ * present in `git ls-files`. That has now happened three times in this repo
+ * (`host/workflow-notify.ts`, `host/workflow-keys.ts`, and here); the third
+ * is what `assertScanCorpus`'s `git ls-files` vs `git grep -lI` diff now
+ * catches. The escape is byte-identical at runtime.
+ */
+const globChunk = (text: string): string =>
+  text
     .replace(/[.+^$()|[\]\\]/g, "\\$&")
-    .replace(/\{[A-Za-z0-9_]+\}/g, "\u0000SEG\u0000")
     .replace(/\*\*\//g, "\u0000DEEP\u0000")
     .replace(/\*\*/g, "\u0000ANY\u0000")
     .replace(/\*/g, "\u0000SEG\u0000")
     .replaceAll("\u0000SEG\u0000", "[^/]*")
     .replaceAll("\u0000DEEP\u0000", "(?:[^/]+/)*")
     .replaceAll("\u0000ANY\u0000", ".*");
+
+/**
+ * A `{placeholder}` or `{placeholder:constraint(arg)}` as a regex fragment.
+ *
+ * The CONSTRAINED form is why this is a function rather than one more
+ * `.replace()`. `{pane:matches(^(preview|docs)$)}` is real konsistent syntax
+ * (path-patterns.md, "Path placeholder constraints"), and the earlier
+ * translator recognised only `\{[A-Za-z0-9_]+\}` — so the colon and the
+ * parens were escaped as literals, the placeholder stopped being a
+ * placeholder, and the pattern resolved to NOTHING. That reported a healthy
+ * three-file convention as dead, which is this suite's own failure mode
+ * turned on itself for the second time today: a checker that understands
+ * less syntax than the thing it checks reports absence where there is none.
+ *
+ * `matches` is translated faithfully, by inlining the constraint's own source
+ * with its anchors stripped, so a constraint that really does select nothing
+ * still fails the test. Any other constraint (`segments`) falls back to a
+ * plain segment: it narrows which values apply rather than which paths exist.
+ */
+const placeholderToRegExp = (inner: string): string => {
+  const colon = inner.indexOf(":");
+  if (colon === -1) return "[^/]*";
+  const matches = /^matches\((.*)\)$/.exec(inner.slice(colon + 1));
+  if (!matches?.[1]) return "[^/]*";
+  return `(?:${matches[1].replace(/^\^/, "").replace(/\$$/, "")})`;
+};
+
+/** A `paths` pattern as an anchored regex over repo-relative paths. */
+const patternToRegExp = (pattern: string): RegExp => {
+  const source = pattern.replace(/^!/, "");
+  let body = "";
+  let cursor = 0;
+  while (cursor < source.length) {
+    const open = source.indexOf("{", cursor);
+    const close = open === -1 ? -1 : source.indexOf("}", open);
+    if (open === -1 || close === -1) {
+      body += globChunk(source.slice(cursor));
+      break;
+    }
+    body += globChunk(source.slice(cursor, open));
+    body += placeholderToRegExp(source.slice(open + 1, close));
+    cursor = close + 1;
+  }
   return new RegExp(`^${body}$`);
 };
 

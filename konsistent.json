@@ -1635,6 +1635,327 @@
       "must": {
         "areBarrelFiles": true
       }
+    },
+    {
+      "name": "ui-hook-result-type",
+      "description": "A hook module in aai-ui is `use-<thing>.ts`, and it exports `use<Thing>` returning a NAMED, exported `Use<Thing>Result`. The name is what makes the published reference readable: an inferred return type renders as one flattened type expression with every field's doc comment dropped (the same typedoc-plugin-markdown behaviour the memoized components pay for — see `ui-memoized-component-props`), so a hook whose result is an inline object literal documents none of its fields, and a caller destructuring `{ items, streaming, transcript, thinking }` has nowhere to read what they mean. Exporting it is also what lets a page annotate its own state with the hook's shape rather than restating it. Three modules are deliberately outside this: `use-run-key.ts` returns a bare `string`, and `use-workflow-form.ts` / `use-workflow-stream.ts` export `useWorkflowSubmit` / `useWorkflowStream` returning the shared `WorkflowSubmission` shape (one submission type for two hooks, so the run-and-stream pair stay interchangeable at a call site). All three names are on the published surface pinned by `etc/index.api.md`, `API-EXPORTS.json` and the `aai-ui:workflow` epochs, so they are exceptions rather than debt — renaming one is an api-report plus an epoch bump, not a tidy-up.",
+      "paths": [
+        "packages/aai-ui/src/use-{hookName}.ts",
+        "!packages/aai-ui/src/use-run-key.ts",
+        "!packages/aai-ui/src/use-workflow-form.ts",
+        "!packages/aai-ui/src/use-workflow-stream.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "use${hookName.toPascalCase()}",
+            "returnValueOfType": "Use${hookName.toPascalCase()}Result"
+          }
+        ],
+        "exportTypes": [
+          "Use${hookName.toPascalCase()}Result"
+        ]
+      }
+    },
+    {
+      "name": "ui-component-module-name",
+      "description": "A module under aai-ui's `components/` exports the component its filename names — `console-shell.tsx` exports `ConsoleShell`. The root barrel re-exports every one of them by explicit name (`index.ts` carries no `export *`), so filename and export are the two halves of one lookup: a component whose file says one thing and whose export says another is findable only by grep, and a reader following an import back from a template's `client.tsx` lands in the wrong file. Three modules are plural by construction and named for the family rather than for one component: `form-fields.tsx` (the seven `Field` / `TextField` / `SelectField` / … controls a `<Form>` is assembled from), `url-chips.tsx` (`ApiUrlChip`, `UiUrlChip`, `SessionUrlChips`), and `upload-progress.tsx` (`UploadProgressBar` — the file could be renamed to match, but the name is on the published surface and the path is keyed in `scripts/no-check-baseline.json`, so it is left alone).",
+      "paths": [
+        "packages/aai-ui/src/components/{componentName}.tsx",
+        "!packages/aai-ui/src/components/form-fields.tsx",
+        "!packages/aai-ui/src/components/upload-progress.tsx",
+        "!packages/aai-ui/src/components/url-chips.tsx"
+      ],
+      "excludeFiles": [
+        "**/*.test.tsx"
+      ],
+      "must": {
+        "export": [
+          "${componentName.toPascalCase()}"
+        ]
+      }
+    },
+    {
+      "name": "ui-memoized-component-props",
+      "description": "The three memoized components (`Markdown`, `Controls`, `MessageList`) are `export const X = memo(fn)`, and each must carry an explicit `MemoExoticComponent<FunctionComponent<XProps>>` annotation written from NAMED react type imports, with `XProps` exported. For as long as that type was inferred the published reference described all three as taking nothing — `const Markdown: MemoExoticComponent;` was the entire declaration, so `text`, a REQUIRED prop, was named nowhere a reader could find it. The cause is neither `memo` nor the props being inline: it is the shape tsc emits for an inferred type, `import(\"react\").MemoExoticComponent<…>`, whose type ARGUMENTS typedoc-plugin-markdown drops. Measured against the plugin directly, the same declaration written from a named import renders its arguments in full, in every combination. So the annotation is what tsc then emits verbatim, and the props type is exported because `treatWarningsAsErrors` refuses a named-but-unexported type on a public signature. The two react type imports are the load-bearing half a checker can see: drop the annotation and both imports go unused, so requiring them is what fails a regression back to the inferred form.",
+      "paths": "packages/aai-ui/src/components/{componentName:matches(^(markdown|controls|message-list)$)}.tsx",
+      "must": {
+        "importTypes": [
+          {
+            "name": "MemoExoticComponent",
+            "from": "react"
+          },
+          {
+            "name": "FunctionComponent",
+            "from": "react"
+          }
+        ],
+        "exportTypes": [
+          "${componentName.toPascalCase()}Props"
+        ],
+        "exportConstants": [
+          "${componentName.toPascalCase()}"
+        ]
+      }
+    },
+    {
+      "name": "ui-worklet-blob-url",
+      "description": "An AudioWorklet processor module in aai-ui is `worklets/<name>-processor.ts`; it exports its raw source as `<name>ProcessorSource` and loads it through `workletModuleUrl` from `./_module-url.ts`. The helper exists because the choice inside it is not discoverable from a call site: the agent page's CSP allows `script-src blob:` and NOT `data:`, so a data-URI module fails `addModule` with the opaque \"Unable to load a worklet's module\" — a failure that names neither the CSP nor the URI scheme. Hand-rolling `URL.createObjectURL(new Blob([...]))` at a second call site works today and is one CSP edit away from being the same bug in two places. The exported source constant is the other half: the processor body is a template STRING, invisible to tsc, so `capture-processor.test.ts` and `playback-processor.test.ts` evaluate it directly — un-exporting it silently removes the only coverage those processors have. NOTE what is deliberately NOT asserted here: `importFromParents: false` is red and should stay red, because both processors import tuning constants (`MIC_BUFFER_SECONDS`, `MIC_SILENCE_PROBE_MS`, the playback figures) from `../types.ts` and interpolate them into the source string, which is exactly right — one declaration, read by the host and baked into the worklet.",
+      "paths": "packages/aai-ui/src/worklets/{worklet}-processor.ts",
+      "excludeFiles": [
+        "**/*.test.ts"
+      ],
+      "must": {
+        "exportConstants": [
+          "${worklet.toCamelCase()}ProcessorSource"
+        ],
+        "import": [
+          {
+            "name": "workletModuleUrl",
+            "from": "./_module-url.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ui-workflow-hook-api-ref",
+      "description": "Every aai-ui hook that talks to the workflow HTTP API takes the caller's client through `useWorkflowApiRef(api)` (`_workflow-api-ref.ts`), never as an effect dependency. The natural spelling passes a new object every render, and as a dependency that is an unbounded request loop against the agent — which BROKERS, so it also boots sandboxes — with `error` wiped before anything can read it. It presents as \"the page polls forever\" rather than as a mistake at the call site, which is why a per-hook comment was not enough: the preamble had been written out five times with four copies of the same paragraph, and a sixth hook would have copied whichever one it read. The helper holds the ref, the lazily-built default client behind it, and one copy of the argument, and returns a STABLE getter read per request — so a caller swapping clients mid-watch (a token arriving after login) is picked up without the watch restarting.",
+      "paths": "packages/aai-ui/src/use-{hook:matches(^(workflow|download-url))}.ts",
+      "excludeFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "must": {
+        "import": [
+          {
+            "name": "useWorkflowApiRef",
+            "from": "./_workflow-api-ref.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ui-browser-barrel-has-no-node-module",
+      "description": "aai-ui's root barrel is a BROWSER entry point, so it may not reach the two modules in this package that import node builtins. `client-dir.ts` (`defaultClientDir()`, `node:module` + `node:path`) has its own `./client-dir` subpath for exactly this reason, and `build-default-client.ts` (`node:path` + `node:url`) is a build step. A node builtin on the root barrel is not a type error and not a lint error — it fails at bundle time in a USER's project, or worse resolves to a browser shim and fails at runtime, and the import that caused it can be four modules deep. Enumerating the specifiers rather than banning the `node:` prefix is a konsistent limitation, not a choice: `importFrom`'s wildcard needs a `/` after the prefix, so `node:*` is unreachable. A blanket prefix ban belongs in biome's `noRestrictedImports` `patterns` group, scoped to this package minus those two files.",
+      "paths": "packages/aai-ui/src/index.ts",
+      "mustNot": {
+        "importFrom": [
+          "./client-dir.ts",
+          "./build-default-client.ts",
+          "node:module",
+          "node:path",
+          "node:url",
+          "node:fs"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-pane-modules",
+      "description": "The studio front-end's panes are one module each, and this is the list. It exists because the prose inventory in `packages/aai-studio-client/CLAUDE.md` went stale in both directions at once: it named a `database.tsx` that had been deleted with the Database pane, omitted `logs-view.tsx` entirely, and then said \"the six page-shaped ones\" under a list of seven. `top-bar.tsx`'s `StudioTab` union is the real roster (`preview`, `docs`, `workflows`, `code`, `logs`, `secrets`, `settings`) and `top-bar.test.tsx` pins the rendered label sequence — but nothing tied either to the modules that render them, so a deleted pane left a documented file that was not there and an added one left a file no document mentioned. konsistent cannot read the union, so this asserts the module set from the filesystem side: existence only, which is what catches the deletion. `chat.tsx` (the pane outside the switcher), `pane-shell.tsx` (shared by the page-shaped ones), `public-api.tsx` (the one page outside the shell, chosen before the auth gate) and the two shells `app.tsx` / `project-view.tsx` are here for the same reason.",
+      "paths": "packages/aai-studio-client/src",
+      "must": {
+        "haveType": "directory",
+        "haveFiles": [
+          "chat.tsx",
+          "preview.tsx",
+          "docs.tsx",
+          "workflows.tsx",
+          "code-view.tsx",
+          "logs-view.tsx",
+          "secrets.tsx",
+          "settings.tsx",
+          "pane-shell.tsx",
+          "public-api.tsx",
+          "top-bar.tsx",
+          "project-view.tsx",
+          "app.tsx"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-pane-export",
+      "description": "A studio pane module whose filename IS its tab id exports `<Tab>Pane` — `secrets.tsx` exports `SecretsPane`. `project-view.tsx` renders the panes from a chain of `selectedTab === \"…\"` comparisons against `top-bar.tsx`'s `StudioTab` union, so the tab id is the one string that links the union, the switcher's label table, the selection state and the module — and the export name is what makes that chain greppable from either end. The two panes with a layout of their own are named for what they are rather than for their tab (`code-view.tsx` → `CodeView` for tab `code`, `logs-view.tsx` → `LogsView` for tab `logs`), and `chat.tsx` exports `ChatPanel` because it is not in the switcher at all; those three are outside the pattern by design, so the rule is scoped to the five whose filename and tab id already agree.",
+      "paths": "packages/aai-studio-client/src/{pane:matches(^(preview|docs|workflows|secrets|settings)$)}.tsx",
+      "must": {
+        "exportFunctions": [
+          "${pane.toPascalCase()}Pane"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-test-seam",
+      "description": "`src/_test-utils.ts` is this package's one test seam, and these are the helpers it owes. Each replaced a shape that had been rebuilt per suite — the QueryClient pair in five files, the `ResizeObserver` stub in two, and 21 `as HTML*Element` casts, a cast that also silently answers `undefined === true` when the query resolves to something with no `.disabled`. The inventory is asserted rather than described because the guide's copy of it is the thing that rots: a helper renamed or folded into a call site leaves a documented seam that is not there, and the next suite rebuilds the shape instead of importing it. Existence only — konsistent cannot see that a suite reached PAST the seam, which stays a review question.",
+      "paths": "packages/aai-studio-client/src/_test-utils.ts",
+      "must": {
+        "exportFunctions": [
+          "stubFetch",
+          "fakeFetch",
+          "jsonResponse",
+          "sseResponse",
+          "settle",
+          "fetchCall",
+          "fetchLines",
+          "renderWithClient",
+          "button",
+          "input",
+          "textarea",
+          "installResizeObserver"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-cleanup-is-setup",
+      "description": "No suite in this package imports Testing Library's `cleanup`: `afterEach(cleanup)` is registered once, in `src/_test-setup.ts`. Testing Library registers its own automatic cleanup only when the runner exposes globals, and this package deliberately does not set `globals: true` — so before the setup file, sixteen suites hand-wrote the hook and the seventeenth (`use-event-stream.test.ts`) leaned on a per-test `unmount()`, which an assertion failing above that line SKIPS: the hook stays mounted holding a pending fake timer into the next test, and the failure surfaces in an unrelated suite. Registering it centrally is the only version a new suite cannot forget, and it runs last (vitest stacks `afterEach` hooks outermost-last), which is what a suite restoring timers or globals in its own hook wants. A `cleanup` import is therefore always one of two mistakes — a re-registered hook, or a mid-test call standing in for a second test case. `github-card.test.tsx` had the second and was split into two cases rather than exempted.",
+      "paths": [
+        "packages/aai-studio-client/src/{suite}.test.tsx",
+        "packages/aai-studio-client/src/{suite}.test.ts"
+      ],
+      "mustNot": {
+        "import": [
+          {
+            "name": "cleanup",
+            "from": "@testing-library/react"
+          }
+        ]
+      }
+    },
+    {
+      "name": "studio-client-probe-cadence",
+      "description": "`preview.tsx` exports the four constants that set the preview-probe cadence (`PROBE_RETRY_MS`, `PROBE_SLOW_AFTER`, `PROBE_SLOW_RETRY_MS`, `PROBE_FAILURES_BEFORE_WAKE`). They are exported for the test rather than for a caller: the probe suite used to copy the numbers, so halving the source cadence would have loosened the very bound written to catch it. Un-exporting one sends the suite straight back to a mirrored literal, which is why this is asserted here and paired with `studio-client-probe-cadence-imported`.",
+      "paths": "packages/aai-studio-client/src/preview.tsx",
+      "must": {
+        "exportConstants": [
+          "PROBE_RETRY_MS",
+          "PROBE_SLOW_AFTER",
+          "PROBE_SLOW_RETRY_MS",
+          "PROBE_FAILURES_BEFORE_WAKE"
+        ]
+      }
+    },
+    {
+      "name": "studio-client-probe-cadence-imported",
+      "description": "The other half: `preview.test.tsx` IMPORTS all four probe constants from `./preview.tsx` rather than mirroring their values. A mirrored constant makes the assertion agree with itself instead of with the source — halve `PROBE_RETRY_MS` in `preview.tsx` and a suite carrying its own `3000` still passes, having loosened the bound it exists to hold. The bound is also EXACT rather than an upper one, because a capped-only assertion is satisfied by a poll loop that STOPS, which is the failure the module's own docblock names — and an exact bound over a mirrored number is the worst of both.",
+      "paths": "packages/aai-studio-client/src/preview.test.tsx",
+      "must": {
+        "import": [
+          {
+            "name": "PROBE_RETRY_MS",
+            "from": "./preview.tsx"
+          },
+          {
+            "name": "PROBE_SLOW_AFTER",
+            "from": "./preview.tsx"
+          },
+          {
+            "name": "PROBE_SLOW_RETRY_MS",
+            "from": "./preview.tsx"
+          },
+          {
+            "name": "PROBE_FAILURES_BEFORE_WAKE",
+            "from": "./preview.tsx"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cli-vite-build-preserves-node-env",
+      "description": "A CLI bundler module (`packages/aai-cli/src/*-bundler.ts`) invokes Vite's `build()` and must take it through `withPreservedNodeEnv` (`./_vite-env.ts`). Vite's `build()` sets `NODE_ENV=production` when it is unset — a permanent, global side effect on the CALLING process, not on the build. `aai dev` rebuilds on every file change, so without the wrapper the first rebuild flips the dev server itself to production for the rest of its life, and nothing reports it. The wrapper snapshots and restores the variable around the build. konsistent can only reach the two modules named `*-bundler.ts`; a Vite invocation added under some other filename is outside it and would want a `guard-invariants` node rule (a `build` import from `\"vite\"` in a module that does not also import the wrapper).",
+      "paths": "packages/aai-cli/src/{kind}-bundler.ts",
+      "excludeFiles": [
+        "**/*.test.ts"
+      ],
+      "must": {
+        "import": [
+          {
+            "name": "build",
+            "from": "vite"
+          },
+          {
+            "name": "withPreservedNodeEnv",
+            "from": "./_vite-env.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cli-command-result-shape",
+      "description": "A single-command module in the CLI is `<command>.ts` exporting `execute<Command>` that returns `Promise<CommandResult<<Command>Data>>`. The envelope is the CLI's contract with scripts: `runCommand` renders `CommandResult` as either the human output or the `--json` object, so an executor that returns a bare payload prints nothing a `jq` pipeline can read and reports failure through an exception instead of an exit-coded result. Naming the data type after the command is what keeps `{\"ok\":true,\"data\":{…}}` documentable per command rather than as one union. Only the commands whose module holds exactly one executor are in scope; `studio.ts` (list/pull/push/publish), `workflow.ts` (list/runs/show/cancel) and `secret.ts` (put/delete/list) each hold a family and are named per operation, and `init.ts` / `login.ts` return a payload type that is not `<Command>Data`.",
+      "paths": "packages/aai-cli/src/{cmd:matches(^(build|delete|deploy|dev|eval|logs|test)$)}.ts",
+      "excludeFiles": [
+        "**/*.test.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          {
+            "name": "execute${cmd.toPascalCase()}",
+            "returnValueOfType": "Promise<CommandResult<${cmd.toPascalCase()}Data>>"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cli-test-data-carries-the-set",
+      "description": "`aai test`'s result carries the SET it covered, not just a boolean. `passed` alone made a narrowed run indistinguishable from a complete one in a script — `jq -e .data.passed` was true either way — while the command printed a green summary over 211 unrun tests, which is what the scaffold wires into CI. So `ran` (what vitest was pointed at), `unrun` (what it was not) and `complete` (the one field a CI job needs to read) are REQUIRED on `TestData`, and `additionalProperties: false` keeps the shape from growing a second answer to the same question. Making `complete` optional is the exact regression this catches: it type-checks at every call site that reads it and silently answers `undefined` — falsy, so a job gating on it fails closed, and a job gating on `passed` is back where it started.",
+      "paths": "packages/aai-cli/src/test.ts",
+      "must": {
+        "declareTypes": [
+          {
+            "name": "TestData",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "skipped": {
+                  "type": "boolean"
+                },
+                "ran": {},
+                "unrun": {},
+                "complete": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "passed",
+                "ran",
+                "unrun",
+                "complete"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "cli-eval-data-carries-the-set",
+      "description": "`aai eval` names its `ran` set for the same reason `aai test` does (see `cli-test-data-carries-the-set`): a boolean verdict over an unknown set of cases is not a verdict. It carries no `unrun`/`complete` deliberately — the eval tier is one file (`agent.eval.test.ts`), so there is no narrowing to report, and inventing the two fields here would imply a completeness question this command does not have.",
+      "paths": "packages/aai-cli/src/eval.ts",
+      "must": {
+        "declareTypes": [
+          {
+            "name": "EvalData",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "passed": {
+                  "type": "boolean"
+                },
+                "skipped": {
+                  "type": "boolean"
+                },
+                "ran": {}
+              },
+              "required": [
+                "passed",
+                "ran"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      }
     }
   ]
 }

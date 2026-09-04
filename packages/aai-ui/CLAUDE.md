@@ -11,7 +11,8 @@ conventions and testing rules live in the root `CLAUDE.md`.
 - `./client-dir` — **Node only**: `defaultClientDir()`, the filesystem path of
   those assets, for passing to `createRuntimeServer`/`createAgentServer` as
   `clientDir`. Its own subpath because it imports `node:module`/`node:path`,
-  which must never reach the browser barrel. It is a FUNCTION, not a constant:
+  which the root barrel may not reach — `ui-browser-barrel-has-no-node-module`
+  in `konsistent.json` is what says so. It is a FUNCTION, not a constant:
   resolution throws when the package is missing, and a module-level constant
   would move that failure to import time, firing for callers that never wanted
   the client. `aai-cli`'s dev server and every self-hosted example used to
@@ -142,27 +143,14 @@ carried was an argument for having one.
 
 ## A memoized component must NAME its props type
 
-`Markdown`, `Controls` and `MessageList` are `export const X = memo(fn)`, and
-for as long as that type was INFERRED the published reference described all
-three as taking nothing: `const Markdown: MemoExoticComponent;` was the entire
-declaration, so `text` — a REQUIRED prop — was named nowhere a reader could
-find it.
+That rule is `ui-memoized-component-props` in `konsistent.json` — the three
+memoized components (`Markdown`, `Controls`, `MessageList`) each carry an
+explicit `MemoExoticComponent<FunctionComponent<XProps>>` annotation written
+from named react type imports, with `XProps` exported. Its description carries
+what typedoc drops from an inferred one and why the imports are the half a
+checker can see.
 
-The cause is not `memo` and not the props being an inline object type. It is
-the shape `tsc` emits for an inferred type: `import("react").MemoExoticComponent<…>`,
-and `typedoc-plugin-markdown` drops the type ARGUMENTS of an `import(…)`
-reference. Measured against the plugin directly: the same declaration written
-with a NAMED import renders its arguments in full, in every combination —
-inline function type, `FunctionComponent<Props>`, anything.
-
-So each of the three carries an explicit annotation
-(`MemoExoticComponent<FunctionComponent<MarkdownProps>>`) written from imported
-names, which is what `tsc` then emits verbatim. The props types are exported
-because `treatWarningsAsErrors` refuses a named-but-unexported type on a public
-signature, and they are the `ToolCallRowProps` pattern the package already used
-— a named props type renders every property with its own prose.
-
-Two consequences worth knowing before adding a component here:
+Two consequences it cannot check, worth knowing before adding a component here:
 
 - **An INTERSECTION in a parameter position loses per-property prose.** A pure
   inline object type expands into a documented property list; `A & Omit<B, …>`
@@ -1340,16 +1328,10 @@ reconnects on its own schedule, which would fight the caller's.
 
 Four properties are load-bearing and each covers a bug that is silent:
 
-- **The client is held in a REF, not named as an effect dependency.** The
-  natural spelling passes a new object every render; as a dependency that is an
-  unbounded request loop against the agent, with `error` wiped before anything
-  can read it — presenting as "the page polls forever" rather than as a mistake
-  at the call site. Hoist the client out of the component anyway. All five
-  workflow hooks get this from **`useWorkflowApiRef(api)`** — the ref, the
-  lazily-built default behind it, and one copy of the argument, which had been
-  written out five times with four copies of the same paragraph. It returns a
-  STABLE getter read per request, so a caller swapping clients mid-watch (a
-  token arriving after login) is picked up without the watch restarting.
+- **The client is held in a REF, not named as an effect dependency** —
+  `useWorkflowApiRef(api)`, required of every workflow hook by
+  `ui-workflow-hook-api-ref` in `konsistent.json`, whose description carries the
+  request loop this prevents. Hoist the client out of the component anyway.
 - **A 404 is a STABLE answer**, so the poll gives up after `MAX_MISSING_READS`.
   Unbounded, a stale id (restored from `localStorage`, or belonging to an agent
   redeployed onto a fresh database) polls — and BROKERS — for as long as the tab

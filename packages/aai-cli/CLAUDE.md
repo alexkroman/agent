@@ -71,10 +71,11 @@ between them is the design:
   — no `agent.test.ts` at all, where the CLI printed "No test file found" while
   the project's specs sat right there. A warning after a green summary is not a
   gate; an exit code is.
-- **The result carries the SET, not just a boolean.** `ran`, `unrun` and
-  `complete` ride `TestData`, because `jq -e .data.passed` answered `true` for a
-  narrowed run and a complete one alike, so no script could tell them apart.
-  `aai eval` reports its `ran` for the same reason.
+- **The result carries the SET, not just a boolean** —
+  `cli-test-data-carries-the-set` and `cli-eval-data-carries-the-set` in
+  `konsistent.json` require `ran`/`unrun`/`complete` on `TestData` and `ran` on
+  `EvalData`, and the first description carries what `jq -e .data.passed`
+  answered before them.
 - **`aai test --all`** is the opt-in: every non-eval spec in one run
   (`TestOptions.all` → `VitestRunOptions.all`, declared as the `test` command's
   one non-`json` arg in `cli.ts`). Still a vitest FILTER LIST rather than an
@@ -595,13 +596,12 @@ Three things separate the two, and picking the wrong one measures nothing:
   outside every `ctx.step(…)` callback, and stay a warning for the case
   attribution cannot settle (a plain helper only a step ever calls is legal and
   looks identical).
-- **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
-  sets `NODE_ENV=production` when it is unset — a permanent, global side
-  effect on the calling process. Both CLI bundlers therefore wrap the
-  build in `withPreservedNodeEnv` (`aai-cli/_vite-env.ts`), which
-  snapshots and restores it. Without that, `aai dev`, which rebuilds on
-  every file change, flips itself to "production" on the first rebuild.
-  Keep any new Vite invocation inside that wrapper.
+- **Vite must not be allowed to mutate `process.env`** —
+  `cli-vite-build-preserves-node-env` in `konsistent.json` requires every
+  `*-bundler.ts` to take `build()` through `withPreservedNodeEnv`
+  (`aai-cli/_vite-env.ts`); its description carries the global side effect that
+  buys the wrapper. A Vite invocation under some other filename is outside that
+  convention's reach, so keep any new one inside the wrapper by hand.
 - **Builds and deploys are TYPE-CHECKED.** `aai build` and `aai deploy`
   run the project's own `tsc --noEmit` (`aai-cli/typecheck.ts`, gated on a
   `tsconfig.json`, `--skipTypecheck` opts out), and the guest's
