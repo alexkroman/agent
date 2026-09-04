@@ -84,6 +84,53 @@ Two consequences worth knowing:
   empty spread would otherwise produce. `unstableLabels` was already guarded this
   way — the spread simply had not caught up.
 
+## The vocabulary reads a TEXT agent too, and grades VERIFICATION
+
+`createTextAgent({ onEvent })` reports a turn as the same `SessionEvent` union a
+voice session emits (`packages/aai-runtime/TEXT-AGENT-CLAUDE.md`), so
+`assertions.ts` takes a text agent's events with **no second implementation** —
+which was the whole point of narrowing that union rather than inventing a
+parallel one. That is verified rather than asserted: `assertions.test.ts` drives
+a real `runTextAgent` turn through the real `createTextAgent`, the real tool
+executor and real tool results, and every arm of the existing vocabulary holds
+over it. `openEvalTextAgent` (`@alexkroman1/aai-runtime/eval`) is the harness a
+live case uses, and it hands back the same `EvalTurn` `say()` does.
+
+Two differences a case meets, both properties of the MODE rather than of any
+arm: there is no greeting turn, so `said()` opens empty where a session's opens
+with the agent's line; and a text turn commits its reply ONCE, joined across
+steps, where a session commits per utterance.
+
+**What the vocabulary could NOT say is what a VERIFYING agent is graded on**, and
+`tool-assertions.ts` is those three arms — spread into the same scope, recording
+through the same prefixed `check`, in a sibling module only because
+`assertions.ts` is at its 500-line cap:
+
+- `toolResultMatching(pattern, { tools, min, max, count })` — did a result come
+  back RED, and how many did. `calledTool(name, { result })` asks whether SOME
+  call to ONE tool carried a substring; a verification is the other quantifier
+  over the other axis, and the count is the REPAIR count.
+- `noToolResultMatching(pattern, { tools })` — the green-at-the-end claim, whose
+  failure carries the offending output itself rather than a tally.
+- `eachToolFollowedBy(first, second)` — every write was CHECKED.
+  `toolOrder(["write_file", "check_types"])` is a subsequence, so it holds when
+  the agent wrote nine files and checked once; this is per occurrence, and zero
+  calls to `first` FAILS on this vocabulary's standing rule that "nothing was
+  measured" is not "nothing was wrong".
+
+`calledTool` also takes `min`/`max` now, and all four counting arms share ONE
+`countVerdict` — which fixed a bug the spelled-out copy carried: a `max` alone
+is a CEILING and implied a floor of one, so `event(type, { max: 3 })` could not
+hold at zero and `{ max: 0 }` could not hold at all.
+
+**The classification stays the CASE's**, deliberately. A tool's result is a wire
+string whose words that tool chose, so `/error TS\d/` is a fact about
+`check_types` and not about the event stream — a vocabulary shipping
+`buildFailed()` would be asserting on prose the agent's own tools may reword.
+What these arms remove is the counting and the failure MESSAGE, which is the
+half every hand-rolled version got wrong (a call that never completed rendering
+identically to one that answered green).
+
 ## One number is not a result
 
 The instrument is noisy in a measured way: identical code has scored **0.56 and
@@ -319,6 +366,90 @@ the runs it should have applied to. The cheap version of that is
 an expectation demanding a tool its prompt never asks for, and a
 `builtinDelegation` that passes on prose alone, both fail in the ordinary test
 run with no key, no studio and no model.
+
+### The five regexes are about tool OUTPUT, not about missing events
+
+`text-agent-events.ts` cites this file as "the measured consequence" of a text
+agent having had no event stream — five REGEXES over tool-output text. That is
+the right motivation for the event stream and the wrong prediction about these
+five, and the audit is worth recording because it says where the remaining work
+actually is.
+
+| | what it reads | replaceable by events? |
+| --- | --- | --- |
+| `TS_ERROR` | a tool RESULT's text carries a TypeScript diagnostic | **no** |
+| `BUILD_FAILED` | `test_agent`'s text says the build failed | **no** |
+| `TESTS_FAILED` | `test_agent`'s text says the tests failed | **no** |
+| `WRITE_DIAGNOSTIC_PREAMBLE` | strips `formatPostWriteDiagnostics`' fixed instruction | **no** |
+| `TEST_AGENT_PREAMBLE` | strips `test_agent`'s success prose | **no** |
+
+All five classify or trim the CONTENT of a tool result, and an event carries
+that content as the same string (`tool.completed.result`) — so an in-process
+harness would run the identical patterns over `turn.toolCalls`. Two of them are
+not even classification: they exist because the excerpt is prose a tool wrote.
+What the event stream replaces is the PLUMBING — pairing a call with its result,
+ordering, per-tool tallies — and this target never hand-rolled that in the first
+place: `readUIMessageStream` does the `toolCallId` → name correlation, and the
+tool arms above are what would replace `VERIFYING_TOOLS` + `redChecks` +
+`testAgentRuns`. So the honest saving is `StudioTurn` shrinking to its events
+plus the two excerpt renderers, and the pattern set staying exactly as it is.
+
+**A projection was available and was not taken.** `foldMessage` could map the
+UI message parts into `SessionEvent`s and let `starter-grade.ts` grade through
+`eventScope` and the tool arms — and it would be testable, since
+`studio-target.test.ts` drives `readTurn` with canned SSE. It is declined on two
+grounds. It makes this file a SECOND producer of the union whose fidelity
+nothing can check (there is no live studio in CI, and the guest's own events are
+not on the wire to compare against), which is the two-vocabularies hazard
+inverted. And it buys no measurement: the same patterns, the same verdicts, in a
+grading path exercised only by a run holding a live key and a live studio. The
+version that pays for itself needs the guest to emit, which is the next
+paragraph.
+
+**What WOULD retire them is structured tool results** — `test_agent` and
+`check_types` answering JSON a case reads with `toolResultIn(calls, name,
+Schema)` instead of prose. That is a change to the studio's tools in
+`aai-guest`, not to the eval, and it is the only version of this that removes a
+regex rather than moving it.
+
+### Carrying the guest's events to a client: measured, and not worth it
+
+The events Step 2 added are emitted IN-PROCESS inside the Modal guest, so this
+target — which drives create-project → broker a session → stream one chat turn
+over real HTTP — cannot read them. The obvious fix is a frame on the chat SSE
+stream (a `data-*` part in the AI SDK's UI message stream, which the client
+would ignore). Of the seven events a text agent emits, **five are already on
+that stream in the SDK's own vocabulary**: the user message is the request's
+own, `tool.called`/`tool.completed` are the tool parts, the reply is the text
+parts, and the terminator is the stream ending. The two that would add
+information are `custom.emitted` (a tool's `ctx.send`) and
+`error.reported` with `code: "tool"` (a tool that THREW rather than returning a
+failure). Neither is something a starter eval grades, and the cost is a new
+versioned wire surface plus a second encoding of arguments and results already
+on the stream. **Recommendation: do not.** Revisit if a case needs to grade a
+`ctx.send` or an uncaught tool throw from outside the sandbox.
+
+### A SECOND, in-process studio eval belongs in `aai-guest`, not here
+
+`createStudioAgent(session, deps)` returns a plain `AgentDef` with
+`text: true` — exactly what `openEvalTextAgent` takes — so an in-process eval of
+the coding agent is mechanically one call away. It cannot be one from HERE:
+`StudioSession` carries a real workspace `dir` and `StudioAgentDeps` is
+`HarnessBundleAccess & { typecheck }`, all of which live in `aai-guest`, which
+`evals-package-boundary` denies this package by name and for a stated reason
+("aai-guest would have it inspect the sandbox rather than the session"). Widening
+that boundary to reach a composition root is the wrong trade for a convenience.
+
+Two further things to weigh before building it there. The tools only MEAN
+anything against an installed toolchain and a workspace the CLI can type-check
+— `aai-guest`'s own studio scenario tier already stands one up — so an
+in-process eval without that measures tool CHOICE and not the verification loop
+the tool arms exist to grade. And it would not replace the HTTP target: what
+that one measures is the DEPLOYED path (the broker, the per-sandbox token, the
+guest chat route, the end-of-turn workspace sync), which is precisely where the
+harness it replaced had rotted — `run.mjs` sent the account key and got a 401,
+so it could not have run at all. **Keep both if the cheap one is built; convert
+nothing.**
 
 ## The template behaviour contract (opt-in)
 

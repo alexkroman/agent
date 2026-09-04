@@ -1,6 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
+import { agent, tool } from "@alexkroman1/aai";
+import { withTools } from "@alexkroman1/aai/manifest";
 import type { SessionEvent, SessionEventBody, SessionEventMeta } from "@alexkroman1/aai/protocol";
+import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test } from "vitest";
+import { z } from "zod";
 import { eventScope } from "./assertions.ts";
 import { createRecorder, type EvalRecorder } from "./runner.ts";
 
@@ -304,6 +308,12 @@ describe("turn scoping", () => {
     // added arm that forgets to fail shows up here rather than in a score.
     const rec = recorder();
     const scope = eventScope(rec, toolTurn()).turn(9);
+    // The three tool arms (`./tool-assertions.ts`) come through the same
+    // failing recorder, which is what makes a NEGATIVE one (`noToolResult…`,
+    // vacuously true over no calls) fail here as well.
+    scope.toolResultMatching(/error TS\d/);
+    scope.noToolResultMatching(/error TS\d/);
+    scope.eachToolFollowedBy("write_file", "check_types");
     scope.succeeded();
     scope.calledTool("cancel_order");
     scope.notCalledTool("cancel_order");
@@ -323,7 +333,7 @@ describe("turn scoping", () => {
     });
     expect(rec.held()).toEqual([]);
     // The turn(9) record plus one per arm — nothing passed, nothing was skipped.
-    expect(rec.failed()).toHaveLength(14);
+    expect(rec.failed()).toHaveLength(17);
     // An absent turn has no events and no sub-turns, and says so as data
     // rather than by failing: these are reads, not assertions.
     expect(scope.turns()).toBe(0);
@@ -341,5 +351,102 @@ describe("turn scoping", () => {
   test("a reply still in flight is not a turn", () => {
     const rec = recorder();
     expect(eventScope(rec, [heard("hello"), called("c1", "x")]).turns()).toBe(0);
+  });
+});
+
+/**
+ * The claim `text-agent-events.ts` was written for: a TEXT agent emits the same
+ * `SessionEvent` union, so this vocabulary reads one with no second
+ * implementation.
+ *
+ * Driven through the real `runTextAgent` over a scripted model — the real
+ * `createTextAgent`, the real tool executor, real results — because the
+ * interesting half is not that the types line up but that the events a live
+ * text turn produces are the ones these assertions partition and count. A
+ * hand-built event list would have proved the types and nothing else.
+ */
+describe("the vocabulary over a TEXT agent's events", () => {
+  /** A verification that comes back RED, which is what the tool arms are for. */
+  const writeFile = tool({
+    description: "Write a file.",
+    inputSchema: z.object({ path: z.string() }),
+    execute: ({ path }) => `wrote ${path}\nsrc/a.ts(3,1): error TS2345: nope`,
+  });
+  const checkTypes = tool({
+    description: "Type-check the workspace.",
+    inputSchema: z.object({}),
+    execute: () => "no errors",
+  });
+  const coder = withTools(agent({ name: "Coder", text: true }), {
+    write_file: writeFile,
+    check_types: checkTypes,
+  });
+
+  async function codingTurn() {
+    return await runTextAgent(coder, "add a health route", {
+      script: [
+        { text: "Writing it.", toolCalls: [{ name: "write_file", input: { path: "src/a.ts" } }] },
+        { toolCalls: [{ name: "check_types" }] },
+        { text: "Done — types are clean." },
+      ],
+    });
+  }
+
+  test("every existing arm holds over a real text turn, unchanged", async () => {
+    const rec = recorder();
+    const scope = eventScope(rec, (await codingTurn()).events);
+    scope.succeeded();
+    scope.noErrors();
+    scope.calledTool("write_file", { args: { path: "src/a.ts" }, count: 1 });
+    scope.calledTool("check_types", { result: "no errors" });
+    scope.notCalledTool("delete_file");
+    scope.toolOrder(["write_file", "check_types"]);
+    scope.maxToolCalls(2);
+    scope.saidSomething(/types are clean/);
+    scope.saidNothingAbout("refund");
+    scope.event("tool.called", { count: 2 });
+    scope.notEvent("reply.cancelled");
+    scope.eventOrder(["user-transcript.committed", "tool.called", "reply.completed"]);
+    expect(rec.failed()).toEqual([]);
+    // One turn, and it is the whole run: a text turn emits exactly one
+    // terminator, which is what `turnsOf` partitions on.
+    expect(scope.turns()).toBe(1);
+    // A text agent commits its reply ONCE, joined across steps — where a voice
+    // session commits per utterance. That is the one difference a case ported
+    // across meets, and it is a property of the mode rather than of the arm.
+    expect(scope.said).toEqual(["Writing it.Done — types are clean."]);
+  });
+
+  test("the tool arms grade the verification a coding agent is judged on", async () => {
+    const rec = recorder();
+    const scope = eventScope(rec, (await codingTurn()).events);
+    // The write came back red, the check did not, and every write was followed
+    // by a check — the three claims `studio-target.ts` hand-rolls as
+    // `redChecks`, `redExcerpts` and a tool-name walk.
+    scope.toolResultMatching(/error TS\d/, { tools: ["write_file"] });
+    scope.noToolResultMatching(/error TS\d/, { tools: ["check_types"] });
+    scope.eachToolFollowedBy("write_file", "check_types");
+    // A ceiling with no floor: one repair is allowed, and the same claim holds
+    // over an agent that needed none.
+    scope.toolResultMatching(/error TS\d/, { tools: ["write_file"], max: 1 });
+    expect(rec.failed()).toEqual([]);
+  });
+
+  test("an unchecked write fails the sequence claim that toolOrder cannot make", async () => {
+    const run = await runTextAgent(coder, "add a health route", {
+      script: [
+        { toolCalls: [{ name: "write_file", input: { path: "src/a.ts" } }] },
+        { toolCalls: [{ name: "check_types" }] },
+        { toolCalls: [{ name: "write_file", input: { path: "src/b.ts" } }] },
+        { text: "Shipped." },
+      ],
+    });
+    const rec = recorder();
+    const scope = eventScope(rec, run.events);
+    // A SUBSEQUENCE, so it holds: one write does precede one check.
+    scope.toolOrder(["write_file", "check_types"]);
+    scope.eachToolFollowedBy("write_file", "check_types");
+    expect(rec.held()).toEqual(["toolOrder(write_file → check_types)"]);
+    expect(rec.failed()).toEqual(["eachToolFollowedBy(write_file → check_types)"]);
   });
 });

@@ -9,12 +9,24 @@
  * its own doc: *"No log scraping, no provider internals, no reaching into the
  * transport."* `createTextAgent` emitted nothing, so a caller grading a text
  * agent had only the vendor's `StreamTextResult` and whatever text it could
- * scrape out of it. The measured consequence is
- * `packages/aai-evals/src/studio-target.ts`, which grades the studio's coding
- * agent — an ordinary `agent({ text: true })` definition — with FIVE REGEXES
- * over tool-output text, two of them there only to strip a tool's success prose
- * back off the excerpt. Nothing about that is a property of text mode; it is
- * what a missing event stream costs.
+ * scrape out of it.
+ *
+ * Be precise about what that cost, because the obvious answer is wrong and this
+ * doc gave it for one commit. `packages/aai-evals/src/studio-target.ts` grades
+ * the studio's coding agent — an ordinary `agent({ text: true })` definition —
+ * with five regexes over tool output, and **those five survive this module**:
+ * they classify a tool result's TEXT, and an event carries that same string
+ * (`tool.completed.result`) rather than a parsed verdict. Retiring them wants
+ * STRUCTURED tool results, which is a change in `aai-guest`. The correlation an
+ * event stream does own — which result belongs to which call, in what order —
+ * that target already got from `readUIMessageStream`.
+ *
+ * What a missing event stream actually cost is that a text agent could not be
+ * DRIVEN by a harness at all: no terminator to wait on, so no `send()` that
+ * cannot begin inside the previous turn, and no typed vocabulary for the claims
+ * a case makes. `eval/text-agent.ts` is what this unlocks;
+ * `packages/aai-evals/CLAUDE.md` carries the full accounting of which of the
+ * five could and could not be replaced.
  *
  * ## It is the SAME union, narrowed — not a parallel vocabulary
  *
