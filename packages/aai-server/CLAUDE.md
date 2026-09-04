@@ -7,6 +7,7 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 
 ## Key files
 
+- `tracing.ts` — OTLP export ([`TRACING-CLAUDE.md`](TRACING-CLAUDE.md))
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — agent sandbox lifecycle: `sessionUrl()` (the public tunnel
   endpoint the broker hands to clients), `drain(deadlineMs?)` (retirement's
