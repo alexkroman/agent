@@ -248,7 +248,17 @@ export async function startSelfHostedServer(
   try {
     const port = await new Promise<number>((resolve, reject) => {
       const check = () => {
-        // The line `aai start` prints on listen: "<name> listening on <url>".
+        // **The JSON result first, because it is the only line guaranteed to
+        // exist here.** `aai start` picks its output mode from the TTY
+        // (`_output.ts`), and `stdio: "pipe"` is not one — so it runs in JSON
+        // mode, where `log.info` is SILENCED and the human "listening on"
+        // line below is never printed at all. Waiting on that line alone gave
+        // no line, no exit and no rejection: the promise hung to the 300s
+        // suite timeout, reported as `template simple` being slow rather than
+        // as a server that never announced itself.
+        const json = buf.match(/\{"ok":true,"data":\{[^\n]*?"port":(\d+)/);
+        if (json?.[1]) return resolve(Number(json[1]));
+        // The human line, for a run that does have a TTY.
         const match = buf.match(/listening on http:\/\/[^:]+:(\d+)/);
         if (match) resolve(Number(match[1]));
       };
