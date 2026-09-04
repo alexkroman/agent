@@ -612,6 +612,22 @@ Five things worth knowing:
   which is how a "send it now" tool cuts a scheduled wait short. Naming no ids
   wakes every outstanding SLEEP and deliberately not a `waitFor` deadline, so
   cutting a schedule short cannot also close an approval window.
+- **A SUSPEND is not free, so `ctx.sleep` is not a `setTimeout`.** A wait costs
+  a journal write to record it, a queued delivery to bring the run back, and a
+  fresh WALK of the body — measured on a deployed agent at roughly a second of
+  overhead around the sleep itself, on top of whatever you asked for. There is a
+  cliff at the bottom of the range worth knowing about: a sleep shorter
+  than the round trip that records it never suspends AT ALL — `ctx.sleep("beat",
+  100)` and `ctx.sleep("beat", 0)` are both simply free — while anything longer
+  pays the whole cost. Measured, `nap(100)` and `nap(0)` came back within 30 ms
+  of each other on a run whose total was 2.1 s.
+
+  So a sub-second pause is not what this is for. For a short backoff inside a
+  step, use an ordinary timer (`sleep` from `@alexkroman1/aai/internal`) — a step
+  body may not call `ctx.sleep` anyway, and the engine refuses one that does. Use
+  `ctx.sleep` for a wait you want to SURVIVE the process, which is the thing a
+  timer cannot do. A body that polls in a loop pays the suspend per iteration,
+  which is the strongest argument for the next section: park on the callback.
 
 #### A third-party callback is an OPTIMIZATION over a reconciling read
 

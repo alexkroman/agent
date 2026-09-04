@@ -102,9 +102,10 @@ export function createPlatformDispatch(
     // this line. Nothing below the field needs whole seconds: `enqueue` multiplies
     // by 1000 and Postgres computes `available_at` in milliseconds, and the
     // enqueue route validates only that the number is finite. (The remaining
-    // ~780 ms is `WORKFLOW_QUEUE_INTERVAL_MS` and is by design — a future-dated
-    // row is deliberately not announced; see `announce()` in
-    // `aai-server/workflow-queue-store.ts`.)
+    // ~780 ms was `WORKFLOW_QUEUE_INTERVAL_MS`, and is closed: a park under one
+    // interval is announced now, and the pass it wakes reads the deadline out of
+    // the queue and arms one extra look at it — see `announce()` and
+    // `msUntilNextDue` in `aai-server/workflow-queue-store.ts`.)
     //
     // Ceil the MILLISECOND and divide afterwards, never the other way round: the
     // server's own conversion is `Math.round(delaySeconds * 1000)` (in both

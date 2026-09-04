@@ -65,6 +65,7 @@ import { createAgentWorkflowsHandler, createWorkflowRateLimitMw } from "./workfl
 import {
   createWorkflowJournalHandler,
   MAX_WORKFLOW_JOURNAL_BODY_BYTES,
+  WORKFLOW_JOURNAL_METHOD_ROUTE,
   WORKFLOW_JOURNAL_ROUTE,
 } from "./workflow-journal-handler.ts";
 import {
@@ -160,10 +161,28 @@ export function registerAgentWorkflowRoutes(
   // own `DATABASE_URL`, and the platform provisions neither, so before this route
   // every deployed run journaled into a sandbox that self-exits. Same bearer and
   // the same slug-in-every-statement scoping as session state.
+  //
+  // TWO paths, ONE handler. The method-in-the-path form is what a current guest
+  // POSTs to, and it exists for the request LOG: fifteen methods on one path made
+  // Modal's per-request line name the slug and never the operation, so a run's RPC
+  // sequence could only be read out of production by counting requests. The bare
+  // route stays registered because an agent bundle carries its own copy of
+  // `aai-runtime` and is deployed independently of this server — a bundle older
+  // than the path form still sends the method in the body, and a journal call that
+  // 404s is a durable run that stops. `workflow-journal-handler.ts` reads the path
+  // first and falls back to the body.
+  const handleWorkflowJournal = createWorkflowJournalHandler(
+    omitUndefined({ adminDb: opts.adminDb }),
+  );
+  agents.post(
+    WORKFLOW_JOURNAL_METHOD_ROUTE,
+    limit(MAX_WORKFLOW_JOURNAL_BODY_BYTES),
+    handleWorkflowJournal,
+  );
   agents.post(
     WORKFLOW_JOURNAL_ROUTE,
     limit(MAX_WORKFLOW_JOURNAL_BODY_BYTES),
-    createWorkflowJournalHandler(omitUndefined({ adminDb: opts.adminDb })),
+    handleWorkflowJournal,
   );
 
   // The correlation-key INDEX — `(workflow, key) -> runId`, which is how a

@@ -9024,7 +9024,7 @@ export function platformSocketUrl(base: string): string;
 type PlatformUploadRecordsOptions = PlatformEndpoint;
 
 // @internal
-export function platformUrl(base: string, route: PlatformRoute): string;
+export function platformUrl(base: string, route: PlatformRoute, segment?: string): string;
 
 export { publishStepEnv }
 

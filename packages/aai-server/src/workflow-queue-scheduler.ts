@@ -85,27 +85,80 @@ export function startWorkflowQueueSweep(
   // under the row lock, so concurrent passes take DISJOINT sets; that was always
   // true (see this module's doc) and is what makes the overlap safe rather than
   // merely cheap.
-  const runner = createCoalescingRunner(() => runQueuePass(passOpts));
+
+  // ONE extra look, at the moment the earliest PARKED message becomes due.
+  //
+  // The interval is otherwise a latency FLOOR for anything parked for less than
+  // a tick: a `ctx.sleep("beat", 100)` and a `ctx.sleep("beat", 900)` were
+  // resumed at the same moment, on this timer's cadence rather than on their
+  // own. `announce` now wakes a pass for a delay at or under
+  // `QUEUE_DUE_SOON_MS`, and `msUntilNextDue` is what that pass learns from it —
+  // so the notification still says only "look", and this is where "due at T"
+  // gets expressed. `workflow-queue-store.ts` carries both halves.
+  //
+  // ONE timer, replaced by every pass that reports a time: the queue only gains
+  // rows, so a later pass's answer is never later than an earlier one's for a
+  // row still parked, and a row that became due in between is claimed by the
+  // pass rather than waited for. A pass that reports NOTHING leaves the standing
+  // timer alone — it may have returned before it could ask (draining, or the
+  // delivery budget saturated), and reading that as "the queue is empty" would
+  // cancel a look that is still owed.
+  let soon: ReturnType<typeof setTimeout> | undefined;
+  const clearSoon = (): void => {
+    if (soon !== undefined) clearTimeout(soon);
+    soon = undefined;
+  };
+  const scheduleSoon = (pass: { nextDueInMs?: number | undefined }): void => {
+    const dueIn = pass.nextDueInMs;
+    // Beyond one interval the ordinary tick already gets there first, so a timer
+    // would be a second mechanism for work the first one covers.
+    if (dueIn === undefined || dueIn >= intervalMs) return;
+    clearSoon();
+    // At least 1 ms so this cannot become a spin: a row the pass could not claim
+    // and that reads as due-in-zero would otherwise re-arm itself immediately.
+    soon = setTimeout(
+      () => {
+        soon = undefined;
+        void runner.trigger().catch((error: unknown) => {
+          log.warn("due-soon queue pass failed", { error: errorMessage(error) });
+        });
+      },
+      Math.max(1, dueIn),
+    );
+    soon.unref?.();
+  };
+
+  const runner = createCoalescingRunner(async () => {
+    const pass = await runQueuePass(passOpts);
+    scheduleSoon(pass);
+    return pass;
+  });
 
   const timer = setInterval(() => {
-    void runQueuePass(passOpts).catch((error: unknown) => {
-      // `createIntervalSweep` used to own this catch. A tick's pass has no other
-      // caller, so a rejection here would be unhandled — same shape as the
-      // notified path below.
-      log.warn("queue pass failed", { error: errorMessage(error) });
-    });
+    void runQueuePass(passOpts)
+      .then(scheduleSoon)
+      .catch((error: unknown) => {
+        // `createIntervalSweep` used to own this catch. A tick's pass has no other
+        // caller, so a rejection here would be unhandled — same shape as the
+        // notified path below.
+        log.warn("queue pass failed", { error: errorMessage(error) });
+      });
   }, intervalMs);
   timer.unref?.();
   const stopInterval = (): void => clearInterval(timer);
 
   // The interval STAYS, and this is the part worth reading twice. A notification
   // is not durable: Postgres drops it when nothing is listening, and a listener
-  // re-establishing its connection misses everything committed in between. It also
-  // cannot express "due at T" — a parked message (which is how `sleep()` works) has
-  // a future `available_at` and nothing announces its arrival. So the interval is
-  // the mechanism that makes delivery eventual, and the listener only removes the
-  // LATENCY of waiting for it on the common path: a step that enqueues its
-  // successor no longer pays the poll interval for the hop.
+  // re-establishing its connection misses everything committed in between. Nor
+  // does it express "due at T" — the payload is empty by design, so a parked
+  // message's arrival is announced by nothing here; what `announce` does for a
+  // SHORT park is wake a pass that then reads the deadline out of the table and
+  // arms `scheduleSoon` above, which is a different thing from the notification
+  // carrying it. So the interval is the mechanism that makes delivery eventual,
+  // and everything above it — the listener, and the due-soon timer it leads to —
+  // only removes LATENCY: a step that enqueues its successor no longer pays the
+  // poll interval for the hop, and one that sleeps for less than a tick no
+  // longer pays a whole one.
   let stopListening: (() => void) | undefined;
   let stopped = false;
   void adminDb
@@ -142,5 +195,6 @@ export function startWorkflowQueueSweep(
     stopped = true;
     stopListening?.();
     stopInterval();
+    clearSoon();
   };
 }
