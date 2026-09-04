@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `@alexkroman1/aai-runtime/testing` — driving a DURABLE workflow run from a
- * spec.
+ * `@alexkroman1/aai-runtime/testing` — driving an agent's own machinery from a
+ * spec: a DURABLE workflow run, and a TEXT agent turn.
  *
  * The one thing an agent author could not test. A workflow's steps are ordinary
  * exported functions and its declaration is a value, so both have always been
@@ -26,6 +26,28 @@
  *
  * await run.signal("approval:1", { approved: true });
  * console.log(run.status); // "completed"
+ * ```
+ *
+ * ## The TEXT half
+ *
+ * `scriptedTextModel` and `runTextAgent` are the same idea one mode over.
+ * `createTextAgent` takes a pre-resolved `LanguageModel` and says outright that
+ * tests are the majority use of that field, and there was nothing published to
+ * put in it — so every caller wrote the provider shape out by hand and cast it,
+ * and each copy re-derived the `finish` frame's shape (the one whose bare-string
+ * spelling silently stops every tool from running). The script is a step —
+ * what the model says, what it calls — and the agent underneath is the real one.
+ *
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
+ *
+ * const run = await runTextAgent(
+ *   agent({ name: "Desk", text: true, systemPrompt: "Be brief." }),
+ *   "where is order 7?",
+ *   { script: [{ text: "It shipped yesterday." }] },
+ * );
+ * console.log(run.text); // "It shipped yesterday."
  * ```
  *
  * ## Why it is on the RUNTIME rather than beside `createWorkflowContext`
@@ -53,6 +75,12 @@
  */
 
 export {
+  type RunTextAgentOptions,
+  runTextAgent,
+  type TextAgentTestRun,
+  type TextAgentTestToolCall,
+} from "./testing/run-text-agent.ts";
+export {
   DEFAULT_MAX_DELIVERIES,
   runWorkflow,
 } from "./testing/run-workflow.ts";
@@ -63,3 +91,8 @@ export type {
   WorkflowTestRun,
   WorkflowTestStep,
 } from "./testing/run-workflow-types.ts";
+export {
+  type ScriptedTextStep,
+  type ScriptedToolCall,
+  scriptedTextModel,
+} from "./testing/scripted-text-model.ts";

@@ -1124,12 +1124,19 @@
   ],
   "@alexkroman1/aai-runtime/testing": [
     "DEFAULT_MAX_DELIVERIES",
+    "RunTextAgentOptions",
     "RunWorkflowOptions",
+    "ScriptedTextStep",
+    "ScriptedToolCall",
+    "TextAgentTestRun",
+    "TextAgentTestToolCall",
     "WorkflowTestHandle",
     "WorkflowTestRead",
     "WorkflowTestRun",
     "WorkflowTestStep",
-    "runWorkflow"
+    "runTextAgent",
+    "runWorkflow",
+    "scriptedTextModel"
   ],
   "@alexkroman1/aai-ui/client-dir": [
     "defaultClientDir"

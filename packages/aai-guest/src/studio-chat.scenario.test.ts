@@ -21,7 +21,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { requestPath, sleep } from "@alexkroman1/aai/internal";
+import { scriptedTextModel } from "@alexkroman1/aai-runtime/testing";
 import type { LanguageModel } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { type FakeHostChannel, installFakeHostChannel } from "./_test-utils.ts";
 import { pendingHostRequests, setHostSend } from "./harness-rpc.ts";
@@ -31,44 +33,21 @@ import { enterTurn, resetTurnGate } from "./studio-turn-stream.ts";
 
 const API_KEY = "caller-key-123";
 
+/**
+ * The scripted model is `@alexkroman1/aai-runtime/testing`'s now.
+ *
+ * This file used to write the provider shape out by hand — a `doStream`
+ * replaying one array of raw wire frames per call, `as unknown as
+ * LanguageModel` — and so did `studio-chat.test.ts`, each copy restating the
+ * `finish` frame's `{ unified, raw }` pair. That pair is a property of the WIRE
+ * rather than of any spec (a bare string stops every tool from running, since
+ * ai@7.0.70), which is exactly the kind of fidelity a shared harness should own.
+ *
+ * `pendingModel` below stays local: it is not a script but a stream the TEST
+ * holds open, which is a different fake. It is built on the AI SDK's own
+ * `MockLanguageModelV3` so it needs no cast either.
+ */
 type ScriptedPart = Record<string, unknown> & { type: string };
-
-/** Structural LanguageModel replaying one scripted stream per doStream call. */
-function scriptedModel(steps: ScriptedPart[][]): LanguageModel {
-  let call = 0;
-  return {
-    specificationVersion: "v3",
-    provider: "fake",
-    modelId: "fake-1",
-    supportedUrls: {},
-    async doGenerate() {
-      throw new Error("not implemented");
-    },
-    async doStream() {
-      const parts = steps[call] ?? [];
-      call += 1;
-      const stream = new ReadableStream<ScriptedPart>({
-        start(controller) {
-          controller.enqueue({ type: "stream-start", warnings: [] });
-          for (const part of parts) controller.enqueue(part);
-          controller.close();
-        },
-      });
-      return { stream };
-    },
-  } as unknown as LanguageModel;
-}
-
-const textStep = (text: string): ScriptedPart[] => [
-  { type: "text-start", id: "t1" },
-  { type: "text-delta", id: "t1", delta: text },
-  { type: "text-end", id: "t1" },
-  {
-    type: "finish",
-    usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    finishReason: { unified: "stop", raw: "stop" },
-  },
-];
 
 /**
  * A model whose stream stays open until the test ends it — the only way to
@@ -82,20 +61,10 @@ function pendingModel(): {
   fail: (error: Error) => void;
 } {
   let controller: ReadableStreamDefaultController<ScriptedPart> | undefined;
-  let markStarted: () => void = () => undefined;
-  const started = new Promise<void>((resolve) => {
-    markStarted = resolve;
-  });
-  const model = {
-    specificationVersion: "v3",
-    provider: "fake",
-    modelId: "fake-pending",
-    supportedUrls: {},
-    async doGenerate() {
-      throw new Error("not implemented");
-    },
-    async doStream() {
-      const stream = new ReadableStream<ScriptedPart>({
+  const { promise: started, resolve: markStarted } = Promise.withResolvers<void>();
+  const model = new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: new ReadableStream<ScriptedPart>({
         start(c) {
           controller = c;
           c.enqueue({ type: "stream-start", warnings: [] });
@@ -103,10 +72,9 @@ function pendingModel(): {
           c.enqueue({ type: "text-delta", id: "t1", delta: "working" });
           markStarted();
         },
-      });
-      return { stream };
-    },
-  } as unknown as LanguageModel;
+      }) as ReadableStream<never>,
+    }),
+  });
   return {
     model,
     started,
@@ -122,15 +90,6 @@ function pendingModel(): {
     fail: (error: Error) => controller?.error(error),
   };
 }
-
-const toolStep = (toolName: string, input: Record<string, unknown>): ScriptedPart[] => [
-  { type: "tool-call", toolCallId: "call1", toolName, input: JSON.stringify(input) },
-  {
-    type: "finish",
-    usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    finishReason: { unified: "tool-calls", raw: "tool-calls" },
-  },
-];
 
 /** Serve handleStudioRequest on an ephemeral port; returns base URL. */
 async function serve(
@@ -263,9 +222,13 @@ describe("guest studio chat surface", () => {
   test("runs a tool-calling turn: edits land on disk and sync to the host", async () => {
     const host = fakeHost();
     const session = await makeSession({ "agent.ts": "// original" });
-    const model = scriptedModel([
-      toolStep("write_file", { path: "agent.ts", content: "// updated by agent" }),
-      textStep("Rewrote agent.ts."),
+    const model = scriptedTextModel([
+      {
+        toolCalls: [
+          { name: "write_file", input: { path: "agent.ts", content: "// updated by agent" } },
+        ],
+      },
+      { text: "Rewrote agent.ts." },
     ]);
     const { url, close } = await serve(session, deps(model));
     try {
@@ -304,11 +267,15 @@ describe("guest studio chat surface", () => {
   test("checkpoints the workspace mid-turn, not only when the turn settles", async () => {
     const host = fakeHost();
     const session = await makeSession({ "agent.ts": "// original" });
-    const model = scriptedModel([
-      toolStep("write_file", { path: "agent.ts", content: "// checkpointed" }),
+    const model = scriptedTextModel([
+      {
+        toolCalls: [
+          { name: "write_file", input: { path: "agent.ts", content: "// checkpointed" } },
+        ],
+      },
       // A distinctive final line, so the settle can be recognised by CONTENT
       // below rather than by counting.
-      textStep("Checkpoint turn finished."),
+      { text: "Checkpoint turn finished." },
     ]);
     const { url, close } = await serve(session, deps(model));
     try {
@@ -369,7 +336,7 @@ describe("guest studio chat surface", () => {
   test("persists the inbound conversation before the turn runs", async () => {
     const host = fakeHost();
     const session = await makeSession({ "agent.ts": "x" });
-    const { url, close } = await serve(session, deps(scriptedModel([textStep("Hi.")])));
+    const { url, close } = await serve(session, deps(scriptedTextModel([{ text: "Hi." }])));
     try {
       // Drained first, for the reason the checkpoint test above spells out: an
       // unread SSE body leaves the whole turn inside `vi.waitFor`'s 1s default.
@@ -389,7 +356,10 @@ describe("guest studio chat surface", () => {
   test("a turn with no file edits does not checkpoint the workspace mid-turn", async () => {
     const host = fakeHost();
     const session = await makeSession({ "agent.ts": "x" });
-    const { url, close } = await serve(session, deps(scriptedModel([textStep("Just talking.")])));
+    const { url, close } = await serve(
+      session,
+      deps(scriptedTextModel([{ text: "Just talking." }])),
+    );
     try {
       // Drained first — see the checkpoint test above.
       await (await post(url, chatBody("say hi"))).text();
@@ -410,9 +380,9 @@ describe("guest studio chat surface", () => {
   test("bash runs real commands inside the workspace", async () => {
     fakeHost();
     const session = await makeSession({ "data.txt": "alpha\nbeta\n" });
-    const model = scriptedModel([
-      toolStep("bash", { command: "wc -l < data.txt && echo done" }),
-      textStep("Counted."),
+    const model = scriptedTextModel([
+      { toolCalls: [{ name: "bash", input: { command: "wc -l < data.txt && echo done" } }] },
+      { text: "Counted." },
     ]);
     const { url, close } = await serve(session, deps(model));
     try {
@@ -544,7 +514,7 @@ describe("guest studio chat surface", () => {
   test("persists assistant messages with a real id", async () => {
     const host = fakeHost();
     const session = await makeSession({ "agent.ts": "x" });
-    const { url, close } = await serve(session, deps(scriptedModel([textStep("Hello.")])));
+    const { url, close } = await serve(session, deps(scriptedTextModel([{ text: "Hello." }])));
     try {
       await (await post(url, chatBody("say hi"))).text();
       await vi.waitFor(() => {
@@ -563,7 +533,7 @@ describe("guest studio chat surface", () => {
 
   test("rejects malformed bodies with 400", async () => {
     const session = await makeSession({ "agent.ts": "x" });
-    const { url, close } = await serve(session, deps(scriptedModel([])));
+    const { url, close } = await serve(session, deps(scriptedTextModel([])));
     try {
       expect((await post(url, { nope: true })).status).toBe(400);
     } finally {
