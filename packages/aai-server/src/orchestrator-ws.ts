@@ -27,6 +27,12 @@ import { errorMessage } from "@alexkroman1/aai";
 import { requestPath, requestQuery } from "@alexkroman1/aai/internal";
 import { answerUpgrade } from "./_upgrade-reply.ts";
 import { createLogger } from "./logger.ts";
+import {
+  acceptPlatformSocket,
+  createPlatformSocketServer,
+  type PlatformSocketOptions,
+  platformSocketSlug,
+} from "./platform-socket-handler.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
@@ -62,6 +68,18 @@ export type WsUpgradeOpts = {
    * dependency is one edit, not one per consumer.
    */
   broker: ResolveSandboxOpts;
+  /**
+   * What `WS /:slug/platform-socket` needs — the app a frame is dispatched
+   * through, and the store its handshake checks a bearer against.
+   *
+   * This is the ONE upgrade on this server that is really terminated; every
+   * other is answered with a handshake response. See
+   * `platform-socket-handler.ts`, and note the module doc below, which said the
+   * platform terminates no sessions — still true, and this is not one: it is a
+   * guest's own RPC transport, carrying the five routes `PLATFORM_ROUTES`
+   * declares.
+   */
+  platformSocket: PlatformSocketOptions;
 };
 
 export type WsUpgrades = {
@@ -142,12 +160,31 @@ function httpScheme(url: URL): string {
 }
 
 export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
+  // One server for every platform socket this replica accepts, built once: it
+  // holds the frame cap and nothing per connection.
+  const platformSockets = createPlatformSocketServer();
+
   async function handleUpgradeRequest(
     req: import("node:http").IncomingMessage,
     socket: import("node:stream").Duplex,
+    head: Buffer,
   ): Promise<void> {
     const rawUrl = req.url ?? "";
     const pathOnly = requestPath(rawUrl);
+    // Checked FIRST because it is the only path here that leads to a real
+    // socket; everything below answers a handshake and hangs up.
+    const guestSlug = platformSocketSlug(pathOnly);
+    if (guestSlug !== undefined) {
+      await acceptPlatformSocket(
+        opts.platformSocket,
+        platformSockets,
+        req,
+        socket,
+        head,
+        guestSlug,
+      );
+      return;
+    }
     const slug = wsSlugFromPath(pathOnly);
     if (slug === undefined) {
       // No other upgrade consumer exists on this server: an unmatched
@@ -162,7 +199,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
   }
 
   const injectWebSocket = (server: import("node:http").Server) => {
-    server.on("upgrade", (req, socket, _head) => {
+    server.on("upgrade", (req, socket, head) => {
       // Node removes its own socket error listener before emitting `upgrade`;
       // without one, a client RST during the async broker call becomes an
       // unhandled `error` → uncaughtException → the whole host exits. Attach
@@ -171,7 +208,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
         /* handled via close/destroy below; presence prevents an uncaught throw */
       });
 
-      void handleUpgradeRequest(req, socket).catch((err: unknown) => {
+      void handleUpgradeRequest(req, socket, head).catch((err: unknown) => {
         log.error("upgrade error", { error: errorMessage(err) });
         answerUpgrade(socket, "500 Internal Server Error", "internal error\n");
       });

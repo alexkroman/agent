@@ -5,6 +5,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { pEvent } from "p-event";
 import WsWebSocket from "ws";
 
@@ -66,10 +67,36 @@ export const PROVIDER_WS_OPTIONS = { perMessageDeflate: false } as const;
 
 // Node's native WebSocket doesn't support custom headers; the `ws` package does.
 export const defaultCreateHeaderWebSocket: CreateHeaderWebSocket = (url, opts) =>
-  new WsWebSocket(url, {
+  openHeaderWebSocket(url, opts);
+
+/**
+ * The same client, with a frame cap.
+ *
+ * A second function rather than a `maxPayload` on {@link CreateHeaderWebSocket},
+ * and the reason is a gate: that type is part of the CONTRACTED `runtime` and
+ * `server` capabilities (`RuntimeOptions.createWebSocket`), so widening it moves
+ * two epochs and obliges two frozen templates — for a cap on a socket no provider
+ * opens. This is not on that surface.
+ *
+ * `platform-socket.ts` is the caller: its peer refuses a frame over
+ * `MAX_PLATFORM_SOCKET_FRAME_BYTES` and a reader that would accept one is a
+ * socket that dies mid-run rather than a request that is refused. It goes through
+ * here rather than opening its own `ws` because this module owns the ONE
+ * narrowing into {@link HeaderWebSocket}, and a second one is a second thing to
+ * keep true.
+ *
+ * @internal
+ */
+export function openHeaderWebSocket(
+  url: string,
+  opts: { headers: Record<string, string>; maxPayload?: number | undefined },
+): HeaderWebSocket {
+  return new WsWebSocket(url, {
     headers: opts.headers,
+    ...omitUndefined({ maxPayload: opts.maxPayload }),
     ...PROVIDER_WS_OPTIONS,
   }) as unknown as HeaderWebSocket;
+}
 
 /**
  * The connect race shared by the header-WebSocket transports (AssemblyAI S2S,

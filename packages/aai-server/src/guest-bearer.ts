@@ -95,11 +95,46 @@ import { agentSandboxName } from "./sandbox-directory.ts";
  * @internal
  */
 export async function assertGuestBearer(c: AppContext, slug: string): Promise<void> {
-  const supplied = parseBearer(c.req.header("authorization"));
-  if (supplied === "") {
-    throw new HTTPException(401, { message: "unauthorized" });
+  const refusal = await guestBearerRefusal({
+    authorization: c.req.header("authorization"),
+    slug,
+    getAgentVersion: (s) => c.env.store.getAgentVersion(s),
+  });
+  if (refusal !== undefined) {
+    throw new HTTPException(refusal.status, { message: refusal.message });
   }
-  const version = await c.env.store.getAgentVersion(slug);
+}
+
+/** How a refusal is reported to a caller that is not holding a Hono context. */
+export type GuestBearerRefusal = { status: 401 | 404; statusText: string; message: string };
+
+/**
+ * The policy itself, over the header rather than over a request.
+ *
+ * Split out for ONE caller that has no `Context` and must not have a second copy
+ * of this: the `WS /:slug/platform-socket` handshake
+ * (`platform-socket-handler.ts`), which is answered from the raw `upgrade` event
+ * before any router has run. The module doc above is the argument for why the
+ * four route-side copies were folded into one; a fifth copy behind a WebSocket
+ * would be the same mistake with a worse failure mode, since a handshake that
+ * checks a bearer differently from the routes underneath it is a door that opens
+ * on credentials the rooms refuse.
+ *
+ * `undefined` means "authorized". `getAgentVersion` is passed rather than a store
+ * because that is the whole of what this reads.
+ *
+ * @internal
+ */
+export async function guestBearerRefusal(opts: {
+  authorization: string | undefined;
+  slug: string;
+  getAgentVersion: (slug: string) => Promise<number | null>;
+}): Promise<GuestBearerRefusal | undefined> {
+  const supplied = parseBearer(opts.authorization);
+  if (supplied === "") {
+    return { status: 401, statusText: "Unauthorized", message: "unauthorized" };
+  }
+  const version = await opts.getAgentVersion(opts.slug);
   // 404 and not 503: there is no tombstone, so "later" is not a thing this row
   // has. See the module doc for why the existence-oracle argument for the 503
   // did not survive contact with the 401 one line down.
@@ -109,8 +144,11 @@ export async function assertGuestBearer(c: AppContext, slug: string): Promise<vo
   // rather than imported deliberately: that module pulls in `sandbox.ts`,
   // `p-timeout` and the peer directory, and an auth gate every guest-called route
   // runs first should not depend on the sandbox layer to name a status.
-  if (version === null) throw new HTTPException(404, { message: `Not found: ${slug}` });
-  if (!constantTimeEquals(supplied, guestTokenFor(agentSandboxName(slug, version)))) {
-    throw new HTTPException(401, { message: "unauthorized" });
+  if (version === null) {
+    return { status: 404, statusText: "Not Found", message: `Not found: ${opts.slug}` };
   }
+  if (!constantTimeEquals(supplied, guestTokenFor(agentSandboxName(opts.slug, version)))) {
+    return { status: 401, statusText: "Unauthorized", message: "unauthorized" };
+  }
+  return undefined;
 }

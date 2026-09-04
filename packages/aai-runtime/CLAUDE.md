@@ -1196,7 +1196,9 @@ whole-window buffering that keeps a failed write re-sendable are argued.
 ## Every call this runtime makes of its OWN goes through a POOL, and there are two
 
 `_egress-fetch.ts` holds both: `rpcFetch` for a platform route (a kilobyte of
-JSON, one per step transition) and `blobFetch` for a window's bytes. They were
+JSON, one per step transition — the FALLBACK now, under one multiplexed socket
+per guest: [`PLATFORM-SOCKET-CLAUDE.md`](../aai-server/PLATFORM-SOCKET-CLAUDE.md))
+and `blobFetch` for a window's bytes. They were
 one pool, so a claim's 32 concurrent probes competed for the sockets a journal
 write queued behind — and one `allowH2` answer served both, though the
 measurement behind it is about multi-megabyte bodies exhausting a flow-control

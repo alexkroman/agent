@@ -123,11 +123,31 @@ export { parseBearer } from "./bearer.ts";
 // `aai-server` imports this package and never the reverse — so the five handlers
 // take their route from the table rather than restating the literal.
 export {
+  MAX_PLATFORM_SOCKET_FRAME_BYTES,
   PLATFORM_ROUTES,
+  PLATFORM_SOCKET_PATH,
   type PlatformEndpoint,
   type PlatformRoute,
   platformUrl,
 } from "./platform-endpoint.ts";
+// The guest's own socket CLIENT. Its importer is `aai-server`'s
+// `platform-socket.scenario.test.ts`, which drives the real client against the
+// real platform over a real port — the one spec that can say the two ends are
+// wired to each other, and one neither package can write alone.
+export {
+  createPlatformSocket,
+  type PlatformSocket,
+  platformSocketUrl,
+} from "./platform-socket.ts";
+// The frames that same guest sends when it carries those five routes down ONE
+// socket instead of five POSTs. Declared beside the table and for the same
+// reason: `aai-server/platform-socket-handler.ts` is the other end of this wire,
+// and a schema per side is a frame one of them silently drops.
+export {
+  PlatformInboundFrameSchema,
+  type PlatformReplyFrame,
+  parsePlatformFrame,
+} from "./platform-socket-frames.ts";
 // The console-backed `Logger` the CLI, the guest and the platform's own logger
 // all start from. The `Logger` TYPE — the thing a host implements — is
 // contracted, on the root barrel.

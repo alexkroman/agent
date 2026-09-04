@@ -252,7 +252,22 @@ REGIONS = ["us-east-2", "us-east"]
 # Each in-flight HTTP request counts as one input. Voice sessions never pass
 # through this process (browsers dial the sandbox tunnel directly, and
 # `/:slug/websocket` upgrades are instant handshake redirects), so inputs are
-# short HTTP traffic plus the studio proxy's SSE streams:
+# short HTTP traffic, the studio proxy's SSE streams, and one PLATFORM SOCKET
+# per running agent guest:
+#
+# - A deployed guest opens `WS /:slug/platform-socket` once and carries every
+#   platform call (session state, upload records, the workflow journal, its key
+#   index, an enqueue) down it — `platform-socket-handler.ts` here,
+#   `aai-runtime/platform-socket.ts` at the other end. A WebSocket is ONE input
+#   for its whole lifetime, so that is one long-lived input per live guest where
+#   the same traffic used to be short requests any replica could serve.
+# - MAX_INPUTS below is therefore the cap that matters: at 400 a replica holds
+#   400 guests' sockets plus its SSE streams and its ordinary requests, and
+#   sockets are the only one of the three that does not drain on its own. Two
+#   things bound it — the server idle-reaps a socket after 90 s with no frame
+#   (PLATFORM_SOCKET_IDLE_MS) and a draining replica REFUSES a new one — and one
+#   thing makes exhaustion survivable: a guest with no socket falls back to plain
+#   POSTs, so the ceiling costs latency rather than availability.
 #
 # - TARGET_INPUTS is the autoscaler's set point: Modal adds containers once
 #   per-container concurrency crosses it.
@@ -318,12 +333,14 @@ MAX_INPUTS = 400  # concurrent-input cap per container (SSE streams included)
 # 300s. Unset, that silently severed every in-process voice session (the old
 # `?host=1` host mode, since removed) at exactly five minutes, mid-word,
 # surfacing to the client as a bare "not connected" with nothing logged
-# server-side. Sessions now never run in this process — browsers dial the
+# server-side. Sessions still never run in this process — browsers dial the
 # guest sandbox's tunnel directly, and `/:slug/websocket` upgrades are
-# handshake redirects — but the studio proxy's SSE streams and any future
-# long-lived input sit under the same cap, so it stays pinned rather than
-# inherited. Same trap the sandbox layer documents in modal-sandbox-env.ts,
-# matched to the same 4h value.
+# handshake redirects — but the studio proxy's SSE streams and the guests'
+# PLATFORM SOCKETS sit under the same cap, so it stays pinned rather than
+# inherited. A platform socket really does live for hours, which is what makes
+# this value load-bearing rather than precautionary now: at Modal's default it
+# would cut every deployed guest's transport every five minutes. Same trap the
+# sandbox layer documents in modal-sandbox-env.ts, matched to the same 4h value.
 FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 
 # ── Guest-sandbox resources ──────────────────────────────────────────────────

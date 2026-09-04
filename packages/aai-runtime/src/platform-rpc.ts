@@ -52,6 +52,13 @@
  * instead; that was an artifact of the URL having once been built twice per call,
  * and the base is one operator-set value the label does not need to repeat.
  *
+ * ## The transport is a SOCKET first, and HTTP is the fallback
+ *
+ * `platform-socket.ts` is preferred and `rpcFetch` answers whenever there is not
+ * an open one. Everything above {@link platformPost} reads a status and a body
+ * and cannot tell which carried it, which is what let the five clients keep their
+ * error handling unchanged; `aai-server/PLATFORM-SOCKET-CLAUDE.md` is the wire.
+ *
  * @module platform-rpc
  */
 
@@ -61,6 +68,8 @@ import pTimeout from "p-timeout";
 import { rpcFetch } from "./_egress-fetch.ts";
 import { newTraceparent, traceIdOf } from "./_trace-context.ts";
 import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./platform-endpoint.ts";
+import { isPlatformSocketUnavailable } from "./platform-socket.ts";
+import { platformSocketFor } from "./platform-socket-registry.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
 
@@ -120,11 +129,6 @@ export function platformBearer(token: string): { authorization: string } {
  * @internal
  */
 export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): Promise<string> {
-  // `rpcFetch`, never the global — see `_egress-fetch.ts`. These calls share an
-  // origin with the upload broker's, so on HTTP/2 they shared its connection too:
-  // a reset taken by a claim's bucket probes failed the run-event reads in the same
-  // instant, which is what made one transport fault read as three unrelated bugs.
-  const fetchFn = opts.fetch ?? rpcFetch;
   // A W3C trace context per call, so this side's wall clock and the handler's
   // own breakdown can be put beside each other — see `_trace-context.ts`, which
   // carries the ~840 ms this exists to decompose. Minted here rather than passed
@@ -132,42 +136,97 @@ export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): 
   // that forgot would be a call with no correlation at all.
   const traceparent = newTraceparent();
   const startedAt = performance.now();
-  const res = await pTimeout(
-    fetchFn(platformUrl(opts.base, call.route), {
-      method: "POST",
-      headers: {
-        ...platformBearer(opts.token),
-        "content-type": "application/json",
-        traceparent,
-      },
-      body: call.body,
-    }),
-    {
-      milliseconds: call.timeoutMs,
-      message: `${call.label} timed out after ${call.timeoutMs}ms`,
-    },
-  );
+  // ONE deadline for the whole call, transport included — so a socket attempt
+  // that is refused and retried over HTTP cannot spend two of them. `pTimeout`
+  // does not abort the work it loses; that was already true of the fetch this
+  // wraps, and the socket's pending entry is dropped by its own close path.
+  const reply = await pTimeout(send(opts, call, traceparent), {
+    milliseconds: call.timeoutMs,
+    message: `${call.label} timed out after ${call.timeoutMs}ms`,
+  });
   // DEBUG, which `consoleLogger` makes a no-op unless `AAI_DEBUG=1`: this is one
   // line per platform call on a path that sustains several a second, and it is
   // an instrument rather than an event. The `traceId` is the join key and the
-  // status is what says whether the elapsed time bought anything.
+  // status is what says whether the elapsed time bought anything. `transport`
+  // was added with the socket, and is the only way to tell from a guest's log
+  // that it is running on the fallback — see `platform-socket.ts`.
   consoleLogger.debug("platform call", {
     label: call.label,
     route: call.route,
     traceId: traceIdOf(traceparent),
-    status: res.status,
+    transport: reply.transport,
+    status: reply.status,
     elapsedMs: Math.round(performance.now() - startedAt),
   });
-  if (!res.ok) {
+  if (!reply.ok) {
     // The body is DETAIL and the status is the finding, so a reply that will not
     // read must not replace it with a stream error. Three of the four clients
     // read this unguarded and lost the status whenever it mattered most — which
     // is also why the guard, rather than the ORDER, is what keeps a caller's own
     // error independent of whether the reply could be read.
-    const detail = await res.text().catch(() => "");
-    throw call.errorFor?.(res.status, detail) ?? statusError(call.label, res.status, detail);
+    const detail = await reply.text().catch(() => "");
+    throw call.errorFor?.(reply.status, detail) ?? statusError(call.label, reply.status, detail);
   }
-  return await res.text();
+  return await reply.text();
+}
+
+/** One answer, however it arrived. */
+type PlatformReply = {
+  status: number;
+  ok: boolean;
+  /** Which transport carried it — a log field, never a decision. */
+  transport: "socket" | "http";
+  /** The body, read lazily: the failure path reads it guarded and the success path does not. */
+  text: () => Promise<string>;
+};
+
+/**
+ * The transport choice, and the ONE place it is made.
+ *
+ * The socket is preferred and HTTP is the fallback — see `platform-socket.ts` for
+ * why that direction, and for why a refusal is only ever raised BEFORE the frame
+ * is written. Everything above this function reads a status and a body and cannot
+ * tell the two apart, which is the property that let five clients keep their
+ * error handling unchanged.
+ */
+async function send(
+  opts: PlatformEndpoint,
+  call: PlatformCall,
+  traceparent: string,
+): Promise<PlatformReply> {
+  const socket = platformSocketFor(opts);
+  if (socket !== undefined) {
+    try {
+      const answered = await socket.send({ route: call.route, body: call.body, traceparent });
+      const body = answered.body;
+      return {
+        status: answered.status,
+        ok: answered.status >= 200 && answered.status < 300,
+        transport: "socket",
+        text: () => Promise.resolve(body),
+      };
+    } catch (err: unknown) {
+      // Only a refusal falls through. A call that was WRITTEN and then failed
+      // carries `PLATFORM_UNAVAILABLE_CODE` and is rethrown, because re-sending it
+      // over HTTP would run it twice.
+      if (!isPlatformSocketUnavailable(err)) throw err;
+    }
+  }
+  // `rpcFetch`, never the global — see `_egress-fetch.ts`. These calls share an
+  // origin with the upload broker's, so on HTTP/2 they shared its connection too:
+  // a reset taken by a claim's bucket probes failed the run-event reads in the same
+  // instant, which is what made one transport fault read as three unrelated bugs.
+  const fetchFn = opts.fetch ?? rpcFetch;
+  const res = await fetchFn(platformUrl(opts.base, call.route), {
+    method: "POST",
+    headers: {
+      ...platformBearer(opts.token),
+      "content-type": "application/json",
+      traceparent,
+    },
+    body: call.body,
+  });
+  return { status: res.status, ok: res.ok, transport: "http", text: () => res.text() };
 }
 
 /**
