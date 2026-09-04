@@ -31,7 +31,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
 
 /**
  * The `must` half of a convention, in either of the two shapes konsistent
@@ -141,6 +141,95 @@ const repoPaths = (() => {
 })();
 
 const config = JSON.parse(raw ?? "{}") as KonsistentConfig;
+
+/**
+ * Every workspace package's npm NAME, which is also the specifier a sibling
+ * imports it by.
+ *
+ * Read out of the manifests rather than listed here, because the whole point of
+ * the test below is that a list of packages maintained by hand goes stale the
+ * day an eleventh one lands — and a copy of that list in the test would go
+ * stale in exactly the same way, one file further from the config.
+ */
+const packageNames = Object.values(
+  import.meta.glob<string>("../../*/package.json", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+)
+  .map((text) => (JSON.parse(text) as { name: string }).name)
+  .sort(byCodeUnit);
+
+/** The base of the dependency graph — every package may import it. */
+const SDK_PACKAGE = "@alexkroman1/aai";
+
+/**
+ * Which package each boundary convention guards, and the workspace edges that
+ * package is allowed to keep.
+ *
+ * This is the map the totality test is checked against, and it is the one thing
+ * here that IS hand-maintained — deliberately, because "is this edge
+ * legitimate?" is a judgement about the architecture and not something a glob
+ * can answer. Every entry is an edge the repo really has: aai-studio-server →
+ * aai-server is the largest in the tree (158 import sites); aai-guest →
+ * aai-runtime is how the harness runs an agent, and its CLI edge is the four
+ * public build-hook subpaths, which is why `@alexkroman1/aai-cli` is NOT
+ * allowed here — konsistent has no allow-list form, so the config denies the
+ * BARE specifier and lets the subpaths through; aai-evals → aai-runtime/eval
+ * plus `aai-studio-client/starters` (same bare-vs-subpath shape); aai-server
+ * and aai-cli → aai-ui, for its `client-dir`; aai-studio-client → aai-ui, the
+ * component library both front-ends share.
+ *
+ * `allows` therefore lists a package it may import AT ALL. The subpath-only
+ * edges are expressed in the config by denying the bare name, and the test
+ * below asserts that bare name is present like any other.
+ */
+const BOUNDARY_OWNERS: Record<
+  string,
+  { readonly pkg: string; readonly allows: readonly string[] }
+> = {
+  "core-package-boundary": { pkg: "@alexkroman1/aai", allows: [] },
+  "browser-package-boundary": { pkg: "@alexkroman1/aai-ui", allows: [] },
+  "runtime-package-boundary": { pkg: "@alexkroman1/aai-runtime", allows: [] },
+  "cli-package-boundary": {
+    pkg: "@alexkroman1/aai-cli",
+    allows: ["@alexkroman1/aai-runtime", "@alexkroman1/aai-ui"],
+  },
+  "guest-package-boundary": { pkg: "aai-guest", allows: ["@alexkroman1/aai-runtime"] },
+  "server-package-boundary": {
+    pkg: "aai-server",
+    allows: ["@alexkroman1/aai-runtime", "@alexkroman1/aai-ui"],
+  },
+  "studio-browser-boundary": { pkg: "aai-studio-client", allows: ["@alexkroman1/aai-ui"] },
+  "studio-server-package-boundary": {
+    pkg: "aai-studio-server",
+    allows: ["@alexkroman1/aai-runtime", "@alexkroman1/aai-ui", "aai-server"],
+  },
+  "evals-package-boundary": { pkg: "aai-evals", allows: ["@alexkroman1/aai-runtime"] },
+};
+
+/**
+ * Packages with no boundary convention, and the reason each has none.
+ *
+ * aai-templates holds no importable source: `templates/` is shipped product a
+ * user scaffolds and `template-authoring-boundary` guards it from the other
+ * direction (what a template may import), while the package's own `src/` is
+ * four meta-check specs. An entry here is a CLAIM, which is why the test
+ * asserts this set and the owners above together account for every package —
+ * package #11 fails until somebody classifies it.
+ */
+const UNGUARDED_PACKAGES: readonly string[] = ["aai-templates"];
+
+/**
+ * Conventions whose name ends in `-boundary` and which are not PACKAGE
+ * boundaries: they constrain a path family within one package rather than the
+ * dependency graph between packages, so the matrix below does not apply.
+ */
+const NON_PACKAGE_BOUNDARIES: readonly string[] = [
+  "sdk-host-boundary",
+  "template-authoring-boundary",
+];
 
 /**
  * A convention's predicate blocks, normalized to the array form.
@@ -313,6 +402,90 @@ describe("konsistent.json", () => {
     }
     for (const kebab of Object.keys(config.kebabToCamelMap ?? {})) {
       expect(kebab, `kebabToCamelMap key "${kebab}" is not kebab-case`).toMatch(/^[a-z0-9-]+$/);
+    }
+  });
+
+  test("every convention named *-boundary is classified as a package boundary or not", () => {
+    // The matrix test below iterates BOUNDARY_OWNERS, so a new package boundary
+    // that nobody adds to it is checked by nothing while the suite stays green
+    // — the vacuous pass this file exists to catch, one level up. Forcing a
+    // classification is what makes the next boundary convention join the matrix
+    // by existing.
+    const boundaries = config.conventions
+      .map((convention) => convention.name ?? "")
+      .filter((name) => name.endsWith("boundary"));
+    expect(boundaries.length, "no boundary conventions found").toBeGreaterThan(8);
+    for (const name of boundaries) {
+      expect(
+        name in BOUNDARY_OWNERS || NON_PACKAGE_BOUNDARIES.includes(name),
+        `${name} is neither in BOUNDARY_OWNERS nor declared a non-package boundary`,
+      ).toBe(true);
+    }
+  });
+
+  test("every package is either guarded by a boundary convention or declared unguarded", () => {
+    expect(packageNames.length, "no package manifests read").toBeGreaterThan(9);
+    expect(packageNames, "SDK package name changed").toContain(SDK_PACKAGE);
+    // Package #11 lands importable from everywhere and nothing reports it, so
+    // the classification is asserted to be EXHAUSTIVE rather than merely
+    // consistent with what is here today.
+    const classified = [
+      ...Object.values(BOUNDARY_OWNERS).map((owner) => owner.pkg),
+      ...UNGUARDED_PACKAGES,
+    ].sort(byCodeUnit);
+    expect(
+      classified,
+      "a workspace package is in neither BOUNDARY_OWNERS nor UNGUARDED_PACKAGES",
+    ).toEqual(packageNames);
+    for (const [name, owner] of Object.entries(BOUNDARY_OWNERS)) {
+      for (const allowed of owner.allows) {
+        // A typo'd allow-entry silently widens the matrix, which is the same
+        // failure as a missing deny entry wearing a different hat.
+        expect(
+          packageNames,
+          `${name}: allows "${allowed}", which is not a workspace package`,
+        ).toContain(allowed);
+      }
+      expect(owner.allows, `${name}: the SDK is allowed everywhere, drop the entry`).not.toContain(
+        SDK_PACKAGE,
+      );
+      expect(
+        owner.allows,
+        `${name}: a package cannot need permission to import itself`,
+      ).not.toContain(owner.pkg);
+    }
+  });
+
+  test("the package-boundary matrix is TOTAL, not just green", () => {
+    // konsistent has NO allow-list form, so every boundary is a hand-written
+    // deny list — the one rule shape in this config that goes stale by
+    // SILENCE. A package absent from a list is importable, and there is no
+    // diagnostic anywhere: the convention still matches its files, still
+    // reports zero violations, and still prints the same pass. That is the same
+    // hazard as a `paths` glob resolving to nothing, so it is checked the same
+    // way, by deriving the expected set from the tree rather than reading the
+    // config back to itself.
+    //
+    // A subpath-only edge (aai-guest → the CLI's build hooks, aai-evals →
+    // `aai-studio-client/starters`) is still required to name the BARE
+    // specifier: denying the bare name and permitting subpaths is the strongest
+    // half of "only that subpath" konsistent can express.
+    for (const [name, owner] of Object.entries(BOUNDARY_OWNERS)) {
+      const convention = config.conventions.find((entry) => entry.name === name);
+      expect(convention, `${name} is in BOUNDARY_OWNERS but not in konsistent.json`).toBeDefined();
+      const denied = convention?.mustNot?.importFrom;
+      expect(
+        Array.isArray(denied),
+        `${name} declares no mustNot.importFrom, so it forbids nothing`,
+      ).toBe(true);
+      const denySet = new Set(Array.isArray(denied) ? (denied as string[]) : []);
+      for (const other of packageNames) {
+        if (other === owner.pkg || other === SDK_PACKAGE || owner.allows.includes(other)) continue;
+        expect(
+          denySet.has(other),
+          `${name} does not forbid "${other}" — ${owner.pkg} may import it and nothing reports it`,
+        ).toBe(true);
+      }
     }
   });
 
