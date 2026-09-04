@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { createRecordingSql } from "aai-server/test-utils";
-import { describe, expect, test, vi } from "vitest";
+import { captureLogs, createRecordingSql } from "aai-server/test-utils";
+import { describe, expect, test } from "vitest";
 import {
   createMemoryPreviewQueue,
   createPgPreviewQueue,
@@ -76,6 +76,10 @@ describe("createMemoryPreviewQueue", () => {
 });
 
 describe("createPgPreviewQueue", () => {
+  // Expected "unreadable payload" warnings, kept out of the output via the log
+  // seam rather than a console spy.
+  captureLogs();
+
   function fakeSql() {
     let rows: Record<string, unknown>[] = [];
     const { sql, calls } = createRecordingSql((query) => (query.includes("pgmq.read") ? rows : []));
@@ -138,7 +142,6 @@ describe("createPgPreviewQueue", () => {
   /** A string that is not JSON at all is still unreadable, not a crash. */
   test("archives a string payload that is not JSON", async () => {
     const { sql, calls, setRows } = fakeSql();
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const queue = createPgPreviewQueue(sql);
     setRows([{ msg_id: 8n, read_ct: 1, message: "not json" }]);
     expect(await queue.claim(5)).toEqual([]);
@@ -154,7 +157,6 @@ describe("createPgPreviewQueue", () => {
    */
   test("archives an unreadable payload instead of redelivering it", async () => {
     const { sql, calls, setRows } = fakeSql();
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const queue = createPgPreviewQueue(sql);
     setRows([{ msg_id: 7n, read_ct: 1, message: { project: "no-scope" } }]);
     expect(await queue.claim(5)).toEqual([]);

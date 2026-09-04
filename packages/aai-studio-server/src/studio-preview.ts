@@ -31,6 +31,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { createLogger } from "aai-server/logger";
 import { createKeyedLock, TtlCache, withLock } from "aai-server/platform-barrel";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import {
@@ -43,6 +44,8 @@ import {
 import { previewSlugFor } from "./studio-project-slugs.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import { getWorkspace, projectKey, stampWorkspaceMeta } from "./studio-workspace.ts";
+
+const log = createLogger("studio.preview");
 
 /** Cap on the stored preview failure output (it renders in a banner). */
 const MAX_PREVIEW_ERROR = 16_000;
@@ -176,7 +179,7 @@ const PREVIEW_LOCK_WAIT_MS = Math.floor(PREVIEW_JOB_VISIBILITY_MS / 2);
 /** Log-and-continue wrapper: queue trouble must never fail a caller's request. */
 function bestEffort(what: string): (err: unknown) => undefined {
   return (err: unknown) => {
-    console.warn(`Preview queue ${what} failed: ${errorMessage(err)}`);
+    log.warn(`queue ${what} failed`, { error: errorMessage(err) });
   };
 }
 
@@ -239,7 +242,7 @@ export function createPreviewDeployer(
         : { previewError: outcome.output.slice(0, MAX_PREVIEW_ERROR) },
     );
     if (!outcome.ok) {
-      console.warn("Studio preview deploy failed", { project, output: outcome.output });
+      log.warn("deploy failed", { project, output: outcome.output });
     }
   }
 
@@ -267,7 +270,7 @@ export function createPreviewDeployer(
       // Nothing here can deploy it. Archiving beats redelivering forever:
       // the only jobs that reach this are raw-key callers' whose enqueuing
       // replica is gone, and no replica will ever hold their credential.
-      console.warn("Archiving preview job with no resolvable credential", { project });
+      log.warn("archiving job with no resolvable credential", { project });
       await options.queue.archive(claimed.id).catch(bestEffort("archive"));
       return;
     }
@@ -303,7 +306,7 @@ export function createPreviewDeployer(
     await Promise.all(
       claimed.map(async (job) => {
         if (job.attempts > PREVIEW_JOB_MAX_ATTEMPTS) {
-          console.warn("Archiving preview job after repeated failures", {
+          log.warn("archiving job after repeated failures", {
             project: job.job.project,
             attempts: job.attempts,
           });
@@ -314,7 +317,7 @@ export function createPreviewDeployer(
           await runJob(job);
         } catch (err) {
           // Left for redelivery on purpose — see the doc above.
-          console.warn("Studio preview deploy errored", {
+          log.warn("deploy errored", {
             project: job.job.project,
             attempts: job.attempts,
             error: errorMessage(err),

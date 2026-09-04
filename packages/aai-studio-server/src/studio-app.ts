@@ -25,7 +25,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ApiKeyVerifier } from "aai-server/api-key-verify";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
-import { createMemoryPlatformEvents, type PlatformEvents } from "aai-server/platform-events";
+import type { PlatformEvents } from "aai-server/platform-events";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
 import { SLUG_PATTERN_SOURCE } from "aai-server/schemas";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
@@ -56,8 +56,17 @@ export type StudioAppOpts = {
    * emitter that never fires — the SSE route then only serves its initial
    * snapshot, which is all tests without a paired store can expect.
    */
-  events?: PlatformEvents;
-  /** Named secret storage; the storage routes read/write app-db credentials. */
+  events: PlatformEvents;
+  /**
+   * Named secret storage — `user-key:<uid>`, `github-install:<uid>`, the
+   * `cli-link:` grants and every project's secret record.
+   *
+   * Optional only because `OrchestratorOpts` declares it so; `buildPlatformDb`
+   * always answers one, and the memory fallback below exists for a spec that
+   * builds an app by hand. Treat a dropped binding as the hazard it is: a
+   * service where sign-in works, keys "save" and GitHub "connects" — per
+   * replica, lost on restart, with no error anywhere.
+   */
   secrets?: SecretStore;
   /** Browser-session auth; absent means raw-API-key bearers only. */
   auth?: StudioAuth;
@@ -95,7 +104,6 @@ export type StudioAppOpts = {
   githubApp?: StudioRouteOptions["githubApp"];
   /** Test seam: drive the GitHub routes against a fake API, no module mocks. */
   githubFetch?: StudioRouteOptions["githubFetch"];
-  allowedOrigins?: string[];
   isDraining?: () => boolean;
 };
 
@@ -105,7 +113,10 @@ export function createStudioApp(opts: StudioAppOpts): {
   dispose: () => Promise<void>;
 } {
   const app = new Hono<StudioHonoEnv>();
-  applyPlatformMiddleware(app, opts.allowedOrigins);
+  // No allowed-origins override: both surfaces are same-origin by
+  // construction, so the only source is `AAI_ALLOWED_ORIGINS`, which
+  // `applyPlatformMiddleware` reads for itself.
+  applyPlatformMiddleware(app, undefined);
 
   addHealthRoute(app, opts.isDraining, opts.events);
 
@@ -150,7 +161,7 @@ export function createStudioApp(opts: StudioAppOpts): {
     store: opts.store,
     workspaces: opts.workspaces,
     chats: opts.chats,
-    events: opts.events ?? createMemoryPlatformEvents().events,
+    events: opts.events,
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...omitUndefined({ auth: opts.auth, keyVerifier: opts.keyVerifier }),
     // Wrapped exactly as the agent service wraps it: holding the lock must

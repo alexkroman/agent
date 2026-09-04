@@ -20,6 +20,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { DEFAULT_PORT } from "aai-server/constants";
+import { createLogger } from "aai-server/logger";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { resolvePort } from "aai-server/platform-barrel";
 import { createPgAgentRateLimiters } from "aai-server/rate-limit";
@@ -35,31 +36,18 @@ import { isStudioPath } from "aai-server/studio-paths";
 import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createMemoryPreviewQueue, createPgPreviewQueue } from "./studio-preview-queue.ts";
-import { createPgStudioRateLimiters, type StudioRateLimiters } from "./studio-rate-limit.ts";
+import { createPgStudioRateLimiters } from "./studio-rate-limit.ts";
 import { createPgStudioSessionRegistry } from "./studio-session-registry.ts";
 
-/** Postgres rate limiters when the platform database is configured; else memory defaults apply. */
-function buildRateLimiters(base: ServiceConfig): StudioRateLimiters | undefined {
-  // ALL of them, from the factory beside the windows — never a hand-listed
-  // subset here. A window this root forgets falls through to the in-memory
-  // arm and silently enforces `MAX_CONTAINERS` times what it says.
-  return base.sql ? createPgStudioRateLimiters(base.sql) : undefined;
-}
-
-/**
- * The agent surface's fleet-wide per-IP limiters, when a platform database is
- * configured. All three at once, from one factory in the package that owns the
- * windows — see `createPgAgentRateLimiters` for why this is not three builders.
- */
-function buildAgentRateLimiters(
-  base: ServiceConfig,
-): ReturnType<typeof createPgAgentRateLimiters> | undefined {
-  if (!base.sql) return;
-  return createPgAgentRateLimiters(base.sql);
-}
+const log = createLogger("studio.boot");
 
 function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAppOpts {
-  const rateLimiters = buildRateLimiters(base);
+  // Postgres rate limiters when the platform database is configured; else the
+  // in-memory defaults apply. ALL of them, from the factory beside the windows
+  // — never a hand-listed subset here. A window this root forgets falls
+  // through to the in-memory arm and silently enforces `MAX_CONTAINERS` times
+  // what it says.
+  const rateLimiters = base.sql ? createPgStudioRateLimiters(base.sql) : undefined;
   // Cross-replica studio session registry — only with a platform database.
   // Without one there is a single process, so there are no peers to find.
   const sessionRegistry = base.sql ? createPgStudioSessionRegistry(base.sql) : undefined;
@@ -72,7 +60,7 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
   // restart is a behaviour difference a developer should see in the boot log.
   const previewQueue = base.sql ? createPgPreviewQueue(base.sql) : createMemoryPreviewQueue();
   if (!base.sql) {
-    console.info("Local dev mode: in-memory preview queue; pending previews are lost on restart");
+    log.info("local dev mode: in-memory preview queue; pending previews are lost on restart");
   }
   return {
     store: base.store,
@@ -81,9 +69,9 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     events: base.events,
     ...omitUndefined({
       secrets: base.secrets,
+      slugLock: base.slugLock,
       auth: base.auth,
       keyVerifier: base.keyVerifier,
-      slugLock: base.slugLock,
       studioRateLimiters: rateLimiters,
       studioSessionRegistry: sessionRegistry,
     }),
@@ -127,7 +115,11 @@ async function main(): Promise<void> {
   // change stream to sandbox invalidation.
   const orchestrator = createOrchestrator({
     ...base,
-    ...buildAgentRateLimiters(base),
+    // The agent surface's fleet-wide per-IP limiters, when a platform database
+    // is configured. All three at once, from one factory in the package that
+    // owns the windows — see `createPgAgentRateLimiters` for why this is not
+    // three builders.
+    ...(base.sql ? createPgAgentRateLimiters(base.sql) : undefined),
     isDraining: () => draining,
   });
   const combinedFetch = (req: Request): Response | Promise<Response> =>
@@ -143,7 +135,7 @@ async function main(): Promise<void> {
     // broker, being useless without this process's control channel.
     onShutdown: async () => {
       draining = true;
-      console.info("Shutting down (retiring guests)...");
+      log.info("shutting down (retiring guests)");
       await teardown();
     },
   });
@@ -172,7 +164,7 @@ if (process.env.AAI_SERVER_WARMUP === "1") {
 // Only boot when executed as an entry (not when imported by tests).
 if (process.env.VITEST === undefined) {
   main().catch((err: unknown) => {
-    console.error("Fatal:", err);
+    log.error("fatal", { error: err });
     process.exit(1);
   });
 }

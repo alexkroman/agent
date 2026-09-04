@@ -11,11 +11,11 @@ import { describe, expect, test, vi } from "vitest";
 import {
   makeStore,
   PROJECT,
+  previewLogs,
   previewStamped,
   SCOPE,
   seededStore,
   settled,
-  silenceWarn,
   stampProject,
   TARGET,
 } from "./_studio-preview-test-utils.ts";
@@ -43,6 +43,8 @@ function makeDeployer(opts: Omit<PreviewDeployerOptions, "queue" | "pollMs">) {
 }
 
 describe("createPreviewDeployer", () => {
+  const logs = previewLogs();
+
   test("deploys the workspace to the preview slug and stamps the metadata", async () => {
     const workspaces = await seededStore();
     const deploy = vi.fn(
@@ -145,7 +147,6 @@ describe("createPreviewDeployer", () => {
 
   test("a failed deploy stamps previewError and leaves the hash unset", async () => {
     const workspaces = await seededStore({ "agent.ts": "// broken" });
-    silenceWarn();
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> => ({
         ok: false,
@@ -168,7 +169,6 @@ describe("createPreviewDeployer", () => {
 
   test("a success after a failure clears previewError", async () => {
     const workspaces = await seededStore({ "agent.ts": "// broken" });
-    silenceWarn();
     let ok = false;
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> =>
@@ -198,7 +198,6 @@ describe("createPreviewDeployer", () => {
    */
   test("a job over already-deployed files clears a stale previewError without deploying", async () => {
     const workspaces = await seededStore({ "agent.ts": "// good" });
-    silenceWarn();
     let ok = true;
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> =>
@@ -261,13 +260,12 @@ describe("createPreviewDeployer", () => {
 
   test("a thrown deploy (dead sandbox) is contained, not fatal", async () => {
     const workspaces = await seededStore();
-    const warn = silenceWarn();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       throw new Error("sandbox gone");
     });
     const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
     deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    await vi.waitFor(() => expect(logs.warns().length).toBeGreaterThan(0));
     // A later schedule runs again — nothing wedged.
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(2));
@@ -281,7 +279,6 @@ describe("createPreviewDeployer", () => {
    */
   test("a job whose deploy throws is left for redelivery, not consumed", async () => {
     const workspaces = await seededStore();
-    const warn = silenceWarn();
     let attempts = 0;
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       attempts++;
@@ -297,7 +294,7 @@ describe("createPreviewDeployer", () => {
     });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    await vi.waitFor(() => expect(logs.warns().length).toBeGreaterThan(0));
     // Not acked and not archived: still in the queue, merely invisible.
     expect(queue.archived).toEqual([]);
 
@@ -314,7 +311,6 @@ describe("createPreviewDeployer", () => {
     vi.useFakeTimers();
     try {
       const workspaces = await seededStore();
-      const warn = silenceWarn();
 
       // The first deploy never returns — a sandbox that went away mid-request.
       const wedged = vi.fn(
@@ -350,9 +346,12 @@ describe("createPreviewDeployer", () => {
       // Asserting the REASON, not just that something warned: a job left
       // unacked because the deploy errored looks identical from the queue's
       // side, and only the message separates it from the lock lapsing.
-      expect(warn).toHaveBeenCalledWith(
-        "Studio preview deploy errored",
-        expect.objectContaining({ error: expect.stringContaining("timed out") }),
+      expect(logs.all()).toContainEqual(
+        expect.objectContaining({
+          level: "warn",
+          msg: "studio.preview deploy errored",
+          ctx: expect.objectContaining({ error: expect.stringContaining("timed out") }),
+        }),
       );
       expect(queue.archived).toEqual([]);
       expect(wedged).toHaveBeenCalledTimes(1);
@@ -364,7 +363,6 @@ describe("createPreviewDeployer", () => {
 
   test("a job redelivered past the attempt cap is archived, not retried forever", async () => {
     const workspaces = await seededStore();
-    silenceWarn();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       throw new Error("crash loop");
     });
@@ -422,7 +420,6 @@ describe("createPreviewDeployer", () => {
 
   test("a redelivered job with no resolvable key is archived", async () => {
     const workspaces = await seededStore();
-    silenceWarn();
     const queue = createMemoryPreviewQueue();
     // No userId: a raw-key caller's job whose enqueuing replica is gone. No
     // replica will ever hold that credential, so retrying is pointless.
@@ -447,9 +444,10 @@ describe("createPreviewDeployer", () => {
  * them — and a swallowed error is exactly the kind of code that rots unnoticed.
  */
 describe("queue failures are contained", () => {
+  const logs = previewLogs();
+
   test("an enqueue failure is logged and never reaches the caller", async () => {
     const workspaces = await seededStore();
-    const warn = silenceWarn();
     const queue = createMemoryPreviewQueue();
     queue.enqueue = () => Promise.reject(new Error("pgmq is down"));
     const deployer = createPreviewDeployer({
@@ -463,7 +461,7 @@ describe("queue failures are contained", () => {
     // throw here would surface as a failed file write.
     expect(() => deployer.schedule(SCOPE, PROJECT, TARGET)).not.toThrow();
     await settled();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Preview queue enqueue failed"));
+    expect(logs.warns()).toContain("studio.preview queue enqueue failed");
   });
 
   test("a claim failure yields no jobs rather than throwing", async () => {
@@ -486,7 +484,6 @@ describe("queue failures are contained", () => {
 
   test("an ack failure is logged, leaving the job for redelivery", async () => {
     const workspaces = await seededStore();
-    const warn = silenceWarn();
     const queue = createMemoryPreviewQueue();
     queue.ack = () => Promise.reject(new Error("ack lost"));
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
@@ -503,6 +500,6 @@ describe("queue failures are contained", () => {
     // redelivered and then no-ops on the matching hash, which is the whole
     // reason at-least-once is safe here.
     expect(deploy).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Preview queue ack failed"));
+    expect(logs.warns()).toContain("studio.preview queue ack failed");
   });
 });

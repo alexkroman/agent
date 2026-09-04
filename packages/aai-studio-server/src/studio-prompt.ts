@@ -22,8 +22,11 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { createLogger } from "aai-server/logger";
 import { studioPreamble } from "./studio-preamble.ts";
 import { DEFAULT_PROJECT_KIND, type ProjectKind } from "./studio-project-kind.ts";
+
+const log = createLogger("studio.prompt");
 
 /**
  * Compact fallback when the scaffold CLAUDE.md cannot be found on disk
@@ -139,7 +142,7 @@ export function studioSystemPrompt(kind: ProjectKind = DEFAULT_PROJECT_KIND): st
   if (cached !== undefined) return cached;
   const guide = loadScaffoldGuide();
   if (!guide) {
-    console.warn("Studio: scaffold CLAUDE.md not found; using built-in authoring guide");
+    log.warn("scaffold CLAUDE.md not found; using built-in authoring guide");
   }
   const prompt = composeStudioPrompt(guide, kind);
   cachedPrompts.set(kind, prompt);

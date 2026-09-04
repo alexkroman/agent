@@ -12,9 +12,12 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { createLogger } from "aai-server/logger";
 import type { Context } from "hono";
 import { requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
+
+const log = createLogger("studio.edit");
 
 /**
  * Two fire-and-forget consequences, both off the response path (the workspace
@@ -33,7 +36,7 @@ export function onSettledEdit(
   project: string,
 ): void {
   broker.refreshSession(scope, project, c.var.apiKey).catch((err: unknown) => {
-    console.warn("Studio: live session refresh failed", { project, error: errorMessage(err) });
+    log.warn("live session refresh failed", { project, error: errorMessage(err) });
   });
   schedulePreviewFor(broker, c, scope, project);
 }
@@ -66,9 +69,9 @@ export function previewOrigin(c: Context<StudioHonoEnv>): {
 }
 
 /**
- * Enqueue a preview deploy on the caller's behalf. Shared with the database
- * switch, which redeploys the preview so the running agent picks up its new
- * `DATABASE_URL`.
+ * Enqueue a preview deploy on the caller's behalf. Shared with the SECRET
+ * routes, which redeploy the preview because a stored secret only reaches an
+ * agent's env when its sandbox is BUILT.
  */
 export function schedulePreviewFor(
   broker: StudioSessionBroker,

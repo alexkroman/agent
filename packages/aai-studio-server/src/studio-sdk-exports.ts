@@ -18,12 +18,15 @@
  * every model's priors and in any documentation snapshot taken before the
  * removal.
  *
- * Two consumers use this list, and both exist so no copy of it can go stale:
- * the studio system prompt names the valid
- * ones, and `studio-prompt.ts` interpolates it into the system prompt so the
- * agent doesn't have to guess at all. Hard-coding either would just move the
- * drift somewhere new — the next rename would leave the studio confidently
- * teaching a subpath that no longer resolves.
+ * ONE consumer uses this list: `studio-preamble.ts` interpolates it into the
+ * coding agent's system prompt, so the agent does not have to guess at all.
+ * (This paragraph used to claim two, the second being the deleted
+ * `studio-bundle.ts` import allowlist — a reason-to-exist describing a caller
+ * that no longer exists is worse than none, since the next reader either
+ * trusts it or re-derives the answer by grep.) The list is READ rather than
+ * hard-coded because hard-coding would just move the drift somewhere new: the
+ * next rename would leave the studio confidently teaching a subpath that no
+ * longer resolves.
  *
  * **Resolution is by directory walk, not by `require.resolve`.** The SDK's
  * exports map declares only `@dev/source`, `types`, and `import` conditions —
@@ -40,7 +43,12 @@ import path from "node:path";
 import { safeJsonParse } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 
-/** Bare specifier of the SDK whose exports map this module reads. */
+/**
+ * Bare specifier of the SDK whose exports map this module reads.
+ *
+ * Exported as a TEST SEAM — `sdkSpecifiers` is the only thing production
+ * calls, and its spec builds expectations out of this and `sdkSubpaths`.
+ */
 export const SDK_PACKAGE = "@alexkroman1/aai";
 
 const PKG_RELATIVE = path.join("node_modules", "@alexkroman1", "aai", "package.json");

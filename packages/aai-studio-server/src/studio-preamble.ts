@@ -27,14 +27,20 @@ import { sdkSpecifiers } from "./studio-sdk-exports.ts";
  * describe a package the build doesn't use. Omitted entirely when the map
  * can't be read — a truncated "these are the only ones:" with no list would be
  * worse than saying nothing.
+ *
+ * A FUNCTION, not a module-level constant: `sdkSpecifiers` walks parent
+ * directories with `existsSync` and then reads and parses a package.json, and
+ * as an IIFE that ran at import — i.e. on the static path from `index.ts`, so
+ * every container cold start paid for a value only a coding-agent session
+ * needs. `sdkSubpaths` memoizes, so calling it per preamble costs one read.
  */
-const SDK_SUBPATH_RULE = (() => {
+function sdkSubpathRule(): string {
   const specs = sdkSpecifiers();
   if (specs.length === 0) return "";
   return `- **Never invent an SDK subpath.** These are the only importable ones, and a
   wrong guess is a build error, not a fallback:
   ${specs.join(", ")}`;
-})();
+}
 
 /**
  * The preamble for one project kind. Pure — `studio-prompt.ts` caches the
@@ -210,7 +216,7 @@ ${mode.spokenReplies}
 - Always implement best practices for performance, security, and
   accessibility: semantic elements, correct ARIA roles, alt text on
   images, sr-only labels on icon-only buttons.
-${SDK_SUBPATH_RULE}
+${sdkSubpathRule()}
 
 ${mode.productShape}
 

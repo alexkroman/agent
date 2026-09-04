@@ -23,8 +23,11 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
+import { createLogger } from "aai-server/logger";
 import pTimeout from "p-timeout";
 import type { StudioSessionRecord } from "./studio-session-registry.ts";
+
+const log = createLogger("studio.session.adopt");
 
 /**
  * Budget for the peer install. Sized like the owner's own
@@ -79,7 +82,7 @@ export async function adoptPeerSession(
       { milliseconds: deps.timeoutMs ?? ADOPT_TIMEOUT_MS, message: "session-init timed out" },
     );
     if (!res.ok) {
-      console.warn("Studio session: peer install refused; respawning sandbox", {
+      log.warn("peer install refused; respawning sandbox", {
         project: params.project,
         status: res.status,
       });
@@ -89,7 +92,7 @@ export async function adoptPeerSession(
   } catch (err) {
     // Dead guest (idle-evicted, crashed, replica gone) or a slow one — either
     // way this replica must not hand its URL to a browser.
-    console.warn("Studio session: peer unreachable; respawning sandbox", {
+    log.warn("peer unreachable; respawning sandbox", {
       project: params.project,
       error: errorMessage(err),
     });

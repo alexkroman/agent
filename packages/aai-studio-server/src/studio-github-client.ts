@@ -76,8 +76,17 @@ export function githubErrorStatus(err: unknown): number | undefined {
   return typeof err.status === "number" ? err.status : undefined;
 }
 
-/** `fetch` with the module's deadline composed onto the caller's signal. */
-function deadlineFetch(base: typeof globalThis.fetch): typeof globalThis.fetch {
+/**
+ * `fetch` with the GitHub budget composed onto the caller's signal.
+ *
+ * Exported because `studio-github-user.ts` dials github.com directly (the
+ * OAuth token exchange and `GET /user/installations` are USER-token calls, so
+ * they cannot go through an installation-authenticated Octokit) and had
+ * re-derived both halves — its own 20s constant, commented "same budget as
+ * every other GitHub call", and its own `AbortSignal.any` composition. Two
+ * numbers that drift the moment anyone tunes "the GitHub budget".
+ */
+export function deadlineFetch(base: typeof globalThis.fetch): typeof globalThis.fetch {
   return (input, init) => {
     const deadline = AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS);
     // Composed, never replaced: `AbortSignal.any` settles on whichever fires

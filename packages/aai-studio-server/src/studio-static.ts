@@ -164,6 +164,21 @@ export async function handleStudioPage(c: AppContext): Promise<Response> {
 }
 
 /**
+ * A zero-copy view of a CACHED buffer, for handing bytes to `c.body`.
+ *
+ * `new Uint8Array(buf)` — which both asset handlers used to call — allocates
+ * and COPIES the whole file per request, and these buffers come from
+ * `createCachedDirReader`, i.e. they are already resident and immutable. A
+ * cold studio page load pulls ~1.7 MB of js/css/woff2, so that was ~1.7 MB
+ * copied and immediately collected per new browser, per replica. A view over
+ * the same memory costs one small object. (`c.body` will not take a `Buffer`
+ * directly — hence a view rather than the buffer itself.)
+ */
+function viewOf(buf: Buffer): Uint8Array<ArrayBuffer> {
+  return new Uint8Array(buf.buffer as ArrayBuffer, buf.byteOffset, buf.byteLength);
+}
+
+/**
  * `GET /favicon.ico` — the studio icon, for the default browser request
  * (the built studio shell links it at `/studio-assets/favicon.ico`, but
  * the not-built fallback page and non-browser clients hit the root path).
@@ -172,7 +187,7 @@ export async function handleStudioPage(c: AppContext): Promise<Response> {
 export async function handleStudioFavicon(c: AppContext): Promise<Response> {
   const content = await readClientFile("favicon.ico");
   if (!content) throw new HTTPException(404, { message: "Favicon not found" });
-  return c.body(new Uint8Array(content), 200, {
+  return c.body(viewOf(content), 200, {
     "Content-Type": "image/x-icon",
     "Cache-Control": "public, max-age=86400",
   });
@@ -230,27 +245,22 @@ export function studioClientAssetHandler(
   isDraining?: () => boolean,
 ): (c: AppContext) => Promise<Response> {
   return async function handleStudioClientAsset(c: AppContext): Promise<Response> {
-    return await serveClientAsset(c, isDraining);
-  };
-}
-
-/** @internal The body behind {@link studioClientAssetHandler}. */
-async function serveClientAsset(c: AppContext, isDraining?: () => boolean): Promise<Response> {
-  const rawPath = c.req.param("path") ?? "";
-  const parsed = SafePathSchema.safeParse(rawPath);
-  if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
-  const content = await readClientFile(parsed.data);
-  if (!content && isDraining?.()) {
-    // `Retry-After: 1` because the replacement replica is already serving —
-    // this one is on its way out, not overloaded.
-    return c.json({ error: "Asset not on this replica (draining)" }, 503, {
-      "Retry-After": "1",
-      "Cache-Control": "no-store",
+    const rawPath = c.req.param("path") ?? "";
+    const parsed = SafePathSchema.safeParse(rawPath);
+    if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
+    const content = await readClientFile(parsed.data);
+    if (!content && isDraining?.()) {
+      // `Retry-After: 1` because the replacement replica is already serving —
+      // this one is on its way out, not overloaded.
+      return c.json({ error: "Asset not on this replica (draining)" }, 503, {
+        "Retry-After": "1",
+        "Cache-Control": "no-store",
+      });
+    }
+    if (!content) throw new HTTPException(404, { message: "Asset not found" });
+    return c.body(viewOf(content), 200, {
+      "Content-Type": mime.lookup(parsed.data) || "application/octet-stream",
+      "Cache-Control": "public, max-age=31536000, immutable",
     });
-  }
-  if (!content) throw new HTTPException(404, { message: "Asset not found" });
-  return c.body(new Uint8Array(content), 200, {
-    "Content-Type": mime.lookup(parsed.data) || "application/octet-stream",
-    "Cache-Control": "public, max-age=31536000, immutable",
-  });
+  };
 }

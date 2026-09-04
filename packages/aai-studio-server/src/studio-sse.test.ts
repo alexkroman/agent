@@ -98,7 +98,9 @@ describe("createSsePusher", () => {
     abort();
     await held;
 
-    await sse.write("project", "{}");
+    // Through `push`, the only way to produce a frame — see `SsePusher`.
+    sse.push(async () => ({ event: "project", data: "{}" }));
+    await vi.advanceTimersByTimeAsync(0);
     expect(frames.filter((f) => f.event === "project")).toEqual([]);
   });
 

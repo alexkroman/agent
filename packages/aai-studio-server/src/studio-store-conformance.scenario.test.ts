@@ -73,7 +73,7 @@ describeWithStack("studio store conformance: the Supabase stack arm", () => {
   };
 
   describe("StudioSessionRegistry", () => {
-    studioSessionRegistryConformance(() => createPgStudioSessionRegistry(sql), parent);
+    studioSessionRegistryConformance((opts) => createPgStudioSessionRegistry(sql, opts), parent);
   });
 
   describe("PreviewQueue (pgmq)", () => {

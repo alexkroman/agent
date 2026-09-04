@@ -18,7 +18,6 @@
  * stored key (and 401s until one exists).
  */
 
-import { safeJsonParse } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { zValidator } from "@hono/zod-validator";
 import {
@@ -35,6 +34,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import { AccountKeySchema, CliLinkSchema } from "./studio-schemas.ts";
+import { parseJsonSecret, writeJsonSecret } from "./studio-secret-record.ts";
 
 /**
  * An approved `aai login` link, stored (JSON) in the SecretStore under the
@@ -56,11 +56,6 @@ const CliLinkGrantSchema = z.object({
 });
 type CliLinkGrant = z.infer<typeof CliLinkGrantSchema>;
 const CLI_LINK_TTL_MS = 10 * 60_000;
-
-function parseCliLinkGrant(raw: string): CliLinkGrant | null {
-  const parsed = CliLinkGrantSchema.safeParse(safeJsonParse(raw));
-  return parsed.success ? parsed.data : null;
-}
 
 export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
   // Public: what the login screen should render — Supabase GitHub-OAuth
@@ -135,7 +130,7 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
       ...omitUndefined({ email: user.email }),
       exp: Date.now() + CLI_LINK_TTL_MS,
     };
-    await c.env.secrets.put(cliLinkSecretName(c.req.valid("json").code), JSON.stringify(grant));
+    await writeJsonSecret(c.env.secrets, cliLinkSecretName(c.req.valid("json").code), grant);
     return c.json({ ok: true });
   });
 
@@ -152,7 +147,7 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
     const raw = await c.env.secrets.get(name);
     if (raw === null) return c.json({ pending: true }, 404);
     await c.env.secrets.delete(name);
-    const grant = parseCliLinkGrant(raw);
+    const grant = parseJsonSecret(raw, CliLinkGrantSchema);
     if (!grant || grant.exp < Date.now()) {
       return c.json({ error: "Link approval expired — run `aai login` again" }, 410);
     }
