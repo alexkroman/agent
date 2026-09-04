@@ -100,7 +100,7 @@ describe("pack + build + boot: template workflows", () => {
     const projectDir = path.join(tmpDir, template);
 
     // Init + install from mock registry + test + build
-    aai(aaiBin, ["init", projectDir, "-t", template, "--skip-deploy"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", template], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
@@ -169,7 +169,7 @@ describe("self-hosted server: npm start", () => {
    */
   test("boots a scaffolded pizza-ordering project and serves it", async ({ skip }) => {
     const projectDir = path.join(tmpDir, "_self-hosted");
-    aai(aaiBin, ["init", projectDir, "-t", "pizza-ordering", "--skip-deploy"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", "pizza-ordering"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
@@ -247,7 +247,7 @@ describe("self-hosted server: durable workflows", () => {
    */
   test("runs a durable workflow end to end under npm start", async ({ skip }) => {
     const projectDir = path.join(tmpDir, "_self-hosted-workflow");
-    aai(aaiBin, ["init", projectDir, "-t", "research-workflow", "--skip-deploy"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", "research-workflow"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
@@ -317,7 +317,7 @@ describe("aai dev: a scaffolded workflow template", () => {
 
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_dev-workflow");
-    aai(aaiBin, ["init", projectDir, "-t", "research-workflow", "--skip-deploy"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", "research-workflow"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
@@ -479,7 +479,7 @@ describe("bundled templates", () => {
     try {
       const detachedBin = detachedCli(aaiBin, detachedDir);
       const projectDir = path.join(tmpDir, "bundled-templates");
-      aai(detachedBin, ["init", projectDir, "-t", "pipeline-simple", "--skip-deploy"], tmpDir);
+      aai(detachedBin, ["init", projectDir, "-t", "pipeline-simple"], tmpDir);
 
       // A template file and a scaffold file: both dirs have to ship.
       expect(fs.existsSync(path.join(projectDir, "agent.ts"))).toBe(true);

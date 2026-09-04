@@ -70,12 +70,10 @@ const init = defineExec({
       alias: "t",
       description: "Template to use (prompted when omitted)",
     },
-    // Not `...platformArgs`: this command interleaves `yes` between the pair,
-    // and the spread would reorder its `--help` block for no gain.
-    server: sharedArgs.server,
+    // No `--server` and no `--skip-deploy`: `init` scaffolds and stops, so it
+    // never talks to a platform. Publishing is `aai publish`, in the project.
     yes: sharedArgs.yes,
     json: sharedArgs.json,
-    skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
   // It creates the directory it works in, and resolves the target itself.
   cwd: "none",
@@ -88,8 +86,6 @@ const init = defineExec({
         template: args.template,
         // JSON mode is non-interactive — accept defaults as if --yes was passed.
         yes: mode === "json" ? true : args.yes,
-        skipDeploy: args.skipDeploy,
-        server: args.server,
       },
       mode === "json" ? { silent: true } : undefined,
     );

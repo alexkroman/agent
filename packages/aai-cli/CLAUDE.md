@@ -227,7 +227,19 @@ existed: a 409 whose hint said to run `aai pull`, which then failed with
 "No studio project named …", so only `--force` recovered. The
 hidden `deploy` subcommand remains only because the guest's Publish
 (`aai-guest/studio-publish.ts`) executes it; a bare `aai` in a project
-offers to publish, and `aai init` publishes after scaffolding.
+offers to publish.
+
+**`aai init` SCAFFOLDS and stops — it does not publish, and takes no
+`--server` or `--skip-deploy`.** It used to deploy to production once the
+install succeeded, which made shipping a consequence of creating a directory:
+a first `aai init` reached for credentials the author might not have yet
+(publishing needs a login, so the common outcome was a scaffold plus a
+`Publish failed:` warning), and when it did succeed it put a template agent
+nobody had run at a public URL. `aai publish`, in the project, is the explicit
+step — which is also why the bare-`aai` path above CONFIRMS before publishing.
+`init.test.ts` keeps `executePublish` mocked purely to assert it is never
+called; the flag went with the behaviour rather than becoming a no-op, so
+`aai init --skip-deploy` now fails as an unknown flag (`findUnknownFlags`).
 
 **A pull that finds nothing PRINTS THE PROJECT LIST.** "No studio project
 named X" has two causes and the list is the only thing that separates them: a

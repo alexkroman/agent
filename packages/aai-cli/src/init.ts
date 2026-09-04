@@ -2,7 +2,6 @@
 
 import path from "node:path";
 import { styleText } from "node:util";
-import { omitUndefined } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
 import { execa } from "execa";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
@@ -14,18 +13,15 @@ import { AGENT_ENTRY, errorMessage, fileExists, readJson, resolveCwd } from "./_
 type InitData = {
   dir: string;
   template: string;
-  deployed: boolean;
-  slug?: string;
-  url?: string;
   /**
-   * Diagnostics a human sees as `log.warn` lines: a failed `pnpm install`, a
-   * failed publish, the publish skipped because of the former.
+   * Diagnostics a human sees as `log.warn` lines — today only a failed
+   * `pnpm install`.
    *
    * They have to ride the result for the same reason `PushOutcome.warnings`
    * does — `log.warn` is silenced in JSON mode and JSON mode is AUTO-DETECTED
-   * on a pipe, so a scripted `aai init` was told `{ ok: true, deployed: false }`
-   * for a project whose dependencies never installed and could not tell that
-   * apart from `--skipDeploy`.
+   * on a pipe, so a scripted `aai init` was told `{ ok: true }` for a project
+   * whose dependencies never installed and could not tell that apart from a
+   * clean run.
    */
   warnings?: string[];
 };
@@ -173,9 +169,14 @@ async function runPnpmInstall(cwd: string): Promise<void> {
   await execa(cmd, [...args, ...pnpmArgs], { cwd });
 }
 
-/** Install deps with pnpm. Returns true on success (or no deps to install). */
-async function installDeps(cwd: string, warn: Warn, silent?: boolean): Promise<boolean> {
-  if (!(await hasDeps(cwd))) return true;
+/**
+ * Install deps with pnpm, reporting a failure through `warn` rather than
+ * throwing: the project is scaffolded either way, and the two warnings say how
+ * to finish the install by hand. Nothing downstream branches on the outcome —
+ * `init` stops here — so it returns nothing.
+ */
+async function installDeps(cwd: string, warn: Warn, silent?: boolean): Promise<void> {
+  if (!(await hasDeps(cwd))) return;
   await ensurePnpm();
 
   try {
@@ -188,11 +189,9 @@ async function installDeps(cwd: string, warn: Warn, silent?: boolean): Promise<b
       },
       () => runPnpmInstall(cwd),
     );
-    return true;
   } catch (err: unknown) {
     warn(`pnpm install failed: ${errorMessage(err)}`);
     warn("Install pnpm (`npm install -g pnpm`), then run `pnpm install` in the project.");
-    return false;
   }
 }
 
@@ -219,31 +218,6 @@ function collectWarnings(): { warn: Warn; warnings: string[] } {
       log.warn(message);
     },
   };
-}
-
-/** Publish after init and return deploy metadata if successful. */
-async function tryPublish(
-  cwd: string,
-  server: string | undefined,
-  warn: Warn,
-): Promise<{ slug: string; url: string; studioUrl: string } | null> {
-  // Server defaulting (dev mode → localhost) is owned by resolveServerUrl
-  // inside executePublish — pass the explicit flag through untouched.
-  const { executePublish } = await import("./studio.ts");
-  try {
-    const result = await executePublish({ cwd, ...omitUndefined({ server }) });
-    if (result.ok) {
-      return { slug: result.data.slug, url: result.data.url, studioUrl: result.data.studioUrl };
-    }
-    warn(`Publish failed: ${result.error}`);
-    return null;
-  } catch (err) {
-    // The project was scaffolded and installed — a publish failure (server
-    // unreachable, bad key) must not fail the whole init.
-    warn(`Publish failed: ${errorMessage(err)}`);
-    warn("Your project was still created — run `aai publish` in it to retry.");
-    return null;
-  }
 }
 
 /** Scaffold the project, optionally showing a spinner. */
@@ -274,8 +248,6 @@ export async function executeInit(
     force?: boolean | undefined;
     template?: string | undefined;
     yes?: boolean | undefined;
-    skipDeploy?: boolean | undefined;
-    server?: string | undefined;
   },
   extra?: { silent?: boolean | undefined },
 ): Promise<CommandResult<InitData>> {
@@ -302,23 +274,18 @@ export async function executeInit(
   const { warn, warnings } = collectWarnings();
 
   await scaffoldProject(dir, cwd, template, suppressUi);
-  const installed = await installDeps(cwd, warn, suppressUi);
-
-  if (!installed) warn("Skipping publish because dependencies were not installed.");
-  // One record rather than three locals kept in sync: `deployed: true` with no
-  // slug was representable, and it would report a successful publish with no
-  // URL to open.
-  const published = installed && !opts.skipDeploy ? await tryPublish(cwd, opts.server, warn) : null;
+  // `init` SCAFFOLDS: it deliberately does not publish. Deploying to
+  // production is an outward-facing act, and doing it as a side effect of
+  // creating a directory means a fresh `aai init` reached for credentials the
+  // author may not have yet, and shipped a template agent nobody had run.
+  // `aai publish` is the explicit step, once `aai dev` says the agent works.
+  await installDeps(cwd, warn, suppressUi);
 
   if (!suppressUi) {
     printPostInitInfo(cwd, monorepoRoot);
   }
 
-  const data: InitData = { dir: cwd, template, deployed: published !== null };
-  if (published) {
-    data.slug = published.slug;
-    data.url = published.url;
-  }
+  const data: InitData = { dir: cwd, template };
   // Omitted when empty so a clean init's result stays exactly as before.
   if (warnings.length > 0) data.warnings = warnings;
   return ok(data);
