@@ -199,7 +199,7 @@ interface TextTurnOptions {
     onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
     prepareStep?: PrepareStepFunction<ToolSet>;
     signal?: AbortSignal;
-    stopWhen?: readonly ((opts: {
+    stopWhen?: readonly ((options: {
         steps: readonly StepResult<ToolSet>[];
     }) => boolean | PromiseLike<boolean>)[];
     systemPrompt?: string;
