@@ -60,7 +60,7 @@ export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThi
 export const MAX_MISSING_READS = 3;
 
 // @public
-type SessionCore = {
+type BrowserSession = {
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
@@ -86,9 +86,9 @@ type SessionError = {
 
 // @internal
 export function SessionProvider(input: {
-    value: SessionCore;
+    value: BrowserSession;
     children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<SessionCore | null>>;
+}): FunctionComponentElement<ProviderProps<BrowserSession | null>>;
 
 // @public
 type SessionSnapshot = {

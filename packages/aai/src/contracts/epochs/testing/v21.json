@@ -63,7 +63,7 @@
     "installStubUploads",
     "mockWorkflows",
     "ok",
-    "okPosition",
+    "expectDialogOk",
     "parseSchemaInput",
     "parseToolInput",
     "routeStepFetch",

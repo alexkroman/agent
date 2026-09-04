@@ -3,7 +3,7 @@
     "current": 3,
     "supported": [3],
     "dropped": {
-      "1": "Reaches the same required `fatal` on SessionError through this capability's rollup — client() surfaces the session error to a custom chrome. Constructing one stops compiling; reading one, which is what a client does, is unaffected.",
+      "1": "Reaches the same required `fatal` on SessionError through this capability's rollup — mountClient() surfaces the session error to a custom chrome. Constructing one stops compiling; reading one, which is what a client does, is unaffected.",
       "2": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here."
     }
   },

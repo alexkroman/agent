@@ -110,7 +110,7 @@ export function createSessionStateStore(opts: {
 // @internal
 export function createUploadStore(opts: {
     db?: Db | undefined;
-    blobs?: UploadBlobs | undefined;
+    blobs?: UploadBackend | undefined;
     localDir?: string | undefined;
     platform?: PlatformUploadRecordsOptions | undefined;
     prefix?: string | undefined;
@@ -453,14 +453,8 @@ export type ServerRoute = {
 // @internal
 export type ServerRouteMatch = "exact" | "prefix";
 
-// @internal
-export const SESSION_EVENT_TABLE = "aai_session_events";
-
-// @internal
-export const SESSION_STATE_TABLE = "aai_session_state";
-
 // @public
-type SessionCore = {
+type ServerSession = {
     readonly id: string;
     configure(config: ReadyConfig): void;
     start(): Promise<void>;
@@ -474,6 +468,12 @@ type SessionCore = {
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
 };
+
+// @internal
+export const SESSION_EVENT_TABLE = "aai_session_events";
+
+// @internal
+export const SESSION_STATE_TABLE = "aai_session_state";
 
 // @public
 type SessionEventPage = {
@@ -622,7 +622,7 @@ export { UPLOAD_PART_BYTES }
 export { UPLOAD_TOKEN_RE }
 
 // @public
-type UploadBlobs = {
+type UploadBackend = {
     put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
         type?: string | undefined;
         limit?: number | undefined;
@@ -686,8 +686,8 @@ export function workflowJournalDdl(schema?: string): string[];
 
 // @public
 type WsSessionOptions = {
-    sessions: OwnedMap<string, SessionCore>;
-    createSession: (sessionId: string, client: ClientSink) => SessionCore;
+    sessions: OwnedMap<string, ServerSession>;
+    createSession: (sessionId: string, client: ClientSink) => ServerSession;
     readyConfig: ReadyConfig;
     logContext?: Record<string, string>;
     onOpen?: () => void;

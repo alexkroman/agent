@@ -63,7 +63,7 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
 export const CHANNEL_POST_TIMEOUT_MS = 30000;
 
 // @public
-export function channelAdvice(channel: Channel, detail: string): string;
+export function explainChannelFailure(channel: Channel, detail: string): string;
 
 // @public
 export class ChannelDeliveryError extends Error {
@@ -91,7 +91,7 @@ export interface ChannelDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export interface ChannelKind {
+export interface ChannelHandler {
     readonly advice: (options: Record<string, unknown>, detail: string) => string;
     readonly kind: string;
     readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
@@ -131,10 +131,10 @@ export function isSlackWebhookUrl(value: string): boolean;
 export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
-export function registerChannelKind(kind: ChannelKind): void;
+export function registerChannelHandler(kind: ChannelHandler): void;
 
 // @public
-export function registeredChannelKinds(): readonly string[];
+export function registeredChannelKindNames(): readonly string[];
 
 // @public
 export function renderChannelPayload(channel: Channel, message: ChannelMessage): ChannelPayload;
@@ -149,7 +149,7 @@ export function renderSlackPlainText(message: ChannelMessage): string;
 export function sendToChannel(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
-export const SLACK_CHANNEL: ChannelKind;
+export const SLACK_CHANNEL_HANDLER: ChannelHandler;
 
 // @public
 export const SLACK_CHANNEL_KIND = "slack";
@@ -164,7 +164,7 @@ export type SlackChannel = Channel & {
 export function slackChannel(options: SlackChannelOptions): SlackChannel;
 
 // @public
-export function slackChannelAdvice(options: SlackChannelOptions, detail: string): string;
+export function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string;
 
 // @public
 export interface SlackChannelOptions {
@@ -1023,10 +1023,10 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 export const LOG_PREVIEW_CHARS = 200;
 
 // @public
-export function makeSttError(code: SttError["code"], message: string): SttError;
+export function createSttError(code: SttError["code"], message: string): SttError;
 
 // @public
-export function makeTtsError(code: TtsError["code"], message: string): TtsError;
+export function createTtsError(code: TtsError["code"], message: string): TtsError;
 
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
@@ -1754,7 +1754,7 @@ type WakeUpOptions = {
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -1778,7 +1778,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -2836,7 +2836,7 @@ type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow
 type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 export type WorkflowClient = {
@@ -2860,7 +2860,7 @@ export type WorkflowClient = {
 };
 
 // @public
-export type WorkflowCtx = {
+export type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -3313,7 +3313,7 @@ type WakeUpOptions = {
 export const WORKFLOW_API_PREFIX = "/workflows";
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -3337,7 +3337,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -3479,7 +3479,7 @@ export interface ModelOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
+export function openAILlm(opts: OpenAILlmOptions): LlmProvider;
 
 // @public
 export interface OpenAILlmOptions extends ModelOptions {
@@ -3489,7 +3489,7 @@ export interface OpenAILlmOptions extends ModelOptions {
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 // @public
-export function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
+export function openRouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 
 // @public
 export interface OpenRouterLlmOptions extends ModelOptions {
@@ -3509,10 +3509,10 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function xaiLlm(opts: XaiLlmOptions): LlmProvider;
+export function xAILlm(opts: XAILlmOptions): LlmProvider;
 
 // @public
-export interface XaiLlmOptions extends ModelOptions {
+export interface XAILlmOptions extends ModelOptions {
 }
 ```
 
@@ -4166,7 +4166,7 @@ export function withTools<D extends {
 }>(def: D, registry: ToolRegistry): D;
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -4190,7 +4190,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -4616,7 +4616,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function openaiS2s(opts?: OpenAIS2sOptions): S2sProvider;
+export function openAIS2s(opts?: OpenAIS2sOptions): S2sProvider;
 
 // @public
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {
@@ -4702,7 +4702,7 @@ export type PcmFormat = {
 };
 
 // @public
-export function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+export function stepReadUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
 
 // @public
 export type ReadUploadOptions = {
@@ -4711,10 +4711,10 @@ export type ReadUploadOptions = {
 };
 
 // @public
-export function report(line: string): Promise<void>;
+export function stepReport(line: string): Promise<void>;
 
 // @public
-export function requireCompleteUpload(id: string): Promise<UploadInfo>;
+export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
 
 // @public
 export function requireStepEnv(name: string): string;
@@ -4969,7 +4969,7 @@ export type UploadInfo = {
 };
 
 // @public
-export function uploadInfo(id: string): Promise<UploadInfo>;
+export function stepUploadInfo(id: string): Promise<UploadInfo>;
 
 // @public
 export type UploadRange = {
@@ -4992,7 +4992,7 @@ export const WAV_HEADER_BYTES = 44;
 export function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<ArrayBuffer>;
 
 // @public
-export function writeUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
+export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
 
 // @public
 export type WriteUploadOptions = {
@@ -5063,7 +5063,7 @@ export type RetryableErrorOptions = {
 };
 
 // @public
-export function sendToChannelClassified(channel: Channel, message: ChannelMessage): Promise<string>;
+export function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
 interface StandardSchemaIssue {
@@ -5107,13 +5107,13 @@ type StepFetchInit = {
 };
 
 // @public
-export function stepFetchOk(url: string, init?: StepFetchInit): Promise<Response>;
+export function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
 
 // @public
-export function stepGenerateClassified(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string>;
 
 // @public
-export function stepGenerateJsonClassified<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
 // @public
 type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
@@ -5132,20 +5132,20 @@ type StepGenerateOptions = {
 };
 
 // @public
-export function stepTranscribePollClassified(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+export function stepTranscribePollOrFail(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 
 // @public
-export function stepTranscribeSubmitClassified(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+export function stepTranscribeSubmitOrFail(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
     id: string;
 }>;
 
 // @public
-export function stepTranscribeSyncClassified(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
+export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 
 // @public
-export function stepTranscribeUploadClassified(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+export function stepTranscribeUploadOrFail(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
     audioUrl: string;
 }>;
 
@@ -5388,7 +5388,7 @@ export function createStubWorkflows(overrides?: Partial<WorkflowClient>): Workfl
 export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
-export function createWorkflowCtx(options?: WorkflowCtxOptions): WorkflowCtxRecorder;
+export function createWorkflowContext(options?: WorkflowContextOptions): WorkflowContextRecorder;
 
 // @public
 type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
@@ -5488,7 +5488,7 @@ type Message = {
 export function ok<T>(result: unknown): T;
 
 // @public
-export function okPosition<T>(result: unknown): DialogToolResult<T>;
+export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 
 // @public
 export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
@@ -6171,10 +6171,10 @@ type WakeUpOptions = {
 };
 
 // @public
-export const WORKFLOW_CTX_NOW = 1767225600000;
+export const WORKFLOW_CONTEXT_NOW = 1767225600000;
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -6198,7 +6198,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -6214,7 +6214,7 @@ type WorkflowCtx = {
 };
 
 // @public
-export type WorkflowCtxOptions = {
+export type WorkflowContextOptions = {
     runId?: string;
     workflow?: string;
     runSteps?: boolean;
@@ -6226,7 +6226,7 @@ export type WorkflowCtxOptions = {
 };
 
 // @public
-export type WorkflowCtxRecorder = WorkflowCtx & {
+export type WorkflowContextRecorder = WorkflowContext & {
     readonly steps: RecordedStep[];
     readonly slept: RecordedSleep[];
     readonly waited: string[];
@@ -6338,10 +6338,10 @@ export function installStubUploads(files: Readonly<Record<string, StubUpload>>, 
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-export function mockWorkflows(options?: MockWorkflowsOptions): WorkflowClient;
+export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
 
 // @public
-export type MockWorkflowsOptions = {
+export type StubWorkflowsOptions = {
     runs?: readonly WorkflowRunSnapshot[];
     names?: readonly string[];
     runId?: string;
@@ -6562,7 +6562,7 @@ type WakeUpOptions = {
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -6586,7 +6586,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -7006,15 +7006,15 @@ export type UploadOptions = {
     type?: string | undefined;
     signal?: AbortSignal | undefined;
     onProgress?: ((progress: UploadProgress) => void) | undefined;
-    parallel?: UploadParallel | undefined;
+    parallel?: UploadParallelOption | undefined;
     resume?: boolean | undefined;
 };
 
 // @public
-export type UploadParallel = boolean | UploadPartsSettings;
+export type UploadParallelOption = boolean | UploadPartsOptions;
 
 // @public
-export type UploadPartsSettings = {
+export type UploadPartsOptions = {
     partBytes?: number | undefined;
     concurrency?: number | undefined;
 };
@@ -7095,7 +7095,7 @@ export type WorkflowApi = {
     }): AsyncIterable<unknown>;
     wake(runId: string, options?: WakeUpOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    uploadInfo(id: string): Promise<UploadInfo>;
+    stepUploadInfo(id: string): Promise<UploadInfo>;
     download(id: string, options?: {
         signal?: AbortSignal;
     }): Promise<Blob>;
@@ -7109,7 +7109,7 @@ export type WorkflowApiClientOptions = {
 };
 
 // @public
-export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 export type WorkflowClient = {
@@ -7133,7 +7133,7 @@ export type WorkflowClient = {
 };
 
 // @public
-export type WorkflowCtx = {
+export type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -7363,19 +7363,19 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-export function callsIn(turns: readonly EvalTurn[]): readonly EvalToolCall[];
+export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolCall[];
 
 // @public
 export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
 
 // @public
-export function createFakeSttOpener(name: string): SttOpener & {
-    last(): FakeSttSession | undefined;
+export function createStubSttOpener(name: string): SttOpener & {
+    last(): StubSttSession | undefined;
 };
 
 // @public
-export function createFakeTtsOpener(name: string): TtsOpener & {
-    last(): FakeTtsSession | undefined;
+export function createStubTtsOpener(name: string): TtsOpener & {
+    last(): StubTtsSession | undefined;
 };
 
 // @public
@@ -7519,26 +7519,26 @@ export type EvalWorkflowsOptions = {
 };
 
 // @public
-export const FAKE_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
 
 // @public
-export type FakeSpeech = {
+export type StubSpeechProviders = {
     readonly stt: SttProvider;
     readonly tts: TtsProvider;
     readonly env: Record<string, string>;
-    sttSession(): FakeSttSession | undefined;
-    ttsSession(): FakeTtsSession | undefined;
+    sttSession(): StubSttSession | undefined;
+    ttsSession(): StubTtsSession | undefined;
     release(): void;
 };
 
 // @public
-export type FakeSttSession = SttSession & {
+export type StubSttSession = SttSession & {
     partial(text: string): void;
     commit(text: string): void;
 };
 
 // @public
-export type FakeTtsSession = TtsSession & {
+export type StubTtsSession = TtsSession & {
     readonly spoken: readonly string[];
 };
 
@@ -7548,7 +7548,7 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 }) => Promise<GenerateResult>;
 
 // @public
-export function installFakeSpeech(): FakeSpeech;
+export function installStubSpeechProviders(): StubSpeechProviders;
 
 // @public
 export function installStubLlm(script: StubScript): StubLlm;
@@ -7618,7 +7618,7 @@ export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, sche
 export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
 
 // @public
-export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolCall[];
+export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
 
 // @public
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
@@ -7944,7 +7944,7 @@ export type AgentServer = {
 };
 
 // @public
-export interface AgentServerOptions extends PassthroughServerOptions {
+export interface AgentServerOptions extends SharedServerOptions {
     agent: RuntimeOptions["agent"];
     clientDir?: string;
     db?: Db | undefined;
@@ -8022,7 +8022,7 @@ type CreateHeaderWebSocket = (url: string, opts: {
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
 // @public
-export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs;
+export function createHttpUploadBackend(opts: HttpUploadBackendOptions): UploadBackend;
 
 // @public (undocumented)
 export function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
@@ -8031,7 +8031,7 @@ export function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
 export function createMemoryKeyStore(): WorkflowKeyStore;
 
 // @public
-export function createMemoryUploadBlobs(): UploadBlobs;
+export function createMemoryUploadBackend(): UploadBackend;
 
 // @public (undocumented)
 type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
@@ -8061,7 +8061,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime;
 type CreateS2sWebSocket = CreateHeaderWebSocket;
 
 // @public
-export function createServer(options: ServerOptions): AgentServer;
+export function createRuntimeServer(options: ServerOptions): AgentServer;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
@@ -8073,7 +8073,7 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent;
 export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
 
 // @public
-export function decliningRuntime(message: string, logger?: Logger): SessionRuntime;
+export function rejectingRuntime(message: string, logger?: Logger): SessionRuntime;
 
 // @public
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
@@ -8146,7 +8146,7 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 }) => Promise<GenerateResult>;
 
 // @public
-export interface HostServerOptions extends PassthroughServerOptions {
+export interface HostServerOptions extends SharedServerOptions {
     defaults?: HostSessionDefaults;
     env?: Record<string, string>;
     name?: string;
@@ -8156,7 +8156,7 @@ export interface HostServerOptions extends PassthroughServerOptions {
 export type HostSessionDefaults = Omit<Partial<AgentDef>, "systemPrompt" | "greeting" | "tools" | "sttPrompt">;
 
 // @public (undocumented)
-export type HttpUploadBlobsOptions = {
+export type HttpUploadBackendOptions = {
     url: string;
     serviceKey: string;
     bucket: string;
@@ -8333,7 +8333,7 @@ export function partKey(prefix: string, id: string, at: number): string;
 export function partsOf(value: unknown): UploadPart[];
 
 // @public
-export type PassthroughServerOptions = {
+export type SharedServerOptions = {
     logger?: Logger | undefined;
     upgrade?: ServerOptions["upgrade"];
     request?: ServerOptions["request"];
@@ -8419,7 +8419,7 @@ export type Runtime = AgentRuntime & {
         agent: string;
         client: ClientSink;
         skipGreeting?: boolean;
-    }): SessionCore;
+    }): ServerSession;
 };
 
 // @public
@@ -8434,7 +8434,7 @@ export type RuntimeOptions = {
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
     publicUrl?: string | undefined;
     logger?: Logger | undefined;
-    s2sConfig?: S2SConfig | undefined;
+    s2sConfig?: S2sConfig | undefined;
     sessionStartTimeoutMs?: number | undefined;
     shutdownTimeoutMs?: number | undefined;
     executeTool?: ExecuteTool | undefined;
@@ -8457,7 +8457,7 @@ export type RuntimeOptions = {
 };
 
 // @public
-export type S2SConfig = {
+export type S2sConfig = {
     wssUrl: string;
     inputSampleRate: number;
     outputSampleRate: number;
@@ -8486,7 +8486,7 @@ export type ServerOptions = {
 export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
 
 // @public
-export type SessionCore = {
+export type ServerSession = {
     readonly id: string;
     configure(config: ReadyConfig): void;
     start(): Promise<void>;
@@ -8496,7 +8496,7 @@ export type SessionCore = {
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
-    report(event: TransportEventBody): void;
+    stepReport(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
 };
@@ -8579,7 +8579,7 @@ export type SessionWebSocket = {
 };
 
 // @public
-export type SkipGreeting = boolean | (() => boolean);
+export type SkipGreetingOption = boolean | (() => boolean);
 
 // @public
 type SleepEntry = SleepRecord & {
@@ -8731,7 +8731,7 @@ export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
 export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
 
 // @public
-export type UploadBlobs = {
+export type UploadBackend = {
     put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
         type?: string | undefined;
         limit?: number | undefined;
@@ -8956,7 +8956,7 @@ export function createSessionStateStore(opts: {
 // @internal
 export function createUploadStore(opts: {
     db?: Db | undefined;
-    blobs?: UploadBlobs | undefined;
+    blobs?: UploadBackend | undefined;
     localDir?: string | undefined;
     platform?: PlatformUploadRecordsOptions | undefined;
     prefix?: string | undefined;
@@ -9306,7 +9306,7 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
 export const SESSION_STATE_TABLE = "aai_session_state";
 
 // @public
-type SessionCore = {
+type ServerSession = {
     readonly id: string;
     configure(config: ReadyConfig): void;
     start(): Promise<void>;
@@ -9316,7 +9316,7 @@ type SessionCore = {
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
-    report(event: TransportEventBody): void;
+    stepReport(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
 };
@@ -9468,7 +9468,7 @@ export { UPLOAD_PART_BYTES }
 export { UPLOAD_TOKEN_RE }
 
 // @public
-type UploadBlobs = {
+type UploadBackend = {
     put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
         type?: string | undefined;
         limit?: number | undefined;
@@ -9532,8 +9532,8 @@ export function workflowJournalDdl(schema?: string): string[];
 
 // @public
 type WsSessionOptions = {
-    sessions: OwnedMap<string, SessionCore>;
-    createSession: (sessionId: string, client: ClientSink) => SessionCore;
+    sessions: OwnedMap<string, ServerSession>;
+    createSession: (sessionId: string, client: ClientSink) => ServerSession;
     readyConfig: ReadyConfig;
     logContext?: Record<string, string>;
     onOpen?: () => void;
@@ -9737,7 +9737,7 @@ import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { StateProjection } from '@alexkroman1/aai';
 import type { TextareaHTMLAttributes } from 'react';
-import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
+import type { UploadParallelOption } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
@@ -9813,7 +9813,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export function client(config: ClientConfig): ClientHandle;
+export function mountClient(config: ClientConfig): ClientHandle;
 
 // @public
 export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
@@ -9835,7 +9835,7 @@ export { ClientConfigResponse }
 
 // @public
 export type ClientHandle = {
-    session: SessionCore;
+    session: ServerSession;
     dispose(): void;
     [Symbol.dispose](): void;
 };
@@ -9881,7 +9881,7 @@ export type ConversationItem = {
 };
 
 // @public
-export function createSessionCore(options: VoiceSessionOptions): SessionCore;
+export function createBrowserSession(options: VoiceSessionOptions): ServerSession;
 
 // @public
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
@@ -9919,12 +9919,12 @@ export type FieldShell = {
 
 // @public
 export function FileField(input: FieldShell & {
-    read?: FileRead;
+    read?: FileReadMode;
     upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type FileRead = "none" | "text" | "dataUrl" | "upload";
+export type FileReadMode = "none" | "text" | "dataUrl" | "upload";
 
 // @public
 export type FileValue = {
@@ -9975,7 +9975,7 @@ export type MessageListProps = {
 export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export function page(config: PageConfig): PageHandle;
+export function mountPage(config: PageConfig): PageHandle;
 
 // @public
 export type PageConfig = {
@@ -10003,10 +10003,10 @@ export function SelectField(input: FieldShell & {
 export type Session = SessionSnapshot & SessionActions;
 
 // @public
-export type SessionActions = Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
+export type SessionActions = Pick<ServerSession, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
 
 // @public
-export type SessionCore = {
+export type ServerSession = {
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
@@ -10312,7 +10312,7 @@ export type UseWorkflowSubmitOptions = {
     recover?: boolean;
     wait?: number;
     intervalMs?: number;
-    parallel?: UploadParallel;
+    parallel?: UploadParallelOption;
 };
 
 // @public
@@ -10444,7 +10444,7 @@ export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThi
 export const MAX_MISSING_READS = 3;
 
 // @public
-type SessionCore = {
+type ServerSession = {
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
@@ -10470,9 +10470,9 @@ type SessionError = {
 
 // @internal
 export function SessionProvider(input: {
-    value: SessionCore;
+    value: ServerSession;
     children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<SessionCore | null>>;
+}): FunctionComponentElement<ProviderProps<ServerSession | null>>;
 
 // @public
 type SessionSnapshot = {

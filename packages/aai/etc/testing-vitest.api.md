@@ -39,19 +39,11 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 // @public
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
+// @public
+export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
-
-// @public
-export function mockWorkflows(options?: MockWorkflowsOptions): WorkflowClient;
-
-// @public
-export type MockWorkflowsOptions = {
-    runs?: readonly WorkflowRunSnapshot[];
-    names?: readonly string[];
-    runId?: string;
-    lastLine?: unknown;
-};
 
 // @public
 type SleepOptions = {
@@ -248,6 +240,14 @@ type StubUploadWrite = {
 };
 
 // @public
+export type StubWorkflowsOptions = {
+    runs?: readonly WorkflowRunSnapshot[];
+    names?: readonly string[];
+    runId?: string;
+    lastLine?: unknown;
+};
+
+// @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
@@ -267,7 +267,7 @@ type WakeUpOptions = {
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -291,7 +291,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;

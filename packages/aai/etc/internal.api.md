@@ -393,7 +393,7 @@ type WakeUpOptions = {
 export const WORKFLOW_API_PREFIX = "/workflows";
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -417,7 +417,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;

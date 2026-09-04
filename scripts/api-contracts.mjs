@@ -109,6 +109,8 @@ const { values: FLAGS } = parseScriptArgs({
     bump: { type: "string" },
     drop: { type: "string" },
     retain: { type: "boolean" },
+    retire: { type: "string" },
+    epoch: { type: "string" },
     init: { type: "boolean" },
     "update-internal": { type: "boolean" },
   },
@@ -199,6 +201,77 @@ function resolveTarget(target) {
           `${matches.map(({ pkg, capability }) => capabilityId(pkg, capability)).join(" or ")}.`,
   );
   process.exit(1);
+}
+
+/**
+ * Withdraw a promise about an OLDER epoch that is still advertised as supported.
+ *
+ * `bump` only ever touches `contract.current`, which is right for the ordinary
+ * case: a surface moves, the epoch that just stopped being current is the one
+ * whose status is in question. A RENAME is the case it cannot express. Removing
+ * a name invalidates every supported epoch whose frozen example uses it, all at
+ * once and regardless of age — `aai:step` advertised 3, 5 and 8, and dropping
+ * `emit`/`report` left the examples for 3 and 5 unable to compile while the
+ * table still called them supported.
+ *
+ * That state is the one thing this gate exists to prevent: a promise the tree
+ * contradicts. It was also unreachable through the CLI, so the only way to
+ * record the truth was to hand-edit the table `writeTable` owns — which is how
+ * a classification ends up attributed to nobody. Hence this mode. It refuses
+ * the current epoch (that is `--bump --drop`'s job) and refuses an epoch the
+ * table does not advertise, because both would record a verdict about
+ * something other than a live promise.
+ */
+function retire(target) {
+  const { pkg, capability } = resolveTarget(target);
+  const id = capabilityId(pkg, capability);
+  const reason = FLAGS.drop;
+  if (reason === undefined || reason.trim() === "") {
+    console.error('api-contracts: `--retire` needs `--drop "<reason>"` — it is what a future reader reads.');
+    process.exit(1);
+  }
+  const epoch = Number(FLAGS.epoch);
+  if (!Number.isInteger(epoch) || epoch < 1) {
+    console.error("api-contracts: `--retire` needs `--epoch <n>`, a positive integer.");
+    process.exit(1);
+  }
+  const table = readTable(pkg);
+  const contract = table[capability];
+  if (contract === undefined) {
+    console.error(`api-contracts: "${id}" has no contract yet — run --init.`);
+    process.exit(1);
+  }
+  if (epoch === contract.current) {
+    console.error(
+      `api-contracts: epoch ${epoch} is "${id}"'s CURRENT epoch. Retiring the current ` +
+        "epoch is what `--bump --drop` does, and it records the successor too.",
+    );
+    process.exit(1);
+  }
+  if (!contract.supported.includes(epoch)) {
+    console.error(
+      `api-contracts: "${id}" does not advertise epoch ${epoch} as supported ` +
+        `(supported: ${contract.supported.join(", ")}), so there is no promise to withdraw.`,
+    );
+    process.exit(1);
+  }
+  table[capability] = {
+    current: contract.current,
+    supported: contract.supported.filter((version) => version !== epoch),
+    dropped: { ...contract.dropped, [epoch]: reason },
+  };
+  writeTable(pkg, table);
+  // Same argument as `bump`'s: a dropped epoch's example does not compile, and
+  // it sits under the package tsconfig, so leaving it behind turns the
+  // classification into a red `pnpm typecheck`. The epoch record keeps history.
+  const retired = fixturePath(pkg, capability, epoch);
+  const had = existsSync(retired);
+  if (had) rmSync(retired);
+  console.log(
+    `api-contracts: "${id}" epoch ${epoch}: DROPPED — ${reason}\n` +
+      `  still supported: ${table[capability].supported.join(", ") || "(none but current)"}\n` +
+      (had ? `  removed its frozen example ${rel(retired)}.\n` : "  it had no frozen example.\n"),
+  );
 }
 
 function bump(target) {
@@ -302,6 +375,12 @@ if (FLAGS["update-internal"] === true) {
     writeInternalSurface(pkg, internalSurfaceSnapshot(authoringSurface(pkg).internalNames));
   }
   console.log("api-contracts: internal-surface baselines lowered to match the tree.");
+  process.exit(0);
+}
+
+const retireTarget = FLAGS.retire;
+if (retireTarget !== undefined) {
+  retire(retireTarget);
   process.exit(0);
 }
 

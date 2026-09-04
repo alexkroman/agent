@@ -76,7 +76,7 @@ export interface ModelOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
+export function openAILlm(opts: OpenAILlmOptions): LlmProvider;
 
 // @public
 export interface OpenAILlmOptions extends ModelOptions {
@@ -86,7 +86,7 @@ export interface OpenAILlmOptions extends ModelOptions {
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 // @public
-export function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
+export function openRouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 
 // @public
 export interface OpenRouterLlmOptions extends ModelOptions {
@@ -106,10 +106,10 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function xaiLlm(opts: XaiLlmOptions): LlmProvider;
+export function xAILlm(opts: XAILlmOptions): LlmProvider;
 
 // @public
-export interface XaiLlmOptions extends ModelOptions {
+export interface XAILlmOptions extends ModelOptions {
 }
 
 // (No @packageDocumentation comment for this package)

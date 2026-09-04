@@ -58,7 +58,7 @@ export function createStubWorkflows(overrides?: Partial<WorkflowClient>): Workfl
 export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
-export function createWorkflowCtx(options?: WorkflowCtxOptions): WorkflowCtxRecorder;
+export function createWorkflowContext(options?: WorkflowContextOptions): WorkflowContextRecorder;
 
 // @public
 type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
@@ -91,6 +91,12 @@ interface DialogPosition {
 interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
+
+// @public
+export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+
+// @public
+export function expectToolOk<T>(result: unknown): T;
 
 // @public
 type FindOptions = {
@@ -153,12 +159,6 @@ type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
 };
-
-// @public
-export function ok<T>(result: unknown): T;
-
-// @public
-export function okPosition<T>(result: unknown): DialogToolResult<T>;
 
 // @public
 export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
@@ -841,10 +841,10 @@ type WakeUpOptions = {
 };
 
 // @public
-export const WORKFLOW_CTX_NOW = 1767225600000;
+export const WORKFLOW_CONTEXT_NOW = 1767225600000;
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -868,7 +868,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -884,7 +884,7 @@ type WorkflowCtx = {
 };
 
 // @public
-export type WorkflowCtxOptions = {
+export type WorkflowContextOptions = {
     runId?: string;
     workflow?: string;
     runSteps?: boolean;
@@ -896,7 +896,7 @@ export type WorkflowCtxOptions = {
 };
 
 // @public
-export type WorkflowCtxRecorder = WorkflowCtx & {
+export type WorkflowContextRecorder = WorkflowContext & {
     readonly steps: RecordedStep[];
     readonly slept: RecordedSleep[];
     readonly waited: string[];

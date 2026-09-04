@@ -21,7 +21,7 @@ import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { StateProjection } from '@alexkroman1/aai';
 import type { TextareaHTMLAttributes } from 'react';
-import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
+import type { UploadParallelOption } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
@@ -97,7 +97,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export function client(config: ClientConfig): ClientHandle;
+export function mountClient(config: ClientConfig): ClientHandle;
 
 // @public
 export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
@@ -119,7 +119,7 @@ export { ClientConfigResponse }
 
 // @public
 export type ClientHandle = {
-    session: SessionCore;
+    session: BrowserSession;
     dispose(): void;
     [Symbol.dispose](): void;
 };
@@ -165,7 +165,7 @@ export type ConversationItem = {
 };
 
 // @public
-export function createSessionCore(options: VoiceSessionOptions): SessionCore;
+export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
@@ -203,12 +203,12 @@ export type FieldShell = {
 
 // @public
 export function FileField(input: FieldShell & {
-    read?: FileRead;
+    read?: FileReadMode;
     upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type FileRead = "none" | "text" | "dataUrl" | "upload";
+export type FileReadMode = "none" | "text" | "dataUrl" | "upload";
 
 // @public
 export type FileValue = {
@@ -259,7 +259,7 @@ export type MessageListProps = {
 export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export function page(config: PageConfig): PageHandle;
+export function mountPage(config: PageConfig): PageHandle;
 
 // @public
 export type PageConfig = {
@@ -287,10 +287,10 @@ export function SelectField(input: FieldShell & {
 export type Session = SessionSnapshot & SessionActions;
 
 // @public
-export type SessionActions = Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
+export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
 
 // @public
-export type SessionCore = {
+export type BrowserSession = {
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
@@ -596,7 +596,7 @@ export type UseWorkflowSubmitOptions = {
     recover?: boolean;
     wait?: number;
     intervalMs?: number;
-    parallel?: UploadParallel;
+    parallel?: UploadParallelOption;
 };
 
 // @public
