@@ -29,6 +29,8 @@
  * existing project already does.
  */
 
+import path from "node:path";
+
 /** The targets `aai build --target` accepts. */
 export const BUILD_TARGETS = ["node", "vercel"] as const;
 
@@ -85,43 +87,160 @@ export function resolveBuildTarget(
 }
 
 /**
- * The Vercel function entry, emitted into the build output.
+ * Where a PREBUILT Vercel deployment lives, relative to the project root.
  *
- * `export default <http.Server>` is Vercel's documented Node WebSocket shape —
- * they bind the socket and deliver upgrades themselves — which is exactly what
- * `AgentServer.node` is, so the whole adapter is these few lines. It is
- * GENERATED rather than committed for the reason at the top of this module.
+ * The Build Output API rather than an `api/` entry plus a `vercel.json`, and
+ * the reason is ORDERING. Vercel reads `vercel.json` and decides what to build
+ * BEFORE it runs the build command, so a `vercel.json` that the build WRITES
+ * configures the NEXT deployment and not this one — a clean clone deploys with
+ * no rewrite and no function at all. The `api/` shape only ever appeared to
+ * work because a previous local `aai build --target vercel` had left both
+ * files in the working tree, which is a property of one laptop rather than of
+ * the repository. `.vercel/output/` is read AFTER the build command; it is the
+ * only place a build can describe its own deployment.
  *
- * Top-level `await` is deliberate and required: the platform reads the module's
- * default export, so the server has to exist by the time evaluation finishes.
+ * Two more things fall out of owning the directory, both of which the `api/`
+ * shape got wrong and could not fix. The function bundle is ASSEMBLED here
+ * rather than traced, so `.aai/worker.mjs` — loaded through a dynamic
+ * `import(pathToFileURL(...))` that no static tracer can follow — and
+ * `.env.example` — the file that DECLARES which variables become `ctx.env` —
+ * are present because they were copied in. And the built client is served by
+ * the CDN out of `static/` instead of through the function.
  *
- * `process.cwd()` rather than a path relative to this file: Vercel runs a
- * function with the project root as the working directory, and the emitted file
- * sits at a depth that depends on where the platform relocates it.
+ * Nitro's vercel preset is the worked precedent and lands in exactly here:
+ * `output.dir = {{rootDir}}/.vercel/output`, `serverDir` a `.func` under it.
+ *
+ * @see https://vercel.com/docs/build-output-api/v3
+ */
+export const VERCEL_OUTPUT_DIR = path.join(".vercel", "output");
+
+/**
+ * The one function every request that is not a static file reaches.
+ *
+ * Named `index.func` because the Build Output API derives a function's ROUTE
+ * from its path — `functions/index.func` is served at `/index`, which is what
+ * {@link VERCEL_BUILD_CONFIG_SOURCE}'s catch-all names as its `dest`.
+ */
+export const VERCEL_FUNCTION_DIR = path.join(VERCEL_OUTPUT_DIR, "functions", "index.func");
+
+/** Static assets the Vercel CDN serves directly, never reaching the function. */
+export const VERCEL_STATIC_DIR = path.join(VERCEL_OUTPUT_DIR, "static");
+
+/**
+ * Node versions Vercel offers. A build on anything newer picks the newest of
+ * these rather than naming a runtime the platform will reject.
+ *
+ * @see https://vercel.com/docs/functions/runtimes/node-js/node-js-versions
+ */
+const SUPPORTED_NODE_MAJORS = [20, 22, 24] as const;
+
+/** `nodejs<major>.x` for the Node running this build, clamped to what Vercel offers. */
+export function vercelNodeRuntime(version: string = process.versions.node): string {
+  const major = Number.parseInt(version.split(".")[0] ?? "", 10);
+  const supported = Number.isNaN(major)
+    ? 22
+    : (SUPPORTED_NODE_MAJORS.findLast((v) => v <= major) ?? SUPPORTED_NODE_MAJORS[0]);
+  return `nodejs${supported}.x`;
+}
+
+/**
+ * The Vercel function entry, emitted into {@link VERCEL_FUNCTION_DIR}.
+ *
+ * ## Why a `(req, res)` handler and not `export default server`
+ *
+ * `export default <http.Server>` is what Vercel's own `@vercel/node` BUILDER
+ * accepts, and it is the shape the previous `api/index.mjs` used. The Build
+ * Output API has no builder in the path: `launcherType: "Nodejs"` invokes the
+ * module's default export as a request handler, so the server never gets
+ * bound and there is nothing to raise an `upgrade` event on it.
+ *
+ * ## How a WebSocket survives that
+ *
+ * Vercel hands a Node function the raw upgrade through its PER-REQUEST
+ * context — `globalThis[Symbol.for("@vercel/request-context")].get()
+ * .upgradeWebSocket()` returns the `{ req, socket, head }` triple — rather
+ * than as an event. Nitro reaches it through `crossws/adapters/vercel`; here
+ * the adapter is three lines, because {@link AgentServer.node} is a real
+ * `http.Server` that already has both an `upgrade` and a `request` listener
+ * registered. Re-emitting onto it is the whole translation, and it means the
+ * deployed path through `server.ts` is the same one `aai dev` and `aai start`
+ * take — no second WebSocket entry point to keep in step.
+ *
+ * The `204` afterwards is what the launcher needs to consider the invocation
+ * finished; the socket the agent is now talking on is not this `res`.
+ *
+ * ## `import.meta.dirname`, not `process.cwd()`
+ *
+ * The function's working directory belongs to the platform, but `.aai/` and
+ * `.env.example` were copied in BESIDE this file. Resolving from the module
+ * keeps that a fact about the bundle rather than about how Vercel happens to
+ * invoke it.
  */
 export const VERCEL_ENTRY_SOURCE = `// Generated by \`aai build --target vercel\` — do not edit, and do not commit.
-// Vercel binds this server and delivers WebSocket upgrades to it; nothing here
-// calls listen(). See @alexkroman1/aai-cli/start.
+// Vercel invokes this handler per request and delivers a WebSocket upgrade
+// through its request context. See @alexkroman1/aai-cli/start.
 import { createProjectServer } from "@alexkroman1/aai-cli/start";
 
-export default (await createProjectServer({ cwd: process.cwd() })).node;
+const server = (await createProjectServer({ cwd: import.meta.dirname })).node;
+
+const REQUEST_CONTEXT = Symbol.for("@vercel/request-context");
+
+export default function handler(req, res) {
+  if (req.method === "GET" && req.headers.upgrade?.toLowerCase() === "websocket") {
+    const upgrade = globalThis[REQUEST_CONTEXT]?.get?.()?.upgradeWebSocket?.();
+    if (upgrade) {
+      server.emit("upgrade", upgrade.req, upgrade.socket, upgrade.head);
+      if (!res.headersSent && !res.writableEnded) {
+        res.statusCode = 204;
+        res.end();
+      }
+      return;
+    }
+  }
+  server.emit("request", req, res);
+}
 `;
 
 /**
- * The `vercel.json` the emitted entry needs.
+ * `.vc-config.json` — how the platform runs {@link VERCEL_ENTRY_SOURCE}.
  *
- * Two things it must say. The entry is a NODE function, not an edge one —
- * WebSockets need the Node runtime — and every request routes to it, because
- * this server serves its own static assets from `clientDir` and owns
- * `/websocket`, `/workflows/*` and the webhook path. Routing static files
- * through the CDN instead would be faster and is deliberately not attempted
- * here: it means the Build Output API, which is a much larger change than an
- * entry file, and it is not what makes a deployment work or not.
+ * `supportsResponseStreaming` is not optional here: an agent streams TTS audio
+ * and SSE workflow events, and without it the platform buffers a response to
+ * completion, which for a stream that ends when the call does means it never
+ * arrives. `shouldAddHelpers` stays off — the entry speaks `node:http`, and
+ * the helpers exist to bolt Express-shaped sugar onto a handler that does not.
  */
-export const VERCEL_CONFIG_SOURCE = `${JSON.stringify(
+export function vercelFunctionConfigSource(runtime: string = vercelNodeRuntime()): string {
+  return `${JSON.stringify(
+    {
+      runtime,
+      handler: "index.mjs",
+      launcherType: "Nodejs",
+      shouldAddHelpers: false,
+      supportsResponseStreaming: true,
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+/**
+ * `config.json` — the routing table, and the reason static assets stop paying
+ * for a function invocation.
+ *
+ * `{ "handle": "filesystem" }` serves anything present in
+ * {@link VERCEL_STATIC_DIR} from the CDN and only then falls through, so the
+ * client bundle, its assets and the worklets are edge-served while
+ * `/client-config`, `/websocket`, `/workflows/*` and the webhook route reach
+ * the agent. The `api/` shape routed EVERY request through the function, which
+ * this file's earlier revision noted as deliberate and "not what makes a
+ * deployment work or not" — true of correctness, false of cost, and free here
+ * because the Build Output API already separates the two directories.
+ */
+export const VERCEL_BUILD_CONFIG_SOURCE = `${JSON.stringify(
   {
-    $schema: "https://openapi.vercel.sh/vercel.json",
-    rewrites: [{ source: "/(.*)", destination: "/api/index" }],
+    version: 3,
+    routes: [{ handle: "filesystem" }, { src: "/(.*)", dest: "/index" }],
   },
   null,
   2,

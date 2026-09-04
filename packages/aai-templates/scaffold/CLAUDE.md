@@ -173,12 +173,12 @@ sandbox and refuses outside one.
 
 ### Deploying to a host that wants its own entry file
 
-`aai build --target <host>` writes the entry that host expects into the build
-output. Nothing host-specific lives in your project: the files are generated,
-gitignored, and rewritten by the host's own build.
+`aai build --target <host>` writes the deployment that host expects into the
+build output. Nothing host-specific lives in your project: the files are
+generated, gitignored, and rewritten by the host's own build.
 
 ```sh
-aai build --target vercel   # writes api/index.mjs and vercel.json
+aai build --target vercel   # writes .vercel/output/ (Build Output API v3)
 ```
 
 You rarely type it. The target is detected from the host's own build
@@ -187,9 +187,10 @@ configured; `--target node`, the default everywhere else, emits nothing extra
 and is what `npm start` runs.
 
 One thing to know before deploying a VOICE agent to a serverless host: the
-session is a WebSocket, so the host has to support one. Vercel does (it binds
-the exported server and delivers upgrades to it). A host that serves only
-request/response still runs the HTTP surface — `/health`, `/client-config`,
+session is a WebSocket, so the host has to support one. Vercel does — it hands
+the function the raw upgrade, and the emitted entry passes it to the same
+server `aai dev` runs. A host that serves only request/response still runs the
+HTTP surface — `/health`, `/client-config`,
 `/workflows/*` and your static assets — which is everything a workflow app
 needs and none of what a voice agent needs.
 

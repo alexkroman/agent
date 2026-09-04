@@ -17,16 +17,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
-import {
-  type BuildTarget,
-  resolveBuildTarget,
-  VERCEL_CONFIG_SOURCE,
-  VERCEL_ENTRY_SOURCE,
-} from "./_build-target.ts";
+import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
+import { type BuildTarget, resolveBuildTarget, VERCEL_OUTPUT_DIR } from "./_build-target.ts";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
+import { emitVercelOutput } from "./_vercel-output.ts";
 import { determinismWarnings, scanWorkflowDeterminism } from "./_workflow-determinism.ts";
 import { classifyVitestError, runVitest, TEST_FILES } from "./test.ts";
 
@@ -39,7 +36,7 @@ import { classifyVitestError, runVitest, TEST_FILES } from "./test.ts";
  * pair is covered end-to-end by the `npm start` leg of `e2e.test.ts` — the only
  * tier that runs both halves as a user does.
  */
-export const WORKER_ARTIFACT_REL = path.join(".aai", "worker.mjs");
+export { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 
 type BuildData = {
   name: string;
@@ -186,19 +183,16 @@ export async function executeBuild(opts: {
 }
 
 /**
- * Write the host entry a target needs, if it needs one.
+ * Write what a target needs, if it needs anything.
  *
  * `node` writes nothing: a long-lived process runs `aai start`, which needs no
- * generated file. The Vercel pair goes to `api/index.mjs` plus `vercel.json` at
- * the project root, because that is where Vercel's own builder looks — and both
- * are GENERATED, so `aai init` adds them to `.gitignore` rather than committing
- * them.
+ * generated file. `vercel` writes a complete prebuilt deployment under
+ * `.vercel/output/` — see `_vercel-output.ts`, and `VERCEL_OUTPUT_DIR` in
+ * `_build-target.ts` for why that directory and not an `api/` entry beside a
+ * generated `vercel.json`.
  */
 async function emitTargetFiles(cwd: string, target: BuildTarget): Promise<void> {
   if (target === "node") return;
-  const entry = path.join(cwd, "api", "index.mjs");
-  await fs.mkdir(path.dirname(entry), { recursive: true });
-  await fs.writeFile(entry, VERCEL_ENTRY_SOURCE, "utf-8");
-  await fs.writeFile(path.join(cwd, "vercel.json"), VERCEL_CONFIG_SOURCE, "utf-8");
-  log.info(`Target ${target}: wrote api/index.mjs and vercel.json`);
+  await emitVercelOutput(cwd);
+  log.info(`Target ${target}: wrote ${VERCEL_OUTPUT_DIR}`);
 }

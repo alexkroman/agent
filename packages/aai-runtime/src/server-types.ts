@@ -186,7 +186,7 @@ export type AgentServer = {
    * nothing.
    *
    * ```ts
-   * // api/index.ts — deployed to Vercel
+   * // deployed to Vercel through its own `@vercel/node` builder
    * import { agent } from "@alexkroman1/aai";
    * import { createAgentServer } from "@alexkroman1/aai-runtime";
    *
@@ -198,14 +198,26 @@ export type AgentServer = {
    * export default server.node; // no listen() — the platform binds it
    * ```
    *
-   * Two things a host that binds this itself owns. **`close()` still works** —
-   * it closes whatever is listening, so it does not care which side called
-   * `listen`. And **a platform that does not deliver the `upgrade` event
-   * serves no WebSocket**: Vercel Functions are request/response only, so
-   * `WS /websocket` and `WS /phone` are unreachable there however this server
-   * is mounted. The HTTP surface — `/health`, `/client-config`,
-   * `/workflows/*`, the webhook route, static assets — is unaffected, which is
-   * what a `page: "static"` workflow app needs and all it needs.
+   * **`close()` still works** — it closes whatever is listening, so it does not
+   * care which side called `listen`.
+   *
+   * ## A host that never raises `upgrade` can still serve a WebSocket
+   *
+   * This used to say Vercel Functions were request/response only and that
+   * `WS /websocket` and `WS /phone` were therefore unreachable there. That is
+   * wrong, and it is the claim a voice agent's whole deployment turns on. What
+   * is true is narrower: some hosts do not raise the EVENT. Vercel exposes the
+   * raw `{ req, socket, head }` through a per-request context instead
+   * (`globalThis[Symbol.for("@vercel/request-context")].get().upgradeWebSocket()`),
+   * and re-emitting that triple onto this server is the whole adapter — see
+   * `VERCEL_ENTRY_SOURCE` in `@alexkroman1/aai-cli`, which `aai build --target
+   * vercel` emits, and which is verified against a real handshake.
+   *
+   * So the rule is: reach for the host's own upgrade channel before concluding
+   * it has none. A host that genuinely has neither still runs the HTTP surface
+   * — `/health`, `/client-config`, `/workflows/*`, the webhook route, static
+   * assets — which is what a `page: "static"` workflow app needs and all it
+   * needs.
    */
   node: http.Server;
 };

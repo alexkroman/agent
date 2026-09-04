@@ -54,12 +54,11 @@ import {
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
+import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
-import { WORKER_ARTIFACT_REL } from "./build.ts";
 
-/** Where `aai build` leaves the built browser client, relative to the root. */
-export const CLIENT_ARTIFACT_REL = path.join(".aai", "client");
+export { CLIENT_ARTIFACT_REL } from "./_artifacts.ts";
 
 /** The port `aai start` binds when neither an argument nor `PORT` says otherwise. */
 export const DEFAULT_START_PORT = 3000;
@@ -125,12 +124,17 @@ function resolveClientDir(cwd: string): string {
  *
  * @example
  * ```ts no-check
- * // api/index.mjs, emitted by `aai build --target vercel` — `no-check` because
- * // this file lives in the USER's project, where `@alexkroman1/aai-cli/start`
- * // resolves; it cannot resolve from inside this package.
+ * // The entry `aai build --target vercel` bundles into
+ * // `.vercel/output/functions/index.func/` — `no-check` because this file
+ * // lives in the USER's project, where `@alexkroman1/aai-cli/start` resolves;
+ * // it cannot resolve from inside this package.
  * import { createProjectServer } from "@alexkroman1/aai-cli/start";
  *
- * export default (await createProjectServer({ cwd: process.cwd() })).node;
+ * const server = (await createProjectServer({ cwd: import.meta.dirname })).node;
+ *
+ * export default function handler(req, res) {
+ *   server.emit("request", req, res);
+ * }
  * ```
  */
 export async function createProjectServer(options: StartOptions): Promise<AgentServer> {
