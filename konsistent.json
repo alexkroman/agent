@@ -1956,6 +1956,167 @@
           }
         ]
       }
+    },
+    {
+      "name": "eval-case-registration",
+      "description": "Every eval file registers its cases through `registerEvalCases` from `./_register.ts`, and that indirection is MECHANICAL rather than stylistic. Biome's `noMisplacedAssertion` accepts an `expect` only inside a literal `test(` call, so a case reached through an alias — `const run = matches ? test : test.skip`, or `test.skipIf(…)(…)`, which is exactly what a tier that skips without a live key needs — is a lint error at every assertion in the file. `_register.ts` holds that alias once, so a case body keeps its `expect`s. The selection logic rides along and has to: `AAI_EVAL_ONLY` is ONE variable across the whole tier, and a file it selects nothing from must WARN (naming what it could have matched) rather than fail, because each eval file sees only its own cases in its own vitest worker — so a second copy of that rule would answer the same filter differently in one file than in the next, which reads as the filter working.",
+      "paths": "packages/aai-evals/src/*.eval.test.ts",
+      "must": {
+        "import": [
+          {
+            "name": "registerEvalCases",
+            "from": "./_register.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "eval-turn-terminators",
+      "description": "What ENDS a reply is declared ONCE — `TURN_ENDS` in `@alexkroman1/aai-runtime/eval` — and `assertions.ts` imports it rather than restating it, along with `saidIn` and `toolCallsInEvents`, the two event readers it partitions a run into turns with. It WAS written out in both places, and the two must agree by construction: `openEvalSession`'s `say()` waits on that set to decide a reply has ended, and these assertions use the same set to decide which turn a tool call was in. A third terminator added to one copy makes `say()` return mid-reply while the assertions still think the turn is open — which reads as the agent misbehaving rather than as a harness bug, and is the exact shape of one of the two harness bugs this tier's first live run found (`say()` settled on the PREVIOUS reply's cancel, so a case recorded \"called no tools\" against a working agent, i.e. a green harness reporting a broken agent). The declaration now crosses a package boundary, the level-1 target having been published so a template can drive its own agent from text, which is what makes an import the only honest spelling of the rule.",
+      "paths": "packages/aai-evals/src/assertions.ts",
+      "must": {
+        "import": [
+          {
+            "name": "TURN_ENDS",
+            "from": "@alexkroman1/aai-runtime/eval"
+          },
+          {
+            "name": "saidIn",
+            "from": "@alexkroman1/aai-runtime/eval"
+          },
+          {
+            "name": "toolCallsInEvents",
+            "from": "@alexkroman1/aai-runtime/eval"
+          }
+        ]
+      }
+    },
+    {
+      "name": "eval-gate-is-not-unit-tier",
+      "description": "`_gate.ts` may not be imported by anything the UNIT tier loads. Importing it RESOLVES a credential and ANNOUNCES at import time — or, under `AAI_REQUIRE_EVAL`, throws — so a unit-tested module reading one setting from there fails its whole file on any machine with that variable set and no key. Verified before it landed, and it is why the tier's side-effect-free settings live in `_env.ts` (`envValue` / `envFlag` / `envInt`, plus `evalStepCapHint`) while `_gate.ts` keeps only the POLICY: which precondition a tier has, what a missing one means, and when a skip becomes a failure. The two files that may import it are the two the unit tier never loads — an `*.eval.test.ts`, excluded by this package's `vitest.config.ts` and selected only by `test:eval`, and `_register.ts`, which nothing but those files imports. That pair is also why neither has a co-located spec; see `eval-module-has-unit-test`. Note konsistent sees a STATIC import only, so a module reaching the gate through `await import(\"./_gate.ts\")` is invisible here — which is a reason not to write one, since the announce happens on evaluation either way.",
+      "paths": [
+        "packages/aai-evals/src/*.ts",
+        "!packages/aai-evals/src/*.eval.test.ts",
+        "!packages/aai-evals/src/_gate.ts",
+        "!packages/aai-evals/src/_register.ts"
+      ],
+      "mustNot": {
+        "importFrom": "./_gate.ts"
+      }
+    },
+    {
+      "name": "eval-module-has-unit-test",
+      "description": "Every module in this package has a co-located `*.test.ts`, because the one that did not was the one deciding what all the others MEANT. `gradeStarter` — which chooses which expectation functions run, under what label, and holds the failure taxonomy — sat in `starter.eval.test.ts`, a file `vitest.config.ts` excludes, so every function it called was unit-tested while the thing calling them was not. The labels are the load-bearing part: they are the keys `EvalReport.unstable` reports and the strings `AAI_EVAL_ONLY` matches, so renaming one silently resets an assertion's flip history with nothing red. The same shape one level down is why the corpus moved INTO the package: as `scripts/starter-eval/expectations.mjs` its eval-only half (`parseLoadedConfig`, `checkMode`, `checkWorkflowShape`, `checkUi`) was in no coverage report at all, exercised only by a run that needed a live key AND a live studio, and it cost the package `allowJs` plus two `turbo.json` input overrides to hash a corpus living outside the package that read it. `_gate.ts` and `_register.ts` are the two exceptions, and they are really one: a spec for either would import `_gate.ts`, which is what `eval-gate-is-not-unit-tier` forbids the unit tier to load. Note this asserts the FILE exists, not that it tests anything — `check:test-assertions` owns the assertion floor and `check:coverage-per-file` the coverage one.",
+      "paths": [
+        "packages/aai-evals/src/{mod}.ts",
+        "!packages/aai-evals/src/*.test.ts",
+        "!packages/aai-evals/src/_gate.ts",
+        "!packages/aai-evals/src/_register.ts"
+      ],
+      "must": {
+        "haveType": "file",
+        "haveFiles": [
+          "${mod}.test.ts"
+        ]
+      }
+    },
+    {
+      "name": "template-eval-spec",
+      "description": "Every template ships an `agent.eval.test.ts`, run by `aai eval` and gated in CI against a SCRIPTED model, and it drives the agent the way a DEPLOYED one is assembled rather than the way the directory reads. Each of the four blocks below replaced a hand-kept count or an unstated habit.",
+      "paths": "packages/aai-templates/templates/{templateName}",
+      "must": [
+        {
+          "name": "eval-present",
+          "description": "The FILE. A template with no eval has coverage only from `agent.test.ts`, which drives its tools and cannot ask the question an eval exists for — did the MODEL choose this tool, with these arguments, in this order. `briefing-desk` shipped exactly that way while the guide said \"25 of them\": a count in prose goes stale on the day a template lands, where a convention fails in the diff that lands it. The eval tier does not gate a merge (it is noisy by construction and needs a live key), but `AAI_EVAL_STUB=1` runs every case's script through the real runtime, transport and tool executor, so the file is also the only thing checking that a template's `agent.ts` still boots and its tools still resolve.",
+          "must": {
+            "haveType": "directory",
+            "haveFiles": [
+              "agent.eval.test.ts"
+            ]
+          }
+        },
+        {
+          "name": "eval-harness",
+          "description": "The HARNESS is `@alexkroman1/aai-runtime/eval/vitest` — `describeEval`, which owns the two modes, the announce line, and the per-case `live` / `scripted` markers. It is also what makes the file PORTABLE, which is the property `aai-evals`' template contract rests on: `use_template` copies the eval verbatim into a studio workspace, `contractWorkspace` overwrites it with the canonical copy, and a plain `npx vitest` then runs it there — which resolves only because everything the file imports is a PUBLISHED package. A local harness, or a helper reached through a repo-relative path, would make that whole non-gameability argument unavailable, and would break a scaffolded project besides (`guard-invariants` rule 13 is the general form).",
+          "if": {
+            "hasFile": "agent.eval.test.ts"
+          },
+          "for": {
+            "files": "agent.eval.test.ts"
+          },
+          "must": {
+            "importFrom": "@alexkroman1/aai-runtime/eval/vitest"
+          }
+        },
+        {
+          "name": "eval-drives-the-discovered-agent",
+          "description": "A template whose agent is DISCOVERED drives `virtual:aai/agent`, never `./agent.ts`. Two things are discovered and this block is gated on the first of them: a `tools/` directory (a tool is a FILE nothing imports, enumerated where the bundle is assembled) — `eval-drives-the-discovered-prompt` covers the second. `agent.ts` is the AUTHORED def, so its raw default export is an agent with NO tools and the FRAMEWORK-DEFAULT prompt; an eval driving it measures a different agent than the one that deploys, and every tool-choice claim in the file then passes or fails for the wrong reason. That has really happened: a spec that lowered the tools and forgot the prompt measured the framework default and reported green, which is why `withDiscoveredTools` is not exported and the two halves are one call. `aaiAgentPlugin()` (`@alexkroman1/aai/testing/vite`, registered in this package's `vitest.config.ts` and in every scaffolded project's) expands the glob against the IMPORTING file's own directory, so the spec needs no glob and no shared helper — and dropping the file into a materialized workspace drives THAT workspace's agent, which is what the template contract needs. The `./agent.ts` ban also catches a TYPE-only import, which konsistent cannot tell apart; that is the right answer here rather than a limitation, because the value a discovered template's spec would want the type of is a workflow definition, and those belong in `shared.ts` — where both workflow-and-tools templates put theirs, so a tool file and a spec can name the def without either importing the agent.",
+          "if": {
+            "hasFile": "tools"
+          },
+          "for": {
+            "files": "agent.eval.test.ts"
+          },
+          "must": {
+            "importFrom": "virtual:aai/agent"
+          },
+          "mustNot": {
+            "importFrom": "./agent.ts"
+          }
+        },
+        {
+          "name": "eval-drives-the-discovered-prompt",
+          "description": "The second half of `eval-drives-the-discovered-agent`, and the reason that rule cannot be gated on `tools/` alone: a `system-prompt.md` is discovered too. `withSystemPrompt` resolves it at BUILD time, so a def whose prompt is the framework default gets the file's text and a def that already contains it is left alone — which means the authored export of a prompt-only template (`code-interpreter`, `math-buddy`, `personal-finance`, `web-researcher` have no tools at all) is an agent that has never read its own rules. Those rules are usually the eval's entire subject: `web-researcher`'s cases are about a prompt that says cite what you read, `math-buddy`'s about one that forbids giving the answer away. An eval driving `./agent.ts` there measures the framework default and reads as a template whose prompt does nothing. The eight templates matched by neither block are the workflow apps and the two minimal starters — nothing to discover, and their evals import `./agent.ts` deliberately, for the workflow definition's type — so the partition is exact and neither block needs an exclusion.",
+          "if": {
+            "hasFile": "system-prompt.md"
+          },
+          "for": {
+            "files": "agent.eval.test.ts"
+          },
+          "must": {
+            "importFrom": "virtual:aai/agent"
+          }
+        }
+      ]
+    },
+    {
+      "name": "template-tools-not-imported",
+      "description": "A `tools/` file IS the tool: it default-exports it, and NOTHING in the template imports it. `agent-templates` owns the default-export half; this is the other one. Discovery happens where the bundle is assembled (`aai-cli/worker-bundler.ts` enumerates `tools/*.ts` and emits static imports, because the guest sandbox is handed one ESM string and has no directory to scan) and, with no bundler in the path, in `aaiAgentPlugin()`'s expansion of `virtual:aai/agent` — so a tool reaches the model by being a file in that directory and by nothing else, and `agent()` refuses a `tools` field outright. An import from `agent.ts` or `shared.ts` therefore buys nothing and costs the thing the layout exists for: it is the first step back toward the 62 map entries whose entire content was `snake_case_name: camelCaseImport`, and whose failure mode is the silent one — add `tools/incident_close.ts`, forget the map line, and the file compiles, lint passes, every gate is green, and the tool never reaches the model. SPECS are excluded and are the deliberate exception: four of them import tool files directly to drive one in isolation, which is a spec's business and not the agent's.",
+      "paths": [
+        "packages/aai-templates/templates/**/*.ts",
+        "packages/aai-templates/templates/**/*.tsx",
+        "!packages/aai-templates/templates/**/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "./tools/*",
+          "../tools/*"
+        ]
+      }
+    },
+    {
+      "name": "template-tool-owns-no-sibling",
+      "description": "And a tool may not import a SIBLING tool. Module state two tools share belongs in a module of its own — `health-assistant`'s `fda.ts` for the memoizing FDA-label cache its two tools read, `embedded-assets`'s search index, `infocom-adventure`'s `REPORTED_HISTORY` — and reaching it through another tool FILE is the version that goes wrong quietly: the importing tool gets the same module instance today, so nothing breaks, while the layout now says one of the two tools owns the other's cache. It also puts a tool one edge away from being un-discoverable, since the rule that makes a `tools/` file a tool is that it is a file in that directory whose default export IS the tool, not a module that also happens to define one. Every tool in the tree reaches what it needs through `../shared.ts` or a named module beside it, which is the shape to copy. konsistent's `importFromCurrentDir` ignores TYPE-only imports, so a sibling's exported type would pass this — no tool wants one (a tool's input shape is its own zod schema), and if one ever does, that is the signal the type belongs in the module the state does.",
+      "paths": "packages/aai-templates/templates/*/tools/*.ts",
+      "mustNot": {
+        "importFromCurrentDir": true
+      }
+    },
+    {
+      "name": "guest-embeds-no-runtime",
+      "description": "The harness embeds NO agent runtime, so no file here may import `createRuntime`. Every worker bundle ships its own: `buildWorker`'s generated wrapper entry exports `__aaiCreateRuntime`, a factory over the USER'S installed SDK's `createRuntime` bundled in with the provider SDKs, and the harness builds every session through that. What the rule buys is that platform SDK drift can never break a deployed agent — it runs exactly the runtime version it was built and tested against, the same one `aai dev` ran — and it is why a bundle WITHOUT the factory is rejected at load (\"rebuild with a current @alexkroman1/aai-cli\") rather than falling back to an embedded copy. A static `createRuntime` here is what such a fallback would be built out of, and the failure it produces is the one no test can see: a deployed agent that boots fine on a runtime nobody deployed it against, in a sandbox whose whole contract is frozen per deploy by the harness image pin. `createRuntimeServer` is deliberately NOT covered — that is the HTTP/session shell (health, `/client-config`, `/websocket`), the same one `aai dev` runs, and the lazy facade around it is what hands the bundle's runtime a session. Nor is `createTextAgent`: the studio's in-guest coding agent is the harness's own agent rather than a user's, and running it on the platform's SDK is correct.",
+      "paths": [
+        "packages/aai-guest/src/*.ts",
+        "packages/aai-guest/src/**/*.ts"
+      ],
+      "mustNot": {
+        "import": [
+          {
+            "name": "createRuntime",
+            "from": "@alexkroman1/aai-runtime"
+          }
+        ]
+      }
     }
   ]
 }

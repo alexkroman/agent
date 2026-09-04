@@ -248,13 +248,10 @@ of bug that would have made a report LIE rather than error:
   anchor; every event of its reply follows it.
 
 **What ENDS a reply is declared once**, `TURN_ENDS` in
-`@alexkroman1/aai-runtime/eval`, imported by both the session that WAITS on it
-and `assertions.ts`, which partitions a run into turns with it. It was written
-out in both, and the two must agree by construction: a third terminator added to
-one copy makes `say()` return mid-reply while the assertions still think the turn
-is open — the same shape as the second bug above, arriving by a different route.
-The declaration crossing a package boundary is what makes the rule hold now that
-the target is published.
+`@alexkroman1/aai-runtime/eval` — `konsistent.json`'s `eval-turn-terminators`
+requires `assertions.ts` to import it, with the two event readers beside it,
+rather than restate it, and carries the argument: the second bug above arriving
+by a different route.
 
 **`openEvalSession` releases the fake stages when its own setup throws.**
 `installStubSpeechProviders()` registers a PROCESS-GLOBAL kind pair and the only
@@ -285,26 +282,19 @@ reads it, and a grader whose eval-only half — `parseLoadedConfig`, `checkMode`
 exercised only by a run needing a live key and a live studio. Moving it in
 retired all three; the four functions have unit tests now.
 
-**The same shape recurred one level UP, and `starter-grade.ts` is the fix.**
-`gradeStarter` — which decides WHICH of those four run, under what label, and
-holds the failure taxonomy — sat in `starter.eval.test.ts`, a file
-`vitest.config.ts` excludes. So every function it calls was unit-tested while
-the thing calling them was not, which matters because the labels are the keys
-`EvalReport.unstable` reports and `AAI_EVAL_ONLY` matches: renaming one silently
-resets the flip history with nothing red. It is a module with its own tests now,
-driven by a canned `StudioTurn`.
+**The same shape recurred one level UP, and `starter-grade.ts` is the fix** —
+a module with its own tests now, driven by a canned `StudioTurn`, rather than a
+`gradeStarter` sitting in a file `vitest.config.ts` excludes.
+`konsistent.json`'s `eval-module-has-unit-test` is that floor for every module
+here and carries both halves of the account.
 
 **Note what that move exposed: `_gate.ts` may not be imported by anything the
-UNIT tier loads.** Importing it resolves a key and ANNOUNCES at import time —
-or, under `AAI_REQUIRE_EVAL`, throws — so a unit-tested module reading a setting
-from there fails the whole file on any machine with that variable set and no
-key. Verified before it landed. The tier's side-effect-free settings therefore
-live in `_env.ts` (`envValue` / `envFlag` / `envInt`, plus `evalStepCapHint`)
-and `_gate.ts` keeps only the POLICY: which precondition a tier has, what a
-missing one means, and when a skip becomes a failure. That module also exists
-because the "blank counts as unset" rule was spelled FIVE ways in two files —
-including inside the function whose own doc warns that "a rule spelled out twice
-is one that can come to be spelled differently".
+UNIT tier loads** — `konsistent.json`'s `eval-gate-is-not-unit-tier`, which
+carries why and names the two files that may. The tier's side-effect-free
+settings live in `_env.ts` for that reason, and that module also exists because
+the "blank counts as unset" rule was spelled FIVE ways in two files — including
+inside the function whose own doc warns that "a rule spelled out twice is one
+that can come to be spelled differently".
 
 **`run.mjs` could not have run, and porting it is what found that out.** The
 chat request belongs to the GUEST and is authenticated by the per-sandbox token
@@ -391,10 +381,8 @@ template's DATA files, rather than for behaviour, is the failure mode to watch:
 ## Adding a case
 
 1. Put it in an existing `*.eval.test.ts`, in the array `registerEvalCases`
-   takes. Registration lives in `_register.ts` for a mechanical reason: Biome's
-   `noMisplacedAssertion` accepts an `expect` only inside a literal `test(` call,
-   so an `expect` reached through a `const run = matches ? test : test.skip`
-   alias — or `test.skipIf(…)(…)` — is a lint error.
+   takes — `konsistent.json`'s `eval-case-registration` requires that import
+   and carries why the indirection is mechanical rather than stylistic.
 2. Name it in a way that survives a rename: the name is the key `unstable`
    reports and the thing `AAI_EVAL_ONLY` matches.
 3. Assert through the vocabulary in `assertions.ts`, and prefer a TURN scope

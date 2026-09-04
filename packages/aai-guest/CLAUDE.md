@@ -557,12 +557,12 @@ wrapper entry exports `__aaiCreateRuntime` — a factory over the *user's
 installed* SDK's `createRuntime`, bundled in with the provider SDKs (an SSR
 Vite build: server resolve conditions, `node:` builtins external, dynamic
 imports inlined via `codeSplitting: false`) — and the harness builds every
-session through it. The harness embeds no runtime at all, so **platform SDK
-drift can never break a deployed agent**: it runs exactly the runtime
-version it was built and tested against, the same one `aai dev` ran.
+session through it, never through a `createRuntime` of its own.
+`konsistent.json`'s `guest-embeds-no-runtime` forbids that import and carries
+the argument: **platform SDK drift can never break a deployed agent.**
 
 - The harness↔bundle contract is deliberately tiny (`CreateGuestRuntime` in
-  `aai-guest/harness-types.ts`): `{ env, db?, runCode?, publicUrl? }` in,
+  `aai-guest/harness-types.ts`): `{ env, runCode?, publicUrl? }` in,
   `{ startSession, shutdown }` out. Keep it that way — everything else
   (provider resolution, tool dispatch, session state) is the bundle's SDK's
   business, on the bundle's SDK's version.

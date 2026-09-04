@@ -918,10 +918,13 @@ slot.
 
 ## Every template ships an EVAL
 
-`templates/*/agent.eval.test.ts` — 25 of them, run by `aai eval` and gated in CI
-against a scripted model. **The harness, the two modes, what a template owes, and
-what these evals found: `packages/aai-runtime/CLAUDE.md`, "Driving an agent from
-text is a published surface".**
+`templates/*/agent.eval.test.ts`, run by `aai eval`, gated in CI against a
+scripted model, and required of every template by `konsistent.json`'s
+`template-eval-spec` — which owns the file set and what one must import. The
+COUNT that stood here went stale the day `briefing-desk` landed without one.
+**The harness, the two modes, what a template owes, and what these evals found:
+`packages/aai-runtime/CLAUDE.md`, "Driving an agent from text is a published
+surface".**
 
 ## The authoring guide ships inside the SDK
 
@@ -1287,15 +1290,14 @@ declares no providers and so nothing else in its config names a credential.
 
 **`template-page-mount.test.ts` correlates BOTH ends of the front door with the
 agent that declares it** — the helper (`agent()` vs `workflowApp()`) and the
-mount (`mountClient()` vs `mountPage()`). konsistent asserts only what every template
-shares (a default export from `agent.ts`, the stylesheet import in
-`client.tsx`): its predicates are "must import X" with no "one of", and no way
-to read a value out of a SIBLING file to decide which — and a rule that merely
-accepted either would pass the exact mistake worth catching, since a static
-agent mounted with `mountClient()` renders fine and then opens a `/websocket` the
-server declines. `agent-default-export` used to require an `agent` import for
-that reason and no longer can, the workflow-app templates calling `workflowApp`
-instead.
+mount (`mountClient()` vs `mountPage()`). This is the one front-door claim
+konsistent cannot make: its predicates are "must import X" with no "one of", and
+no way to read a value out of a SIBLING file to decide which — and a rule that
+merely accepted either would pass the exact mistake worth catching, since a
+static agent mounted with `mountClient()` renders fine and then opens a
+`/websocket` the server declines. `agent-default-export` used to require an
+`agent` import for that reason and no longer can, the workflow-app templates
+calling `workflowApp` instead.
 
 **konsistent's version is pinned EXACTLY (`1.0.0-beta.4`, the registry's
 `latest`) rather than caret-ranged**, and this is where that note lives because
@@ -1336,11 +1338,10 @@ Three things the conversion taught, each worth copying into the next one:
   `gameSlot.tool()`/`gameSlot.updateTool()` calls with no annotation and no
   opening `slot.get`. That is the case those two were built for, and moving a
   tool out of `agent.ts` is what makes it visible.
-- **Module state shared by two tools needs a module.** `health-assistant`'s two
-  tools share one memoizing FDA-label cache; a cache per tool file would halve
-  the memoization silently, so it moved to `fda.ts` and says so there. Same shape
-  as `embedded-assets`'s search index and `infocom-adventure`'s
-  `REPORTED_HISTORY` — a `-5` that two files answered with.
+- **Module state shared by two tools needs a module** — `health-assistant`'s
+  `fda.ts` says so in place, and `konsistent.json`'s
+  `template-tool-owns-no-sibling` is why reaching it through the other tool FILE
+  is the version that goes wrong quietly.
 - **A workflow DECLARATION needs a home that is neither half.** `research-workflow`
   and `recap-workflow` reach a run by passing the definition rather than its name
   (which is what types the input), and four or five tool files each name it, so
@@ -1348,10 +1349,9 @@ Three things the conversion taught, each worth copying into the next one:
   `workflows/` by convention, so a spec can import the steps without the agent.
 
 It replaced 62 map entries whose whole content was
-`snake_case_name: camelCaseImport`, and the reason was the silent failure rather
-than the line count: add `tools/incident_close.ts`, forget the map line, and the
-file compiled, lint passed, every gate was green, and the tool never reached the
-model.
+`snake_case_name: camelCaseImport`; `konsistent.json`'s
+`template-tools-not-imported` is the no-importer half of the rule and carries
+why the line count was never the reason.
 
 **A spec has no bundler in its path, so the same lowering has to happen
 somewhere else** — over the same `toolRegistry`, from the same
