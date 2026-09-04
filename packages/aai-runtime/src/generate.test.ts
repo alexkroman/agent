@@ -2,7 +2,14 @@
 /**
  * Unit tests for the host `ctx.generate` implementation — descriptor
  * resolution through the real registry (a fake LLM kind), text vs
- * structured-output dispatch, and the Zod-schema parity guard.
+ * structured-output dispatch, the Zod-schema parity guard, and the check on
+ * what the model sent BACK.
+ *
+ * The schema cases all drive the real path — `generateText` over a fake model
+ * whose `doGenerate` answers a scripted body — because the defect they pin was
+ * that nothing between `Output.object` and the caller ever looked at that body.
+ * A spec calling the validator directly would have passed against the broken
+ * code.
  */
 
 import type { LanguageModel } from "ai";
@@ -89,6 +96,79 @@ describe("createGenerateFn", () => {
     const generate = createGenerateFn({ llm: descriptor, env });
     const result = await generate({ prompt: "count", schema: z.object({ n: z.number() }) });
     expect(result.object).toEqual({ n: 7 });
+  });
+
+  it("rejects a model reply the call's Zod schema rejects", async () => {
+    // What the model really emits when it half-obeys: the right keys, one of
+    // them the wrong type. Typed as `string[]`, it reached the tool unchecked.
+    const { descriptor, env } = setup(() => JSON.stringify({ issues: "not-an-array" }));
+    const generate = createGenerateFn({ llm: descriptor, env });
+    await expect(
+      generate({ prompt: "audit", schema: z.object({ issues: z.array(z.string()) }) }),
+    ).rejects.toThrow(/does not match the call's schema/);
+  });
+
+  it("names the offending property when a reply is rejected", async () => {
+    const { descriptor, env } = setup(() => JSON.stringify({ issues: "not-an-array" }));
+    const generate = createGenerateFn({ llm: descriptor, env });
+    await expect(
+      generate({ prompt: "audit", schema: z.object({ issues: z.array(z.string()) }) }),
+    ).rejects.toThrow(/issues/);
+  });
+
+  it("returns the PARSED value, not the model's raw reply", async () => {
+    // A default the model omitted and a key it invented: both are things the
+    // schema decides, so both must be settled before the caller reads `object`
+    // — and `text` is the stringified object by contract, so it moves with it.
+    const { descriptor, env } = setup(() => JSON.stringify({ n: 1, extra: "dropped" }));
+    const generate = createGenerateFn({ llm: descriptor, env });
+    const result = await generate({
+      prompt: "count",
+      schema: z.object({ n: z.number(), unit: z.string().default("items") }),
+    });
+    expect(result.object).toEqual({ n: 1, unit: "items" });
+    expect(result.text).toBe(JSON.stringify({ n: 1, unit: "items" }));
+  });
+
+  it("propagates a validator that throws rather than answering issues", async () => {
+    const { descriptor, env } = setup(() => JSON.stringify({ n: 1 }));
+    const generate = createGenerateFn({ llm: descriptor, env });
+    const exploding = z.object({ n: z.number() }).refine(() => {
+      throw new Error("vendor exploded");
+    });
+    await expect(generate({ prompt: "count", schema: exploding })).rejects.toThrow(
+      /vendor exploded/,
+    );
+  });
+
+  it("rejects a scalar reply on the plain JSON Schema path", async () => {
+    // No validator exists for a JSON Schema document, so the top-level TYPE is
+    // the whole check — and it is the one that catches an apology in place of
+    // an object.
+    const { descriptor, env } = setup(() => JSON.stringify("sorry, I cannot"));
+    const generate = createGenerateFn({ llm: descriptor, env });
+    const jsonSchemaObj = z.toJSONSchema(z.object({ n: z.number() })) as Record<string, unknown>;
+    await expect(generate({ prompt: "count", schema: jsonSchemaObj })).rejects.toThrow(
+      /JSON Schema declares object/,
+    );
+  });
+
+  it("rejects a scalar reply when the JSON Schema declares no type at all", async () => {
+    const { descriptor, env } = setup(() => JSON.stringify(7));
+    const generate = createGenerateFn({ llm: descriptor, env });
+    await expect(generate({ prompt: "count", schema: { properties: {} } })).rejects.toThrow(
+      /not a JSON object or array/,
+    );
+  });
+
+  it("passes a JSON Schema reply of the declared type through UNCHECKED beneath the top level", async () => {
+    // The documented limit of that path: `object` is `unknown` there and the
+    // caller narrows. Pinned so a later change cannot quietly claim more.
+    const { descriptor, env } = setup(() => JSON.stringify({ n: "not-a-number" }));
+    const generate = createGenerateFn({ llm: descriptor, env });
+    const jsonSchemaObj = z.toJSONSchema(z.object({ n: z.number() })) as Record<string, unknown>;
+    const result = await generate({ prompt: "count", schema: jsonSchemaObj });
+    expect(result.object).toEqual({ n: "not-a-number" });
   });
 
   it("rejects a pre-v4 Zod-like schema (safeParse, no Standard Schema)", async () => {

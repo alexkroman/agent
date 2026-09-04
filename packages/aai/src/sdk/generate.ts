@@ -30,12 +30,37 @@
  *   },
  * });
  * ```
+ *
+ * ## There is no `signal` here, and that is not the omission it looks like
+ *
+ * The authoring guide says to pass `ctx.signal` to anything slow, and a model
+ * call is the slowest thing in a tool body — so the absent option reads as the
+ * mandate being unfollowable. It is already followed: the runtime binds this
+ * call to the tool's own signal for you. `buildToolContext` forwards the
+ * per-call controller it always builds (`ToolContext.signal` is non-optional
+ * for the same reason), and `createGenerateFn` passes it to the provider as
+ * `abortSignal` — so a barge-in that unblocks the tool's `await` also cancels
+ * the generation behind it, whether or not the author thought about it.
+ *
+ * An option here would be a SECOND signal beside that one, and the failure
+ * would be silent in the worst direction: a tool that passes nothing is
+ * cancelled and a tool that carefully passes a narrower deadline would replace
+ * the turn's signal with it unless every layer remembered to combine them.
+ * A narrower deadline is a real want — "give up on this summary after two
+ * seconds" — and it is not expressible today; adding it means threading a
+ * combined signal through {@link GenerateFn}'s host implementation, not a
+ * field on this bag.
  */
 
 import type { LlmProvider } from "./providers.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./schema.ts";
 
-/** Options for one LLM generation call. */
+/**
+ * Options for one LLM generation call.
+ *
+ * No `signal`: the call is already bound to `ctx.signal` by the runtime — see
+ * the module doc for why a field here would be a second, competing one.
+ */
 export type GenerateOptions = {
   /** The user prompt for this call. */
   prompt: string;
