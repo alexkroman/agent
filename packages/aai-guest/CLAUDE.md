@@ -1336,7 +1336,7 @@ always boots with a fresh harness for local-dev sandboxes) and as
 before the remote image build, which rebuilds the harness itself). Also
 runnable directly: `node scripts/ensure-guest-harness.mjs`.
 
-## The guest image's Node major, and the split floor it creates
+## The guest image's Node major, and the floor it sits above
 
 The guest base image defaults to `node:26-slim`; pin via
 `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
@@ -1351,7 +1351,11 @@ section exists to enumerate, and one that no test can see because each side
 is internally consistent. The three move together; `@types/node` is the
 fourth, since it is what `tsc` checks every package and every studio
 workspace against — pinned two majors ahead of the runtime, it accepts APIs
-the deployed container does not have.
+the deployed container does not have. **`.node-version` currently says 24
+against a `node:26-slim` on both images**, which is that split by the front
+door: `aai dev` and CI run a major the deployed guest does not. It is left
+as it stands here because closing it means moving an image or the pin, not a
+guide.
 
 Note the ceiling is a RANGE, not a pin: `engines.node` stays `>=24` so SDK
 consumers on the previous LTS are not broken by a platform deploy, which is
@@ -1363,22 +1367,21 @@ CALL. That floor is what decides which Node 26 features may be used, and
 `tsc` cannot enforce it: the root tsconfig sets `lib: ["ESNext"]`, so every
 V8 14.6 addition — `Map.prototype.getOrInsert` / `getOrInsertComputed`,
 `Iterator.concat`, `Temporal` — type-checks in every package while shipping
-a `TypeError: … is not a function` on the floor, having passed lint,
-typecheck, and a CI whose own Node is 26. `runtime-tools.ts` carries the
+a `TypeError: … is not a function` on the floor, having passed lint and
+typecheck. `runtime-tools.ts` carries the
 worked example: `getOrInsertComputed` fits its state map exactly and is
 deliberately not used. Any such API needs a Node-24 floor check, not a type
 check. (`Iterator.concat` is doubly unavailable — TS 7.0.2's lib does not
 declare it yet.)
 
-The private packages held `>=26` until the floor was lowered, on the
-argument that they only ever run on the images above. What it actually
-bought was a warning on every `pnpm install` under Node 24 and a licence
-nothing used: no `getOrInsert`, `Iterator.concat` or `Temporal` call
-existed in `aai-server`, `aai-guest`, `aai-studio-*` or `aai-evals` when the
-floor came down. Repo DEVELOPMENT still wants 26 — the root `engines.node`
-is `>=26 <27`, `.nvmrc` and `.node-version` say 26, and
-`aai-studio-server`'s `predev` refuses to boot below it — which is a
-separate claim from what a package's code supports.
+The private packages held `>=26` on the argument that they only ever run on
+the images above, and were the last thing in the workspace still saying so
+once the root `engines.node`, `.nvmrc` and `.node-version` came down to 24.
+What the licence bought was nothing — no `getOrInsert`, `Iterator.concat` or
+`Temporal` call existed in `aai-server`, `aai-guest`, `aai-studio-*` or
+`aai-evals` — against an unsupported-engine warning per package on every
+`pnpm install` and a `predev` in `aai-studio-server` that refused to boot on
+the very Node `.node-version` pins. Both are gone; that guard is `< 24` now.
 
 Safe in every package, because they predate the 24 floor: `crypto.hash()`
 (21.7), `module.enableCompileCache()` (22.1, stable in 25.4),
