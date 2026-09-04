@@ -35,37 +35,24 @@
  */
 
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { STARTERS } from "aai-studio-client/starters";
-import { describeEvalTierWhen, evalApiKey, evalContracts, evalOrigin } from "./_gate.ts";
-import { registerEvalCases } from "./_register.ts";
-import type { EvalRecorder } from "./runner.ts";
 import {
-  checkCapabilities,
-  checkMode,
-  checkUi,
-  checkWorkflowShape,
-  EXPECTATIONS,
-  parseLoadedConfig,
-} from "./starter-expectations.ts";
-import { createStudioClient, type StudioTurn } from "./studio-target.ts";
-import { runTemplateContract, spawnVitest } from "./template-contract.ts";
-
-/** The shipped templates, whose `agent.eval.test.ts` files are the contracts. */
-const TEMPLATES_DIR = fileURLToPath(new URL("../../aai-templates/templates/", import.meta.url));
-
-/**
- * Where a contract run materializes a workspace.
- *
- * INSIDE this package, because a template contract imports
- * `@alexkroman1/aai/protocol`, `@alexkroman1/aai-runtime/eval`, `vitest` and
- * `zod`, and Node resolution walks upward — a directory here resolves all four
- * with nothing installed, where one in `tmpdir()` resolves none.
- */
-const SCRATCH_ROOT = fileURLToPath(new URL("./.eval-workspaces/", import.meta.url));
-
-/** Roughly the studio's `MAX_CHAT_STEPS`; only used to flag a long run. */
-const STEP_CAP_HINT = Number(process.env.AAI_STEP_CAP_HINT ?? 80);
+  describeEvalTier,
+  describeEvalTierWhen,
+  evalApiKey,
+  evalContracts,
+  evalKeyEnv,
+  evalOrigin,
+} from "./_gate.ts";
+import { evalOnlySelects, registerEvalCases } from "./_register.ts";
+import { gradeStarter } from "./starter-grade.ts";
+import { createStudioClient } from "./studio-target.ts";
+import {
+  CONTRACT_SCRATCH_ROOT,
+  runTemplateContract,
+  spawnVitest,
+  TEMPLATES_DIR,
+} from "./template-contract.ts";
 
 /** How long the studio-reachability probe waits. */
 const PROBE_MS = 3000;
@@ -95,73 +82,24 @@ const STARTER_CASES = Object.entries(STARTERS).flatMap(([kind, list]) =>
 );
 
 /**
- * Grade one turn, recording every check.
+ * Probed only when this file has a case to run.
  *
- * The failure taxonomy is the label set, so a report names which of the three
- * problems a case hit rather than reporting one "shippable" bit.
+ * `AAI_EVAL_ONLY` is one variable across the whole tier, so selecting a level-1
+ * behaviour case used to make THIS file pay a 3-second HTTP probe and then
+ * announce `[skipped: no studio answered…]` about a run nobody asked it for.
+ * The selection is `_register.ts`'s, imported rather than restated, so the
+ * probe's precondition and the registration's cannot drift.
  */
-function gradeStarter(
-  t: EvalRecorder,
-  label: string,
-  kind: string,
-  turn: StudioTurn,
-  files: Record<string, string> | undefined,
-): void {
-  const last = turn.testAgentRuns.at(-1);
-  const built = last !== undefined && !last.buildFailed && !last.testsFailed;
-  const source = files?.["agent.ts"] ?? "";
-  const config = parseLoadedConfig(turn.lastTestAgentOutput);
-  const expectation = EXPECTATIONS.find((e) => e.label === label);
-  const workflow = kind === "workflow";
+const SELECTED = STARTER_CASES.filter((starter) => evalOnlySelects(starter.label));
 
-  t.check(turn.testAgentRuns.length > 0, "verified (ran test_agent)", "never ran test_agent");
-  t.check(built, "endedGreen", last === undefined ? "no run" : last.excerpt);
-  t.check(turn.errors.length === 0, "no stream errors", turn.errors.slice(0, 3).join(" | "));
-  t.check(
-    turn.toolCalls.length < STEP_CAP_HINT,
-    `under the step cap (${STEP_CAP_HINT})`,
-    `made ${turn.toolCalls.length} tool calls`,
-  );
-  // Red verifications, whichever tool ran them: an agent whose cheaper checks
-  // catch the errors first scores zero repairs while writing the same wrong code.
-  t.check(
-    turn.redChecks.length === 0,
-    "first-try clean (no red verification)",
-    turn.redExcerpts.slice(0, 3).join(" | "),
-  );
-
-  if (expectation !== undefined) {
-    const caps = checkCapabilities(expectation, { config, source });
-    t.check(caps.missing.length === 0, "covers the prompt's capabilities", caps.missing.join("/"));
-    t.check(
-      caps.missingBuiltins.length === 0,
-      "declares the named builtins",
-      caps.missingBuiltins.join("/"),
-    );
-    t.check(!caps.tooFewTools, "declares enough tools", `only ${caps.toolCount}`);
-  }
-
-  // A workflow project is graded on the workflow-app SHAPE instead of pipeline
-  // mode and a live-state client: it has no session, so those are questions
-  // about a thing that does not exist here.
-  const mode = workflow ? checkWorkflowShape(files) : checkMode(config, source);
-  t.check(mode.ok, workflow ? "workflow-app shape" : "pipeline mode", mode.note ?? "");
-  if (!workflow) {
-    // `checkUi` is the whole UI claim, and a bare "did it write a client.tsx"
-    // check is deliberately NOT added beside it: `run.mjs` recorded `builtClient`
-    // as INFORMATION and kept it out of its `shippable` verdict, because most
-    // starters never ask for one — asserting it failed the math-tutor template
-    // for shipping exactly what it is supposed to ship.
-    const ui = checkUi(expectation, files);
-    t.check(ui.ok, "client UI", ui.note ?? "");
-  }
-}
-
-const describeStarters = describeEvalTierWhen(
-  await studioReachable(ORIGIN),
-  `no studio answered at ${ORIGIN}`,
-  "Start one with `pnpm dev:aai-server`, or set AAI_EVAL_ORIGIN.",
-);
+const describeStarters =
+  SELECTED.length === 0
+    ? describeEvalTier
+    : describeEvalTierWhen(
+        await studioReachable(ORIGIN),
+        `no studio answered at ${ORIGIN}`,
+        "Start one with `pnpm dev:aai-server`, or set AAI_EVAL_ORIGIN.",
+      );
 
 describeStarters("starter eval — studio codegen", () => {
   registerEvalCases(
@@ -173,7 +111,7 @@ describeStarters("starter eval — studio codegen", () => {
         try {
           const turn = await client.runTurn(project, starter.kind, starter.prompt);
           const files = await client.workspace(project);
-          gradeStarter(t, starter.label, starter.kind, turn, files);
+          gradeStarter(t, { label: starter.label, kind: starter.kind, turn, files });
           // The BEHAVIOUR half, opt-in — see `evalContracts` for the cost
           // argument and `template-contract.ts` for why the template's own eval
           // is the contract. A starter naming no template, or naming one that
@@ -184,11 +122,15 @@ describeStarters("starter eval — studio codegen", () => {
               files: files ?? {},
               prompt: starter.prompt,
               templatesDir: TEMPLATES_DIR,
-              scratchDir: path.join(SCRATCH_ROOT, project),
-              run: spawnVitest({ ASSEMBLYAI_API_KEY: evalApiKey() }),
+              scratchDir: path.join(CONTRACT_SCRATCH_ROOT, project),
+              run: spawnVitest(evalKeyEnv()),
             });
-            if (contract.ran) {
-              t.check(contract.passed, "passes the template's behaviour contract", contract.note);
+            if (contract.outcome !== "skipped") {
+              t.check(
+                contract.outcome === "passed",
+                "passes the template's behaviour contract",
+                contract.note,
+              );
             }
           }
         } finally {

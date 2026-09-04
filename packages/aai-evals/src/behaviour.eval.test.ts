@@ -21,7 +21,7 @@ import { agent, tool } from "@alexkroman1/aai";
 import { withTools } from "@alexkroman1/aai/manifest";
 import { openEvalSession } from "@alexkroman1/aai-runtime/eval";
 import { z } from "zod";
-import { describeEvalTier, evalApiKey } from "./_gate.ts";
+import { describeEvalTier, evalKeyEnv } from "./_gate.ts";
 import { registerEvalCases } from "./_register.ts";
 import { scopeOf } from "./assertions.ts";
 
@@ -78,8 +78,7 @@ function supportAgent() {
 }
 
 describeEvalTier("behaviour eval — level 1 (text-driven)", () => {
-  const open = () =>
-    openEvalSession({ agent: supportAgent(), env: { ASSEMBLYAI_API_KEY: evalApiKey() } });
+  const open = () => openEvalSession({ agent: supportAgent(), env: evalKeyEnv() });
 
   registerEvalCases([
     {

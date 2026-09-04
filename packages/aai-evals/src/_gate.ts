@@ -19,20 +19,34 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { describe } from "vitest";
+import { envFlag, envValue } from "./_env.ts";
 
 /**
- * The AssemblyAI key the tier runs on: an exported `ASSEMBLYAI_API_KEY`, else
+ * The one env var the tier's targets are handed.
+ *
+ * Declared here because this module already resolves the key and prints the
+ * name in {@link HOW_TO}; both eval files used to rebuild
+ * `{ ASSEMBLYAI_API_KEY: evalApiKey() }` by hand, so the gate that reports "no
+ * API key resolved" was not the thing deciding what the target received.
+ */
+const EVAL_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
+/**
+ * The AssemblyAI key the tier runs on: an exported {@link EVAL_KEY_ENV}, else
  * the one `aai login` saved. Same two sources, in the same order, as the repo's
  * other developer tools (`scripts/_api-key.mjs`) — these spend the RUNNER's key.
  */
 function resolveKey(): string | undefined {
-  const exported = process.env.ASSEMBLYAI_API_KEY;
-  if (exported !== undefined && exported.trim() !== "") return exported;
+  const exported = envValue(process.env, EVAL_KEY_ENV);
+  if (exported !== undefined) return exported;
   try {
     const cfg = path.join(homedir(), ".config", "aai", "config.json");
-    const parsed: unknown = JSON.parse(readFileSync(cfg, "utf-8"));
+    // `safeJsonParse` rather than a bare `JSON.parse`: the `try` here is for a
+    // MISSING file, and a catch wide enough to also swallow a parse is a catch
+    // wide enough to swallow the next thing added to this block.
+    const parsed = safeJsonParse(readFileSync(cfg, "utf-8"));
     const key = isRecord(parsed) ? parsed.apiKey : undefined;
     return typeof key === "string" && key !== "" ? key : undefined;
   } catch {
@@ -43,7 +57,7 @@ function resolveKey(): string | undefined {
 const KEY = resolveKey();
 
 const HOW_TO =
-  "Export ASSEMBLYAI_API_KEY, or run `aai login` (the tier reads the key it\n" +
+  `Export ${EVAL_KEY_ENV}, or run \`aai login\` (the tier reads the key it\n` +
   "saves). This tier calls a live model and spends tokens on that key.";
 
 /** What a gated eval file registers its suite with. */
@@ -86,7 +100,7 @@ export function sayFromHarness(text: string, stream: "out" | "err" = "err"): voi
  * have reached one gate and not the other.
  */
 function announceOrThrow(reason: string, howTo: string): void {
-  if ((process.env.AAI_REQUIRE_EVAL ?? "") !== "") {
+  if (envValue(process.env, "AAI_REQUIRE_EVAL") !== undefined) {
     // Thrown at import time on purpose: it fails the FILE, which is the one
     // outcome a green-but-skipped suite cannot be confused with.
     throw new Error(`AAI_REQUIRE_EVAL is set but ${reason}.\n${howTo}`);
@@ -127,12 +141,21 @@ export function evalApiKey(): string {
   return KEY;
 }
 
+/**
+ * The key as the env block a target is started with.
+ *
+ * One spelling of {@link EVAL_KEY_ENV} for `openEvalSession` and for the
+ * contract runner's subprocess.
+ */
+export function evalKeyEnv(): Record<string, string> {
+  return { [EVAL_KEY_ENV]: evalApiKey() };
+}
+
 /** The studio origin the starter eval drives. */
 export function evalOrigin(): string {
   return process.env.AAI_EVAL_ORIGIN ?? "http://127.0.0.1:8080";
 }
 
-/** Case-name filter, so one case can be iterated on without the rest. */
 /**
  * Is the template behaviour contract on?
  *
@@ -143,11 +166,10 @@ export function evalOrigin(): string {
  * `template-contract.ts` for what it then grades.
  */
 export function evalContracts(): boolean {
-  const raw = process.env.AAI_EVAL_CONTRACTS;
-  return raw !== undefined && raw !== "" && raw !== "0";
+  return envFlag(process.env, "AAI_EVAL_CONTRACTS");
 }
 
+/** Case-name filter, so one case can be iterated on without the rest. */
 export function evalOnly(): string | undefined {
-  const raw = process.env.AAI_EVAL_ONLY;
-  return raw === undefined || raw.trim() === "" ? undefined : raw;
+  return envValue(process.env, "AAI_EVAL_ONLY");
 }

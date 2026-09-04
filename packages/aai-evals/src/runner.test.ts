@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { formatSpread } from "./report.ts";
+import { formatScore } from "./report.ts";
 import { evalMinScore, evalRepeat, runEval } from "./runner.ts";
 
 describe("runEval", () => {
@@ -140,7 +140,7 @@ describe("runEval", () => {
     });
     expect(report.measuredPasses).toBe(0);
     expect(report.harnessErrors).toBe(2);
-    expect(formatSpread(report)).toBe("not measured");
+    expect(formatScore(report)).toBe("not measured");
   });
 
   test("an unreached assertion is missing data, not a flip", async () => {

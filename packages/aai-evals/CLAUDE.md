@@ -284,6 +284,27 @@ reads it, and a grader whose eval-only half — `parseLoadedConfig`, `checkMode`
 exercised only by a run needing a live key and a live studio. Moving it in
 retired all three; the four functions have unit tests now.
 
+**The same shape recurred one level UP, and `starter-grade.ts` is the fix.**
+`gradeStarter` — which decides WHICH of those four run, under what label, and
+holds the failure taxonomy — sat in `starter.eval.test.ts`, a file
+`vitest.config.ts` excludes. So every function it calls was unit-tested while
+the thing calling them was not, which matters because the labels are the keys
+`EvalReport.unstable` reports and `AAI_EVAL_ONLY` matches: renaming one silently
+resets the flip history with nothing red. It is a module with its own tests now,
+driven by a canned `StudioTurn`.
+
+**Note what that move exposed: `_gate.ts` may not be imported by anything the
+UNIT tier loads.** Importing it resolves a key and ANNOUNCES at import time —
+or, under `AAI_REQUIRE_EVAL`, throws — so a unit-tested module reading a setting
+from there fails the whole file on any machine with that variable set and no
+key. Verified before it landed. The tier's side-effect-free settings therefore
+live in `_env.ts` (`envValue` / `envFlag` / `envInt`, plus `evalStepCapHint`)
+and `_gate.ts` keeps only the POLICY: which precondition a tier has, what a
+missing one means, and when a skip becomes a failure. That module also exists
+because the "blank counts as unset" rule was spelled FIVE ways in two files —
+including inside the function whose own doc warns that "a rule spelled out twice
+is one that can come to be spelled differently".
+
 **`run.mjs` could not have run, and porting it is what found that out.** The
 chat request belongs to the GUEST and is authenticated by the per-sandbox token
 the session broker returns beside the URL; `run.mjs` sent the account's API key

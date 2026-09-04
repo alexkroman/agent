@@ -41,6 +41,16 @@ const starters = Object.values(STARTERS).flat();
  */
 const referencesTemplate = (prompt: string): boolean => templateNamed(prompt) !== undefined;
 
+/**
+ * A starter's prompt by label.
+ *
+ * A map rather than the `starters.find((s) => s.label === e.label)` three checks
+ * below ran inside their own loops over EXPECTATIONS — twelve times eighteen
+ * comparisons each, three times over.
+ */
+const PROMPTS: ReadonlyMap<string, string> = new Map(starters.map((s) => [s.label, s.prompt]));
+const promptFor = (label: string): string => PROMPTS.get(label) ?? "";
+
 describe("starter expectations", () => {
   test("every expectation names a starter that exists", () => {
     const labels = new Set(starters.map((s) => s.label));
@@ -50,7 +60,7 @@ describe("starter expectations", () => {
 
   test("a required UI is asked for by the prompt", () => {
     const offenders = EXPECTATIONS.filter((e) => e.ui).filter((e) => {
-      const prompt = starters.find((s) => s.label === e.label)?.prompt ?? "";
+      const prompt = promptFor(e.label);
       return !(referencesTemplate(prompt) || /client\.tsx|custom UI/i.test(prompt));
     });
     expect(offenders.map((e) => e.label)).toEqual([]);
@@ -59,7 +69,7 @@ describe("starter expectations", () => {
   test("a required builtin is named by the prompt", () => {
     const offenders: string[] = [];
     for (const e of EXPECTATIONS) {
-      const prompt = starters.find((s) => s.label === e.label)?.prompt ?? "";
+      const prompt = promptFor(e.label);
       if (referencesTemplate(prompt)) continue;
       for (const builtin of [...(e.builtins ?? []), ...(e.builtinDelegation ?? [])]) {
         if (!prompt.includes(builtin)) offenders.push(`${e.label}: ${builtin}`);
@@ -77,7 +87,7 @@ describe("starter expectations", () => {
       const capabilities = e.capabilities ?? [];
       if (!e.builtinDelegation || capabilities.length === 0) continue;
       const proseOnly = `greeting: "${capabilities.map((syn) => syn[0]).join(" and ")}"`;
-      const { missing } = checkCapabilities(e, { config: null, source: proseOnly });
+      const { missing } = checkCapabilities(e, { config: undefined, source: proseOnly });
       if (missing.length !== capabilities.length) offenders.push(e.label);
     }
     expect(offenders).toEqual([]);
@@ -159,33 +169,25 @@ describe("reading a built agent", () => {
   });
 
   describe("checkMode", () => {
-    test("no loaded config is not a failure, and says why", () => {
-      const result = checkMode(undefined, "");
-      expect(result.ok).toBe(true);
-      expect(result.note).toMatch(/no loaded config/);
-    });
-
+    // Only ONE claim is left here, and that is the point: the two `ok: true`
+    // notes this block used to assert ("no loaded config to check",
+    // "provider-less agent (pipeline default)") could never be read, because
+    // `createRecorder` drops a `detail` on a check that held. See `checkMode`.
     test("a non-pipeline agent fails and the note names the mode it built", () => {
-      const result = checkMode({ name: "X", mode: "s2s", tools: [] }, "stt: deepgram()");
+      const result = checkMode({ name: "X", mode: "s2s", tools: [] });
       expect(result.ok).toBe(false);
       expect(result.note).toMatch(/mode=s2s/);
     });
 
-    test("a pipeline agent with declared stages passes with no note", () => {
-      const result = checkMode(
-        { name: "X", mode: "pipeline", tools: [] },
-        "stt: assemblyai(), llm: gateway(), tts: assemblyai()",
-      );
-      expect(result).toEqual({ ok: true });
-    });
-
-    test("a provider-less pipeline agent passes, since defaults fill the stages", () => {
-      // The documented rule: unset stages are filled at parse time, so a
-      // pipeline-mode config always carries all three and an agent that
+    test.each([
+      ["no loaded config", undefined],
+      ["a pipeline agent", { name: "X", mode: "pipeline", tools: [] }],
+      // Unset stages are filled with the AssemblyAI defaults at parse time, so
+      // a pipeline-mode config always carries all three and an agent that
       // declares none is legitimate rather than incomplete.
-      const result = checkMode({ name: "X", mode: "pipeline", tools: [] }, "systemPrompt: 'hi'");
-      expect(result.ok).toBe(true);
-      expect(result.note).toMatch(/provider-less/);
+      ["a provider-less pipeline agent", { name: "X", mode: "pipeline", tools: ["a"] }],
+    ] as const)("%s passes with no note", (_label, config) => {
+      expect(checkMode(config)).toEqual({ ok: true });
     });
   });
 
@@ -200,21 +202,27 @@ describe("reading a built agent", () => {
       expect(checkWorkflowShape(complete)).toEqual({ ok: true });
     });
 
-    test("each missing piece is named in the note", () => {
-      const cases: [Record<string, string>, RegExp][] = [
-        [{ ...complete, "agent.ts": "export default agent({})" }, /no workflowApp\(\)/],
-        [{ "agent.ts": complete["agent.ts"], "client.tsx": complete["client.tsx"] }, /workflows\//],
-        [
-          { "agent.ts": complete["agent.ts"], "workflows/main.ts": "x" },
-          /no client\.tsx \(the front door\)/,
-        ],
-        [{ ...complete, "client.tsx": "export default client(() => null)" }, /mount with page\(\)/],
-      ];
-      for (const [files, pattern] of cases) {
-        const result = checkWorkflowShape(files);
-        expect(result.ok, `expected a failure matching ${pattern}`).toBe(false);
-        expect(result.note).toMatch(pattern);
-      }
+    // `test.each` rather than a loop: the reporter names the case that failed,
+    // which is what the loop's `expect(result.ok, `expected a failure matching
+    // ${pattern}`)` label existed to hand-roll.
+    test.each([
+      ["no workflowApp() declaration", { ...complete, "agent.ts": "export default agent({})" }],
+      [
+        "no workflows/ body",
+        { "agent.ts": complete["agent.ts"], "client.tsx": complete["client.tsx"] },
+      ],
+      [
+        "no client.tsx (the front door)",
+        { "agent.ts": complete["agent.ts"], "workflows/main.ts": "x" },
+      ],
+      [
+        "client.tsx does not mount with page()",
+        { ...complete, "client.tsx": "export default client(() => null)" },
+      ],
+    ])("names the missing piece: %s", (problem, files) => {
+      const result = checkWorkflowShape(files);
+      expect(result.ok).toBe(false);
+      expect(result.note).toContain(problem);
     });
 
     test("an empty workspace fails rather than throwing", () => {
@@ -267,7 +275,7 @@ describe("reading a built agent", () => {
       // The regexed version stopped at the first `}` and lost every tool after
       // one with an inline object in it — `remove_item` here.
       const source = "agent({ tools: { add_item: tool({ schema: { a: 1 } }), remove_item: t } })";
-      const report = checkCapabilities(expectation, { config: null, source });
+      const report = checkCapabilities(expectation, { config: undefined, source });
       expect(report.missing).toEqual([]);
     });
 
@@ -278,12 +286,12 @@ describe("reading a built agent", () => {
       // MORE permissive, which is why it has never failed a starter, and
       // narrowing it is a grading change rather than part of moving the file.
       const source = "agent({ tools: { add_item: tool({ schema: { a: 1 } }), remove_item: t } })";
-      expect(checkCapabilities(expectation, { config: null, source }).toolCount).toBe(4);
+      expect(checkCapabilities(expectation, { config: undefined, source }).toolCount).toBe(4);
     });
 
     test("`const x = tool(...)` declarations count too", () => {
       const report = checkCapabilities(expectation, {
-        config: null,
+        config: undefined,
         source: "const addThing = tool({}); const removeThing = tool({});",
       });
       expect(report.covered).toBe(true);
@@ -295,29 +303,24 @@ describe("reading a built agent", () => {
       const report = checkCapabilities(
         { label: "x", capabilities: [["puzzle"]] },
         {
-          config: null,
+          config: undefined,
           source: `tools: { use_item: tool({ description: "Use an item. This owns puzzle flags" }) }`,
         },
       );
       expect(report.missing).toEqual([]);
     });
 
-    test("descriptions in single and template quotes are read as well", () => {
-      // Apostrophes in prose are why each quote style has its own class.
-      for (const src of [
-        `tools: { a: tool({ description: 'sets the puzzle flag' }) }`,
-        "tools: { a: tool({ description: `sets the puzzle flag` }) }",
-      ]) {
-        expect(
-          checkCapabilities(
-            { label: "x", capabilities: [["puzzle"]] },
-            {
-              config: null,
-              source: src,
-            },
-          ).missing,
-        ).toEqual([]);
-      }
+    // Apostrophes in prose are why each quote style has its own character
+    // class, and `test.each` is what names the style that regressed — the loop
+    // this replaces labelled nothing at all.
+    test.each([
+      ["single", `tools: { a: tool({ description: 'sets the puzzle flag' }) }`],
+      ["template", "tools: { a: tool({ description: `sets the puzzle flag` }) }"],
+    ])("a description in %s quotes is evidence", (_style, source) => {
+      expect(
+        checkCapabilities({ label: "x", capabilities: [["puzzle"]] }, { config: undefined, source })
+          .missing,
+      ).toEqual([]);
     });
 
     test("the loaded config's tools count alongside the source's", () => {
@@ -331,7 +334,7 @@ describe("reading a built agent", () => {
 
     test("a missing capability is reported by its first synonym", () => {
       const report = checkCapabilities(expectation, {
-        config: null,
+        config: undefined,
         source: "tools: { add_item: t }",
       });
       expect(report.missing).toEqual(["remove"]);
@@ -350,7 +353,7 @@ describe("reading a built agent", () => {
     test("a named builtin the agent never declared is reported", () => {
       const report = checkCapabilities(
         { label: "x", capabilities: [], builtins: ["run_code", "web_search"] },
-        { config: null, source: `builtinTools: ["run_code"]` },
+        { config: undefined, source: `builtinTools: ["run_code"]` },
       );
       expect(report.missingBuiltins).toEqual(["web_search"]);
       expect(report.covered).toBe(false);
@@ -364,18 +367,20 @@ describe("reading a built agent", () => {
       };
       // Prose alone: no builtins declared, so the prose is not consulted.
       expect(
-        checkCapabilities(delegating, { config: null, source: "greeting: 'I convert currency'" })
-          .missing,
+        checkCapabilities(delegating, {
+          config: undefined,
+          source: "greeting: 'I convert currency'",
+        }).missing,
       ).toEqual(["convert"]);
       // Builtins alone: nothing tells the model what to reach for them for.
       expect(
-        checkCapabilities(delegating, { config: null, source: `builtinTools: ["fetch_json"]` })
+        checkCapabilities(delegating, { config: undefined, source: `builtinTools: ["fetch_json"]` })
           .missing,
       ).toEqual(["convert"]);
       // Both halves.
       expect(
         checkCapabilities(delegating, {
-          config: null,
+          config: undefined,
           source: `builtinTools: ["fetch_json"]; greeting: 'I convert currency'`,
         }).missing,
       ).toEqual([]);

@@ -17,18 +17,44 @@
  */
 
 import { plural } from "@alexkroman1/aai/utils";
-import type { EvalCheck, EvalReport } from "./runner.ts";
+import type { EvalCheck, EvalReport, EvalSpread } from "./runner.ts";
+
+/**
+ * One line of at most `max` characters — how every `EvalCheck.detail` is made.
+ *
+ * This module owns the presentation of that field, so the rule lives here: it
+ * was written out twice, `studio-target.ts` capping at 600 and
+ * `template-contract.ts` at 800, with byte-identical bodies. The caps are the
+ * tier's readability contract and there was no place to change one — and
+ * {@link signature} truncates again at 110 for grouping, so a producer widening
+ * its own cap silently changes which failures group together.
+ *
+ * `slice` BEFORE the collapse: a wedged vitest run or a full `tsc` dump is
+ * hundreds of kilobytes, and running `/\s+/g` over all of it to keep 800
+ * characters is the whole string walked for nothing. The headroom multiple is
+ * what lets the collapse still shorten runs of whitespace inside the kept part.
+ */
+export function condense(text: string, max: number): string {
+  return text
+    .slice(0, max * 8)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+/** How much of a signature is compared when grouping recurring failures. */
+const MAX_SIGNATURE = 110;
 
 /** Collapse a failure detail to a comparable signature. */
 export function signature(text: string): string {
-  return text
-    .replace(/'[^']*'/g, "'X'")
-    .replace(/"[^"]*"/g, '"X"')
-    .replace(/\b[0-9a-f]{8,}\b/gi, "ID")
-    .replace(/\b\d+\b/g, "N")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 110);
+  return condense(
+    text
+      .replace(/'[^']*'/g, "'X'")
+      .replace(/"[^"]*"/g, '"X"')
+      .replace(/\b[0-9a-f]{8,}\b/gi, "ID")
+      .replace(/\b\d+\b/g, "N"),
+    MAX_SIGNATURE,
+  );
 }
 
 /** One grouped failure signature. */
@@ -64,10 +90,15 @@ export function failureGroups(reports: readonly EvalReport[]): FailureGroup[] {
   const groups = new Map<string, GroupEntry>();
   for (const report of reports) {
     for (const [key, line] of failureLines(report)) {
-      const entry = groups.get(key) ?? { count: 0, cases: [], sample: line };
+      // Insert only on a MISS: the `?? {…}` form allocated an entry object for
+      // every failing line, hit or not, and re-`set` the map each time.
+      let entry = groups.get(key);
+      if (entry === undefined) {
+        entry = { count: 0, cases: [], sample: line };
+        groups.set(key, entry);
+      }
       entry.count += 1;
       if (!entry.cases.includes(report.name)) entry.cases.push(report.name);
-      groups.set(key, entry);
     }
   }
   return [...groups]
@@ -76,6 +107,7 @@ export function failureGroups(reports: readonly EvalReport[]): FailureGroup[] {
 }
 
 const pct = (n: number): string => `${Math.round(n * 100)}%`;
+const secs = (ms: number): string => `${Math.round(ms / 1000)}s`;
 
 /**
  * `mean (min–max, ±spread)`, or a bare number when one pass was measured.
@@ -85,12 +117,29 @@ const pct = (n: number): string => `${Math.round(n * 100)}%`;
  * a SINGLE measurement and printing `±0%` for it would claim a stability nobody
  * observed. With none measured there is no number at all, and saying so beats
  * printing the 0% that an empty spread produces.
+ *
+ * Takes a {@link EvalSpread} and a formatter rather than an {@link EvalReport},
+ * because it used to read only `report.score` — so the LATENCY axis, which
+ * carries a fully-computed spread of its own, was printed by {@link formatCase}
+ * as a bare mean. This module's rule is "the spread is the headline, never the
+ * mean", and this package's own measurement is that at level-1 scope the score
+ * is not the noisy thing, latency is (46s / 93s / 70s over identical code).
+ * Both axes now go through one function, so the two branches above apply to
+ * each by construction.
  */
-export function formatSpread(report: EvalReport): string {
-  if (report.measuredPasses === 0) return "not measured";
-  const { min, max, mean, spread } = report.score;
-  if (report.measuredPasses === 1) return pct(mean);
-  return `${pct(mean)} (${pct(min)}–${pct(max)}, ±${pct(spread)})`;
+export function formatSpread(
+  { min, max, mean, spread }: EvalSpread,
+  measuredPasses: number,
+  fmt: (n: number) => string,
+): string {
+  if (measuredPasses === 0) return "not measured";
+  if (measuredPasses === 1) return fmt(mean);
+  return `${fmt(mean)} (${fmt(min)}–${fmt(max)}, ±${fmt(spread)})`;
+}
+
+/** {@link formatSpread} over a report's score. */
+export function formatScore(report: EvalReport): string {
+  return formatSpread(report.score, report.measuredPasses, pct);
 }
 
 /** Every failing assertion of one case, deduplicated across repeats. */
@@ -128,9 +177,9 @@ export function formatEvalReport(reports: readonly EvalReport[]): string {
 function formatCase(report: EvalReport): string[] {
   const repeats = report.passes.length;
   const lines = [
-    `${report.name}  score ${formatSpread(report)}  ` +
+    `${report.name}  score ${formatScore(report)}  ` +
       `${repeats} ${plural(repeats, "repeat")}  ` +
-      `${Math.round(report.ms.mean / 1000)}s/pass` +
+      `${formatSpread(report.ms, report.measuredPasses, secs)}/pass` +
       (report.harnessErrors > 0 ? `  HARNESS ERRORS ${report.harnessErrors}` : ""),
     ...failedChecks(report).map((check) => `  FAIL ${checkLine(check)}`),
   ];

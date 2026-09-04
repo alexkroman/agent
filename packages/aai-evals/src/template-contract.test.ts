@@ -14,8 +14,7 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   CONTRACT_FILE,
   type ContractRunner,
@@ -23,10 +22,9 @@ import {
   readContract,
   runTemplateContract,
   spawnCommand,
+  TEMPLATES_DIR,
   templateNamed,
 } from "./template-contract.ts";
-
-const TEMPLATES_DIR = fileURLToPath(new URL("../../aai-templates/templates/", import.meta.url));
 
 const scratches: string[] = [];
 afterEach(async () => {
@@ -40,15 +38,15 @@ async function scratch(): Promise<string> {
   return path.join(base, "workspace");
 }
 
-/** A runner that records the directory it was handed and returns `code`. */
-function fakeRunner(code: number, output = ""): ContractRunner & { dir: string | undefined } {
-  const runner = async (dir: string) => {
-    runner.dir = dir;
-    return { code, output };
-  };
-  runner.dir = undefined as string | undefined;
-  return runner;
-}
+/**
+ * A runner that returns `code`, and records the directory it was handed.
+ *
+ * `vi.fn` rather than a function object with a mutable `.dir`: the spy keeps its
+ * own call history and NAMES itself in a failure, which is the repo rule about
+ * preferring the tool's bookkeeping to a local variable.
+ */
+const fakeRunner = (code: number, output = ""): ReturnType<typeof vi.fn<ContractRunner>> =>
+  vi.fn<ContractRunner>(async () => ({ code, output }));
 
 describe("templateNamed", () => {
   test("reads the template a prompt names", () => {
@@ -76,13 +74,15 @@ describe("templateNamed", () => {
       .map((s) => templateNamed(s.prompt))
       .filter((t): t is string => t !== undefined);
     expect(named.length).toBeGreaterThan(8);
-    for (const template of named) {
-      const dir = path.join(TEMPLATES_DIR, template);
-      await expect(
-        stat(dir).then((s) => s.isDirectory()),
-        `starter names template "${template}", which is not a directory`,
-      ).resolves.toBe(true);
-    }
+    // In parallel: fifteen `stat`s awaited one at a time, in the tier CI gates.
+    await Promise.all(
+      [...new Set(named)].map((template) =>
+        expect(
+          stat(path.join(TEMPLATES_DIR, template)).then((st) => st.isDirectory()),
+          `starter names template "${template}", which is not a directory`,
+        ).resolves.toBe(true),
+      ),
+    );
   });
 });
 
@@ -135,8 +135,8 @@ describe("runTemplateContract", () => {
       scratchDir: await scratch(),
       run,
     });
-    expect(result).toEqual({ ran: false, passed: true, note: "prompt names no template" });
-    expect(run.dir).toBeUndefined();
+    expect(result).toEqual({ outcome: "skipped", note: "prompt names no template" });
+    expect(run).not.toHaveBeenCalled();
   });
 
   test("a template that ships no contract does not run and does not fail", async () => {
@@ -147,9 +147,8 @@ describe("runTemplateContract", () => {
       scratchDir: await scratch(),
       run,
     });
-    expect(result.ran).toBe(false);
-    expect(result.passed).toBe(true);
-    expect(run.dir).toBeUndefined();
+    expect(result.outcome).toBe("skipped");
+    expect(run).not.toHaveBeenCalled();
   });
 
   test("a green contract run passes", async () => {
@@ -159,7 +158,7 @@ describe("runTemplateContract", () => {
       scratchDir: await scratch(),
       run: fakeRunner(0),
     });
-    expect(result).toEqual({ ran: true, passed: true, note: "" });
+    expect(result).toEqual({ outcome: "passed", note: "" });
   });
 
   test("a red contract run fails and keeps the output", async () => {
@@ -169,8 +168,7 @@ describe("runTemplateContract", () => {
       scratchDir: await scratch(),
       run: fakeRunner(1, "AssertionError:  every  order tool must refuse"),
     });
-    expect(result.ran).toBe(true);
-    expect(result.passed).toBe(false);
+    expect(result.outcome).toBe("failed");
     expect(result.note).toBe("AssertionError: every order tool must refuse");
   });
 
@@ -237,7 +235,7 @@ describe("runTemplateContract", () => {
       scratchDir: dir,
       run: fakeRunner(0),
     });
-    expect(result.passed).toBe(true);
+    expect(result.outcome).toBe("passed");
   });
 });
 
