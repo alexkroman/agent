@@ -55,6 +55,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import { queueNameKind } from "@alexkroman1/aai-runtime/internal";
+import { envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -151,14 +152,54 @@ export type EnqueueParams = {
  * double delivery.
  */
 /**
- * Tell a listening replica to look, when the message is due NOW.
+ * The longest delay whose arrival is still worth ANNOUNCING — the sweep's own
+ * `WORKFLOW_QUEUE_INTERVAL_MS`, read from the same variable with the same
+ * default.
  *
- * Skipped for a delayed message, which is the whole reason this is a condition
- * rather than an unconditional notify: a `NOTIFY` says "look now" and there is
- * nothing to find until `available_at` passes, so announcing a 30-second sleep
- * would wake every replica to run a query that returns nothing. A parked message
- * is what the periodic pass is FOR — see {@link WORKFLOW_QUEUE_CHANNEL} — and it
- * is the one thing a notification cannot express.
+ * DECLARED rather than imported, and the duplication is deliberate: the sweep
+ * imports this module, so importing it back would make a cycle out of a constant
+ * both ends only read. The expression is identical, so the two cannot drift by
+ * configuration; `workflow-queue-due-soon.test.ts` pins them equal so they cannot
+ * drift by edit either.
+ *
+ * Why the interval is the right ceiling, from both sides. AT OR UNDER it, a row
+ * can become due before the next tick and the tick is therefore the wrong
+ * instrument — see {@link announce}. ABOVE it, a tick is already going to run
+ * before the row is due, so an announcement buys nothing and costs every replica
+ * a wakeup.
+ */
+export const QUEUE_DUE_SOON_MS = envMs(process.env.WORKFLOW_QUEUE_INTERVAL_MS, 1000);
+
+/**
+ * Tell a listening replica to look, when the message is due NOW or SOON.
+ *
+ * A `NOTIFY` says "look now" and there is nothing to find until `available_at`
+ * passes, so this used to skip a delayed message entirely: announcing a
+ * 30-second sleep would wake every replica to run a query that returns nothing,
+ * and a parked message is what the periodic pass is FOR — see {@link
+ * WORKFLOW_QUEUE_CHANNEL}.
+ *
+ * ## Which made the interval a latency FLOOR for a SHORT sleep
+ *
+ * That argument holds for a sleep measured in minutes and fails for one measured
+ * in milliseconds. Nothing announces a row parked for 100 ms, so it waits for the
+ * next tick — and the tick is on its own cadence, so `ctx.sleep("beat", 100)` and
+ * `ctx.sleep("beat", 900)` resumed at the SAME moment, one full
+ * `WORKFLOW_QUEUE_INTERVAL_MS` from the enqueue on average, with a poll-shaped
+ * body paying it per iteration. `workflow-platform-dispatch.ts` measured the
+ * residual at ~780 ms and named this line as the cause.
+ *
+ * So a delay at or under {@link QUEUE_DUE_SOON_MS} announces too. The pass that
+ * wakes CLAIMS NOTHING — the row is not due yet, which is exactly the objection
+ * above — and that is not the point of it: a pass also reads
+ * {@link msUntilNextDue}, so what the wakeup really buys is the sweep learning
+ * "due at T" and scheduling one extra look for it. The notification still says
+ * only "look", and carries no payload, so nothing here can be tempted into
+ * delivering FROM it.
+ *
+ * A pass triggered this way is one indexed claim plus one indexed read, and the
+ * scheduler's coalescing runner collapses a burst of them, so a fan-out of short
+ * sleeps costs one wakeup rather than one per branch.
  *
  * Failures are swallowed, deliberately: the row is committed and the periodic pass
  * will find it, so a failed announcement costs latency and nothing else. Letting
@@ -169,16 +210,16 @@ export type EnqueueParams = {
  * immediately, which is what `queueDeliveryBusySeconds` answers for a walk that
  * has barely started — was re-parked with `available_at = now()` and NO notify,
  * so it waited out a whole `WORKFLOW_QUEUE_INTERVAL_MS` for a message that was
- * already due. The rule above is unchanged and is what makes this safe: the test
- * is the delay, not the caller, so a real `sleep()` still announces nothing.
+ * already due. The test is the DELAY and not the caller, which is what keeps one
+ * rule over both call sites.
  *
  * The delay is in MILLISECONDS, which is the unit both call sites already hold —
  * `reschedule` rounds a fractional `delaySeconds` into them, and passing seconds
- * from one caller and milliseconds from the other would make the `> 0` test read
+ * from one caller and milliseconds from the other would make the test read
  * differently on each.
  */
 async function announce(sql: SqlExec, delayMs: number): Promise<void> {
-  if (delayMs > 0) return;
+  if (delayMs > QUEUE_DUE_SOON_MS) return;
   try {
     await sql("select pg_notify($1, '')", [WORKFLOW_QUEUE_CHANNEL]);
   } catch (error) {
@@ -289,6 +330,58 @@ export async function enqueue(sql: SqlExec, params: EnqueueParams): Promise<{ id
   // destructuring instead.
   const { idempotencyKey: _dropped, ...withoutKey } = params;
   return enqueue(sql, withoutKey);
+}
+
+/**
+ * How long until the earliest PARKED message becomes due, or `undefined` when
+ * nothing is parked.
+ *
+ * ## What it is for: the interval is a latency FLOOR for a short sleep
+ *
+ * A `NOTIFY` means "look now" and there is nothing to find until `available_at`
+ * passes, so nothing announced a future-dated row and a parked message waited
+ * for the periodic pass. That is right for a `sleep()` measured in minutes and
+ * badly wrong for one measured in milliseconds: everything below
+ * `WORKFLOW_QUEUE_INTERVAL_MS` cost the SAME as one full interval, so an author's
+ * `ctx.sleep("beat", 100)` and `ctx.sleep("beat", 900)` resumed at the same
+ * moment and a poll-shaped body paid that per iteration.
+ * `workflow-platform-dispatch.ts`'s own note measured the residual at ~780 ms and
+ * named it as the cause.
+ *
+ * So a short park announces (see {@link announce}), the pass it wakes ASKS this,
+ * and the sweep schedules one extra look at the answer — see
+ * `startWorkflowQueueSweep`. That expresses "due at T", which is exactly what a
+ * notification cannot, and it does it without a payload: a duration read out of
+ * the table names no message, so nothing here can be tempted into delivering
+ * FROM the signal — the rule {@link WORKFLOW_QUEUE_CHANNEL} states and
+ * `CloseableDb.listen` drops the payload to enforce.
+ *
+ * ## It is one index scan, and that is what makes it affordable per pass
+ *
+ * `workflow_queue_due_idx` is `(available_at) where locked_at is null` — partial
+ * on the CLAIM, not on the clock — so a future row is in it and in order. The
+ * query is therefore an ordered index scan stopping at the first row, on the
+ * connection the claim already holds; it is not a `min()` over the table.
+ *
+ * The delay is computed by POSTGRES, like every other timestamp arithmetic here,
+ * so a replica with a skewed clock cannot schedule its extra look into another
+ * replica's past. It is a FLOOR rather than an instant for the same reason a
+ * caller may always be answered late and never early: the row was still parked
+ * when this ran, so a pass this many milliseconds from now cannot be early.
+ */
+export async function msUntilNextDue(sql: SqlExec): Promise<number | undefined> {
+  const rows = await sql(
+    `select ceil(extract(epoch from (available_at - now())) * 1000)::bigint as ms
+       from aai_platform.workflow_queue
+      where locked_at is null and available_at > now()
+      order by available_at
+      limit 1`,
+  );
+  const ms = Number(rows[0]?.ms);
+  // NOT `?? undefined`: an empty queue, a non-numeric answer and a row that
+  // became due while this ran are all "nothing to schedule a look for", and the
+  // caller's only alternative would be to invent a delay.
+  return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }
 
 // The DELIVERY CLAIM — `claimDue`, `QUEUE_CLAIM_STALE_MS` and

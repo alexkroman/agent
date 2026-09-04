@@ -128,6 +128,25 @@ const CONFLICT_METHODS = new Set(["claimHook"]);
  *
  * `errorFor` is what keeps a refusal a refusal: every other non-2xx is the
  * store, and a retryable status already carries `PLATFORM_UNAVAILABLE_CODE`.
+ *
+ * ## The method rides the PATH and the body, and both are deliberate
+ *
+ * The path is for whoever is reading a request log. Every one of these fifteen
+ * methods POSTed to the same `/:slug/workflow-journal`, so Modal's per-request
+ * line — the only per-call record a deployed run leaves, since the debug line
+ * above `platformPost` is off unless `AAI_DEBUG=1` — said which run was talking
+ * and never what it said. Reconstructing an RPC sequence meant COUNTING requests
+ * and inferring the order from the engine's source. `/workflow-journal/appendStep`
+ * decomposes that log per method for free, at zero added log volume.
+ *
+ * The BODY keeps it because the two ends of this wire are deployed
+ * independently: a user's bundle carries its own copy of this package (see "A
+ * deployed guest has TWO copies of this package" in this package's guide), so a
+ * bundle older than the path form has to keep working against a newer platform,
+ * and the platform reads the path first and falls back to the body
+ * (`aai-server/workflow-journal-handler.ts`). A newer guest against an older
+ * platform is the same question from the other side and is why the legacy route
+ * stays registered rather than being replaced.
  */
 async function call(
   opts: PlatformEndpoint,
@@ -136,6 +155,7 @@ async function call(
 ): Promise<unknown> {
   return await platformResult(opts, {
     route: PLATFORM_ROUTES.workflowJournal,
+    pathSegment: method,
     label: `workflow-journal ${method}`,
     timeoutMs: JOURNAL_TIMEOUT_MS,
     body: JSON.stringify({ method, ...body }),

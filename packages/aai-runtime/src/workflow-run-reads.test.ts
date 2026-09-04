@@ -31,6 +31,7 @@ import {
   isRunWatchClosed,
   type RunReader,
   readRunOnce,
+  signalRunSettled,
 } from "./workflow-run-reads.ts";
 
 beforeEach(() => {
@@ -409,5 +410,154 @@ describe("readRunOnce", () => {
     // its own answer would report `Run watch closed` for every lost database.
     const runs = { get: vi.fn(async () => Promise.reject(new Error("journal 503"))) };
     await expect(readRunOnce(runs, "wrun_1")).rejects.toThrow("journal 503");
+  });
+});
+/**
+ * The local accelerator. Nothing told a watcher anything, so a run that finished
+ * in THIS process was discovered by the next tick of a timer — up to a whole
+ * `WORKFLOW_WAIT_POLL_MS` of added latency on the one route whose caller is
+ * holding a request open.
+ *
+ * Every case here is also a statement of what the signal must NOT become: it
+ * carries no snapshot and resolves nobody, so what it can do wrong is limited to
+ * taking a read early or not taking one at all.
+ */
+describe("signalRunSettled", () => {
+  test("answers a pending waiter NOW rather than at its own deadline", async () => {
+    const runs = { get: vi.fn(async () => snapshot({ status: "completed" })) };
+    const reads = createRunReads(runs);
+    const watch = reads.watch("wrun_1");
+    const pending = watch.next(10_000);
+
+    // Nowhere near the deadline, so without the signal this is zero reads.
+    await vi.advanceTimersByTimeAsync(50);
+    expect(runs.get).toHaveBeenCalledTimes(0);
+
+    signalRunSettled("wrun_1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await pending).toEqual(snapshot({ status: "completed" }));
+    expect(runs.get).toHaveBeenCalledTimes(1);
+    watch.close();
+  });
+
+  test("brings a READ forward and never supplies the answer itself", async () => {
+    // The whole safety argument in one case. A run can be walked by another
+    // replica, so a value pushed from whichever process finished a walk would be
+    // the cache this module refuses to be. The signal says only "look now".
+    const runs = { get: vi.fn(async () => snapshot({ status: "running" })) };
+    const reads = createRunReads(runs);
+    const watch = reads.watch("wrun_1");
+    const pending = watch.next(10_000);
+    signalRunSettled("wrun_1");
+    await vi.advanceTimersByTimeAsync(0);
+    // `running`, because that is what the journal said — a signal that carried
+    // its own verdict would have resolved this `completed`.
+    expect(await pending).toEqual(snapshot({ status: "running" }));
+    watch.close();
+  });
+
+  test("is not lost when it arrives while a read is already in flight", async () => {
+    // The common shape rather than an edge: the walk's own status write and the
+    // waiter's poll are both racing the same journal, and the read in flight may
+    // have STARTED before the write landed. Holding the signal until a read is
+    // really triggered is what stops the waiter then paying its full interval
+    // for an answer that already existed.
+    // A read whose resolution this spec owns, so "in flight" is a state the case
+    // really occupies rather than one it hopes to hit between microtasks.
+    const inFlight: PromiseWithResolvers<WorkflowRunSnapshot | undefined>[] = [];
+    const runs = {
+      get: vi.fn(() => {
+        const next = Promise.withResolvers<WorkflowRunSnapshot | undefined>();
+        inFlight.push(next);
+        return next.promise;
+      }),
+    };
+    const reads = createRunReads(runs);
+    const watch = reads.watch("wrun_1");
+
+    // A read in flight, with the waiter batched into it and the waiter set empty
+    // — so there is no deadline for the signal to pull forward.
+    const first = watch.next(0);
+    // The runner defers `run` by a microtask, so the read is really open only
+    // after one turn — asserted rather than assumed, since the whole case is
+    // about what a signal does while one is.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.get).toHaveBeenCalledTimes(1);
+    signalRunSettled("wrun_1");
+    inFlight[0]?.resolve(snapshot({ status: "running" }));
+    expect(await first).toEqual(snapshot({ status: "running" }));
+
+    // The loop re-arms at its ordinary interval; the held signal makes it now.
+    const second = watch.next(10_000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.get).toHaveBeenCalledTimes(2);
+    inFlight[1]?.resolve(snapshot({ status: "completed" }));
+    expect(await second).toEqual(snapshot({ status: "completed" }));
+    watch.close();
+  });
+
+  test("takes NO read for a run nobody is watching, and does not throw", async () => {
+    // The engine raises this from a walk without asking whether anything is
+    // listening — a run started with no `wait=` and no open page is the ordinary
+    // case — so an unwatched run has to be free rather than merely harmless.
+    const runs = { get: vi.fn(async () => snapshot()) };
+    const reads = createRunReads(runs);
+    signalRunSettled("wrun_1");
+    signalRunSettled("wrun_nothing");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.get).toHaveBeenCalledTimes(0);
+    expect(reads.size).toBe(0);
+  });
+
+  test("a CLOSED watch stops hearing it", async () => {
+    // A listener that outlived its watch would read a run for a response nobody
+    // will receive — the same waste `waitForRun`'s caller-gone check exists for,
+    // arriving by a different route.
+    const runs = { get: vi.fn(async () => snapshot()) };
+    const reads = createRunReads(runs);
+    reads.watch("wrun_1").close();
+    signalRunSettled("wrun_1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.get).toHaveBeenCalledTimes(0);
+  });
+
+  test("crosses copies of this package, which is the deployment that needs it", async () => {
+    // The process that WALKS a run is the bundle's engine; the one holding the
+    // `wait=` request is the harness's server. A module-level registry would put
+    // the signal and every listener in separate halves of one process, where
+    // this is dead code that looks wired.
+    vi.resetModules();
+    const harness = await import("./workflow-run-reads.ts");
+    vi.resetModules();
+    const bundle = await import("./workflow-run-reads.ts");
+    expect(harness).not.toBe(bundle);
+
+    const runs = { get: vi.fn(async () => snapshot({ status: "completed" })) };
+    const watch = harness.watchRun(runs, "wrun_1");
+    const pending = watch.next(10_000);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(runs.get).toHaveBeenCalledTimes(0);
+
+    bundle.signalRunSettled("wrun_1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await pending).toEqual(snapshot({ status: "completed" }));
+    watch.close();
+  });
+
+  test("a synchronous wait answers on the signal instead of on its next tick", async () => {
+    // Stated over the REAL loop, because what was wrong is what a caller waits,
+    // and a spec over this module's API alone would not have measured it.
+    let answer = snapshot({ status: "running" });
+    const runs = { get: vi.fn(async () => answer) };
+    const waiting = waitForRun(runs, "wrun_1", 10_000, caller());
+    // Past the opening read, well short of the next one.
+    await vi.advanceTimersByTimeAsync(WORKFLOW_WAIT_POLL_MS - 50);
+    answer = snapshot({ status: "completed" });
+    signalRunSettled("wrun_1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await waiting).toEqual(snapshot({ status: "completed" }));
+    // Two reads: the opening one and the one the signal brought forward. Without
+    // the signal the second lands `WORKFLOW_WAIT_POLL_MS` later.
+    expect(runs.get).toHaveBeenCalledTimes(2);
   });
 });

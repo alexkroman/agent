@@ -147,15 +147,30 @@ export type PlatformEndpoint = {
 };
 
 /**
- * `<base><route>`, tolerating a trailing slash on the base.
+ * `<base><route>`, plus an optional trailing SEGMENT, tolerating a trailing slash
+ * on the base.
  *
  * The strip is why this is a function and not a template at each call site: six
  * copies of `` base.replace(/\/+$/, "") `` were in the tree, one of them running
  * per storage call and one running TWICE per enqueue (the second only to build a
  * timeout message that the success path discards).
  *
+ * ## The segment is what makes a multi-method route READABLE in a request log
+ *
+ * Three of these routes are one path serving a dozen methods behind a `method`
+ * field in the body, and a request log — Modal's, a proxy's, anyone's — sees the
+ * path. So `POST /:slug/workflow-journal` was fourteen different operations
+ * printing one line, and reconstructing which was which meant counting requests.
+ * A method in the PATH decomposes that log for free, at zero added volume, which
+ * is why the segment exists rather than a second log line per call.
+ *
+ * It is `encodeURIComponent`'d because it is a path segment and a route is not:
+ * every caller passes a value off a closed list, and encoding is what keeps that
+ * true of the URL even if one day a caller does not.
+ *
  * @internal
  */
-export function platformUrl(base: string, route: PlatformRoute): string {
-  return `${base.replace(/\/+$/, "")}${route}`;
+export function platformUrl(base: string, route: PlatformRoute, segment?: string): string {
+  const suffix = segment === undefined ? "" : `/${encodeURIComponent(segment)}`;
+  return `${base.replace(/\/+$/, "")}${route}${suffix}`;
 }
