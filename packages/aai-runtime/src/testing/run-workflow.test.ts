@@ -14,7 +14,7 @@
  * shape it could never receive.
  */
 
-import { type WorkflowCtx, workflow } from "@alexkroman1/aai";
+import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "../workflow-journal-memory.ts";
@@ -27,7 +27,7 @@ describe("a run that finishes on the first delivery", () => {
   test("reports its output and its journaled steps", async () => {
     const digest = workflow({
       description: "digest",
-      run: async (input: Record<string, unknown>, ctx: WorkflowCtx) => ({
+      run: async (input: Record<string, unknown>, ctx: WorkflowContext) => ({
         headline: await ctx.step("summarize", () => `all about ${String(input.topic)}`),
       }),
     });
@@ -67,7 +67,7 @@ describe("a run that SLEEPS", () => {
   /** A body that files a report a day after writing it. */
   const review = workflow({
     description: "review",
-    run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const written = await ctx.step("write", () => "the draft");
       await ctx.sleep("settle", A_DAY);
       return { written, filed: await ctx.step("file", () => "filed") };
@@ -91,7 +91,7 @@ describe("a run that SLEEPS", () => {
     const parked = await runWorkflow(
       workflow({
         description: "review",
-        run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+        run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
           const written = await ctx.step("write", write);
           await ctx.sleep("settle", A_DAY);
           return { written, filed: await ctx.step("file", () => "filed") };
@@ -115,7 +115,7 @@ describe("a run that SLEEPS", () => {
 describe("a run parked on somebody else's ANSWER", () => {
   const approve = workflow({
     description: "approve",
-    run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const answer = await ctx.waitFor<{ approved: boolean }>("approval:1");
       return { approved: answer?.approved ?? false };
     },
@@ -147,7 +147,7 @@ describe("a wait whose WINDOW closes unanswered", () => {
   /** A gate whose safe default is to refuse — the shape an approval has. */
   const gate = workflow({
     description: "gate",
-    run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const answer = await ctx.waitFor<{ approved: boolean }>("approval:1", {
         timeoutMs: 120_000,
       });
@@ -186,7 +186,7 @@ describe("a wait whose WINDOW closes unanswered", () => {
     // schedule is `advanceSleep`'s and an approval window is this one's.
     const scheduled = workflow({
       description: "scheduled",
-      run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
         await ctx.sleep("schedule", A_DAY);
         return "later";
       },
@@ -204,7 +204,7 @@ describe("a step that RETRIES", () => {
     let tries = 0;
     const flaky = workflow({
       description: "flaky",
-      run: (_input: Record<string, unknown>, ctx: WorkflowCtx) =>
+      run: (_input: Record<string, unknown>, ctx: WorkflowContext) =>
         ctx.step("fetch", () => {
           tries += 1;
           // A plain `Error` is retryable with NO backoff, so the case costs
@@ -230,7 +230,7 @@ describe("a worker that DIES mid-run", () => {
     const second = vi.fn(() => "two");
     const pipeline = workflow({
       description: "pipeline",
-      run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => [
+      run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => [
         await ctx.step("first", first),
         await ctx.step("second", second),
       ],
@@ -256,7 +256,8 @@ describe("a worker that DIES mid-run", () => {
   test("does not charge the dead attempt to the resuming walk's retry budget", async () => {
     const pipeline = workflow({
       description: "pipeline",
-      run: (_input: Record<string, unknown>, ctx: WorkflowCtx) => ctx.step("only", () => "done"),
+      run: (_input: Record<string, unknown>, ctx: WorkflowContext) =>
+        ctx.step("only", () => "done"),
     });
 
     const journal = createMemoryJournal();
@@ -281,7 +282,7 @@ describe("what the journal holds, as a spec reads it", () => {
   /** A body that steps in a loop and reads the clock at both ends. */
   const audited = workflow({
     description: "audited",
-    run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const startedAt = await ctx.now();
       // Eleven, so the occurrence has to be compared as a NUMBER: `poll#10`
       // sorts before `poll#2` as a string.
@@ -369,7 +370,7 @@ describe("the driver's own limits", () => {
     // spec that hangs and reports the RUNNER's timeout.
     const looping = workflow({
       description: "looping",
-      run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
         for (let i = 0; i < 100; i++) await ctx.sleep("poll", A_DAY);
         return "never";
       },

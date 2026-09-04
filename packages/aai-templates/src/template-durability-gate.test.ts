@@ -120,7 +120,7 @@ describe.each(workflowTemplates())("%s", (name: string) => {
     expect(
       imports.length,
       `${name} declares a workflow in workflows/ but no spec imports ${SURFACE}. ` +
-        "A template's body is the thing the template is FOR, and `createWorkflowCtx` " +
+        "A template's body is the thing the template is FOR, and `createWorkflowContext` " +
         "records what it asked for without replaying anything — see " +
         "link-digest/agent.test.ts for the shape a durable block takes.",
     ).toBeGreaterThan(0);

@@ -3,7 +3,7 @@
  * The GRAMMAR of a generated workflow body, and the compiler that runs one.
  *
  * A {@link Program} is a list of {@link Node}s; {@link runProgram} walks it
- * against a real `WorkflowCtx`, and {@link expectedOutput} says what the answer
+ * against a real `WorkflowContext`, and {@link expectedOutput} says what the answer
  * must be WITHOUT the engine. Nothing here interrupts anything: the two crash
  * models are `_workflow-resume-harness.ts` (a killed worker) and
  * `_workflow-rebuild-harness.ts` (a rebuilt engine), and both are written
@@ -49,7 +49,7 @@
  * claim is about LEAF step bodies, each of which has its own journal row.
  */
 
-import type { SleepOptions, StepOptions, WorkflowCtx } from "@alexkroman1/aai";
+import type { SleepOptions, StepOptions, WorkflowContext } from "@alexkroman1/aai";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 
@@ -198,7 +198,7 @@ export function tokensOf(program: Program): { token: string; mode: HookMode }[] 
  * wait needs a label, and a label per NODE is the only kind that keeps the
  * program's waits on separate counters.
  */
-type GeneratedCtx = Omit<WorkflowCtx, "step" | "sleep"> & {
+type GeneratedCtx = Omit<WorkflowContext, "step" | "sleep"> & {
   step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
   sleep(label: string, until: number | Date, options?: SleepOptions): Promise<void>;
 };
@@ -279,7 +279,7 @@ async function runNode(node: Node, ctx: GeneratedCtx, rec: Recorder): Promise<un
 
 export async function runProgram(
   program: Program,
-  raw: WorkflowCtx,
+  raw: WorkflowContext,
   rec: Recorder,
 ): Promise<unknown[]> {
   const ctx: GeneratedCtx = raw; // The one narrowing — see {@link GeneratedCtx}.

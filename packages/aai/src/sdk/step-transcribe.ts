@@ -29,11 +29,11 @@
  * `stepFetch` already keep.
  *
  * ```ts
- * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
+ * import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  * import { stepTranscribePoll, stepTranscribeSubmit, stepTranscribeUpload } from "@alexkroman1/aai/step";
  *
- * export async function transcribe(input: { recording: string }, ctx: WorkflowCtx) {
+ * export async function transcribe(input: { recording: string }, ctx: WorkflowContext) {
  *   const { audioUrl } = await ctx.step("upload", () =>
  *     stepTranscribeUpload(input.recording).catch(throwStepError),
  *   );

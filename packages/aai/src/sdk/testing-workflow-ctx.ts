@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A {@link WorkflowCtx} for driving a workflow BODY from a spec.
+ * A {@link WorkflowContext} for driving a workflow BODY from a spec.
  *
  * The body is the half of a workflow that nothing else can test. Its steps are
  * ordinary exported functions a spec calls directly, and its declaration is a
@@ -68,7 +68,7 @@ import type {
   StepOptions,
   WaitForOptions,
   WaitForSchemaOptions,
-  WorkflowCtx,
+  WorkflowContext,
 } from "./workflow-ctx.ts";
 
 /**
@@ -93,7 +93,7 @@ async function checkedAgainst(
   const result = await schema["~standard"].validate(value);
   if (result.issues) {
     throw new Error(
-      `createWorkflowCtx: ${what} does not match the schema it declared: ` +
+      `createWorkflowContext: ${what} does not match the schema it declared: ` +
         formatSchemaIssues(result.issues),
     );
   }
@@ -120,8 +120,8 @@ export type RecordedSleep = {
   correlationId?: string | undefined;
 };
 
-/** What {@link createWorkflowCtx} answers: a real `WorkflowCtx` plus its log. */
-export type WorkflowCtxRecorder = WorkflowCtx & {
+/** What {@link createWorkflowContext} answers: a real `WorkflowContext` plus its log. */
+export type WorkflowContextRecorder = WorkflowContext & {
   /** Every step reached, in the order the body reached them. */
   readonly steps: RecordedStep[];
   /** Every `ctx.sleep`, in order. */
@@ -130,8 +130,8 @@ export type WorkflowCtxRecorder = WorkflowCtx & {
   readonly waited: string[];
 };
 
-/** What {@link createWorkflowCtx} takes. */
-export type WorkflowCtxOptions = {
+/** What {@link createWorkflowContext} takes. */
+export type WorkflowContextOptions = {
   /** Defaults to `"wrun_test"`. */
   runId?: string;
   /** The declared key. Defaults to `"test"`. */
@@ -171,7 +171,7 @@ export type WorkflowCtxOptions = {
   /**
    * What `ctx.now()` answers — a fixed number, or a function called per reach.
    *
-   * Defaults to {@link WORKFLOW_CTX_NOW}, a FIXED instant, so a body's derived
+   * Defaults to {@link WORKFLOW_CONTEXT_NOW}, a FIXED instant, so a body's derived
    * durations are constants a spec can write down. There is no journal here, so
    * nothing is memoized: a function is called once per reach, which is what a
    * spec asserting on two reads (a start and an end) wants.
@@ -191,19 +191,19 @@ export type WorkflowCtxOptions = {
 };
 
 /**
- * The instant {@link createWorkflowCtx} freezes `ctx.now()` at.
+ * The instant {@link createWorkflowContext} freezes `ctx.now()` at.
  *
  * `2026-01-01T00:00:00.000Z`. Exported so a spec computes an expected duration
  * from it rather than copying the number.
  */
-export const WORKFLOW_CTX_NOW = 1_767_225_600_000;
+export const WORKFLOW_CONTEXT_NOW = 1_767_225_600_000;
 
 /**
- * Build a `WorkflowCtx` that runs a body and records what it asked for.
+ * Build a `WorkflowContext` that runs a body and records what it asked for.
  *
  * @example
  * ```ts no-check
- * const ctx = createWorkflowCtx();
+ * const ctx = createWorkflowContext();
  * const output = await digestFlow({ url: "https://example.com/a" }, ctx);
  *
  * expect(output.headline).toBe("…");
@@ -213,7 +213,9 @@ export const WORKFLOW_CTX_NOW = 1_767_225_600_000;
  *
  * @public
  */
-export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtxRecorder {
+export function createWorkflowContext(
+  options: WorkflowContextOptions = {},
+): WorkflowContextRecorder {
   const steps: RecordedStep[] = [];
   const slept: RecordedSleep[] = [];
   const waited: string[] = [];
@@ -231,7 +233,7 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
     if (typeof given === "function") return given;
     return () => given;
   }
-  const nowOf = answer(options.now, () => WORKFLOW_CTX_NOW);
+  const nowOf = answer(options.now, () => WORKFLOW_CONTEXT_NOW);
   const randomOf = answer(options.random, () => 0.5);
   let minted = 0;
   const uuidOf = answer(options.uuid, () => `uuid-${minted++}`);
@@ -313,7 +315,7 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
       // Without one there is no honest answer, and hanging would report a
       // runner timeout instead of the missing payload.
       throw new Error(
-        `createWorkflowCtx: no payload for hook ${JSON.stringify(token)}. ` +
+        `createWorkflowContext: no payload for hook ${JSON.stringify(token)}. ` +
           `Pass one as { hooks: { ${JSON.stringify(token)}: … } }, or give the wait a ` +
           "timeoutMs so the unanswered branch is what runs.",
       );

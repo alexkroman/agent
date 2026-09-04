@@ -49,7 +49,7 @@
  * expensive one.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { stepReport, stepSpeak, stepWriteUpload, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import { stepGenerateJsonOrFail } from "@alexkroman1/aai/step-errors";
 import { countWords, omitUndefined } from "@alexkroman1/aai/utils";
@@ -128,7 +128,7 @@ export type SpokenSummary = {
 /** Transcribe a recording, summarize it, and read the summary back. */
 export async function spokenSummaryFlow(
   input: WorkflowInputOf<typeof spokenSummary>,
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<SpokenSummary> {
   const transcript = await transcribe(input.recording, ctx);
   const summary = await ctx.step("summarize", () => summarize(transcript.text));
@@ -157,7 +157,7 @@ export async function spokenSummaryFlow(
  * re-derives exactly the same sequence. It takes the `ctx` for that reason: a
  * helper that reaches the journal has to be handed the handle.
  */
-async function transcribe(recording: string, ctx: WorkflowCtx): Promise<Transcript> {
+async function transcribe(recording: string, ctx: WorkflowContext): Promise<Transcript> {
   // `maxAttempts: 6` was `uploadToProvider.maxRetries = 5` — five retries after
   // the first attempt. It is the one step here worth extra patience: it streams
   // the whole recording, so a transient failure is expensive to reach again.

@@ -3,7 +3,7 @@
  * The one property that lets a step body's I/O be cancelled.
  *
  * The engine hands a step body no `AbortSignal`, and cannot start doing so
- * without moving a published signature (`WorkflowCtx.step`'s callback). So the
+ * without moving a published signature (`WorkflowContext.step`'s callback). So the
  * walk's signal rides the RUN CONTEXT instead, which is what lets `step-fetch.ts`
  * combine it into every outbound request without a body threading one down
  * through its own helpers — the same argument `stepReport()` rests on, in
@@ -17,7 +17,7 @@
  * waiting for until the process died.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type { JournalStore } from "./workflow-journal-types.ts";
@@ -43,7 +43,7 @@ async function signalSeenInStep(
   signal?: AbortSignal,
 ): Promise<AbortSignal | undefined> {
   let seen: AbortSignal | undefined;
-  const run = async (_input: Record<string, unknown>, ctx: WorkflowCtx) =>
+  const run = async (_input: Record<string, unknown>, ctx: WorkflowContext) =>
     await ctx.step("look", () => {
       seen = currentRun()?.step?.signal;
       return "done";

@@ -12,7 +12,7 @@
  * something the body never asked to cancel.
  */
 
-import { type WorkflowCtx, workflow } from "@alexkroman1/aai";
+import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
@@ -117,7 +117,7 @@ describe("durable sleep", () => {
 describe("hooks", () => {
   /** A body that parks on one token and reports what it was sent. */
   const parking = {
-    digest: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    digest: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const answer = await ctx.waitFor<{ approved: boolean }>("tok_review");
       return { approved: answer.approved };
     },
@@ -248,7 +248,7 @@ describe("hooks", () => {
 describe("a hook with a deadline", () => {
   /** A body that waits for an answer but not forever — Temporal's `timeoutOrUserAction`. */
   const gated = {
-    digest: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    digest: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const answer = await ctx.waitFor<{ keep: boolean }>("tok_gate", { timeoutMs: 60_000 });
       return { kept: answer?.keep ?? false, answered: answer !== undefined };
     },
@@ -256,7 +256,7 @@ describe("a hook with a deadline", () => {
 
   /** The same gate with a window short enough for a spec to outlive. */
   const briefly = {
-    digest: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    digest: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const answer = await ctx.waitFor<{ keep: boolean }>("tok_gate", { timeoutMs: 1 });
       return { kept: answer?.keep ?? false, answered: answer !== undefined };
     },

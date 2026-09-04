@@ -12,7 +12,7 @@
  *
  * A step is called through `ctx.step(name, fn)`, and its journal key is the name
  * plus the number of times THAT name has already been reached in this walk —
- * `segment#0`, `segment#1`, … (see `WorkflowCtx` in `sdk/workflow-ctx.ts`). So
+ * `segment#0`, `segment#1`, … (see `WorkflowContext` in `sdk/workflow-ctx.ts`). So
  * the Nth call issued under a given name reads the Nth entry under it, on the
  * first execution and on every replay.
  *

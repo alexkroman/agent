@@ -436,14 +436,14 @@ below.
 
 ### Workflow bodies live in `workflows/`
 
-A body is an ordinary exported async function of its input and a `WorkflowCtx`.
+A body is an ordinary exported async function of its input and a `WorkflowContext`.
 There is no directive and no compile step of its own — the agent bundle compiles
 `workflows/` like any other source file — and durability is a method call:
 
 ```ts
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 
-export async function digestFlow(input: { url: string }, ctx: WorkflowCtx) {
+export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
   const digest = await ctx.step("summarize", () => summarize(input.url));
 
   // Suspended, not blocked: the container is free to exit here and the run
@@ -535,11 +535,11 @@ The three undurable reads a body most often wants, each journaled — read once 
 the first reach, and the same value on every later walk:
 
 ```ts
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 
 declare function charge(amount: number, idempotencyKey: string, jitter: number): Promise<void>;
 
-export async function chargeFlow(input: { amount: number }, ctx: WorkflowCtx) {
+export async function chargeFlow(input: { amount: number }, ctx: WorkflowContext) {
   const startedAt = await ctx.now(); // epoch ms, decided once
   const idempotencyKey = await ctx.uuid(); // still the same id after a crash
   const jitter = await ctx.random(); // one float in [0, 1), journaled per call
@@ -692,15 +692,15 @@ trap somebody has already paid for:
 Steps are ordinary exported functions, so a spec imports and calls them. The
 BODY needs an engine, and there are two, for two different questions.
 
-**"What did the body ask for?"** — `createWorkflowCtx` from
+**"What did the body ask for?"** — `createWorkflowContext` from
 `@alexkroman1/aai/testing`. It runs the steps and records the names, the retry
 policies and the sleeps, over one walk with no journal. Nothing replays, so a
 spec built on it must not claim to test durability.
 
 ```ts no-check
-import { createWorkflowCtx } from "@alexkroman1/aai/testing";
+import { createWorkflowContext } from "@alexkroman1/aai/testing";
 
-const ctx = createWorkflowCtx({ runSteps: false });
+const ctx = createWorkflowContext({ runSteps: false });
 await digestFlow({ url: "https://example.com/a" }, ctx);
 
 expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);

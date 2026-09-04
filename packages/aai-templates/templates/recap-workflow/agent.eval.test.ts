@@ -40,7 +40,7 @@
 //
 //     What no eval here can show is a delivery RESUMING a run, so no case claims
 //     it. The answered arm is `agent.test.ts`'s, through
-//     `createWorkflowCtx({ hooks })`, which is the only tier that can send a
+//     `createWorkflowContext({ hooks })`, which is the only tier that can send a
 //     payload at all; a real HTTP POST to the public callback route is
 //     `aai-cli`'s `dev-workflow.scenario.test.ts`'s, and is not yet written.
 //   * **The provider is scripted, in BOTH modes**, through `stepFetch`'s

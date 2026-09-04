@@ -148,7 +148,7 @@ export type {
  * `WorkflowClient` stays because `ToolContext.workflows` names it.
  *
  * What a BODY is written against joins it, because that is authoring too:
- * {@link WorkflowCtx} (an author annotates a body's second parameter with it),
+ * {@link WorkflowContext} (an author annotates a body's second parameter with it),
  * the three option bags its methods take, and {@link DEFAULT_STEP_MAX_ATTEMPTS}.
  * Those replaced the Workflow DevKit's `"use step"` /
  * `"use workflow"` directives and its `sleep`/`defineHook` imports — the engine
@@ -271,7 +271,7 @@ export {
   type WorkflowClient,
   // What a workflow BODY is handed. An author annotates a body's second
   // parameter with it, which is the membership test this barrel applies.
-  type WorkflowCtx,
+  type WorkflowContext,
   type WorkflowDef,
   workflow,
 } from "./sdk/workflow.ts";

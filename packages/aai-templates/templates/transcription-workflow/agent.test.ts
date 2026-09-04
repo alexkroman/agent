@@ -22,7 +22,7 @@ import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { stepReadUpload, type UploadRange } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowCtx } from "@alexkroman1/aai/testing";
+import { createWorkflowContext } from "@alexkroman1/aai/testing";
 import {
   installStubReporter,
   installStubStepFetch,
@@ -962,7 +962,7 @@ describe("transcribeSegment", () => {
     // `transcribeStreamFlow`'s own `transcribeSegment` call carries the same
     // budget and is asserted with that flow, not here — this drives only
     // `transcribeFlow`.
-    const ctx = createWorkflowCtx({
+    const ctx = createWorkflowContext({
       runSteps: false,
       results: {
         normalizeRecording: { recording: UPLOAD_ID, converted: false },

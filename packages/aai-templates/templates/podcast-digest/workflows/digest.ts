@@ -49,7 +49,7 @@
  * @module digest
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { mapConcurrent, stepReport, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import {
   FatalError,
@@ -178,7 +178,7 @@ const SummaryReply = z.object({
  */
 export async function dailyDigestFlow(
   input: DigestInput,
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<DailyDigestOutput> {
   // No `??` fallbacks: {@link DigestInput} is the schema's OUTPUT, so every
   // `.default()` has already run by the time a run reaches this line. The
@@ -269,7 +269,7 @@ export async function dailyDigestFlow(
  */
 async function waitForTranscripts(
   jobs: TranscriptJob[],
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<TranscriptState[]> {
   let pending = jobs;
   // Keyed by episode id rather than appended, and that is what keeps the digest

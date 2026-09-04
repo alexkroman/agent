@@ -293,7 +293,7 @@ export const WORKFLOW_BODY_RULES = [
       "so it refuses a name that WIDENED — and a template literal's type is a\n" +
       "template-literal type rather than `string`, so a name written as a\n" +
       "template literal with an interpolation in it compiles cleanly. Verified\n" +
-      "against the real `WorkflowCtx`; the samples below carry the shape.\n" +
+      "against the real `WorkflowContext`; the samples below carry the shape.\n" +
       "\n" +
       "It is also rule 30's own headline defect, from the other end: that rule\n" +
       "bans the READ that feeds such a name and pays for the breadth with six\n" +

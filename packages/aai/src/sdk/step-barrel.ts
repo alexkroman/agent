@@ -64,7 +64,7 @@
  * `FatalError` / `RetryableError` they resolve to) is on
  * `@alexkroman1/aai/step-errors`, so that importing a classifier is an opt-in
  * rather than something every `/step` reader pays for. And the durable wait is
- * `ctx.sleep` on the `WorkflowCtx` the engine hands the body — this SDK
+ * `ctx.sleep` on the `WorkflowContext` the engine hands the body — this SDK
  * owns what is INSIDE a step and never the steps.
  *
  * @module step

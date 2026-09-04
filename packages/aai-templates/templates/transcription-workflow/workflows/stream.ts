@@ -167,7 +167,7 @@
  * what keeps that order a pure function of journaled values.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import {
   mapConcurrent,
   stepReadUpload,
@@ -308,7 +308,7 @@ export type StreamPlan = {
  * an upload id exactly as in the classic flow; what differs is that the client chose
  * it and the bytes are still on their way.
  */
-export async function transcribeStreamFlow(input: { recording: string }, ctx: WorkflowCtx) {
+export async function transcribeStreamFlow(input: { recording: string }, ctx: WorkflowContext) {
   // `ctx.now()`, not a step: the engine journals the read under its own key, so
   // every walk of this line sees the instant the first one did.
   const startedAt = await ctx.now();

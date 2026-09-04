@@ -15,7 +15,7 @@
  * really run twice.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { publishStepInfoReader } from "@alexkroman1/aai/host-internal";
 import { type StepInfo, stepInfo } from "@alexkroman1/aai/step";
 import { describe, expect, onTestFinished, test } from "vitest";
@@ -41,7 +41,7 @@ async function seed(): Promise<{ journal: JournalStore }> {
 /** Replay `run` against a journal, with the seeded run's identity. */
 function replay(
   journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown,
+  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
 ) {
   return replayRun({ runId: "wrun_1", workflow: "digest", input: {}, run, journal });
 }

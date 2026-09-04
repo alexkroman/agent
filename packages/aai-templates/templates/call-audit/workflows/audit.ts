@@ -45,7 +45,7 @@
  * ingest result, once as the plan) and buy nothing.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { encodeWav, mapConcurrent, stepReadUpload, stepReport } from "@alexkroman1/aai/step";
 import { countWords, formatDuration } from "@alexkroman1/aai/utils";
 // ERASED at build time, so the body can name the schema's own output type without
@@ -156,7 +156,7 @@ export type CallAudit = {
  */
 export async function auditFlow(
   input: WorkflowInputOf<typeof audit>,
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<CallAudit> {
   // Both at once: neither needs the other, and issued together they are one round
   // trip instead of two before any audio moves. The ORDER is still a pure function

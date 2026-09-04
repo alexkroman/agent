@@ -51,9 +51,9 @@
  *
  * ```ts
  * import { stepReadUpload, stepUploadInfo } from "@alexkroman1/aai/step";
- * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
+ * import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
  *
- * export async function transcribeStream(input: { recording: string }, ctx: WorkflowCtx) {
+ * export async function transcribeStream(input: { recording: string }, ctx: WorkflowContext) {
  *   for (;;) {
  *     // In a step, so each poll's answer is journaled rather than re-read on
  *     // every replay — `arrived#0`, `arrived#1`, … one per round of the loop.

@@ -19,7 +19,7 @@
 
 import { stepReadUpload, stepUploadInfo } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowCtx, stubGatewayRoute } from "@alexkroman1/aai/testing";
+import { createWorkflowContext, stubGatewayRoute } from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
   installStubReporter,
@@ -292,7 +292,7 @@ describe("the whole run", () => {
     installStubReporter();
     installStubSpeech();
 
-    const summary = await spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowCtx());
+    const summary = await spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowContext());
 
     expect(summary).toEqual({
       source: "standup.wav",
@@ -314,7 +314,7 @@ describe("the whole run", () => {
     installStubReporter();
     const speech = installStubSpeech();
 
-    await spokenSummaryFlow({ recording: UPLOAD_ID, voice: "michael" }, createWorkflowCtx());
+    await spokenSummaryFlow({ recording: UPLOAD_ID, voice: "michael" }, createWorkflowContext());
 
     expect(speech.calls[0]).toMatchObject({ text: "Spoken.", voice: "michael" });
   });
@@ -324,9 +324,9 @@ describe("the whole run", () => {
     installStubReporter();
     installStubSpeech();
 
-    await expect(spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowCtx())).rejects.toThrow(
-      "corrupt audio",
-    );
+    await expect(
+      spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowContext()),
+    ).rejects.toThrow("corrupt audio");
   });
 });
 

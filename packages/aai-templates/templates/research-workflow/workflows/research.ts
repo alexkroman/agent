@@ -49,7 +49,7 @@
  * researcher CONCLUDED, which is exactly what the step returns.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { mapConcurrent, stepReport } from "@alexkroman1/aai/step";
 import { stepGenerateJsonOrFail, stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
@@ -212,7 +212,7 @@ export type Findings = {
  */
 export async function researchFlow(
   input: { topic: string; requestedBy: string },
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ) {
   const brief = await ctx.step("writeBrief", () => writeBrief(input.topic));
   const angles = await ctx.step("planAngles", () => planAngles(brief));

@@ -63,7 +63,7 @@
  *   `output` exists only when the last segment does.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import {
   mapConcurrent,
   stepEmit,
@@ -248,7 +248,7 @@ export type SegmentTranscript = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the
  * schema it is validated against before a run exists.
  */
-export async function transcribeFlow(input: { recording: string }, ctx: WorkflowCtx) {
+export async function transcribeFlow(input: { recording: string }, ctx: WorkflowContext) {
   // Both at once: neither needs the other, and issued together they are one
   // round trip instead of two before any audio is read. The ORDER is still a
   // pure function of this line — the two calls go out synchronously, left to

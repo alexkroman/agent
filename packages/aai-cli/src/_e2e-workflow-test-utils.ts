@@ -53,10 +53,10 @@ import { ofetch } from "ofetch";
  * at length.
  */
 const LAB_FLOWS_TS = `// Written by the e2e suite — a provider-free workflow lab.
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { stepReport } from "@alexkroman1/aai/step";
 
-export async function labSleepFlow(input: { seconds: number }, ctx: WorkflowCtx) {
+export async function labSleepFlow(input: { seconds: number }, ctx: WorkflowContext) {
   // Stamped by a STEP either side, so the elapsed time is journaled rather than
   // read off a body that replays: a resumed run recomputes the body from the
   // top, and a bare Date.now() there would restamp on every replay.
@@ -73,7 +73,7 @@ export async function labSleepFlow(input: { seconds: number }, ctx: WorkflowCtx)
   return { before, after, elapsedMs: after - before };
 }
 
-export async function labCountFlow(input: { steps: number }, ctx: WorkflowCtx) {
+export async function labCountFlow(input: { steps: number }, ctx: WorkflowContext) {
   let total = 0;
   for (let i = 0; i < input.steps; i += 1) {
     total = await ctx.step("labInc", () => labInc(total));

@@ -56,14 +56,18 @@
  *
  * The two wait METHODS are not here either. `workflow-replay-waits.ts` holds
  * them, split at the seam `createDeterminismReads` already drew — a
- * `Pick<WorkflowCtx, …>` factory bound to one walk — and it carries the key
+ * `Pick<WorkflowContext, …>` factory bound to one walk — and it carries the key
  * grammar (`sleep!<label>#<occurrence>`, `hook!<token>#<occurrence>`) and what
  * naming the waits closed. What is left here is the STEP, which is the one
  * method whose identity the walk itself decides.
  */
 
 import { randomUUID } from "node:crypto";
-import { DEFAULT_STEP_MAX_ATTEMPTS, type StepOptions, type WorkflowCtx } from "@alexkroman1/aai";
+import {
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  type StepOptions,
+  type WorkflowContext,
+} from "@alexkroman1/aai";
 import type { Logger } from "./runtime-config.ts";
 import { describeCodeChange } from "./workflow-code-version.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS } from "./workflow-journal-bound.ts";
@@ -103,7 +107,7 @@ export type ReplayOptions = {
    */
   input: Record<string, unknown>;
   /** The body. Looked up by the caller, which owns the registry. */
-  run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown;
+  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown;
   /**
    * The run record's `codeVersion` — which bundle the run was STARTED against.
    *
@@ -314,7 +318,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
 
   const gate = options.gate;
 
-  const ctx: WorkflowCtx = {
+  const ctx: WorkflowContext = {
     runId,
     workflow,
     // `ctx.now`/`ctx.random`/`ctx.uuid`, each journaled under its own positional
@@ -334,7 +338,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     // closed and the one residual it did not.
     ...createWaitMethods({ runId, workflow, journal, sleeps, suspend, refuse: setRefused }),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
-      // IDENTITY first: which journal key is this call? See `WorkflowCtx` in the
+      // IDENTITY first: which journal key is this call? See `WorkflowContext` in the
       // SDK for why it is a name plus an occurrence count.
       const occurrence = occurrences.get(name) ?? 0;
       occurrences.set(name, occurrence + 1);

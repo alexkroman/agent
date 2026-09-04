@@ -53,7 +53,7 @@
  * request rather than two and the value journaled by the last poll IS the result.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { stepReport, stepUploadInfo, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import {
   stepTranscribePollOrFail,
@@ -78,7 +78,7 @@ const MAX_POLLS = 360;
 /** Transcribe a recording through the async API. */
 export async function transcribeBatchFlow(
   input: { recording: string },
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<Transcript> {
   // Both at once: the clock does not depend on the upload, and issuing them
   // together costs one round trip instead of two before a byte moves. Their issue

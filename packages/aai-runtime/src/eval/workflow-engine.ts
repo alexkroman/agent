@@ -104,7 +104,7 @@ import type {
   StepOptions,
   WaitForOptions,
   WaitForSchemaOptions,
-  WorkflowCtx,
+  WorkflowContext,
   WorkflowDef,
 } from "@alexkroman1/aai/workflow-api";
 import { checkedStepOutput } from "../workflow-replay-schema.ts";
@@ -221,11 +221,11 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
    * a reader can see the whole of, which is strictly better even though it
    * measures exactly as much.
    */
-  function evalCtx(record: EvalRunRecord): WorkflowCtx {
+  function evalCtx(record: EvalRunRecord): WorkflowContext {
     return {
       runId: record.runId,
       workflow: record.workflowName,
-      // The parameters are annotated because `WorkflowCtx.step` is OVERLOADED —
+      // The parameters are annotated because `WorkflowContext.step` is OVERLOADED —
       // a schema selects a second signature — and TypeScript contextually types
       // a function expression from one signature only. The pass-through is
       // unchanged; what it gained is that a declared `schema` is still CHECKED
@@ -237,7 +237,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // LIVE, not journaled — the same pass-through `step` is, and for the same
       // reason: there is no journal here, so there is nothing to answer a second
       // walk from and no second walk to answer. A case that needs a FIXED clock
-      // or a fixed id wants `createWorkflowCtx` from `@alexkroman1/aai/testing`,
+      // or a fixed id wants `createWorkflowContext` from `@alexkroman1/aai/testing`,
       // which freezes all three; what this preserves is that the body can be
       // WRITTEN the way a deployed body is written.
       now: async () => Date.now(),
@@ -253,7 +253,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       sleep: async (label, until) => {
         record.slept.push({ label, duration: until });
       },
-      // REFUSED, and named. A hook is the one thing on `WorkflowCtx` this engine
+      // REFUSED, and named. A hook is the one thing on `WorkflowContext` this engine
       // cannot fake: a sleep can be skipped because the body continues either
       // way, but a `waitFor` is defined by what the SIGNALLER sends, and
       // inventing a payload would evaluate a run nobody could have produced.

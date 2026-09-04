@@ -13,7 +13,7 @@
 // Nothing here reaches a vendor. That is the point: a step's cost is the
 // journal, the queue and the resume, and a provider's latency buried in the same
 // number makes all three unreadable.
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { mapConcurrent, stepFetch } from "@alexkroman1/aai/step";
 import { stepFetchOrFail } from "@alexkroman1/aai/step-errors";
 
@@ -34,7 +34,7 @@ async function tick(index: number, spin: number) {
  * concurrency, no I/O and no suspension in it. Everything else is read against
  * this.
  */
-export async function chainFlow(input: { steps: number; spin?: number }, ctx: WorkflowCtx) {
+export async function chainFlow(input: { steps: number; spin?: number }, ctx: WorkflowContext) {
   const spin = input.spin ?? 1000;
   let last = 0;
   for (let i = 0; i < input.steps; i++) {
@@ -87,7 +87,7 @@ export async function fanoutFlow(
     width?: number;
     classify?: boolean;
   },
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ) {
   const indices = Array.from({ length: input.items }, (_, i) => i);
   const classify = input.classify === true;
@@ -106,7 +106,7 @@ export async function fanoutFlow(
  * resume is against the sleep it asked for. A `sleep` shorter than the queue's
  * own poll interval reports that interval, which is the number worth knowing.
  */
-export async function napFlow(input: { ms: number }, ctx: WorkflowCtx) {
+export async function napFlow(input: { ms: number }, ctx: WorkflowContext) {
   // Two names for one function, so a run's history says WHICH side of the sleep
   // an entry is — `tick#0`/`tick#1` would say the same thing and read worse.
   const before = await ctx.step("tickBefore", () => tick(0, 100));

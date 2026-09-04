@@ -32,7 +32,7 @@
  * three functions read more tidily than one.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { stepReport } from "@alexkroman1/aai/step";
 import {
   FatalError,
@@ -98,7 +98,7 @@ export interface Round {
  * the page's render model — and `WorkflowOutputOf<typeof redline>` in
  * `client.tsx` is that type, derived rather than restated.
  */
-export async function redlineFlow(input: RedlineInput, ctx: WorkflowCtx) {
+export async function redlineFlow(input: RedlineInput, ctx: WorkflowContext) {
   // The three `maxAttempts` below were `maxRetries` properties on the functions
   // (3, 5, 3 — retries AFTER the first attempt, so 4, 6, 4 in all). The policy
   // is an argument to the CALL now, which is where it belongs: the same function

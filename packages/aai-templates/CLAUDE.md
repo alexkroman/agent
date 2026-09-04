@@ -734,7 +734,7 @@ paragraph.
 
 Its spec stubs `ctx.workflows` for the TOOLS rather than driving a real client,
 and drives the STEPS directly against a stubbed `fetch` — they are ordinary
-exported async functions. The BODY is driven twice: `createWorkflowCtx`
+exported async functions. The BODY is driven twice: `createWorkflowContext`
 (`@alexkroman1/aai/testing`) records the steps it asked for and answers the
 waits, and `runWorkflow` (`@alexkroman1/aai-runtime/testing`) runs it on the
 REAL replay engine, so the review wait suspends and the resume comes off the
@@ -1140,7 +1140,7 @@ a second lesson and would cost this one its shape.
 
 Its spec runs three tiers and is explicit about which one proves what: the tools
 against a stubbed `ctx.workflows`, the steps directly, and the body's HELPERS
-(`awaitTranscript`, `compensate`, `askWhetherToKeep`) against `createWorkflowCtx`
+(`awaitTranscript`, `compensate`, `askWhetherToKeep`) against `createWorkflowContext`
 (`@alexkroman1/aai/testing`). That third tier asserts ORDERING and BRANCHING,
 which is ordinary logic worth pinning (the poll's exit conditions, the unwind's
 direction, that a failing undo does not strand the ones behind it, and the
@@ -1156,7 +1156,7 @@ raced against a `sleep`, so a spec had to mock both, hand-build a thenable, and
 make the `sleep` never resolve — otherwise which side of the `Promise.race` won
 came down to microtask order rather than to the branch under test.
 `ctx.waitFor(token, { timeoutMs })` is one call, so an answer is a `hooks` entry
-on `createWorkflowCtx` and the no-answer branch is its absence. The template's
+on `createWorkflowContext` and the no-answer branch is its absence. The template's
 comments record the other half, which is a real API improvement rather than a
 tidier test: the old hook registered nothing until the workflow suspended, so an
 answer sent early was told "nobody is listening" and the body had to force

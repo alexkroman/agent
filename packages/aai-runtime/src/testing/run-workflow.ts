@@ -6,7 +6,7 @@
  *
  * A workflow is three things — a declaration, a set of steps, and a body — and
  * before this only the first two were testable. `@alexkroman1/aai/testing`'s
- * `createWorkflowCtx` drives a body over a recording context and says so
+ * `createWorkflowContext` drives a body over a recording context and says so
  * plainly: *"It is not a durability test, and a spec built on it must not claim
  * to be one. There is no journal, so nothing is memoized and nothing replays."*
  * `@alexkroman1/aai-runtime/eval`'s workflow engine says the same from the other

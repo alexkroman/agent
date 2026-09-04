@@ -22,7 +22,7 @@
  * it, a pin says this exact interleaving still works.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type { JournalStore } from "./workflow-journal-types.ts";
@@ -45,7 +45,7 @@ async function seed(): Promise<JournalStore> {
 
 function replay(
   journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown>,
+  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown>,
 ): ReturnType<typeof replayRun> {
   return replayRun({ runId: RUN_ID, workflow: "probe", input: {}, journal, run });
 }
@@ -64,7 +64,7 @@ describe("a walk whose snapshot went stale", () => {
     const gate = Promise.withResolvers<void>();
     let probeRuns = 0;
     let effectRuns = 0;
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const probe = await ctx.step("probe", async () => {
         probeRuns += 1;
         // Only the FIRST walk parks — the second has to be able to finish.

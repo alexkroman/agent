@@ -16,7 +16,7 @@
  * exported async function, so its prompt handling, its parsing and its
  * `FatalError` guards are all testable without an engine.
  *
- * The BODY is driven here only through `createWorkflowCtx`, which records what
+ * The BODY is driven here only through `createWorkflowContext`, which records what
  * it asked for and replays nothing. That is a choice rather than a limit now:
  * `runWorkflow` from `@alexkroman1/aai-runtime/testing` will run this body on
  * the real engine, and `link-digest` is the template that shows it — three
@@ -31,7 +31,7 @@ import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
   createRunSnapshot,
   createToolContext,
-  createWorkflowCtx,
+  createWorkflowContext,
   parseSchemaInput,
   type StubGatewayCall,
   schemaInputIssues,
@@ -448,7 +448,7 @@ describe("the steps that research", () => {
     // could not have said differently.
     // `planAngles`' result is what the fan-out iterates, so it is supplied
     // rather than run — the rest of the body needs no page and no model.
-    const ctx = createWorkflowCtx({
+    const ctx = createWorkflowContext({
       runSteps: false,
       // Every step the body READS needs a value: with `runSteps: false` nothing
       // runs, so this is the skeleton of a run rather than a run. That is the
@@ -559,7 +559,7 @@ describe("the steps that research", () => {
 /**
  * `researchFlow` itself, on the real replay engine.
  *
- * The block above drives this body through `createWorkflowCtx`, which records
+ * The block above drives this body through `createWorkflowContext`, which records
  * what it ASKED for and replays nothing — right for the retry policy and the
  * step order, and silent about the desk's actual promise: **answer the caller
  * now, finish the work later**. `runWorkflow`

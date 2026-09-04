@@ -775,8 +775,8 @@ methods constrain their identity with `Literal<Name>`
 (`string extends Name ? never : Name`), which refuses a name that has widened to
 `string` — and a template literal's type is a template-literal type, not
 `string`, so ``ctx.step(`charge-${coin}`, charge)`` compiles cleanly. Verified
-against the real `WorkflowCtx`. It is also the engine's own measured defect: a
-coin flip interpolated into a step name ran the side effect twice in **7 of 10
+against the real `WorkflowContext`. It is also the engine's own measured defect:
+a coin flip interpolated into a step name ran the side effect twice in **7 of 10
 runs, with all 10 reporting `completed`**.
 
 Three properties are decisions:

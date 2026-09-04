@@ -24,7 +24,7 @@
  * fetched text crosses a queue between them, which is what the cap on it is for.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { htmlToText, pageMetadata } from "@alexkroman1/aai/html";
 import { stepInfo, stepReport } from "@alexkroman1/aai/step";
 import { FatalError, stepFetchOrFail, stepGenerateJsonOrFail } from "@alexkroman1/aai/step-errors";
@@ -107,7 +107,7 @@ export type Article = {
  * literally the page's render model, and `WorkflowOutputOf<typeof digest>` in
  * `client.tsx` is that type, derived rather than restated.
  */
-export async function digestFlow(input: { url: string }, ctx: WorkflowCtx) {
+export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
   const article = await ctx.step("fetchArticle", () => fetchArticle(input.url));
   // `maxAttempts: 6` was `summarize.maxRetries = 5` — five retries AFTER the
   // first attempt, so six in all. The retry policy moved from a property on the

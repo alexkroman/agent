@@ -64,7 +64,7 @@ export type RunRecord = {
  * crash leaves the journal describing exactly the work that finished — which is
  * what makes replay safe to run against it without a reconciliation pass.
  *
- * `key` is `name#occurrence` — see `WorkflowCtx` in the SDK for why identity is
+ * `key` is `name#occurrence` — see `WorkflowContext` in the SDK for why identity is
  * that pair and not an ordinal or a bare name.
  */
 export type StepEntry = {

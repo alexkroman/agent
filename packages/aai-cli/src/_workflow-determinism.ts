@@ -21,12 +21,12 @@
  * compiling every fence in this repo's shipped docs:
  *
  * ```ts
- * import type { WorkflowCtx } from "@alexkroman1/aai";
+ * import type { WorkflowContext } from "@alexkroman1/aai";
  *
  * declare const charge: () => Promise<string>;
  *
- * export async function body(ctx: WorkflowCtx, coin: string): Promise<void> {
- *   // No error. The banned shape, against the real `WorkflowCtx`.
+ * export async function body(ctx: WorkflowContext, coin: string): Promise<void> {
+ *   // No error. The banned shape, against the real `WorkflowContext`.
  *   await ctx.step(`charge-${coin}`, charge);
  * }
  * ```

@@ -14,19 +14,19 @@
  * ## The body is REPLAYED, which is the whole reason this type exists
  *
  * A durable run survives its process. The engine achieves that by re-running the
- * body from the top on every resume and answering each {@link WorkflowCtx.step}
+ * body from the top on every resume and answering each {@link WorkflowContext.step}
  * from the journal instead of executing it again. So the body is not ordinary
  * async code, and the rule is the one WDK had:
  *
  * - **Anything non-deterministic goes inside a `step`.** A clock, a random
  *   number, a uuid, a network call — read outside one, it produces a different
  *   value on every replay and the run silently diverges. The three commonest are
- *   methods here instead: see {@link WorkflowCtx.now},
- *   {@link WorkflowCtx.random} and {@link WorkflowCtx.uuid} below.
+ *   methods here instead: see {@link WorkflowContext.now},
+ *   {@link WorkflowContext.random} and {@link WorkflowContext.uuid} below.
  * - **Anything inside a `step` runs at most once per successful execution** and
  *   its result is journaled.
  *
- * {@link WorkflowCtx.sleep} is the other half of the same idea and the reason a
+ * {@link WorkflowContext.sleep} is the other half of the same idea and the reason a
  * replay engine is worth having at all: it SUSPENDS rather than waiting, so the
  * process is free for the duration and a wait can outlive it. A sleep's wake time
  * is journaled the first time it is reached, exactly like a step's result and for
@@ -73,11 +73,11 @@
  *   from a config table, so it is necessary regardless of the other two.
  *
  * A wait's identity used to be the thing NONE of them saw. `ctx.sleep` and
- * {@link WorkflowCtx.waitFor} were keyed POSITIONALLY (`sleep!0`, `hook!0`), so
+ * {@link WorkflowContext.waitFor} were keyed POSITIONALLY (`sleep!0`, `hook!0`), so
  * a body reaching a different NUMBER of waits read another wait's record — and a
  * pure-sleep divergence reaches no step name for any layer to catch. **A wait is
  * keyed by NAME now**, exactly as a step is: `ctx.sleep` takes a `label` and
- * {@link WorkflowCtx.waitFor} already had a token, so the keys are
+ * {@link WorkflowContext.waitFor} already had a token, so the keys are
  * `sleep!<label>#<occurrence>` and `hook!<token>#<occurrence>` and a wait that
  * moves keeps its own record. What is left is stated at
  * `aai-runtime/workflow-replay-divergence.ts` rather than here: a label or token
@@ -102,8 +102,8 @@
  * ## A clock, a random number and a uuid are AFFORDANCES, not prohibitions
  *
  * The three rules above are the three mistakes, so the three are methods:
- * {@link WorkflowCtx.now}, {@link WorkflowCtx.random} and
- * {@link WorkflowCtx.uuid}. Each reads its source ONCE, journals the value, and
+ * {@link WorkflowContext.now}, {@link WorkflowContext.random} and
+ * {@link WorkflowContext.uuid}. Each reads its source ONCE, journals the value, and
  * answers every later walk from the journal — which is exactly what an author
  * was already hand-rolling. Two shipped templates had written the clock half of
  * it (`transcription-workflow`'s `startClock`, `call-audit`'s two `now` reads),
@@ -113,7 +113,7 @@
  *
  * **They are keyed in their own POSITIONAL space** — `now!0`, `random!0`,
  * `uuid!0`, per kind. These three take no argument at all, so unlike
- * {@link WorkflowCtx.sleep} — which was positional and is not any more — there is
+ * {@link WorkflowContext.sleep} — which was positional and is not any more — there is
  * nothing to key a map on and nothing an author could be asked to name. `!` is
  * not producible by `${name}#${occurrence}`, so an author's own `ctx.step("now")`
  * cannot alias one, and the counters are per KIND rather than shared, so
@@ -130,7 +130,7 @@
  * `ctx.step("startClock", …)` they replaced.
  *
  * **And a positional key is what makes them illegal inside a
- * {@link WorkflowCtx.step}**, which the engine refuses exactly as it refuses a
+ * {@link WorkflowContext.step}**, which the engine refuses exactly as it refuses a
  * wait there. A settled step's body is not re-executed, so a read inside one
  * stops being reached the moment the step lands and every later read of that kind
  * slides one place down the key space — a body would then get its predecessor's
@@ -202,7 +202,7 @@ export {
  * // workflows/research.ts
  * export async function researchFlow(
  *   input: { topic: string },
- *   ctx: WorkflowCtx,
+ *   ctx: WorkflowContext,
  * ) {
  *   const brief = await ctx.step("writeBrief", () => writeBrief(input.topic));
  *   const notes = await ctx.step("investigate", () => investigate(brief));
@@ -218,7 +218,7 @@ export {
  *
  * @public
  */
-export type WorkflowCtx = {
+export type WorkflowContext = {
   /** This run's id — the same value `ctx.workflows.start()` resolved to. */
   readonly runId: string;
   /** Key the workflow is declared under in `agent({ workflows })`. */
@@ -227,8 +227,8 @@ export type WorkflowCtx = {
    * Run `fn` once and journal what it returns; on every later replay, return
    * the journaled value without running it again.
    *
-   * **`fn` may not wait.** {@link WorkflowCtx.sleep} and
-   * {@link WorkflowCtx.waitFor} reached inside a step fail the run, because a
+   * **`fn` may not wait.** {@link WorkflowContext.sleep} and
+   * {@link WorkflowContext.waitFor} reached inside a step fail the run, because a
    * suspend unwinds out of the step without journaling it — so the body would
    * re-run from the top on every delivery, and every later wait in the run would
    * read the wrong record. Put the wait in the body, between two steps. For a
@@ -273,11 +273,11 @@ export type WorkflowCtx = {
    * the run really reached this line, however many times the line is walked.
    *
    * ```ts
-   * import type { WorkflowCtx } from "@alexkroman1/aai";
+   * import type { WorkflowContext } from "@alexkroman1/aai";
    *
    * declare function transcribe(recording: string): Promise<string>;
    *
-   * export async function timedFlow(input: { recording: string }, ctx: WorkflowCtx) {
+   * export async function timedFlow(input: { recording: string }, ctx: WorkflowContext) {
    *   const startedAt = await ctx.now();
    *   const transcript = await ctx.step("transcribe", () => transcribe(input.recording));
    *   const finishedAt = await ctx.now();
@@ -285,7 +285,7 @@ export type WorkflowCtx = {
    * }
    * ```
    *
-   * **Not legal inside a {@link WorkflowCtx.step}** — the engine refuses one and
+   * **Not legal inside a {@link WorkflowContext.step}** — the engine refuses one and
    * the message names the fix. A step's internals are not replayed, so a plain
    * `Date.now()` inside one is already durable and is what to write there.
    *
@@ -307,8 +307,8 @@ export type WorkflowCtx = {
    * and the reason a BULK draw belongs in a step:
    * `ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`.
    *
-   * **Not legal inside a {@link WorkflowCtx.step}**, for
-   * {@link WorkflowCtx.now}'s reason.
+   * **Not legal inside a {@link WorkflowContext.step}**, for
+   * {@link WorkflowContext.now}'s reason.
    */
   random(): Promise<number>;
   /**
@@ -319,23 +319,23 @@ export type WorkflowCtx = {
    * the same request rather than a second one.
    *
    * ```ts
-   * import type { WorkflowCtx } from "@alexkroman1/aai";
+   * import type { WorkflowContext } from "@alexkroman1/aai";
    *
    * declare function charge(amount: number, idempotencyKey: string): Promise<void>;
    *
-   * export async function chargeFlow(input: { amount: number }, ctx: WorkflowCtx) {
+   * export async function chargeFlow(input: { amount: number }, ctx: WorkflowContext) {
    *   const idempotencyKey = await ctx.uuid();
    *   await ctx.step("charge", () => charge(input.amount, idempotencyKey));
    * }
    * ```
    *
-   * **Not a hook TOKEN.** {@link WorkflowCtx.waitFor}'s token must be DERIVED
+   * **Not a hook TOKEN.** {@link WorkflowContext.waitFor}'s token must be DERIVED
    * from the run's own input, because whoever signals is usually a tool and a tool
    * cannot see the body's local variables — a journaled uuid is stable across
    * replays and still unnameable from outside the body.
    *
-   * **Not legal inside a {@link WorkflowCtx.step}**, for
-   * {@link WorkflowCtx.now}'s reason.
+   * **Not legal inside a {@link WorkflowContext.step}**, for
+   * {@link WorkflowContext.now}'s reason.
    */
   uuid(): Promise<string>;
   /**
@@ -357,7 +357,7 @@ export type WorkflowCtx = {
    * `completed`, with the clock unmoved. `aai-runtime/workflow-replay-divergence.ts`
    * carries that reproduction.
    *
-   * So the same rules apply as to {@link WorkflowCtx.step}'s name, and the
+   * So the same rules apply as to {@link WorkflowContext.step}'s name, and the
    * `Literal` constraint says so at the call site: make it a string literal,
    * give two call sites two labels, and let a loop reuse one — the occurrence
    * count is what separates the iterations.
@@ -374,7 +374,7 @@ export type WorkflowCtx = {
    * deadline from the clock on every replay would push it further out each time
    * and a run could sleep forever.
    *
-   * **Call it from the BODY, never from inside a {@link WorkflowCtx.step}** — a
+   * **Call it from the BODY, never from inside a {@link WorkflowContext.step}** — a
    * step body that waits fails the run, and the message names the fix.
    *
    * ```ts no-check
@@ -411,7 +411,7 @@ export type WorkflowCtx = {
   /**
    * Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
    *
-   * Suspends like {@link WorkflowCtx.sleep} and with no deadline at all: the run
+   * Suspends like {@link WorkflowContext.sleep} and with no deadline at all: the run
    * waits until `ctx.workflows.signal(token, payload)` is called. That is how a
    * run parks on a human approval, a review that may take a week, or anything
    * else somebody else decides.

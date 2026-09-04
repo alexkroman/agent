@@ -93,10 +93,10 @@ export default agent({
 `;
 
 const WORKFLOW_TS = `
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { stepReport } from "@alexkroman1/aai/step";
 
-export async function researchFlow(input: { topic: string }, ctx: WorkflowCtx) {
+export async function researchFlow(input: { topic: string }, ctx: WorkflowContext) {
   const findings = await ctx.step("gather", () => gather(input.topic));
   // The suspension is the point: it is what a tool cannot do, and it is what
   // makes the resume path (a second delivery) part of this test.
@@ -166,10 +166,10 @@ async function file(topic: string) {
  * inside an SDK helper.
  */
 const FAN_OUT_TS = `
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 
-export async function fanOutFlow(input: { words: string[] }, ctx: WorkflowCtx) {
+export async function fanOutFlow(input: { words: string[] }, ctx: WorkflowContext) {
   return {
     shouted: await mapConcurrent(input.words, 3, (word, index) =>
       ctx.step("shout", () => shout(word, index)),
@@ -199,10 +199,10 @@ async function shout(word: string, index: number) {
  * real template calls them from.
  */
 const NARRATE_TS = `
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { stepEmit, mapConcurrent, stepReport } from "@alexkroman1/aai/step";
 
-export async function narrateFlow(input: { items: string[] }, ctx: WorkflowCtx) {
+export async function narrateFlow(input: { items: string[] }, ctx: WorkflowContext) {
   const seen = await mapConcurrent(input.items, 2, (item, index) =>
     ctx.step("handle", () => handle(item, index)),
   );
@@ -231,10 +231,10 @@ async function handle(item: string, index: number) {
  * — if the global does not cross the bundle boundary this run fails.
  */
 const SECRET_TS = `
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { requireStepEnv, stepEnv } from "@alexkroman1/aai/step";
 
-export async function secretFlow(_input: Record<string, unknown>, ctx: WorkflowCtx) {
+export async function secretFlow(_input: Record<string, unknown>, ctx: WorkflowContext) {
   return await ctx.step("readSecret", () => readSecret());
 }
 

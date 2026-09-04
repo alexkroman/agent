@@ -11,7 +11,7 @@
  * `workflow-journal-bound.ts`'s module doc.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import type { Mock } from "vitest";
 import { describe, expect, test, vi } from "vitest";
 import type { Logger } from "./runtime-config.ts";
@@ -113,7 +113,7 @@ describe("replayRun acts on the bound before it runs a body", () => {
    */
   const grower =
     (steps: number) =>
-    async (_input: Record<string, unknown>, ctx: WorkflowCtx): Promise<unknown> => {
+    async (_input: Record<string, unknown>, ctx: WorkflowContext): Promise<unknown> => {
       for (let n = 0; n < steps; n++) await ctx.step("tick", async () => n);
       return await ctx.step("done", async () => "ok");
     };

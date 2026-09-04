@@ -11,7 +11,7 @@
  * what a body can observe of its own wait, and how concurrent waits aggregate.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { publishStepReporter } from "@alexkroman1/aai/host-internal";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
@@ -38,7 +38,7 @@ async function seed(
 /** Replay `run` against a journal, with the seeded run's identity. */
 function replay(
   journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown,
+  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
   input: Record<string, unknown> = {},
 ) {
   return replayRun({ runId: "wrun_1", workflow: "digest", input, run, journal });
@@ -102,7 +102,7 @@ describe("a first execution", () => {
 describe("a replay", () => {
   test("answers a completed step from the journal instead of running it again", async () => {
     const { journal } = await seed();
-    const body = vi.fn(async (_input: unknown, ctx: WorkflowCtx) => {
+    const body = vi.fn(async (_input: unknown, ctx: WorkflowContext) => {
       const first = await ctx.step("once", work);
       const second = await ctx.step("twice", work);
       return [first, second];
@@ -121,7 +121,7 @@ describe("a replay", () => {
   test("resumes a run that crashed midway without redoing what landed", async () => {
     const { journal } = await seed();
     const ran: string[] = [];
-    const crashing = async (_input: unknown, ctx: WorkflowCtx) => {
+    const crashing = async (_input: unknown, ctx: WorkflowContext) => {
       await ctx.step("first", () => {
         ran.push("first");
         return 1;
@@ -143,7 +143,7 @@ describe("a replay", () => {
   test("re-throws a journaled failure, so a body that caught it takes the same branch", async () => {
     const { journal } = await seed();
     const branches: string[] = [];
-    const body = async (_input: unknown, ctx: WorkflowCtx) => {
+    const body = async (_input: unknown, ctx: WorkflowContext) => {
       try {
         await ctx.step("flaky", () => {
           throw new FatalError("nope");
@@ -403,7 +403,7 @@ describe("concurrent deliveries", () => {
     const { journal } = await seed();
     const outputs: unknown[] = [];
     let n = 0;
-    const body = async (_input: unknown, ctx: WorkflowCtx) => {
+    const body = async (_input: unknown, ctx: WorkflowContext) => {
       const value = await ctx.step("racy", () => `attempt-${++n}`);
       outputs.push(value);
       return value;
@@ -463,7 +463,7 @@ describe("durable sleep", () => {
     // The bug this prevents: `ctx.sleep("nap", 60_000)` re-evaluated on every delivery
     // stores a deadline 60s later each time, and the run never wakes.
     const { journal } = await seed();
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await ctx.sleep("nap", 60_000);
       return "done";
     };
@@ -477,7 +477,7 @@ describe("durable sleep", () => {
 
   test("continues past a wait the journal says was woken", async () => {
     const { journal } = await seed();
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await ctx.sleep("nap", 60_000);
       return ctx.step("after", () => "ran");
     };
@@ -544,7 +544,7 @@ describe("a hook answered while its own timeout is being read", () => {
 
   test("both walks take the ANSWERED branch", async () => {
     const { journal } = await seed();
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => ({
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => ({
       answer: await ctx.waitFor("tok", { timeoutMs: 1000 }),
     });
 
@@ -572,7 +572,7 @@ describe("a hook answered while its own timeout is being read", () => {
 
   test("still times out when nothing was delivered", async () => {
     const { journal } = await seed();
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => ({
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => ({
       answer: await ctx.waitFor("tok", { timeoutMs: -1 }),
     });
     expect(await replay(journal, body)).toEqual({

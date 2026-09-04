@@ -26,7 +26,7 @@
  * is the rule the whole attempt lease rests on.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
@@ -51,7 +51,7 @@ async function seed(journal: JournalStore = createMemoryJournal()): Promise<Jour
 /** Replay `run` against a journal, optionally as a run started under `startedUnder`. */
 function replay(
   journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown,
+  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
   startedUnder?: string,
 ) {
   return replayRun({ runId: RUN_ID, workflow: "digest", input: {}, run, journal, startedUnder });
@@ -72,7 +72,7 @@ describe("ctx.waitFor({ schema })", () => {
    */
   async function signalled(
     payload: unknown,
-    body: (ctx: WorkflowCtx) => Promise<unknown>,
+    body: (ctx: WorkflowContext) => Promise<unknown>,
   ): Promise<{ journal: JournalStore; outcome: ReplayOutcome }> {
     const journal = await seed();
     const first = await replay(journal, async (_input, ctx) => body(ctx));
@@ -144,7 +144,7 @@ describe("ctx.waitFor({ schema })", () => {
     // running it over "nobody answered" would fail every timeout a validating
     // wait ever takes.
     const journal = await seed();
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const approval = await ctx.waitFor("approval", { schema: Approval, timeoutMs: 50 });
       return { approval: approval ?? "expired" };
     };

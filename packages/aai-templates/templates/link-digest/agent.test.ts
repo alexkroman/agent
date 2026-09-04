@@ -26,7 +26,7 @@
  */
 
 import {
-  createWorkflowCtx,
+  createWorkflowContext,
   schemaInputIssues,
   stubGatewayRoute,
   stubStepInfo,
@@ -264,7 +264,7 @@ describe("summarize", () => {
     // which is the only place the policy is observable at all. `runSteps: false`
     // because the subject is the declared policy rather than the work: the steps
     // would otherwise need a page and a model.
-    const ctx = createWorkflowCtx({ runSteps: false });
+    const ctx = createWorkflowContext({ runSteps: false });
     await digestFlow({ url: "https://example.com/a" }, ctx);
 
     const summarizeStep = ctx.steps.find((step) => step.name === "summarize");

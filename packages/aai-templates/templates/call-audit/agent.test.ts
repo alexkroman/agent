@@ -32,7 +32,7 @@
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowCtx, stubSpeech, WORKFLOW_CTX_NOW } from "@alexkroman1/aai/testing";
+import { createWorkflowContext, stubSpeech, WORKFLOW_CONTEXT_NOW } from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
   installStubReporter,
@@ -867,14 +867,14 @@ describe("the body's step policy", () => {
    * only reads `ctx.steps` afterwards, so it is built once.
    */
   const walkedCtx = () =>
-    createWorkflowCtx({
+    createWorkflowContext({
       runSteps: false,
       // The body reads the clock at both ends with `ctx.now()`, which the engine
       // journals under `now!0` and `now!1`. A PRODUCER here rather than a fixed
       // number, so the two reaches differ and `elapsedMs` is assertable — based
-      // on `WORKFLOW_CTX_NOW`, the instant the fake otherwise freezes at, rather
+      // on `WORKFLOW_CONTEXT_NOW`, the instant the fake otherwise freezes at, rather
       // than on a second arbitrary epoch nobody can relate to the first.
-      now: clockReads(WORKFLOW_CTX_NOW, WORKFLOW_CTX_NOW + 3000),
+      now: clockReads(WORKFLOW_CONTEXT_NOW, WORKFLOW_CONTEXT_NOW + 3000),
       results: {
         ingestRecording: {
           audio: "upl_pcm",
@@ -937,7 +937,7 @@ describe("the body's step policy", () => {
 /**
  * `auditFlow` on the real replay engine — as far as this tier can take it.
  *
- * The block above drives the body through `createWorkflowCtx` with
+ * The block above drives the body through `createWorkflowContext` with
  * `runSteps: false` and a journaled result per step, which is what makes it
  * affordable: `ingestRecording` shells out to the ffmpeg toolchain, which this
  * tier cannot usefully feed — the `ingestRecording` and `narrate` specs above

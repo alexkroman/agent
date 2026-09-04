@@ -59,7 +59,7 @@ export {
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
-  createWorkflowCtx,
+  createWorkflowContext,
   deployedAgent,
   expectDialogOk,
   expectToolOk,
@@ -122,9 +122,9 @@ export {
   toolInputIssues,
   toolOf,
   toolRunner,
-  WORKFLOW_CTX_NOW,
-  type WorkflowCtxOptions,
-  type WorkflowCtxRecorder,
+  WORKFLOW_CONTEXT_NOW,
+  type WorkflowContextOptions,
+  type WorkflowContextRecorder,
 } from "../../sdk/testing.ts";
 export {
   installStubGateway,
