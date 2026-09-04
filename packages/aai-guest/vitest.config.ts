@@ -41,7 +41,12 @@ export default defineConfig({
       // smoke path against the built artifact, not by unit tests, which is
       // what keeps these floors below the other packages'.
       // Actuals (2026-08): lines 85.79, functions 84.49, branches 75.58, statements 83.88.
-      thresholds: { lines: 83, functions: 82, branches: 72, statements: 81 },
+      // Actuals (2026-09, with studio-agent/http/session/tool-descriptions
+      // specs): lines 85.65, functions 84.38, branches 77.88, statements 84.12.
+      // Only `branches` moved: the two readings of it disagree (75.58 vs
+      // 77.88), so the floor is set under the LOWER one — the point of a
+      // ratchet is that it never has to come back down.
+      thresholds: { lines: 83, functions: 82, branches: 74, statements: 81 },
     },
   },
 });
