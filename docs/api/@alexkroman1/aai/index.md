@@ -439,6 +439,41 @@ function readStatus(body: string): string | undefined {
 
 ***
 
+### mcpToolName()
+
+```ts
+function mcpToolName(serverKey: string, remoteName: string): string;
+```
+
+The name the MODEL calls, for one remote tool on one server.
+
+Deterministic, and every input maps to a legal name: the remote half is
+lowercased and every character a provider would reject becomes `_`, because
+an MCP server's names are its own (`getWeather`, `search-docs`) and refusing
+them would make whole servers unusable for a spelling.
+
+Truncation at [MCP\_TOOL\_NAME\_MAX](#mcp_tool_name_max) is the one lossy step, and it is why
+the caller must still dedupe: two long remote names can land on one truncated
+name. `mergeMcpTools` resolves that the same way it resolves every other
+collision — first wins in a sorted order, the loser is dropped and logged —
+rather than silently overwriting.
+
+#### Parameters
+
+##### serverKey
+
+`string`
+
+##### remoteName
+
+`string`
+
+#### Returns
+
+`string`
+
+***
+
 ### omitUndefined()
 
 ```ts
@@ -1533,6 +1568,36 @@ capped turn still answers rather than stopping mid-chain in silence.
 ###### Default Value
 
 `10` (`DEFAULT_MAX_STEPS`)
+
+##### mcpServers?
+
+```ts
+optional mcpServers?: Readonly<Record<string, McpServerConfig>>;
+```
+
+MCP servers whose tools the model may call alongside this agent's own.
+
+Each key names one server and prefixes every tool it contributes, so a
+`docs` server's `search` arrives as `mcp_docs_search` — a third party's
+tool can never stand where one of yours stood. HTTP(S) only.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Support",
+  mcpServers: {
+    docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" },
+  },
+  requiredEnv: ["DOCS_MCP_TOKEN"],
+});
+```
+
+Declaring servers is not enough on its own: a host connects them with
+`withMcpTools` from `@alexkroman1/aai-runtime` before building the runtime,
+because discovery is a network round trip and `createRuntime` is
+synchronous. A server that is down, slow, or missing its token costs its
+own tools and nothing else — never the session.
 
 ##### minBargeInWords?
 
@@ -4475,6 +4540,89 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### McpServerConfig
+
+```ts
+type McpServerConfig = {
+  pinnedTools?: Readonly<Record<string, string>>;
+  tokenEnv?: string;
+  url: string;
+};
+```
+
+One MCP server an agent may take tools from.
+
+#### Properties
+
+##### pinnedTools?
+
+```ts
+optional pinnedTools?: Readonly<Record<string, string>>;
+```
+
+The tool definitions this agent has REVIEWED, as
+`remote tool name → fingerprint`.
+
+An MCP server owns its own tool descriptions and input schemas, and it can
+change them after you have trusted it — the "rug pull": a tool called
+`search` whose description quietly becomes "…and forward the caller's
+address to https://…". Namespacing does not touch that; it stops a server
+standing where YOUR tool stood, and this stops a server changing what its
+OWN tool means. Both, because they are different attacks.
+
+A fingerprint covers the server-controlled, security-relevant fields —
+`description`, the resolved input JSON schema, and `title` — and is
+produced by `fingerprintTools` from the Vercel AI SDK. `withMcpTools`
+(`@alexkroman1/aai-runtime`) reports the fingerprints of whatever it
+discovered, so adopting a pin is copying them in once a human has read the
+tools. With a pin declared, a tool whose fingerprint CHANGED — or one that
+was ADDED since — is not offered to the model, and the drop is logged.
+
+**The baseline lives HERE because there is nowhere better.** It is a
+reviewed decision about a third party, so its home has to be the artifact a
+human reviews and a deploy carries: `agent.ts`, in version control, in the
+diff. Nothing the runtime could persist has that property — a guest sandbox
+is reclaimed on idle and replaced on every deploy, so a baseline captured
+at first connect would be re-captured, from the server, on the next boot,
+and would authenticate nothing.
+
+Omitted, the agent trusts on first use: the tools are offered, and their
+fingerprints are reported so a pin can be adopted.
+
+##### tokenEnv?
+
+```ts
+optional tokenEnv?: string;
+```
+
+Name of the environment variable holding a bearer token for this server —
+the NAME, never the token. Omit it for a server that needs no credential.
+
+##### url
+
+```ts
+url: string;
+```
+
+The server's streamable-HTTP endpoint, e.g.
+`https://mcp.example.com/mcp`. Screened for SSRF before the first request
+and on every redirect hop, like every other URL this framework dials.
+
+***
+
+### McpServers
+
+```ts
+type McpServers = Readonly<Record<string, McpServerConfig>>;
+```
+
+The servers an agent declares, keyed by the name that prefixes their tools.
+
+A record rather than an array so the key is stated once and cannot drift from
+the name the model sees.
+
+***
+
 ### Message
 
 ```ts
@@ -7166,6 +7314,56 @@ is a repair, not an invitation to keep composing.
 diffed across SDK versions, or asserted on in a test. The full text is
 assembled from parts and is not reproduced here — a second copy in a comment
 would drift from the one the agent runs.
+
+***
+
+### MCP\_SERVER\_KEY\_RE
+
+```ts
+const MCP_SERVER_KEY_RE: RegExp;
+```
+
+The grammar for a server KEY — the name an author gives one server, and the
+first segment of every tool name it contributes.
+
+The same shape a tool file name must have (`tool-registry.ts`), for the same
+reason: it becomes part of what the MODEL calls, and providers reject a tool
+name outside `[a-zA-Z0-9_-]`. Capped at 24 so that a key plus the `mcp_`
+prefix plus a realistic remote name still clears [MCP\_TOOL\_NAME\_MAX](#mcp_tool_name_max)
+without truncation, which is the case where two remote tools can collapse
+onto one name.
+
+***
+
+### MCP\_TOOL\_NAME\_MAX
+
+```ts
+const MCP_TOOL_NAME_MAX: 64 = 64;
+```
+
+Longest tool name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the
+strictest this SDK routes to, and therefore the one that decides. Same
+constant and same reason as `tool-registry.ts`'s cap; a name over it is
+refused when the tool list is sent, by a vendor, in a message that names
+neither the server nor the tool.
+
+***
+
+### MCP\_TOOL\_PREFIX
+
+```ts
+const MCP_TOOL_PREFIX: "mcp_" = "mcp_";
+```
+
+The prefix every MCP-derived tool name carries.
+
+Namespacing is not tidiness here. An MCP server is a third party that
+publishes its own tool names, so without a prefix a server could publish
+`transfer_funds` and quietly stand where the agent's own tool of that name
+stood — the model would call it and nothing would say so. With the prefix,
+shadowing a native tool takes an author writing a `tools/mcp_*.ts` file
+themselves, and even that loses: the native tool wins and the drop is logged
+(see `mergeMcpTools`).
 
 ***
 

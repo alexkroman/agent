@@ -71,6 +71,11 @@ function toAgentConfig(source: AgentConfigSource): {
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
   maxSteps?: number;
+  mcpServers?: Record<string, {
+     pinnedTools?: Record<string, string>;
+     tokenEnv?: string;
+     url: string;
+  }>;
   minBargeInWords?: number;
   mode?: "text" | "s2s" | "pipeline";
   name: string;
@@ -142,6 +147,11 @@ the runtime.
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
   maxSteps?: number;
+  mcpServers?: Record<string, {
+     pinnedTools?: Record<string, string>;
+     tokenEnv?: string;
+     url: string;
+  }>;
   minBargeInWords?: number;
   mode?: "text" | "s2s" | "pipeline";
   name: string;
@@ -236,6 +246,16 @@ optional interruptionMinDurationMs?: number;
 
 ```ts
 optional maxSteps?: number;
+```
+
+##### mcpServers?
+
+```ts
+optional mcpServers?: Record<string, {
+  pinnedTools?: Record<string, string>;
+  tokenEnv?: string;
+  url: string;
+}>;
 ```
 
 ##### minBargeInWords?
