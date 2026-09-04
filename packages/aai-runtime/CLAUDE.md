@@ -106,8 +106,8 @@ mechanism is the repo's — see "The authoring surface is versioned in epochs" i
 `docs/CLAUDE.md`, which owns all three artifacts over this surface (the reports,
 the epochs and the renderings); `AGENTS.md` keeps the four obligations a change
 owes — and what it means here is that a signature change on any
-of the public names on that surface is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
-rather than discovered by whoever's build breaks.
+of the public names on that surface is CLASSIFIED (`--bump … --retain`
+or `--drop "<reason>"`) rather than discovered by whoever's build breaks.
 
 `tools` is the smallest — one name, `withToolsDir` — and it is
 its own capability rather than part of `runtime` because it assembles the
