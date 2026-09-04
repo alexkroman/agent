@@ -69,8 +69,13 @@ const REPO_ROOT = repoRoot(import.meta.url);
  * "no matches" from "the pathspec matched nothing" — git uses the same status
  * for both — which is the entire reason `assertScanCorpus` below exists.
  *
+ * `cwd` spells out `| undefined` because `exactOptionalPropertyTypes` is on and
+ * every caller here forwards its own optional `cwd` straight through: under
+ * that flag an ABSENT property and one explicitly set to `undefined` are
+ * different types, and forwarding produces the second.
+ *
  * @param {string[]} args
- * @param {{ allowNoMatch?: boolean, cwd?: string | URL }} [opts]
+ * @param {{ allowNoMatch?: boolean, cwd?: string | URL | undefined }} [opts]
  */
 export function git(args, { allowNoMatch = false, cwd = REPO_ROOT } = {}) {
   try {
@@ -87,6 +92,17 @@ export function git(args, { allowNoMatch = false, cwd = REPO_ROOT } = {}) {
  * Sliced positionally rather than split on ":" — a matched source line very
  * often contains colons.
  */
+/**
+ * One `git grep -n` hit.
+ *
+ * Named because three signatures below hand it around and all three said
+ * `object`, which has no properties at all — so `match.text`, the thing every
+ * caller reads, was unreachable through every one of them.
+ *
+ * @typedef {{ file: string, line: number, text: string }} GrepMatch
+ */
+
+/** @returns {GrepMatch} */
 function parseMatch(raw) {
   const fileEnd = raw.indexOf(":");
   const lineEnd = raw.indexOf(":", fileEnd + 1);
@@ -115,6 +131,12 @@ function parseMatch(raw) {
  * TWO passes, because `-o` prints the matched FRAGMENT and both callers need
  * the whole source line: the failure report prints it, and `isCommentOnly`
  * decides on it. The `-n` pass supplies the text, the `-o` pass the count.
+ */
+/**
+ * @param {string} re
+ * @param {string[]} pathspecs
+ * @param {{ cwd?: string | URL | undefined }} [opts]
+ * @returns {GrepMatch[]}
  */
 function grepMatches(re, pathspecs, { cwd } = {}) {
   const tail = ["--untracked", "-e", re, "--", ...pathspecs];
@@ -287,13 +309,18 @@ export function assertScanCorpus({ gate, what, pathspecs, minFiles, cwd }) {
  * `filter` drops matches the caller does not want counted (self-referential
  * files, comment-only lines).
  *
- * @param {{ key: string, re: string, paths: string[] }[]} groups
- * @param {{ filter?: (match: object, group: object) => boolean, cwd?: string|URL }} [opts]
+ * Generic in the GROUP so a caller's extra fields reach `filter`:
+ * `check-escape-hatches.mjs` carries a `skipComments` per group and decides on
+ * it there, which a fixed parameter type would hide behind `object`.
+ *
+ * @template {{ key: string, re: string, paths: string[] }} G
+ * @param {G[]} groups
+ * @param {{ filter?: (match: GrepMatch, group: G) => boolean, cwd?: string | URL | undefined }} [opts]
  */
 export function scanGroups(groups, { filter, cwd } = {}) {
   /** @type {Map<string, Map<string, number>>} */
   const counts = new Map();
-  /** @type {Map<string, Map<string, object[]>>} */
+  /** @type {Map<string, Map<string, GrepMatch[]>>} */
   const occurrences = new Map();
   let total = 0;
   for (const group of groups) {
@@ -314,25 +341,6 @@ export function scanGroups(groups, { filter, cwd } = {}) {
 /** Sum of a `{ file: count }` record. */
 export const totalOf = (record) => Object.values(record ?? {}).reduce((sum, n) => sum + n, 0);
 
-/**
- * `--update`: lower every baseline entry to the tree, and REFUSE to raise one.
- *
- * That asymmetry is the whole contract. `--update` is a convenience for
- * recording removals, not a way to bless additions — otherwise the gate would be
- * advisory, since every failure would have a one-command bypass and the
- * reviewable diff (the actual control on a deliberate increase) would never be
- * produced.
- *
- * @param {{
- *   gate: string,
- *   baselinePath: string | URL,
- *   baseline: Record<string, unknown>,
- *   groups: { key: string, label: string }[],
- *   counts: Map<string, Map<string, number>>,
- *   advice: string,
- *   describe?: (next: Record<string, unknown>) => string,
- * }} opts
- */
 /**
  * Merge one group's budgets against the tree, recording every move.
  *
@@ -356,6 +364,25 @@ function mergeGroup(allowed, current, label, { lowered, refused }) {
   return merged;
 }
 
+/**
+ * `--update`: lower every baseline entry to the tree, and REFUSE to raise one.
+ *
+ * That asymmetry is the whole contract. `--update` is a convenience for
+ * recording removals, not a way to bless additions — otherwise the gate would be
+ * advisory, since every failure would have a one-command bypass and the
+ * reviewable diff (the actual control on a deliberate increase) would never be
+ * produced.
+ *
+ * @param {{
+ *   gate: string,
+ *   baselinePath: string | URL,
+ *   baseline: Record<string, unknown>,
+ *   groups: { key: string, label: string }[],
+ *   counts: Map<string, Map<string, number>>,
+ *   advice: string,
+ *   describe?: (next: Record<string, unknown>) => string,
+ * }} opts
+ */
 export function updateBaseline({ gate, baselinePath, baseline, groups, counts, advice, describe }) {
   const next = {};
   const moves = { lowered: [], refused: [] };

@@ -128,14 +128,17 @@ async function coldBurst() {
 async function oneSession() {
   const brokerAt = performance.now();
   const res = await fetch(`${PLATFORM}/${SLUG}/client-config`);
-  const config = await res.json();
+  const config = /** @type {{ sessionUrl?: string }} */ (await res.json());
   if (!res.ok) throw new Error(`client-config HTTP ${res.status}`);
   const brokerMs = performance.now() - brokerAt;
-  if (!config.sessionUrl) throw new Error("client-config carried no sessionUrl");
+  // Bound to a local: the guard below does not reach inside the promise
+  // executor, a closure being free to observe a later `config.sessionUrl`.
+  const sessionUrl = config.sessionUrl;
+  if (!sessionUrl) throw new Error("client-config carried no sessionUrl");
 
   const sessionAt = performance.now();
   const configured = await new Promise((resolve, reject) => {
-    const ws = new WebSocket(config.sessionUrl);
+    const ws = new WebSocket(sessionUrl);
     const timer = setTimeout(
       () => reject(new Error("timeout awaiting session.configured")),
       20_000,

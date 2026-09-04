@@ -49,7 +49,7 @@ export function runChild(command, options) {
     shell: process.platform === "win32",
   });
 
-  for (const signal of STOP_SIGNALS) {
+  for (const signal of /** @type {readonly NodeJS.Signals[]} */ (STOP_SIGNALS)) {
     process.on(signal, () => {
       // Nothing else: no exit, no timer. The child owns the shutdown, and this
       // handler's real job is to REPLACE Node's default action so the wrapper

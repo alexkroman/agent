@@ -37,6 +37,14 @@ import { formatBytes, formatRatioPercent, REPORT_KIND } from "./artifact-size-fo
  * both of its branches and the run died on the "required" check below with the
  * path sitting right there in argv. `strict` gets the same treatment for a
  * misspelled flag, which that loop ignored silently.
+ *
+ * `@satisfies`, never `@type`: it checks the shape against node's own config
+ * type while PRESERVING the literal `"string"` / `"boolean"` inference, which
+ * is what lets `parseArgs` hand back `string | undefined` per flag. `@type`
+ * widens those literals, every value comes back
+ * `string | boolean | (string | boolean)[]`, and each use pays for a narrowing.
+ *
+ * @satisfies {import("node:util").ParseArgsOptionsConfig}
  */
 const OPTIONS = {
   acknowledged: { type: "boolean", default: false },

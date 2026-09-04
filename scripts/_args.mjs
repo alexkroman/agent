@@ -63,8 +63,12 @@ export const USAGE_EXIT = 2;
  * @param {object} spec
  * @param {string} spec.script `import.meta.url` of the calling script, so the
  *   error names the file a developer would go and read.
- * @param {Record<string, { type: "boolean" | "string", short?: string, multiple?: boolean, default?: unknown }>} spec.options
- *   `parseArgs` option config, verbatim.
+ * @param {import("node:util").ParseArgsOptionsConfig} spec.options
+ *   `parseArgs` option config, verbatim — and named as node's own type rather
+ *   than restated, which is what "verbatim" has to mean for the two to stay in
+ *   step. The hand-written copy said `default?: unknown`, which node does not
+ *   accept, so every caller's option object was rejected the moment a compiler
+ *   looked at one.
  * @param {boolean} [spec.allowPositionals] Whether bare arguments are legal.
  *   Defaults to `false`, which is the safe direction: a script that does not
  *   expect positionals should reject `--chekc` rather than silently collect it.
@@ -139,8 +143,18 @@ export function requiredValue(value, flag, script) {
  * parse would mean maintaining a central option list for a throwaway benchmark
  * flag, which is a cost with no gate behind it.
  *
+ * The reader is generic in its FALLBACK, so `arg("port", "4960")` is a string
+ * rather than `unknown` and the harness's arithmetic and template literals need
+ * no narrowing. `boolean` stays in the union on purpose: a bare `--port` really
+ * does read as `true` (see above), and a signature that hid that would be the
+ * one lie in this module.
+ *
  * @param {readonly string[]} argv
- * @returns {(name: string, fallback?: unknown) => unknown}
+ * The fallback is REQUIRED in the type though the body treats it as optional:
+ * every one of the six readers supplies one, and `arg("typo")` answering
+ * `undefined` is the shape of a benchmark that silently measures its defaults.
+ *
+ * @returns {<T>(name: string, fallback: T) => string | boolean | T}
  */
 export function valueReader(argv) {
   return (name, fallback) => {

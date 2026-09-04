@@ -24,11 +24,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join, relative } from "node:path";
 
 import { typedEntryPoints } from "./_api-surface.mjs";
-import { readJson, repoRoot } from "./_fs.mjs";
+import { readJson, readManifest, repoRoot } from "./_fs.mjs";
 
 // `readJson` was defined here (silently) and twice more elsewhere; it is
 // `_fs.mjs`'s now, re-exported so the ~20 call sites in this tree read as before.
-export { readJson } from "./_fs.mjs";
+// `readManifest` rides along for the same reason: `_api-contracts.mjs` reads a
+// package manifest and takes everything else in this family from here.
+export { readJson, readManifest } from "./_fs.mjs";
 
 export const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const PACKAGES_ROOT = join(ROOT, "packages");
@@ -168,7 +170,7 @@ function contractPackage(key) {
     key,
     dir,
     contractRoot,
-    name: readJson(join(dir, "package.json")).name,
+    name: readManifest(join(dir, "package.json")).name,
     entrypointRoot: join(contractRoot, "entrypoints"),
     /** Epoch metadata. NOT `reports/` — `.gitignore` has a bare `reports/` rule. */
     epochRoot: join(contractRoot, "epochs"),
@@ -196,15 +198,35 @@ export function contractPackages() {
     .map((key) => contractPackage(key));
 }
 
-export const readTable = (pkg) => readJson(pkg.tablePath);
+/**
+ * The three committed contract artifacts, as shapes.
+ *
+ * `readJson` rightly answers `unknown`, and every reader below was reaching
+ * into that for `.current`, `.supported`, `.exports`. Declaring them here means
+ * one narrowing per artifact instead of one per read, and — the part worth
+ * having — a misspelled field in a gate that decides whether a BREAKING change
+ * can land is a compile error rather than an `undefined` that compares equal to
+ * nothing and reports no violation.
+ *
+ * @typedef {{ current: number, supported: number[], dropped: Record<string, string> }} CapabilityEpochs
+ * @typedef {Record<string, CapabilityEpochs>} ContractTable
+ * @typedef {{ comment?: string, total: number, surface: Record<string, string[]> }} InternalSurface
+ * @typedef {{ kind: string, capability: string, epoch: number, sha256: string, exports: string[] }} EpochRecord
+ */
+
+/** @returns {ContractTable} */
+export const readTable = (pkg) => /** @type {ContractTable} */ (readJson(pkg.tablePath));
 export const writeTable = (pkg, table) => writeJson(pkg.tablePath, table);
-export const readInternalSurface = (pkg) => readJson(pkg.internalSurfacePath);
+/** @returns {InternalSurface} */
+export const readInternalSurface = (pkg) =>
+  /** @type {InternalSurface} */ (readJson(pkg.internalSurfacePath));
 export const writeInternalSurface = (pkg, surface) => writeJson(pkg.internalSurfacePath, surface);
 
 export const epochPath = (pkg, capability, version) =>
   join(pkg.epochRoot, capability, `v${version}.json`);
+/** @returns {EpochRecord} */
 export const readEpoch = (pkg, capability, version) =>
-  readJson(epochPath(pkg, capability, version));
+  /** @type {EpochRecord} */ (readJson(epochPath(pkg, capability, version)));
 export const writeEpoch = (pkg, capability, version, value) =>
   writeJson(epochPath(pkg, capability, version), value);
 
@@ -257,7 +279,7 @@ export function capabilities(pkg) {
  * here are keyed by.
  */
 export function authoringSubpaths(pkg) {
-  const manifest = readJson(join(pkg.dir, "package.json"));
+  const manifest = readManifest(join(pkg.dir, "package.json"));
   const exports = manifest.exports ?? {};
   const denied = NON_AUTHORING_SUBPATHS[pkg.key] ?? {};
 
@@ -331,6 +353,6 @@ export function exampleFacingSubpaths(pkg) {
  * than saying nothing.
  */
 export function internalDestination(pkg) {
-  const manifest = readJson(join(pkg.dir, "package.json"));
+  const manifest = readManifest(join(pkg.dir, "package.json"));
   return Object.hasOwn(manifest.exports ?? {}, "./internal") ? `${pkg.name}/internal` : null;
 }

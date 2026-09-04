@@ -55,7 +55,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
-import { publishablePackages, readJson, repoRoot, withPackedTarball } from "./_fs.mjs";
+import { publishablePackages, readManifest, repoRoot, withPackedTarball } from "./_fs.mjs";
 import {
   REPORT_KIND,
   REPORT_SCHEMA_VERSION,
@@ -93,6 +93,14 @@ const MIN_PUBLISHABLE_PACKAGES = 4;
  * the script then measured every artifact, printed the report to stdout, wrote
  * NO FILE and exited 0. `strict` also makes a misspelled flag an error instead
  * of a silently absorbed one.
+ *
+ * `@satisfies`, never `@type`: it checks the shape against node's own config
+ * type while PRESERVING the literal `"string"` / `"boolean"` inference, which
+ * is what lets `parseArgs` hand back `string | undefined` per flag. `@type`
+ * widens those literals, every value comes back
+ * `string | boolean | (string | boolean)[]`, and each use pays for a narrowing.
+ *
+ * @satisfies {import("node:util").ParseArgsOptionsConfig}
  */
 const OPTIONS = {
   help: { type: "boolean" },
@@ -131,7 +139,7 @@ function measureTree(dir) {
  * every historical "we shipped the wrong thing" bug lives in that gap.
  */
 function measurePackage(dir) {
-  const manifest = readJson(join(ROOT, dir, "package.json"));
+  const manifest = readManifest(join(ROOT, dir, "package.json"));
   // The pack + scratch-directory dance is `_fs.mjs`'s, shared with
   // `check-publish-protocols.mjs` — the only two things in the repo that pack.
   return withPackedTarball(join(ROOT, dir), ({ tarball, workDir }) => {

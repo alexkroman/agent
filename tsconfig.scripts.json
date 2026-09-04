@@ -1,0 +1,97 @@
+{
+  // The JAVASCRIPT that no other program could see.
+  //
+  // `tsconfig.tools.json` is the same idea one file type over: its header says
+  // it exists for "the files that no other program could see", and its
+  // `include` is `*.ts` + `examples/**/*.ts`. It stops at TypeScript, because
+  // `allowJs` is off — so the 80 `.mjs` files under `scripts/` and the 10 under
+  // `examples/` had lint and no compiler. That is every quality ratchet in this
+  // repo (`check.mjs`, `_ratchet.mjs`, the six `guard-invariants-*` modules,
+  // `api-report.mjs`) plus the reference self-hosting servers.
+  //
+  // `aai-cli` already closed exactly this gap for its own two `.mjs` files with
+  // exactly these two flags, and its comment carries the argument: "the two
+  // files every user of this package actually executes had lint but no
+  // compiler." The gate scripts are the harder version of it — a broken gate
+  // does not throw, it prints a checkmark, which is the failure mode this repo
+  // has paid for repeatedly.
+  //
+  // It is a SECOND program rather than a widening of `tsconfig.tools.json`
+  // because it needs three relaxations that must not reach the `.ts` files
+  // there. See `compilerOptions` below.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./.tsbuildinfo/scripts.tsbuildinfo",
+    "types": ["node"],
+    "allowJs": true,
+    // `checkJs` is the half that matters. `allowJs` alone only lets these files
+    // be pulled into a program as imports; without `checkJs` they are parsed
+    // and never checked.
+    "checkJs": true,
+
+    // The three relaxations, each measured. Under the inherited settings this
+    // program reports 849 errors; under these, 166 — and the 683 that go away
+    // are all artifacts of checking annotation-free JavaScript, not findings.
+    //
+    // `noImplicitAny`: 500 of the 849 are TS7006/TS7031 on parameters. Every
+    // one is "this JS function has no JSDoc", which is true of all of it and is
+    // not a defect. Requiring annotations here would mean hand-writing types
+    // for 80 scripts before the compiler could report a single real mistake.
+    "noImplicitAny": false,
+    // `noUncheckedIndexedAccess`: the hits are `match[1]` after a null-checked
+    // `exec`, `starts[mid]` inside a binary search, `parsed.errors[0]` after a
+    // length check — provably safe, and in JS there is no `!` and no type
+    // annotation to narrow with, so the only remedies available are a runtime
+    // guard on a branch that cannot happen or a cast. Casts are what
+    // `check:hatches` counts.
+    "noUncheckedIndexedAccess": false,
+    // `useUnknownInCatchVariables`: 21 sites reading `err.message` / `err.code`
+    // off a caught value. Correct in TypeScript, where the narrowing is one
+    // line; in JSDoc-less JS it costs a helper per catch to say what these
+    // scripts already say by crashing.
+    "useUnknownInCatchVariables": false,
+
+    // Same purpose as `tsconfig.tools.json`'s `paths` and the same reason:
+    // `examples/` is deliberately not a workspace member, so it has no
+    // `node_modules` and its manifest pins the PUBLISHED packages. Mapping to
+    // workspace source asks the question worth asking — does the example still
+    // compile against the SDK as it stands today.
+    //
+    // The subpath entries are ORDERED FALLBACKS, not a hand-kept list: tsc
+    // tries each substitution and takes the first that resolves to a real file,
+    // so `@alexkroman1/aai/llm` finds `sdk/providers/llm-barrel.ts` and
+    // `@alexkroman1/aai/html` falls through to `host/html.ts`. The four
+    // patterns are the four layouts the `exports` map already uses, which means
+    // a new subpath export is covered on creation rather than on the next edit
+    // to this file — the argument `packages/aai-templates/tsconfig.json` spells
+    // out after its own hand-kept list fell three files behind.
+    //
+    // `ws` is mapped like `tsconfig.tools.json` maps `zod`: not ours, so there
+    // is no source to point at, and the entry names where the workspace already
+    // installed it.
+    "paths": {
+      "@alexkroman1/aai": ["./packages/aai/src/index.ts"],
+      "@alexkroman1/aai/*": [
+        "./packages/aai/src/sdk/providers/*-barrel.ts",
+        "./packages/aai/src/sdk/*-barrel.ts",
+        "./packages/aai/src/sdk/*.ts",
+        "./packages/aai/src/host/*.ts",
+        "./packages/aai/src/*.ts"
+      ],
+      "@alexkroman1/aai-ui": ["./packages/aai-ui/src/index.ts"],
+      "@alexkroman1/aai-ui/*": ["./packages/aai-ui/src/*.ts"],
+      "@alexkroman1/aai-runtime": ["./packages/aai-runtime/src/runtime-barrel.ts"],
+      "@alexkroman1/aai-runtime/*": [
+        "./packages/aai-runtime/src/*-barrel.ts",
+        "./packages/aai-runtime/src/*.ts"
+      ],
+      "ws": ["./packages/aai-runtime/node_modules/ws"],
+      "zod": ["./packages/aai/node_modules/zod"]
+    }
+  },
+  // Generic on purpose, same as `tsconfig.tools.json`: tsc's `include` only
+  // sets ROOT files, and a script is imported by nothing, so anything not
+  // matched here is checked by nothing at all.
+  "include": ["scripts/**/*.mjs", "examples/**/*.mjs"]
+}

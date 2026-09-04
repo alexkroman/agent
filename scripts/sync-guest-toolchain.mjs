@@ -45,7 +45,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { parseScriptArgs } from "./_args.mjs";
-import { readJson, repoRoot } from "./_fs.mjs";
+import { readJson, readManifest, repoRoot } from "./_fs.mjs";
 
 const { values: flags } = parseScriptArgs({
   script: import.meta.url,
@@ -87,7 +87,7 @@ const LOCKED_PACKAGES = [
 
 /** The version each locked package resolves to in THIS checkout. */
 function installedVersions() {
-  const guestPkg = readJson(guestPkgPath);
+  const guestPkg = readManifest(guestPkgPath);
   const declared = { ...guestPkg.dependencies, ...guestPkg.devDependencies };
   const versions = {};
   for (const name of LOCKED_PACKAGES) {
@@ -100,7 +100,7 @@ function installedVersions() {
     if (!existsSync(installed)) {
       throw new Error(`${name} is declared but not installed at ${installed} — run pnpm install`);
     }
-    versions[name] = readJson(installed).version;
+    versions[name] = readManifest(installed).version;
   }
   return versions;
 }
@@ -123,6 +123,18 @@ function expectedManifest(versions) {
 const versions = installedVersions();
 
 /**
+ * The two shapes `pick` reaches into: the toolchain manifest's own
+ * `dependencies`, and the lockfile's root importer under `packages[""]`.
+ * Declared rather than left as `unknown` so a `pick` that misspells either path
+ * is a compile error instead of a silently-empty map — which this gate would
+ * report as "everything is in sync".
+ *
+ * @typedef {object} ToolchainJson
+ * @property {Record<string, string>} [dependencies]
+ * @property {Record<string, { dependencies?: Record<string, string> }>} [packages]
+ */
+
+/**
  * Both committed files declare the same dependency map, so both are checked
  * the same way: every installed version present, and nothing extra. Reads the
  * map through `pick` rather than duplicating the loop per file — the two
@@ -130,10 +142,15 @@ const versions = installedVersions();
  *
  * Compares PARSED JSON, not bytes: a formatter reaching these files must not
  * be able to fail the gate.
+ *
+ * @param {string} label
+ * @param {string} path
+ * @param {(json: ToolchainJson) => Record<string, string> | undefined} pick
+ * @returns {string[]}
  */
 function drift(label, path, pick) {
   if (!existsSync(path)) return [`${path} is missing`];
-  const declared = pick(readJson(path)) ?? {};
+  const declared = pick(/** @type {ToolchainJson} */ (readJson(path))) ?? {};
   const problems = [];
   for (const [name, version] of Object.entries(versions)) {
     if (declared[name] !== version) {

@@ -54,6 +54,7 @@
 import { walk } from "./_ast-scan.mjs";
 import {
   asyncListener,
+  callOfMember,
   isCallOfMember,
   isJitteredWindow,
   isTimersPromisesSleep,
@@ -68,9 +69,10 @@ export const TIMING_RULES = [
     key: "rule3_raceTimeout",
     label: "hand-rolled Promise.race timeout",
     match(node) {
-      if (!isCallOfMember(node, "Promise", "race")) return false;
+      const race = callOfMember(node, "Promise", "race");
+      if (race === undefined) return false;
       let timer = false;
-      walk(node.arguments, (inner) => {
+      walk(race.arguments, (inner) => {
         if (timer) return false;
         if (promiseWait(inner) !== undefined) timer = true;
       });
@@ -238,7 +240,14 @@ export const TIMING_RULES = [
     match: (node) => isCallOfMember(node, "expect", "poll"),
     // Report at `.poll` rather than at the call's own start: wrapped, the call
     // begins on an `await expect` line that names nothing a reader can act on.
-    at: (node) => node.callee.property,
+    at: (node) => {
+      // `callOfMember` already established the callee is `expect.poll`; the
+      // `type` test is what lets the property be READ, `callee` being oxc's
+      // whole `Expression` union. Falls back to the call itself, which is where
+      // this reported before `at` existed.
+      const callee = callOfMember(node, "expect", "poll")?.callee;
+      return callee?.type === "MemberExpression" ? callee.property : node;
+    },
     paths: SOURCE_PATHSPECS,
     samples: {
       matches: [

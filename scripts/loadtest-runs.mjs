@@ -65,7 +65,9 @@ const arg = valueReader(process.argv.slice(2));
 const PORT = arg("port", "4960");
 const BASE = arg("base", `http://127.0.0.1:${PORT}`);
 const WORKFLOW = arg("workflow", "chain");
-const INPUT = JSON.parse(arg("input", '{"steps":10}'));
+// `String(...)`: a bare `--input` reads as `true` (see `valueReader`), which
+// `JSON.parse` would accept as the boolean `true` rather than an object.
+const INPUT = JSON.parse(String(arg("input", '{"steps":10}')));
 const RUNS = Number(arg("runs", "20"));
 const CONCURRENCY = Number(arg("concurrency", "4"));
 const POLL_MS = Number(arg("poll", "50"));
@@ -109,7 +111,7 @@ async function oneRun() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ workflow: WORKFLOW, input: INPUT }),
   });
-  const started = await start.json();
+  const started = /** @type {{ runId?: string }} */ (await start.json());
   if (!start.ok)
     throw new Error(`start HTTP ${start.status}: ${JSON.stringify(started).slice(0, 120)}`);
   if (!started.runId) throw new Error("start returned no runId");
@@ -118,13 +120,17 @@ async function oneRun() {
   const deadline = Date.now() + TIMEOUT_MS;
   while (Date.now() < deadline) {
     const read = await fetch(`${BASE}/workflows/runs/${started.runId}`);
-    const snapshot = await read.json();
+    const snapshot = /** @type {{ status?: string, error?: unknown }} */ (await read.json());
     if (!read.ok) throw new Error(`read HTTP ${read.status}`);
-    if (TERMINAL.has(snapshot.status)) {
+    // A response with no `status` at all is not terminal, which is what the
+    // bare `has(undefined)` meant — said so that the returned `status` is a
+    // string rather than `string | undefined`.
+    const status = snapshot.status;
+    if (status !== undefined && TERMINAL.has(status)) {
       return {
         startedMs,
         totalMs: performance.now() - at,
-        status: snapshot.status,
+        status,
         // A failed run's reason, capped. The whole point of reading it is to
         // notice that "completed" was really "failed 40 times, quickly" —
         // `undefined` rather than an absent key, because the one reader below

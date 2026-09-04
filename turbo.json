@@ -545,6 +545,22 @@
     // `globalDependencies`: a file a task depends on has to be hashed by that
     // task, and a root task's globs are the only ones that can see outside a
     // package. No `dependsOn`: it resolves source, so it needs no `dist`.
+    // The JAVASCRIPT half of the same job — see `tsconfig.scripts.json`'s header.
+    // Same `inputs` rule as the task below: a file this reads has to be hashed
+    // by it, and a root task's globs are the only ones that can see outside a
+    // package. The three `packages/**` entries are there because the config
+    // `paths`-maps the published specifiers to workspace SOURCE for the
+    // examples, so this task really does read them.
+    "//#typecheck:scripts": {
+      "inputs": [
+        "scripts/**/*.mjs",
+        "examples/**/*.mjs",
+        "tsconfig.scripts.json",
+        "packages/aai/**/*.ts",
+        "packages/aai-ui/**/*.ts",
+        "packages/aai-runtime/**/*.ts"
+      ]
+    },
     "//#typecheck:tools": {
       "inputs": [
         "*.ts",

@@ -42,7 +42,12 @@ export function scaffoldCompilerOptions() {
  * messaging, including any rewriting of scratch paths in the diagnostics back
  * to whatever the reader should be looking at.
  *
+ * Each arm of the result names the other's key as absent, which is what makes
+ * `if (result.ok)` narrow: on a bare `{ok:true} | {ok:false,output}` union the
+ * `output` read in the else branch is an error, not a narrowing.
+ *
  * @param {{ name: string, include: string[], overrides?: Record<string, unknown> }} opts
+ * @returns {{ ok: true, output?: undefined } | { ok: false, output: string }}
  */
 export function runScaffoldTsc({ name, include, overrides = {} }) {
   const configPath = path.join(REPO_ROOT, `tsconfig.${name}.json`);

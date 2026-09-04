@@ -79,6 +79,83 @@ export function repoRoot(importMetaUrl) {
  * @returns {unknown}
  */
 export function readJson(path) {
+  return parseJson(path);
+}
+
+/**
+ * The fields of a `package.json` that a gate in this repo actually reads.
+ *
+ * `readJson` returns `unknown`, which is right — it is handed arbitrary JSON.
+ * But twelve of its nineteen call sites read a MANIFEST, and every one of them
+ * was reaching into that `unknown` for `.name`, `.version`, `.private`. Under
+ * `checkJs` each of those is a TS18046, and the two remedies available in
+ * annotation-free JS are a per-site JSDoc cast or one typed seam. This is the
+ * seam — the same answer `packages/aai/CLAUDE.md` gives for a concentration of
+ * identical casts, and the reason it is a fixed field list rather than an index
+ * signature: an index signature resolves every property name including a
+ * MISTYPED one, which is the class of bug this program was turned on to find.
+ *
+ * A field a future gate needs is added here, in a diff a reviewer sees.
+ *
+ * @typedef {object} PackageManifest
+ * @property {string} [name]
+ * @property {string} [version]
+ * @property {boolean} [private]
+ * @property {string} [license]
+ * @property {string} [packageManager]
+ * @property {string | { type?: string, url?: string, directory?: string }} [repository]
+ * @property {boolean | string[]} [sideEffects]
+ * @property {string[]} [files]
+ * @property {Record<string, ExportTarget>} [exports]
+ * @property {Record<string, string>} [scripts]
+ * @property {Record<string, string>} [dependencies]
+ * @property {Record<string, string>} [devDependencies]
+ * @property {Record<string, string>} [peerDependencies]
+ * @property {Record<string, string>} [optionalDependencies]
+ * @property {Record<string, string>} [engines]
+ * @property {Record<string, unknown>} [publishConfig]
+ */
+
+/**
+ * One entry in an `exports` map: either a bare path, or the condition object
+ * this repo actually writes (`@dev/source` + `types` + `import`).
+ *
+ * Spelled out rather than left as `unknown` because two gates walk this map and
+ * both had the same problem: `typeof target === "object"` narrows `unknown` to
+ * `object`, and `object` has no index signature, so `target["@dev/source"]` and
+ * `target.types` were unreachable. An open condition map is the honest type —
+ * the condition names are not a fixed set — and it is still specific enough
+ * that reading a nested value off a bare-string entry stays an error.
+ *
+ * @typedef {string | { [condition: string]: string | undefined }} ExportTarget
+ */
+
+/**
+ * `readJson` for the file that is a `package.json`.
+ *
+ * Same read, same fail-loudly behaviour; the only difference is that the result
+ * is typed. See {@link PackageManifest}.
+ *
+ * @param {string | URL} path
+ * @returns {PackageManifest}
+ */
+export function readManifest(path) {
+  // The ONE narrowing. `parseJson` is handed arbitrary JSON and rightly says
+  // `unknown`; this is the single place that claims a shape for it, so the
+  // claim is reviewable here instead of being re-made at twelve call sites.
+  return /** @type {PackageManifest} */ (parseJson(path));
+}
+
+/**
+ * The shared body of `readJson` and `readManifest`.
+ *
+ * Split out so each can declare its own return type: a JSDoc `@returns` is the
+ * only way to say it, and one function cannot carry two.
+ *
+ * @param {string | URL} path
+ * @returns {unknown}
+ */
+function parseJson(path) {
   let text;
   try {
     text = readFileSync(path, "utf8");
@@ -113,7 +190,7 @@ export function publishablePackages(root) {
       const manifest = join(root, dir, "package.json");
       if (!existsSync(manifest)) return false;
       try {
-        return readJson(manifest).private !== true;
+        return readManifest(manifest).private !== true;
       } catch {
         return false;
       }

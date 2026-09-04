@@ -22,9 +22,12 @@ const quiet = process.env.BENCH_DEBUG
 const server = createHostServer({
   logger: quiet,
   defaults: {
-    stt: assemblyAIStt({ streamingUrl: BENCH_STT_URL }),
+    // `omitUndefined`-by-hand: under `exactOptionalPropertyTypes` an absent
+    // option and one explicitly `undefined` are different types, and these
+    // two come from `process.env`.
+    stt: assemblyAIStt(BENCH_STT_URL === undefined ? {} : { streamingUrl: BENCH_STT_URL }),
     llm: assemblyAILlm({}),
-    tts: assemblyAITts({ host: BENCH_TTS_HOST }),
+    tts: assemblyAITts(BENCH_TTS_HOST === undefined ? {} : { host: BENCH_TTS_HOST }),
   },
 });
 

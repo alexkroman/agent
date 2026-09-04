@@ -127,7 +127,7 @@ jobs:
           restore-keys: |
             tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json', 'tsconfig.tools.json', 'pnpm-lock.yaml') }}-
             tsbuildinfo-typecheck-${{ runner.os }}-
-      - run: pnpm exec turbo run lint typecheck typecheck:tools
+      - run: pnpm exec turbo run lint typecheck typecheck:tools typecheck:scripts
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main

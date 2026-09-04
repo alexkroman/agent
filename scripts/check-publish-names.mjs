@@ -67,7 +67,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { publishablePackages, readJson, repoRoot } from "./_fs.mjs";
+import { publishablePackages, readManifest, repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url);
 const ALLOWED_SCOPES = ["@alexkroman1/"];
@@ -77,28 +77,49 @@ const REPO_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\.git$/;
 
 const errors = [];
 
-/** @type {{ dir: string, path: string, pkg: Record<string, unknown> }[]} */
+/** @type {{ dir: string, path: string, pkg: import("./_fs.mjs").PackageManifest }[]} */
 const manifests = [];
+
+/**
+ * The `repository` block, or `undefined` when the field is absent or is npm's
+ * STRING shorthand.
+ *
+ * Both readers below want the same thing and both spelled it `pkg.repository?.url`,
+ * which reads as a guard and is not one: optional chaining only answers for
+ * `null`/`undefined`, so on the string form it is a property read that yields
+ * `undefined` by accident rather than by decision. Same landing branch, so this
+ * is the behaviour those two sites already had — said once, and checkably.
+ *
+ * @param {import("./_fs.mjs").PackageManifest} pkg
+ * @returns {{ url?: string, directory?: string } | undefined}
+ */
+function repositoryBlock(pkg) {
+  return typeof pkg.repository === "object" ? pkg.repository : undefined;
+}
 
 for (const dir of publishablePackages(ROOT)) {
   const pkgJsonPath = join(ROOT, dir, "package.json");
   try {
-    manifests.push({ dir, path: pkgJsonPath, pkg: readJson(pkgJsonPath) });
+    manifests.push({ dir, path: pkgJsonPath, pkg: readManifest(pkgJsonPath) });
   } catch (err) {
     errors.push(`${pkgJsonPath}: ${err.message}`);
   }
 }
 
 for (const { path, pkg } of manifests) {
-  if (typeof pkg.name !== "string") {
+  // Bound to a local rather than read through `pkg` each time: the guard below
+  // does not survive into the `some` callback, because a closure could observe
+  // a `pkg.name` that changed after the check.
+  const name = pkg.name;
+  if (typeof name !== "string") {
     errors.push(`${path}: missing "name" field`);
     continue;
   }
 
-  const ok = ALLOWED_SCOPES.some((scope) => pkg.name.startsWith(scope));
+  const ok = ALLOWED_SCOPES.some((scope) => name.startsWith(scope));
   if (!ok) {
     errors.push(
-      `${path}: name "${pkg.name}" is not under an allowed scope ` +
+      `${path}: name "${name}" is not under an allowed scope ` +
         `(${ALLOWED_SCOPES.join(", ")}). ` +
         `Unscoped names like "aai" are already taken on npm and publish ` +
         "will 404. Either rename under @alexkroman1/ or mark the package " +
@@ -111,7 +132,7 @@ for (const { path, pkg } of manifests) {
 // see the header. A tie cannot happen with fewer than two dissenters, and with
 // two the gate reports both against the majority, which is the honest report.
 const urls = manifests
-  .map(({ pkg }) => pkg.repository?.url)
+  .map(({ pkg }) => repositoryBlock(pkg)?.url)
   .filter((url) => typeof url === "string" && url !== "");
 const tally = new Map();
 for (const u of urls) tally.set(u, (tally.get(u) ?? 0) + 1);
@@ -121,10 +142,9 @@ for (const [u, n] of tally) {
 }
 
 for (const { dir, path, pkg } of manifests) {
-  // Optional chaining rather than a record guard: a non-object `repository`
-  // yields `undefined` here and lands in the same branch as an absent one,
-  // which is the same remedy.
-  const repo = pkg.repository;
+  // A non-object `repository` lands in the same branch as an absent one, which
+  // is the same remedy. See `repositoryBlock`.
+  const repo = repositoryBlock(pkg);
   if (typeof repo?.url !== "string" || repo.url === "") {
     errors.push(
       `${path}: missing "repository.url". ship.yml publishes with ` +

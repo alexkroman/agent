@@ -95,9 +95,31 @@ export function isCallOf(node, name) {
   return isIdent(call.callee, name) || propertyName(call.callee) === name;
 }
 
+/**
+ * The CALL behind `<object>.<name>(…)` — `Promise.race`, `expect.poll` — or
+ * `undefined`.
+ *
+ * Hands back the UNWRAPPED node rather than a boolean, for two reasons that
+ * turn out to be one. A rule that then reads `node.arguments` or
+ * `node.callee` cannot be type-checked off a `boolean`, oxc's `Node` being a
+ * union in which most members have neither. And it was reading the wrong node:
+ * the test ran against `unwrap(node)` while the rule body used `node`, so a
+ * parenthesized or `as`-wrapped call matched and was then walked as its
+ * wrapper, finding nothing. Rule 31's doc records paying for that once already.
+ *
+ * @param {import("oxc-parser").Node} node
+ * @returns {import("oxc-parser").CallExpression | undefined}
+ */
+export function callOfMember(node, object, name) {
+  const call = unwrap(node);
+  return call?.type === "CallExpression" && isMemberOf(call.callee, object, name)
+    ? call
+    : undefined;
+}
+
 /** Is `node` a call of `<object>.<name>` — `Promise.race`, `expect.poll`? */
 export const isCallOfMember = (node, object, name) =>
-  unwrap(node)?.type === "CallExpression" && isMemberOf(unwrap(node).callee, object, name);
+  callOfMember(node, object, name) !== undefined;
 
 /** Is `node` an arrow or a `function` expression? */
 export const isFunctionExpression = (node) =>

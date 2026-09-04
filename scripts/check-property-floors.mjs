@@ -239,7 +239,9 @@ function statefulReach(file, info) {
   const reach = new Set(info.statefulApis);
   for (const specifier of info.siblingFcModules) {
     const sibling = corpus.get(normalize(join(dirname(file), specifier)));
-    if (sibling) for (const api of sibling.statefulApis) reach.add(api);
+    // `?? []`: `analyzeSource`'s error path returns a row with no APIs at all,
+    // and an unparsable sibling contributes nothing to what this one reaches.
+    if (sibling) for (const api of sibling.statefulApis ?? []) reach.add(api);
   }
   return reach;
 }
@@ -281,7 +283,18 @@ const bareFloorsOf = (row) => row.info.floors.filter((f) => f.value !== 0 && !f.
 const counts = new Map([
   [
     "unmeasured-floor",
-    new Map(obliged.map((row) => [row.file, bareFloorsOf(row).length]).filter(([, n]) => n > 0)),
+    new Map(
+      obliged
+        // The `@returns` makes the body a TUPLE; an array literal is `string[]`
+        // otherwise and `new Map` has no overload for it.
+        .map(
+          /** @returns {[file: string, count: number]} */ (row) => [
+            row.file,
+            bareFloorsOf(row).length,
+          ],
+        )
+        .filter(([, n]) => n > 0),
+    ),
   ],
 ]);
 /** Every bare floor's line, for the failure message; the counts are the budget. */
@@ -298,7 +311,7 @@ if (flags.report) {
   }
   console.log(
     `\n${corpus.size} file(s), ${obliged.length} obliged, ${totalFloors} floor(s), ` +
-      `${floorless.length} floorless, ${counts.get("unmeasured-floor").size} with an ` +
+      `${floorless.length} floorless, ${counts.get("unmeasured-floor")?.size ?? 0} with an ` +
       "unmeasured floor.",
   );
 }

@@ -109,9 +109,13 @@ export {
  * @property {string} key     Baseline key — the SAME key a line rule would use, so a
  *   rule migrating between the two engines keeps its recorded budgets.
  * @property {string} label   Short name for the summary line.
- * @property {(node: object) => boolean} match
+ * @property {(node: import("oxc-parser").Node) => boolean} match
  *   Whether this AST node is an occurrence. Called for every node in the corpus.
- * @property {(node: object) => object} [at]
+ *   Typed as oxc's own `Node` union rather than `object`, which has no members
+ *   at all — so a rule reading `node.arguments` or `node.callee` could not be
+ *   checked, in the engine whose whole advantage over the line rules is that it
+ *   sees SHAPE.
+ * @property {(node: import("oxc-parser").Node) => import("oxc-parser").Node} [at]
  *   Which node's position to REPORT, when it is not the matched one. Rule 21
  *   matches the whole `expect.poll(...)` call and reports at `.poll`, because
  *   wrapped, that call begins on an `await expect` line naming nothing a reader

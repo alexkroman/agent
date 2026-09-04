@@ -276,6 +276,10 @@ if (PRINT_ONLY) {
   // The EFFECTIVE values, not this script's additions: with three layers, "what
   // will the server see" is the only question worth answering here, and a
   // `.env`-supplied database would be invisible in a diff of the additions.
+  // Annotated: `origin` is a UNION (`{}` or the resolved pair), and spreading a
+  // union spreads to a union — which drops the index signature `process.env`
+  // contributes, so every named read below became a property error.
+  /** @type {NodeJS.ProcessEnv} */
   const effective = { ...process.env, ...localDev, ...origin, ...platform.env };
   // `PLATFORM_POOLER_URL` is NOT in `PLATFORM_ENV` — it is derived from
   // `config.toml` rather than read out of `supabase status` — so a fixed loop

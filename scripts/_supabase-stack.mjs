@@ -43,7 +43,16 @@ const LINE = /^([A-Z0-9_]+)="?(.*?)"?$/;
  * S3 credential pair, and a caller that exported everything would be putting
  * them in the environment of a child process that has no use for them.
  *
- * @returns {{ values: Map<string, string>, source: string } | { why: string }}
+ * Each arm declares the OTHER arm's keys as absent, which is what makes
+ * `if (!stack.values)` a real narrowing rather than a property read that
+ * happens to be `undefined` at runtime. Both callers were written that way and
+ * neither could be checked: on a bare two-arm union every member access is an
+ * error, so the compiler could not tell the success path from the failure path
+ * — in a resolver whose entire contract is that its failure path stays
+ * reachable and prints a reason.
+ *
+ * @returns {{ values: Map<string, string>, source: string, why?: undefined }
+ *   | { values?: undefined, source?: undefined, why: string }}
  */
 export function readSupabaseStack() {
   const run = spawnSync("supabase", ["status", "-o", "env"], {
@@ -55,7 +64,12 @@ export function readSupabaseStack() {
     stdio: ["ignore", "pipe", "ignore"],
   });
   if (run.error || run.status !== 0) {
-    const why = run.error?.code === "ENOENT" ? "no `supabase` CLI on PATH" : "the command failed";
+    // `spawnSync` types `error` as a plain `Error`; what node actually throws
+    // here is an `ErrnoException`, and the errno is the whole distinction
+    // between "no CLI installed" and "the stack is down".
+    const notFound =
+      run.error instanceof Error && "code" in run.error && run.error.code === "ENOENT";
+    const why = notFound ? "no `supabase` CLI on PATH" : "the command failed";
     return { why: `could not read \`supabase status -o env\` (${why})` };
   }
   const values = new Map(

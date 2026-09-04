@@ -77,7 +77,9 @@ async function serveStatic(pathname, res) {
 }
 
 const server = createServer((req, res) => {
-  const { pathname } = new URL(req.url, `http://${req.headers.host}`);
+  // `req.url` is `string | undefined` on the type though a served request
+  // always carries one; `??` keeps the route match total either way.
+  const { pathname } = new URL(req.url ?? "/", `http://${req.headers.host}`);
   if (pathname === "/token") {
     void handleToken(res);
   } else {

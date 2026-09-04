@@ -55,6 +55,7 @@ function pct(values, p) {
 function openSession(port) {
   const started = Date.now();
   const ws = new WebSocket(`ws://127.0.0.1:${port}/websocket?host=1`);
+  /** @type {{ ws: WebSocket, ready: boolean, audioBytes: number, readyMs: number, error: string | null }} */
   const state = { ws, ready: false, audioBytes: 0, readyMs: 0, error: null };
   return new Promise((resolve) => {
     let settled = false;
@@ -145,8 +146,12 @@ async function main() {
   });
 
   let lagMax = 0;
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
+  // `stdio` above asks for a pipe, so this is never null — but `spawn`'s type
+  // cannot know that, and the assertion is the one place to say so.
+  const childOut = child.stdout;
+  if (childOut === null) throw new Error("bench: child was spawned without a stdout pipe");
+  childOut.setEncoding("utf8");
+  childOut.on("data", (chunk) => {
     for (const line of chunk.trim().split("\n")) {
       if (line === "ready") return;
       try {

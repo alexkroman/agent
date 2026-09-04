@@ -20,9 +20,33 @@ import { parseArgs } from "node:util";
  * instead. Both produce a sweep that answers a question nobody asked, with
  * nothing in the output saying so. `strict` refuses them and a misspelled flag.
  */
-const STRINGS = ["target", "token", "mib", "concurrency", "part-mib", "repeat", "gap-ms", "json"];
-const FLAGS = ["h2", "no-shuffle", "no-warmup", "no-single", "yes"];
+// `@type {const}` (JSDoc's `as const`) so the parsed shape below can be DERIVED
+// from these two lists rather than restated beside them — a hand-written twin
+// of a name list is the thing that falls behind it.
+const STRINGS = /** @type {const} */ ([
+  "target",
+  "token",
+  "mib",
+  "concurrency",
+  "part-mib",
+  "repeat",
+  "gap-ms",
+  "json",
+]);
+const FLAGS = /** @type {const} */ (["h2", "no-shuffle", "no-warmup", "no-single", "yes"]);
 
+/**
+ * What `parseSweepArgs` hands back: every string option optional, every flag
+ * present (they carry `default: false`).
+ *
+ * Worth declaring rather than leaving as `parseArgs`'s index signature, which
+ * resolves ANY key: `args.targt` read as `undefined`, so the sweep would print
+ * "--target is required" for a flag that was right there in argv.
+ *
+ * @typedef {{ [K in (typeof STRINGS)[number]]?: string } & { [K in (typeof FLAGS)[number]]: boolean }} SweepArgs
+ */
+
+/** @type {import("node:util").ParseArgsOptionsConfig} */
 export const OPTIONS = Object.fromEntries([
   ...STRINGS.map((name) => [name, { type: "string" }]),
   ...FLAGS.map((name) => [name, { type: "boolean", default: false }]),
@@ -38,10 +62,15 @@ export function usage() {
  *
  * A person runs the sweep, so a refusal is the message plus the usage line —
  * not a `parseArgs` stack trace through `node:internal`.
+ *
+ * @returns {SweepArgs}
  */
 export function parseSweepArgs() {
   try {
-    return parseArgs({ options: OPTIONS, strict: true }).values;
+    // `OPTIONS` is built with `Object.fromEntries`, so its per-flag kinds are
+    // not recoverable from its type — this is where the shape those two lists
+    // describe is claimed. See `SweepArgs`.
+    return /** @type {SweepArgs} */ (parseArgs({ options: OPTIONS, strict: true }).values);
   } catch (err) {
     console.error(`upload-sweep: ${err.message}`);
     usage();

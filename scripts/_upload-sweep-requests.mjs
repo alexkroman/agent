@@ -16,7 +16,10 @@ export function installCountingFetch() {
   const requests = [];
   const origins = new Set();
   globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : String(input?.url ?? input);
+    // A `Request` carries `.url`; a `URL` stringifies to it. `in` rather than
+    // optional chaining, which reads as a guard here and is not one.
+    const url =
+      typeof input === "string" ? input : String(input instanceof Request ? input.url : input);
     const method = init?.method ?? "GET";
     const bytes = bodyBytes(init?.body);
     const kind = classify(method, bytes);

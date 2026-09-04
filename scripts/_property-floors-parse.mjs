@@ -325,9 +325,14 @@ export function analyzeSource(filename, source) {
 
   const starts = lineStarts(source);
   const byLine = commentIndex(source, parsed.comments, starts);
-  const siblingFcModules = program.body
-    .filter((node) => node.type === "ImportDeclaration" && node.source.value.startsWith("."))
-    .map((node) => node.source.value);
+  // `flatMap` rather than `filter().map()`: a `filter` predicate does not narrow
+  // what the following `map` receives, so `node.source` was being read off the
+  // whole `Statement` union.
+  const siblingFcModules = program.body.flatMap((node) =>
+    node.type === "ImportDeclaration" && node.source.value.startsWith(".")
+      ? [node.source.value]
+      : [],
+  );
 
   const found = collect(program, bindings, starts);
   found.spans.push(...tableSpans(found.tables, found.referenced, starts));
