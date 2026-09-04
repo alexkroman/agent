@@ -6,14 +6,29 @@
  * did re-derived the error banner WITHOUT `role="alert"`. That is the one part
  * of this component a reviewer cannot see is missing, so it is the one this
  * spec is mostly about.
+ *
+ * The banner is `<SessionErrorBanner>` now, and this file asserts the
+ * COMPOSITION rather than re-asserting that component's own contract: that the
+ * shell still announces an error it was never handed, from a session it reads
+ * itself. `session-error-banner.test.tsx` owns the banner's own rules. The
+ * split matters because the failure this guards is a shell that quietly stops
+ * rendering the banner — which looks like a healthy page.
  */
 
 import { render, screen } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
 import { describe, expect, test } from "vitest";
+import { createMockSessionCore } from "../_react-test-utils.ts";
+import { SessionProvider } from "../context.ts";
+import type { SessionError } from "../types.ts";
 import { ConsoleShell } from "./console-shell.tsx";
 
-function shell(props: Partial<Parameters<typeof ConsoleShell>[0]> = {}) {
-  return render(
+function shell(
+  props: Partial<Parameters<typeof ConsoleShell>[0]> = {},
+  error: SessionError | null = null,
+) {
+  const core = createMockSessionCore({ error });
+  const tree: ReactNode = (
     <ConsoleShell
       state="ready"
       pulsing={false}
@@ -21,8 +36,9 @@ function shell(props: Partial<Parameters<typeof ConsoleShell>[0]> = {}) {
       {...props}
     >
       <p>Conversation</p>
-    </ConsoleShell>,
+    </ConsoleShell>
   );
+  return render(createElement(SessionProvider, { value: core }, tree));
 }
 
 describe("ConsoleShell", () => {
@@ -31,13 +47,13 @@ describe("ConsoleShell", () => {
     // remaining signal — the state eyebrow beside it goes back to reading like
     // a live session — so an unannounced banner is a session that failed
     // silently for a screen reader.
-    shell({ error: "microphone permission denied" });
+    shell({}, { code: "audio", message: "microphone permission denied" });
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toBe("microphone permission denied");
+    expect(alert.textContent).toBe("microphone permission denied (audio)");
   });
 
   test("shows no banner when there is no error", () => {
-    shell({ error: null });
+    shell();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

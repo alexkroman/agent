@@ -1,5 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// The seven default state words, so a chrome overrides the one it has a better
+// term for instead of writing a ternary chain over the whole union. Same shape
+// and same argument as `WORKFLOW_STATUS_LABELS` below.
+export { AGENT_STATE_LABELS } from "./agent-state-labels.ts";
 // Pre-connection client-config lookup (name + greeting). `fetchClientConfig`
 // is the PUBLIC half — a workflow app's replacement for the lookup `client()`
 // makes for itself, since `page()` makes none. The default client's and the
@@ -38,6 +42,14 @@ export {
 } from "./components/form.tsx";
 export { Markdown, type MarkdownProps, type MarkdownVariant } from "./components/markdown.tsx";
 export { MessageList, type MessageListProps } from "./components/message-list.tsx";
+// The announced error banner, WITHOUT the frame that used to come with it —
+// `ConsoleShell` composes this one rather than carrying a second copy. Every
+// full-bleed chrome rebuilt the banner because it could not adopt the shell,
+// and the three that did had already drifted on whether to show the code.
+export {
+  SessionErrorBanner,
+  type SessionErrorBannerProps,
+} from "./components/session-error-banner.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
 // The design system's console row for one tool invocation — the shared
@@ -59,10 +71,25 @@ export { WorkflowFields } from "./components/workflow-fields.tsx";
 // The rendered half of `useWorkflowProgress` — what a run has SAID, as against
 // where it has got to.
 export { WorkflowProgress } from "./components/workflow-progress.tsx";
-export type { Session } from "./context.ts";
+export type { Session, SessionActions } from "./context.ts";
 // Context & hooks. The two PROVIDERS `client()` mounts around the tree
 // (`SessionProvider`, `ThemeProvider`) are on `@alexkroman1/aai-ui/internal`.
-export { useSession, useSessionSelector, useTheme } from "./context.ts";
+//
+// The three NARROW hooks beside `useSession` are what this package's own
+// components always had and a `client.tsx` did not: `useSessionActions` is the
+// control methods with no snapshot subscription (`useSessionCore` narrowed to
+// what a client may legitimately call, minus the store), and the other two are
+// the only two snapshot fields more than one custom chrome ever selects. A page
+// that needs a third field still writes `useSessionSelector` — these are the
+// measured repeats, not the beginning of a hook per field.
+export {
+  useSession,
+  useSessionActions,
+  useSessionError,
+  useSessionSelector,
+  useSessionStatus,
+  useTheme,
+} from "./context.ts";
 export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 // Entry
 export { client } from "./define-client.tsx";

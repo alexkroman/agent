@@ -9,6 +9,7 @@ import type { AgentState } from "../types.ts";
 import { ERROR_COLOR, INK_FAINT_PCT, inkTint, THINKING_COLOR } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
+import { SessionErrorBanner } from "./session-error-banner.tsx";
 
 /**
  * Indicator dot color per state.
@@ -48,14 +49,6 @@ export type ConsoleShellProps = {
   state: AgentState;
   /** Whether the status dot pulses. */
   pulsing: boolean;
-  /**
-   * Error banner text; `null`/`undefined` hides the banner.
-   *
-   * Pass `session.error?.message` — the banner is announced, which a
-   * hand-rolled `<div>` in a custom chrome is not. See the `role="alert"`
-   * comment below for why that matters more here than it looks.
-   */
-  error?: string | null | undefined;
   /** Card content — normally a {@link MessageList}. */
   children: ReactNode;
   /** Row rendered beneath the card (controls). */
@@ -73,14 +66,20 @@ export type ConsoleShellProps = {
  * `<Controls>` under it, and until now that was the only way to get it — the
  * shell itself was internal, so a client wanting its own conversation markup
  * had to rebuild the chrome as well. Each one that did re-derived the error
- * banner WITHOUT `role="alert"`, which is the one part of this component a
- * reviewer cannot see is missing: per the `fatalError` latch in
- * `session-core.ts`, the banner is the only remaining signal once the state
- * eyebrow goes back to reading like a live session, and a screen reader is
- * never told an unannounced one appeared.
+ * banner WITHOUT `role="alert"`.
+ *
+ * **The banner is {@link SessionErrorBanner} now, composed here rather than
+ * spelled out.** It was four lines of this file, and this file is a whole
+ * FRAME — a centred `max-w-190` column — so the full-bleed chromes that needed
+ * the announced banner could not take it without taking a layout that would
+ * replace the design they exist to demonstrate. Composing means there is one
+ * banner, and it means this component no longer takes an `error` prop: the
+ * banner reads the session itself, which is one fewer thing a caller can wire
+ * up wrong.
  *
  * Reach for it when the conversation is yours and the frame is not. Reach for
- * `<ChatView>` when both are ours.
+ * `<ChatView>` when both are ours. Reach for `<SessionErrorBanner>` alone when
+ * neither is.
  *
  * Must be rendered inside the providers `client()` installs.
  *
@@ -90,19 +89,17 @@ export type ConsoleShellProps = {
  *   ConsoleShell,
  *   Controls,
  *   useConversation,
- *   useSessionSelector,
+ *   useSessionStatus,
  * } from "@alexkroman1/aai-ui";
  *
  * function Console() {
- *   const state = useSessionSelector((s) => s.state);
- *   const error = useSessionSelector((s) => s.error);
+ *   const state = useSessionStatus();
  *   const { items } = useConversation();
  *   return (
  *     <ConsoleShell
  *       title="Dispatch"
  *       state={state}
  *       pulsing={state === "listening"}
- *       error={error?.message}
  *       footer={<Controls />}
  *     >
  *       <ul>
@@ -126,7 +123,6 @@ export function ConsoleShell({
   title,
   state,
   pulsing,
-  error,
   children,
   footer,
   className,
@@ -168,24 +164,9 @@ export function ConsoleShell({
           {state}
         </Eyebrow>
       </div>
-      {/* Error banner. `role="alert"` for the reason `Form` uses it on the same
-          job: a screen reader is otherwise never told this appeared, and per
-          the `fatalError` latch (see session-core) this banner is the ONLY
-          remaining signal — the state eyebrow beside it goes back to reading
-          like a live session. */}
-      {error && (
-        <div
-          role="alert"
-          className="px-3.5 py-2.5 rounded-aai border text-[13px] leading-[130%] shrink-0"
-          style={{
-            borderColor: "rgba(179,38,30,0.35)",
-            background: "rgba(179,38,30,0.06)",
-            color: ERROR_COLOR,
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {/* Error banner — the component, not a copy of it. It renders nothing
+          when the session is fine, and reads the session itself. */}
+      <SessionErrorBanner />
       {/* Main card */}
       <div
         className="flex flex-col flex-1 min-h-0 border rounded-lg overflow-hidden"

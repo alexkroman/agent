@@ -49,13 +49,31 @@ describe("Controls: click interactions", () => {
     expect(screen.getByText("Resume")).toBeDefined();
   });
 
-  test("clicking New Conversation calls reset", () => {
+  test("clicking New Conversation restarts the SESSION, it does not reset it", () => {
+    // The distinction this button used to get wrong. `reset` reconnects
+    // carrying the same session id, so a stateful agent's `sessionSlot` data
+    // survives and the caller gets a blank transcript in front of their old
+    // cart. `restart` drops the session, which is what the label promises.
     const core = createMockSessionCore({ started: true, running: true });
+    const restart = vi.spyOn(core, "restart");
     const reset = vi.spyOn(core, "reset");
+    const end = vi.spyOn(core, "end");
+    const start = vi.spyOn(core, "start");
 
     renderWithProvider(<Controls />, core);
     fireEvent.click(screen.getByText("New Conversation"));
-    expect(reset).toHaveBeenCalledOnce();
+
+    expect(restart).toHaveBeenCalledOnce();
+    expect(reset).not.toHaveBeenCalled();
+    // And restart really is the pair, in that order — the property the three
+    // templates that hand-rolled `end(); start();` were relying on.
+    expect(end).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledOnce();
+    const [endedAt] = end.mock.invocationCallOrder;
+    const [startedAt] = start.mock.invocationCallOrder;
+    expect(endedAt).toBeLessThan(Number(startedAt));
+    // Ends up live again rather than parked on the start screen.
+    expect(core.getSnapshot().started).toBe(true);
   });
 });
 
@@ -409,7 +427,9 @@ describe("ChatView + StartScreen: full component tree integration", () => {
         running: false,
       }),
     );
-    expect(screen.getByText("Lost connection")).toBeDefined();
+    // The banner is one element holding message AND code, so it is read off
+    // the alert rather than matched as a text node.
+    expect(screen.getByRole("alert").textContent).toBe("Lost connection (connection)");
     expect(screen.getByText("Resume")).toBeDefined();
   });
 
@@ -428,6 +448,9 @@ describe("ChatView + StartScreen: full component tree integration", () => {
         error: { code: "tts", message: "Cartesia TTS: missing API key.", fatal: true },
       }),
     );
-    expect(screen.getByRole("alert").textContent).toBe("Cartesia TTS: missing API key.");
+    // Message AND code: the shell composes `<SessionErrorBanner>`, which shows
+    // the code because it is the stable half of an error and the half a user
+    // can quote back.
+    expect(screen.getByRole("alert").textContent).toBe("Cartesia TTS: missing API key. (tts)");
   });
 });

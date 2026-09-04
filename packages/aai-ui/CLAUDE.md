@@ -239,15 +239,13 @@ called `useSession()`, which re-renders on EVERY snapshot change, so a dispatch
 board re-rendered at STT-partial rate. `use-conversation.test.tsx` pins it — an
 `apiUrl` + `recording` update produces no render.
 
-**The ACTIONS are the other half, and they are not reachable narrowly.** A
-custom chrome needs `start`, `toggle`, `end` and `running`, and the only public
-route to them is `useSession()`; `useSessionCore()`, the narrow way `<Controls>`
-reaches them, is not exported. So a converted chrome still ends up with one
-whole-session subscriber, and the remedy available to a template author is to
-push it into a LEAF — `infocom-adventure`'s two-button `Footer`, `retail`'s and
-`dispatch-center`'s `Controls` — so the transcript, the status bar and the board
-above it do not re-render with it. Either export `useSessionCore`, or keep the
-actions in a leaf.
+**The ACTIONS are the other half, and `useSessionActions()` is the answer.** The
+only public route to `start`/`toggle`/`end` used to be `useSession()` — a
+whole-snapshot subscription for four methods, so four components across three
+templates re-rendered at STT-partial rate. It is `useSessionCore` narrowed to
+the eight methods: no subscription, no store on the object it returns. Pair it
+with a one-field `useSessionSelector`, or with `useSessionStatus()` /
+`useSessionError()`, the only two fields more than one chrome selects.
 
 `retail` and `dispatch-center` are the worked examples of the conversion: both
 were a single `App()` mapping `session.messages`, and both split into `Row` /
@@ -257,7 +255,7 @@ leaves `App` holding only `useAgentState(projection)`.
 ### `ConsoleShell` is public, `role="alert"` is why — and no template adopted it
 
 `ConsoleShell` already had exactly the right prop shape (`icon, title, state,
-pulsing, error, children, footer`) and was `@internal`, so each custom chrome
+pulsing, children, footer`) and was `@internal`, so each custom chrome
 rebuilt the frame too — and every one of them re-derived the error banner
 WITHOUT the `role="alert"` that `console-shell.tsx` argues is load-bearing: per
 the `fatalError` latch in `session-core.ts` the banner is the only remaining
@@ -272,11 +270,14 @@ eyebrow) and footer. `retail` and `dispatch-center` are full-bleed
 `1fr / 320px` grids whose headers carry things it cannot express ("Verified ·
 Olivia Ito", "SYSTEM ALERT: RED"); `infocom-adventure` is a CRT. Adopting it
 would replace the design each template exists to demonstrate. What all three
-actually needed was the `role="alert"` banner INSIDE it, which they now carry
-locally. By the coverage gate's own rule `ConsoleShell`/`ConsoleShellProps` are
-either missing their example or should not be public, and on this evidence it is
-the second — worth revisiting before the release rather than leaving as an
-allowlist entry nobody reads.
+actually needed was the `role="alert"` banner INSIDE it, and that is
+`<SessionErrorBanner>` now — its own export, COMPOSED here (so the shell takes
+no `error` prop), so a full-bleed chrome takes the announced-error decision
+without the frame. The three copies had already drifted, one dropping
+`error.code`. By the coverage gate's own rule `ConsoleShell`/`ConsoleShellProps` are either missing their
+example or should not be public, and on this evidence it is the second — worth
+revisiting before the release rather than leaving as an allowlist entry nobody
+reads.
 
 ## `AutoScroll` is the only scroll-pinning implementation
 
