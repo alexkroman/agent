@@ -807,6 +807,7 @@ export interface TextAgentOptions {
     fetch?: typeof globalThis.fetch;
     logger?: Logger;
     model?: LanguageModel;
+    onEvent?: (event: SessionEvent) => void;
     providerEnv?: ProviderEnv;
     runCode?: RunCodeExecutor;
     sessionId?: string;

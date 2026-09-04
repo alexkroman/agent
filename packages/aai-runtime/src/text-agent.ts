@@ -45,6 +45,13 @@
  *   {@link forceFinalAnswer} — the same rule and the same code as the voice
  *   pipeline);
  * - malformed tool arguments are repaired (see `tool-call-repair.ts`).
+ *
+ * **And a turn is OBSERVABLE without wrapping that result**, which is how the
+ * two claims above coexist: `onEvent` reports the turn as the same typed
+ * {@link SessionEvent} stream a voice session emits, so an eval reads a text
+ * agent's behaviour with the readers it already has instead of scraping text.
+ * It is additive — nothing about `TextTurnResult` changes — and
+ * `text-agent-events.ts` carries the vocabulary and its argument.
  */
 
 import type { AgentDef, Message, ToolChoice } from "@alexkroman1/aai";
@@ -55,6 +62,7 @@ import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
+import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import {
@@ -72,6 +80,7 @@ import { resolveLlm } from "./providers/resolve.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { mergeBuiltinSurface } from "./runtime-tools.ts";
 import { createSubagentRunner } from "./subagent.ts";
+import { createTextAgentEvents } from "./text-agent-events.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { createToolCallRepair } from "./tool-call-repair.ts";
 import { createToolDispatcher, executeToolCall } from "./tool-executor.ts";
@@ -120,6 +129,25 @@ export interface TextAgentOptions {
   fetch?: typeof globalThis.fetch;
   /** Defaults to `consoleLogger`. */
   logger?: Logger;
+  /**
+   * Where this conversation's typed events go — the same {@link SessionEvent}
+   * stream a voice session emits, narrowed to what a text agent can honestly
+   * report, so every reader in `@alexkroman1/aai-runtime/eval` and every
+   * assertion built on them works over a text turn unchanged.
+   *
+   * ADDITIVE, and deliberately so: {@link TextAgent.stream} still returns the
+   * vendor's `StreamTextResult` and nothing about it changes. A chat surface
+   * consumes that; this is for whoever is GRADING or auditing the agent.
+   * `text-agent-events.ts` carries which events are emitted, which eleven are
+   * not, and why the turn terminator fires exactly once.
+   *
+   * **Conversation-scoped, and the envelope carries no turn coordinate** (see
+   * `protocol-events.ts`, which argues that absence), so two overlapping
+   * `stream()` calls on ONE text agent interleave into one stream with nothing
+   * to tell them apart. A caller that needs them separate builds a text agent
+   * per turn — which is what `runTextAgent` does.
+   */
+  onEvent?: (event: SessionEvent) => void;
   /**
    * Conversation identity for `ctx.sessionId` and the session's `ctx.state`.
    * Defaults to a fresh id per text agent — one instance is one conversation,
@@ -294,6 +322,16 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
    */
   const slots = createDetachedSlotStore();
 
+  /**
+   * This conversation's typed event stream — inert unless `onEvent` is set.
+   *
+   * Built here, above the dispatcher, because two of the three things it
+   * reports come from TOOL execution rather than from the model stream:
+   * `ctx.send` and a tool that threw were both dropped on the floor in text
+   * mode until this existed.
+   */
+  const events = createTextAgentEvents(options.onEvent, logger);
+
   const executeTool = createToolDispatcher(allTools, (tool, call) =>
     executeToolCall(call.name, call.args, {
       tool,
@@ -310,6 +348,8 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
       logger,
       signal: call.options?.signal,
       timeoutMs: options.toolTimeoutMs,
+      send: events.custom,
+      onUncaught: events.toolFault,
     }),
   );
 
@@ -343,6 +383,10 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
     sessionId,
     stream(turn: TextTurnOptions): TextTurnResult {
       const turnTools = toolsFor(toContextMessages(turn.messages));
+      // Opened before the request, so the turn's own user transcript is the
+      // first event of it. `undefined` when nothing is listening, which is what
+      // keeps an unobserved turn from installing a per-part callback at all.
+      const turnEvents = events.openTurn(turn.messages);
       const maxSteps = turn.maxSteps ?? agent.maxSteps ?? DEFAULT_MAX_STEPS;
       const forceFinal = forceFinalAnswer(maxSteps, logger, sessionId);
       return streamText({
@@ -364,6 +408,10 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
         experimental_repairToolCall: createToolCallRepair(model, logger, () => turn.signal),
         ...omitUndefined({ abortSignal: turn.signal }),
         ...omitUndefined({ onStepFinish: turn.onStepFinish }),
+        // Both halves of the event stream: every part maps through `onChunk`,
+        // and `onEnd` is the guarded backstop terminator.
+        ...omitUndefined({ onChunk: turnEvents?.onChunk }),
+        ...omitUndefined({ onEnd: turnEvents?.onEnd }),
         // Claiming this callback is what keeps a provider failure to one log
         // line: the SDK's default is `console.error(error)`, which spends
         // ~100 lines on three nested stack traces plus the whole request body

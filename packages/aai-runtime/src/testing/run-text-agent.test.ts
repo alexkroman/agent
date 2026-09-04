@@ -19,6 +19,7 @@ import { type AgentDef, agent, tool } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { saidIn, TURN_ENDS, toolCallsInEvents, toolNames } from "../eval/events.ts";
 import { runTextAgent } from "./run-text-agent.ts";
 
 /** A text agent WITH its tools — `agent()` takes none, a tool being a FILE. */
@@ -223,6 +224,44 @@ describe("runTextAgent", () => {
     );
 
     expect(roles).toEqual([["user"]]);
+  });
+
+  test("records the turn as a typed event stream the eval readers accept", async () => {
+    const run = await runTextAgent(
+      desk({
+        look_up: tool({
+          description: "Look up an order",
+          inputSchema: z.object({ id: z.string() }),
+          execute: ({ id }) => ({ order: id, status: "shipped" }),
+        }),
+      }),
+      "where is order 7?",
+      {
+        script: [
+          { text: "Let me check. ", toolCalls: [{ name: "look_up", input: { id: "7" } }] },
+          { text: "It shipped yesterday." },
+        ],
+      },
+    );
+
+    // The point of the field: the eval tier's own readers, over a text turn.
+    expect(toolNames(toolCallsInEvents(run.events))).toEqual(["look_up"]);
+    expect(toolCallsInEvents(run.events)[0]?.args).toEqual({ id: "7" });
+    expect(saidIn(run.events)).toEqual([run.text]);
+    // One terminator, and it is the LAST event — which is what lets a harness
+    // wait for a reply to end rather than for a timer.
+    expect(run.events.filter((event) => TURN_ENDS.has(event.type))).toHaveLength(1);
+    expect(run.events.at(-1)?.type).toBe("reply.completed");
+  });
+
+  test("forwards a caller's own `onEvent` as well as recording", async () => {
+    const seen: string[] = [];
+    const run = await runTextAgent(desk(), "hi", {
+      script: [{ text: "hello" }],
+      onEvent: (event) => seen.push(event.type),
+    });
+    expect(seen).toEqual(run.events.map((event) => event.type));
+    expect(seen).toContain("reply.completed");
   });
 
   test("refuses an agent that did not opt into text mode", async () => {

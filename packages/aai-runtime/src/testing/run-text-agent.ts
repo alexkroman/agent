@@ -64,6 +64,7 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
+import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StepResult, ToolSet } from "ai";
 import { silentLogger } from "../runtime-config.ts";
@@ -161,6 +162,46 @@ export type TextAgentTestRun = {
    * hands back an assistant message with no tool call to explain it.
    */
   readonly messages: readonly ModelMessage[];
+  /**
+   * The turn as a typed {@link SessionEvent} stream, in order — every event
+   * `TextAgentOptions.onEvent` reported while this turn ran.
+   *
+   * **This is the field that makes a text agent GRADEABLE by the same readers a
+   * voice one is.** `@alexkroman1/aai-runtime/eval` answers three questions off
+   * an event list — where a reply ends, what the agent said, which tools it
+   * called with what — and every one of them takes this array unchanged:
+   *
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   * import { saidIn, toolCallsInEvents, toolNames } from "@alexkroman1/aai-runtime/eval";
+   * import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
+   *
+   * const desk = agent({ name: "Desk", text: true });
+   * const run = await runTextAgent(desk, "where is order 7?", {
+   *   script: [
+   *     { text: "Let me check.", toolCalls: [{ name: "look_up", input: { id: "7" } }] },
+   *     { text: "It shipped yesterday." },
+   *   ],
+   * });
+   *
+   * console.log(toolNames(toolCallsInEvents(run.events))); // ["look_up"]
+   * console.log(saidIn(run.events)); // ["Let me check.It shipped yesterday."]
+   * ```
+   *
+   * The three projections above it are not made redundant by it and are not a
+   * second copy of it either: {@link TextAgentTestRun.toolCalls} carries the
+   * SDK's own parsed `input` where an event carries the wire's record, and
+   * {@link TextAgentTestRun.steps} is the escape hatch for a question neither
+   * vocabulary answers. What this adds is the vocabulary the eval tier already
+   * speaks — including the turn TERMINATOR, which is what lets a harness wait
+   * for a reply to end rather than for a timer.
+   *
+   * Ends in exactly one `reply.completed` or `reply.cancelled`, on every turn
+   * this helper drives: it consumes the whole stream, so the terminal part has
+   * always passed through by the time this resolves. `text-agent-events.ts`
+   * carries which events a text agent emits and which it refuses.
+   */
+  readonly events: readonly SessionEvent[];
 };
 
 /**
@@ -256,10 +297,19 @@ export async function runTextAgent(
 ): Promise<TextAgentTestRun> {
   const { script, signal, systemPrompt, maxSteps, temperature, toolChoice, ...agentOptions } =
     options;
+  const events: SessionEvent[] = [];
   const agent = createTextAgent({
     ...agentOptions,
     agent: def,
     model: scriptedTextModel(script),
+    // Recorded AND forwarded, rather than claimed: `onEvent` stays a field of
+    // `RunTextAgentOptions` — which is `TextAgentOptions` minus the two things
+    // this helper really supplies — so a caller that wants the events live
+    // still gets them, and `run.events` holds the same list either way.
+    onEvent: (event) => {
+      events.push(event);
+      options.onEvent?.(event);
+    },
     // Silence rather than `consoleLogger`: a turn logs its step budget and every
     // provider hiccup at debug, and a spec suite that prints them reads as
     // failing. A caller asserting on a log line passes its own recorder.
@@ -290,5 +340,6 @@ export async function runTextAgent(
     toolCalls: steps.flatMap(toolCallsOf),
     steps,
     messages: await result.responseMessages,
+    events,
   };
 }

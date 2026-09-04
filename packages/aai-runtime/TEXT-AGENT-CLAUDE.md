@@ -49,6 +49,38 @@ Four decisions worth not relitigating:
   there is no text seam to drive, and silently running it as a pipeline agent
   would evaluate a configuration nobody deployed.
 
+### A text agent's turns are the SAME event stream, narrowed
+
+`createTextAgent({ onEvent })` reports a turn as `SessionEvent`s — the union a
+voice session emits — so `saidIn`, `toolCallsInEvents`, `toolArgsIn`,
+`toolResultIn`, `customEventsIn`, `describeToolCalls` and `TURN_ENDS` all take a
+text turn with no second implementation, and `runTextAgent` hands the recorded
+list back as `TextAgentTestRun.events`.
+
+**The argument, the emitted set, and the eleven refusals live in
+`src/text-agent-events.ts`'s module doc** — this guide is REFERENCE and that
+file is where the reasoning has to be read from. Four things worth knowing
+before touching either:
+
+- **It is one union, not two.** A `TextAgentEvent` vocabulary of its own would
+  mean a second set of readers and a second set of assertions above them, and
+  the one thing worse than an ungradeable agent is two vocabularies that
+  disagree about what a tool call is. The measured cost of having neither is
+  `aai-evals/src/studio-target.ts`, which grades an `agent({ text: true })`
+  definition with five REGEXES over tool-output text.
+- **`session.configured` is refused for want of an honest field**, and it is the
+  only member refused on those grounds: it requires `audioFormat`, `sampleRate`
+  and `ttsSampleRate`, `0` fails the schema, and any real number is a lie a
+  client would negotiate against. A synthesized field is worse than an absent
+  event, because an assertion will believe it.
+- **The terminator is derived from the stream's own terminal part** — `finish`,
+  `abort` or `error`, all through one `onChunk` — and guarded, first one wins.
+  A/B'd: removing the guard fails seven specs, because the SDK's flush fires the
+  backstop `onEnd` on an ordinary turn as well.
+- **It is ADDITIVE.** `TextTurnResult` is still the vendor's own
+  `StreamTextResult` for the reason `text-agent.ts` argues, and a text agent
+  with no `onEvent` installs no per-part callback at all.
+
 ### A template eval imports from `/eval` and `/eval/vitest`, and NOWHERE else
 
 **That is konsistent's `template-eval-runtime-subpaths`** — the root barrel and

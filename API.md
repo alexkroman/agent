@@ -8670,6 +8670,7 @@ export interface TextAgentOptions {
     fetch?: typeof globalThis.fetch;
     logger?: Logger;
     model?: LanguageModel;
+    onEvent?: (event: SessionEvent) => void;
     providerEnv?: ProviderEnv;
     runCode?: RunCodeExecutor;
     sessionId?: string;
@@ -9559,6 +9560,7 @@ import { ModelMessage } from 'ai';
 import { PrepareStepFunction } from 'ai';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionEvent } from '@alexkroman1/aai/protocol';
 import { StepResult } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
@@ -9712,6 +9714,7 @@ interface TextAgentOptions {
     fetch?: typeof globalThis.fetch;
     logger?: Logger;
     model?: LanguageModel;
+    onEvent?: (event: SessionEvent) => void;
     providerEnv?: ProviderEnv;
     runCode?: RunCodeExecutor;
     sessionId?: string;
@@ -9726,6 +9729,7 @@ export type TextAgentTestRun = {
     readonly toolCalls: readonly TextAgentTestToolCall[];
     readonly steps: readonly StepResult<ToolSet>[];
     readonly messages: readonly ModelMessage[];
+    readonly events: readonly SessionEvent[];
 };
 
 // @public
