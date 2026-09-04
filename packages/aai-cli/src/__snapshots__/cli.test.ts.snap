@@ -72,7 +72,7 @@ ARGUMENTS
   DIR    Project directory
 OPTIONS
                 -f, --force    Overwrite existing files
-  -t, --template=<template>    Template to use (run \`aai templates\` for the list)
+  -t, --template=<template>    Template to use (prompted when omitted)
       -s, --server=<server>    Platform server URL
                   -y, --yes    Accept defaults (no prompts)
                      --json    Output JSON (auto-detected in non-TTY)

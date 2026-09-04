@@ -311,6 +311,19 @@ there owes an explicit `getOutputMode({})` branch. `cli.test.ts` covers it by
 running the real bin with stdout PIPED, which is what puts it in JSON mode —
 calling the command bodies cannot reach the auto-detection.
 
+**`aai init` with no `--template` PICKS one, and the picker must never be
+reachable without a human.** `promptTemplate` (`init.ts`) is a `p.select` over
+`listTemplates()` — the same function that backs `aai templates` and the
+unknown-template error, so a template added to `aai-templates` appears in the
+picker with no second roster to update, and `simple` is hoisted to the top and
+pre-selected so a bare `aai init` is still one Enter away from the project it
+produced before there was a picker. What is load-bearing is the guard around it:
+`--yes` AND `silent` (which is how JSON mode arrives, and JSON mode is
+AUTO-DETECTED on a pipe) resolve `DEFAULT_TEMPLATE` without prompting. Either one
+missing hangs a scripted `aai init | jq` on a terminal read nobody is watching —
+which is why the two specs asserting `select` was NOT called are the point of
+that group, not the one asserting it was.
+
 **A dev-mode `aai init` must link EVERY workspace package the scaffold names,
 and the list is derived, not written down.** `WORKSPACE_PKG_DIRS` in `_init.ts`
 rewrites the scaffold's published ranges to `link:` paths; it named `aai`,

@@ -68,7 +68,7 @@ const init = defineExec({
     template: {
       type: "string",
       alias: "t",
-      description: "Template to use (run `aai templates` for the list)",
+      description: "Template to use (prompted when omitted)",
     },
     // Not `...platformArgs`: this command interleaves `yes` between the pair,
     // and the spread would reorder its `--help` block for no gain.
