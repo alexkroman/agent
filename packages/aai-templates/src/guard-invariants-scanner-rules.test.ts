@@ -251,12 +251,16 @@ describe("rule 14 — a fixture directory nothing reads", () => {
     ).toBe("packages/aai/src/host/integration/fixtures/hello-how-are-you.pcm16");
   });
 
+  // Resolved once: `fixtureDirs()` shells out to `git ls-files` and walks
+  // every path it prints, and nothing between these two tests can change
+  // what it answers.
+  const dirs = fixtureDirs?.() ?? [];
+
   test("candidate discovery finds the real fixture directories", () => {
     // A discovery step that found nothing would report "0 ✓" — the same output
     // as the rule being upheld, which is the failure shape this whole suite
     // exists for. Nested candidates are separate: `fixtures/` and
     // `integration/fixtures/` are two directories, not one.
-    const dirs = fixtureDirs?.() ?? [];
     expect(dirs).toContain("packages/aai/src/sdk/compat-fixtures");
     expect(dirs).toContain("packages/aai-ui/src/fixtures");
     expect(dirs).toContain("packages/aai-runtime/src/fixtures");
@@ -265,6 +269,6 @@ describe("rule 14 — a fixture directory nothing reads", () => {
 
   test("the deleted aai-server fixture set is really gone", () => {
     // The one-time deletion this rule turns into a standing check.
-    expect(fixtureDirs?.() ?? []).not.toContain("packages/aai-server/src/compat-fixtures");
+    expect(dirs).not.toContain("packages/aai-server/src/compat-fixtures");
   });
 });

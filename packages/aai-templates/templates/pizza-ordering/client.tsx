@@ -1,6 +1,7 @@
+import { formatMoney } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useAgentState } from "@alexkroman1/aai-ui";
-import { formatPrice, orderProjection, pizzaPrice } from "./shared.ts";
+import { orderProjection, pizzaPrice } from "./shared.ts";
 
 function PizzaIcon({ size }: { size: string }) {
   const dim = size === "small" ? 36 : size === "large" ? 52 : 44;
@@ -67,7 +68,7 @@ function OrderSidebar() {
             </p>
           </div>
           <p className="text-sm font-bold whitespace-nowrap text-aai-primary">
-            {formatPrice(pizzaPrice(p))}
+            {formatMoney(pizzaPrice(p))}
           </p>
         </div>
       ))}

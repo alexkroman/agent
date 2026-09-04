@@ -5,6 +5,11 @@
 ```ts
 
 // @public
+export function ffmpegBaseArgs(options?: {
+    loglevel?: string;
+}): string[];
+
+// @public
 export class FfmpegError extends Error {
     constructor(opts: {
         kind: FfmpegFailureKind;

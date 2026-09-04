@@ -1,4 +1,5 @@
-import { FLIGHTS, formatPrice, tripSlot } from "../shared.ts";
+import { formatMoney } from "@alexkroman1/aai/utils";
+import { FLIGHTS, tripSlot } from "../shared.ts";
 
 /**
  * Their `fetch_user_flight_information`, which the notebook runs ONCE and
@@ -22,13 +23,13 @@ export default tripSlot.tool({
               route: flight.route,
               departs: flight.departs,
               arrives: flight.arrives,
-              fare: formatPrice(flight.fare),
+              fare: formatMoney(flight.fare),
             }
           : null,
       bookings: trip.bookings.map((b) => ({
         reference: b.reference,
         what: b.summary,
-        price: formatPrice(b.price),
+        price: formatMoney(b.price),
       })),
     };
   },

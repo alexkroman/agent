@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, repoPathOf, sole } from "./_gate-support.ts";
 
 /** Every committed per-entry-point report, keyed by path relative to this file. */
 const reports: Record<string, string> = import.meta.glob("../../*/etc/*.api.md", {
@@ -71,7 +71,7 @@ const declarations = (report: string): string[] =>
 
 const entries = Object.entries(reports)
   .map(([key, text]) => ({ path: repoPathOf(key), declarations: declarations(text) }))
-  .sort((a, b) => a.path.localeCompare(b.path));
+  .sort((a, b) => byCodeUnit(a.path, b.path));
 
 const remedy = "Run `pnpm api-report` and commit API.md.";
 
@@ -104,7 +104,7 @@ describe("API.md", () => {
     // Sorted on both sides: the file is written in generation order (package,
     // then entry-point slug), which is not the path order `entries` carries.
     expect(
-      listed.map((item) => item.reportPath).sort((a, b) => a.localeCompare(b)),
+      listed.map((item) => item.reportPath).sort(byCodeUnit),
       `API.md lists ${listed.length} entry point(s), the repo has ${entries.length}. ${remedy}`,
     ).toEqual(entries.map((entry) => entry.path));
     // The contents list and the sections have to agree, or the list is a map of

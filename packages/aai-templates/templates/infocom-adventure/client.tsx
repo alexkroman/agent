@@ -1,10 +1,11 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, Session } from "@alexkroman1/aai-ui";
+import type { AgentState } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
   client,
   useConversation,
-  useSession,
+  useSessionActions,
+  useSessionError,
   useSessionSelector,
   useTheme,
 } from "@alexkroman1/aai-ui";
@@ -146,8 +147,16 @@ function Transcript() {
           {transcript.text}
         </div>
       )}
+      {/* Same contract as the shipped `MessageList`'s indicator: the blinking
+          block is the only sign the parser is working, and to a screen reader it
+          is one unpronounceable glyph. */}
       {thinking && (
-        <div className="animate-pulse" style={{ color: GREEN_DIM }}>
+        <div
+          role="status"
+          aria-label="The parser is thinking"
+          className="animate-pulse"
+          style={{ color: GREEN_DIM }}
+        >
           &#9612;
         </div>
       )}
@@ -155,12 +164,18 @@ function Transcript() {
   );
 }
 
+/** Module scope, so the selector has a STABLE identity: an inline arrow makes
+ *  `useSyncExternalStoreWithSelector` rebuild its selection memo every render,
+ *  and this runs on every snapshot push — each STT partial and streaming
+ *  delta. Counting with `reduce` rather than `filter().length` for the same
+ *  reason: the array copy is thrown away, and it grows for the whole adventure. */
+const userTurns = (snapshot: { messages: { role: string }[] }): number =>
+  snapshot.messages.reduce((n, message) => (message.role === "user" ? n + 1 : n), 0);
+
 /** The turn counter — a NUMBER out of the selector, so a new message array with
  *  the same user-message count re-renders nothing. */
 function TurnCount() {
-  const turns = useSessionSelector(
-    (snapshot) => snapshot.messages.filter((message) => message.role === "user").length,
-  );
+  const turns = useSessionSelector(userTurns);
   return <span>Turns: {turns}</span>;
 }
 
@@ -207,7 +222,7 @@ function StatusDot() {
  * never told an unannounced one appeared.
  */
 function ErrorBanner() {
-  const error = useSessionSelector((snapshot) => snapshot.error);
+  const error = useSessionError();
   if (!error) return null;
   return (
     <div
@@ -215,33 +230,22 @@ function ErrorBanner() {
       className="px-5 py-2 text-xs"
       style={{ background: "#3a0000", color: "#ff4141" }}
     >
-      ERROR: {error.message}
+      ERROR: {error.message} ({error.code})
     </div>
   );
 }
 
-/**
- * Start a fresh conversation without leaving the game screen.
+/*
+ * Pause/resume, new game and hang-up.
  *
- * Written out here rather than reached for on the session, because there is no
- * one method that does it: `reset()` clears the CONVERSATION and keeps the
- * session, which is wrong for any agent that also keeps session-scoped state —
- * this game's world would come back with the next tool call. `end()` drops the
- * resume identity, so the redial is a brand-new session (fresh world, opening
- * scene included), and `start()` puts the player straight into it rather than
- * back at the title screen.
+ * `useSessionActions()` is the narrow way `<Controls>` reaches the methods, and
+ * it is published now — so this row takes the three it presses and one
+ * selector for the flag it reads, instead of a whole-snapshot `useSession()`
+ * that re-rendered the footer on every partial transcript.
  */
-function newConversation(session: Session): void {
-  session.end();
-  session.start();
-}
-
-/** Pause/resume, new game and hang-up. The only place a whole-session
- *  subscription is still needed: the ACTIONS live on `useSession()`, and
- *  `useSessionCore` — the narrow way `<Controls>` reaches them — is not on the
- *  public surface. */
 function Footer() {
-  const session = useSession();
+  const { toggle, restart, end } = useSessionActions();
+  const running = useSessionSelector((snapshot) => snapshot.running);
   return (
     <div
       className="flex items-center justify-between px-5 py-2 shrink-0 gap-3"
@@ -253,9 +257,9 @@ function Footer() {
           type="button"
           className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
           style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-          onClick={session.toggle}
+          onClick={toggle}
         >
-          {session.running ? "[P]ause" : "[R]esume"}
+          {running ? "[P]ause" : "[R]esume"}
         </button>
         {/* The one-click new conversation the default shell's `<Controls>`
             gives every other template — a custom `component:` renders no
@@ -266,7 +270,7 @@ function Footer() {
           type="button"
           className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
           style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-          onClick={() => newConversation(session)}
+          onClick={restart}
         >
           [N]ew Game
         </button>
@@ -276,7 +280,7 @@ function Footer() {
           type="button"
           className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
           style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-          onClick={() => session.end()}
+          onClick={() => end()}
         >
           [Q]uit
         </button>
@@ -315,7 +319,7 @@ function Crt({ children }: { children: ReactNode }) {
 }
 
 function TitleScreen() {
-  const session = useSession();
+  const { start } = useSessionActions();
   return (
     <Crt>
       <div
@@ -345,7 +349,7 @@ function TitleScreen() {
             border: `1px solid ${GREEN}`,
             animation: "ic-pulse 2s ease-in-out infinite",
           }}
-          onClick={session.start}
+          onClick={start}
         >
           Begin Adventure
         </button>

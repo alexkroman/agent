@@ -21,6 +21,7 @@ export {
   type FfmpegRunOptions,
   type FfmpegRunResult,
   type FfmpegSource,
+  ffmpegBaseArgs,
   isFfmpegError,
   type MediaInfo,
   type MediaStreamInfo,

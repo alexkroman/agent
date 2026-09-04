@@ -457,19 +457,6 @@ export async function mergeTranscript(
   };
 }
 
-// Re-exported rather than re-declared: `stream.ts` and `batch.ts` already import
-// these from this module, and the split that let the PAGE stitch a partial
-// transcript should not ripple through every flow. `clock` and `countWords` used
-// to be in this list and are `formatDuration`/`countWords` on
-// `@alexkroman1/aai/utils` now — a run narrates itself and the page renders the
-// same run, so those two were a private copy of a formatter the SDK ships.
-export {
-  stitchChunks,
-  stitchTranscript,
-  TRANSCRIPT_STREAM,
-  type TranscriptChunk,
-} from "./stitch.ts";
-
 // ---- I/O helpers ------------------------------------------------------------
 
 /**

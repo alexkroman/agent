@@ -21,6 +21,7 @@
 import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
+  Facts,
   isTerminal,
   useWorkflowProgress,
   WORKFLOW_STATUS_LABELS,
@@ -150,15 +151,25 @@ export function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onCle
           object with optional fields. */}
       {run.status === "completed" && (
         <>
-          <p className="text-xs opacity-60">
-            {run.output.segments} {plural(run.output.segments, "segment")} ·{" "}
-            {formatDuration(run.output.durationMs)} of audio · took{" "}
-            {formatDuration(run.output.elapsedMs)} · {run.output.words} words
-          </p>
+          <Facts
+            size="xs"
+            items={[
+              `${run.output.segments} ${plural(run.output.segments, "segment")}`,
+              `${formatDuration(run.output.durationMs)} of audio`,
+              `took ${formatDuration(run.output.elapsedMs)}`,
+              `${run.output.words} words`,
+            ]}
+          />
           <pre className="whitespace-pre-wrap text-sm leading-relaxed">{run.output.transcript}</pre>
         </>
       )}
-      {run.status === "failed" && <p className="text-red-600">{run.error}</p>}
+      {/* `role="alert"`, the same contract `<Form>` gives the submit error in
+          `client.tsx`: this is the outcome the reader waited minutes for. */}
+      {run.status === "failed" && (
+        <p role="alert" className="text-red-600">
+          {run.error}
+        </p>
+      )}
     </section>
   );
 }
@@ -186,17 +197,26 @@ function LiveTranscript({ runId }: { runId: string }) {
   // Memoized on the ARRAY, which the hook appends to per read: stitching is a
   // seam search per segment, and a fan-out re-renders this panel on every
   // progress poll whether or not anything arrived.
-  const transcript = useMemo(() => stitchChunks(progress), [progress]);
+  //
+  // The word count and the coverage are derived in the SAME memo, not below
+  // it: both are functions of `progress` alone, and `countWords` rescans a
+  // transcript that reaches ~14k words on a feature-length recording.
+  //
+  // `covered` is the furthest point reached, not the count: segments land out
+  // of order, so "6 segments" says nothing about how much is covered.
+  const { transcript, words, covered } = useMemo(() => {
+    const stitched = stitchChunks(progress);
+    return {
+      transcript: stitched,
+      words: countWords(stitched),
+      covered: progress.reduce((furthest, chunk) => Math.max(furthest, chunk.endMs), 0),
+    };
+  }, [progress]);
   if (progress.length === 0) return null;
 
-  // The furthest point reached, not the count: segments land out of order, so
-  // "6 segments" says nothing about how much of the recording is covered.
-  const covered = Math.max(...progress.map((chunk) => chunk.endMs));
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs opacity-60">
-        {countWords(transcript)} words so far · through {formatDuration(covered)}
-      </p>
+      <Facts size="xs" items={[`${words} words so far`, `through ${formatDuration(covered)}`]} />
       <pre className="whitespace-pre-wrap text-sm leading-relaxed opacity-80">{transcript}</pre>
     </div>
   );

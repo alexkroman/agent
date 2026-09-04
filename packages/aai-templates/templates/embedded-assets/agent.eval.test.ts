@@ -13,8 +13,10 @@
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
  *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS — a scaffolded project has no repo helper to import. Without
+ * Taken from `virtual:aai/agent` rather than a hand-written glob: the plugin
+ * expands it against THIS file's own directory, so the spec needs no glob and
+ * no shared helper — which matters because this file SHIPS, and a scaffolded
+ * project has no repo helper to import. Without
  * it this agent would have no tools and would answer every question from the
  * model's own memory, which is exactly what the cases below forbid.
  *

@@ -16,7 +16,7 @@
  * ## The argv is ours, so it is BUILT rather than embedded
  *
  * `runFfmpeg` passes `args` through verbatim — no `-y`, no `-loglevel` — so the
- * standing flags are a decision this file makes once ({@link standardFlags}) and
+ * standing flags come from `ffmpegBaseArgs` on `@alexkroman1/aai/ffmpeg`, and
  * every invocation's real argv is a value a test can assert on. It is also why
  * the filter strings below carry no shell quoting: each is ONE element of an
  * argv array, so the commas that chain filters and the colons that separate their
@@ -58,7 +58,9 @@
  * longer than the cap gets the blind cut, and says so.
  */
 
+import { ffmpegBaseArgs } from "@alexkroman1/aai/ffmpeg";
 import type { PcmFormat } from "@alexkroman1/aai/step";
+import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 
 /**
@@ -151,20 +153,6 @@ export const MAX_SEGMENT_SECONDS = 110;
  */
 export const MIN_SEGMENT_SECONDS = 1;
 
-/** The standing flags, on every invocation this desk makes. */
-export function standardFlags(): string[] {
-  return [
-    "-hide_banner",
-    // Progress lines are noise in a captured stderr, and the SDK keeps only a
-    // tail of it — so suppressing them is what leaves room for the diagnosis.
-    "-nostats",
-    // In a guest there is no terminal, and an ffmpeg that decides to read stdin
-    // is a process that never exits.
-    "-nostdin",
-    "-y",
-  ];
-}
-
 /** A loudness measurement, as `loudnorm`'s first pass reports it. */
 export type Loudness = {
   /** Integrated loudness, LUFS. */
@@ -233,9 +221,9 @@ export class MediaAnalysisError extends Error {
  */
 export function measureLoudnessArgs(input: string): string[] {
   return [
-    ...standardFlags(),
-    "-loglevel",
-    "info",
+    // `info`, not the default `error`: `print_format=json` reports through the
+    // LOG, so at `error` this pass runs, succeeds, and prints nothing.
+    ...ffmpegBaseArgs({ loglevel: "info" }),
     "-i",
     input,
     "-af",
@@ -273,7 +261,7 @@ export function parseLoudness(stderr: string): Loudness {
   // different remedies, and the second message quotes the value ffmpeg actually
   // printed — which needs the block still in hand, so the gate cannot be folded
   // into the schema below.
-  const block = LoudnessBlock.safeParse(safeJson(stderr.slice(open, close + 1)));
+  const block = LoudnessBlock.safeParse(safeJsonParse(stderr.slice(open, close + 1)));
   if (!block.success) {
     throw new MediaAnalysisError("The loudness pass printed a block that is not JSON.");
   }
@@ -301,7 +289,7 @@ export function parseLoudness(stderr: string): Loudness {
 /**
  * Is the found `{…}` an object at all?
  *
- * The reachable failure is {@link safeJson} answering `undefined` — a brace pair
+ * The reachable failure is {@link safeJsonParse} answering `undefined` — a brace pair
  * found in ffmpeg's chatter with something other than JSON between them — and
  * that is a different sentence from a value being unreadable, which is why this
  * gate exists at all rather than being folded into {@link LoudnessValues}.
@@ -370,12 +358,10 @@ export function normalizeArgs(
   ].join(":");
 
   return [
-    ...standardFlags(),
     // Quiet, and the analysis still arrives: `ametadata` writes its file
     // directly rather than through the log, which is the property that lets this
     // pass be both silent and complete.
-    "-loglevel",
-    "error",
+    ...ffmpegBaseArgs(),
     "-i",
     input,
     "-af",
@@ -600,9 +586,7 @@ export function planSegments(silences: readonly Silence[], totalBytes: number): 
  */
 export function masterArgs(input: string, output: string): string[] {
   return [
-    ...standardFlags(),
-    "-loglevel",
-    "error",
+    ...ffmpegBaseArgs(),
     "-i",
     input,
     "-af",
@@ -651,13 +635,4 @@ function value(line: string, key: string): number | undefined {
   if (text === "") return undefined;
   const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-/** `JSON.parse` that answers `undefined` rather than throwing, so the caller frames the error. */
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
 }

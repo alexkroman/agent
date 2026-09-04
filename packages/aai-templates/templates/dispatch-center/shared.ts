@@ -71,7 +71,6 @@ export interface Incident {
   createdAt: number;
   updatedAt: number;
   escalationLevel: number;
-  protocolsActivated: string[];
   casualties: { confirmed: number; estimated: number; treated: number };
   hazards: string[];
 }
@@ -82,7 +81,6 @@ export interface DispatchState {
   incidentCounter: number;
   mutualAidCounter: number;
   alertLevel: "green" | "yellow" | "orange" | "red";
-  mutualAidRequested: boolean;
 }
 
 /**
@@ -157,7 +155,6 @@ export function createDefaultState(): DispatchState {
     incidentCounter: 0,
     mutualAidCounter: 0,
     alertLevel: "green",
-    mutualAidRequested: false,
   };
 }
 
@@ -348,7 +345,6 @@ export function createIncident(state: DispatchState, overrides: Partial<Incident
     createdAt: time,
     updatedAt: time,
     escalationLevel: 0,
-    protocolsActivated: [],
     casualties: { confirmed: 0, estimated: 0, treated: 0 },
     hazards: [],
     ...overrides,
@@ -730,8 +726,4 @@ export function recalculateAlertLevel(state: DispatchState): void {
   } else {
     state.alertLevel = "green";
   }
-
-  // Mutual aid tracks system posture: requested at red alert, stood down
-  // when the alert level drops back below red.
-  state.mutualAidRequested = state.alertLevel === "red";
 }

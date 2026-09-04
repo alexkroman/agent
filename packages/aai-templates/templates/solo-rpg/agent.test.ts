@@ -24,11 +24,11 @@ import updateState from "./tools/update_state.ts";
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
 
-/** `send` is a spy rather than the recorder `createToolContext` installs,
- *  because this suite asserts call counts on it. Each call gets its own slot
- *  store, which is what makes two contexts two games. */
+/** Each call gets its own slot store, which is what makes two contexts two
+ *  games. `send` is the recorder `createToolContext` installs — no test here
+ *  asserts on it, and overriding it would only throw the recording away. */
 function makeCtx(): ToolContext {
-  return createToolContext({ send: vi.fn() });
+  return createToolContext();
 }
 
 const SETUP_ARGS = {

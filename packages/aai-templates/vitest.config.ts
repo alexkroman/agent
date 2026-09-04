@@ -61,7 +61,15 @@ export default defineConfig({
       // with which files a run touches, so the floor sits under the LOW end).
       // The seed floors had drifted 8-15 points under actual, which is a ratchet
       // nothing can trip.
-      thresholds: { lines: 84, functions: 85, branches: 72, statements: 82 },
+      //
+      // Ratcheted again 84/85/72/82 -> 89/89/76/87 after a dead-code sweep took
+      // out several never-executed branches (a write-only state field, an
+      // unreachable second cap, a re-export nothing imported, a pre-loop that
+      // made its own fallback dead). Removing unreached code RAISES the ratio,
+      // so the floors had to follow it or the pass would have banked the gain
+      // and left the same slack behind. Measured over three runs: stmts 89.96
+      // flat, branch 78.45-78.57, funcs 91.79 flat, lines 91.82 flat.
+      thresholds: { lines: 89, functions: 89, branches: 76, statements: 87 },
     },
   },
 });

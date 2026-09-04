@@ -15,6 +15,10 @@ export {
 } from "./client-config.ts";
 // Components
 export { AutoScroll } from "./components/auto-scroll.tsx";
+// A run's key points, findings or risks as a disc list. Published because all
+// five pages that had written it keyed by the bullet's own TEXT, and these
+// lists are model output — a repeated bullet is a duplicate React key.
+export { BulletList, type BulletListProps } from "./components/bullet-list.tsx";
 export { Button, type ButtonSize, type ButtonVariant } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
 // The chrome UNDER `ChatView` — header, announced error banner, card, footer —
@@ -22,6 +26,10 @@ export { ChatView } from "./components/chat-view.tsx";
 // every custom chrome that rebuilt it lost the banner's `role="alert"`.
 export { ConsoleShell, type ConsoleShellProps } from "./components/console-shell.tsx";
 export { Controls, type ControlsProps } from "./components/controls.tsx";
+// A muted line of run facts joined by `·`. It owns the separator — four of the
+// nine sites that wrote it by hand carried a literal `{" "}` to survive a wrap
+// — and drops the facts a page decided not to print.
+export { Facts, type FactsProps } from "./components/facts.tsx";
 // Forms — what a workflow app's front door is made of. See `components/form.tsx`
 // for why the values come off the DOM rather than out of React state.
 export {

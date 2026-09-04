@@ -287,17 +287,19 @@ async function waitForTranscripts(
     if (pending.length > 0) await ctx.sleep("poll", POLL_DELAY_MS);
   }
 
-  for (const job of pending) settled.set(job.id, gaveUpOn(job));
   // The list `jobs` arrived in, which `discoverEpisodes` sorted newest first.
+  // A job still pending is absent from `settled`, so the `??` IS the
+  // give-up path — `pollTranscript` returns the job unchanged while it is
+  // submitted, so the value given up on is the one that went in.
   return jobs.map((job) => settled.get(job.id) ?? gaveUpOn(job));
 }
 
 /**
  * One episode the run is done waiting for.
  *
- * Its own function because {@link waitForTranscripts} needs it in two places —
- * the jobs still pending when the budget ran out, and the unreachable fallback
- * the ordered rebuild above needs for a lookup that cannot miss.
+ * Its own function because {@link waitForTranscripts} reaches it from the
+ * ordered rebuild, for every job whose budget ran out while it was still
+ * submitted and which is therefore absent from `settled`.
  */
 function gaveUpOn(job: TranscriptJob): TranscriptState {
   return {

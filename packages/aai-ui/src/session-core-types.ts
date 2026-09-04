@@ -205,6 +205,30 @@ export type SessionCore = {
    * per-session tool state, greeting included.
    */
   end(): void;
+  /**
+   * End the current call and immediately begin a new one — `end()` then
+   * `start()`, which is what "New Conversation" means for an agent that keeps
+   * SESSION-SCOPED STATE.
+   *
+   * `reset()` is the one whose name suggests this and it is not the same
+   * thing: it clears the transcript and reconnects, but the reconnect carries
+   * the same `?sessionId=`, so every `sessionSlot` on the server survives —
+   * the game world, the incident board, the cart. A caller who asked to start
+   * over gets a blank transcript in front of the old state. This drops the
+   * session id, so the next connect mints a fresh one and the greeting plays
+   * again.
+   *
+   * Three templates had each written `session.end(); session.start();` with
+   * the same paragraph explaining why `reset()` was wrong; the six on the
+   * stock shell could not, because {@link Controls} called `reset()` for them.
+   *
+   * @example
+   * ```ts
+   * declare const session: import("@alexkroman1/aai-ui").Session;
+   * session.restart();
+   * ```
+   */
+  restart(): void;
   /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };

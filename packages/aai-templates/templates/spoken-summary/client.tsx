@@ -69,7 +69,9 @@ import "@alexkroman1/aai-ui/styles.css";
 // `workflows/summarize.ts` already declares.
 import { formatDuration } from "@alexkroman1/aai/utils";
 import {
+  BulletList,
   createWorkflowApi,
+  Facts,
   Form,
   page,
   SubmitButton,
@@ -79,7 +81,6 @@ import {
   WorkflowFields,
   WorkflowProgress,
 } from "@alexkroman1/aai-ui";
-import { useState } from "react";
 import type { spokenSummary } from "./agent.ts";
 
 /**
@@ -128,16 +129,11 @@ function captionsUrl(text: string, durationMs: number): string {
 }
 
 export function App() {
-  // Did THIS load start the run? A reload cannot have, and that is the only way
-  // the page can tell "working on what you just sent" from "picking up where
-  // you left off" — the hook reports the run, not who asked for it.
-  const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. The reload is the hook's own doing — see
   // the module doc for why the key it mints is the right one for this page.
-  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = useWorkflowSubmit<
-    typeof spokenSummary
-  >(WORKFLOW, { api });
+  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error, startedHere } =
+    useWorkflowSubmit<typeof spokenSummary>(WORKFLOW, { api });
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the
@@ -153,14 +149,7 @@ export function App() {
         </p>
       </header>
 
-      <Form
-        onSubmit={(values) => {
-          setStartedHere(true);
-          return submitForm(values);
-        }}
-        error={error}
-        className="flex flex-col gap-4"
-      >
+      <Form onSubmit={(values) => submitForm(values)} error={error} className="flex flex-col gap-4">
         {/* Every control, from the workflow's own input schema. See the module doc. */}
         <WorkflowFields workflow={WORKFLOW} />
         <SubmitButton pending={pending} pendingLabel="Working…">
@@ -183,22 +172,24 @@ export function App() {
       {/* What the run itself says, from `report()` in the workflow's steps. */}
       <WorkflowProgress runId={run?.runId} api={api} />
 
-      {run?.status === "failed" && <p className="text-red-600">That one failed: {run.error}</p>}
+      {/* `role="alert"`, the same contract `<Form>` gives the submit error: this
+          is the outcome the reader waited minutes for. */}
+      {run?.status === "failed" && (
+        <p role="alert" className="text-red-600">
+          That one failed: {run.error}
+        </p>
+      )}
 
       {output !== undefined && (
         <article className="flex flex-col gap-5">
           <div className="flex flex-col gap-1">
             <h2 className="text-xl">{output.headline}</h2>
-            <p className="text-sm opacity-70">
-              {output.source} · {formatDuration(output.durationMs)} · {output.words} words
-            </p>
+            <Facts
+              items={[output.source, formatDuration(output.durationMs), `${output.words} words`]}
+            />
           </div>
 
-          <ul className="flex list-disc flex-col gap-1 pl-5">
-            {output.points.map((point) => (
-              <li key={point}>{point}</li>
-            ))}
-          </ul>
+          <BulletList items={output.points} />
 
           <section className="flex flex-col gap-2">
             <h3 className="text-sm font-medium opacity-70">
@@ -206,11 +197,13 @@ export function App() {
             </h3>
             {audio.pending && <p className="text-sm opacity-70">Fetching the audio…</p>}
             {audio.error !== undefined && (
-              <p className="text-red-600">Could not load the audio: {audio.error}</p>
+              <p role="alert" className="text-red-600">
+                Could not load the audio: {audio.error}
+              </p>
             )}
             {audio.url !== undefined && (
               <>
-                <audio controls src={audio.url} className="w-full">
+                <audio aria-label="Summary read aloud" controls src={audio.url} className="w-full">
                   {/* A real caption track, not a suppression: the summary was
                       written before it was spoken, so the words are already
                       here and one cue spanning the clip is an honest

@@ -1,5 +1,6 @@
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { CRUSTS, calculateTotal, formatPrice, orderSlot, type Pizza, SIZES } from "../shared.ts";
+import { CRUSTS, calculateTotal, orderSlot, type Pizza, SIZES } from "../shared.ts";
 
 export default orderSlot.updateTool({
   description: "Add a pizza to the order. Use when the customer has decided on a pizza.",
@@ -24,7 +25,7 @@ export default orderSlot.updateTool({
 
     return {
       added: pizza,
-      orderTotal: formatPrice(calculateTotal(order.pizzas)),
+      orderTotal: formatMoney(calculateTotal(order.pizzas)),
       itemCount: order.pizzas.length,
     };
   },

@@ -139,6 +139,25 @@ describe("WorkflowProgress", () => {
     expect(screen.getByText("Starting…")).not.toBeNull();
   });
 
+  test("the narration is a LIVE REGION, so a run is audible while it happens", async () => {
+    // The whole point of the component: before a run produces an output, these
+    // lines are the only channel it has, and an inert `<pre>` makes that channel
+    // sighted-only. Asserted on the RENDERED element rather than on the source,
+    // and all three attributes separately — `role="log"` alone would leave the
+    // behaviour to each screen reader's implicit mapping, and `aria-atomic` is
+    // the one that decides whether a poll announces the new line or re-reads the
+    // whole block. Note `getByRole` finds it: a role scraped off the source
+    // could be on an element the component never renders.
+    fetchMock.mockImplementation(() => Promise.resolve(sse(["Fetching…", "Summarising…"])));
+    render(<WorkflowProgress runId="wrun_1" />);
+
+    const log = await screen.findByRole("log");
+    expect(log.tagName).toBe("PRE");
+    expect(log.getAttribute("aria-live")).toBe("polite");
+    expect(log.getAttribute("aria-atomic")).toBe("false");
+    expect(log.textContent).toBe("Fetching…\nSummarising…");
+  });
+
   test("className REPLACES the default, so a custom chrome is not fighting it", async () => {
     fetchMock.mockImplementation(() => Promise.resolve(sse(["Reading…"])));
     const { container } = render(<WorkflowProgress runId="wrun_1" className="font-mono" />);

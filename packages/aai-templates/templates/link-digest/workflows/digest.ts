@@ -282,8 +282,5 @@ export function extractTitle(html: string): string | undefined {
  * structure are bytes the summary does not read.
  */
 export function extractText(html: string): string {
-  return htmlToText(html, { maxChars: MAX_ARTICLE_CHARS })
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, MAX_ARTICLE_CHARS);
+  return htmlToText(html, { maxChars: MAX_ARTICLE_CHARS }).replace(/\s+/g, " ").trim();
 }

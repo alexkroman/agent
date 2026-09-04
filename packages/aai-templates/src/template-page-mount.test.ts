@@ -30,6 +30,7 @@
  */
 
 import { beforeAll, describe, expect, test } from "vitest";
+import { byCodeUnit } from "./_gate-support.ts";
 
 /** Every template's client source, as text. */
 const clientSources = import.meta.glob("../templates/*/client.tsx", {
@@ -102,7 +103,7 @@ const byTemplate = (
       if (!name) throw new Error(`Unexpected glob key: ${path}`);
       return { name, source, agentPath: `../templates/${name}/agent.ts` };
     })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => byCodeUnit(a.name, b.name));
 
 const clients = byTemplate(clientSources);
 
@@ -172,7 +173,14 @@ function hasNewConversation(source: string | undefined): boolean {
   const code = withoutComments(source);
   if (!/\bcomponent:/.test(code)) return true;
   if (importsFrom(code, "@alexkroman1/aai-ui").includes("Controls")) return true;
-  return code.split("newConversation(").length - 1 >= 2;
+  // `session.restart()` — the SDK method that is this affordance. It used to
+  // look for two occurrences of a hand-rolled `newConversation(`, which is what
+  // all three of these clients had written because no such method existed; the
+  // shipped `<Controls>` called `reset()`, which keeps the session id and so
+  // leaves a stateful agent's slot data in place behind a cleared transcript.
+  // Matching the METHOD rather than a template's private helper name is also
+  // what stops this gate passing on a fourth spelling of the same workaround.
+  return /\brestart\b/.test(code);
 }
 
 describe("template client mounts", () => {

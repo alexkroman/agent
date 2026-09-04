@@ -62,7 +62,7 @@
  * this file SHIPS — see `agent.test.ts`.
  */
 import agentDef from "virtual:aai/agent";
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
+import { routeStepFetch, type StepRoute, stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import {
   describeToolCalls,
@@ -138,22 +138,30 @@ function stubProvider(options: { hold?: boolean; ending?: Ending } = {}): Script
   const gate = Promise.withResolvers<void>();
   const model = stubGatewayRoute(RECAP_JSON);
   let polls = 0;
-  const stub = installStubStepFetch(async (request) => {
-    const recapped = model.route(request);
-    if (recapped) return recapped;
+  // Two legs: the model, then the provider's job API. Anything neither answers is a
+  // finding, which is `routeStepFetch`'s default rather than this file's throw.
+  // Annotated, so the leg's contract is visible where it is written: answer the
+  // requests you recognise, `undefined` for everything else, and let
+  // `routeStepFetch` decide what an unrecognised one means.
+  const provider: StepRoute = (request) => {
     if (request.method === "POST") return { body: { id: TRANSCRIPT_ID, status: "queued" } };
     // The compensation. A real DELETE removes the transcript from the account,
     // which is what makes "a failed run leaves nothing behind" a claim rather
     // than a comment — so the assertion that matters is that this was CALLED.
     if (request.method === "DELETE") return { body: {} };
-    if (request.method === "GET") {
-      polls += 1;
-      if (options.hold === true && polls === 1) await gate.promise;
-      return options.ending === "error"
-        ? { body: { status: "error", error: "that recording could not be decoded" } }
-        : { body: { status: "completed", text: TRANSCRIPT_TEXT, audio_duration: 254 } };
-    }
-    throw new Error(`unexpected step request in an eval: ${request.method} ${request.url}`);
+    if (request.method !== "GET") return;
+    polls += 1;
+    return options.ending === "error"
+      ? { body: { status: "error", error: "that recording could not be decoded" } }
+      : { body: { status: "completed", text: TRANSCRIPT_TEXT, audio_duration: 254 } };
+  };
+  const route = routeStepFetch([model.route, provider]);
+  const stub = installStubStepFetch(async (request) => {
+    const answered = route(request);
+    // Held AFTER routing, so the poll this returns is the one the script owed
+    // it — and `polls` has already counted this request.
+    if (options.hold === true && request.method === "GET" && polls === 1) await gate.promise;
+    return answered;
   });
   return { calls: stub.calls, release: () => gate.resolve() };
 }

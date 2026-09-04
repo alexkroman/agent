@@ -33,6 +33,7 @@ import biomeConfig from "../../../biome.json?raw";
 import scaffoldGuide from "../scaffold/CLAUDE.md?raw";
 import scaffoldWorkspaceYaml from "../scaffold/pnpm-workspace.yaml?raw";
 import { templatePromptFiles, withTemplatePrompt, withTemplateTools } from "./_discovery.ts";
+import { byCodeUnit } from "./_gate-support.ts";
 
 /** What a template's default export must satisfy — derived from the exact
  * functions the CLI bundler feeds it to. */
@@ -51,7 +52,7 @@ const templates = Object.keys(agentModules)
     if (!name) throw new Error(`Unexpected glob key: ${modulePath}`);
     return { name, modulePath };
   })
-  .sort((a, b) => a.name.localeCompare(b.name));
+  .sort((a, b) => byCodeUnit(a.name, b.name));
 
 describe("template build smoke", () => {
   test("discovers templates", () => {

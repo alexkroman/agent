@@ -1,4 +1,5 @@
-import { calculateTotal, formatPrice, orderSlot } from "../shared.ts";
+import { formatMoney } from "@alexkroman1/aai/utils";
+import { calculateTotal, orderSlot } from "../shared.ts";
 
 export default orderSlot.tool({
   description: "View the current order summary with all pizzas and total price.",
@@ -15,7 +16,7 @@ export default orderSlot.tool({
         toppings: p.toppings,
         quantity: p.quantity,
       })),
-      orderTotal: formatPrice(calculateTotal(pizzas)),
+      orderTotal: formatMoney(calculateTotal(pizzas)),
     };
   },
 });

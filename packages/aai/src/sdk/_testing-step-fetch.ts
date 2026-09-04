@@ -59,6 +59,92 @@ export type StubStepAnswer =
   | Response
   | { status?: number; body?: unknown; headers?: Record<string, string> };
 
+/**
+ * One leg of a step's outside world: answers the requests it recognises and
+ * `undefined` for everything else, so legs compose.
+ *
+ * The shape `stubGatewayRoute` already hands back, named so a spec writing its
+ * own leg (a page fetch, a provider's job API) writes the same thing.
+ *
+ * @public
+ */
+export type StepRoute = (request: StubStepRequest) => StubStepAnswer | undefined;
+
+/**
+ * What an unrecognised request means.
+ *
+ * - `"throw"` (the default) — a finding. A step asked for something the spec
+ *   did not set up, and the test should say so at the call.
+ * - `"notFound"` — a real 404, for a spec whose subject IS how a flow handles
+ *   one.
+ * - a {@link StepRoute} — the fallback leg, for "anything else is this page".
+ *
+ * @public
+ */
+export type StepUnmatched = "throw" | "notFound" | StepRoute;
+
+/**
+ * Compose several {@link StepRoute}s into the one handler `stubStepFetch`
+ * takes.
+ *
+ * Publishing a `stepFetch` REPLACES, so a flow that calls a model AND fetches a
+ * page AND transcribes can install exactly one fake and has to route inside it.
+ * Thirteen sites across seven templates wrote that composition by hand, and
+ * they did not agree on the part that matters — the unmatched case. Three threw
+ * (with a byte-identical message), two answered 404, and six fell through to a
+ * second fake.
+ *
+ * **The default is `"throw"` because the alternatives HIDE a finding.** A 404
+ * for a request nobody set up reads to the run as a provider that refused, so
+ * the flow takes its own error path and the spec passes green having tested the
+ * wrong branch. A spec that really is about a 404 says so.
+ *
+ * Order matters: the first route to answer wins, so put the most specific leg
+ * first. A route that throws is left alone — this only decides what happens
+ * when every leg answers `undefined`.
+ *
+ * @example
+ * ```ts
+ * import { routeStepFetch, stubGatewayRoute } from "@alexkroman1/aai/testing";
+ *
+ * const model = stubGatewayRoute(['{"summary":"ok"}']);
+ * // Model first, then the page; anything else is a finding.
+ * const handler = routeStepFetch([model.route, (req) =>
+ *   req.url.startsWith("https://example.test") ? { body: "<p>hi</p>" } : undefined,
+ * ]);
+ * ```
+ *
+ * @public
+ */
+export function routeStepFetch(
+  routes: readonly StepRoute[],
+  options: { unmatched?: StepUnmatched } = {},
+): (request: StubStepRequest) => StubStepAnswer {
+  const unmatched = options.unmatched ?? "throw";
+  return (request) => {
+    for (const route of routes) {
+      const answered = route(request);
+      if (answered !== undefined) return answered;
+    }
+    if (unmatched === "throw") {
+      // Names the method and URL, because the useful question when this fires
+      // is always "which leg was I missing".
+      throw new Error(`no step route for ${request.method} ${request.url}`);
+    }
+    if (unmatched === "notFound") {
+      return { status: 404, body: { error: `no step route for ${request.url}` } };
+    }
+    // A fallback leg that itself declines is still unmatched, and answering
+    // `undefined` from a handler `stubStepFetch` will encode is not a legal
+    // answer — so it is the same finding as having no fallback at all.
+    const fallback = unmatched(request);
+    if (fallback === undefined) {
+      throw new Error(`the fallback step route declined ${request.method} ${request.url}`);
+    }
+    return fallback;
+  };
+}
+
 /** What {@link stubStepFetch} returns. */
 export type StubStepFetch = {
   /** Every request the step made, in order. */

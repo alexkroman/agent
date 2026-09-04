@@ -1,5 +1,6 @@
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { formatPrice, HOTELS, requireDesk, tripSlot } from "../shared.ts";
+import { HOTELS, requireDesk, tripSlot } from "../shared.ts";
 
 /** Their `search_hotels`, with `price_tier` collapsed to a nightly ceiling —
  *  a caller says "under two hundred", not "midscale". */
@@ -33,7 +34,7 @@ export default tripSlot.tool({
         name: h.name,
         area: h.area,
         stars: h.stars,
-        perNight: formatPrice(h.pricePerNight),
+        perNight: formatMoney(h.pricePerNight),
       })),
     };
   },

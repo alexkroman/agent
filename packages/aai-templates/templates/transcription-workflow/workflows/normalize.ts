@@ -70,7 +70,7 @@
  */
 
 import { basename, extname, join } from "node:path";
-import { probeMedia, runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
+import { ffmpegBaseArgs, probeMedia, runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
 import { readUpload, report, requireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
@@ -184,15 +184,11 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
 
       await runFfmpeg(
         [
-          // The argv is the caller's, verbatim — `runFfmpeg` adds nothing. So the
-          // standing flags are here: quiet, non-interactive, overwrite. `-nostdin`
-          // matters most in a guest, where there is no terminal and an ffmpeg that
-          // decides to read stdin is a process that never exits.
-          "-hide_banner",
-          "-loglevel",
-          "error",
-          "-nostdin",
-          "-y",
+          // The argv is the caller's, verbatim — `runFfmpeg` adds nothing — so
+          // the standing flags are the caller's too. This copy used to omit
+          // `-nostats`, which is the one that keeps ffmpeg's progress spam from
+          // evicting the error out of the captured stderr tail.
+          ...ffmpegBaseArgs(),
           "-i",
           source,
           ...wavEncodeArgs({

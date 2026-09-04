@@ -41,7 +41,7 @@ import type {
   UploadProgress,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useRecoveredRun } from "./_recover-run.ts";
 import { useRunControls } from "./_run-controls.ts";
 import { useSubmissionState } from "./_submission-state.ts";
@@ -139,6 +139,38 @@ export type WorkflowSubmission<R = unknown, I = unknown> = {
   cancel: () => Promise<boolean>;
   /** The run, once started, followed to completion. */
   run: WorkflowRun<R> | undefined;
+  /**
+   * True from `submit()` on this mount until `reset()` — did THIS page start
+   * the run it is showing?
+   *
+   * A page needs it to say the right sentence and cannot derive it: a run
+   * ADOPTED by the mount-time lookup after a reload looks exactly like one this
+   * page started. Six templates kept a `useState(false)` next to this hook, set
+   * it in their `onSubmit` and mirrored it in their `onClear` — shadow state
+   * for a fact only this hook can know, since it is the thing that decides
+   * between `submit()` and the recovery lookup. One of the six grew a fourth
+   * branch and had to move the whole note into its own module with its own
+   * spec, which is what a seam missing one layer down looks like.
+   *
+   * The RAW fact rather than a derived "recovered", deliberately: with `run`
+   * these are three states, not two, and the third is the one a page most needs
+   * to explain. `startedHere` is "you pressed the button"; `!startedHere &&
+   * !run` is the mount-time lookup still going; `!startedHere && run` is a run
+   * this browser started earlier, now in front of somebody who did not press
+   * anything. A boolean meaning only the last of those cannot express the
+   * middle one.
+   *
+   * @example
+   * ```ts
+   * declare const submission: import("@alexkroman1/aai-ui").WorkflowSubmission;
+   * const note = submission.startedHere
+   *   ? "You can close this tab or reload it — this page will find the run again."
+   *   : submission.run === undefined
+   *     ? "Looking for a run this tab started earlier…"
+   *     : "Still working on the run this tab started earlier. Reloading is safe.";
+   * ```
+   */
+  startedHere: boolean;
   /**
    * True from `submit()` until the run reaches a terminal status.
    *
@@ -297,6 +329,11 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   // The other half of "a run outlives the page": `key` records the handle, this
   // reads it back. See `_recover-run.ts` for why it happens once per mount and
   // why the answer can never displace a run the person has already started.
+  // Whether a `submit()` on THIS mount is what produced the current run. A ref
+  // would do for the value, but it is read during render and has to re-render
+  // the page when it flips, so it is state.
+  const [startedHere, setStartedHere] = useState(false);
+
   const recovering = useRecoveredRun({
     workflow,
     key,
@@ -312,6 +349,9 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
     async (input: unknown) => {
       const client = getClient();
       const current = createUploadSession(workflow);
+      // Before the await, so the flag is already true by the time a run exists
+      // — a page must never read a run it started as one it adopted.
+      setStartedHere(true);
       actions.begin(current);
       try {
         const options = omitUndefined({ key });
@@ -343,15 +383,26 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
     [workflow, key, wait, parallel, getClient, actions],
   );
 
+  // Wrapped rather than passed through: `reset()` puts the form back to its
+  // initial state, and "did this page start the run" is part of that state. The
+  // six templates that kept this by hand each had to remember the mirror, and a
+  // page adding a second clear path and forgetting it would print the
+  // adopted-run sentence for a run it had just started.
+  const reset = useCallback(() => {
+    setStartedHere(false);
+    actions.reset();
+  }, [actions]);
+
   return {
     submit,
     submitForm: submit,
-    reset: actions.reset,
+    reset,
     wake,
     cancel,
     pauseUpload: actions.pauseUpload,
     resumeUpload: actions.resumeUpload,
     run: tracked.run,
+    startedHere,
     // `tracked.polling` rather than a second derivation from the snapshot, and
     // that is the whole of it: `useWorkflowRun` gives up on an id the agent
     // keeps reporting as unknown (`MAX_MISSING_READS`), which leaves `run`

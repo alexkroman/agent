@@ -86,6 +86,7 @@
  */
 
 import {
+  BulletList,
   Form,
   page,
   SubmitButton,
@@ -98,7 +99,6 @@ import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
 // digest.ts` already declares.
-import { useState } from "react";
 import type { dailyDigest } from "./agent.ts";
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
@@ -131,17 +131,15 @@ export function App() {
   // Did THIS load start the schedule? A later load cannot have, and that is the
   // only way the page can tell "scheduled just now" from "still running from
   // Tuesday" — the hook reports the run, not who asked for it.
-  const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. `error` is the agent's own sentence for a
   // rejected input — better copy than anything this page could write, and the
   // reason there is no `try`/`catch` here.
   // The key REPLACES the tab-scoped one the hook would mint; the lookup that
   // reads it back on the next load happens either way.
-  const { submitForm, run, pending, error, wake, cancel } = useWorkflowSubmit<typeof dailyDigest>(
-    WORKFLOW,
-    { key },
-  );
+  const { submitForm, run, pending, error, wake, cancel, startedHere } = useWorkflowSubmit<
+    typeof dailyDigest
+  >(WORKFLOW, { key });
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
@@ -149,13 +147,7 @@ export function App() {
 
       {/* `submit()` resolves as soon as the run EXISTS — deliberately not when it
           finishes, which here could be a month away. */}
-      <Form
-        onSubmit={(values) => {
-          setStartedHere(true);
-          return submitForm(values);
-        }}
-        error={error}
-      >
+      <Form onSubmit={(values) => submitForm(values)} error={error}>
         <WorkflowFields workflow={WORKFLOW} />
         <SubmitButton pending={pending}>
           {pending ? "Digest scheduled" : "Start digest"}
@@ -195,7 +187,13 @@ export function App() {
         </div>
       )}
 
-      {run?.status === "failed" && <p className="text-red-600">That run failed: {run.error}</p>}
+      {/* `role="alert"`, the same contract `<Form>` gives the submit error
+          above: a digest that fails does so days later, with nobody watching. */}
+      {run?.status === "failed" && (
+        <p role="alert" className="text-red-600">
+          That run failed: {run.error}
+        </p>
+      )}
       {run?.status === "cancelled" && <p>Cancelled — no further digests will be posted.</p>}
 
       {run?.status === "completed" && (
@@ -213,11 +211,7 @@ export function App() {
                 </a>
               </h2>
               <p>{episode.summary}</p>
-              <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-                {episode.keyPoints.map((point) => (
-                  <li key={point}>{point}</li>
-                ))}
-              </ul>
+              <BulletList items={episode.keyPoints} size="sm" />
             </section>
           ))}
         </article>

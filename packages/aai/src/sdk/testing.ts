@@ -56,6 +56,9 @@ export {
   toolInputIssues,
 } from "./_testing-schema.ts";
 export {
+  routeStepFetch,
+  type StepRoute,
+  type StepUnmatched,
   type StubStepAnswer,
   type StubStepFetch,
   type StubStepRequest,

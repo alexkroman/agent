@@ -85,7 +85,7 @@ import type {
   UploadParallel,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useRunControls } from "./_run-controls.ts";
 import { type SubmissionToken, useSubmissionState } from "./_submission-state.ts";
 import { coalesceUploadReports } from "./_upload-report.ts";
@@ -198,11 +198,19 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
   // that hook's type, so a field missing here is a lie in the shared type.
   const { wake, cancel } = useRunControls(runId, getClient);
 
+  // This hook REFUSES `recover` (see `UseWorkflowStreamOptions`), so every run
+  // it reports is one this mount started — but the flag still has to move with
+  // `submit`/`reset` rather than being a constant `true`, because it is false
+  // before the first submission and again after a clear, and a page shares its
+  // markup with `useWorkflowSubmit` pages that read the same field.
+  const [startedHere, setStartedHere] = useState(false);
+
   const submit = useCallback(
     async (input: unknown) => {
       const client = getClient();
       const current: SubmissionToken = { gate: createUploadGate() };
       const { gate } = current;
+      setStartedHere(true);
       actions.begin(current);
       let started: string | undefined;
       try {
@@ -245,15 +253,21 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
     [workflow, key, parallel, getClient, actions],
   );
 
+  const reset = useCallback(() => {
+    setStartedHere(false);
+    actions.reset();
+  }, [actions]);
+
   return {
     submit,
     submitForm: submit,
-    reset: actions.reset,
+    reset,
     wake,
     cancel,
     pauseUpload: actions.pauseUpload,
     resumeUpload: actions.resumeUpload,
     run: tracked.run,
+    startedHere,
     pending: state.starting || tracked.polling,
     upload: state.upload,
     error: state.startError ?? tracked.error,

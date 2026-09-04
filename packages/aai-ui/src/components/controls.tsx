@@ -48,7 +48,7 @@ export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>> = m
     // Narrow subscription: only re-render when `running` flips, not on every
     // snapshot change (messages, transcripts, audio state, ...).
     const running = useSessionSelector((s) => s.running);
-    const { toggle, reset } = useSessionCore();
+    const { toggle, restart } = useSessionCore();
 
     return (
       // `flex-wrap`, because the row could not shrink: two nowrap buttons plus
@@ -58,7 +58,16 @@ export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>> = m
         <Button variant="secondary" onClick={toggle}>
           {running ? "Stop" : "Resume"}
         </Button>
-        <Button variant="ghost" onClick={reset}>
+        {/*
+         * `restart`, NOT `reset`. `reset` clears the transcript and reconnects
+         * carrying the same session id, so every `sessionSlot` on the server
+         * survives — a caller who pressed this on a stateful agent got a blank
+         * transcript in front of their old cart, game or board, with nothing on
+         * screen saying so. Three templates with custom chrome each found this
+         * and wrote `end(); start();` by hand; the ones using this shell had no
+         * way to. `restart` is that pair, and it is what the label promises.
+         */}
+        <Button variant="ghost" onClick={restart}>
           New Conversation
         </Button>
         {/*

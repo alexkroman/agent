@@ -40,7 +40,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
 
 /** The point past which an agent's context silently drops the remainder. */
 const HARD_LIMIT = 150_000;
@@ -76,7 +76,7 @@ const rootShim = sole(
 // reports aai-templates' own guide under). See `_gate-support.ts`.
 const entries = Object.entries(guides)
   .map(([key, text]) => ({ path: repoPathOf(key), text }))
-  .sort((a, b) => a.path.localeCompare(b.path));
+  .sort((a, b) => byCodeUnit(a.path, b.path));
 
 const remedy =
   "Move sections into the owning package's CLAUDE.md and leave a pointer in " +

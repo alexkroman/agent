@@ -270,10 +270,6 @@ function TranscriptionDesk() {
   // piece of state for all three hooks, because it describes the UPLOAD and every
   // mode has one — see the module doc.
   const [parallel, setParallel] = useState(true);
-  // Did THIS load press Transcribe? A reload cannot have, and it is the only way
-  // the page can tell "working on what you just sent" from "picking up where you
-  // left off" — the hooks report the run, not who asked for it.
-  const [startedHere, setStartedHere] = useState(false);
   // ALL THREE hooks are called every render, because a hook may not be conditional —
   // and that costs nothing here: none of them does anything until its `submit` is
   // called, and `useWorkflowRun` underneath them holds no id until then either.
@@ -292,7 +288,13 @@ function TranscriptionDesk() {
   // store — so it is the SAME hook against a different workflow. Only the streaming
   // mode needs the other one, because only it needs the id before the bytes.
   const active = mode === "streaming" ? streamed : mode === "batch" ? batched : stored;
-  const { submitForm, run, upload, pending, error, reset, pauseUpload, resumeUpload } = active;
+  // `startedHere` comes off the ACTIVE hook rather than being one flag for the
+  // page, and that is a fix rather than a tidy-up: a single piece of page state
+  // survived a mode switch, so pressing Transcribe in one mode and then
+  // switching made the other mode's panel claim the reader had started its run.
+  // Per-hook, switching modes shows the truth about the run being shown.
+  const { submitForm, run, upload, pending, error, reset, pauseUpload, resumeUpload, startedHere } =
+    active;
   // History is per WORKFLOW, so the list follows the mode: two flows that produce
   // the same output are still two different things to have run, and merging them
   // would put a run under a heading that cannot explain it.
@@ -349,7 +351,6 @@ function TranscriptionDesk() {
       <Form
         onSubmit={(values) => {
           total.start();
-          setStartedHere(true);
           // Written at SUBMIT rather than on the radio, so the remembered mode
           // is always the mode a run exists under — which is the only thing the
           // next load can use it for.
@@ -369,8 +370,8 @@ function TranscriptionDesk() {
       </Form>
 
       <TotalLatency
-        elapsedMs={total.elapsedMs}
-        running={total.running}
+        startedAt={total.startedAt}
+        frozenMs={total.frozenMs}
         runMs={run?.status === "completed" ? run.output.elapsedMs : undefined}
       />
 
@@ -394,8 +395,8 @@ function TranscriptionDesk() {
           onClear={() => {
             // A recovered run is dismissed as deliberately as one this load
             // started: the lookup is a mount-time act, so `reset()` is not
-            // undone by a second one and Clear really does clear.
-            setStartedHere(false);
+            // undone by a second one and Clear really does clear. `reset()`
+            // also clears `startedHere`, which this page used to mirror here.
             reset();
             total.clear();
           }}

@@ -335,8 +335,6 @@ export async function investigate(brief: Brief, angle: string): Promise<Note> {
   return await compress(angle, seen, sources);
 }
 
-/** UNUSED-ORPHAN-MARKER Retries beyond the default: the far side is a search engine and a model. */
-
 /**
  * The supervisor's second look.
  *

@@ -1,5 +1,6 @@
 import { toolFailure } from "@alexkroman1/aai";
-import { calculateTotal, formatPrice, orderSlot, resetOrder } from "../shared.ts";
+import { formatMoney } from "@alexkroman1/aai/utils";
+import { calculateTotal, orderSlot, resetOrder } from "../shared.ts";
 
 export default orderSlot.updateTool({
   description:
@@ -9,7 +10,7 @@ export default orderSlot.updateTool({
     if (pizzas.length === 0) return toolFailure("Cannot place an empty order.");
 
     const customerName = order.customerName ?? "Guest";
-    const total = formatPrice(calculateTotal(pizzas));
+    const total = formatMoney(calculateTotal(pizzas));
     const orderNumber = Math.floor(1000 + Math.random() * 9000);
 
     const estimatedMinutes = 15 + pizzas.length * 5;

@@ -474,6 +474,11 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
     });
   }
 
+  function restart(): void {
+    end();
+    start();
+  }
+
   return {
     getSnapshot,
     subscribe,
@@ -485,6 +490,7 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
     start,
     toggle,
     end,
+    restart,
     [Symbol.dispose]() {
       disconnect();
     },

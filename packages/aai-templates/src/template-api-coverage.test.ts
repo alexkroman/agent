@@ -77,7 +77,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSync } from "oxc-parser";
 import { describe, expect, test } from "vitest";
-import { sole } from "./_gate-support.ts";
+import { byCodeUnit, sole } from "./_gate-support.ts";
 
 /** The PACKAGE root: `templates/` and the allowlist sit beside `src/`. */
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -250,13 +250,11 @@ describe("template API coverage ratchet", () => {
     const used = usage.get(spec) ?? new Set<string>();
     const unexercised = used.has("*")
       ? []
-      : [...exported].filter((name) => !used.has(name)).sort((a, b) => a.localeCompare(b));
+      : [...exported].filter((name) => !used.has(name)).sort(byCodeUnit);
 
     const baseline = new Set(allowlist[spec] ?? []);
     const newlyUnexercised = unexercised.filter((name) => !baseline.has(name));
-    const stale = [...baseline]
-      .filter((name) => !unexercised.includes(name))
-      .sort((a, b) => a.localeCompare(b));
+    const stale = [...baseline].filter((name) => !unexercised.includes(name)).sort(byCodeUnit);
 
     expect(
       newlyUnexercised,
