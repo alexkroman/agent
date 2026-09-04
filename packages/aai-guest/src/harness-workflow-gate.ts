@@ -30,6 +30,7 @@
 import type http from "node:http";
 import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import { constantTimeEquals } from "./harness-auth.ts";
+import { writeJson } from "./harness-http.ts";
 
 /**
  * Header the platform injects to prove a `/workflows/*` request came through it.
@@ -134,7 +135,6 @@ export function gateDirectWorkflowDial(
   ) {
     return false;
   }
-  res.writeHead(401, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ error: "unauthorized" }));
+  writeJson(res, 401, { error: "unauthorized" });
   return true;
 }

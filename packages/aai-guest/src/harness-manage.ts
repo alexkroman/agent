@@ -27,6 +27,7 @@ import { requestQuery } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { handleWorkflowRequest } from "@alexkroman1/aai-runtime/internal";
 import { verifyBearer } from "./harness-auth.ts";
+import { writeJson } from "./harness-http.ts";
 import { guestLogBuffer, parseLogQuery } from "./harness-logs.ts";
 import { gateDirectWorkflowDial } from "./harness-workflow-gate.ts";
 import { GUEST_CONTRACT_VERSION } from "./limits.ts";
@@ -65,11 +66,6 @@ function drainDeadlineMs(req: http.IncomingMessage): number | undefined {
   return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }
 
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(body));
-}
-
 /**
  * The `request` hook serving `/manage/*`. Claims every `/manage` path
  * (unauthenticated ones with a 401 — the tunnel URL is public, the bearer is
@@ -82,11 +78,11 @@ export function createManageHandler(
   return (req, res, url, method) => {
     if (!url.startsWith("/manage/")) return false;
     if (!verifyBearer(req.headers.authorization, deps.token)) {
-      sendJson(res, 401, { error: "unauthorized" });
+      writeJson(res, 401, { error: "unauthorized" });
       return true;
     }
     if (method === "GET" && url === MANAGE_STATUS_PATH) {
-      sendJson(res, 200, {
+      writeJson(res, 200, {
         activeSessions: deps.activeSessions(),
         draining: deps.isDraining(),
         contractVersion: GUEST_CONTRACT_VERSION,
@@ -95,7 +91,7 @@ export function createManageHandler(
     }
     if (method === "POST" && url === MANAGE_DRAIN_PATH) {
       deps.startDrain(drainDeadlineMs(req));
-      sendJson(res, 200, { ok: true, draining: true });
+      writeJson(res, 200, { ok: true, draining: true });
       return true;
     }
     // This guest's own stdout/stderr, by cursor. Served from here rather than
@@ -103,10 +99,10 @@ export function createManageHandler(
     // only — see harness-logs.ts.
     if (method === "GET" && url === MANAGE_LOGS_PATH) {
       const { after, limit } = parseLogQuery(requestQuery(req.url));
-      sendJson(res, 200, guestLogBuffer().read(after, limit));
+      writeJson(res, 200, guestLogBuffer().read(after, limit));
       return true;
     }
-    sendJson(res, 404, { error: "not found" });
+    writeJson(res, 404, { error: "not found" });
     return true;
   };
 }

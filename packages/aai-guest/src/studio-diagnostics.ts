@@ -123,14 +123,21 @@ export type ExportResolver = (specifier: string) => Promise<readonly string[]>;
  * hinting: the agent guessed, and the real list ends the guessing.
  */
 async function exportHints(output: string, resolveExports: ExportResolver): Promise<string[]> {
-  const specifiers = [...output.matchAll(MODULE_RE)].flatMap((m) => {
-    const specifier = m[1] ?? m[2];
-    return specifier ? [specifier] : [];
-  });
+  // DEDUPED: `MODULE_RE` matches per occurrence, so three wrong names from one
+  // module used to pay three resolves and emit three identical hint lines.
+  const specifiers = new Set(
+    [...output.matchAll(MODULE_RE)].flatMap((m) => {
+      const specifier = m[1] ?? m[2];
+      return specifier ? [specifier] : [];
+    }),
+  );
   // One disk read per specifier, and they do not depend on each other — a
   // failed typecheck naming three modules should not pay for three in series.
   const resolved = await Promise.all(
-    specifiers.map(async (specifier) => ({ specifier, names: await resolveExports(specifier) })),
+    [...specifiers].map(async (specifier) => ({
+      specifier,
+      names: await resolveExports(specifier),
+    })),
   );
   return resolved
     .filter(({ names }) => names.length > 0)

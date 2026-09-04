@@ -102,16 +102,27 @@ async function readTemplateEntries(
   templateDir: string,
   selected: string[],
 ): Promise<{ entries: TemplateEntry[]; skipped: string[] }> {
+  // One round trip per file, not 2N in series: the reads are independent, and
+  // a template is up to ~26 files. Order is preserved so the skip list and the
+  // copy summary read the same way every time.
+  const read = await Promise.all(
+    selected.map(async (rel) => {
+      const abs = path.join(templateDir, rel);
+      const size = (await stat(abs)).size;
+      if (size > MAX_STUDIO_FILE_BYTES) {
+        return { rel, oversize: size } as const;
+      }
+      return { rel, content: await readFile(abs, "utf-8") } as const;
+    }),
+  );
   const skipped: string[] = [];
   const entries: TemplateEntry[] = [];
-  for (const rel of selected) {
-    const abs = path.join(templateDir, rel);
-    const size = (await stat(abs)).size;
-    if (size > MAX_STUDIO_FILE_BYTES) {
-      skipped.push(`${rel} (${size} bytes — over the ${MAX_STUDIO_FILE_BYTES} sync cap)`);
-      continue;
+  for (const r of read) {
+    if ("oversize" in r) {
+      skipped.push(`${r.rel} (${r.oversize} bytes — over the ${MAX_STUDIO_FILE_BYTES} sync cap)`);
+    } else {
+      entries.push({ rel: r.rel, content: r.content });
     }
-    entries.push({ rel, content: await readFile(abs, "utf-8") });
   }
   return { entries, skipped };
 }
@@ -125,26 +136,46 @@ async function classifyAgainstWorkspace(
   entries: TemplateEntry[],
   overwrite: boolean,
 ): Promise<{
-  existing: Set<string>;
+  /** Files already in the workspace, and how many of `writes` are NEW — the
+   *  two numbers the caller needs for the file-count cap. Returning them beats
+   *  handing back the working set for the caller to re-derive from. */
+  existingCount: number;
+  newFileCount: number;
   conflicts: string[];
   unchanged: string[];
   writes: TemplateEntry[];
 }> {
   const existing = new Set(await walkWorkspace(dir));
+  // The counterparts are read in parallel; only entries that already exist
+  // have one to read.
+  const current = new Map(
+    await Promise.all(
+      entries
+        .filter((entry) => existing.has(entry.rel))
+        .map(
+          async (entry) =>
+            [
+              entry.rel,
+              await readFile(resolveInside(dir, entry.rel), "utf-8").catch(() => null),
+            ] as const,
+        ),
+    ),
+  );
   const conflicts: string[] = [];
   const unchanged: string[] = [];
   const writes: TemplateEntry[] = [];
+  let newFileCount = 0;
   for (const entry of entries) {
     if (!existing.has(entry.rel)) {
       writes.push(entry);
+      newFileCount++;
       continue;
     }
-    const current = await readFile(resolveInside(dir, entry.rel), "utf-8").catch(() => null);
-    if (current === entry.content) unchanged.push(entry.rel);
+    if (current.get(entry.rel) === entry.content) unchanged.push(entry.rel);
     else if (overwrite) writes.push(entry);
     else conflicts.push(entry.rel);
   }
-  return { existing, conflicts, unchanged, writes };
+  return { existingCount: existing.size, newFileCount, conflicts, unchanged, writes };
 }
 
 /** The tool result for a copy that went through. */
@@ -198,11 +229,8 @@ async function copyTemplate(
   const selected = wanted && wanted.length > 0 ? wanted : available;
 
   const { entries, skipped } = await readTemplateEntries(templateDir, selected);
-  const { existing, conflicts, unchanged, writes } = await classifyAgainstWorkspace(
-    dir,
-    entries,
-    overwrite === true,
-  );
+  const { existingCount, newFileCount, conflicts, unchanged, writes } =
+    await classifyAgainstWorkspace(dir, entries, overwrite === true);
   if (conflicts.length > 0) {
     return {
       result:
@@ -211,11 +239,10 @@ async function copyTemplate(
       written: [],
     };
   }
-  const newFiles = writes.filter((w) => !existing.has(w.rel)).length;
-  if (existing.size + newFiles > MAX_STUDIO_FILES) {
+  if (existingCount + newFileCount > MAX_STUDIO_FILES) {
     return {
       result:
-        `Error: copying would put the workspace at ${existing.size + newFiles} files ` +
+        `Error: copying would put the workspace at ${existingCount + newFileCount} files ` +
         `(max ${MAX_STUDIO_FILES}) — delete files you no longer need first`,
       written: [],
     };

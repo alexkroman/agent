@@ -54,7 +54,6 @@ export type TurnBudget = {
    * turn is guaranteed to end on a message the user can read.
    */
   takeFinalNotice: () => string | null;
-  elapsedMs: () => number;
 };
 
 export function createTurnBudget(
@@ -69,7 +68,6 @@ export function createTurnBudget(
   /** Both notices open with the same clock reading; one spelling of it. */
   const stamp = () => `[${Math.round(elapsed() / 60_000)} minutes into this turn]`;
   return {
-    elapsedMs: elapsed,
     expired: () => closing && elapsed() >= hard,
     takeWrapUpNotice: () => {
       if (warned || elapsed() < soft) return null;

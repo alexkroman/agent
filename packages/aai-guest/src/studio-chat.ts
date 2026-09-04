@@ -88,7 +88,7 @@ async function runTurn(
   try {
     body = await readBody(req, MAX_CHAT_BODY_BYTES);
   } catch (err) {
-    sendJson(res, 400, { error: err instanceof Error ? err.message : "Bad request" });
+    sendJson(res, 400, { error: errorMessage(err) });
     return;
   }
   let messages: UIMessage[];
@@ -97,7 +97,7 @@ async function runTurn(
     if (!Array.isArray(parsed.messages)) throw new Error("messages must be an array");
     messages = parsed.messages as UIMessage[];
   } catch (err) {
-    sendJson(res, 400, { error: err instanceof Error ? err.message : "Malformed body" });
+    sendJson(res, 400, { error: errorMessage(err) });
     return;
   }
 

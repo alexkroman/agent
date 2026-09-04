@@ -5,10 +5,11 @@
  *
  * This file is bundled into the guest, so its dependencies are restricted to
  * what the harness bundle already contains: `@alexkroman1/aai` subpaths, and
- * nothing else. Everything above the workspace caps is therefore ASSERTED
- * against the SDK rather than imported from it (see `limits.test.ts`); the
- * caps themselves are re-exported from `@alexkroman1/aai/workspace-files`,
- * which tsdown bundles in. A dependency on `@alexkroman1/aai-cli` — which the
+ * nothing else. Anything the SDK already defines is therefore RE-EXPORTED from
+ * it rather than mirrored and asserted (see `limits.test.ts`) — the workspace
+ * caps from `@alexkroman1/aai/workspace-files`, the tool deadline from
+ * `@alexkroman1/aai/internal`, both of which tsdown bundles in. What is left
+ * declared here is what the SDK has no counterpart for. A dependency on `@alexkroman1/aai-cli` — which the
  * harness build keeps EXTERNAL — or on any other package would break guest
  * bundling, which is what `limits.test.ts` guards.
  */
@@ -26,10 +27,12 @@
 export const RUN_CODE_TIMEOUT_MS = 5000;
 
 /**
- * Wall-clock cap for a single guest tool execution. Mirrors the SDK's
- * `TOOL_EXECUTION_TIMEOUT_MS` — same asserted-not-imported arrangement.
+ * Wall-clock cap for a single guest tool execution. RE-EXPORTED rather than
+ * mirrored: `@alexkroman1/aai/internal` is a subpath tsdown already bundles
+ * (`harness.ts` imports it), so the caps' argument applies here too and one
+ * definition beats a copy held in step by an assertion.
  */
-export const TOOL_TIMEOUT_MS = 30_000;
+export { TOOL_EXECUTION_TIMEOUT_MS as TOOL_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 
 /**
  * How long the guest harness tolerates having no host WebSocket connected

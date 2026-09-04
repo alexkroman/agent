@@ -73,7 +73,7 @@ function parseResult(value: unknown): LogsResult | null {
   if (!(isRecord(value) && Array.isArray(value.lines))) return null;
   const lines = value.lines.filter(isLogLine);
   return {
-    ...(typeof value.slug === "string" ? { slug: value.slug } : {}),
+    ...omitUndefined({ slug: typeof value.slug === "string" ? value.slug : undefined }),
     running: value.running === true,
     lines,
     dropped: typeof value.dropped === "number" ? value.dropped : 0,

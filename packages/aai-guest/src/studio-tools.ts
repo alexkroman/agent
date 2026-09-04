@@ -26,7 +26,6 @@ import type { Stats } from "node:fs";
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
-import picomatch from "picomatch";
 import { z } from "zod";
 import type { HarnessBundleAccess } from "./harness-types.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
@@ -246,9 +245,9 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
       execute: async ({ pattern }) => {
         let match: (p: string) => boolean;
         try {
-          match = picomatch(pattern, { dot: true });
+          match = globMatcher(pattern);
         } catch (err) {
-          return `Error: invalid glob: ${errorMessage(err)}`;
+          return `Error: ${errorMessage(err)}`;
         }
         // Not `.filter(match)`: filter's index argument would land in
         // picomatch's `returnObject` parameter and match everything.
@@ -360,7 +359,11 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
         try {
           // Read only what the glob selects — a data or generated file the
           // filter excludes must not cost I/O and memory on every search.
-          const filter = opts.glob ? globMatcher(opts.glob) : null;
+          // `glob` is consumed HERE and not forwarded: `grepWorkspace` would
+          // otherwise compile the identical matcher a second time and re-test
+          // every path that has already passed this filter.
+          const { glob, ...searchOpts } = opts;
+          const filter = glob ? globMatcher(glob) : null;
           const paths = (await walkWorkspace(dir)).filter((p) => !filter || filter(p));
           const files: Record<string, string> = {};
           await Promise.all(
@@ -372,7 +375,7 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
               files[rel] = await readFile(abs, "utf-8");
             }),
           );
-          return grepWorkspace(files, pattern, opts);
+          return grepWorkspace(files, pattern, searchOpts);
         } catch (err) {
           if (err instanceof StudioGrepError) return `Error: ${err.message}`;
           throw err;

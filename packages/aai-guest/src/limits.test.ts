@@ -5,15 +5,10 @@
 // test is the other half — what the file is allowed to depend on at all.
 
 import { readFile } from "node:fs/promises";
-import { TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import * as limits from "./limits.ts";
 
 describe("guest limits mirror the SDK constants", () => {
-  test("tool execution timeout", () => {
-    expect(limits.TOOL_TIMEOUT_MS).toBe(TOOL_EXECUTION_TIMEOUT_MS);
-  });
-
   test("no storage-disabled message, because there is no ctx.db", () => {
     // This pinned the guest's import-free DUPLICATE of the SDK's message against
     // the original, so dev and prod threw identically when tool code touched
@@ -53,7 +48,10 @@ describe("guest limits mirror the SDK constants", () => {
     const specifiers = [...source.matchAll(/\bfrom\s*["']([^"']+)["']/g)].map(
       (m) => m[1] as string,
     );
-    expect(specifiers).toEqual(["@alexkroman1/aai/workspace-files"]);
+    expect(specifiers.toSorted((a, b) => a.localeCompare(b))).toEqual([
+      "@alexkroman1/aai/internal",
+      "@alexkroman1/aai/workspace-files",
+    ]);
     // Belt and braces on the regex itself: a pattern that stopped matching
     // would report an empty list, which `toEqual` above would call a failure
     // only while the one real dependency exists.

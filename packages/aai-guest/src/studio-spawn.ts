@@ -13,7 +13,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 
 /** Output tail kept per stream from a CLI child (build / deploy envelopes). */
 export const CLI_OUTPUT_CAP = 32_000;
@@ -134,11 +134,7 @@ export function parseLastJsonLine<T>(stdout: string): T | null {
     .filter((l) => l.trim().length > 0)
     .at(-1);
   if (!line) return null;
-  try {
-    return JSON.parse(line) as T;
-  } catch {
-    return null;
-  }
+  return (safeJsonParse(line) as T | undefined) ?? null;
 }
 
 /**
@@ -255,6 +251,30 @@ export const WORKSPACE_CHILD_ENV_ALLOWLIST: readonly string[] = [
 ];
 
 /**
+ * PATH resolves whatever the CLI shells out to. The temp names are `os.tmpdir()`'s
+ * own precedence list, forwarded together so the child cannot resolve a different
+ * scratch directory than the guest around it.
+ */
+const CLI_CHILD_ENV_ALLOWLIST: readonly string[] = ["PATH", "TMPDIR", "TMP", "TEMP"];
+
+/**
+ * Copy the named variables out of `process.env` — the one spelling of an
+ * allow-list, shared by both child-env policies below.
+ *
+ * An absent variable stays ABSENT rather than becoming `undefined`: an own
+ * property whose value is `undefined` is coerced to the STRING "undefined" by
+ * `spawn`, which is how a child ends up with `TMPDIR=undefined`.
+ */
+function pickEnv(names: readonly string[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const name of names) {
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
+  }
+  return env;
+}
+
+/**
  * The ambient env for children that run workspace-controlled code (`bash`, npm,
  * the workspace test run) — an ALLOW-LIST, so the control-channel bearer and
  * every future boot key are out by default rather than by remembering.
@@ -268,15 +288,7 @@ export const WORKSPACE_CHILD_ENV_ALLOWLIST: readonly string[] = [
  * workspace code unless somebody remembers to subtract it.
  */
 export function workspaceChildEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const name of WORKSPACE_CHILD_ENV_ALLOWLIST) {
-    const value = process.env[name];
-    // An absent variable stays ABSENT rather than becoming `undefined`: an own
-    // property whose value is `undefined` is coerced to the STRING "undefined"
-    // by `spawn`, which is how a child ends up with `TMPDIR=undefined`.
-    if (value !== undefined) env[name] = value;
-  }
-  return env;
+  return pickEnv(WORKSPACE_CHILD_ENV_ALLOWLIST);
 }
 
 /**
@@ -318,15 +330,5 @@ export function workspaceChildEnv(): NodeJS.ProcessEnv {
  * argument they answer.
  */
 export function cliChildEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  // PATH resolves whatever the CLI shells out to. The temp names are `os.tmpdir()`'s
-  // own precedence list, forwarded together so the child cannot resolve a different
-  // scratch directory than the guest around it.
-  for (const name of ["PATH", "TMPDIR", "TMP", "TEMP"]) {
-    const value = process.env[name];
-    // ABSENT stays absent: an own property whose value is `undefined` is coerced to
-    // the STRING "undefined" by `spawn` — see `workspaceChildEnv`.
-    if (value !== undefined) env[name] = value;
-  }
-  return env;
+  return pickEnv(CLI_CHILD_ENV_ALLOWLIST);
 }
