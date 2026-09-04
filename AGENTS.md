@@ -498,36 +498,47 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   — enforces **structural** conventions: the shapes that are wrong only in
   relation to their siblings, which is why no per-file tool can see them.
   Biome lints statements and tsc type-checks a program; neither can say "every
-  module in this directory must look like the others." The seventeen
-  conventions cover the four things this repo restates by hand — the
+  module in this directory must look like the others." Their count is not
+  written here — a hand-kept one went stale twice. They cover the four things
+  this repo restates by hand — the
   per-package file set (`package.json`, `tsconfig.json`, `vitest.config.ts`,
   `CLAUDE.md`, plus README/`tsconfig.build.json`/`tsdown.config.ts` on the
   four published ones) and each `vitest.config.ts` importing `sharedConfig`;
   `*-barrel.ts` files being pure re-export surfaces; the **dependency-graph
   boundaries** under "Dependency flow" (aai imports no sibling, aai-runtime
   imports only aai, the CLI imports neither server nor guest, the guest imports
-  no server code, the SERVER imports no guest source, and neither browser bundle
-  — aai-ui, the studio client — imports platform or runtime code); and the
-  repeated-by-construction shapes — every
+  no server code, the SERVER imports no guest source, neither browser bundle
+  — aai-ui, the studio client — imports platform or runtime code, the studio
+  server and the evals keep one legitimate edge each, `sdk/` reaches no `host/`
+  module, and a TEMPLATE imports no internal subpath and no private package —
+  shipped product, so an import that resolves here is absent from a user's
+  install and `check:template-types` compiles it clean);
+  and the repeated-by-construction shapes — every
   STT/TTS/LLM/S2S provider module's `*_KIND` / `*_API_KEY_ENV` / `*Options` /
-  `*Provider` / factory / `resolve*Settings` set, every CHANNEL module's
-  `*_CHANNEL_KIND` / `*ChannelOptions` / factory set (no `*_API_KEY_ENV`: a
-  channel's credential is its destination and is passed in, never read from the
-  agent env), and every template's `agent.ts` + `client.tsx`.
+  factory / `resolve*Settings` set, checked by SIGNATURE (its own Options in,
+  the stage type out) and for importing no vendor SDK,
+  every CHANNEL module's `*_CHANNEL_KIND` / `*ChannelOptions` / factory set (no
+  `*_API_KEY_ENV`: a channel's credential is its destination and is passed in,
+  never read from the agent env), each store factory returning the interface it
+  implements, and every template's `agent.ts` + `agent.test.ts` + `client.tsx` +
+  `tools/` default exports.
   `pnpm check:konsistent-config` (`konsistent validate`) checks the config
   against its schema without touching the tree.
 
-  It used to be fourteen: `template-tools` checked an export NAME that no longer
-  exists. A tool is now DISCOVERED — a file in `tools/` is the tool, named by its
-  own filename, registered by no one — so there is nothing per-file left to
-  assert. See "A `tools/` file IS the tool" in `packages/aai-templates/CLAUDE.md`.
+  `template-tools` was once retired on the ground that a DISCOVERED tool leaves
+  nothing per-file to assert. The DEFAULT EXPORT is what discovery reads, so
+  that is what it asserts now. See "A `tools/` file IS the tool" in
+  `packages/aai-templates/CLAUDE.md`.
 
   Two things to know before editing `konsistent.json`. **A convention that
   matches nothing passes** — a typo'd `paths` glob checks zero files and prints
   the same "No violations found" as a healthy run, with no error anywhere, so
   `packages/aai-templates/src/konsistent-config.test.ts` asserts every pattern's
   literal prefix exists (plus that each convention is named, described, and
-  declares at least one predicate). And **the case maps compose**:
+  declares at least one predicate). **A deny list also goes stale by SILENCE**,
+  there being no allow-list form, so that test derives the package set from the
+  manifests and asserts the boundary matrix is TOTAL. And **the case maps
+  compose**:
   `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
   declaring `openai: OpenAI` for the type names also makes the factory
   `openAILlm`. That is the wanted derivation; the identity entries that used to
@@ -535,12 +546,8 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   lowercase spellings they kept alive. `elevenlabs: elevenLabs` stays, being a
   real override rather than an identity.
 
-  The version is pinned **exactly** (`1.0.0-beta.4`, the registry's `latest`)
-  rather than caret-ranged: a `^` range over a prerelease drifts onto
-  `1.0.0-beta.6`, which renames the predicates (`export` → `exportValues`,
-  `import` → `importValues`, `importFrom` → `importValuesFrom`). Read the
-  predicate catalog from `node_modules/konsistent/docs/`, not the GitHub README,
-  until that pin moves; the two disagree.
+  The exact version pin, and the predicate-catalog trap that comes with it, are
+  in `packages/aai-templates/CLAUDE.md`.
 
   [konsistent]: https://github.com/vercel-labs/konsistent
 

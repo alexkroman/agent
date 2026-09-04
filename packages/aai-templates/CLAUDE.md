@@ -1297,6 +1297,15 @@ server declines. `agent-default-export` used to require an `agent` import for
 that reason and no longer can, the workflow-app templates calling `workflowApp`
 instead.
 
+**konsistent's version is pinned EXACTLY (`1.0.0-beta.4`, the registry's
+`latest`) rather than caret-ranged**, and this is where that note lives because
+the root guide is at its character cap. A `^` range over a prerelease drifts
+onto `1.0.0-beta.6`, which renames the predicates (`export` → `exportValues`,
+`import` → `importValues`, `importFrom` → `importValuesFrom`) — so a floating
+range turns every convention in `konsistent.json` into a schema error at
+install time. Read the predicate catalog from `node_modules/konsistent/docs/`,
+not the GitHub README, until that pin moves; the two disagree.
+
 **A `tools/` file IS the tool: it default-exports it, nothing imports it, and
 `agent()` takes no `tools` field at all.** Discovery happens where
 the bundle is assembled (`aai-cli/worker-bundler.ts` enumerates `tools/*.ts` and

@@ -533,7 +533,7 @@
     },
     {
       "name": "agent-templates",
-      "description": "Every template is a complete agent project a user can scaffold: agent.ts is its entry, client.tsx (when present) is the browser half, and each tools/ file is one tool.",
+      "description": "Every template is a complete agent project a user can scaffold: agent.ts is its entry, client.tsx (when present) is the browser half, and each tools/ file is one tool. The SPEC is required too, and in the UNIT tier specifically: four templates shipped an agent.eval.test.ts and nothing else, so their only coverage was a tier that reports rather than gates \u2014 and `aai build` runs a project's tests before it bundles, so agent.test.ts is also what a user's first customization is checked against. The tools/ rule is the DEFAULT EXPORT, which is what discovery reads: a file there IS the tool, named by its own filename and registered by no one, so an export under any other name is a tool that silently does not exist. It is also why nothing in tools/ may be a re-export \u2014 konsistent cannot see `default` through `export { x as default } from`, and biome's noExportedImports prescribes exactly that form, so the three files this rule caught were rewritten to default-export the RESULT of a factory call, the shape the four delegation files beside them already had. Do not settle a future conflict here by excluding a file: an exclusion in this convention is a tool whose discoverability nothing checks.",
       "paths": "packages/aai-templates/templates/{templateName}",
       "must": [
         {
@@ -541,7 +541,8 @@
           "must": {
             "haveType": "directory",
             "haveFiles": [
-              "agent.ts"
+              "agent.ts",
+              "agent.test.ts"
             ]
           }
         },
@@ -549,6 +550,17 @@
           "name": "agent-default-export",
           "for": {
             "files": "agent.ts"
+          },
+          "must": {
+            "export": [
+              "default"
+            ]
+          }
+        },
+        {
+          "name": "template-tool-default-export",
+          "for": {
+            "files": "tools/*.ts"
           },
           "must": {
             "export": [
