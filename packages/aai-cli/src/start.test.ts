@@ -8,18 +8,24 @@
  * subprocess and asserts it serves `/health`, which is `createProjectServer`
  * end to end.
  *
- * What is here is `loadBuiltAgent`, and it is worth its own test because its
- * FAILURE is the one a user meets: `npm start` before a build, where the
- * difference between a useful message and a stack trace about a missing module
- * is the whole of the experience.
+ * What is here is `loadBuiltAgent` — worth its own test because its FAILURE is
+ * the one a user meets, `npm start` before a build being the ordinary state of
+ * a fresh clone — and `createProjectServer`, which BUILDS a server and binds
+ * nothing, so it is reachable without a port. That is the seam a serverless
+ * host is written against, and the reason it can be tested here at all.
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { withTempDir } from "./_test-utils.ts";
-import { CLIENT_ARTIFACT_REL, DEFAULT_START_PORT, loadBuiltAgent } from "./start.ts";
+import {
+  CLIENT_ARTIFACT_REL,
+  createProjectServer,
+  DEFAULT_START_PORT,
+  loadBuiltAgent,
+} from "./start.ts";
 
 describe("loadBuiltAgent", () => {
   test("names the artifact and the command that produces it", async () => {
@@ -68,5 +74,72 @@ describe("the start defaults", () => {
     // reads when it configures nothing.
     expect(DEFAULT_START_PORT).toBe(3000);
     expect(CLIENT_ARTIFACT_REL).toBe(path.join(".aai", "client"));
+  });
+});
+
+/** A built project, ready for `createProjectServer`. */
+async function builtProject(dir: string, withClient: boolean): Promise<void> {
+  await fs.mkdir(path.join(dir, ".aai"), { recursive: true });
+  await fs.writeFile(
+    path.join(dir, WORKER_ARTIFACT_REL),
+    `export default { name: "Served Agent", systemPrompt: "hi", greeting: "hey", maxSteps: 2, tools: {} };\n`,
+  );
+  // `.env.example` is the DECLARATION of what becomes `ctx.env` — see
+  // `DEPLOY_ENV_FILES`. Without it the agent env is empty and provider
+  // resolution fails, which is the packaging bug the vercel emit also hit.
+  await fs.writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
+  if (!withClient) return;
+  await fs.mkdir(path.join(dir, CLIENT_ARTIFACT_REL), { recursive: true });
+  await fs.writeFile(path.join(dir, CLIENT_ARTIFACT_REL, "index.html"), "<!doctype html>built");
+}
+
+describe("createProjectServer", () => {
+  test("builds a server and binds NOTHING", async () => {
+    await withTempDir(async (dir) => {
+      await builtProject(dir, true);
+      vi.stubEnv("ASSEMBLYAI_API_KEY", "unit-test-key");
+      const server = await createProjectServer({ cwd: dir });
+      onTestFinished(async () => {
+        await server.close();
+      });
+
+      // The whole point of the seam: a host takes this and calls `listen`
+      // itself, so nothing here may be listening and `port` must ask the
+      // server rather than report a value `listen()` latched.
+      expect(server.node.listening).toBe(false);
+      expect(server.port).toBeUndefined();
+    });
+  });
+
+  test("an UNBUILT client.tsx still boots, taking the warn path", async () => {
+    await withTempDir(async (dir) => {
+      await builtProject(dir, false);
+      // A `client.tsx` with no build beside it is worth saying out loud — the
+      // server would otherwise serve the default UI and look like it had
+      // ignored the file. What is asserted is that it still BOOTS: the warning
+      // is advice, not a refusal.
+      await fs.writeFile(path.join(dir, "client.tsx"), "export default null;\n");
+      vi.stubEnv("ASSEMBLYAI_API_KEY", "unit-test-key");
+      const server = await createProjectServer({ cwd: dir });
+      onTestFinished(async () => {
+        await server.close();
+      });
+      expect(server.node.listening).toBe(false);
+    });
+  });
+
+  test("falls back to the SDK's prebuilt UI when the project has none", async () => {
+    await withTempDir(async (dir) => {
+      await builtProject(dir, false);
+      vi.stubEnv("ASSEMBLYAI_API_KEY", "unit-test-key");
+      // The branch that matters is that it RESOLVES rather than throwing on a
+      // project with no `client.tsx` build — the default client ships inside
+      // `@alexkroman1/aai-ui`, so a missing install is a boot failure.
+      const server = await createProjectServer({ cwd: dir });
+      onTestFinished(async () => {
+        await server.close();
+      });
+      expect(server.node).toBeDefined();
+    });
   });
 });
