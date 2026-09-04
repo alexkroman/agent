@@ -1,5 +1,30 @@
 # aai-studio-server
 
+## 0.11.11
+
+### Patch Changes
+
+- 29fbf01: Studio client: read the project/chat event streams with the SDK's published `readEventStream` instead of a third private copy of the SSE parser, and narrow each pushed frame with a real guard instead of casting a `JSON.parse`.
+- 8dc4cbb: Ship the phone-route declaration: the guest harness forwards the agent's `telephony` allow-list to the server it builds, so a deployed agent serves `WS /phone` only for the carriers it names, and the studio's Phone card says so beside the webhook URLs it hands out.
+- 29fbf01: aai-ui: publish the three behaviour rules the studio front-end had duplicated. `useFlash` and `useCopy` replace three hand-rolled flashes — including the one inside the URL chips, which swallowed a refused clipboard write so the button did nothing visible; a refusal now reports `Failed`. `fieldKindFor` is `<WorkflowFields>`'s own control-selection rule, extracted out of `SchemaField` so there is one decision and published so a reader documenting the form-to-JSON correspondence asks it rather than mirroring the switch. The studio's chat transcript and Logs pane also drop `use-stick-to-bottom` for `<AutoScroll>`, this package's one owner of that effect.
+- Updated dependencies [29fbf01]
+- Updated dependencies [77b86d9]
+- Updated dependencies [b92507b]
+- Updated dependencies [8dc4cbb]
+- Updated dependencies [29fbf01]
+- Updated dependencies [f9c1a98]
+- Updated dependencies [77b86d9]
+- Updated dependencies [29fbf01]
+- Updated dependencies [29fbf01]
+- Updated dependencies [8dc4cbb]
+- Updated dependencies [77b86d9]
+- Updated dependencies [29fbf01]
+  - aai-studio-client@0.6.24
+  - aai-server@5.3.1
+  - @alexkroman1/aai-runtime@15.0.0
+  - @alexkroman1/aai@15.0.0
+  - @alexkroman1/aai-ui@15.0.0
+
 ## 0.11.10
 
 ### Patch Changes

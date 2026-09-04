@@ -1,5 +1,27 @@
 # @alexkroman1/aai-server
 
+## 5.3.1
+
+### Patch Changes
+
+- 77b86d9: Deploy the guest change that comes with `aai start`: `@alexkroman1/aai-cli` joins WORKSPACE_DEPENDENCIES, the platform-owned set.
+  
+  A scaffolded project's `npm start` runs `aai start` now, so the CLI is a runtime dependency rather than a devDependency. It is already baked into the guest image with the rest of the toolchain, so nothing about the guest changes — what changes is that `update_dependencies` must refuse to bump it when a workspace names it by hand, which is what that set is for. The carrier is named here because `aai-guest` reaches production only through the image the server pins at deploy time.
+- b92507b: Declare MemorySandboxDirectory and MemoryPreviewQueue as named interfaces so each store factory returns the contract it implements, which is what lets konsistent check both arms of every platform store. Type declarations only — no call site, test seam or runtime path changed.
+- 8dc4cbb: Ship the phone-route declaration: the guest harness forwards the agent's `telephony` allow-list to the server it builds, so a deployed agent serves `WS /phone` only for the carriers it names, and the studio's Phone card says so beside the webhook URLs it hands out.
+- Updated dependencies [29fbf01]
+- Updated dependencies [f9c1a98]
+- Updated dependencies [77b86d9]
+- Updated dependencies [29fbf01]
+- Updated dependencies [29fbf01]
+- Updated dependencies [8dc4cbb]
+- Updated dependencies [77b86d9]
+- Updated dependencies [29fbf01]
+  - @alexkroman1/aai-runtime@15.0.0
+  - @alexkroman1/aai@15.0.0
+  - @alexkroman1/aai-ui@15.0.0
+  - aai-guest@0.6.1
+
 ## 5.3.0
 
 ### Minor Changes
