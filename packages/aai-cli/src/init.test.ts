@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { patchPackageJsonForWorkspace, runInit } from "./_init.ts";
 import { silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
-import { executeInit, resolvePnpmCommand } from "./init.ts";
+import { executeInit, promptTemplate, resolvePnpmCommand } from "./init.ts";
 
 /**
  * Create a fake templates root (real scaffold files + test extras) and point
@@ -39,12 +39,22 @@ vi.mock("./studio.ts", () => ({ executePublish }));
  * affordance under test is replaced.
  */
 const spinnerCalls = vi.hoisted(() => ({ started: [] as string[], stopped: [] as string[] }));
+/**
+ * The template picker, recorded. Its default answers with `initialValue` — a
+ * user pressing Enter — so a spec asserting the picker was NOT reached
+ * (`--yes`, JSON mode) fails on the call count rather than on a stray
+ * `undefined` three functions later.
+ */
+const selectMock = vi.hoisted(() =>
+  vi.fn(({ initialValue }: { initialValue?: unknown }) => Promise.resolve(initialValue)),
+);
 vi.mock("@clack/prompts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@clack/prompts")>()),
   spinner: () => ({
     start: (msg?: string) => spinnerCalls.started.push(msg ?? ""),
     stop: (msg?: string) => spinnerCalls.stopped.push(msg ?? ""),
   }),
+  select: selectMock,
 }));
 
 // executeInit shells out (corepack/safe-chain/pnpm) only when the scaffolded
@@ -134,6 +144,10 @@ describe("executeInit", () => {
   beforeEach(() => {
     executePublish.mockReset();
     execaMock.mockReset();
+    // `restoreMocks` restores SPIES; a factory `vi.fn()` was never one, so its
+    // calls would accumulate across this file and turn every "was not called"
+    // assertion below into an assertion about test order.
+    selectMock.mockClear();
   });
 
   test("installs deps then publishes when the template declares dependencies", async () => {
@@ -265,6 +279,64 @@ describe("executeInit", () => {
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
         expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
         expect(executePublish).not.toHaveBeenCalled();
+      }),
+    );
+  });
+
+  test("picks a template through the selector when --template is omitted", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        await addDepsTemplate(dir);
+        const target = path.join(dir, "picked");
+        // The author scrolls off the pre-selected default and chooses `deps`.
+        selectMock.mockResolvedValueOnce("deps");
+
+        const result = await executeInit({ dir: target, skipDeploy: true });
+
+        expect(selectMock).toHaveBeenCalledTimes(1);
+        if (result.ok) expect(result.data.template).toBe("deps");
+        // The template's own file, not the scaffold's — the pick reached the copy.
+        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
+        expect(await fileExists(path.join(target, "readme.txt"))).toBe(false);
+      }),
+    );
+  });
+
+  test("--yes takes the default template without prompting", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        // A SECOND template, so the assertion below is about the `--yes` guard
+        // rather than about promptTemplate's "one choice is not a choice" exit.
+        await addDepsTemplate(dir);
+        const target = path.join(dir, "yes-mode");
+
+        const result = await executeInit({ dir: target, yes: true, skipDeploy: true });
+
+        expect(selectMock).not.toHaveBeenCalled();
+        if (result.ok) expect(result.data.template).toBe("simple");
+      }),
+    );
+  });
+
+  /**
+   * JSON mode is AUTO-DETECTED on a pipe and reaches here as `silent`, so a
+   * prompt on this path would hang a scripted `aai init | jq` on a terminal
+   * read nobody is watching.
+   */
+  test("silent mode takes the default template without prompting", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        // Two templates, for the same reason as the spec above.
+        await addDepsTemplate(dir);
+        const target = path.join(dir, "silent-mode");
+
+        const result = await executeInit({ dir: target, skipDeploy: true }, { silent: true });
+
+        expect(selectMock).not.toHaveBeenCalled();
+        if (result.ok) expect(result.data.template).toBe("simple");
       }),
     );
   });
@@ -498,5 +570,48 @@ describe("patchPackageJsonForWorkspace", () => {
         expect(range).toContain(`/${name.slice("@alexkroman1/".length)}`);
       }
     });
+  });
+});
+
+describe("promptTemplate", () => {
+  beforeEach(() => {
+    selectMock.mockClear();
+  });
+
+  test("offers every shipped template, default first and hinted", async () => {
+    const picked = await promptTemplate(() =>
+      Promise.resolve(["briefing-desk", "pizza-ordering", "simple"]),
+    );
+
+    expect(picked).toBe("simple");
+    const opts = selectMock.mock.calls[0]?.[0] as {
+      initialValue: string;
+      options: { value: string; hint?: string }[];
+    };
+    expect(opts.initialValue).toBe("simple");
+    // Hoisted to the top so the pre-selected entry is the one under the cursor,
+    // rather than somewhere down a two-dozen-entry scroll.
+    expect(opts.options.map((o) => o.value)).toEqual(["simple", "briefing-desk", "pizza-ordering"]);
+    expect(opts.options[0]?.hint).toBeTruthy();
+    expect(opts.options[1]?.hint).toBeUndefined();
+  });
+
+  test("keeps the listed order when the default is not among them", async () => {
+    await promptTemplate(() => Promise.resolve(["alpha", "beta"]));
+
+    const opts = selectMock.mock.calls[0]?.[0] as {
+      initialValue: string;
+      options: { value: string }[];
+    };
+    expect(opts.initialValue).toBe("alpha");
+    expect(opts.options.map((o) => o.value)).toEqual(["alpha", "beta"]);
+  });
+
+  test("does not prompt when there is nothing to choose between", async () => {
+    expect(await promptTemplate(() => Promise.resolve(["only-one"]))).toBe("only-one");
+    // An empty list is a broken install; the error belongs to the copy step,
+    // which names the templates it did find.
+    expect(await promptTemplate(() => Promise.resolve([]))).toBe("simple");
+    expect(selectMock).not.toHaveBeenCalled();
   });
 });

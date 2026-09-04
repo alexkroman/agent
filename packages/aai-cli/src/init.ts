@@ -7,6 +7,7 @@ import * as p from "@clack/prompts";
 import { execa } from "execa";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
+import { listTemplates } from "./_templates.ts";
 import { log, unwrapCancel } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, fileExists, readJson, resolveCwd } from "./_utils.ts";
 
@@ -69,6 +70,58 @@ async function promptProjectName(yes?: boolean): Promise<string> {
     "Setup cancelled",
   );
   return result || DEFAULT_PROJECT_NAME;
+}
+
+/**
+ * The template a non-interactive `init` gets, and the entry the selector opens
+ * on — so an author who just presses Enter lands where they used to.
+ */
+const DEFAULT_TEMPLATE = "simple";
+
+/**
+ * Ask which template to scaffold, listing what this CLI actually ships.
+ *
+ * The options are derived from {@link listTemplates} rather than a roster kept
+ * here: that function already backs `aai templates` AND the unknown-template
+ * error, so a template added to the package shows up in the picker with no
+ * second list to update. {@link DEFAULT_TEMPLATE} is hoisted to the top and
+ * pre-selected, which is what keeps a bare `aai init` a single Enter away from
+ * the project it produced before there was a picker.
+ *
+ * Callers must not reach here when there is nobody to answer — `--yes` and
+ * JSON mode (auto-detected on a pipe) resolve the default without prompting.
+ */
+export async function promptTemplate(
+  list: () => Promise<string[]> = listTemplates,
+): Promise<string> {
+  const [first, ...rest] = await list();
+  // An empty list means a broken install, whose error belongs to
+  // downloadAndMergeTemplate; one template is not a choice. Neither is a prompt.
+  if (first === undefined) return DEFAULT_TEMPLATE;
+  if (rest.length === 0) return first;
+  const names = [first, ...rest];
+  const hasDefault = names.includes(DEFAULT_TEMPLATE);
+  const ordered = hasDefault
+    ? [DEFAULT_TEMPLATE, ...names.filter((name) => name !== DEFAULT_TEMPLATE)]
+    : names;
+  return unwrapCancel(
+    await p.select({
+      message: "Which template?",
+      // `maxItems` scrolls rather than printing all of them: the list is over
+      // two dozen entries and a full dump pushes the intro off the screen.
+      maxItems: 12,
+      initialValue: hasDefault ? DEFAULT_TEMPLATE : first,
+      // Two literals rather than one with an optional `hint`: `Option.hint` is
+      // optional under `exactOptionalPropertyTypes`, so a present-and-undefined
+      // field is not assignable to it.
+      options: ordered.map((name) =>
+        name === DEFAULT_TEMPLATE
+          ? { value: name, hint: "the default starting point" }
+          : { value: name },
+      ),
+    }),
+    "Setup cancelled",
+  );
 }
 
 /** Best-effort corepack enable so pnpm is available (scaffold declares packageManager: pnpm). */
@@ -241,7 +294,11 @@ export async function executeInit(
     );
   }
 
-  const template = opts.template ?? "simple";
+  // Prompted only when there is a human to answer: `--yes` and JSON mode both
+  // mean "take the default" (JSON mode is auto-detected on a pipe, and passes
+  // `yes` through from the CLI), and `silent` is a caller saying the same.
+  const template =
+    opts.template ?? (opts.yes || suppressUi ? DEFAULT_TEMPLATE : await promptTemplate());
   const { warn, warnings } = collectWarnings();
 
   await scaffoldProject(dir, cwd, template, suppressUi);
