@@ -42,6 +42,29 @@ function consume(
   });
 }
 
+/**
+ * The empty message, as a value rather than a literal — Biome's
+ * `useErrorMessage` refuses an empty message literal, and it is right to. Naming
+ * it beats spending one of the ratcheted lint suppressions on the value these
+ * specs are about.
+ */
+const NO_MESSAGE = "";
+
+/**
+ * A model whose `doStream` REJECTS — a provider refusing the request outright,
+ * before a single stream part exists. No script can express that, so the fake
+ * is patched.
+ *
+ * ONE seam, for the reason `_fake-llm.ts`'s `asFakeLanguageModel` is one: the
+ * escape-hatch ratchet counts occurrences, and three identical casts in three
+ * specs is a missing helper.
+ */
+function refusingModel(error: unknown): ReturnType<typeof createFakeLanguageModel> {
+  const llm = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
+  (llm as unknown as { doStream: () => Promise<never> }).doStream = () => Promise.reject(error);
+  return llm;
+}
+
 describe("LLM stream error reporting", () => {
   function apiError(): APICallError {
     return new APICallError({
@@ -70,7 +93,9 @@ describe("LLM stream error reporting", () => {
     });
     handler.handle({ type: "error", error: apiError() });
     expect(log.error).toHaveBeenCalledWith("LLM stream error", {
-      message: "Internal Server Error",
+      // The logged message is the sentence the CALLER saw, verbatim — a support
+      // report quotes the banner, so the log has to be findable by it.
+      message: "Internal Server Error (HTTP 500 from llm-gateway.assemblyai.com)",
       sid: "sid-1",
       statusCode: 500,
       url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
@@ -147,14 +172,168 @@ describe("LLM stream error reporting", () => {
       sid: "sid-1",
     });
     handler.handle({ type: "error", error: apiError() });
-    expect(emitError).toHaveBeenCalledWith("llm", "Internal Server Error", { fatal: false });
+    expect(emitError).toHaveBeenCalledWith(
+      "llm",
+      "Internal Server Error (HTTP 500 from llm-gateway.assemblyai.com)",
+      { fatal: false },
+    );
+  });
+
+  /**
+   * The error a rejected key really produces, built the way the AI SDK builds
+   * it: `createJsonErrorResponseHandler` copies `response.statusText` into
+   * `message`, and a reason phrase is optional in HTTP/1.1 and absent from
+   * HTTP/2 — so `message` is EMPTY and everything worth reading is in the other
+   * fields. `sdk/utils.test.ts` covers the same shape structurally; these two
+   * cases are what keep that stand-in honest.
+   */
+  function rejectedKeyError(): APICallError {
+    return new APICallError({
+      message: NO_MESSAGE,
+      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
+      requestBodyValues: { model: "qwen3-next-80b-a3b" },
+      statusCode: 401,
+      responseHeaders: { "x-request-id": "req_9" },
+      responseBody: '{"error":{"message":"Invalid API key","type":"invalid_request_error"}}',
+    });
+  }
+
+  test("a rejected API key names the cause instead of reporting nothing", () => {
+    // The regression: this reached the browser as
+    // {"type":"error.reported","code":"llm","message":"","fatal":false} — a
+    // banner that says an error happened and refuses to say what, for the
+    // failure a new project is most likely to hit first.
+    const emitError = vi.fn();
+    const handler = createStreamPartHandler({
+      onDelta: () => undefined,
+      sendTtsText: () => undefined,
+      onToolCall: () => undefined,
+      deadAirCoverMs: 0,
+      emitError,
+      log: makeLogger(),
+      sid: "sid-401",
+    });
+    handler.handle({ type: "error", error: rejectedKeyError() });
+    expect(emitError).toHaveBeenCalledWith(
+      "llm",
+      "The LLM provider rejected this agent's API key: Invalid API key (HTTP 401 from llm-gateway.assemblyai.com). Check the API key in the agent's environment.",
+      { fatal: false },
+    );
+  });
+
+  test("a thrown rejection reports the same sentence as the stream part", async () => {
+    // A provider failure reaches the host two ways — an `error` part and a
+    // throw — and a gateway can produce both for one turn. They must not
+    // describe it differently.
+    const emitError = vi.fn();
+    const llm = refusingModel(rejectedKeyError());
+    const result = await consume({ llm, emitError, sid: "sid-402" });
+    expect(result.failed).toBe(true);
+    expect(emitError).toHaveBeenCalledWith(
+      "llm",
+      "The LLM provider rejected this agent's API key: Invalid API key (HTTP 401 from llm-gateway.assemblyai.com). Check the API key in the agent's environment.",
+      { fatal: false },
+    );
+  });
+
+  test("exhausted retries report the LAST attempt's cause, not the retry count", () => {
+    // `RetryError.message` ("Failed after 3 attempts…") states something, so
+    // nothing further down gets read unless the wrapper is unwrapped — which is
+    // what hid the 401 behind a sentence about retrying.
+    const emitError = vi.fn();
+    const handler = createStreamPartHandler({
+      onDelta: () => undefined,
+      sendTtsText: () => undefined,
+      onToolCall: () => undefined,
+      deadAirCoverMs: 0,
+      emitError,
+      log: makeLogger(),
+      sid: "sid-403",
+    });
+    const last = rejectedKeyError();
+    handler.handle({
+      type: "error",
+      error: new RetryError({
+        message: "Failed after 3 attempts. Last error: ",
+        reason: "maxRetriesExceeded",
+        errors: [last, last, last],
+      }),
+    });
+    expect(emitError).toHaveBeenCalledWith(
+      "llm",
+      expect.stringContaining("Invalid API key (HTTP 401 from llm-gateway.assemblyai.com)"),
+      { fatal: false },
+    );
+  });
+
+  test("one refused call is reported ONCE, by its cause", async () => {
+    // A refused provider call emits an `error` part AND then throws: the AI
+    // SDK's `steps` promise rejects with "No output generated. Check the stream
+    // for errors.". Reported second, that vaguer sentence is what a client's
+    // banner is left showing — it painted over the one naming the 401.
+    const emitError = vi.fn();
+    const result = await consume({
+      llm: createFakeLanguageModel({ script: [{ type: "error", error: rejectedKeyError() }] }),
+      emitError,
+      sid: "sid-once",
+    });
+    expect(result.failed).toBe(true);
+    expect(emitError).toHaveBeenCalledTimes(1);
+    expect(emitError.mock.calls[0]?.[1]).toContain("rejected this agent's API key");
+    expect(emitError.mock.calls[0]?.[1]).not.toContain("No output generated");
+  });
+
+  test("a throw with no error part before it is still reported", () => {
+    // The other side of the de-duplication above: nothing named the cause yet,
+    // so the catch is the only reporter there is.
+    const emitError = vi.fn();
+    const llm = refusingModel(rejectedKeyError());
+    return consume({ llm, emitError, sid: "sid-throw-only" }).then(() => {
+      expect(emitError).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test("no LLM failure is ever reported with an empty message", () => {
+    // The property the browser banner depends on: `SessionError.message` is
+    // rendered verbatim, so "" is a UI that says an error occurred and refuses
+    // to say what. Every value here is one a provider client really throws.
+    const thrown: unknown[] = [
+      rejectedKeyError(),
+      apiError(),
+      // A body-less 502 from something in front of the provider.
+      new APICallError({
+        message: NO_MESSAGE,
+        url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
+        requestBodyValues: {},
+        statusCode: 502,
+        responseBody: "",
+      }),
+      new RetryError({
+        message: NO_MESSAGE,
+        reason: "maxRetriesExceeded",
+        errors: [rejectedKeyError()],
+      }),
+      new Error(NO_MESSAGE),
+    ];
+    for (const error of thrown) {
+      const emitError = vi.fn();
+      const handler = createStreamPartHandler({
+        onDelta: () => undefined,
+        sendTtsText: () => undefined,
+        onToolCall: () => undefined,
+        deadAirCoverMs: 0,
+        emitError,
+        log: makeLogger(),
+        sid: "sid-empty",
+      });
+      handler.handle({ type: "error", error });
+      expect.soft(emitError.mock.calls[0]?.[1]).not.toBe("");
+    }
   });
 
   test("a thrown LLM stream reports the turn failure NON-fatally", async () => {
     const emitError = vi.fn();
-    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
-    (llm as unknown as { doStream: () => Promise<never> }).doStream = () =>
-      Promise.reject(new Error("connection reset"));
+    const llm = refusingModel(new Error("connection reset"));
     const result = await consume({ llm, emitError, sid: "sid-5" });
     expect(result.failed).toBe(true);
     expect(emitError).toHaveBeenCalledWith("llm", "connection reset", { fatal: false });

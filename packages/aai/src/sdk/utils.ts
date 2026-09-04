@@ -36,7 +36,7 @@
  */
 
 import { isRecord } from "./is-record.ts";
-import { statusWithPreview } from "./response-body.ts";
+import { previewBody, statusWithPreview } from "./response-body.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 // Imported as well as re-exported: the functions below call them, and a
 // re-export does not bring the name into this module's scope.
@@ -71,13 +71,184 @@ export {
 export { omitUndefined } from "./omit-undefined.ts";
 export { safeJsonParse } from "./safe-json-parse.ts";
 
-/** Extract an error message from an unknown thrown value. */
+/**
+ * Extract an error message from an unknown thrown value.
+ *
+ * **It never answers with an empty string.** That is the contract, and it is
+ * worth stating as one: `SessionError.message` is rendered directly by a
+ * browser client, so `""` paints a banner that says an error occurred and
+ * refuses to say what — strictly worse than a generic sentence, because an
+ * absent message reads as absence rather than as a problem.
+ *
+ * The shape that produced one is not exotic, it is the FIRST failure a new
+ * project hits. The AI SDK builds an `APICallError` whose `message` is
+ * `response.statusText` whenever the provider's error body does not match the
+ * schema it expected (`createJsonErrorResponseHandler`), and a reason phrase is
+ * optional in HTTP/1.1 and does not exist at all in HTTP/2 — so a rejected API
+ * key arrived as `{"code":"llm","message":"","fatal":false}` with the status,
+ * the URL, and the provider's own explanation all sitting unread on the error
+ * object.
+ *
+ * So a value that says nothing on its own is read one level down, in this
+ * order: the HTTP fields an `APICallError`-shaped failure carries (the status,
+ * the host that answered, the sentence in the response body), then `cause`,
+ * then an `AggregateError`'s members. Detection is STRUCTURAL for the same
+ * reason {@link schemaIssuesOf} is — this module is published, zod-free, and
+ * may not import `ai` to ask `APICallError.isInstance` — and it costs nothing:
+ * a numeric `statusCode` beside a `responseBody` is the shape, whoever built it.
+ *
+ * An error that DOES state something keeps its own words — an HTTP failure has
+ * the status appended to them, since `Unauthorized` alone answers neither "which
+ * provider" nor "refused or fell over", and everything else is returned
+ * verbatim. One message is replaced outright, and it has precedent:
+ * `fetch failed` (and the browser's `failed to fetch`) is
+ * Node's own placeholder, with the reason — `ECONNREFUSED`, a DNS failure, a
+ * certificate rejection — one level down in `cause`. The AI SDK makes exactly
+ * this substitution for its own calls (`handleFetchError`, which rewrites the
+ * pair as "Cannot connect to API: …"); this extends the same reading to every
+ * direct `fetch` in the SDK.
+ *
+ * @public
+ */
 export function errorMessage(err: unknown): string {
+  return describeError(err, new Set()) ?? lastResortMessage(err);
+}
+
+/**
+ * The two placeholders a failed `fetch` throws — Node's and the browser's.
+ *
+ * Lower-cased for comparison; the same pair the AI SDK's `handleFetchError`
+ * keys off.
+ */
+const OPAQUE_FETCH_MESSAGES: ReadonlySet<string> = new Set(["fetch failed", "failed to fetch"]);
+
+/** What {@link errorMessage} says when the thrown value carried nothing at all. */
+const UNKNOWN_ERROR = "Unknown error";
+
+/**
+ * The best sentence a value states about itself, or `undefined` when it states
+ * none — the recursive half of {@link errorMessage}.
+ *
+ * `seen` is not defensive bookkeeping: a `cause` chain really can be cyclic
+ * (an error re-thrown with itself as its own cause is a two-line mistake), and
+ * this walks it.
+ */
+function describeError(err: unknown, seen: Set<unknown>): string | undefined {
+  if (isRecord(err)) {
+    if (seen.has(err)) return undefined;
+    seen.add(err);
+  }
   const issues = schemaIssuesOf(err);
   if (issues !== undefined) return formatSchemaIssues(issues);
-  if (err instanceof Error) return err.message;
-  if (isRecord(err) && typeof err.message === "string") return err.message;
-  return String(err);
+  const http = httpFailureMessage(err, seen);
+  if (http !== undefined) return http;
+  const own = statedMessage(err);
+  if (own !== undefined && !OPAQUE_FETCH_MESSAGES.has(own.toLowerCase())) return own;
+  const inherited = inheritedMessage(err, seen);
+  if (inherited === undefined) return own;
+  if (own === undefined || inherited.includes(own)) return inherited;
+  return `${own}: ${inherited}`;
+}
+
+/** A value's own `message`, trimmed, or `undefined` when it has none worth reading. */
+function statedMessage(err: unknown): string | undefined {
+  if (!isRecord(err) || typeof err.message !== "string") return undefined;
+  const text = err.message.trim();
+  return text === "" ? undefined : text;
+}
+
+/**
+ * The sentence an HTTP failure carries, or `undefined` if this is not one.
+ *
+ * The status is ALWAYS included, even when the error states a message: "which
+ * provider, and did it refuse the credential or fall over" is what the reader
+ * needs, and `Unauthorized` on its own answers neither.
+ */
+function httpFailureMessage(err: unknown, seen: Set<unknown>): string | undefined {
+  if (!isRecord(err) || typeof err.statusCode !== "number" || !Number.isFinite(err.statusCode)) {
+    return undefined;
+  }
+  const host = hostOf(err.url);
+  const where = `HTTP ${err.statusCode}${host === undefined ? "" : ` from ${host}`}`;
+  const detail =
+    statedMessage(err) ??
+    bodyMessage(err.responseBody) ??
+    bodyMessage(err.data) ??
+    inheritedMessage(err, seen);
+  return detail === undefined ? where : `${detail} (${where})`;
+}
+
+/**
+ * The explanation a provider put in its error BODY.
+ *
+ * Every JSON API in this stack's dependency tree spells it one of four ways —
+ * `{"error":{"message":…}}` (OpenAI and everything compatible with it),
+ * `{"error":…}` (this SDK's own routes), `{"message":…}`, `{"detail":…}`
+ * (FastAPI) — so the four are read in turn and anything else falls back to a
+ * capped preview of the raw body, which at least identifies whatever answered.
+ */
+function bodyMessage(body: unknown): string | undefined {
+  if (typeof body === "string") {
+    const text = body.trim();
+    if (text === "") return undefined;
+    return bodyMessage(safeJsonParse(text)) ?? previewBody(text);
+  }
+  if (!isRecord(body)) return undefined;
+  for (const field of [body.error, body.message, body.detail]) {
+    const text = typeof field === "string" ? field.trim() : (statedMessage(field) ?? "");
+    if (text !== "") return text;
+  }
+  return undefined;
+}
+
+/** What a value's `cause`, or an `AggregateError`'s members, say instead. */
+function inheritedMessage(err: unknown, seen: Set<unknown>): string | undefined {
+  if (!isRecord(err)) return undefined;
+  if (err.cause !== undefined && err.cause !== null) {
+    const fromCause = describeError(err.cause, seen);
+    if (fromCause !== undefined) return fromCause;
+  }
+  if (!Array.isArray(err.errors)) return undefined;
+  const parts = err.errors
+    .map((member: unknown) => describeError(member, seen))
+    .filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? undefined : parts.join("; ");
+}
+
+/** The host that answered, for naming the provider in a failure. */
+function hostOf(url: unknown): string | undefined {
+  if (typeof url !== "string" || url === "") return undefined;
+  try {
+    return new URL(url).host || undefined;
+  } catch {
+    // Not an absolute URL — the status alone is still worth reporting.
+    return undefined;
+  }
+}
+
+/**
+ * The last thing to say about a value that states nothing: its class, or its
+ * own stringification, and never the empty string.
+ *
+ * `Error (no message)` beats `String(err)`'s bare `Error` because a lone class
+ * name reads as a message someone wrote; the parenthetical says the error
+ * carried none, which is the actual finding.
+ */
+function lastResortMessage(err: unknown): string {
+  if (isRecord(err) && typeof err.name === "string" && err.name.trim() !== "") {
+    return `${err.name.trim()} (no message)`;
+  }
+  const text = stringify(err);
+  return text === "" || text === "[object Object]" ? UNKNOWN_ERROR : text;
+}
+
+/** `String(value)`, for a value whose `toString` may itself be hostile. */
+function stringify(value: unknown): string {
+  try {
+    return String(value).trim();
+  } catch {
+    return "";
+  }
 }
 
 /**

@@ -355,52 +355,49 @@ describe("each declared site produces its declared frame and recovery", () => {
 // ─── What the matrix found ──────────────────────────────────────────────────
 
 /**
- * ONE refused LLM request reports TWO error frames, and the second is the
- * uninformative one.
+ * ONE refused LLM request reports ONE error frame — the one naming the cause.
  *
- * Found by A/B while checking this suite's own sensitivity, not by design.
- * Driving a `doStream` rejection — a gateway 500, an expired key, a refused
- * connection — produces, in order:
+ * It used to report two, and this suite is where that was found (by A/B while
+ * checking its own sensitivity, not by design). Driving a `doStream` rejection —
+ * a gateway 500, an expired key, a refused connection — produced, in order:
  *
  * ```text
- * error.reported  llm  "provider refused the connection"                 fatal:false
+ * error.reported  llm  "provider refused the connection"                   fatal:false
  * error.reported  llm  "No output generated. Check the stream for errors." fatal:false
  * ```
  *
  * The first is the stream-part handler (`pipeline-stream-parts.ts`), which sees
- * the AI SDK's conversion of the rejection into an `error` part. The second is
+ * the AI SDK's conversion of the rejection into an `error` part. The second was
  * the outer catch in `consumeLlmStream` (`pipeline-llm-stream.ts`), which then
  * sees `streamText` throw `NoOutputGeneratedError` because the stream it was
- * consuming produced nothing. Neither reporter knows the other fired.
+ * consuming produced nothing. Neither reporter knew the other had fired.
  *
- * **The caller is unaffected and the client is not.** `errorPhrase` is spoken
- * once — `runReply` asks the turn outcome, not the frame count — so nothing is
- * audibly wrong. But a client that renders the latest error into a banner shows
+ * **The caller was unaffected and the client was not.** `errorPhrase` is spoken
+ * once — `runReply` asks the turn outcome, not the frame count — so nothing was
+ * audibly wrong. But a client that renders the latest error into a banner showed
  * `No output generated. Check the stream for errors.`, a message about this
  * runtime's own plumbing, in place of the one naming the actual cause. That is
- * the message a user reports, and it sends whoever reads it to the wrong layer.
+ * the message a user reports, and it sent whoever read it to the wrong layer.
  *
- * Pinned as the CURRENT behaviour with the defect named, deliberately NOT
- * "fixed" here: suppressing the second report means deciding whether an
- * `errored()` handler should swallow a later throw, which is a change to what
- * `failed` means for every turn and belongs in its own diff. This test is what
- * makes that diff's effect visible.
+ * The fix is the one the finding named as owing its own diff: the catch reports
+ * only when nothing reported from the stream ({@link StreamPartHandler.errored}),
+ * which changes no turn's `failed` — the outcome is still a failure either way,
+ * so `errorPhrase` is unmoved. This test is the other side of the pin it used to
+ * be: the SECOND frame is what must not come back.
  */
-describe("a refused LLM request reports twice — a known defect", () => {
-  test("the second frame is the derived message, not the cause", async () => {
+describe("a refused LLM request reports once", () => {
+  test("the one frame names the cause, not the runtime's own plumbing", async () => {
     const live = await driverFor("llm.request-refused")();
+    // The turn is over once the recovery phrase has reached TTS, so everything
+    // this failure was going to report has been reported by then — which is
+    // what makes "exactly one" a claim rather than a race.
     await vi.waitFor(() => {
-      expect(framesFor(live, "llm").length).toBeGreaterThan(1);
+      expect(live.tts.last()?.textChunks.length ?? 0).toBeGreaterThan(0);
     });
-    const messages = live.callbacks.events
-      .filter((e): e is ErrorFrame => e.type === "error.reported")
-      .map((e) => e.message);
+    const messages = framesFor(live, "llm").map((e) => e.message);
+    expect(messages).toHaveLength(1);
     expect(messages[0]).toContain("provider refused the connection");
-    expect(
-      messages[1],
-      "if this no longer holds, the duplicate report was fixed — delete this test and " +
-        "the finding above it rather than updating the expectation.",
-    ).toContain("No output generated");
+    expect(messages[0]).not.toContain("No output generated");
     await live.transport.stop();
   });
 });

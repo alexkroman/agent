@@ -11,6 +11,19 @@ import {
   toolFailure,
 } from "./utils.ts";
 
+/**
+ * The empty message, as a value rather than a literal.
+ *
+ * Biome's `useErrorMessage` refuses an empty message literal, and it is right
+ * to: the rule and the specs below make the same point from opposite ends. Naming
+ * it beats spending one of the ratcheted lint suppressions on the single value
+ * this suite exists to describe.
+ */
+const NO_MESSAGE = "";
+
+/** A message that is all whitespace — as absent as {@link NO_MESSAGE} once trimmed. */
+const WHITESPACE_MESSAGE = "   ";
+
 describe("toArgsRecord", () => {
   test("passes a plain object through unchanged", () => {
     const args = { city: "Paris", n: 1 };
@@ -74,6 +87,153 @@ describe("errorMessage", () => {
   test("an empty issue list is not a validation failure", () => {
     const err = Object.assign(new Error("nothing wrong"), { issues: [] });
     expect(errorMessage(err)).toBe("nothing wrong");
+  });
+});
+
+/**
+ * The shapes a provider client really throws.
+ *
+ * The failed `fetch` and the `AggregateError` below are the genuine articles.
+ * The HTTP failure is a field-for-field stand-in for the AI SDK's
+ * `APICallError`, because `ai` is a dependency of `aai-runtime` and not of this
+ * package — `pipeline-llm-stream.test.ts` builds the same cases with the real
+ * constructor, which is what keeps this stand-in honest. Detection here is
+ * structural for the same reason (see {@link errorMessage}), so the stand-in is
+ * exactly what the implementation sees.
+ */
+describe("errorMessage over real provider-client failures", () => {
+  /**
+   * What `createJsonErrorResponseHandler` builds for a rejected key: the message
+   * is `response.statusText`, which is empty over HTTP/2 and optional in
+   * HTTP/1.1, and everything worth reading is in the other fields.
+   */
+  function rejectedKey(responseBody: string, statusCode = 401): Error {
+    return Object.assign(new Error(NO_MESSAGE), {
+      name: "AI_APICallError",
+      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
+      requestBodyValues: { model: "qwen3-next-80b-a3b" },
+      statusCode,
+      responseHeaders: { "x-request-id": "req_1" },
+      responseBody,
+    });
+  }
+
+  test("names the cause of a rejected API key instead of reporting nothing", () => {
+    // The regression: this exact value reached the browser as
+    // {"type":"error.reported","code":"llm","message":"","fatal":false}.
+    const err = rejectedKey(
+      JSON.stringify({ error: { message: "Invalid API key", type: "invalid_request_error" } }),
+    );
+    expect(err.message).toBe(NO_MESSAGE);
+    expect(errorMessage(err)).toBe("Invalid API key (HTTP 401 from llm-gateway.assemblyai.com)");
+  });
+
+  test("reads the other three body spellings, and previews a body in none of them", () => {
+    expect(errorMessage(rejectedKey(JSON.stringify({ error: "Unauthorized" })))).toBe(
+      "Unauthorized (HTTP 401 from llm-gateway.assemblyai.com)",
+    );
+    expect(errorMessage(rejectedKey(JSON.stringify({ message: "no credit" }), 402))).toBe(
+      "no credit (HTTP 402 from llm-gateway.assemblyai.com)",
+    );
+    expect(errorMessage(rejectedKey(JSON.stringify({ detail: "Not authenticated" }), 403))).toBe(
+      "Not authenticated (HTTP 403 from llm-gateway.assemblyai.com)",
+    );
+    // A proxy's HTML page fits none of them; the preview still identifies it.
+    expect(errorMessage(rejectedKey("<html><body>503 upstream</body></html>", 503))).toBe(
+      "<html><body>503 upstream</body></html> (HTTP 503 from llm-gateway.assemblyai.com)",
+    );
+  });
+
+  test("still reports the status when the body is empty too", () => {
+    // Both halves absent is the pure form of the bug — nothing to quote at all.
+    expect(errorMessage(rejectedKey(""))).toBe("HTTP 401 from llm-gateway.assemblyai.com");
+  });
+
+  test("keeps the provider's own sentence and adds the status to it", () => {
+    // The path where the error schema DID match: `errorToMessage` filled the
+    // message in, and the status is what says whether to retry or fix a key.
+    const err = Object.assign(new Error("Rate limit exceeded"), {
+      name: "AI_APICallError",
+      url: "https://api.openai.com/v1/chat/completions",
+      statusCode: 429,
+      responseBody: JSON.stringify({ error: { message: "Rate limit exceeded" } }),
+    });
+    expect(errorMessage(err)).toBe("Rate limit exceeded (HTTP 429 from api.openai.com)");
+  });
+
+  test("a wrapper that states its own count still leads with it", () => {
+    // `RetryError.message` is stated, so it is what a caller sees; unwrapping to
+    // `lastError` is the RUNTIME's job (see `llmErrorSentence`), and this pins
+    // that the attempt underneath still describes itself.
+    const attempt = rejectedKey(JSON.stringify({ error: { message: "Invalid API key" } }));
+    const err = Object.assign(new Error("Failed after 3 attempts. Last error: "), {
+      name: "AI_RetryError",
+      reason: "maxRetriesExceeded",
+      errors: [attempt, attempt],
+      lastError: attempt,
+    });
+    expect(errorMessage(err)).toBe("Failed after 3 attempts. Last error:");
+    expect(errorMessage(attempt)).toBe(
+      "Invalid API key (HTTP 401 from llm-gateway.assemblyai.com)",
+    );
+  });
+
+  test("a failed fetch reports WHY, not Node's placeholder", async () => {
+    // A real one: undici throws `TypeError("fetch failed")` and puts the reason
+    // in `cause`. Port 9 (discard) is refused without leaving the machine.
+    const thrown = await fetch("http://127.0.0.1:9/nope").then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+    expect(thrown).toBeInstanceOf(TypeError);
+    expect((thrown as TypeError).message).toBe("fetch failed");
+    const message = errorMessage(thrown);
+    expect(message.startsWith("fetch failed: ")).toBe(true);
+    expect(message).not.toBe("fetch failed");
+  });
+
+  test("an aggregate error reports its members rather than its empty message", () => {
+    // The shape `Promise.any` and `AbortSignal.any` reject with, and what a
+    // provider opener throws when every endpoint refused.
+    const err = new AggregateError(
+      [new Error("stt refused"), new Error("tts refused")],
+      NO_MESSAGE,
+    );
+    expect(err.message).toBe(NO_MESSAGE);
+    expect(errorMessage(err)).toBe("stt refused; tts refused");
+  });
+
+  test("never answers with an empty string, whatever it is handed", () => {
+    // The property the browser banner depends on. Every entry here is a value
+    // the old implementation answered "" or a bare class name for.
+    const cases: unknown[] = [
+      rejectedKey(""),
+      new Error(NO_MESSAGE),
+      new Error(WHITESPACE_MESSAGE),
+      new AggregateError([], NO_MESSAGE),
+      NO_MESSAGE,
+      "   ",
+      {},
+      Object.create(null),
+      Object.assign(new Error(NO_MESSAGE), { name: "AI_APICallError", url: "", statusCode: 500 }),
+    ];
+    // Labelled by index, not by `String(value)` — one of these is a
+    // null-prototype object, which throws on stringification. That is the case
+    // `errorMessage`'s own guarded `String` exists for.
+    cases.forEach((value, index) => {
+      expect.soft(errorMessage(value), `case ${index}`).not.toBe("");
+    });
+    expect(errorMessage(new Error(NO_MESSAGE))).toBe("Error (no message)");
+    expect(errorMessage(NO_MESSAGE)).toBe("Unknown error");
+    expect(errorMessage({})).toBe("Unknown error");
+  });
+
+  test("a self-referential cause chain terminates", () => {
+    // Not defensive bookkeeping: an error re-thrown as its own cause is a
+    // two-line mistake, and the walk below would not otherwise return.
+    const err = new Error(NO_MESSAGE);
+    (err as { cause?: unknown }).cause = err;
+    expect(errorMessage(err)).toBe("Error (no message)");
   });
 });
 
