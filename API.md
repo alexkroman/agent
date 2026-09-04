@@ -4109,6 +4109,7 @@ export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
 // @public
 export function withTools<D extends {
     readonly tools: ToolRegistry;
+    readonly builtinTools?: readonly string[] | undefined;
 }>(def: D, registry: ToolRegistry): D;
 
 // @public
@@ -6570,16 +6571,17 @@ type WorkflowSummary = {
 ## `@alexkroman1/aai/tools`
 
 ```ts
-// @public
+// @public (undocumented)
 export type CallOptions = {
     fetch?: typeof globalThis.fetch;
+    signal?: AbortSignal;
 };
 
 // @public
 type DefaultToolResult = any;
 
 // @public
-export function fetchJson<T = DefaultToolResult>(url: string | ({
+export function fetchJson<T = UntypedJsonBody>(url: string | ({
     url: string;
     headers?: Record<string, string>;
 } & CallOptions), options?: {
@@ -6592,12 +6594,15 @@ type ToolFailure = {
 };
 
 // @public
-export function visitWebpage<T = DefaultToolResult>(url: string | ({
+type UntypedJsonBody = Record<string, DefaultToolResult>;
+
+// @public
+export function visitWebpage<T = UntypedJsonBody>(url: string | ({
     url: string;
 } & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
 
 // @public
-export function webSearch<T = DefaultToolResult>(query: string | ({
+export function webSearch<T = UntypedJsonBody>(query: string | ({
     query: string;
     maxResults?: number;
 } & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
@@ -9070,7 +9075,7 @@ export const SERVER_ROUTES: {
         readonly transport: "http";
         readonly path: "/health";
         readonly match: "exact";
-        readonly methods: readonly ["GET"];
+        readonly methods: readonly ["GET", "HEAD"];
     };
     readonly clientConfig: {
         readonly transport: "http";
@@ -9816,6 +9821,7 @@ export type SessionCore = {
 export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
+    readonly fatal: boolean;
 };
 
 export { SessionErrorCode }
@@ -9978,16 +9984,20 @@ export function useSessionSelector<T>(selector: (snapshot: SessionSnapshot) => T
 export function useTheme(): Required<ClientTheme>;
 
 // @public
-export function useToolCallStart(toolName: string, callback: (toolCall: ToolCallInfo) => void): void;
+export function useToolCallStart<A = ToolCallInfo["args"]>(toolName: string, callback: (toolCall: Omit<ToolCallInfo, "args"> & {
+    args: A;
+}) => void): void;
 
 // @public
-export function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
+export function useToolCallStart<A = ToolCallInfo["args"]>(callback: (toolCall: Omit<ToolCallInfo, "args"> & {
+    args: A;
+}) => void): void;
 
 // @public
-export function useToolResult<R = DefaultToolResult>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
+export function useToolResult<R = unknown>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
 
 // @public
-export function useToolResult<R = DefaultToolResult>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
+export function useToolResult<R = unknown>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
 
 // @public
 export function useUserTranscript(): UseUserTranscriptResult;
@@ -10230,6 +10240,7 @@ type SessionCore = {
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
+    readonly fatal: boolean;
 };
 
 // @internal

@@ -80,6 +80,7 @@ type SessionCore = {
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
+    readonly fatal: boolean;
 };
 
 // @internal

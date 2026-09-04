@@ -21,10 +21,11 @@
     }
   },
   "builtins": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "`webSearch` takes ONE name for its cap, in ONE position: `maxResults`, in the options bag. It used to accept `max_results` too — the only snake_case identifier on this SDK's TypeScript surface — and `maxResults` again in the second parameter, so one option had three ways to arrive and two were undiscoverable from the third. `max_results` remains the WIRE name the model-facing builtin schema declares; only the TypeScript helper narrowed."
+      "1": "`webSearch` takes ONE name for its cap, in ONE position: `maxResults`, in the options bag. It used to accept `max_results` too — the only snake_case identifier on this SDK's TypeScript surface — and `maxResults` again in the second parameter, so one option had three ways to arrive and two were undiscoverable from the third. `max_results` remains the WIRE name the model-facing builtin schema declares; only the TypeScript helper narrowed.",
+      "2": "An untyped fetchJson/webSearch/visitWebpage no longer answers `any`, so an epoch-2 caller reading a field off an unnarrowed result stops compiling — which is the defect: the T | ToolFailure union was collapsing to any. Same class as epoch 1's drop. CallOptions also gained an optional signal, which is additive."
     }
   },
   "channels": {

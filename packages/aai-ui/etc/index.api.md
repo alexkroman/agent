@@ -283,6 +283,7 @@ export type SessionCore = {
 export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
+    readonly fatal: boolean;
 };
 
 export { SessionErrorCode }
@@ -445,16 +446,20 @@ export function useSessionSelector<T>(selector: (snapshot: SessionSnapshot) => T
 export function useTheme(): Required<ClientTheme>;
 
 // @public
-export function useToolCallStart(toolName: string, callback: (toolCall: ToolCallInfo) => void): void;
+export function useToolCallStart<A = ToolCallInfo["args"]>(toolName: string, callback: (toolCall: Omit<ToolCallInfo, "args"> & {
+    args: A;
+}) => void): void;
 
 // @public
-export function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
+export function useToolCallStart<A = ToolCallInfo["args"]>(callback: (toolCall: Omit<ToolCallInfo, "args"> & {
+    args: A;
+}) => void): void;
 
 // @public
-export function useToolResult<R = DefaultToolResult>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
+export function useToolResult<R = unknown>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
 
 // @public
-export function useToolResult<R = DefaultToolResult>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
+export function useToolResult<R = unknown>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
 
 // @public
 export function useUserTranscript(): UseUserTranscriptResult;

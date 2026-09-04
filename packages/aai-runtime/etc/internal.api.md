@@ -397,7 +397,7 @@ export const SERVER_ROUTES: {
         readonly transport: "http";
         readonly path: "/health";
         readonly match: "exact";
-        readonly methods: readonly ["GET"];
+        readonly methods: readonly ["GET", "HEAD"];
     };
     readonly clientConfig: {
         readonly transport: "http";
