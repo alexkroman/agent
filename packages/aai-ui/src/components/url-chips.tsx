@@ -6,7 +6,14 @@ import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { pageBaseUrl } from "../_utils.ts";
 import { useSessionSelector, useTheme } from "../context.ts";
-import { INK_FAINT_PCT, INK_MUTED_PCT, INK_SURFACE_PCT, inkTint } from "./_colors.ts";
+import {
+  FOCUS_RING,
+  focusRingStyle,
+  INK_FAINT_PCT,
+  INK_MUTED_PCT,
+  INK_SURFACE_PCT,
+  inkTint,
+} from "./_colors.ts";
 
 /** How long the "Copied" confirmation replaces the label after a click. */
 const COPIED_FEEDBACK_MS = 1500;
@@ -59,16 +66,14 @@ function UrlChip({
       title={`${hint} (click to copy)\n${url}`}
       className={clsx(
         "flex items-center gap-1.5 min-w-0 appearance-none m-0 px-2 py-1 rounded-aai border cursor-pointer text-[11px] leading-none font-aai-mono",
-        // Same story as Button: `outline-none` sat here alone, so a chip
-        // reachable by Tab showed nothing at all when it got focus.
-        "outline-none focus-visible:[outline:2px_solid] focus-visible:[outline-offset:2px]",
+        FOCUS_RING,
         className,
       )}
       style={{
         background: inkTint(theme.text, theme.surface, INK_SURFACE_PCT),
         borderColor: theme.border,
         color: inkTint(theme.text, theme.surface, INK_FAINT_PCT),
-        outlineColor: theme.primary,
+        ...focusRingStyle(theme.primary),
       }}
       data-testid={testId}
     >

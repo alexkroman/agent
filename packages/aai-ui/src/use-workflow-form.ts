@@ -41,11 +41,12 @@ import type {
   UploadProgress,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
-import { useCallback, useRef, useState } from "react";
+import { useCallback } from "react";
 import { useRecoveredRun } from "./_recover-run.ts";
 import { useRunControls } from "./_run-controls.ts";
+import { useSubmissionState } from "./_submission-state.ts";
 import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
-import { useUploadPause } from "./_upload-pause.ts";
+import { coalesceUploadReports } from "./_upload-report.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { FormValues } from "./components/form-types.ts";
 import { useDefaultRunKey } from "./use-run-key.ts";
@@ -281,14 +282,11 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   // opting out of the LOOKUP still leaves the run findable — by the next load
   // that turns recovery back on, and by anything else holding the key.
   const key = useDefaultRunKey(opts.key);
-  const [runId, setRunId] = useState<string | undefined>(undefined);
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | undefined>(undefined);
-  const [upload, setUpload] = useState<UploadStatus | undefined>(undefined);
-  // The live submission's uploads, so `pauseUpload` reaches the gate the walk is
-  // waiting on. A ref rather than state: nothing renders from it, and a re-render
-  // per pause would be a re-render that changes nothing on the page.
-  const session = useRef<UploadSession | undefined>(undefined);
+  // The four states, the live-submission ref, the supersede rule, `reset` and
+  // the pause pair — shared with `useWorkflowStream`, which had a copy of every
+  // one of them. See `_submission-state.ts`.
+  const state = useSubmissionState<UploadSession>();
+  const { runId, actions } = state;
 
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
@@ -305,24 +303,16 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
     enabled: recover,
     getClient,
     onFound: (found) => {
-      setRunId((current) => current ?? found);
+      actions.setRunId((current) => current ?? found);
     },
-    onError: setStartError,
+    onError: actions.setStartError,
   });
 
   const submit = useCallback(
     async (input: unknown) => {
       const client = getClient();
-      setStarting(true);
-      setStartError(undefined);
-      // Dropped BEFORE the request, not after it returns: the previous run's
-      // result must not sit under a form that is already submitting again.
-      setRunId(undefined);
-      // A submission that is starting takes the pause controls from whatever was
-      // there before, so a stale gate cannot park the new one.
-      session.current?.gate.cancel();
       const current = createUploadSession(workflow);
-      session.current = current;
+      actions.begin(current);
       try {
         const options = omitUndefined({ key });
         // Files first: a run input carries an upload ID, never bytes, and this
@@ -330,10 +320,14 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
         // can store it. A form using `<FileField upload>` (which is what
         // `<WorkflowFields>` renders for a declared upload property) therefore
         // needs no upload code of its own.
-        const started = await uploadFiles(client, input, setUpload, parallel, current);
+        // Coalesced: the parts uploader reports per XHR progress event across
+        // eight concurrent requests, which is far more often than the bar can
+        // render. See `_upload-report.ts`.
+        const report = coalesceUploadReports(actions.setUpload);
+        const started = await uploadFiles(client, input, report, parallel, current);
         // Both paths end in a run id — the difference is only whether the agent
         // held the request open — so the watch below is identical either way.
-        setRunId(
+        actions.setRunId(
           wait === undefined
             ? await client.start(workflow, started, options)
             : (await client.startAndWait(workflow, started, { ...options, wait })).runId,
@@ -341,52 +335,22 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
       } catch (err: unknown) {
         // An abandoned upload is not a failure to report: `reset()` and the next
         // `submit()` both cancel, and both are the person's own doing.
-        if (!current.gate.cancelled) setStartError(errorMessage(err));
+        if (!current.gate.cancelled) actions.setStartError(errorMessage(err));
       } finally {
-        // A SUPERSEDED submission owns none of this state any more. Its walk
-        // unwinds after the next one has already set `starting`, so clearing here
-        // unconditionally would report the live submission as finished and drop the
-        // bar it is drawing.
-        if (session.current === current) {
-          session.current = undefined;
-          setStarting(false);
-          // Dropped whichever way it went. From here the wait belongs to the RUN,
-          // which `run` and `pending` describe, and a bar left at 100% under a
-          // running workflow reads as the thing that is taking the time.
-          setUpload(undefined);
-        }
+        actions.end(current);
       }
     },
-    [workflow, key, wait, parallel, getClient],
-  );
-
-  const reset = useCallback(() => {
-    // Abandoned rather than left running: a form put back to its initial state has
-    // no bar to draw and no submission to finish, so bytes still going would be
-    // bytes nobody is waiting for.
-    session.current?.gate.cancel();
-    session.current = undefined;
-    setRunId(undefined);
-    setStartError(undefined);
-    setUpload(undefined);
-  }, []);
-
-  // The gate stops the bytes; the hook is what makes the page say so — see
-  // `_upload-pause.ts`, shared with `useWorkflowStream` so the two cannot
-  // disagree about what a paused bar reads.
-  const { pauseUpload, resumeUpload } = useUploadPause(
-    useCallback(() => session.current?.gate, []),
-    setUpload,
+    [workflow, key, wait, parallel, getClient, actions],
   );
 
   return {
     submit,
     submitForm: submit,
-    reset,
+    reset: actions.reset,
     wake,
     cancel,
-    pauseUpload,
-    resumeUpload,
+    pauseUpload: actions.pauseUpload,
+    resumeUpload: actions.resumeUpload,
     run: tracked.run,
     // `tracked.polling` rather than a second derivation from the snapshot, and
     // that is the whole of it: `useWorkflowRun` gives up on an id the agent
@@ -400,8 +364,8 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
     // with no run and no spinner. `recovering` is the same gap on a RELOAD,
     // where there is no submit to have set `starting`: a form that offered
     // Submit while a live run was arriving would invite a second one.
-    pending: recovering || starting || tracked.polling,
-    upload,
-    error: startError ?? tracked.error,
+    pending: recovering || state.starting || tracked.polling,
+    upload: state.upload,
+    error: state.startError ?? tracked.error,
   };
 }

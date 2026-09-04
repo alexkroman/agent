@@ -25,7 +25,7 @@
  * one describes an element that EXISTS. So this is a context rather than an
  * attribute, and it carries the one fact a DOM read cannot recover.
  *
- * A form with no such children is ready by definition — `useFormFieldsPending`
+ * A form with no such children is ready by definition — `useFormReadiness`
  * outside a provider reports nothing pending, so every hand-written form is
  * unaffected and `Form` keeps working outside this package.
  */

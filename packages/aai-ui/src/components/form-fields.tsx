@@ -34,6 +34,7 @@ import type {
 } from "react";
 import { useId } from "react";
 import { useTheme } from "../context.ts";
+import { FOCUS_RING, focusRingStyle } from "./_colors.ts";
 import type { FieldShell, FileRead, FileValue, FormValues } from "./form-types.ts";
 
 /**
@@ -107,14 +108,14 @@ function useControlProps(): { className: string; style: React.CSSProperties } {
   return {
     className: clsx(
       "w-full rounded-aai border px-3 py-2 text-sm font-aai",
-      "outline-none focus-visible:[outline:2px_solid] focus-visible:[outline-offset:2px]",
+      FOCUS_RING,
       "disabled:cursor-not-allowed disabled:opacity-50",
     ),
     style: {
       background: theme.surface,
       color: theme.text,
       borderColor: theme.border,
-      outlineColor: theme.primary,
+      ...focusRingStyle(theme.primary),
     },
   };
 }
@@ -154,6 +155,38 @@ function useFileControlProps(): { className: string; style: React.CSSProperties 
 }
 
 /**
+ * `TextField` and `NumberField`, which differ only in the `type` they set.
+ *
+ * Internal, because the two stay separate PUBLIC exports: each is named in the
+ * `components` capability contract and in the API report, and a caller writes
+ * the one whose value shape it wants — `NumberField` is the one that
+ * contributes a number to {@link FormValues}.
+ */
+function InputField({
+  defaultType,
+  name,
+  label,
+  hint,
+  className,
+  ...rest
+}: FieldShell & {
+  /**
+   * The `type` this field stands for, applied BEFORE `rest` — so `TextField`,
+   * whose props do not omit `type`, still lets a caller ask for `email` or
+   * `url`, exactly as it did when the attribute was written inline.
+   */
+  defaultType: "text" | "number";
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">) {
+  const id = useId();
+  const control = useControlProps();
+  return (
+    <Field label={label} hint={hint} htmlFor={id} className={className}>
+      <input id={id} name={name} type={defaultType} {...control} {...rest} />
+    </Field>
+  );
+}
+
+/**
  * A single-line text input.
  *
  * Accepts every `<input>` attribute except `name` and `className`, which this
@@ -163,20 +196,10 @@ function useFileControlProps(): { className: string; style: React.CSSProperties 
  *
  * @public
  */
-export function TextField({
-  name,
-  label,
-  hint,
-  className,
-  ...rest
-}: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">) {
-  const id = useId();
-  const control = useControlProps();
-  return (
-    <Field label={label} hint={hint} htmlFor={id} className={className}>
-      <input id={id} name={name} type="text" {...control} {...rest} />
-    </Field>
-  );
+export function TextField(
+  props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">,
+) {
+  return <InputField defaultType="text" {...props} />;
 }
 
 /**
@@ -191,20 +214,10 @@ export function TextField({
  *
  * @public
  */
-export function NumberField({
-  name,
-  label,
-  hint,
-  className,
-  ...rest
-}: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">) {
-  const id = useId();
-  const control = useControlProps();
-  return (
-    <Field label={label} hint={hint} htmlFor={id} className={className}>
-      <input id={id} name={name} type="number" {...control} {...rest} />
-    </Field>
-  );
+export function NumberField(
+  props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">,
+) {
+  return <InputField defaultType="number" {...props} />;
 }
 
 /**

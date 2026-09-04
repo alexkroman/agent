@@ -292,7 +292,6 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   capture.start();
 
   let playNode: AudioWorkletNode | null = null;
-  let onPlaybackStop: (() => void) | null = null;
   /**
    * Turn ids for the drain handshake. Every `done()` posts a fresh id and the
    * worklet echoes it on the matching 'stop', so a stop the worklet posted for
@@ -303,14 +302,22 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
    * reply finished while it is still speaking.
    */
   let turnSeq = 0;
-  let pendingStopTurn: number | null = null;
+  /**
+   * The drain wait in flight, if any.
+   *
+   * ONE field, because the resolver and the turn it belongs to are one fact:
+   * as two independently-nulled variables they could disagree, and did — the
+   * suspended-context branch of `done()` cleared the turn and left the resolver
+   * set. A single nullable makes that unrepresentable.
+   */
+  let pendingStop: { turn: number; settle: () => void } | null = null;
   const lifecycle = new AbortController();
 
   /** Settle whatever drain wait is pending and forget the turn it belonged to. */
   function settlePendingStop(): void {
-    onPlaybackStop?.();
-    onPlaybackStop = null;
-    pendingStopTurn = null;
+    const pending = pendingStop;
+    pendingStop = null;
+    pending?.settle();
   }
 
   /** The playback worklet's turn-boundary report (see `stopTurn` there). */
@@ -332,7 +339,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     // A drain stop for a turn the host is no longer waiting on — the flush
     // that ended that turn already settled its promise. Settling here would
     // report the CURRENT reply finished while it is still speaking.
-    if (pendingStopTurn !== null && msg.turn !== pendingStopTurn) return;
+    if (pendingStop !== null && msg.turn !== pendingStop.turn) return;
     settlePendingStop();
   }
 
@@ -382,15 +389,17 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       // the context is rendering. If it's suspended/closed (e.g. a backgrounded
       // tab), the 'stop' round-trip never happens — resolve now rather than hang.
       if (ctx.state !== "running") {
-        pendingStopTurn = null;
+        // Settle a wait this call replaces, rather than dropping the resolver
+        // and leaving its promise to strand.
+        settlePendingStop();
         return Promise.resolve();
       }
       // `Promise.withResolvers` for the same reason `stop()` above uses it: the
-      // resolver is stored on `onPlaybackStop` for the port handler to call, so
-      // it has to outlive the constructor rather than be hoisted out of one.
+      // resolver is stored on `pendingStop` for the port handler to call, so it
+      // has to outlive the constructor rather than be hoisted out of one.
       const { promise, resolve } = Promise.withResolvers<void>();
       // Settle a resolver this call replaces so its promise never strands.
-      onPlaybackStop?.();
+      settlePendingStop();
       // Bounded wait: if the context suspends mid-playback or the processor
       // dies, the 'stop' message never arrives — resolve anyway so session
       // state can't be stuck in "speaking". The poll catches a suspension
@@ -400,18 +409,16 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       const settle = (): void => {
         clearInterval(poll);
         clearTimeout(cap);
-        if (onPlaybackStop === settle) {
-          onPlaybackStop = null;
-          pendingStopTurn = null;
-        }
+        // Only clear the slot if it is still THIS wait: a later `done()` may
+        // have replaced it, and clearing then would drop the live turn.
+        if (pendingStop?.settle === settle) pendingStop = null;
         resolve();
       };
       const poll = setInterval(() => {
         if (ctx.state !== "running") settle();
       }, PLAYBACK_DONE_POLL_MS);
       const cap = setTimeout(settle, PLAYBACK_DONE_MAX_WAIT_MS);
-      onPlaybackStop = settle;
-      pendingStopTurn = turn;
+      pendingStop = { turn, settle };
       return promise;
     },
 

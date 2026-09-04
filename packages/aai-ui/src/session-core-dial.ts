@@ -34,8 +34,6 @@ export type DialOptions = {
 };
 
 export type Dialer = {
-  /** The URL for the next attempt — partysocket's async provider. */
-  url(): Promise<string>;
   /** A socket for this attempt. */
   open(): InstanceType<WebSocketConstructor>;
   /**
@@ -114,7 +112,6 @@ export function createDialer(options: DialOptions): Dialer {
   }
 
   return {
-    url,
     open: () => {
       if (options.WebSocket) {
         return new options.WebSocket(

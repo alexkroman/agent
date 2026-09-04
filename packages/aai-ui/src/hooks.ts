@@ -64,6 +64,24 @@ function processToolCallTail(
 }
 
 /**
+ * The two `fire` implementations, at module scope so they are stable across
+ * renders — which is what lets `useToolCallEffect` name `fire` as a plain
+ * dependency instead of holding it in a ref.
+ */
+const fireResult = (callback: ToolCallCallback, tc: ToolCallInfo, filtered: boolean): void => {
+  const parsed = tryParseJSON(tc.result);
+  if (filtered) {
+    (callback as (r: unknown, tc: ToolCallInfo) => void)(parsed, tc);
+  } else {
+    (callback as (n: string, r: unknown, tc: ToolCallInfo) => void)(tc.name, parsed, tc);
+  }
+};
+
+const fireStart = (callback: ToolCallCallback, tc: ToolCallInfo): void => {
+  (callback as (tc: ToolCallInfo) => void)(tc);
+};
+
+/**
  * Shared scaffold for the tool-call lifecycle hooks: parses the optional
  * `(toolName, callback)` / `(callback)` overload args, dedups by call ID,
  * and invokes `fire` once per tool call reaching `status`.
@@ -84,9 +102,6 @@ function useToolCallEffect(
   const mountedRef = useRef(false);
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
-  const fireRef = useRef(fire);
-  fireRef.current = fire;
-
   useEffect(() => {
     const firstRun = !mountedRef.current;
     mountedRef.current = true;
@@ -115,10 +130,13 @@ function useToolCallEffect(
         // about the moment, a result is a value the UI is being driven from.
         if (tc.status !== status && firstRun) return;
         if (filterName && tc.name !== filterName) return;
-        fireRef.current(callbackRef.current, tc, filterName !== null);
+        fire(callbackRef.current, tc, filterName !== null);
       },
     );
-  }, [toolCalls, filterName, status]);
+    // `fire` is a module-level constant at both call sites, so naming it as a
+    // dependency is free — which is what makes the ref this used to hold
+    // unnecessary.
+  }, [toolCalls, filterName, status, fire]);
 }
 
 /**
@@ -202,14 +220,7 @@ export function useToolResult<R = unknown>(
   callback: (name: string, result: R, toolCall: ToolCallInfo) => void,
 ): void;
 export function useToolResult(...args: unknown[]): void {
-  useToolCallEffect("done", args, (callback, tc, filtered) => {
-    const parsed = tryParseJSON(tc.result);
-    if (filtered) {
-      (callback as (r: unknown, tc: ToolCallInfo) => void)(parsed, tc);
-    } else {
-      (callback as (n: string, r: unknown, tc: ToolCallInfo) => void)(tc.name, parsed, tc);
-    }
-  });
+  useToolCallEffect("done", args, fireResult);
 }
 
 /**
@@ -443,7 +454,5 @@ export function useToolCallStart<A = ToolCallInfo["args"]>(
   callback: (toolCall: Omit<ToolCallInfo, "args"> & { args: A }) => void,
 ): void;
 export function useToolCallStart(...args: unknown[]): void {
-  useToolCallEffect("pending", args, (callback, tc) => {
-    (callback as (tc: ToolCallInfo) => void)(tc);
-  });
+  useToolCallEffect("pending", args, fireStart);
 }

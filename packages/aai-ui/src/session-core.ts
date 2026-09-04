@@ -26,7 +26,13 @@ import {
 } from "./session-core-messages.ts";
 import { reconnectPending } from "./session-core-reconnect.ts";
 import { createSessionStateMachine } from "./session-core-state.ts";
-import type { ConnState, SessionCore, SessionSnapshot } from "./session-core-types.ts";
+import {
+  bargeIn,
+  type ConnState,
+  type SessionCore,
+  type SessionSnapshot,
+  STOPPED,
+} from "./session-core-types.ts";
 import { buildWsUrl } from "./session-core-url.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES, type VoiceSessionOptions } from "./types.ts";
 
@@ -298,8 +304,7 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
         conn.ws = null;
         updateState({
           ...agentState.apply({ type: "FAILED", error: HANDSHAKE_ERROR }),
-          running: false,
-          recording: false,
+          ...STOPPED,
         });
       },
     });
@@ -354,7 +359,7 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
         if (!(conn.retiredByServer || agentState.fatal()) && reconnectPending(socket)) {
           // partysocket retries with backoff. Keep the listeners attached
           // and the session logically alive: the URL provider re-derives the
-          // resume URL and `onServerConfig` replays history on the next open.
+          // resume URL, and the server restores the conversation itself.
           // Invalidate any audio init still awaiting getUserMedia — the retry
           // will start its own, and cleanupAudio just cleared the in-flight
           // flag, so a survivor would otherwise pass the same-generation
@@ -399,7 +404,7 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
                 type: "FAILED",
                 error: { code: "connection", message: failure, fatal: false },
               });
-        updateState({ ...closed, running: false, recording: false });
+        updateState({ ...closed, ...STOPPED });
       },
       { signal: sig },
     );
@@ -412,15 +417,13 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
     // A client-side barge-in is a turn boundary exactly as the server's
     // `cancelled` frame is: the flush below settles the interrupted turn's
     // drain, whose continuation must not outlive the turn it belonged to.
-    conn.turn.bump();
-    conn.voiceIO?.flush();
+    bargeIn(conn);
     updateState(agentState.apply({ type: "LISTEN" }));
     sendJson({ type: "cancel" });
   }
 
   function reset(): void {
-    conn.turn.bump();
-    conn.voiceIO?.flush();
+    bargeIn(conn);
     if (openSocket()) {
       sendJson({ type: "reset" });
       return;
@@ -440,7 +443,7 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
     // `DISCONNECT` rather than `CLOSED`: it deliberately does NOT clear the
     // error, so the banner explaining why a session ended survives the hang-up
     // that follows it.
-    updateState({ ...agentState.apply({ type: "DISCONNECT" }), running: false, recording: false });
+    updateState({ ...agentState.apply({ type: "DISCONNECT" }), ...STOPPED });
   }
 
   function start(): void {
@@ -467,8 +470,7 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
       ...CLEARED_SESSION_STATE,
       ...agentState.apply({ type: "END" }),
       started: false,
-      running: false,
-      recording: false,
+      ...STOPPED,
     });
   }
 

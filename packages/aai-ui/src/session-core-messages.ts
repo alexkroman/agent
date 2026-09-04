@@ -15,7 +15,7 @@ import { DEFAULT_MAX_HISTORY, toArgsRecord } from "@alexkroman1/aai/internal";
 import { lenientParse, type SessionEvent, SessionEventSchema } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { SessionStateMachine } from "./session-core-state.ts";
-import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
+import { bargeIn, type ConnState, type SessionSnapshot, STOPPED } from "./session-core-types.ts";
 import type { SessionError } from "./types.ts";
 
 /** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
@@ -238,8 +238,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       conn.generation.bump();
       updateState({
         ...agentState.apply({ type: "FATAL", error }),
-        running: false,
-        recording: false,
+        ...STOPPED,
       });
     }
   }
@@ -303,14 +302,12 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         toListening();
         break;
       case "reply.cancelled":
-        conn.turn.bump();
-        conn.voiceIO?.flush();
+        bargeIn(conn);
         commitAgentTranscript();
         toListening({ userTranscript: null });
         break;
       case "session.reset": {
-        conn.turn.bump();
-        conn.voiceIO?.flush();
+        bargeIn(conn);
         // A fatal session keeps its banner AND its conversation:
         // CLEARED_SESSION_STATE nulls `error`, and only a fresh handshake may
         // do that. `RESET` is the machine's half (listening + the banner

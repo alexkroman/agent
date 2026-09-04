@@ -90,21 +90,14 @@
  */
 
 import { useState } from "react";
+import { type StorageKind, storageGet, storageSet, urlSlot } from "./_web-storage.ts";
 
 /** Where a run key lives, namespaced like this package's two other stores. */
 const PREFIX = "aai:run-key:";
 
 /** This page's own slot — see "The slot is keyed by the page's own URL". */
 function slotFor(): string {
-  const href = globalThis.location?.href;
-  if (href === undefined) return PREFIX;
-  try {
-    return `${PREFIX}${new URL("./", href).href}`;
-  } catch {
-    // Unresolvable (a document with an opaque origin). The raw href still
-    // separates two agents, which is what the slot is for.
-    return `${PREFIX}${href}`;
-  }
+  return urlSlot(PREFIX, "./");
 }
 
 /**
@@ -114,20 +107,15 @@ function slotFor(): string {
  * which is what the hook is. Calling this per render would mint a fresh key and
  * hand `recover` one nothing was ever started under.
  */
-function mintRunKey(storage: "session" | "local"): string {
-  try {
-    // Read INSIDE the guard: reaching for the property is itself what throws in
-    // a blocked iframe, before any method is called.
-    const store = storage === "local" ? globalThis.localStorage : globalThis.sessionStorage;
-    const slot = slotFor();
-    const stored = store?.getItem(slot);
-    if (stored !== null && stored !== undefined) return stored;
-    const minted = crypto.randomUUID();
-    store?.setItem(slot, minted);
-    return minted;
-  } catch {
-    return crypto.randomUUID();
-  }
+function mintRunKey(storage: StorageKind): string {
+  const slot = slotFor();
+  const stored = storageGet(storage, slot);
+  if (stored !== undefined) return stored;
+  // A store that refuses the write still returns a usable key — this page just
+  // gets one run's worth of it, which is the behaviour it would have had anyway.
+  const minted = crypto.randomUUID();
+  storageSet(storage, slot, minted);
+  return minted;
 }
 
 /**
@@ -155,12 +143,10 @@ function mintRunKey(storage: "session" | "local"): string {
  */
 export function useDefaultRunKey(explicit: string | undefined): string {
   // STORAGE is touched only when the first render had no key of its own; a page
-  // that named one gets a plain id it will never use, which costs nothing and
-  // leaves nothing behind. Either way the value is frozen for the component's
-  // life, which is what makes the next load able to produce the same one.
-  const [minted] = useState(() =>
-    explicit === undefined ? mintRunKey("session") : crypto.randomUUID(),
-  );
+  // that named one mints nothing at all. Either way the value is frozen for the
+  // component's life, which is what makes the next load able to produce the
+  // same one.
+  const [minted] = useState(() => (explicit === undefined ? mintRunKey("session") : ""));
   return explicit ?? minted;
 }
 

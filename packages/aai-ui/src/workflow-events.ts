@@ -49,11 +49,11 @@ export function watchRunEvents<R>(
   onFallback: () => void,
 ): () => void {
   const controller = new AbortController();
-  let handedOver = false;
+  // Exactly one of `pump()`'s two settlements runs, so this needs no
+  // idempotence guard — only the abort check, which is what makes a caller's
+  // teardown mid-stream silent rather than a fallback nobody asked for.
   const handOver = (): void => {
-    if (handedOver || controller.signal.aborted) return;
-    handedOver = true;
-    onFallback();
+    if (!controller.signal.aborted) onFallback();
   };
 
   /**

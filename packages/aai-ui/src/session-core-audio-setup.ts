@@ -14,7 +14,7 @@ import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type { SessionStateMachine } from "./session-core-state.ts";
-import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
+import { type ConnState, type SessionSnapshot, STOPPED } from "./session-core-types.ts";
 
 /** Dependencies `initAudioCapture` needs from the owning session core. */
 export type AudioSetupDeps = {
@@ -87,8 +87,7 @@ export async function initAudioCapture(
     // `session-core-state.ts`.
     deps.updateState({
       ...deps.agentState.apply({ type: "FAILED", error: { code: "audio", message, fatal: false } }),
-      running: false,
-      recording: false,
+      ...STOPPED,
     });
   };
   try {

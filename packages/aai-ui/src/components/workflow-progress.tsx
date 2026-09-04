@@ -4,7 +4,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import clsx from "clsx";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useWorkflowProgress } from "../use-workflow-progress.ts";
 import type { WorkflowApi } from "../workflow-client.ts";
 
@@ -89,15 +89,21 @@ export function WorkflowProgress({
   const { progress, streaming, supported } = useWorkflowProgress(runId, omitUndefined({ api }));
 
   // Sliced before the emptiness test, so `lines={0}` reads as "nothing to show"
-  // rather than as a full log.
-  const shown =
-    lines === undefined ? progress : progress.slice(Math.max(progress.length - lines, 0));
+  // rather than as a full log. Joined under the same memo: this renders inside
+  // the caller's `<Form>`, which re-renders at upload-progress rate, and the
+  // join is O(the whole log) — quadratic across a fan-out that writes a line
+  // per item.
+  const text = useMemo(() => {
+    const shown =
+      lines === undefined ? progress : progress.slice(Math.max(progress.length - lines, 0));
+    return shown.length === 0 ? null : shown.join("\n");
+  }, [progress, lines]);
 
-  if (!supported || shown.length === 0) return placeholder ?? null;
+  if (!supported || text === null) return placeholder ?? null;
 
   return (
     <pre className={clsx(className ?? "whitespace-pre-wrap border-l pl-4 text-xs opacity-70")}>
-      {shown.join("\n")}
+      {text}
       {streaming && "\n…"}
     </pre>
   );

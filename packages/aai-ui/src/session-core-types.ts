@@ -258,3 +258,38 @@ export type ConnState = {
    *  buffered during mic-permission never finishes playing. */
   preInitDone: boolean;
 };
+
+/**
+ * The two liveness fields at rest.
+ *
+ * `running` and `recording` ride with almost every state transition and were
+ * spread as a pair of literals at seven sites across three modules — the same
+ * shape `session-core-state.ts` folded `state` and `error` out of, one field
+ * short. Naming it relates them: a transition that ends the call says so once,
+ * and a reader looking for "what stops the mic" finds one symbol rather than a
+ * grep.
+ *
+ * It is deliberately NOT the whole snapshot patch — a transition still supplies
+ * its own `agentState.apply(...)` projection beside this.
+ */
+export const STOPPED = { running: false, recording: false } as const;
+
+/**
+ * A turn boundary: end the current turn and settle whatever it was playing.
+ *
+ * The two calls are one fact and were written out at four sites — `cancel()`
+ * and `reset()` here, `reply.cancelled` and `session.reset` on the server side
+ * — where the pair is load-bearing in both halves. The bump stops a stale drain
+ * continuation from stamping `"listening"` over a state the session has since
+ * moved to; the flush settles the interrupted turn's `done()` so it cannot
+ * strand.
+ *
+ * Two further sites bump WITHOUT flushing (`cleanupAudio`, a committed user
+ * transcript) and stay spelled out, which is the point of naming this one: a
+ * bump on its own now reads as a deliberate choice rather than a forgotten
+ * flush.
+ */
+export function bargeIn(conn: ConnState): void {
+  conn.turn.bump();
+  conn.voiceIO?.flush();
+}

@@ -6,7 +6,7 @@ import clsx from "clsx";
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 import { useTheme } from "../context.ts";
 import type { ClientTheme } from "../types.ts";
-import { INK_SURFACE_PCT, inkTint, primaryTint } from "./_colors.ts";
+import { FOCUS_RING, focusRingStyle, INK_SURFACE_PCT, inkTint, primaryTint } from "./_colors.ts";
 
 /**
  * A style object that may also carry CSS custom properties.
@@ -149,9 +149,7 @@ export function Button({
     "--aai-btn-bg-hover": colors.hoverBg,
     "--aai-btn-fg-hover": colors.hoverFg,
     "--aai-btn-bd-hover": colors.hoverBorder,
-    // A real property, so it needs no variant class of its own — the
-    // focus-visible rule only has to turn the outline on.
-    outlineColor: theme.primary,
+    ...focusRingStyle(theme.primary),
     ...style,
   };
 
@@ -167,12 +165,7 @@ export function Button({
         "bg-(--aai-btn-bg) text-(--aai-btn-fg) border-(--aai-btn-bd)",
         "enabled:hover:bg-(--aai-btn-bg-hover) enabled:hover:text-(--aai-btn-fg-hover)",
         "enabled:hover:border-(--aai-btn-bd-hover)",
-        // The ring is the only thing a keyboard user gets. `outline-none`
-        // used to sit here with no replacement, so focus was invisible on
-        // every control in the default client — WCAG 2.4.7. Written as a
-        // shorthand so it cannot be undone by Tailwind's shared
-        // `--tw-outline-style` variable.
-        "outline-none focus-visible:[outline:2px_solid] focus-visible:[outline-offset:2px]",
+        FOCUS_RING,
         "disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
