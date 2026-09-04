@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, it, test } from "vitest";
 import type { Session } from "./context.ts";
-import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, SessionSnapshot } from "./session-core-types.ts";
 import type { AgentState, ChatMessage, ClientTheme, SessionError, ToolCallInfo } from "./types.ts";
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 
@@ -69,19 +69,19 @@ describe("ClientTheme", () => {
   });
 });
 
-describe("SessionCore type contract", () => {
+describe("BrowserSession type contract", () => {
   test("has subscribe/getSnapshot/connect/disconnect/cancel/start/toggle", () => {
-    expectTypeOf<SessionCore["subscribe"]>().toBeFunction();
-    expectTypeOf<SessionCore["getSnapshot"]>().toBeFunction();
-    expectTypeOf<SessionCore["connect"]>().toBeFunction();
-    expectTypeOf<SessionCore["disconnect"]>().toBeFunction();
-    expectTypeOf<SessionCore["cancel"]>().toBeFunction();
-    expectTypeOf<SessionCore["start"]>().toBeFunction();
-    expectTypeOf<SessionCore["toggle"]>().toBeFunction();
+    expectTypeOf<BrowserSession["subscribe"]>().toBeFunction();
+    expectTypeOf<BrowserSession["getSnapshot"]>().toBeFunction();
+    expectTypeOf<BrowserSession["connect"]>().toBeFunction();
+    expectTypeOf<BrowserSession["disconnect"]>().toBeFunction();
+    expectTypeOf<BrowserSession["cancel"]>().toBeFunction();
+    expectTypeOf<BrowserSession["start"]>().toBeFunction();
+    expectTypeOf<BrowserSession["toggle"]>().toBeFunction();
   });
 
   test("getSnapshot returns SessionSnapshot", () => {
-    expectTypeOf<SessionCore["getSnapshot"]>().returns.toEqualTypeOf<SessionSnapshot>();
+    expectTypeOf<BrowserSession["getSnapshot"]>().returns.toEqualTypeOf<SessionSnapshot>();
   });
 });
 

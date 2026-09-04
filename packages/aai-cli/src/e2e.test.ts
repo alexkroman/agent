@@ -68,7 +68,7 @@ import { WORKER_ARTIFACT_REL } from "./build.ts";
 // build dies on `Could not resolve "workflow"` in the one place no CI job
 // looks.
 //
-// `link-digest` is the WORKFLOW APP — `workflowApp()` + `page()`, no
+// `link-digest` is the WORKFLOW APP — `workflowApp()` + `mountPage()`, no
 // stt/llm/tts, `page: "static"`. It is a different front door with different
 // wiring (telephony defaults off, `/websocket` is declined with a reason), and
 // until it was added no workflow app was built or booted anywhere in this tier;

@@ -199,7 +199,8 @@ function assertNoInlineTools(def: unknown): void {
  * about the front door.
  *
  * It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
- * `page()` mounts a workflow app's UI and `client()` mounts a voice one,
+ * `mountPage()` mounts a workflow app's UI and `mountClient()` mounts a voice
+ * one,
  * because a flag would leave every session-shaped question ("what does this
  * mean with no session?") answered by a conditional. Same reasoning, same
  * seam, other end of the wire.

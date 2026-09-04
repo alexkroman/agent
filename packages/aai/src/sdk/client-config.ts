@@ -58,7 +58,7 @@ export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 /**
  * Build the `GET /client-config` response body from an agent-shaped config.
  *
- * Every server that serves the endpoint (a self-hosted `createServer`, the
+ * Every server that serves the endpoint (a self-hosted `createRuntimeServer`, the
  * platform's per-slug handler, the CLI dev server) goes through this, so a
  * surface rule can't drift between them.
  */

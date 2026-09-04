@@ -14,7 +14,7 @@
  * `.slice()` in `fileChunks` fails "stores the file's real bytes".
  *
  * The upload store is the other seam that makes this testable at all —
- * `readUpload`/`writeUpload` read a process-wide slot rather than dialling
+ * `stepReadUpload`/`stepWriteUpload` read a process-wide slot rather than dialling
  * anything, so a spec supplies its own bytes and the code under test is
  * unchanged. `stubUploads` is imported from its own module rather than from
  * `sdk/testing.ts`; the barrel would work equally well and this is the narrower
@@ -25,7 +25,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { publishUploadReader, uploadInfo } from "../sdk/step-uploads.ts";
+import { publishUploadReader, stepUploadInfo } from "../sdk/step-uploads.ts";
 import { stubUploads } from "../sdk/testing-uploads.ts";
 import {
   readUploadToFile,
@@ -72,7 +72,7 @@ function pattern(length: number, step = 7): Uint8Array {
  *
  * `short` stages the case the fan-out has to survive on a COMPLETE file: a store
  * answering a window with fewer bytes than the range it was handed, for reasons
- * of its own. `readUpload` would not clamp here — `info.complete` is true and its
+ * of its own. `stepReadUpload` would not clamp here — `info.complete` is true and its
  * `size` covers the file — so the shortness is visible only in the bytes.
  */
 function watchedStore(
@@ -197,7 +197,7 @@ describe("readUploadToFile", () => {
     });
   });
 
-  test("defaults the size from uploadInfo, which is what both call sites had", async () => {
+  test("defaults the size from stepUploadInfo, which is what both call sites had", async () => {
     // No `size` passed at all: the templates this replaces each fetched the
     // record a line earlier and threaded it, and a caller that has not is the
     // common case.
@@ -235,7 +235,7 @@ describe("readUploadToFile", () => {
 
   test("stops at what ARRIVED when the size overshoots the store", async () => {
     // The streamed-upload case, and the reason the walk advances by `slice.end`
-    // rather than by the window it asked for: `readUpload` clamps to the bytes
+    // rather than by the window it asked for: `stepReadUpload` clamps to the bytes
     // that are there, so a stale size must end the walk rather than stride past
     // the short answer. The returned count is how a caller learns it was short.
     const arrived = pattern(4096, 5);
@@ -424,7 +424,7 @@ describe("readUploadToFile — the windows are read concurrently", () => {
 
   test("stops the walk at the first window a still-arriving upload cannot fill", async () => {
     // The same serial contract through the real clamp rather than a rigged store:
-    // `readUpload` cuts the window to what has ARRIVED, and the walk must stop at
+    // `stepReadUpload` cuts the window to what has ARRIVED, and the walk must stop at
     // that answer instead of striding a whole window past it.
     const arrived = pattern(2500, 5);
     uploadStore({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
@@ -444,7 +444,7 @@ describe("readUploadToFile — the windows are read concurrently", () => {
 describe("writeUploadFromFile", () => {
   test("stores the file's real bytes, not a reused buffer", async () => {
     // The aliasing bug, absorbed into this function so it is tested once here
-    // instead of being re-explained wherever `writeUpload(fileChunks(p), …)` is
+    // instead of being re-explained wherever `stepWriteUpload(fileChunks(p), …)` is
     // written by hand. Verified to CATCH it: deleting the `.slice()` in
     // `fileChunks` fails this test.
     uploadStore({}, { writable: true });
@@ -487,7 +487,7 @@ describe("writeUploadFromFile", () => {
       });
     });
 
-    const info = await uploadInfo(stored.id);
+    const info = await stepUploadInfo(stored.id);
     expect(info.name).toBe("audit.mp3");
     expect(info.type).toBe("audio/mpeg");
     expect(Object.keys(info)).not.toContain("windowBytes");

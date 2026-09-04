@@ -13,7 +13,7 @@ import type { WorkflowApi } from "../workflow-client.ts";
  *
  * The complement of a status line, and the reason both exist: a run is
  * `running` for its whole life, so a one-round job and a ten-round one look
- * identical while they happen. These lines come from the run itself (`report()`
+ * identical while they happen. These lines come from the run itself (`stepReport()`
  * in a `"use step"` body), which is the only channel a workflow has before it
  * produces an output.
  *

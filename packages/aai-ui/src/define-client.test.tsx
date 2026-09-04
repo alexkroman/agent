@@ -6,7 +6,7 @@
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock createSessionCore to avoid real WebSocket connections.
+// Mock createBrowserSession to avoid real WebSocket connections.
 vi.mock("./session-core.ts", () => {
   const snapshot = {
     state: "disconnected" as const,
@@ -19,7 +19,7 @@ vi.mock("./session-core.ts", () => {
     running: false,
   };
   return {
-    createSessionCore: vi.fn(() => ({
+    createBrowserSession: vi.fn(() => ({
       getSnapshot: () => snapshot,
       subscribe: () => () => undefined,
       connect: vi.fn(),
@@ -37,15 +37,15 @@ vi.mock("./session-core.ts", () => {
 
 import { createMockSessionCore, flushEffects } from "./_react-test-utils.ts";
 import { type ToolDisplayConfig, useToolConfig } from "./components/tool-config-context.ts";
-import { client } from "./define-client.tsx";
-import { createSessionCore } from "./session-core.ts";
+import { mountClient } from "./define-client.tsx";
+import { createBrowserSession } from "./session-core.ts";
 
 /** A core the default shell will render its children under. */
 function startedCore() {
   return createMockSessionCore({ state: "ready", started: true });
 }
 
-describe("client", () => {
+describe("mountClient", () => {
   let container: HTMLElement;
 
   beforeEach(() => {
@@ -68,12 +68,12 @@ describe("client", () => {
 
   it("throws when target selector does not match", () => {
     expect(() =>
-      client({ name: "Test", target: "#nonexistent", platformUrl: "http://localhost:3000" }),
+      mountClient({ name: "Test", target: "#nonexistent", platformUrl: "http://localhost:3000" }),
     ).toThrow("Element not found: #nonexistent");
   });
 
   it("renders the default shell when no component is given", () => {
-    const handle = client({
+    const handle = mountClient({
       name: "Test Agent",
       target: "#app",
       platformUrl: "http://localhost:3000",
@@ -88,7 +88,7 @@ describe("client", () => {
     function MyApp() {
       return createElement("div", { "data-testid": "custom" }, "Custom");
     }
-    const handle = client({
+    const handle = mountClient({
       component: MyApp,
       target: "#app",
       platformUrl: "http://localhost:3000",
@@ -98,7 +98,7 @@ describe("client", () => {
   });
 
   it("dispose unmounts and disconnects", () => {
-    const handle = client({
+    const handle = mountClient({
       name: "Test",
       target: "#app",
       platformUrl: "http://localhost:3000",
@@ -108,12 +108,12 @@ describe("client", () => {
   });
 
   it("dispose invokes the session core's Symbol.dispose", () => {
-    const handle = client({
+    const handle = mountClient({
       name: "Test",
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
-    const core = vi.mocked(createSessionCore).mock.results[0]?.value as {
+    const core = vi.mocked(createBrowserSession).mock.results[0]?.value as {
       [Symbol.dispose]: ReturnType<typeof vi.fn>;
     };
     expect(core[Symbol.dispose]).not.toHaveBeenCalled();
@@ -122,7 +122,7 @@ describe("client", () => {
   });
 
   it("Symbol.dispose aliases dispose", () => {
-    const handle = client({
+    const handle = mountClient({
       name: "Test",
       target: "#app",
       platformUrl: "http://localhost:3000",
@@ -135,7 +135,7 @@ describe("client", () => {
   it("accepts an HTMLElement as target", () => {
     const el = document.createElement("div");
     document.body.appendChild(el);
-    const handle = client({ target: el, platformUrl: "http://localhost:3000" });
+    const handle = mountClient({ target: el, platformUrl: "http://localhost:3000" });
     expect(el.childNodes.length).toBeGreaterThan(0);
     handle.dispose();
   });
@@ -151,7 +151,7 @@ describe("client", () => {
           }),
       ),
     );
-    const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
+    const handle = mountClient({ target: "#app", platformUrl: "http://localhost:3000" });
     await vi.waitFor(() => expect(container.textContent).toContain("Server Name"));
     handle.dispose();
   });
@@ -161,7 +161,7 @@ describe("client", () => {
       throw new Error("network down");
     });
     vi.stubGlobal("fetch", fetchSpy);
-    const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
+    const handle = mountClient({ target: "#app", platformUrl: "http://localhost:3000" });
 
     // `waitFor(fetchSpy called)` settles INSIDE the effect, before the
     // rejection is handled — so on its own this asserted the shell's optimistic
@@ -186,7 +186,11 @@ describe("client", () => {
     // fill in a value the caller already supplied.
     const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
-    const handle = client({ name: "Test", target: "#app", platformUrl: "http://localhost:3000" });
+    const handle = mountClient({
+      name: "Test",
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+    });
     await vi.waitFor(() => expect(container.textContent).toContain("Test"));
     expect(fetchSpy).not.toHaveBeenCalled();
     handle.dispose();
@@ -198,8 +202,8 @@ describe("client", () => {
       pathname: "/agent/",
       href: "https://example.com/agent/",
     });
-    const mockedCreateSessionCore = vi.mocked(createSessionCore);
-    const handle = client({ name: "Test", target: container });
+    const mockedCreateSessionCore = vi.mocked(createBrowserSession);
+    const handle = mountClient({ name: "Test", target: container });
     expect(mockedCreateSessionCore).toHaveBeenCalledWith(
       expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
     );
@@ -216,7 +220,7 @@ describe("client", () => {
    */
   it("uses name as the page title, including with a custom component", () => {
     const before = document.title;
-    const handle = client({
+    const handle = mountClient({
       name: "Pizza Palace",
       component: () => null,
       target: container,
@@ -228,7 +232,7 @@ describe("client", () => {
 
   it("leaves the page title alone when no name is given", () => {
     document.title = "Shipped by the HTML";
-    const handle = client({ component: () => null, target: container });
+    const handle = mountClient({ component: () => null, target: container });
     expect(document.title).toBe("Shipped by the HTML");
     handle.dispose();
   });
@@ -236,7 +240,7 @@ describe("client", () => {
   /**
    * `tools` alongside `component` used to be `never` — the same shape of bug
    * as `name` above, and found the same way: four starters in one eval run
-   * wrote `client({ component, tools })` and each lost a build round to
+   * wrote `mountClient({ component, tools })` and each lost a build round to
    * "Type '{ … }' is not assignable to type 'undefined'".
    *
    * It was never a default-shell option like `sidebar`. The provider wraps
@@ -251,7 +255,7 @@ describe("client", () => {
       seen = useToolConfig();
       return null;
     }
-    const handle = client({
+    const handle = mountClient({
       component: Probe,
       tools: { add_pizza: { label: "Adding pizza", icon: "🍕" } },
       target: container,
@@ -266,7 +270,7 @@ describe("client", () => {
       seen = useToolConfig();
       return null;
     }
-    const handle = client({ component: Probe, target: container });
+    const handle = mountClient({ component: Probe, target: container });
     expect(seen).toEqual({});
     handle.dispose();
   });
@@ -285,7 +289,7 @@ describe("client", () => {
     function Aside() {
       return createElement("div", { "data-testid": "aside" }, "Aside");
     }
-    const handle = client({ component: MyApp, sidebar: Aside, target: container });
+    const handle = mountClient({ component: MyApp, sidebar: Aside, target: container });
     expect(container.querySelector("[data-testid='main']")).not.toBeNull();
     expect(container.querySelector("[data-testid='aside']")).not.toBeNull();
     handle.dispose();
@@ -294,12 +298,12 @@ describe("client", () => {
    * The four display fields the two shell components already accepted and
    * `ClientConfig` did not name. `solo-rpg` wanted all four and could say none
    * of them in config, so it dropped to the `component:` tier for a 27-line
-   * wrapper whose only job was to re-say what `client()` already knows how to
+   * wrapper whose only job was to re-say what `mountClient()` already knows how to
    * say — and which dragged `useAgentState` up a level so its `Sidebar` had to
    * take a prop.
    */
   it("forwards icon, subtitle and buttonText to the start screen", () => {
-    const handle = client({
+    const handle = mountClient({
       name: "Solo RPG",
       icon: createElement("span", { "data-testid": "mark" }, "*"),
       subtitle: "A Narrative Solo-RPG Engine",
@@ -321,8 +325,8 @@ describe("client", () => {
     function Aside() {
       return createElement("div", { "data-testid": "aside" }, "Aside");
     }
-    vi.mocked(createSessionCore).mockReturnValueOnce(startedCore());
-    const handle = client({
+    vi.mocked(createBrowserSession).mockReturnValueOnce(startedCore());
+    const handle = mountClient({
       name: "T",
       sidebar: Aside,
       sidebarPosition: "right",
@@ -345,7 +349,7 @@ describe("client", () => {
     function Aside() {
       return createElement("div", { "data-testid": "aside" }, "Aside");
     }
-    const handle = client({
+    const handle = mountClient({
       component: MyApp,
       sidebar: Aside,
       sidebarPosition: "right",

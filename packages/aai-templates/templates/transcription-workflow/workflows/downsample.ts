@@ -152,7 +152,7 @@ export function downsampleSegment(
   const bind = sampleReaderFor(from);
   const frame = blockAlign(from);
   const inFrames = Math.floor(bytes.length / frame);
-  // A CALLER ERROR, and stated as one. `readUpload` clamps a window to what is
+  // A CALLER ERROR, and stated as one. `stepReadUpload` clamps a window to what is
   // stored, so the streaming flow can hand a short read down here; with no whole
   // frame the averaging window below is zero wide, `total / 0` is `NaN`, and
   // `setInt16` writes that as a 0 — a two-byte WAV of silence, transcribed and

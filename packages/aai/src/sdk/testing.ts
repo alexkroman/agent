@@ -23,7 +23,7 @@
  *   bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
  *   own FILES (`tools/`, `system-prompt.md`) onto its `agent.ts` default export
  *   the way the build does — the one function a spec needs.
- * - `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
+ * - `_testing-tool-results.ts` — `expectToolOk` / `expectDialogOk`, unwrapping what a gated
  *   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
  *   schema accepts, without reaching through `~standard`.
  * - `testing-delegate.ts` — `stubDelegate`, the same seam one loop up: what a
@@ -32,7 +32,7 @@
  *   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
  *   slots a step reaches through, each answered in memory.
  * - `testing-workflows.ts` — run snapshots and progress streams, for a page;
- *   `testing-workflow-ctx.ts` — `createWorkflowCtx`, the `ctx` a workflow BODY
+ *   `testing-workflow-ctx.ts` — `createWorkflowContext`, the `ctx` a workflow BODY
  *   takes, which nothing else can hand it.
  *
  * @module testing
@@ -64,7 +64,7 @@ export {
   type StubStepRequest,
   stubStepFetch,
 } from "./_testing-step-fetch.ts";
-export { ok, okPosition } from "./_testing-tool-results.ts";
+export { expectDialogOk, expectToolOk } from "./_testing-tool-results.ts";
 export {
   type StubTranscribe,
   type StubTranscribeCall,
@@ -125,12 +125,12 @@ export {
 // but the body takes a `ctx` only an engine constructs. Three templates
 // hand-rolled one.
 export {
-  createWorkflowCtx,
+  createWorkflowContext,
   type RecordedSleep,
   type RecordedStep,
-  WORKFLOW_CTX_NOW,
-  type WorkflowCtxOptions,
-  type WorkflowCtxRecorder,
+  WORKFLOW_CONTEXT_NOW,
+  type WorkflowContextOptions,
+  type WorkflowContextRecorder,
 } from "./testing-workflow-ctx.ts";
 export {
   createProgressStream,
@@ -138,7 +138,7 @@ export {
   type RunSnapshotOverrides,
 } from "./testing-workflows.ts";
 
-/** One chunk `emit()` wrote, and the stream it went to. */
+/** One chunk `stepEmit()` wrote, and the stream it went to. */
 export type StubEmitted = {
   /** The stream named at the call site. */
   namespace: string;
@@ -148,9 +148,9 @@ export type StubEmitted = {
 
 /** What {@link stubReporter} returns. */
 export type StubReporter = {
-  /** Every line `report()` wrote, oldest first. */
+  /** Every line `stepReport()` wrote, oldest first. */
   lines: string[];
-  /** Every chunk `emit()` wrote, oldest first. */
+  /** Every chunk `stepEmit()` wrote, oldest first. */
   emitted: StubEmitted[];
   /** Unpublish. Call it in an `afterEach` — see {@link stubReporter}. */
   restore: () => void;
@@ -214,7 +214,7 @@ export function stubStepInfo(step: {
 /**
  * Capture what a step narrates and emits.
  *
- * `report()` and `emit()` both go through a published slot, and with nothing
+ * `stepReport()` and `stepEmit()` both go through a published slot, and with nothing
  * published they fall back to the console — which is right for a step under test
  * that nobody is asserting on, and useless the moment the narration IS the
  * subject. It is for a step whose partial results are part of its contract: a
@@ -245,8 +245,8 @@ export function stubReporter(): StubReporter {
   const emitted: StubEmitted[] = [];
   publishStepReporter((chunk, options) => {
     // The namespace is what tells the two apart, and it is the SAME test
-    // `emit()`'s own contract rests on: an absent one is the default stream,
-    // which is `report()`'s.
+    // `stepEmit()`'s own contract rests on: an absent one is the default stream,
+    // which is `stepReport()`'s.
     if (options?.namespace === undefined) lines.push(String(chunk));
     else emitted.push({ namespace: options.namespace, chunk });
   });

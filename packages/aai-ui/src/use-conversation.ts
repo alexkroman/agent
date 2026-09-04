@@ -139,7 +139,7 @@ function isThinking(
  * Subscribe to the conversation: the interleaved exchange, the streaming
  * utterance, the live transcript and the thinking rule — with no markup.
  *
- * Must be used inside the provider `client()` installs.
+ * Must be used inside the provider `mountClient()` installs.
  *
  * @example A custom bubble, keeping every rule `<MessageList>` knows
  * ```tsx

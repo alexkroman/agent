@@ -5,7 +5,7 @@
  *
  * The ONLY store, written over two interfaces: {@link UploadRecords} for the
  * record (who the upload is, how much of it is readable, whether that is all of
- * it, and which objects hold which windows) and {@link UploadBlobs} for the bytes.
+ * it, and which objects hold which windows) and {@link UploadBackend} for the bytes.
  * Each has two implementations, and the pairing is decided once — in
  * `workflow-uploads.ts` — by whether the deployment has a `DATABASE_URL`: the
  * app's own database plus a bucket when it does, the local workflow world's data
@@ -31,7 +31,7 @@
  * big the object is before it records the window. A client that claimed a part it
  * never uploaded would otherwise advance `size` past a hole, and a step reading
  * there gets silence rather than an error — a transcript with a gap in it and
- * nothing anywhere reporting one. `UploadBlobs.size` never over-reports, so that
+ * nothing anywhere reporting one. `UploadBackend.size` never over-reports, so that
  * one question is the whole defence.
  *
  * ## Why the boundary merge is under a LOCK
@@ -58,7 +58,7 @@ import {
   partKey,
   partsCovering,
   rangesOf,
-  type UploadBlobs,
+  type UploadBackend,
   type UploadPart,
 } from "./_upload-blobs.ts";
 import { concat, once, windows } from "./_upload-byte-util.ts";
@@ -101,7 +101,7 @@ type MergedParts = {
  */
 export function createBlobUploadStore(opts: {
   records: UploadRecords;
-  blobs: UploadBlobs;
+  blobs: UploadBackend;
   prefix: string;
   maxBytes: number;
 }): UploadStore {

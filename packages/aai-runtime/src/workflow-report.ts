@@ -1,12 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The published half of {@link report} and {@link emit}: one call becomes a
+ * The published half of {@link stepReport} and {@link stepEmit}: one call becomes a
  * stream chunk, and — for a narration line — a server-log line beside it.
  *
  * `sdk/step-report.ts` is the surface a step calls and may not import a logger
  * (a step is handed none) — it rides the browser bundle and the CLI's
  * zero-dependency startup path. This module is where the logger lives, and
- * `createServer` publishes it — the one front door `aai dev`, a self-hosted
+ * `createRuntimeServer` publishes it — the one front door `aai dev`, a self-hosted
  * server and every deployed guest share, so narration behaves identically in all
  * three.
  *
@@ -26,7 +26,7 @@
  * ## The run is found through an `AsyncLocalStorage`, not through an import
  *
  * `workflow-run-context.ts` is the store, and it propagates across awaits — so a
- * `report()` from deep inside a step's own helpers still lands in the step's own
+ * `stepReport()` from deep inside a step's own helpers still lands in the step's own
  * run. Outside a run there is no context, and that is ORDINARY: a spec calling
  * an exported step degrades to log-only rather than failing.
  */
@@ -40,7 +40,7 @@ import type { Logger } from "./runtime-config.ts";
 import { currentRun } from "./workflow-run-context.ts";
 
 /**
- * Build the reporter `createServer` publishes.
+ * Build the reporter `createRuntimeServer` publishes.
  *
  * @param logger - Where the line goes as well as the run's stream.
  * @internal
@@ -48,18 +48,18 @@ import { currentRun } from "./workflow-run-context.ts";
 export function createStepReporter(logger: Logger): StepReporter {
   return async (chunk: unknown, options): Promise<void> => {
     // Which step is speaking, when one is. A body, a tool and a spec are all
-    // legitimate places to `report()` from and none of them is a step, so the
+    // legitimate places to `stepReport()` from and none of them is a step, so the
     // answer there is `undefined` rather than a failure — which is what let the
     // DevKit-era try/catch around `getStepMetadata()` go.
     const step = currentRun()?.step;
     const namespace = options?.namespace;
     // **The attempt is part of the LINE, not just the log context.** A fan-out
     // that is retrying looks identical in a progress stream to one that is
-    // succeeding — `report()` prints the same sentence each attempt — so a
+    // succeeding — `stepReport()` prints the same sentence each attempt — so a
     // reader watching sixty segments cannot tell a slow run from a wedged one.
     // Only past the first, so the ordinary case reads as the author wrote it.
     //
-    // Only a LINE gets it. `emit()`'s chunk is a value a program parses, and a
+    // Only a LINE gets it. `stepEmit()`'s chunk is a value a program parses, and a
     // suffix on it is either lost or corruption — its retries are visible in the
     // narration beside it, which is the reader that can read a suffix.
     const written =
@@ -67,7 +67,7 @@ export function createStepReporter(logger: Logger): StepReporter {
         ? `${chunk} (attempt ${step.attempt})`
         : chunk;
     // The log first: it is the reader that cannot go away, and a stream write
-    // that throws must not cost the operator the line. `emit()` passes
+    // that throws must not cost the operator the line. `stepEmit()` passes
     // `log: false`, because a structured chunk per item would bury the narration
     // it sits beside.
     if (options?.log !== false) {
@@ -95,13 +95,13 @@ export function createStepReporter(logger: Logger): StepReporter {
 /**
  * Write one chunk to a stream of the current run, if there is one.
  *
- * The namespace is what separates `emit()`'s typed chunks from `report()`'s
+ * The namespace is what separates `stepEmit()`'s typed chunks from `stepReport()`'s
  * lines: a run's streams are keyed by it, so a reader subscribing to one sees
  * only the other's. An ABSENT namespace is the default stream, which is
- * `report()`'s.
+ * `stepReport()`'s.
  */
 async function writeChunk(chunk: unknown, namespace: string | undefined): Promise<void> {
-  // No run in this context (a spec, a script, a `report()` from a tool): the log
+  // No run in this context (a spec, a script, a `stepReport()` from a tool): the log
   // line above is the whole report, which is what makes an exported step
   // callable with no engine around it.
   const run = currentRun();
@@ -113,7 +113,7 @@ async function writeChunk(chunk: unknown, namespace: string | undefined): Promis
 }
 
 /**
- * Build the step-info reader `createServer` publishes.
+ * Build the step-info reader `createRuntimeServer` publishes.
  *
  * Beside {@link createStepReporter} because both are the published half of a
  * `@alexkroman1/aai/step` slot over the same `AsyncLocalStorage`, and both

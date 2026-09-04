@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `writeUpload()` — storing a file a step PRODUCED.
+ * `stepWriteUpload()` — storing a file a step PRODUCED.
  *
  * The write half of `step-uploads.ts`, split out because that module reached
  * the 500-line cap and this is the seam a split falls on: everything there is
@@ -14,7 +14,7 @@
 import { requireUploadAccess, type UploadInfo } from "./step-uploads.ts";
 
 /**
- * Options for {@link writeUpload}.
+ * Options for {@link stepWriteUpload}.
  *
  * @public
  */
@@ -40,7 +40,7 @@ export type WriteUploadOptions = {
 /**
  * Store a file a step PRODUCED, and answer with the record naming it.
  *
- * The other direction of {@link readUpload}, and the half a workflow app needs
+ * The other direction of {@link stepReadUpload}, and the half a workflow app needs
  * the moment its output is not text. A run's output is journaled and read back
  * as JSON, so audio, an image or a PDF cannot travel in one — the same rule
  * that keeps a recording's bytes out of a run's INPUT, arriving at the other
@@ -48,11 +48,11 @@ export type WriteUploadOptions = {
  * which a page turns back into a file with `api.download(id)`.
  *
  * ```ts
- * import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
+ * import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string) {
  *   const spoken = await stepSpeak(summary);
- *   const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
+ *   const stored = await stepWriteUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
  *   return { audio: stored.id, durationMs: spoken.durationMs };
  * }
  * ```
@@ -79,7 +79,7 @@ export type WriteUploadOptions = {
  *
  * @public
  */
-export async function writeUpload(
+export async function stepWriteUpload(
   bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>,
   opts: WriteUploadOptions = {},
 ): Promise<UploadInfo> {
@@ -99,9 +99,9 @@ export async function writeUpload(
  * @internal
  */
 export const UPLOAD_WRITES_UNAVAILABLE_MESSAGE =
-  "The upload store in this process is read-only, so `writeUpload` has nowhere to put the " +
+  "The upload store in this process is read-only, so `stepWriteUpload` has nowhere to put the " +
   "bytes. Every deployed agent, every self-hosted server and `aai dev` publish a writable " +
-  "store through `createServer`; in a test, pass `{ writable: true }` to `stubUploads` from " +
+  "store through `createRuntimeServer`; in a test, pass `{ writable: true }` to `stubUploads` from " +
   "`@alexkroman1/aai/testing`.";
 
 /**

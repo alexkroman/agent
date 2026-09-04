@@ -15,7 +15,7 @@ import {
   makeConfig,
   recordingWebSocketClass,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
+import { createBrowserSession } from "./session-core.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
 
 function noop(): void {
@@ -58,7 +58,7 @@ describe("late playback drain vs teardown", () => {
   }
 
   it("disconnect() during a playback drain must not flip state back to listening", async () => {
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     core.start();
     socket?.simulateOpen();
     socket?.simulateMessage(makeConfig());
@@ -83,7 +83,7 @@ describe("late playback drain vs teardown", () => {
   });
 
   it("end() during a playback drain must not flip state back to listening", async () => {
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     core.start();
     socket?.simulateOpen();
     socket?.simulateMessage(makeConfig());
@@ -99,7 +99,7 @@ describe("late playback drain vs teardown", () => {
   });
 
   it("fatal error during a playback drain must not flip state back to listening", async () => {
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     core.start();
     socket?.simulateOpen();
     socket?.simulateMessage(makeConfig());
@@ -134,7 +134,7 @@ describe("late playback drain vs teardown", () => {
   ])(
     "a drain-stop in flight when a barge-in lands must not settle the next turn ($label)",
     async ({ turn }) => {
-      const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+      const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
       core.start();
       socket?.simulateOpen();
       socket?.simulateMessage(makeConfig());
@@ -164,7 +164,7 @@ describe("late playback drain vs teardown", () => {
   it("a matching drain-stop settles the turn and returns to listening", async () => {
     // The happy path the guards above exist to protect: without it, "discard
     // every late completion" and "discard the right ones" look identical.
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     core.start();
     socket?.simulateOpen();
     socket?.simulateMessage(makeConfig());
@@ -185,7 +185,7 @@ describe("late playback drain vs teardown", () => {
   it("audio_done with no audio pipeline yet still returns to listening", async () => {
     // Greeting audio can arrive before the worklet is up; there is nothing to
     // wait on, so the transition happens optimistically.
-    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const core = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     core.start();
     socket?.simulateOpen();
     // No config frame, so audio init has not run and voiceIO is absent.

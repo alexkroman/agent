@@ -21,7 +21,7 @@ import type { Logger } from "@alexkroman1/aai-runtime";
 import { consoleLogger } from "@alexkroman1/aai-runtime/internal";
 
 /**
- * The env handed to `createServer` for host-mode connections: provider
+ * The env handed to `createRuntimeServer` for host-mode connections: provider
  * credentials plus the `AAI_ALLOW_HOST` gate read straight from the shell
  * (it is a control variable, not something an agent declares in `.env`).
  */

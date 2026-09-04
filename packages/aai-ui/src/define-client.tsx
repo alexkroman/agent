@@ -12,20 +12,20 @@ import { SidebarLayout } from "./components/sidebar-layout.tsx";
 import { StartScreen } from "./components/start-screen.tsx";
 import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
 import { SessionProvider, ThemeProvider } from "./context.ts";
-import { createSessionCore } from "./session-core.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import { createBrowserSession } from "./session-core.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
 
 // ─── Config types ─────────────────────────────────────────────────────────────
 
 /**
- * Configuration passed to {@link client}.
+ * Configuration passed to {@link mountClient}.
  *
  * The session-forwarded fields are picked from {@link VoiceSessionOptions}
  * (one source of truth for types and docs) rather than re-declared — a
  * re-declared copy is exactly how doc comments drift. It is NOT the session's
  * own options type: that is {@link VoiceSessionOptions}, which
- * `createSessionCore` takes and which three of these fields come from.
+ * `createBrowserSession` takes and which three of these fields come from.
  *
  * @remarks
  * **One flat type, not a union of tiers.** `component` is what decides which
@@ -34,12 +34,12 @@ import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
  * and that decision is made at runtime, where every field can be honoured. It
  * used to be a union whose two arms banned each other's fields with `?: never`,
  * and the failure that shape produces is recorded twice in this file's history:
- * `client({ name, component })` and `client({ component, tools })` were both
+ * `mountClient({ name, component })` and `mountClient({ component, tools })` were both
  * the natural thing to write, both were refused with *"Type 'string' is not
  * assignable to type 'undefined'"*, and both cost a build round each time
  * before the ban was lifted. What was left banned was `sidebar` beside a
  * `component`, which invited the identical failure for a combination
- * {@link client} can simply render.
+ * {@link mountClient} can simply render.
  *
  * @public
  */
@@ -99,7 +99,7 @@ export type ClientConfig = Pick<
   /**
    * Tool display config: icon and label overrides keyed by tool name.
    *
-   * Honoured with a custom `component` too: {@link client} installs it into
+   * Honoured with a custom `component` too: {@link mountClient} installs it into
    * `ToolConfigContext`, and the consumer is `ToolCallBlock` — which a custom
    * component renders as soon as it uses `MessageList` or `ChatView`, the usual
    * way to build one.
@@ -108,7 +108,7 @@ export type ClientConfig = Pick<
 };
 
 /**
- * Handle returned by {@link client} for cleanup.
+ * Handle returned by {@link mountClient} for cleanup.
  *
  * Implements `Disposable` so it can be used with `using`.
  *
@@ -116,7 +116,7 @@ export type ClientConfig = Pick<
  */
 export type ClientHandle = {
   /** The underlying session core. */
-  session: SessionCore;
+  session: BrowserSession;
   /** Unmount the UI and disconnect the session. */
   dispose(): void;
   /** Alias for `dispose` for use with `using`. */
@@ -128,7 +128,7 @@ export type ClientHandle = {
 /**
  * The element a mount renders into.
  *
- * Exported so `page()` resolves its target the same way `client()` does — the
+ * Exported so `mountPage()` resolves its target the same way `mountClient()` does — the
  * default selector and the "element not found" sentence are part of what an
  * author has learned, and a second copy is how the two mounts come to disagree
  * about which one they were given.
@@ -148,7 +148,7 @@ export function resolveContainer(target: string | HTMLElement = "#app"): HTMLEle
  * @internal
  */
 export type MountedRoot = {
-  /** Unmount the React tree (and, for `client()`, dispose the session). */
+  /** Unmount the React tree (and, for `mountClient()`, dispose the session). */
   dispose(): void;
   /** Alias for `dispose` for use with `using`. */
   [Symbol.dispose](): void;
@@ -157,15 +157,15 @@ export type MountedRoot = {
 /**
  * Render `node` into `container` and hand back its teardown.
  *
- * Shared by {@link client} and `page()` because the plumbing is identical and
+ * Shared by {@link mountClient} and `mountPage()` because the plumbing is identical and
  * the two decisions in it are not obvious enough to be re-derived: the root is
  * created here rather than by the caller so nothing else can hold one, and the
  * render is `flushSync` so the mount is observable to the caller's NEXT
- * STATEMENT (and to a test) rather than scheduled — `client()` returns a handle
- * whose session is expected to be live, and `page()` returns one a caller may
+ * STATEMENT (and to a test) rather than scheduled — `mountClient()` returns a handle
+ * whose session is expected to be live, and `mountPage()` returns one a caller may
  * dispose immediately.
  *
- * `onDispose` runs after the unmount, which is the order `client()` needs: the
+ * `onDispose` runs after the unmount, which is the order `mountClient()` needs: the
  * tree comes down before the session under it goes away.
  *
  * @internal
@@ -186,7 +186,7 @@ export function mountRoot(
     },
     // Delegated through `this` rather than through a captured local, so the
     // alias still holds after the handle is spread into a wider one (which is
-    // exactly what `client()` does to add `session`) or after a caller replaces
+    // exactly what `mountClient()` does to add `session`) or after a caller replaces
     // `dispose` on the object it was handed.
     [Symbol.dispose]() {
       this.dispose();
@@ -203,7 +203,7 @@ export function mountRoot(
  * sidebar, an icon, a subtitle and its own CTA, all of which
  * `StartScreen`/`SidebarLayout` already take — could not say any of it in
  * config and dropped to the `component:` tier for a 27-line wrapper whose only
- * job was to re-say what `client()` already knows how to say.
+ * job was to re-say what `mountClient()` already knows how to say.
  */
 type ShellDisplay = {
   // Mapped rather than a bare `Pick`, so each field also accepts an EXPLICIT
@@ -252,7 +252,7 @@ function DefaultShell({ name, icon, subtitle, buttonText, Sidebar, ...layout }: 
  *
  * **The lookup is SKIPPED when the caller already named the agent.** The
  * response's only consumer here is the fallback below, so with an explicit
- * `client({ name })` the request was issued and its answer thrown away — and on
+ * `mountClient({ name })` the request was issued and its answer thrown away — and on
  * the platform this endpoint is the BROKER, so the discarded request is one that
  * can boot a sandbox. The session's own per-attempt lookup
  * (`session-core.ts`'s URL provider) is a different question and deliberately
@@ -276,7 +276,7 @@ function DefaultRoot({ platformUrl, ...display }: { platformUrl: string } & Shel
     };
   }, [platformUrl, needsLookup]);
 
-  // An explicit client({ name }) wins; otherwise use the server-declared name.
+  // An explicit mountClient({ name }) wins; otherwise use the server-declared name.
   return <DefaultShell {...display} name={name ?? resolved?.name} />;
 }
 
@@ -285,7 +285,7 @@ function DefaultRoot({ platformUrl, ...display }: { platformUrl: string } & Shel
  *
  * A custom component owns the whole page, so there is no header to hang a
  * `sidebar` off — but the layout the default shell uses is right here, and
- * `client({ component, sidebar })` names one pane and one aside, which is
+ * `mountClient({ component, sidebar })` names one pane and one aside, which is
  * exactly what it renders. Honouring the combination rather than ignoring it is
  * the same call this file already made for `name` and `tools`.
  */
@@ -337,13 +337,13 @@ function rootFor(config: ClientConfig, platformUrl: string) {
  *
  * @example The default shell
  * ```tsx
- * import { client } from "@alexkroman1/aai-ui";
+ * import { mountClient } from "@alexkroman1/aai-ui";
  *
  * function OrderPanel() {
  *   return <div>Cart</div>;
  * }
  *
- * client({
+ * mountClient({
  *   name: "Pizza Ordering",
  *   theme: { bg: "#1a1a1a", primary: "#e55" },
  *   sidebar: OrderPanel,
@@ -353,14 +353,14 @@ function rootFor(config: ClientConfig, platformUrl: string) {
  *
  * @example A custom component
  * ```tsx
- * import { client, useSession } from "@alexkroman1/aai-ui";
+ * import { mountClient, useSession } from "@alexkroman1/aai-ui";
  *
  * function MyCustomApp() {
  *   const session = useSession();
  *   return <div>{session.state}</div>;
  * }
  *
- * client({ component: MyCustomApp });
+ * mountClient({ component: MyCustomApp });
  * ```
  *
  * @returns A {@link ClientHandle} for cleanup.
@@ -368,12 +368,12 @@ function rootFor(config: ClientConfig, platformUrl: string) {
  *
  * @public
  */
-export function client(config: ClientConfig): ClientHandle {
+export function mountClient(config: ClientConfig): ClientHandle {
   const container = resolveContainer(config.target);
 
   const platformUrl = config.platformUrl ?? pageBaseUrl();
 
-  const session = createSessionCore({
+  const session = createBrowserSession({
     platformUrl,
     onSessionId: config.onSessionId,
     resumeSessionId: config.resumeSessionId,

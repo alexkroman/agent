@@ -944,7 +944,7 @@ type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow
 type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 export type WorkflowClient = {
@@ -968,7 +968,7 @@ export type WorkflowClient = {
 };
 
 // @public
-export type WorkflowCtx = {
+export type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;

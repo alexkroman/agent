@@ -2,7 +2,7 @@
 
 import {
   ASSEMBLYAI_STT_API_KEY_ENV,
-  makeSttError,
+  createSttError,
   resolveAssemblyAISttSettings,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_FRAME_FLOOR_MS,
@@ -213,7 +213,7 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         openOpts.apiKey,
         ASSEMBLYAI_STT_API_KEY_ENV,
         "AssemblyAI STT",
-        (msg) => makeSttError("stt_auth_failed", msg),
+        (msg) => createSttError("stt_auth_failed", msg),
       );
 
       const client = new AssemblyAI({ apiKey });
@@ -281,7 +281,7 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
 
       await connectOrThrow(
         "AssemblyAI STT",
-        (msg) => makeSttError("stt_connect_failed", msg),
+        (msg) => createSttError("stt_connect_failed", msg),
         () => transcriber.connect(),
       );
 

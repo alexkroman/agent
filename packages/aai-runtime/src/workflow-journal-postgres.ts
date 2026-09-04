@@ -4,7 +4,7 @@
  *
  * `createMemoryJournal` is the reference implementation of the contract and the
  * honest trade for `aai dev`; this is the one that makes a run outlive its
- * process. A self-hosted `createServer` with a `DATABASE_URL`, or `aai dev`
+ * process. A self-hosted `createRuntimeServer` with a `DATABASE_URL`, or `aai dev`
  * against one, gets it — the platform's own journal is a separate backend, for
  * the same reason session state has three.
  *

@@ -15,8 +15,8 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import { createBrowserSession } from "./session-core.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 
 type FakeVoiceIO = {
   enqueue: ReturnType<typeof vi.fn<(buf: ArrayBuffer) => void>>;
@@ -54,13 +54,13 @@ vi.mock("./audio.ts", () => ({
 }));
 
 describe("initAudioCapture races", () => {
-  let core: SessionCore;
+  let core: BrowserSession;
 
   beforeEach(() => {
     resetLastSocket();
     pendingInits.length = 0;
     createVoiceIOMock.mockClear();
-    core = createSessionCore({
+    core = createBrowserSession({
       platformUrl: "ws://localhost:3000",
       WebSocket: MockWebSocketConstructor,
     });

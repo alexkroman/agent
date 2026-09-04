@@ -51,7 +51,7 @@ describe("the theme as CSS custom properties", () => {
     });
   });
 
-  test("a client({ theme }) override reaches the variables, not just useTheme()", () => {
+  test("a mountClient({ theme }) override reaches the variables, not just useTheme()", () => {
     mount({ primary: "#ff0000", surface: "#101010" });
     const vars = varsOnRoot();
     expect(vars["--aai-primary"]).toBe("#ff0000");

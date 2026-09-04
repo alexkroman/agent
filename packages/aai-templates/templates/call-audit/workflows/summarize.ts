@@ -11,7 +11,7 @@
  * `spoken-summary` owns the audio ROUND TRIP and is the template to read for it:
  * why `stepSpeak` exists at all (a `TtsSession` is an event stream wired into a
  * live pipeline's playback, and a step has no turn to be part of and has to return
- * a VALUE), why `writeUpload` is its other half, and why speaking and storing must
+ * a VALUE), why `stepWriteUpload` is its other half, and why speaking and storing must
  * be one step. None of that is restated here.
  *
  * **What this file adds is the pass AFTER the synthesis**, and it is the second
@@ -35,8 +35,8 @@
 import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-import { report, stepSpeak } from "@alexkroman1/aai/step";
-import { stepGenerateJsonClassified, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+import { stepReport, stepSpeak } from "@alexkroman1/aai/step";
+import { stepGenerateJsonOrFail, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
@@ -105,8 +105,8 @@ export async function summarize(
   source: string,
   durationMs: number,
 ): Promise<CallSummary> {
-  await report("Reading the transcript.");
-  const reply = await stepGenerateJsonClassified(
+  await stepReport("Reading the transcript.");
+  const reply = await stepGenerateJsonOrFail(
     `Audit this transcript of a recorded call (${source}, ${formatDuration(durationMs)}).\n\n` +
       "Answer with JSON only, in this shape:\n" +
       `{"headline": "...", "risks": ["..."], "actions": ["..."], "spoken": "..."}\n\n` +
@@ -125,12 +125,12 @@ export async function summarize(
       system: "You audit recorded calls. You answer with JSON and nothing else.",
       schema: AuditReply,
     },
-    // The `Classified` caller is `stepGenerateJson` plus `throwStepError`, which is
+    // The `OrFail` caller is `stepGenerateJson` plus `throwStepError`, which is
     // what reads the gateway's own status: a 429 is worth another attempt and a 400
     // is not, and that is what tells the DevKit which.
   );
 
-  await report(
+  await stepReport(
     `Found ${reply.risks.length} ${plural(reply.risks.length, "risk")} and ` +
       `${reply.actions.length} ${plural(reply.actions.length, "action")}.`,
   );
@@ -186,7 +186,7 @@ export async function narrate(
         type: "audio/mpeg",
       });
 
-      await report(
+      await stepReport(
         `Recorded a ${Math.round(spoken.durationMs / 1000)}s audit in ${spoken.voice}'s voice — ` +
           `${formatBytes(bytes)} of MP3, from ${formatBytes(spoken.audio.byteLength)} of WAV.`,
       );

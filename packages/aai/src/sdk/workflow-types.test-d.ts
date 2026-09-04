@@ -18,7 +18,7 @@ import {
   type WorkflowRunOf,
   workflow,
 } from "./workflow.ts";
-import type { WorkflowCtx } from "./workflow-ctx.ts";
+import type { WorkflowContext } from "./workflow-ctx.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /** A schema with all three shapes a body reads differently: required, optional, defaulted. */
@@ -100,7 +100,7 @@ test("neither helper accepts something that is not a workflow definition", () =>
  * the call site's type. A schema that validated at run time while the body still
  * saw `unknown` would be half the feature and would look like all of it.
  */
-declare const ctx: WorkflowCtx;
+declare const ctx: WorkflowContext;
 const Approval = z.object({ approved: z.boolean() });
 
 test("a wait's schema supersedes the type parameter, and a deadline adds `| undefined`", async () => {
@@ -172,7 +172,7 @@ const annotated: WorkflowDef<typeof annotatedInput, z.infer<typeof annotatedOutp
 
 async function annotatedFlow(
   input: WorkflowInputOf<typeof annotated>,
-  _ctx: WorkflowCtx,
+  _ctx: WorkflowContext,
 ): Promise<WorkflowOutputOf<typeof annotated>> {
   return { headline: input.topic, words: 1 };
 }

@@ -1,7 +1,12 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
-import { createToolContext, okPosition, stubGenerate, toolRunner } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  expectDialogOk,
+  stubGenerate,
+  toolRunner,
+} from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./procedure.ts";
@@ -216,7 +221,7 @@ describe("work_next_step", () => {
     const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
 
-    const first = okPosition<{
+    const first = expectDialogOk<{
       finished: boolean;
       step: string;
       result: string;
@@ -243,7 +248,7 @@ describe("work_next_step", () => {
     });
     const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
-    const answered = okPosition<{ finished: boolean; response: string }>(
+    const answered = expectDialogOk<{ finished: boolean; response: string }>(
       await run("work_next_step", ctx),
     );
 
@@ -327,7 +332,7 @@ describe("revise_plan", () => {
     await run("work_next_step", ctx);
     expect(stateOf(ctx).response).not.toBeNull();
 
-    const revised = okPosition<{ finished: boolean; remaining: string[] }>(
+    const revised = expectDialogOk<{ finished: boolean; remaining: string[] }>(
       await run("revise_plan", { instruction: "make it Porto instead" }, ctx),
     );
     expect(revised.result.finished).toBe(false);
@@ -362,7 +367,7 @@ describe("revise_plan", () => {
     });
     const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
-    const revised = okPosition<{ finished: boolean }>(
+    const revised = expectDialogOk<{ finished: boolean }>(
       await run("revise_plan", { instruction: "never mind, it is booked" }, ctx),
     );
     expect(revised.result.finished).toBe(true);

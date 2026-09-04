@@ -17,7 +17,7 @@
 import { workflow } from "@alexkroman1/aai";
 import { publishStepReporter } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
-import { report } from "@alexkroman1/aai/step";
+import { stepReport } from "@alexkroman1/aai/step";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger, tick } from "./_test-utils.ts";
 import { harness } from "./_workflow-engine-harness.ts";
@@ -276,8 +276,8 @@ describe("the run record carries the output", () => {
 });
 
 describe("progress", () => {
-  test("a report() from inside a step reaches the run's stream", async () => {
-    // The seam this proves: `report()` finds its run through
+  test("a stepReport() from inside a step reaches the run's stream", async () => {
+    // The seam this proves: `stepReport()` finds its run through
     // `workflow-run-context.ts` rather than through the DevKit's
     // `getWritable()`, and the executor enters that context per STEP so the
     // line is attributed to the right one.
@@ -289,7 +289,7 @@ describe("progress", () => {
           description: "digest",
           run: async (_input, ctx) => {
             await ctx.step("research", async () => {
-              await report("reading the page");
+              await stepReport("reading the page");
             });
             return "done";
           },

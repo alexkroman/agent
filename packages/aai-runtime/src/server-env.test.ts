@@ -1,9 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `agentServerEnv` — which keys of an agent's env reach `createServer`.
+ * `agentServerEnv` — which keys of an agent's env reach `createRuntimeServer`.
  *
  * The cases came from the guest harness, which had its own copy of this filter
- * until `createAgentServer` turned out to need the same one. Its `createServer`
+ * until `createAgentServer` turned out to need the same one. Its `createRuntimeServer`
  * call was made with no `env` AT ALL; the wrapper's was made with the agent's env
  * going only to the runtime — the same three symptoms by two routes.
  */

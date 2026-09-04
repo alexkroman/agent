@@ -11,7 +11,7 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import type { Logger } from "./runtime-config.ts";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
 import type { ResumeFindings } from "./session-resume-found.ts";
@@ -140,7 +140,7 @@ export function createRuntimeSessionState(opts: {
  * @internal
  */
 export function attachSessionState(
-  core: SessionCore,
+  core: ServerSession,
   opts: {
     state: RuntimeSessionState;
     sessionId: string;

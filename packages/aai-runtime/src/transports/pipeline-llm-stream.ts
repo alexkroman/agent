@@ -79,7 +79,7 @@ export interface ConsumeLlmStreamParams {
   deadAirCoverMs?: number | undefined;
   /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
   callerSpeaking?: (() => boolean) | undefined;
-  /** Tool-call/tool-result observability hooks, forwarded to SessionCore. */
+  /** Tool-call/tool-result observability hooks, forwarded to ServerSession. */
   callbacks: Pick<TransportCallbacks, "report">;
   /** Report an LLM-stream error. */
   emitError: EmitError;

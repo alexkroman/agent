@@ -27,7 +27,7 @@
 
 import { readFile, rm } from "node:fs/promises";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { createServer } from "@alexkroman1/aai-runtime";
+import { createRuntimeServer } from "@alexkroman1/aai-runtime";
 import { agentServerEnv } from "@alexkroman1/aai-runtime/internal";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";
@@ -211,10 +211,10 @@ export async function mainAgent(port: number, host: string, token: string): Prom
     refuse: () => (idle.isDraining() ? { code: 1013, reason: "draining" } : null),
   });
 
-  const server = createServer({
+  const server = createRuntimeServer({
     runtime,
     // The agent's own env, and its ABSENCE here was a bug with three symptoms.
-    // `createServer` reads four things out of it, and a deployed agent got none:
+    // `createRuntimeServer` reads four things out of it, and a deployed agent got none:
     //
     // - `DATABASE_URL`, which is where a workflow upload's RECORD lives. Without it
     //   `installWorkflowSupport` built a store with no database — so every deployed

@@ -107,8 +107,8 @@ export async function loadClientConfig(
  * yields the agent default (`{}`).
  *
  * **This is what a workflow app calls instead of receiving the config.**
- * `client()` fetches `GET client-config` for itself before it renders the
- * default chat shell, so a voice client never has to. `page()` mounts no
+ * `mountClient()` fetches `GET client-config` for itself before it renders the
+ * default chat shell, so a voice client never has to. `mountPage()` mounts no
  * session and makes no such request — deliberately, since a page has no shell
  * to put a name in — so a page that wants the agent's own `name` or `greeting`
  * asks for them here.
@@ -130,7 +130,7 @@ export async function loadClientConfig(
  *
  * @example
  * ```tsx
- * import { fetchClientConfig, page } from "@alexkroman1/aai-ui";
+ * import { fetchClientConfig, mountPage } from "@alexkroman1/aai-ui";
  *
  * const { name, greeting } = await fetchClientConfig(
  *   location.origin + location.pathname,
@@ -145,7 +145,7 @@ export async function loadClientConfig(
  *   );
  * }
  *
- * page({ name: name ?? "Workflows", component: App });
+ * mountPage({ name: name ?? "Workflows", component: App });
  * ```
  *
  * @public

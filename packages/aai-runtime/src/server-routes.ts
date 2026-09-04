@@ -3,7 +3,7 @@
  * Every path this package serves, as a TABLE rather than as a dispatch chain.
  *
  * Two things read a route table, and until now only one of them existed. The
- * dispatch in `createServer` matched `url === "/health"` inline, and
+ * dispatch in `createRuntimeServer` matched `url === "/health"` inline, and
  * `aai-server`'s `GUEST_ROUTES` — the platform's statement of what a guest
  * answers — was a hand-transcribed copy of the same strings in another package.
  * Nothing joined them: `guard-invariants` rule 12 greps the guest's source for
@@ -18,11 +18,11 @@
  * `/websocket`) get one below, which is the only new spelling this module adds.
  *
  * **Two tables, because there are two mounting surfaces.** {@link SERVER_ROUTES}
- * is what `createServer` answers on its own; {@link WORKFLOW_CALLBACK_ROUTES} is
+ * is what `createRuntimeServer` answers on its own; {@link WORKFLOW_CALLBACK_ROUTES} is
  * what {@link handleWorkflowRequest} answers, which every front door installs
  * through the embedder's `request` hook (`aai dev` and the guest harness both
- * do) rather than getting from `createServer`. Merging them would claim a
- * composition that does not exist — a `createServer` with no `request` hook
+ * do) rather than getting from `createRuntimeServer`. Merging them would claim a
+ * composition that does not exist — a `createRuntimeServer` with no `request` hook
  * serves the first set and none of the second.
  *
  * The precedent is `WORKFLOW_API_METHODS` in `workflow-api.ts`, which already
@@ -52,7 +52,7 @@ export const HEALTH_PATH = "/health";
  * Client voice sessions. A PREFIX match: the upgrade carries session options as
  * query parameters (`parseWsUpgradeParams`), and `requestPath` has already cut
  * the query off — so the prefix is what tolerates a trailing segment, which is
- * the shape `createServer` has always matched with `startsWith`.
+ * the shape `createRuntimeServer` has always matched with `startsWith`.
  *
  * @internal
  */
@@ -99,7 +99,7 @@ export type ServerRoute =
   | { readonly transport: "ws"; readonly path: string; readonly match: ServerRouteMatch };
 
 /**
- * What `createServer` answers on its own — no embedder hook, no static assets.
+ * What `createRuntimeServer` answers on its own — no embedder hook, no static assets.
  *
  * The dispatch in `server.ts` reads its paths and methods from here, so a route
  * cannot be served under a path this table does not name.
@@ -112,7 +112,7 @@ export const SERVER_ROUTES = {
   // 404 to it takes the whole deployment out of rotation while `GET /health`
   // reports ok. Declared HERE rather than only at `createAgentServer`'s door,
   // because `aai dev`, the guest harness and `createHostServer` all call
-  // `createServer` directly and would each have kept the 404. Node drops a
+  // `createRuntimeServer` directly and would each have kept the 404. Node drops a
   // HEAD response's body itself, so the one handler serves both verbs.
   health: { transport: "http", path: HEALTH_PATH, match: "exact", methods: ["GET", "HEAD"] },
   clientConfig: {
@@ -142,11 +142,11 @@ export const SERVER_ROUTES = {
 
 /**
  * What {@link handleWorkflowRequest} answers, mounted by whoever supplies
- * `createServer`'s `request` hook.
+ * `createRuntimeServer`'s `request` hook.
  *
  * Separate from {@link SERVER_ROUTES} because the composition really is
  * separate: `aai dev` (`_dev-server.ts`) and the guest harness
- * (`harness-manage.ts`) each install it, and a self-hosted `createServer` with
+ * (`harness-manage.ts`) each install it, and a self-hosted `createRuntimeServer` with
  * no hook answers none of these.
  *
  * @internal

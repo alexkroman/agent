@@ -23,7 +23,7 @@
 
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
-  // `WorkflowCtx.sleep`'s options. Durable sleep is what makes a replay engine
+  // `WorkflowContext.sleep`'s options. Durable sleep is what makes a replay engine
   // worth having, so its option bag is part of the declaring surface.
   type SleepOptions,
   type StepOptions,
@@ -45,7 +45,7 @@ export {
   // is what a page READS. They arrived with the engine that replaced the
   // Workflow DevKit's `"use step"` directive — the durability an author reaches
   // for is a method call now, so it is part of the declaring surface.
-  type WorkflowCtx,
+  type WorkflowContext,
   type WorkflowDef,
   workflow,
 } from "../../index.ts";

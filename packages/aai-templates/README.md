@@ -46,7 +46,7 @@ project self-hosts with `npm start` — no platform account required.
 | `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 26 |
 | `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 14 templates |
 | `workflows/` | durable workflow bodies | 8 templates |
-| `client.tsx` | the browser half; mounts with `client()` (voice) or `page()` (workflow app) | 15 templates |
+| `client.tsx` | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app) | 15 templates |
 | `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 16 templates |
 | `shared.ts` | the session slot, its projection, and anything both ends need | most |
 | `agent.test.ts` | unit tests, run by `pnpm test` | 22 templates |

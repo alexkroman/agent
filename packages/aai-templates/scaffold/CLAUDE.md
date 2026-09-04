@@ -425,14 +425,14 @@ below.
 
 ### Workflow bodies live in `workflows/`
 
-A body is an ordinary exported async function of its input and a `WorkflowCtx`.
+A body is an ordinary exported async function of its input and a `WorkflowContext`.
 There is no directive and no compile step of its own — the agent bundle compiles
 `workflows/` like any other source file — and durability is a method call:
 
 ```ts
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 
-export async function digestFlow(input: { url: string }, ctx: WorkflowCtx) {
+export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
   const digest = await ctx.step("summarize", () => summarize(input.url));
 
   // Suspended, not blocked: the container is free to exit here and the run
@@ -524,11 +524,11 @@ The three undurable reads a body most often wants, each journaled — read once 
 the first reach, and the same value on every later walk:
 
 ```ts
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 
 declare function charge(amount: number, idempotencyKey: string, jitter: number): Promise<void>;
 
-export async function chargeFlow(input: { amount: number }, ctx: WorkflowCtx) {
+export async function chargeFlow(input: { amount: number }, ctx: WorkflowContext) {
   const startedAt = await ctx.now(); // epoch ms, decided once
   const idempotencyKey = await ctx.uuid(); // still the same id after a crash
   const jitter = await ctx.random(); // one float in [0, 1), journaled per call
@@ -681,15 +681,15 @@ trap somebody has already paid for:
 Steps are ordinary exported functions, so a spec imports and calls them. The
 BODY needs an engine, and there are two, for two different questions.
 
-**"What did the body ask for?"** — `createWorkflowCtx` from
+**"What did the body ask for?"** — `createWorkflowContext` from
 `@alexkroman1/aai/testing`. It runs the steps and records the names, the retry
 policies and the sleeps, over one walk with no journal. Nothing replays, so a
 spec built on it must not claim to test durability.
 
 ```ts no-check
-import { createWorkflowCtx } from "@alexkroman1/aai/testing";
+import { createWorkflowContext } from "@alexkroman1/aai/testing";
 
-const ctx = createWorkflowCtx({ runSteps: false });
+const ctx = createWorkflowContext({ runSteps: false });
 await digestFlow({ url: "https://example.com/a" }, ctx);
 
 expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
@@ -754,7 +754,7 @@ root barrel would drag the whole SDK into that bundle.
 
 ```ts
 import { stepEnv } from "@alexkroman1/aai/step";
-import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
+import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
 
 async function summarize(text: string) {
   // The agent's env by name — the same values a tool reads from `ctx.env`.
@@ -762,7 +762,7 @@ async function summarize(text: string) {
   const style = stepEnv("DIGEST_STYLE") ?? "plain";
 
   // One model call, on the agent's own ASSEMBLYAI_API_KEY and default model.
-  return await stepGenerateClassified(`${style} summary of:\n\n${text}`, {
+  return await stepGenerateOrFail(`${style} summary of:\n\n${text}`, {
     system: "Reply with two sentences and nothing else.",
   });
 }
@@ -774,9 +774,9 @@ before and after a deploy. List what you read in `requiredEnv` and a deploy
 checks it for you. And **`stepGenerate` is not `ctx.generate`**: it is one
 request to the AssemblyAI LLM Gateway, with no tools and no structured output,
 because bundling the AI SDK into a step artifact costs megabytes on every
-deploy. Use `stepGenerateJsonClassified` with a Zod `schema` if you need a shape.
+deploy. Use `stepGenerateJsonOrFail` with a Zod `schema` if you need a shape.
 
-### From a step, reach for the `Classified` call
+### From a step, reach for the `OrFail` call
 
 `@alexkroman1/aai/step-errors` publishes a wrapper for every `/step` call that
 can fail against a remote service, and **inside a step the wrapper is the one to
@@ -784,14 +784,14 @@ use**:
 
 | Raw, on `@alexkroman1/aai/step` | Use this instead, on `@alexkroman1/aai/step-errors` |
 | --- | --- |
-| `stepGenerate` | `stepGenerateClassified` |
-| `stepGenerateJson` | `stepGenerateJsonClassified` |
-| `stepFetch` | `stepFetchOk` |
-| `stepTranscribeSync` | `stepTranscribeSyncClassified` |
-| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*Classified` |
-| `sendToChannel` (`/channels`) | `sendToChannelClassified` |
+| `stepGenerate` | `stepGenerateOrFail` |
+| `stepGenerateJson` | `stepGenerateJsonOrFail` |
+| `stepFetch` | `stepFetchOrFail` |
+| `stepTranscribeSync` | `stepTranscribeSyncOrFail` |
+| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*OrFail` |
+| `sendToChannel` (`/channels`) | `sendToChannelOrFail` |
 
-`stepFetchOk` is the one that is not spelled `*Classified`, and the name is the
+`stepFetchOrFail` is the one that is not spelled `*OrFail`, and the name is the
 difference: the others turn an already-thrown failure into a classified one,
 while this also turns a NON-2XX RESPONSE into a throw — `stepFetch` resolves
 with a `404` rather than raising it. Two changes, so two names.
@@ -829,7 +829,7 @@ bundling rule as `/step` — import them there, never through the root barrel:
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
   the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Use the `Classified`
+  lives on `/step` with the other step primitives.) Use the `OrFail`
   wrappers above: a provider refusal — a container it will not read, a
   recording with no speech — arrives
   with `retryable: false`, and unclassified a step re-uploads the same bytes
@@ -866,19 +866,19 @@ export async function measure(uploadId: string) {
 
 A run that finishes while nobody is on the line needs somewhere to put the
 result. `slackChannel({ webhookUrl })` names a destination and
-`sendToChannelClassified(channel, message)` posts to it:
+`sendToChannelOrFail(channel, message)` posts to it:
 
 ```ts no-check
 import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
 import { requireStepEnv } from "@alexkroman1/aai/step";
-import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 
 export async function announce(headline: string, points: string[]) {
   const message: ChannelMessage = {
     text: headline,
     sections: points.map((point) => ({ text: point })),
   };
-  return await sendToChannelClassified(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
+  return await sendToChannelOrFail(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
 }
 ```
 
@@ -887,7 +887,7 @@ it with `aai secret put`. A channel's credential is its DESTINATION and is
 passed in, which is why no channel reads an env var of its own. `ChannelMessage`
 is rendered per platform, so the same message is legal on a channel kind added
 later; `isSlackWebhookUrl` / `isSlackWorkflowTriggerUrl` validate a pasted URL
-before a run depends on it, and `channelAdvice` turns a refusal into a sentence
+before a run depends on it, and `explainChannelFailure` turns a refusal into a sentence
 a person can act on. `podcast-digest` is the worked example.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
@@ -966,11 +966,11 @@ Both are on `@alexkroman1/aai/step`, and `spoken-summary` is the template that
 shows the whole round trip.
 
 ```ts
-import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
+import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(script: string) {
   const spoken = await stepSpeak(script, { voice: "jane" });
-  const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
+  const stored = await stepWriteUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
   return { audio: stored.id, durationMs: spoken.durationMs };
 }
 ```
@@ -987,11 +987,13 @@ opens and produces silence rather than an error. The `AssemblyAITtsVoice` type
 gives you autocomplete over it and nothing more: it accepts any string, so that
 a voice the service adds after this release still compiles.
 
-**`writeUpload` is `readUpload`'s other direction, and you need it.** A run's
-output is read back as JSON, so audio cannot travel in one — the same rule that
-keeps an uploaded recording's bytes out of a run's INPUT, arriving at the other
-end of the run. Store the bytes, return the **id**, and let the page fetch it
-with `api.download(id)`.
+**`stepWriteUpload` is `stepReadUpload`'s other direction, and you need it.** A
+run's output is read back as JSON, so audio cannot travel in one — the same rule
+that keeps an uploaded recording's bytes out of a run's INPUT, arriving at the
+other end of the run. Store the bytes, return the **id**, and let the page fetch
+it with `api.download(id)`. A step that wants the record rather than the bytes
+reads it with `stepUploadInfo(id)`, which answers an `UploadInfo` — the name,
+the size stored so far, and whether that is all of it.
 
 Three rules come with it:
 
@@ -1045,12 +1047,13 @@ naming a shape is what asks the compiler to make you handle the failure.
 
 ### The page
 
-A workflow app's `client.tsx` mounts with `page()` rather than `client()` —
-there is no session to build, so no socket, no audio graph and no microphone
-request. Everything else is the same file, React and Tailwind included.
+A workflow app's `client.tsx` mounts with `mountPage()` rather than
+`mountClient()` — there is no session to build, so no socket, no audio graph
+and no microphone request. Everything else is the same file, React and
+Tailwind included.
 
 ```tsx no-check
-import { createWorkflowApi, page, useWorkflowRun } from "@alexkroman1/aai-ui";
+import { createWorkflowApi, mountPage, useWorkflowRun } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import { useState } from "react";
@@ -1078,7 +1081,7 @@ export function App() {
   );
 }
 
-page({ name: "Link Digest", component: App });
+mountPage({ name: "Link Digest", component: App });
 ```
 
 `api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that
@@ -1197,7 +1200,7 @@ statement about pipeline mode, not about the SDK.
 ### Answering a phone call
 
 A deployed voice agent already serves carrier media streams — there is nothing
-to switch on. `createServer` mounts `WS /phone` whenever the agent is a voice
+to switch on. `createRuntimeServer` mounts `WS /phone` whenever the agent is a voice
 agent (`telephony` defaults to `true`, and to `false` for a `page: "static"`
 workflow app, which has no stages to put on a call). Point the carrier at it
 with a `carrier` query parameter naming who is dialling:
@@ -1213,7 +1216,7 @@ the bridge transcodes in both directions, so the agent, its tools and its slots
 behave exactly as they do in the browser — a phone call is a transport, not a
 mode. Nothing about `agent.ts` changes to support one.
 
-Turn the route off with `telephony: false` on `createServer`. If you are
+Turn the route off with `telephony: false` on `createRuntimeServer`. If you are
 embedding the runtime yourself rather than deploying, the pieces are
 `createTelephonyBridge`, `startTelephonySession`, `TELEPHONY_PATH` and
 `carrierByName`, all on `@alexkroman1/aai-runtime`.
@@ -1293,12 +1296,12 @@ API keys require it; the US endpoints reject them. Example:
 | Factory         | SDK package         | Env var                        |
 | --------------- | ------------------- | ------------------------------ |
 | `anthropicLlm`  | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
-| `openaiLlm`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
+| `openAILlm`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
 | `googleLlm`     | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
 | `mistralLlm`    | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
-| `xaiLlm`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
+| `xAILlm`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
 | `groqLlm`       | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
-| `openrouterLlm` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
+| `openRouterLlm` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
 | `gatewayLlm`    | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
 | `assemblyAILlm` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
@@ -1308,10 +1311,10 @@ shared by all of them except `assemblyAILlm`. Example:
 because a third-party vendor's catalog is not this SDK's to default from;
 `assemblyAILlm()` is the one bare call, since it has a default model.
 
-`openrouterLlm` routes through [OpenRouter](https://openrouter.ai) — an
+`openRouterLlm` routes through [OpenRouter](https://openrouter.ai) — an
 OpenAI-compatible endpoint fronting hundreds of models addressed as
 `"creator/model"`, e.g.
-`openrouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" })`. It needs
+`openRouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" })`. It needs
 no extra SDK install (it reuses the `@ai-sdk/openai` client).
 
 `gatewayLlm` routes through the [Vercel AI
@@ -1972,7 +1975,7 @@ Those three cover almost everything an agent wants. A database is for data that
 must outlive a session AND be queryable: a ledger, filed records, cross-session
 saves.
 
-## Custom UI — `client()`
+## Custom UI — `mountClient()`
 
 File: `client.tsx` alongside `agent.ts`. Uses **React** (not Preact).
 Always import `"@alexkroman1/aai-ui/styles.css"` first.
@@ -1982,9 +1985,9 @@ Always import `"@alexkroman1/aai-ui/styles.css"` first.
 ```tsx
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
-import { client } from "@alexkroman1/aai-ui";
+import { mountClient } from "@alexkroman1/aai-ui";
 
-client({ name: "My Agent" });
+mountClient({ name: "My Agent" });
 ```
 
 ### Tier 1 with sidebar
@@ -1992,7 +1995,7 @@ client({ name: "My Agent" });
 ```tsx
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
-import { client, useEvent } from "@alexkroman1/aai-ui";
+import { mountClient, useEvent } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 
 function Sidebar() {
@@ -2007,7 +2010,7 @@ function Sidebar() {
   );
 }
 
-client({ name: "My Agent", sidebar: Sidebar });
+mountClient({ name: "My Agent", sidebar: Sidebar });
 ```
 
 ### Tier 2 — full custom component
@@ -2015,7 +2018,7 @@ client({ name: "My Agent", sidebar: Sidebar });
 ```tsx
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
-import { client, useSession } from "@alexkroman1/aai-ui";
+import { mountClient, useSession } from "@alexkroman1/aai-ui";
 
 function MyApp() {
   const { messages, userTranscript, started, running, start, toggle, end } =
@@ -2036,10 +2039,10 @@ function MyApp() {
   );
 }
 
-client({ component: MyApp });
+mountClient({ component: MyApp });
 ```
 
-### `client()` config
+### `mountClient()` config
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2197,7 +2200,7 @@ Property 'children' is missing` build error:
 ```tsx
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
-import { ChatView, client, StartScreen } from "@alexkroman1/aai-ui";
+import { ChatView, mountClient, StartScreen } from "@alexkroman1/aai-ui";
 
 function PizzaApp() {
   return (
@@ -2207,7 +2210,7 @@ function PizzaApp() {
   );
 }
 
-client({ component: PizzaApp });
+mountClient({ component: PizzaApp });
 ```
 
 ## Styling
@@ -2215,7 +2218,7 @@ client({ component: PizzaApp });
 - **Tailwind CSS v4** — compiled at bundle time, configured via CSS.
   Do NOT create `tailwind.config.js` — it will be ignored.
 - Use Tailwind classes for layout, `useTheme()` for dynamic colors.
-- Set theme: `client({ theme: { bg, primary, text, surface, border } })`.
+- Set theme: `mountClient({ theme: { bg, primary, text, surface, border } })`.
 - Override CSS custom properties for extra tokens:
   `--color-aai-*`, `--radius-aai`, `--font-aai`.
 - Always import `"@alexkroman1/aai-ui/styles.css"` at the top of `client.tsx`.

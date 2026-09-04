@@ -39,7 +39,7 @@
  * ({@link ASSEMBLYAI_LLM_DEFAULT_MODEL}) and so a bare call.
  *
  * Two vendors here are AGGREGATORS rather than model owners, addressed as
- * `"creator/model"`: {@link openrouterLlm} and {@link gatewayLlm}. A third,
+ * `"creator/model"`: {@link openRouterLlm} and {@link gatewayLlm}. A third,
  * {@link assemblyAILlm}, fronts AssemblyAI's own gateway — its ids are
  * {@link AssemblyAIGatewayModel}, and the CATALOG behind that union (which
  * model streams, calls tools, serves the EU) is on
@@ -78,10 +78,10 @@ export { type GoogleLlmOptions, googleLlm } from "./llm/google.ts";
 export { type GroqLlmOptions, groqLlm } from "./llm/groq.ts";
 export { type MistralLlmOptions, mistralLlm } from "./llm/mistral.ts";
 export type { ModelOptions } from "./llm/model-options.ts";
-export { type OpenAILlmOptions, openaiLlm } from "./llm/openai.ts";
+export { type OpenAILlmOptions, openAILlm } from "./llm/openai.ts";
 export {
   OPENROUTER_BASE_URL,
   type OpenRouterLlmOptions,
-  openrouterLlm,
+  openRouterLlm,
 } from "./llm/openrouter.ts";
-export { type XaiLlmOptions, xaiLlm } from "./llm/xai.ts";
+export { type XAILlmOptions, xAILlm } from "./llm/xai.ts";

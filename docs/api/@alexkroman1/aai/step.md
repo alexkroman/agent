@@ -31,7 +31,7 @@ it:
 - **HTTP** — [stepFetch](#stepfetch) (HTTP/1.1-pinned; `fetch` speaks h2 and a
   fan-out on one connection turns a rate limit into an unreadable stream
   reset) and [multipartBody](#multipartbody-1).
-- **Narration** — [report](#report) / [emit](#emit), what a page's progress
+- **Narration** — [stepReport](#stepreport) / [stepEmit](#stepemit), what a page's progress
   stream renders.
 - **Being woken** — [stepWebhookUrl](#stepwebhookurl), the public callback URL a step
   hands a third party so a delivery resolves the body's `ctx.waitFor` instead
@@ -40,8 +40,8 @@ it:
 - **The model** — [stepGenerate](#stepgenerate) (one `fetch` to the LLM gateway on the
   agent's own key, because the AI SDK would be megabytes in a ~7 KB artifact)
   and [stepGenerateJson](#stepgeneratejson) / [stripJsonFence](#stripjsonfence).
-- **Audio, both directions** — [writeUpload](#writeupload) / [readUpload](#readupload) /
-  [uploadInfo](#uploadinfo-1), [stepSpeak](#stepspeak) and [encodeWav](#encodewav) out, and
+- **Audio, both directions** — [stepWriteUpload](#stepwriteupload) / [stepReadUpload](#stepreadupload) /
+  [stepUploadInfo](#stepuploadinfo), [stepSpeak](#stepspeak) and [encodeWav](#encodewav) out, and
   [stepTranscribeUpload](#steptranscribeupload) / [stepTranscribeSubmit](#steptranscribesubmit) /
   [stepTranscribePoll](#steptranscribepoll) for the async job API or
   [stepTranscribeSync](#steptranscribesync) for the one-request one, back in.
@@ -64,90 +64,10 @@ Two neighbours that are deliberately elsewhere. The failure a body THROWS
 `FatalError` / `RetryableError` they resolve to) is on
 `@alexkroman1/aai/step-errors`, so that importing a classifier is an opt-in
 rather than something every `/step` reader pays for. And the durable wait is
-`ctx.sleep` on the `WorkflowCtx` the engine hands the body — this SDK
+`ctx.sleep` on the `WorkflowContext` the engine hands the body — this SDK
 owns what is INSIDE a step and never the steps.
 
 ## Functions
-
-### emit()
-
-```ts
-function emit<T>(namespace: string, chunk: T): Promise<void>;
-```
-
-Write one structured chunk into a NAMED stream of this run.
-
-The other half of [report](#report), and the split is what each is FOR: `report`
-writes a sentence for a person, into the run's default stream and the server
-log. This writes a VALUE for a program — a partial result, as the step produces
-it — into a stream a reader asks for by name.
-
-That is what makes a long run's output streamable rather than only its
-narration. A run's snapshot carries a status and, once terminal, an output, so
-a fan-out that has transcribed forty of sixty segments has forty results and no
-way to hand any of them over. Emitting each one as it lands means a page renders
-the answer growing instead of a spinner:
-
-```ts no-check
-import { emit } from "@alexkroman1/aai/step";
-
-export async function transcribeSegment(index: number) {
-  const text = await transcribe(index);
-  await emit("transcript", { index, text });
-  return { index, text };
-}
-```
-
-```tsx no-check
-// The reader, which the SDK already had: one stream per namespace.
-const { progress } = useWorkflowProgress<{ index: number; text: string }>(runId, {
-  namespace: "transcript",
-});
-```
-
-**The namespace is REQUIRED, and that is the point of the argument.** The
-default stream is `report()`'s, carrying lines a page renders verbatim — an
-object written into it comes back as `[object Object]` in the middle of the
-progress log, which is a trap rather than a decision. A named stream is also
-how a reader gets ONE kind of chunk per subscription, so
-`useWorkflowProgress<T>` can be typed at all.
-
-**Call it from a STEP, never from the workflow body**, for the reason `report`
-says: a body replays from the top on every resume, so a chunk written there is
-re-emitted on each one.
-
-Chunks are RETAINED with the run, so a reader that arrives late or reloads gets
-the whole stream from the beginning rather than only what arrives next.
-
-Failures are swallowed, exactly as `report`'s are: a run must not fail because
-a reader could not be told about a result the run itself has.
-
-#### Type Parameters
-
-##### T
-
-`T`
-
-#### Parameters
-
-##### namespace
-
-`string`
-
-Which of the run's streams this belongs in. A short,
-  stable name — a reader subscribes by it.
-
-##### chunk
-
-`T`
-
-The value, which must survive the run's own serialization.
-
-#### Returns
-
-`Promise`\<`void`\>
-
-***
 
 ### encodeWav()
 
@@ -315,7 +235,7 @@ impossible; endpoints behave the same way.
 
 **A part's `name` and `filename` are ESCAPED, because they are the one thing
 here that is routinely not the author's own string.** An upload's `name` is
-"the filename the uploader gave" (`uploadInfo`), so it reaches a step from a
+"the filename the uploader gave" (`stepUploadInfo`), so it reaches a step from a
 browser form and lands in a header this function writes — and a `"`, a CR or
 an LF in it closed the quoted string and appended headers of the caller's
 choosing to the request. The escaping is the HTML form-encoding algorithm's,
@@ -352,7 +272,7 @@ to it is refused rather than divided: `bytes / blockAlign` is `NaN`, and a
 `NaN` duration is journaled by a step, rendered into a progress bar and
 reported to a caller without anything on the way saying which call produced
 it. That is the one misuse this signature invites — `encodeWav`, `stepSpeak`
-and `readUpload` all deal in the bytes themselves. [wavHeader](#wavheader) is the
+and `stepReadUpload` all deal in the bytes themselves. [wavHeader](#wavheader) is the
 other function here taking a count, and shares this check for that reason.
 
 #### Parameters
@@ -374,142 +294,6 @@ other function here taking a count, and shares this check for that reason.
 for a format no header can describe — the same check
   [encodeWav](#encodewav) makes, so the two cannot disagree about what is legal —
   or for a `byteLength` that is not a length.
-
-***
-
-### readUpload()
-
-```ts
-function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
-```
-
-Read a window of an uploaded file.
-
-Omitting both bounds reads the whole file, which is the right call only when
-the file is small: everything else names the window it needs, so a fan-out
-over a large file moves each byte once.
-
-Bounds are CLAMPED rather than rejected — a plan computed from a file's own
-header can legitimately end one byte past it, and the returned `start`/`end`
-say what was actually read. That is also exactly what makes a STREAMED upload
-readable: the clamp is to what has ARRIVED, so a window that runs past the
-bytes stored so far comes back short rather than failing, and `end` is how a
-caller learns which it got.
-
-#### Parameters
-
-##### id
-
-`string`
-
-##### opts?
-
-[`ReadUploadOptions`](#readuploadoptions)
-
-#### Returns
-
-`Promise`\<[`UploadSlice`](#uploadslice)\>
-
-#### Example
-
-Write in one step, read a window back in another — an id crosses the journal,
-bytes never do.
-```ts
-import { readUpload, writeUpload } from "@alexkroman1/aai/step";
-
-export async function store(bytes: Uint8Array): Promise<string> {
-  const { id } = await writeUpload(bytes, { name: "summary.wav" });
-  return id;
-}
-
-export async function firstSecond(uploadId: string): Promise<Uint8Array> {
-  const { bytes } = await readUpload(uploadId, { start: 44, end: 44 + 32_000 });
-  return bytes;
-}
-```
-
-***
-
-### report()
-
-```ts
-function report(line: string): Promise<void>;
-```
-
-Write one progress line for the run this step belongs to.
-
-The line reaches two readers: the run's own output stream, which
-`GET /workflows/runs/:id/stream` serves and `useWorkflowProgress` in
-`@alexkroman1/aai-ui` renders,
-and the server log, so an operator watching a deploy can see which step is
-running without a page open.
-
-**Call it from a STEP, never from the workflow body.** A body replays from the
-top on every resume, so a line written there is re-emitted on each one — the
-same rule `ctx.db` follows.
-
-Failures are swallowed: narration must never fail a run. It resolves either
-way, so awaiting it is safe and is what keeps the ordering of a step's own
-lines.
-
-#### Parameters
-
-##### line
-
-`string`
-
-One line of progress, as a reader should see it. Prefer a
-  sentence naming what is happening and to what (`"Transcribing 0:00–0:58."`)
-  over a machine token — the page renders these verbatim.
-
-#### Returns
-
-`Promise`\<`void`\>
-
-***
-
-### requireCompleteUpload()
-
-```ts
-function requireCompleteUpload(id: string): Promise<UploadInfo>;
-```
-
-One upload's metadata, refused unless every byte is in.
-
-The read for a step that consumes a file END TO END — an upload to a provider,
-a copy to local disk, a length a segment plan is computed from. A step that
-works on a WINDOW wants [uploadInfo](#uploadinfo-1) and clamping, which is what
-`readUpload` already does.
-
-#### Parameters
-
-##### id
-
-`string`
-
-#### Returns
-
-`Promise`\<[`UploadInfo`](#uploadinfo)\>
-
-#### Example
-
-```ts
-import { requireCompleteUpload } from "@alexkroman1/aai/step";
-
-export async function wholeFileSize(uploadId: string): Promise<number> {
-  const stored = await requireCompleteUpload(uploadId);
-  return stored.size;
-}
-```
-
-#### Throws
-
-when the upload is still arriving — see this
-  module's doc for why that is a refusal rather than a wait.
-
-#### Throws
-
-when the id names no upload, exactly as [uploadInfo](#uploadinfo-1) does.
 
 ***
 
@@ -585,6 +369,86 @@ A `Response`, or its headers. Both spellings are accepted
 #### Returns
 
 `Date` \| `undefined`
+
+***
+
+### stepEmit()
+
+```ts
+function stepEmit<T>(namespace: string, chunk: T): Promise<void>;
+```
+
+Write one structured chunk into a NAMED stream of this run.
+
+The other half of [stepReport](#stepreport), and the split is what each is FOR:
+`stepReport` writes a sentence for a person, into the run's default stream and
+the server log. This writes a VALUE for a program — a partial result, as the step produces
+it — into a stream a reader asks for by name.
+
+That is what makes a long run's output streamable rather than only its
+narration. A run's snapshot carries a status and, once terminal, an output, so
+a fan-out that has transcribed forty of sixty segments has forty results and no
+way to hand any of them over. Emitting each one as it lands means a page renders
+the answer growing instead of a spinner:
+
+```ts no-check
+import { stepEmit } from "@alexkroman1/aai/step";
+
+export async function transcribeSegment(index: number) {
+  const text = await transcribe(index);
+  await stepEmit("transcript", { index, text });
+  return { index, text };
+}
+```
+
+```tsx no-check
+// The reader, which the SDK already had: one stream per namespace.
+const { progress } = useWorkflowProgress<{ index: number; text: string }>(runId, {
+  namespace: "transcript",
+});
+```
+
+**The namespace is REQUIRED, and that is the point of the argument.** The
+default stream is `stepReport()`'s, carrying lines a page renders verbatim —
+an object written into it comes back as `[object Object]` in the middle of the
+progress log, which is a trap rather than a decision. A named stream is also
+how a reader gets ONE kind of chunk per subscription, so
+`useWorkflowProgress<T>` can be typed at all.
+
+**Call it from a STEP, never from the workflow body**, for the reason `stepReport`
+says: a body replays from the top on every resume, so a chunk written there is
+re-emitted on each one.
+
+Chunks are RETAINED with the run, so a reader that arrives late or reloads gets
+the whole stream from the beginning rather than only what arrives next.
+
+Failures are swallowed, exactly as `stepReport`'s are: a run must not fail
+because a reader could not be told about a result the run itself has.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### namespace
+
+`string`
+
+Which of the run's streams this belongs in. A short,
+  stable name — a reader subscribes by it.
+
+##### chunk
+
+`T`
+
+The value, which must survive the run's own serialization.
+
+#### Returns
+
+`Promise`\<`void`\>
 
 ***
 
@@ -685,7 +549,7 @@ when the request never got an answer — a reset
   status, which is returned like any other: only the caller knows whether a
   `404` is fatal.
 
-**From a step, prefer `stepFetchOk`
+**From a step, prefer `stepFetchOrFail`
 (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
@@ -700,7 +564,7 @@ function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<strin
 
 Ask the AssemblyAI LLM Gateway one question and return its reply.
 
-**From a step, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `stepGenerateOrFail` (`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -765,7 +629,7 @@ Ask the model for JSON and return it validated.
 The reply is unfenced, parsed, and checked against `schema`; the validated
 value is what comes back, typed as the schema's output.
 
-**From a step, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `stepGenerateJsonOrFail` (`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -853,6 +717,142 @@ answer cannot change and reads as though it could.
 
 ***
 
+### stepReadUpload()
+
+```ts
+function stepReadUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+```
+
+Read a window of an uploaded file.
+
+Omitting both bounds reads the whole file, which is the right call only when
+the file is small: everything else names the window it needs, so a fan-out
+over a large file moves each byte once.
+
+Bounds are CLAMPED rather than rejected — a plan computed from a file's own
+header can legitimately end one byte past it, and the returned `start`/`end`
+say what was actually read. That is also exactly what makes a STREAMED upload
+readable: the clamp is to what has ARRIVED, so a window that runs past the
+bytes stored so far comes back short rather than failing, and `end` is how a
+caller learns which it got.
+
+#### Parameters
+
+##### id
+
+`string`
+
+##### opts?
+
+[`ReadUploadOptions`](#readuploadoptions)
+
+#### Returns
+
+`Promise`\<[`UploadSlice`](#uploadslice)\>
+
+#### Example
+
+Write in one step, read a window back in another — an id crosses the journal,
+bytes never do.
+```ts
+import { stepReadUpload, stepWriteUpload } from "@alexkroman1/aai/step";
+
+export async function store(bytes: Uint8Array): Promise<string> {
+  const { id } = await stepWriteUpload(bytes, { name: "summary.wav" });
+  return id;
+}
+
+export async function firstSecond(uploadId: string): Promise<Uint8Array> {
+  const { bytes } = await stepReadUpload(uploadId, { start: 44, end: 44 + 32_000 });
+  return bytes;
+}
+```
+
+***
+
+### stepReport()
+
+```ts
+function stepReport(line: string): Promise<void>;
+```
+
+Write one progress line for the run this step belongs to.
+
+The line reaches two readers: the run's own output stream, which
+`GET /workflows/runs/:id/stream` serves and `useWorkflowProgress` in
+`@alexkroman1/aai-ui` renders,
+and the server log, so an operator watching a deploy can see which step is
+running without a page open.
+
+**Call it from a STEP, never from the workflow body.** A body replays from the
+top on every resume, so a line written there is re-emitted on each one — the
+same rule `ctx.db` follows.
+
+Failures are swallowed: narration must never fail a run. It resolves either
+way, so awaiting it is safe and is what keeps the ordering of a step's own
+lines.
+
+#### Parameters
+
+##### line
+
+`string`
+
+One line of progress, as a reader should see it. Prefer a
+  sentence naming what is happening and to what (`"Transcribing 0:00–0:58."`)
+  over a machine token — the page renders these verbatim.
+
+#### Returns
+
+`Promise`\<`void`\>
+
+***
+
+### stepRequireCompleteUpload()
+
+```ts
+function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
+```
+
+One upload's metadata, refused unless every byte is in.
+
+The read for a step that consumes a file END TO END — an upload to a provider,
+a copy to local disk, a length a segment plan is computed from. A step that
+works on a WINDOW wants [stepUploadInfo](#stepuploadinfo) and clamping, which is what
+`stepReadUpload` already does.
+
+#### Parameters
+
+##### id
+
+`string`
+
+#### Returns
+
+`Promise`\<[`UploadInfo`](#uploadinfo)\>
+
+#### Example
+
+```ts
+import { stepRequireCompleteUpload } from "@alexkroman1/aai/step";
+
+export async function wholeFileSize(uploadId: string): Promise<number> {
+  const stored = await stepRequireCompleteUpload(uploadId);
+  return stored.size;
+}
+```
+
+#### Throws
+
+when the upload is still arriving — see this
+  module's doc for why that is a refusal rather than a wait.
+
+#### Throws
+
+when the id names no upload, exactly as [stepUploadInfo](#stepuploadinfo) does.
+
+***
+
 ### stepSpeak()
 
 ```ts
@@ -896,11 +896,11 @@ Speak and STORE in one step, and return the id. A step is journaled by what
 it returns, so an id is replayed on a resume and bytes are not — splitting
 this in two would carry the audio across the queue on every resume.
 ```ts
-import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
+import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(summary: string): Promise<string> {
   const spoken = await stepSpeak(summary, { voice: "jane" });
-  const stored = await writeUpload(spoken.audio, {
+  const stored = await stepWriteUpload(spoken.audio, {
     name: "summary.wav",
     type: "audio/wav",
   });
@@ -952,7 +952,7 @@ forever.
   and the one that reads least like a failure: everything downstream would
   otherwise be handed no words and asked to work anyway.
 
-**From a step, prefer `stepTranscribePollClassified`
+**From a step, prefer `stepTranscribePollOrFail`
 (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
@@ -1027,7 +1027,7 @@ export async function checkJob(id: string): Promise<string | undefined> {
 }
 ```
 
-**From a step, prefer `stepTranscribeSubmitClassified`
+**From a step, prefer `stepTranscribeSubmitOrFail`
 (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
@@ -1046,7 +1046,7 @@ function stepTranscribeSync(bytes:
 
 Transcribe one complete audio file.
 
-**From a step, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `stepTranscribeSyncOrFail` (`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -1112,10 +1112,10 @@ multi-file upload, [stepSpeak](#stepspeak)'s output) passes them through untouch
 One clip, one request. Compare [stepTranscribeSubmit](#steptranscribesubmit) for a recording
 that cannot fit in one.
 ```ts
-import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
+import { stepReadUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
 
 export async function transcribeClip(uploadId: string): Promise<string> {
-  const clip = await readUpload(uploadId);
+  const clip = await stepReadUpload(uploadId);
   const { text } = await stepTranscribeSync(clip.bytes);
   return text;
 }
@@ -1133,7 +1133,7 @@ function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions)
 
 Send a stored upload to the provider, and answer with the URL it gave.
 
-The recording STREAMS out of the app's own store: `readUpload` hands back
+The recording STREAMS out of the app's own store: `stepReadUpload` hands back
 bytes and a two-hour recording is not a value this process can hold, so the
 body is an async iterable of windows — which `stepFetch` accepts precisely
 for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
@@ -1143,7 +1143,7 @@ keeps the store and the socket busy at the same time.
 `UploadInfo.size` is the contiguous readable prefix, so reading it off a
 still-arriving recording used to upload only what had landed and transcribe a
 truncated file — a plausible wrong answer with no error anywhere.
-`requireCompleteUpload` refuses instead, BEFORE the expensive leg; its module
+`stepRequireCompleteUpload` refuses instead, BEFORE the expensive leg; its module
 doc carries why that is a refusal rather than a wait.
 
 #### Parameters
@@ -1152,7 +1152,7 @@ doc carries why that is a refusal rather than a wait.
 
 `string`
 
-An upload in the agent's own store, as `writeUpload` or a
+An upload in the agent's own store, as `stepWriteUpload` or a
   page's `api.upload(file)` produced. Must be complete.
 
 ##### opts?
@@ -1175,10 +1175,46 @@ on a refusal, carrying the verdict `toStepError`
   reads. Give this step extra retries: it is the one call here worth another
   attempt, and the only one whose cost is the file.
 
-**From a step, prefer `stepTranscribeUploadClassified`
+**From a step, prefer `stepTranscribeUploadOrFail`
 (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
+
+***
+
+### stepUploadInfo()
+
+```ts
+function stepUploadInfo(id: string): Promise<UploadInfo>;
+```
+
+Read one upload's metadata: its name, what has ARRIVED, and whether that is all
+of it.
+
+The poll a body waiting on a streamed upload runs.
+
+**`complete` is the field to branch on, never `size`.** A size that stopped
+growing means "nothing arrived recently", which is what a slow link and a dead
+client both look like; only `complete` says the file is all there. A body that
+treated a stalled size as the end would return a transcript of most of a
+recording and report success.
+
+#### Parameters
+
+##### id
+
+`string`
+
+#### Returns
+
+`Promise`\<[`UploadInfo`](#uploadinfo)\>
+
+#### Throws
+
+when the id names no upload — a step that reaches for one and finds
+  nothing has been handed a stale or invented id, which no retry fixes. Note a
+  streamed upload EXISTS from its first byte, so this answers for one that is
+  still arriving.
 
 ***
 
@@ -1238,14 +1274,14 @@ The absolute URL, encoded for the route's single token segment.
 Submit the work and hand the callback over in the same step, so the far side
 is told about the waitpoint before the body parks on it.
 ```ts
-import { report, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
+import { stepReport, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
 
 // The token is DERIVED from the run's own input, so the step handing the URL
 // out and the body parking on it agree — the rule `ctx.waitFor` states.
 export const renderToken = (id: string) => `render:${id}`;
 
 export async function submitRender(id: string): Promise<void> {
-  await report(`Submitting render ${id}.`);
+  await stepReport(`Submitting render ${id}.`);
   await stepFetch("https://renders.example.com/jobs", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1264,6 +1300,75 @@ when this process cannot mint one — the message names the
 when `token` is empty: that composes to the route's own
   prefix, which the parser refuses, so the failure would otherwise arrive at
   the far end as a 404 on a URL nobody can re-issue.
+
+***
+
+### stepWriteUpload()
+
+```ts
+function stepWriteUpload(bytes: 
+  | Uint8Array<ArrayBufferLike>
+  | readonly Uint8Array<ArrayBufferLike>[]
+| AsyncIterable<Uint8Array<ArrayBufferLike>, any, any>, opts?: WriteUploadOptions): Promise<UploadInfo>;
+```
+
+Store a file a step PRODUCED, and answer with the record naming it.
+
+The other direction of [stepReadUpload](#stepreadupload), and the half a workflow app needs
+the moment its output is not text. A run's output is journaled and read back
+as JSON, so audio, an image or a PDF cannot travel in one — the same rule
+that keeps a recording's bytes out of a run's INPUT, arriving at the other
+end of the run. So the bytes go to the store and the output carries the id,
+which a page turns back into a file with `api.download(id)`.
+
+```ts
+import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
+
+export async function narrate(summary: string) {
+  const spoken = await stepSpeak(summary);
+  const stored = await stepWriteUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
+  return { audio: stored.id, durationMs: spoken.durationMs };
+}
+```
+
+**Write it in the step that MAKES it, and return the id.** A step is
+journaled by what it returns, so an id is replayed and bytes are not: a
+resumed run re-reads the same file rather than re-synthesizing it. The
+corollary is that a RETRIED step writes a second upload and abandons the
+first, which is the cost of the store having no way to know two calls meant
+one file — worth knowing, and cheap next to the alternative of a step that
+cannot retry at all.
+
+#### Parameters
+
+##### bytes
+
+  \| `Uint8Array`\<`ArrayBufferLike`\>
+  \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
+  \| `AsyncIterable`\<`Uint8Array`\<`ArrayBufferLike`\>, `any`, `any`\>
+
+The file. A LIST is stored in order and an async iterable is
+  streamed, so a step producing something large — a long recording, a
+  concatenation of many utterances — never has to hold it whole.
+
+##### opts?
+
+[`WriteUploadOptions`](#writeuploadoptions)
+
+What to declare about it. Both fields are stored verbatim and
+  neither is inferred; see [WriteUploadOptions](#writeuploadoptions).
+
+#### Returns
+
+`Promise`\<[`UploadInfo`](#uploadinfo)\>
+
+#### Throws
+
+when the process published no store, or published a READ-ONLY one —
+  two different sentences, because the remedies differ and the call site
+  cannot tell them apart. Also when the deployment has nowhere durable to put
+  bytes at all, which the store reports by naming the variable that is
+  missing.
 
 ***
 
@@ -1288,42 +1393,6 @@ Text that carries no fence is returned trimmed and otherwise untouched.
 #### Returns
 
 `string`
-
-***
-
-### uploadInfo()
-
-```ts
-function uploadInfo(id: string): Promise<UploadInfo>;
-```
-
-Read one upload's metadata: its name, what has ARRIVED, and whether that is all
-of it.
-
-The poll a body waiting on a streamed upload runs.
-
-**`complete` is the field to branch on, never `size`.** A size that stopped
-growing means "nothing arrived recently", which is what a slow link and a dead
-client both look like; only `complete` says the file is all there. A body that
-treated a stalled size as the end would return a transcript of most of a
-recording and report success.
-
-#### Parameters
-
-##### id
-
-`string`
-
-#### Returns
-
-`Promise`\<[`UploadInfo`](#uploadinfo)\>
-
-#### Throws
-
-when the id names no upload — a step that reaches for one and finds
-  nothing has been handed a stale or invented id, which no retry fixes. Note a
-  streamed upload EXISTS from its first byte, so this answers for one that is
-  still arriving.
 
 ***
 
@@ -1369,75 +1438,6 @@ Exactly [WAV\_HEADER\_BYTES](#wav_header_bytes) bytes.
 for a format no header can describe — the same check
   [encodeWav](#encodewav) makes, so the two cannot disagree about what is legal —
   or for a `byteLength` that is not a length.
-
-***
-
-### writeUpload()
-
-```ts
-function writeUpload(bytes: 
-  | Uint8Array<ArrayBufferLike>
-  | readonly Uint8Array<ArrayBufferLike>[]
-| AsyncIterable<Uint8Array<ArrayBufferLike>, any, any>, opts?: WriteUploadOptions): Promise<UploadInfo>;
-```
-
-Store a file a step PRODUCED, and answer with the record naming it.
-
-The other direction of [readUpload](#readupload), and the half a workflow app needs
-the moment its output is not text. A run's output is journaled and read back
-as JSON, so audio, an image or a PDF cannot travel in one — the same rule
-that keeps a recording's bytes out of a run's INPUT, arriving at the other
-end of the run. So the bytes go to the store and the output carries the id,
-which a page turns back into a file with `api.download(id)`.
-
-```ts
-import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
-
-export async function narrate(summary: string) {
-  const spoken = await stepSpeak(summary);
-  const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
-  return { audio: stored.id, durationMs: spoken.durationMs };
-}
-```
-
-**Write it in the step that MAKES it, and return the id.** A step is
-journaled by what it returns, so an id is replayed and bytes are not: a
-resumed run re-reads the same file rather than re-synthesizing it. The
-corollary is that a RETRIED step writes a second upload and abandons the
-first, which is the cost of the store having no way to know two calls meant
-one file — worth knowing, and cheap next to the alternative of a step that
-cannot retry at all.
-
-#### Parameters
-
-##### bytes
-
-  \| `Uint8Array`\<`ArrayBufferLike`\>
-  \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
-  \| `AsyncIterable`\<`Uint8Array`\<`ArrayBufferLike`\>, `any`, `any`\>
-
-The file. A LIST is stored in order and an async iterable is
-  streamed, so a step producing something large — a long recording, a
-  concatenation of many utterances — never has to hold it whole.
-
-##### opts?
-
-[`WriteUploadOptions`](#writeuploadoptions)
-
-What to declare about it. Both fields are stored verbatim and
-  neither is inferred; see [WriteUploadOptions](#writeuploadoptions).
-
-#### Returns
-
-`Promise`\<[`UploadInfo`](#uploadinfo)\>
-
-#### Throws
-
-when the process published no store, or published a READ-ONLY one —
-  two different sentences, because the remedies differ and the call site
-  cannot tell them apart. Also when the deployment has nowhere durable to put
-  bytes at all, which the store reports by naming the variable that is
-  missing.
 
 ## Classes
 
@@ -1920,7 +1920,7 @@ type ReadUploadOptions = {
 };
 ```
 
-Options for [readUpload](#readupload).
+Options for [stepReadUpload](#stepreadupload).
 
 Both bounds admit `undefined` explicitly rather than being merely optional:
 a step computes them from a plan, and under `exactOptionalPropertyTypes` a
@@ -2602,7 +2602,7 @@ than an omission: a whole-file write has no windows (its bytes are one
 contiguous prefix, which [UploadInfo.size](#size) already states), and a
 finished parts upload is covered end to end by construction.
 
-**A READER may act on it, and [readUpload](#readupload) already does.** This used to
+**A READER may act on it, and [stepReadUpload](#stepreadupload) already does.** This used to
 say `size` was the only field a reader could trust, on the ground that a range
 past the prefix names bytes with a hole in front of them. The bytes are still
 there — the store maps a window onto the objects covering it and never
@@ -2620,17 +2620,17 @@ Sorted, non-overlapping, and half-open like every other range here.
 
 **A LIST rather than a single offset, and that is the whole of what it buys.**
 The obvious cheaper shape is one number — "everything up to here has landed" —
-which is what a sequential append protocol reports (tus's `Upload-Offset`, where
-a `PATCH` at any other offset is a 409). A single cursor cannot represent a GAP
-at all, so under it an upload whose second part was lost has to re-send
+which is what a sequential append protocol reports (tus's `Upload-Offset`,
+where a `PATCH` at any other offset is a 409). A single cursor cannot represent
+a GAP at all, so under it an upload whose second part was lost has to re-send
 everything after the first, and a fan-out that lands parts out of order has
 nothing to report until they happen to join up. [UploadInfo.size](#size) already
 IS that number. This is the strictly larger fact.
 
-Absent also means "cannot say", not "nothing landed" — the store may decline to
-report windows, and an agent too old to have this field says nothing either. A
-reader's answer to an absent list is therefore to assume nothing about what is
-stored, which for an uploader means sending the file.
+Absent also means "cannot say", not "nothing landed" — the store may decline
+to report windows, and an agent too old to have this field says nothing
+either. A reader's answer to an absent list is therefore to assume nothing
+about what is stored, which for an uploader means sending the file.
 
 ##### size
 
@@ -2641,7 +2641,7 @@ size: number;
 Bytes STORED so far.
 
 The whole file for a finished upload, and a growing number for one still
-arriving — which is why [readUpload](#readupload) clamps to it rather than to
+arriving — which is why [stepReadUpload](#stepreadupload) clamps to it rather than to
 anything the uploader declared. Never trust it as a total: see
 [UploadInfo.complete](#complete).
 
@@ -2693,7 +2693,7 @@ type UploadSlice = {
 };
 ```
 
-One window of an upload, as [readUpload](#readupload) resolves it.
+One window of an upload, as [stepReadUpload](#stepreadupload) resolves it.
 
 #### Properties
 
@@ -2740,7 +2740,7 @@ type WriteUploadOptions = {
 };
 ```
 
-Options for [writeUpload](#writeupload).
+Options for [stepWriteUpload](#stepwriteupload).
 
 #### Properties
 

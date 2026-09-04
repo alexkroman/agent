@@ -83,7 +83,7 @@ export type PlacedWindow = { at: number; bytes: Uint8Array };
  * the fix is the cut and not the number — a `size` counting bytes that have merely
  * arrived would send a reader to a window that is not there.
  *
- * Two things that cost, both real: a body watching `uploadInfo` sees no progress at
+ * Two things that cost, both real: a body watching `stepUploadInfo` sees no progress at
  * all, and a template judging a STALL on that number reads a healthy slow uplink as
  * dead (`templates/transcription-workflow`'s idle-poll bound gives up after five
  * minutes of an unchanging `size`).
@@ -188,7 +188,7 @@ export function concat(parts: readonly Uint8Array[], size: number): Uint8Array {
 /**
  * Drain a body into one buffer, refusing it the moment it passes `limit`.
  *
- * The three {@link UploadBlobs} implementations each open an object write by
+ * The three {@link UploadBackend} implementations each open an object write by
  * buffering — Storage has no append and no streaming PUT of unknown length, so
  * an object's bytes have to be in hand to write them — and each had written the
  * same accumulate-count-and-cap loop. The cap is what makes it safe: the size is

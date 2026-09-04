@@ -2,7 +2,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import type { AgentState } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
-  client,
+  mountClient,
   useConversation,
   useSessionActions,
   useSessionError,
@@ -99,7 +99,7 @@ function Transcript() {
   // The one theme read left in this file, and the case `useTheme()` is still
   // for: `scrollbar-color` takes TWO values and has no utility class, so it has
   // to be a style — and reading it off the theme beats re-pinning the two hex
-  // codes the `client({ theme })` block below already declares.
+  // codes the `mountClient({ theme })` block below already declares.
   const theme = useTheme();
 
   return (
@@ -385,7 +385,7 @@ function InfocomAdventure() {
   );
 }
 
-client({
+mountClient({
   component: InfocomAdventure,
   theme: {
     bg: CRT_BG,

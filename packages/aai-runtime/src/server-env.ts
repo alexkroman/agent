@@ -6,7 +6,7 @@
  * `host-mode.ts`, because both front doors that build a server need it and
  * neither of them is that module: the guest harness had its own copy of the line,
  * and `createAgentServer` needed the same filter when it turned out to be
- * forwarding no env to `createServer` at all.
+ * forwarding no env to `createRuntimeServer` at all.
  *
  * @module
  */
@@ -17,7 +17,7 @@ import type { Logger } from "./runtime-config.ts";
 /**
  * An agent's env as a SERVER may read it: everything except the host-mode gate.
  *
- * `createServer` reads four things out of `env` — `DATABASE_URL` (where a workflow
+ * `createRuntimeServer` reads four things out of `env` — `DATABASE_URL` (where a workflow
  * upload's record lives), `AAI_WORKFLOW_API_TOKEN` and `AAI_SESSION_EVENTS_TOKEN`
  * (the gates on those two routes), and `AAI_ALLOW_HOST` — and the fourth must not
  * ride along with the first three. A door that serves ONE agent on the operator's

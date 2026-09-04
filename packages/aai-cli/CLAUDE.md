@@ -364,18 +364,17 @@ it under `aai dev`** — with a `client.tsx`, Vite owns the port the user is tol
 to open and answers everything not in that table itself, with a bare 404
 carrying none of the agent server's headers. So the failure reads as a missing
 route, not a missing proxy entry, and it is invisible to every test that talks
-to the backend port directly. **A route added to `createServer` that a page
+to the backend port directly. **A route added to `createRuntimeServer` that a page
 fetches must be added there too.**
 
 `/workflows` is the case that proves the rule and the one it was learned from.
 A WORKFLOW APP (`workflowApp()`, i.e. `page: "static"`) has no session and no
-socket:
-`page()` renders a form and every single thing it does — listing workflows to
-build that form, starting a run, polling it, streaming its events — is a
-same-origin fetch under that prefix. Unproxied, both workflow-app templates
-were dead on arrival under `aai dev` (`404 POST /workflows/runs` the instant
-the form is submitted) while the backend served the whole API correctly one
-port over. A string key prefix-matches, so the one entry covers `/runs`,
+socket: `mountPage()` renders a form and every single thing it does — listing
+workflows to build that form, starting a run, polling it, streaming its events
+— is a same-origin fetch under that prefix. Unproxied, both workflow-app
+templates were dead on arrival under `aai dev` (`404 POST /workflows/runs` the
+instant the form is submitted) while the backend served the whole API correctly
+one port over. A string key prefix-matches, so the one entry covers `/runs`,
 `/runs/:id` and the `/runs/:id/events` SSE stream. The
 `/.well-known/workflow/v1/*` routes deliberately stay out: the queue delivery
 door is dialled by the platform and the webhook by a third party, never by a
@@ -556,7 +555,7 @@ a mode whose whole job is to inject faults has to be shown to inject them.
 `packages/aai/src/host/_fault-socket.ts` is the sibling of this one: a TCP
 proxy that SEVERS live connections, for testing that a session continues
 across a disconnect. It sits in `aai` rather than here because what it faults —
-`createServer`, the WebSocket upgrade, session resume — lives there.
+`createRuntimeServer`, the WebSocket upgrade, session resume — lives there.
 
 Three things separate the two, and picking the wrong one measures nothing:
 
@@ -577,7 +576,7 @@ Three things separate the two, and picking the wrong one measures nothing:
   exactly that reason.
 - **It is a proxy for the same reason this one is a supervisor.** The sockets are
   server-side, so the obvious shape is an env-gated `ws.close()` inside
-  `createServer` — a fault injector in production code, able to fire in
+  `createRuntimeServer` — a fault injector in production code, able to fire in
   production. A proxy in front is test-only by construction.
 
 ## Bundling rules
@@ -776,8 +775,8 @@ methods constrain their identity with `Literal<Name>`
 (`string extends Name ? never : Name`), which refuses a name that has widened to
 `string` — and a template literal's type is a template-literal type, not
 `string`, so ``ctx.step(`charge-${coin}`, charge)`` compiles cleanly. Verified
-against the real `WorkflowCtx`. It is also the engine's own measured defect: a
-coin flip interpolated into a step name ran the side effect twice in **7 of 10
+against the real `WorkflowContext`. It is also the engine's own measured defect:
+a coin flip interpolated into a step name ran the side effect twice in **7 of 10
 runs, with all 10 reporting `completed`**.
 
 Three properties are decisions:
@@ -867,15 +866,15 @@ guess is not trusted where egress is real.
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
-The SDK's `createServer` (`packages/aai/src/host/server.ts`) is what `aai dev` runs,
-and its defaults are documented here because this is the caller that owns
-`AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`. The two fail-closed
-defaults are summarised in `packages/aai/CLAUDE.md`, "Self-hosted server
-defaults"; the argument is below.
+The SDK's `createRuntimeServer` (`packages/aai/src/host/server.ts`) is what
+`aai dev` runs, and its defaults are documented here because this is the caller
+that owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`. The two
+fail-closed defaults are summarised in `packages/aai/CLAUDE.md`, "Self-hosted
+server defaults"; the argument is below.
 
-`createServer` has no request authentication of its own — it is the `aai dev`
-backend, not the managed platform. Two defaults exist because of that, and
-both are fail-closed:
+`createRuntimeServer` has no request authentication of its own — it is the
+`aai dev` backend, not the managed platform. Two defaults exist because of that,
+and both are fail-closed:
 
 - **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` defaults to
   `127.0.0.1`. Pass `"0.0.0.0"` deliberately to expose it; binding every

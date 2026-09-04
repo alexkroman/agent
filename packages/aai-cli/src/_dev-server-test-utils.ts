@@ -195,7 +195,7 @@ export async function getPortModule(): Promise<Record<string, unknown>> {
 export function aaiRuntimeModule(): Record<string, unknown> {
   return {
     createRuntime: mockCreateRuntime,
-    createServer: mockCreateServer,
+    createRuntimeServer: mockCreateServer,
     requiredProviderEnvVars: mockRequiredProviderEnvVars,
     // The dev server applies the self-hosted credential fallback when building
     // `env`; identity here keeps these tests focused on wiring. The helper's
@@ -251,7 +251,7 @@ export function aaiRuntimeInternalModule(): Record<string, unknown> {
     // The console-backed logger the dev server hands the runtime in human
     // mode (see createDevLogger); these specs only need it to exist.
     consoleLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-    // The platform's delivery door, mounted on `createServer`'s `request` hook.
+    // The platform's delivery door, mounted on `createRuntimeServer`'s `request` hook.
     // Declining is the case every spec in these files uses — they serve no
     // workflows; `dev-workflow.scenario.test.ts` covers the wired-up path
     // against real bundles.

@@ -265,10 +265,11 @@ export interface AgentDef extends PipelineVoiceTuning {
    * `"static"` declares a WORKFLOW APP: an ordinary web page over the workflow
    * HTTP API (`/workflows/*`), with no microphone, no WebSocket and no session.
    * The page is still a `client.tsx`, still React, still Tailwind — it just
-   * mounts with `page()` instead of `client()` and reaches the agent through
+   * mounts with `mountPage()` instead of `mountClient()` and reaches the agent
+   * through
    * `createWorkflowApi()` / `useWorkflowRun()` instead of `useSession()`.
    *
-   * Declaring it is not decoration. `createServer` refuses the voice surfaces
+   * Declaring it is not decoration. `createRuntimeServer` refuses the voice surfaces
    * for a static agent, so a page that has no session cannot be handed a socket
    * that would never answer, and telephony defaults off for one — an agent with
    * no `stt`/`llm`/`tts` has nothing to put on a phone call.
@@ -414,7 +415,7 @@ export interface AgentDef extends PipelineVoiceTuning {
   /**
    * Pluggable S2S provider descriptor — the explicit opt-in to
    * speech-to-speech mode (e.g. `assemblyAIS2s()` for AssemblyAI's Voice
-   * Agent API, or `openaiS2s()`). Unset, the agent runs the default
+   * Agent API, or `openAIS2s()`). Unset, the agent runs the default
    * cascaded pipeline. Mutually exclusive with the `stt`/`llm`/`tts`
    * pipeline triple.
    */

@@ -15,7 +15,7 @@
  * second delivery re-walks the body from the top.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import fc from "fast-check";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
@@ -28,7 +28,7 @@ import {
   isDeterminismKey,
 } from "./workflow-replay-determinism.ts";
 
-type Body = (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown;
+type Body = (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown;
 
 async function seed(runId = "wrun_j"): Promise<JournalStore> {
   const journal = createMemoryJournal();

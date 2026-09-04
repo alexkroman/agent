@@ -4,7 +4,7 @@
  * socket that is really cut.
  *
  * Scenario tier because the whole point is that nothing here is simulated: a
- * real `createServer`, a real WebSocket upgrade, a real TCP relay, and a
+ * real `createRuntimeServer`, a real WebSocket upgrade, a real TCP relay, and a
  * `destroy()` that produces the abrupt drop a load-balancer timeout or a changed
  * network produces. A test that called `ws.close()` would prove the opposite of
  * what it looks like it proves — a clean close is the "user hung up" case, which
@@ -43,7 +43,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
 import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";
 import { silentLogger } from "./_test-utils.ts";
-import { createServer, type SessionRuntime } from "./server.ts";
+import { createRuntimeServer, type SessionRuntime } from "./server.ts";
 
 /** What the double sends back, standing in for the runtime's `config` frame. */
 type ConfigFrame = { type: "config"; sessionId: string; skipGreeting: boolean; starts: number };
@@ -104,7 +104,7 @@ async function serve(): Promise<Harness> {
     shutdown: () => Promise.resolve(),
   };
 
-  const server = createServer({ runtime, logger: silentLogger });
+  const server = createRuntimeServer({ runtime, logger: silentLogger });
   await server.listen(0, "127.0.0.1");
   const target = server.port;
   if (target === undefined) throw new Error("server did not report a port");

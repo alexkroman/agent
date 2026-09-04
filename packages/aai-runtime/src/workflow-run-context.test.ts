@@ -16,7 +16,7 @@
  * which is why every other signal said healthy.
  *
  * A deployed guest has two copies of this package by design: the harness bundles
- * its own and calls `createServer` from it, while the agent's runtime comes from
+ * its own and calls `createRuntimeServer` from it, while the agent's runtime comes from
  * the BUNDLE's `__aaiCreateRuntime` so a deployed agent runs the SDK version it
  * was tested against. `vi.resetModules()` is that, exactly — a second module
  * instance is a second copy — which is what makes this testable in one process.
@@ -59,7 +59,7 @@ describe("the run context crosses copies of this package", () => {
   });
 
   test("a STEP set by one copy is visible to another, which is what `{}` was", async () => {
-    // `report()` reads `currentRun()?.step`, and an empty context is what made
+    // `stepReport()` reads `currentRun()?.step`, and an empty context is what made
     // the narration log-only. Two copies, so this fails against a module-level
     // `new AsyncLocalStorage()`.
     const engine = await loadCopy();
@@ -80,7 +80,7 @@ describe("the run context crosses copies of this package", () => {
   });
 
   test("outside a run BOTH copies agree there is no context", async () => {
-    // The other half: a shared store must not invent one either, or a `report()`
+    // The other half: a shared store must not invent one either, or a `stepReport()`
     // from a spec would claim a step it is not in.
     const engine = await loadCopy();
     const reporter = await loadCopy();

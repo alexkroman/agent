@@ -4,12 +4,12 @@
 /** @jsxImportSource react */
 
 // Wiring smoke test: unlike define-client.test.tsx this file does NOT mock
-// createSessionCore — the real client() → session-core → WebSocket path runs,
+// createBrowserSession — the real mountClient() → session-core → WebSocket path runs,
 // with only the socket constructor injected.
 
 import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { client } from "./define-client.tsx";
+import { mountClient } from "./define-client.tsx";
 import type { WebSocketConstructor } from "./types.ts";
 
 /** Minimal inert WebSocket stand-in that records constructed URLs. */
@@ -36,7 +36,7 @@ class MockSocket {
   }
 }
 
-describe("client (unmocked session core)", () => {
+describe("mountClient (unmocked session core)", () => {
   let container: HTMLElement;
 
   beforeEach(() => {
@@ -51,7 +51,7 @@ describe("client (unmocked session core)", () => {
   });
 
   it("clicking the start button opens a socket to the /websocket endpoint", () => {
-    const handle = client({
+    const handle = mountClient({
       name: "Smoke Test",
       target: "#app",
       platformUrl: "http://test.local",

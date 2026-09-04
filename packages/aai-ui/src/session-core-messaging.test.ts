@@ -15,8 +15,8 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore } from "./session-core.ts";
-import type { SessionCore } from "./session-core-types.ts";
+import { createBrowserSession } from "./session-core.ts";
+import type { BrowserSession } from "./session-core-types.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES } from "./types.ts";
 
 /** Mirrors the module-private cap in session-core-messages.ts. */
@@ -24,8 +24,8 @@ const MAX_PREINIT_AUDIO_CHUNKS = 100;
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("createSessionCore", () => {
-  let core: SessionCore;
+describe("createBrowserSession", () => {
+  let core: BrowserSession;
 
   beforeEach(() => {
     resetLastSocket();
@@ -35,7 +35,7 @@ describe("createSessionCore", () => {
     // resume instead. Clearing it is what makes each test a fresh TAB, which is
     // the unit the store is scoped to (session-resume-store.ts).
     sessionStorage.clear();
-    core = createSessionCore({
+    core = createBrowserSession({
       platformUrl: "ws://localhost:3000",
       WebSocket: MockWebSocketConstructor,
     });
@@ -155,7 +155,7 @@ describe("createSessionCore", () => {
   describe("config message", () => {
     it("calls onSessionId when config includes sessionId", () => {
       const onSessionId = vi.fn();
-      core = createSessionCore({
+      core = createBrowserSession({
         platformUrl: "ws://localhost:3000",
         WebSocket: MockWebSocketConstructor,
         onSessionId,
@@ -169,7 +169,7 @@ describe("createSessionCore", () => {
 
     it("handles config with empty sessionId (no onSessionId call expected)", () => {
       const onSessionId = vi.fn();
-      core = createSessionCore({
+      core = createBrowserSession({
         platformUrl: "ws://localhost:3000",
         WebSocket: MockWebSocketConstructor,
         onSessionId,
@@ -233,7 +233,7 @@ describe("createSessionCore", () => {
 
   describe("URL building", () => {
     it("converts http to ws protocol", () => {
-      core = createSessionCore({
+      core = createBrowserSession({
         platformUrl: "http://localhost:3000",
         WebSocket: MockWebSocketConstructor,
       });
@@ -242,7 +242,7 @@ describe("createSessionCore", () => {
     });
 
     it("converts https to wss protocol", () => {
-      core = createSessionCore({
+      core = createBrowserSession({
         platformUrl: "https://example.com",
         WebSocket: MockWebSocketConstructor,
       });
@@ -251,7 +251,7 @@ describe("createSessionCore", () => {
     });
 
     it("uses resumeSessionId on first connect", () => {
-      core = createSessionCore({
+      core = createBrowserSession({
         platformUrl: "ws://localhost:3000",
         WebSocket: MockWebSocketConstructor,
         resumeSessionId: "prev-session",
@@ -347,7 +347,7 @@ describe("createSessionCore", () => {
       // No `WebSocket` option → the core uses partysocket's reconnecting
       // socket, which falls back to the global WebSocket as its transport.
       vi.stubGlobal("WebSocket", MockWebSocket);
-      core = createSessionCore({ platformUrl: "ws://localhost:3000" });
+      core = createBrowserSession({ platformUrl: "ws://localhost:3000" });
     });
 
     afterEach(() => {

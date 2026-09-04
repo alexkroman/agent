@@ -81,7 +81,7 @@ export type AgentServer = {
 };
 
 // @public
-export interface AgentServerOptions extends PassthroughServerOptions {
+export interface AgentServerOptions extends SharedServerOptions {
     agent: RuntimeOptions["agent"];
     clientDir?: string;
     db?: Db | undefined;
@@ -159,7 +159,7 @@ type CreateHeaderWebSocket = (url: string, opts: {
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
 // @public
-export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs;
+export function createHttpUploadBackend(opts: HttpUploadBackendOptions): UploadBackend;
 
 // @public (undocumented)
 export function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
@@ -168,7 +168,7 @@ export function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
 export function createMemoryKeyStore(): WorkflowKeyStore;
 
 // @public
-export function createMemoryUploadBlobs(): UploadBlobs;
+export function createMemoryUploadBackend(): UploadBackend;
 
 // @public (undocumented)
 type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
@@ -194,11 +194,11 @@ export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 // @public
 export function createRuntime(opts: RuntimeOptions): Runtime;
 
+// @public
+export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+
 // @public (undocumented)
 type CreateS2sWebSocket = CreateHeaderWebSocket;
-
-// @public
-export function createServer(options: ServerOptions): AgentServer;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
@@ -208,9 +208,6 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent;
 
 // @public
 export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
-
-// @public
-export function decliningRuntime(message: string, logger?: Logger): SessionRuntime;
 
 // @public
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
@@ -283,7 +280,7 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 }) => Promise<GenerateResult>;
 
 // @public
-export interface HostServerOptions extends PassthroughServerOptions {
+export interface HostServerOptions extends SharedServerOptions {
     defaults?: HostSessionDefaults;
     env?: Record<string, string>;
     name?: string;
@@ -293,7 +290,7 @@ export interface HostServerOptions extends PassthroughServerOptions {
 export type HostSessionDefaults = Omit<Partial<AgentDef>, "systemPrompt" | "greeting" | "tools" | "sttPrompt">;
 
 // @public (undocumented)
-export type HttpUploadBlobsOptions = {
+export type HttpUploadBackendOptions = {
     url: string;
     serviceKey: string;
     bucket: string;
@@ -469,13 +466,6 @@ export function partKey(prefix: string, id: string, at: number): string;
 // @public
 export function partsOf(value: unknown): UploadPart[];
 
-// @public
-export type PassthroughServerOptions = {
-    logger?: Logger | undefined;
-    upgrade?: ServerOptions["upgrade"];
-    request?: ServerOptions["request"];
-};
-
 export { ProviderEnv }
 
 // @public
@@ -486,6 +476,9 @@ export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpen
 
 // @public
 export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
+
+// @public
+export function rejectingRuntime(message: string, logger?: Logger): SessionRuntime;
 
 // @public
 export function requiredProviderEnvVars(agent: {
@@ -556,7 +549,7 @@ export type Runtime = AgentRuntime & {
         agent: string;
         client: ClientSink;
         skipGreeting?: boolean;
-    }): SessionCore;
+    }): ServerSession;
 };
 
 // @public
@@ -571,7 +564,7 @@ export type RuntimeOptions = {
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
     publicUrl?: string | undefined;
     logger?: Logger | undefined;
-    s2sConfig?: S2SConfig | undefined;
+    s2sConfig?: S2sConfig | undefined;
     sessionStartTimeoutMs?: number | undefined;
     shutdownTimeoutMs?: number | undefined;
     executeTool?: ExecuteTool | undefined;
@@ -593,18 +586,8 @@ export type RuntimeOptions = {
     tts?: TtsProvider | undefined;
 };
 
-// @public
-export type S2SConfig = {
-    wssUrl: string;
-    inputSampleRate: number;
-    outputSampleRate: number;
-};
-
-// @public
-export function salvageJson(input: string): Promise<string | null>;
-
 // @public (undocumented)
-export type ServerOptions = {
+export type RuntimeServerOptions = {
     runtime: SessionRuntime;
     name?: string;
     clientDir?: string;
@@ -620,10 +603,17 @@ export type ServerOptions = {
 };
 
 // @public
-export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
+export type S2sConfig = {
+    wssUrl: string;
+    inputSampleRate: number;
+    outputSampleRate: number;
+};
 
 // @public
-export type SessionCore = {
+export function salvageJson(input: string): Promise<string | null>;
+
+// @public
+export type ServerSession = {
     readonly id: string;
     configure(config: ReadyConfig): void;
     start(): Promise<void>;
@@ -637,6 +627,9 @@ export type SessionCore = {
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
 };
+
+// @public
+export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
 
 // @public
 export type SessionEventPage = {
@@ -716,7 +709,14 @@ export type SessionWebSocket = {
 };
 
 // @public
-export type SkipGreeting = boolean | (() => boolean);
+export type SharedServerOptions = {
+    logger?: Logger | undefined;
+    upgrade?: RuntimeServerOptions["upgrade"];
+    request?: RuntimeServerOptions["request"];
+};
+
+// @public
+export type SkipGreetingOption = boolean | (() => boolean);
 
 // @public
 type SleepEntry = SleepRecord & {
@@ -868,7 +868,7 @@ export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
 export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
 
 // @public
-export type UploadBlobs = {
+export type UploadBackend = {
     put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
         type?: string | undefined;
         limit?: number | undefined;

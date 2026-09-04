@@ -1,11 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The `/phone` front door: everything `createServer` needs to answer a
+ * The `/phone` front door: everything `createRuntimeServer` needs to answer a
  * carrier's media-stream upgrade, kept out of `server.ts` so the route costs
  * that file a handful of lines rather than a section.
  *
  * **Exposure is identical to `/websocket`, which is why this is on by
- * default.** `createServer`'s other two defaults are fail-closed (loopback
+ * default.** `createRuntimeServer`'s other two defaults are fail-closed (loopback
  * bind, opt-in host mode) because each WIDENS what an unauthenticated caller
  * can do — expose the whole server, or supply the agent definition. This
  * route widens nothing: it starts the same session, on the same agent, on the
@@ -30,7 +30,7 @@ import { asSessionWebSocket, type SessionWebSocket } from "../ws-frames.ts";
 import { type CarrierCodec, carrierByName } from "./carriers.ts";
 import { createTelephonyBridge } from "./telephony-bridge.ts";
 
-/** Path `createServer` serves carrier media streams on. */
+/** Path `createRuntimeServer` serves carrier media streams on. */
 export const TELEPHONY_PATH = "/phone";
 
 /** Query parameter naming the carrier — see `carrierByName`. */
@@ -80,7 +80,7 @@ function refuse(socket: Duplex, status: string, log: Logger, reason: string): vo
  * Claim a `/phone` upgrade, or refuse it.
  *
  * Returns true when the path was `/phone` — claimed either way, since a
- * refusal is still this route's to answer. `createServer` calls it before its
+ * refusal is still this route's to answer. `createRuntimeServer` calls it before its
  * own `/websocket` routing.
  *
  * @internal

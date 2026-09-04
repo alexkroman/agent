@@ -178,14 +178,14 @@ export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
    * what a webhook wants; the validated value is what the body receives.
    *
    * ```ts
-   * import type { WorkflowCtx } from "@alexkroman1/aai";
+   * import type { WorkflowContext } from "@alexkroman1/aai";
    * import { z } from "zod";
    *
    * // Derived from the run's own input, so the tool handing the URL out and the
-   * // body waiting on it agree — see `WorkflowCtx.waitFor`.
+   * // body waiting on it agree — see `WorkflowContext.waitFor`.
    * declare function approvalToken(id: string): string;
    *
-   * export async function reviewFlow(input: { id: string }, ctx: WorkflowCtx) {
+   * export async function reviewFlow(input: { id: string }, ctx: WorkflowContext) {
    *   const approval = await ctx.waitFor(approvalToken(input.id), {
    *     schema: z.object({ approved: z.boolean() }),
    *     timeoutMs: 24 * 60 * 60 * 1000,

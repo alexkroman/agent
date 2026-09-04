@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `SessionCore`'s conversation: what a restore puts back, and who it reaches.
+ * `ServerSession`'s conversation: what a restore puts back, and who it reaches.
  *
  * Split out of `session-core.test.ts` at the 700-line test cap, on the seam that
  * file already had (`describe("createSessionCore — history")`). It is a real

@@ -183,18 +183,18 @@ export type {
   LogFn,
   Logger,
   LogLevel,
-  S2SConfig,
+  S2sConfig,
 } from "./runtime-config.ts";
 export {
   type AgentServer,
-  createServer,
+  createRuntimeServer,
   DEFAULT_LISTEN_HOST,
-  decliningRuntime,
-  type PassthroughServerOptions,
-  type ServerOptions,
+  type RuntimeServerOptions,
+  rejectingRuntime,
   type SessionRuntime,
+  type SharedServerOptions,
 } from "./server.ts";
-export type { SessionCore } from "./session-core.ts";
+export type { ServerSession } from "./session-core.ts";
 export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
 // reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:
@@ -258,7 +258,7 @@ export type {
   // `@alexkroman1/aai-runtime/internal`, but the rule is unchanged: a caller
   // passing the THUNK form — which is how a resume that recovered nothing gets
   // greeted — would otherwise have a type to satisfy and no way to name it.
-  SkipGreeting,
+  SkipGreetingOption,
   // `TransportCallbacks.report` names this, so anything implementing that
   // interface (it is on `@alexkroman1/aai-runtime/internal`) needs the other —
   // a forgotten export here would be a type a consumer has to satisfy and has
@@ -266,7 +266,7 @@ export type {
   TransportEventBody,
   TransportEventType,
 } from "./transports/types.ts";
-// The workflow HTTP API's ADDRESSING. `createServer` mounts the route itself,
+// The workflow HTTP API's ADDRESSING. `createRuntimeServer` mounts the route itself,
 // so nothing outside this package has to wire one — what is exported is the
 // token's env var (the guest's deploy path reads it to decide whether a
 // deployed app's API is closed) and the prefix, so the platform's proxy and
@@ -311,9 +311,9 @@ export { resolveKeyStore } from "./workflow-keys-select.ts";
 // asymmetry this package's guide records under "What writing the templates
 // found".
 export {
-  createHttpUploadBlobs,
-  createMemoryUploadBlobs,
-  type HttpUploadBlobsOptions,
+  createHttpUploadBackend,
+  createMemoryUploadBackend,
+  type HttpUploadBackendOptions,
   partKey,
   partsOf,
   UPLOAD_KEY_PREFIX,
@@ -321,7 +321,7 @@ export {
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
   UPLOADS_TABLE,
-  type UploadBlobs,
+  type UploadBackend,
   type UploadMeta,
   type UploadPart,
   type UploadStore,

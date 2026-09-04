@@ -1,6 +1,6 @@
 import { plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, client, useAgentState } from "@alexkroman1/aai-ui";
+import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import { PRODUCT, supportProjection } from "./shared.ts";
 
 /**
@@ -98,7 +98,7 @@ function TraceSidebar() {
   );
 }
 
-client({
+mountClient({
   // Derived, not typed twice: `PRODUCT` comes off `knowledge.json`, which is
   // what `agent.ts` names the agent and greets with. A knowledge base swapped
   // for another product otherwise leaves the browser tab advertising the old

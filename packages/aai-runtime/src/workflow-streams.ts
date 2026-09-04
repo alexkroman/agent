@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A run's PROGRESS channel: what `report()` writes and a page reads back.
+ * A run's PROGRESS channel: what `stepReport()` writes and a page reads back.
  *
  * Separate from `JournalStore` although both are per-run durable state, because
  * the two have opposite properties and merging them would give the stricter one
@@ -64,7 +64,7 @@
  *
  * ## Namespaces
  *
- * One run may write several independent channels — `report()` uses the default,
+ * One run may write several independent channels — `stepReport()` uses the default,
  * and a template wanting a second (a transcript beside a progress log) names
  * one. They are separate sequences with separate indices, which is why the
  * namespace is part of the key rather than a field on the chunk.

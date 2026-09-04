@@ -381,8 +381,9 @@ export function checkMode(config: LoadedConfig | undefined): CheckResult {
  * `workflowApp()` declaration rather than an `agent()`, a body under
  * `workflows/` (the only directory the build transforms, so a body in agent.ts
  * is undurable and silent about it), and a page — which is not optional here,
- * because it is the product's whole front door — mounted with `page()` rather
- * than `client()`, since a static page opened as a session dials a `/websocket`
+ * because it is the product's whole front door — mounted with `mountPage()`
+ * rather than `mountClient()`, since a static page opened as a session dials a
+ * `/websocket`
  * the server declines.
  *
  * Checked against the FILES rather than the loaded config for the same reason
@@ -398,7 +399,9 @@ export function checkWorkflowShape(files: Record<string, string> | undefined): C
     problems.push("no workflows/ body");
   }
   if (client === undefined) problems.push("no client.tsx (the front door)");
-  else if (!/\bpage\s*\(/.test(client)) problems.push("client.tsx does not mount with page()");
+  else if (!/\bmountPage\s*\(/.test(client)) {
+    problems.push("client.tsx does not mount with mountPage()");
+  }
   return problems.length === 0
     ? { ok: true }
     : { ok: false, note: `workflow-shape: ${problems.join("; ")}` };

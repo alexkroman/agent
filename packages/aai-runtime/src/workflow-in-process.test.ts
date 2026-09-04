@@ -9,7 +9,7 @@
  * engine, and a rejection escaping into a timer callback.
  */
 
-import { type WorkflowCtx, workflow } from "@alexkroman1/aai";
+import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger, tick } from "./_test-utils.ts";
@@ -23,7 +23,7 @@ import { watchRun } from "./workflow-run-reads.ts";
 
 /** An engine over an inspectable journal, with a real dispatcher. */
 function harness(
-  run: (input: Record<string, unknown>, ctx: WorkflowCtx) => unknown,
+  run: (input: Record<string, unknown>, ctx: WorkflowContext) => unknown,
   journal: JournalStore = createMemoryJournal(),
 ): {
   engine: InProcessWorkflowEngine;
@@ -109,7 +109,7 @@ describe("a suspended run", () => {
     // `setTimeout` fires IMMEDIATELY for a delay over 2^31-1 ms, so a run asked
     // to wait a month would wake at once, re-suspend on the same journaled wake
     // time, and spin for the life of the process. The re-arm is what stops that.
-    const body = vi.fn(async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = vi.fn(async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await ctx.sleep("month", 40 * 24 * 60 * 60 * 1000);
       return "much later";
     });
@@ -138,7 +138,7 @@ describe("a burst of deliveries for ONE run", () => {
    * them dispatches.
    */
   function racer(): {
-    run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<string>;
+    run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<string>;
     walks: () => number;
     slow: () => number;
     release: () => void;
@@ -274,10 +274,11 @@ describe("a burst of deliveries for ONE run", () => {
 
 describe("a run suspended when the engine went away", () => {
   /** A body that sleeps once and then does one step. */
-  const napper = (ms: number, after: () => unknown) => async (_i: unknown, ctx: WorkflowCtx) => {
-    await ctx.sleep("nap", ms);
-    return ctx.step("after", after);
-  };
+  const napper =
+    (ms: number, after: () => unknown) => async (_i: unknown, ctx: WorkflowContext) => {
+      await ctx.sleep("nap", ms);
+      return ctx.step("after", after);
+    };
 
   test("is re-delivered by a rebuilt engine over the same journal, deadline ALREADY elapsed", async () => {
     // The unrecoverable case. `stop()` clears the timer, the deadline then
@@ -330,7 +331,7 @@ describe("a run suspended when the engine went away", () => {
     // it at every boot buys nothing and costs a replay per parked run per
     // `aai dev` file save.
     const journal = createMemoryJournal();
-    const body = vi.fn(async (_i: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = vi.fn(async (_i: Record<string, unknown>, ctx: WorkflowContext) => {
       const answer = await ctx.waitFor<{ ok: boolean }>("tok_park");
       return answer.ok;
     });
@@ -471,7 +472,7 @@ describe("a run that settles in this process", () => {
   test("wakes a watcher when a CANCEL ends it", async () => {
     // The other terminal write, and the one easiest to forget: nothing about a
     // cancel goes through the walk.
-    const { engine } = harness(async (_input, ctx: WorkflowCtx) => {
+    const { engine } = harness(async (_input, ctx: WorkflowContext) => {
       await ctx.sleep("hold", 60_000);
       return "done";
     });
@@ -490,7 +491,7 @@ describe("a run that settles in this process", () => {
     // A suspended run is still `running`, and a `false` from `cancel` moved
     // nothing — so neither is a new answer, and hurrying a watcher toward one
     // would spend a platform round trip per park.
-    const { engine } = harness(async (_input, ctx: WorkflowCtx) => {
+    const { engine } = harness(async (_input, ctx: WorkflowContext) => {
       await ctx.sleep("hold", 60_000);
       return "done";
     });

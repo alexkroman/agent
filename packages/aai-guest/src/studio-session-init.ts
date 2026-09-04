@@ -63,7 +63,7 @@ export const SessionInitParamsSchema = z.object({
 
 /**
  * The harness's HTTP hook for `POST /studio/session-init` — returns true when
- * the request was claimed. Wired into `createServer`'s `request` option ahead
+ * the request was claimed. Wired into `createRuntimeServer`'s `request` option ahead
  * of the public chat surface.
  *
  * Installing REPLACES any session already loaded, which is the same semantics

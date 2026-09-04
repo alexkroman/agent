@@ -3,7 +3,7 @@
  * A phone call, presented to the runtime as an ordinary session socket.
  *
  * **The session stack is not changed by telephony, and that is the design.**
- * `SessionCore` talks to a `ClientSink`, `wireSessionSocket` talks to a
+ * `ServerSession` talks to a `ClientSink`, `wireSessionSocket` talks to a
  * `SessionWebSocket`, and neither knows what is on the far end. So a
  * carrier's media stream does not need a second session implementation, a
  * second pacer, or a second lifecycle — it needs a socket-shaped adapter that
@@ -25,8 +25,8 @@
  * and `ttsSampleRate`, so the bridge reads them off the wire and builds its
  * converters then. That is what lets one adapter serve a 16 kHz pipeline
  * agent and a 24 kHz S2S agent with no per-agent configuration and no plumbing
- * through `createServer` — which matters because the guest harness hands
- * `createServer` a LAZY runtime facade that cannot answer a rate question
+ * through `createRuntimeServer` — which matters because the guest harness hands
+ * `createRuntimeServer` a LAZY runtime facade that cannot answer a rate question
  * until the first session has already begun.
  *
  * **Pacing stays ON, deliberately.** A carrier accepts audio far faster than

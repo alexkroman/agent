@@ -12,10 +12,14 @@
  */
 
 import type { SpeechSynthesizer, StepFetch } from "@alexkroman1/aai/host-internal";
-import type { WorkflowCtx, WorkflowDef, WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
+import type {
+  WorkflowContext,
+  WorkflowDef,
+  WorkflowRunStatus,
+} from "@alexkroman1/aai/workflow-api";
 import type { WdkAdapter } from "../workflow-wdk-types.ts";
 
-/** One chunk `emit()` wrote during a run, and the stream it named. */
+/** One chunk `stepEmit()` wrote during a run, and the stream it named. */
 export type EvalEmitted = {
   /** The stream the step named. */
   readonly namespace: string;
@@ -55,9 +59,9 @@ export type EvalRunRecord = {
   readonly createdAt: number;
   output?: unknown;
   error?: { message: string };
-  /** Lines this run's steps wrote with `report()`, oldest first. */
+  /** Lines this run's steps wrote with `stepReport()`, oldest first. */
   readonly reported: string[];
-  /** Chunks this run's steps wrote with `emit()`, oldest first. */
+  /** Chunks this run's steps wrote with `stepEmit()`, oldest first. */
   readonly emitted: EvalEmitted[];
   /** Durable sleeps the body asked for — see {@link EvalSleep}. */
   readonly slept: EvalSleep[];
@@ -82,7 +86,7 @@ export type EvalRunRecord = {
  */
 export type EvalBody = (
   input: Record<string, unknown>,
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ) => Promise<unknown> | unknown;
 
 /** What {@link createEvalWorkflowEngine} takes. */

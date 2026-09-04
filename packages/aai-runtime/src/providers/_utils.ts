@@ -6,8 +6,8 @@
 
 import type { SttEvents, TtsEvents } from "@alexkroman1/aai/host-internal";
 import {
-  makeSttError,
-  makeTtsError,
+  createSttError,
+  createTtsError,
   STT_FRAME_MAX_MS,
   STT_FRAME_TARGET_MS,
 } from "@alexkroman1/aai/host-internal";
@@ -350,7 +350,7 @@ export function createSttSessionShell(opts: {
 }): SessionShell<SttEvents> {
   return createSessionShell({
     emitter: opts.emitter,
-    makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
+    makeStreamError: (msg) => createSttError("stt_stream_error", msg),
     emitError: (err) => opts.emitter.emit("error", err),
     cleanCloseIsFatal: true,
     teardown: opts.teardown,
@@ -368,7 +368,7 @@ export function createTtsSessionShell(opts: {
 }): SessionShell<TtsEvents> {
   return createSessionShell({
     emitter: opts.emitter,
-    makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
+    makeStreamError: (msg) => createTtsError("tts_stream_error", msg),
     emitError: (err) => opts.emitter.emit("error", err),
     teardown: opts.teardown,
   });

@@ -2,7 +2,7 @@
 /**
  * Capability contract: `theme`.
  *
- * The tokens a client passes to `client({ theme })` and the hook a component
+ * The tokens a client passes to `mountClient({ theme })` and the hook a component
  * reads them back through. Its own contract rather than part of `client`
  * because a token is a name in someone's CSS: renaming one breaks a page that
  * never calls a function of ours.

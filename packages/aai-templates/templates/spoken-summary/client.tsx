@@ -73,7 +73,7 @@ import {
   createWorkflowApi,
   Facts,
   Form,
-  page,
+  mountPage,
   SubmitButton,
   UploadProgressBar,
   useDownloadUrl,
@@ -169,7 +169,7 @@ export function App() {
           nothing for `<WorkflowProgress>` to read. */}
       <UploadProgressBar upload={upload} onPause={pauseUpload} onResume={resumeUpload} />
 
-      {/* What the run itself says, from `report()` in the workflow's steps. */}
+      {/* What the run itself says, from `stepReport()` in the workflow's steps. */}
       <WorkflowProgress runId={run?.runId} api={api} />
 
       {/* `role="alert"`, the same contract `<Form>` gives the submit error: this
@@ -237,4 +237,4 @@ export function App() {
   );
 }
 
-page({ name: "Spoken Summary", component: App });
+mountPage({ name: "Spoken Summary", component: App });

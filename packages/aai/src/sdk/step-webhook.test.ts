@@ -66,7 +66,7 @@ describe("stepWebhookUrl", () => {
 
   test("the minter's own failure is not swallowed", () => {
     // A host that published a minter over an unusable base still owes the step
-    // an error rather than a URL: `report`'s swallow-everything rule is for
+    // an error rather than a URL: `stepReport`'s swallow-everything rule is for
     // NARRATION, and this value is acted on.
     publishStepWebhookUrl(() => {
       throw new Error("no public URL");

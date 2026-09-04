@@ -3,7 +3,7 @@
  * The options bag every single-setting LLM factory takes.
  *
  * Eight vendors here are reached by naming one model id and nothing else —
- * `anthropicLlm`, `openaiLlm`, `googleLlm`, `groqLlm`, `mistralLlm`, `xaiLlm`, `openrouterLlm` and
+ * `anthropicLlm`, `openAILlm`, `googleLlm`, `groqLlm`, `mistralLlm`, `xAILlm`, `openRouterLlm` and
  * `gatewayLlm` — and each used to declare its own `{ model: string }` interface
  * under its own name. Eight byte-identical shapes with no reference outside
  * their own module: they published eight reference pages that said the same
@@ -21,7 +21,7 @@ import type { ProviderCredentialOptions } from "../../providers.ts";
 export interface ModelOptions extends ProviderCredentialOptions {
   /**
    * The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-   * `"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+   * `"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
    * `gatewayLlm`) address a model as `"creator/model"`; each module's doc names
    * the shape it takes.
    *

@@ -14,7 +14,7 @@ delivers):
   **agent mode** (deployed agents — see "Agent guests are servers") boots
   from files delivered at exec time and serves only the public session
   surfaces — `/websocket` for browsers and `/phone` for carrier media streams,
-  both from the SDK's own `createServer` — plus the token-gated
+  both from the SDK's own `createRuntimeServer` — plus the token-gated
   `/manage/status` + `/manage/drain` pair (`harness-agent-mode.ts`);
   **studio mode** serves
   `/ws` (bearer-token host control channel — JSON-RPC
@@ -470,19 +470,20 @@ which is exactly the old behaviour, and boot announces it.
 
 The SDK's `aai/host/telephony/` — so `packages/aai/CLAUDE.md` owns the code, and
 this guide holds the detail because the process that serves `/phone` in
-production is this harness (and, under `aai dev`, the same `createServer`). Both
-of the other guides are at their length caps; the platform's TwiML webhook route
-stays in `packages/aai-server/CLAUDE.md`, "Telephony".
+production is this harness (and, under `aai dev`, the same
+`createRuntimeServer`). Both of the other guides are at their length caps; the
+platform's TwiML webhook route stays in `packages/aai-server/CLAUDE.md`,
+"Telephony".
 
 `WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
 stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
-ordinary session. `createServer` serves it by default, so `aai dev`, a
+ordinary session. `createRuntimeServer` serves it by default, so `aai dev`, a
 self-hosted server and every deployed agent all answer phone calls with no
 per-agent configuration — the platform route above is only what points a carrier
 at it.
 
 **Nothing in the session stack knows about telephony, and that is the whole
-design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
+design.** `ServerSession` talks to a `ClientSink`; `wireSessionSocket` talks to
 a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
 (`createTelephonyBridge`) that speaks the client protocol on one side and the
 carrier's JSON framing on the other, handed straight to
@@ -507,7 +508,7 @@ Four things that are easy to get wrong here, each of which was a decision:
   thing any runtime sends a session is `{ sampleRate, ttsSampleRate }`, so the
   bridge builds its converters from that — which lets one adapter serve a
   16 kHz pipeline agent and a 24 kHz S2S agent, and avoids plumbing a rate
-  through `createServer`, whose runtime is a LAZY facade in the guest harness
+  through `createRuntimeServer`, whose runtime is a LAZY facade in the guest harness
   and cannot answer a rate question before the first session exists.
 - **Downsampling must low-pass first, and both converters are STATEFUL**
   (`telephony/resample.ts`) — decimating without the filter folds everything
@@ -534,7 +535,7 @@ ignored rather than surfaced as a custom event.
 ## Dev/prod parity
 
 **The guest IS the dev server — and the runtime IS the user's.** The
-harness wraps the same `createServer` (`aai/host/server.ts`) that `aai dev`
+harness wraps the same `createRuntimeServer` (`aai/host/server.ts`) that `aai dev`
 runs — health, `client-config`, and `/websocket` sessions — adding (per
 mode) the `/manage/*` request hook or the `/ws` control channel, plus a
 lazy runtime facade (`lazyRuntime` in `aai-guest/harness.ts`: the runtime
@@ -968,12 +969,12 @@ So **`GUEST_SYSTEM_PACKAGES`** (`aai-server/modal-system-packages.ts`) installs
 **`@alexkroman1/aai/ffmpeg`** is how a step reaches it:
 
 ```ts no-check
-import { readUpload } from "@alexkroman1/aai/utils";
+import { stepReadUpload } from "@alexkroman1/aai/utils";
 import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
 
 export async function toPcm(uploadId: string) {
   "use step";
-  const { bytes } = await readUpload(uploadId);
+  const { bytes } = await stepReadUpload(uploadId);
   const info = await probeMedia(bytes);
   return info.audio?.codec === "pcm_s16le"
     ? bytes

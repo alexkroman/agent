@@ -71,7 +71,7 @@
 
 import { basename, extname, join } from "node:path";
 import { ffmpegBaseArgs, probeMedia, runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
-import { readUpload, report, requireCompleteUpload } from "@alexkroman1/aai/step";
+import { stepReadUpload, stepReport, stepRequireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
@@ -122,16 +122,16 @@ export type NormalizedRecording = {
  * file that already exists instead of paying for a second one.
  */
 export async function normalizeRecording(uploadId: string): Promise<NormalizedRecording> {
-  // `requireCompleteUpload`, not `uploadInfo`: `size` is the readable PREFIX, and
+  // `stepRequireCompleteUpload`, not `stepUploadInfo`: `size` is the readable PREFIX, and
   // every judgement below — cuttable, heavier-per-second, the byte count copied to
   // disk — is about the WHOLE file.
-  const stored = await requireCompleteUpload(uploadId);
-  const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
+  const stored = await stepRequireCompleteUpload(uploadId);
+  const head = await stepReadUpload(uploadId, { end: HEADER_PROBE_BYTES });
 
   if (cuttable(head.bytes, stored.size) && !heavierThanNormalized(head.bytes, stored.size)) {
     // No subprocess, no copy, no second upload. The overwhelmingly common case
     // for a desk whose form says WAV, and the reason the check is a 64 KB read.
-    await report(`${stored.name || uploadId} is already linear-PCM WAV — cutting it as it is.`);
+    await stepReport(`${stored.name || uploadId} is already linear-PCM WAV — cutting it as it is.`);
     return { recording: uploadId, converted: false };
   }
 
@@ -144,7 +144,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
   // WAV that is fine but too heavy to cut at this rate. Reporting "not a WAV we
   // can cut" for the second one is a line that contradicts the file they
   // uploaded.
-  await report(
+  await stepReport(
     `Converting ${stored.name || uploadId} (${formatBytes(stored.size)}) — ` +
       (cuttable(head.bytes, stored.size)
         ? `heavier per second than ${NORMALIZED_SAMPLE_RATE / 1000} kHz mono.`
@@ -164,7 +164,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
       // `STEP_FILE_READ_CONCURRENCY` of them. Passing `size` means "I am judging
       // completeness myself", which is what a body polling a still-arriving
       // upload needs and is the opposite of what happened above: this step has
-      // already called `requireCompleteUpload`, so the file IS whole and the
+      // already called `stepRequireCompleteUpload`, so the file IS whole and the
       // windows may land in any order. Omitting it lets `readUploadToFile`
       // establish that for itself and fan out. The cost is one metadata round
       // trip, against the dozens of window reads it overlaps.
@@ -177,7 +177,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
       const info = await probeMedia(source, { timeoutMs: CONVERT_TIMEOUT_MS }).catch(
         throwFfmpegStepError,
       );
-      await report(
+      await stepReport(
         `It is ${describeSource(info.audio?.codec, info.durationSec)} — re-encoding to ` +
           `${NORMALIZED_SAMPLE_RATE / 1000} kHz mono WAV.`,
       );
@@ -208,7 +208,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
         type: "audio/wav",
       });
 
-      await report(
+      await stepReport(
         `Converted to ${formatBytes(written.size)} of WAV (from ${formatBytes(stored.size)}).`,
       );
       return { recording: written.id, converted: true };

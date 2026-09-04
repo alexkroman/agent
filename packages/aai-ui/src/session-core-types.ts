@@ -161,7 +161,7 @@ export type SessionSnapshot = {
  *
  * @public
  */
-export type SessionCore = {
+export type BrowserSession = {
   /** Return the current immutable state snapshot. */
   getSnapshot(): SessionSnapshot;
   /** Subscribe to state changes. Returns an unsubscribe function. */

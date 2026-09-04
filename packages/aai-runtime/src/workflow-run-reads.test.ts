@@ -314,7 +314,7 @@ describe("the registry crosses copies of this package", () => {
   /**
    * A fresh copy of the module, the way a second bundle gets one.
    *
-   * A deployed guest has two: `createServer` — hence the wait loop and the
+   * A deployed guest has two: `createRuntimeServer` — hence the wait loop and the
    * event stream — comes from the HARNESS's copy, while `createRunNotifier` is
    * built by `createRuntime` inside the BUNDLE's. Both hold the same
    * `WorkflowClient` object, so the registry is what has to be shared, and

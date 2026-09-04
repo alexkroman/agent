@@ -11,13 +11,13 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   publishUploadReader,
-  readUpload,
+  stepReadUpload,
+  stepUploadInfo,
   type UploadAccess,
   type UploadWriteMeta,
-  uploadInfo,
 } from "./step-uploads.ts";
-import { requireCompleteUpload } from "./step-uploads-complete.ts";
-import { UPLOAD_WRITES_UNAVAILABLE_MESSAGE, writeUpload } from "./step-uploads-write.ts";
+import { stepRequireCompleteUpload } from "./step-uploads-complete.ts";
+import { stepWriteUpload, UPLOAD_WRITES_UNAVAILABLE_MESSAGE } from "./step-uploads-write.ts";
 
 /** Publish a reader over one in-memory file, recording the windows it is asked for. */
 function publish(bytes: Uint8Array, over: Partial<UploadAccess> = {}) {
@@ -39,10 +39,10 @@ function publish(bytes: Uint8Array, over: Partial<UploadAccess> = {}) {
 // A slot left published would make the next file's steps read this one's bytes.
 afterEach(() => publishUploadReader(undefined));
 
-describe("readUpload", () => {
+describe("stepReadUpload", () => {
   test("reads the window it was asked for and reports the whole file's size", async () => {
     const reads = publish(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
-    const slice = await readUpload("upl_1", { start: 2, end: 5 });
+    const slice = await stepReadUpload("upl_1", { start: 2, end: 5 });
     expect([...slice.bytes]).toEqual([3, 4, 5]);
     expect(slice.info.size).toBe(8);
     expect(reads).toEqual([{ start: 2, end: 5 }]);
@@ -50,7 +50,7 @@ describe("readUpload", () => {
 
   test("reads the whole file when no window is named", async () => {
     publish(new Uint8Array([1, 2, 3]));
-    const slice = await readUpload("upl_1");
+    const slice = await stepReadUpload("upl_1");
     expect([...slice.bytes]).toEqual([1, 2, 3]);
     expect(slice).toMatchObject({ start: 0, end: 3 });
   });
@@ -59,7 +59,7 @@ describe("readUpload", () => {
     // A plan computed from a file's own header legitimately ends one byte past
     // it, and the returned bounds are what say how much was really read.
     const reads = publish(new Uint8Array([1, 2, 3]));
-    const slice = await readUpload("upl_1", { start: 1, end: 99 });
+    const slice = await stepReadUpload("upl_1", { start: 1, end: 99 });
     expect([...slice.bytes]).toEqual([2, 3]);
     expect(slice.end).toBe(3);
     expect(reads).toEqual([{ start: 1, end: 3 }]);
@@ -67,24 +67,24 @@ describe("readUpload", () => {
 
   test("answers an empty window without touching the store", async () => {
     const reads = publish(new Uint8Array([1, 2, 3]));
-    const slice = await readUpload("upl_1", { start: 2, end: 2 });
+    const slice = await stepReadUpload("upl_1", { start: 2, end: 2 });
     expect(slice.bytes).toHaveLength(0);
     expect(reads).toEqual([]);
   });
 
   test("never passes NaN to the store, and reads an infinite end to the end", async () => {
     const reads = publish(new Uint8Array([1, 2, 3]));
-    await readUpload("upl_1", { start: Number.NaN, end: Number.POSITIVE_INFINITY });
+    await stepReadUpload("upl_1", { start: Number.NaN, end: Number.POSITIVE_INFINITY });
     expect(reads).toEqual([{ start: 0, end: 3 }]);
   });
 
   test("fails by NAME on an id that names no upload", async () => {
     publish(new Uint8Array(1));
-    await expect(readUpload("upl_gone")).rejects.toThrow(/No upload with id upl_gone/);
+    await expect(stepReadUpload("upl_gone")).rejects.toThrow(/No upload with id upl_gone/);
   });
 
   test("fails with the fix when no store was published", async () => {
-    await expect(readUpload("upl_1")).rejects.toThrow(/No upload store in this process/);
+    await expect(stepReadUpload("upl_1")).rejects.toThrow(/No upload store in this process/);
   });
 });
 
@@ -109,7 +109,7 @@ function publishPartial(total: number, landed: readonly [number, number][]) {
   return bytes;
 }
 
-describe("readUpload against a parts upload still arriving", () => {
+describe("stepReadUpload against a parts upload still arriving", () => {
   test("reads a landed window the contiguous PREFIX cannot see", async () => {
     // The case this clamp exists for, and the ONE test here that discriminates:
     // the three below are properties the change had to PRESERVE, and each passes
@@ -122,7 +122,7 @@ describe("readUpload against a parts upload still arriving", () => {
     // came back empty and a run watching the upload had nothing to do until it was
     // over.
     const bytes = publishPartial(64, [[16, 48]]);
-    const slice = await readUpload("upl_1", { start: 16, end: 48 });
+    const slice = await stepReadUpload("upl_1", { start: 16, end: 48 });
     expect(slice.info.size).toBe(0);
     expect([...slice.bytes]).toEqual([...bytes.subarray(16, 48)]);
     expect(slice).toMatchObject({ start: 16, end: 48 });
@@ -136,13 +136,13 @@ describe("readUpload against a parts upload still arriving", () => {
       [0, 16],
       [32, 48],
     ]);
-    const slice = await readUpload("upl_1", { start: 8, end: 40 });
+    const slice = await stepReadUpload("upl_1", { start: 8, end: 40 });
     expect(slice).toMatchObject({ start: 8, end: 16 });
   });
 
   test("reads NOTHING from a window that has not landed", async () => {
     publishPartial(64, [[32, 48]]);
-    const slice = await readUpload("upl_1", { start: 0, end: 16 });
+    const slice = await stepReadUpload("upl_1", { start: 0, end: 16 });
     expect(slice.bytes.length).toBe(0);
   });
 
@@ -151,15 +151,15 @@ describe("readUpload against a parts upload still arriving", () => {
     // ceiling has to fall back to the prefix for them or this change would widen
     // a bound it has no business widening.
     publish(new Uint8Array([1, 2, 3]));
-    const slice = await readUpload("upl_1", { start: 1, end: 99 });
+    const slice = await stepReadUpload("upl_1", { start: 1, end: 99 });
     expect(slice).toMatchObject({ start: 1, end: 3 });
   });
 });
 
-describe("uploadInfo", () => {
+describe("stepUploadInfo", () => {
   test("reports what the uploader declared", async () => {
     publish(new Uint8Array(4));
-    await expect(uploadInfo("upl_1")).resolves.toEqual({
+    await expect(stepUploadInfo("upl_1")).resolves.toEqual({
       id: "upl_1",
       name: "a.wav",
       type: "audio/wav",
@@ -170,7 +170,7 @@ describe("uploadInfo", () => {
 
   test("fails by name on a missing upload", async () => {
     publish(new Uint8Array(1));
-    await expect(uploadInfo("upl_gone")).rejects.toThrow(/No upload with id/);
+    await expect(stepUploadInfo("upl_gone")).rejects.toThrow(/No upload with id/);
   });
 });
 
@@ -185,7 +185,7 @@ describe("publishUploadReader", () => {
       complete: true,
     }));
     publishUploadReader({ info: second, read: async () => new Uint8Array([7]) });
-    const slice = await readUpload("upl_1");
+    const slice = await stepReadUpload("upl_1");
     expect([...slice.bytes]).toEqual([7]);
     expect(second).toHaveBeenCalled();
   });
@@ -219,11 +219,11 @@ function publishWritable() {
   return written;
 }
 
-describe("writeUpload", () => {
+describe("stepWriteUpload", () => {
   test("stores a buffer and answers with the record naming it", async () => {
     const written = publishWritable();
 
-    const stored = await writeUpload(new Uint8Array([1, 2, 3]), {
+    const stored = await stepWriteUpload(new Uint8Array([1, 2, 3]), {
       name: "summary.wav",
       type: "audio/wav",
     });
@@ -241,7 +241,7 @@ describe("writeUpload", () => {
   test("declares nothing the caller did not — no type is sniffed from the bytes", async () => {
     const written = publishWritable();
 
-    await writeUpload(new Uint8Array([0x52, 0x49, 0x46, 0x46]));
+    await stepWriteUpload(new Uint8Array([0x52, 0x49, 0x46, 0x46]));
 
     expect(written[0]?.meta).toEqual({ name: undefined, type: undefined });
   });
@@ -249,7 +249,7 @@ describe("writeUpload", () => {
   test("streams a list of chunks in order rather than joining it first", async () => {
     const written = publishWritable();
 
-    await writeUpload([new Uint8Array([1, 2]), new Uint8Array([3])]);
+    await stepWriteUpload([new Uint8Array([1, 2]), new Uint8Array([3])]);
 
     expect([...(written[0]?.bytes ?? [])]).toEqual([1, 2, 3]);
     expect(written[0]?.chunks).toBe(2);
@@ -258,7 +258,7 @@ describe("writeUpload", () => {
   test("drops an empty chunk, which several stores read as a window boundary", async () => {
     const written = publishWritable();
 
-    await writeUpload([new Uint8Array([1]), new Uint8Array(0), new Uint8Array([2])]);
+    await stepWriteUpload([new Uint8Array([1]), new Uint8Array(0), new Uint8Array([2])]);
 
     expect(written[0]?.chunks).toBe(2);
     expect([...(written[0]?.bytes ?? [])]).toEqual([1, 2]);
@@ -271,7 +271,7 @@ describe("writeUpload", () => {
       yield new Uint8Array([8]);
     }
 
-    await writeUpload(produce());
+    await stepWriteUpload(produce());
 
     expect([...(written[0]?.bytes ?? [])]).toEqual([7, 8]);
     expect(written[0]?.chunks).toBe(2);
@@ -280,20 +280,20 @@ describe("writeUpload", () => {
   test("names the READ-ONLY store apart from a process with no store at all", async () => {
     publish(new Uint8Array([1]));
 
-    await expect(writeUpload(new Uint8Array([1]))).rejects.toThrow(
+    await expect(stepWriteUpload(new Uint8Array([1]))).rejects.toThrow(
       UPLOAD_WRITES_UNAVAILABLE_MESSAGE,
     );
   });
 
   test("reports an absent store the way every other reader here does", async () => {
-    await expect(writeUpload(new Uint8Array([1]))).rejects.toThrow(/No upload store/);
+    await expect(stepWriteUpload(new Uint8Array([1]))).rejects.toThrow(/No upload store/);
   });
 });
 
-describe("requireCompleteUpload", () => {
+describe("stepRequireCompleteUpload", () => {
   test("answers with the record when every byte is in", async () => {
     publish(new Uint8Array([1, 2, 3]));
-    expect(await requireCompleteUpload("upl_1")).toMatchObject({ size: 3, complete: true });
+    expect(await stepRequireCompleteUpload("upl_1")).toMatchObject({ size: 3, complete: true });
   });
 
   test("refuses one that is still arriving, and names the fix", async () => {
@@ -304,7 +304,7 @@ describe("requireCompleteUpload", () => {
     // The sentence is the whole product here: the reader is a step author whose
     // run started a moment too early, and the two supported orders — wait for the
     // upload, or poll it from the body — are what the message has to name.
-    await expect(requireCompleteUpload("upl_1")).rejects.toMatchObject({
+    await expect(stepRequireCompleteUpload("upl_1")).rejects.toMatchObject({
       name: "UploadIncompleteError",
       // NOT retryable: `toStepError` reads this structurally, so a step ending
       // `.catch(throwStepError)` fails the run rather than spending the budget of
@@ -314,11 +314,11 @@ describe("requireCompleteUpload", () => {
       // to tell "nothing has arrived" from "we were one window short".
       stored: 3,
     });
-    await expect(requireCompleteUpload("upl_1")).rejects.toThrow(/ctx\.sleep/);
+    await expect(stepRequireCompleteUpload("upl_1")).rejects.toThrow(/ctx\.sleep/);
   });
 
-  test("reports an id that names nothing exactly as uploadInfo does", async () => {
+  test("reports an id that names nothing exactly as stepUploadInfo does", async () => {
     publish(new Uint8Array([1]));
-    await expect(requireCompleteUpload("nope")).rejects.toThrow(/No upload with id nope/);
+    await expect(stepRequireCompleteUpload("nope")).rejects.toThrow(/No upload with id nope/);
   });
 });

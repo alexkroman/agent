@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Every raw step primitive points at its `Classified` twin, in its OWN doc.
+ * Every raw step primitive points at its `OrFail` twin, in its OWN doc.
  *
  * `guard-invariants` rule 26 already fails a raw call inside a shipped
  * `workflows/` body, and the shipped guide carries the translation table. What
@@ -21,14 +21,14 @@ import { describe, expect, test } from "vitest";
 
 /** Raw primitive → the module that declares it, and the twin it must name. */
 const PAIRS: readonly (readonly [string, string, string])[] = [
-  ["stepFetch", "step-fetch.ts", "stepFetchOk"],
-  ["stepGenerate", "step-generate.ts", "stepGenerateClassified"],
-  ["stepGenerateJson", "step-generate-json.ts", "stepGenerateJsonClassified"],
-  ["stepTranscribeSync", "step-transcribe-sync.ts", "stepTranscribeSyncClassified"],
-  ["stepTranscribeUpload", "step-transcribe.ts", "stepTranscribeUploadClassified"],
-  ["stepTranscribePoll", "step-transcribe.ts", "stepTranscribePollClassified"],
-  ["stepTranscribeSubmit", "step-transcribe.ts", "stepTranscribeSubmitClassified"],
-  ["sendToChannel", "channels/send.ts", "sendToChannelClassified"],
+  ["stepFetch", "step-fetch.ts", "stepFetchOrFail"],
+  ["stepGenerate", "step-generate.ts", "stepGenerateOrFail"],
+  ["stepGenerateJson", "step-generate-json.ts", "stepGenerateJsonOrFail"],
+  ["stepTranscribeSync", "step-transcribe-sync.ts", "stepTranscribeSyncOrFail"],
+  ["stepTranscribeUpload", "step-transcribe.ts", "stepTranscribeUploadOrFail"],
+  ["stepTranscribePoll", "step-transcribe.ts", "stepTranscribePollOrFail"],
+  ["stepTranscribeSubmit", "step-transcribe.ts", "stepTranscribeSubmitOrFail"],
+  ["sendToChannel", "channels/send.ts", "sendToChannelOrFail"],
 ];
 
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -43,7 +43,7 @@ function docFor(source: string, name: string): string | undefined {
   return open === -1 ? undefined : source.slice(open, close);
 }
 
-describe("raw step primitives name their Classified twin", () => {
+describe("raw step primitives name their OrFail twin", () => {
   // A floor, because this suite's whole output is a count over a hand-kept
   // list: a `docFor` that stopped matching would find nothing and pass.
   test("the pair list still resolves to real declarations", () => {

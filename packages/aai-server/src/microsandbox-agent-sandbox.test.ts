@@ -155,7 +155,7 @@ describe("spawnMicrosandboxAgentServer", () => {
   it("rewrites both DIALED urls but not the public base, and opens the platform's port", async () => {
     // The three boot keys carry the same value under different names because
     // their claims differ (see `agentBootEnv`), and under a microVM those
-    // claims point OPPOSITE ways: the guest DIALS the broker (`writeUpload`
+    // claims point OPPOSITE ways: the guest DIALS the broker (`stepWriteUpload`
     // PUTs byte windows to `<broker>/uploads/<id>/<offset>`) and DIALS the
     // platform base (every `resolvePlatformQueue` call — run storage, the
     // queue, session state, upload records), while the public base is what a

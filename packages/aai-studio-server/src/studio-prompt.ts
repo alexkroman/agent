@@ -68,7 +68,7 @@ export default tool({
   run_code.
 - A FORM-fronted product (submit a job, watch it, read the result) is a
   workflow app instead: \`workflowApp({ name, workflows })\` with its bodies
-  in \`workflows/*.ts\`, and a client.tsx mounted with \`page()\`. It has no
+  in \`workflows/*.ts\`, and a client.tsx mounted with \`mountPage()\`. It has no
   session, so systemPrompt/tools/providers are type errors on one.
 - Pipeline mode is the default: declaring no providers gives the
   all-AssemblyAI pipeline (voice: "…" picks its TTS voice), and any subset

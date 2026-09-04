@@ -16,8 +16,8 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
 import { registerLlmKind, requiredProviderEnvVars } from "../providers/resolve.ts";
-import { FAKE_SPEECH_API_KEY_ENV } from "./fake-speech.ts";
 import { evalCredentials, openEvalSession } from "./session.ts";
+import { STUB_SPEECH_API_KEY_ENV } from "./stub-speech.ts";
 
 const SPEC_LLM_KIND = "eval-spec-llm";
 const SPEC_LLM_ENV = "EVAL_SPEC_LLM_KEY";
@@ -86,7 +86,7 @@ describe("openEvalSession", () => {
     // with an stt and no llm/tts is not a complete pipeline, so the default one
     // is what would run.)
     expect(requiredProviderEnvVars({ stt: { kind: "aai-eval-stt-1" } })).not.toContain(
-      FAKE_SPEECH_API_KEY_ENV,
+      STUB_SPEECH_API_KEY_ENV,
     );
   });
 

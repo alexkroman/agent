@@ -33,7 +33,7 @@
  * **The branch this file used to name as its biggest gap no longer exists.** It
  * was `recapFlow`'s `if (isWorkflowSuspend(err)) throw err;` — the guard whose
  * absence had once deleted the transcript the run was waiting for — and it was
- * unpinnable here by construction, since `createWorkflowCtx`'s `sleep` is
+ * unpinnable here by construction, since `createWorkflowContext`'s `sleep` is
  * RECORDED and its `waitFor` answers out of `hooks`, so no wait it serves ever
  * suspended. A wait now hands the body a promise that never settles, so a
  * suspension cannot reach a `catch` at all and there is no branch left to test:
@@ -47,7 +47,7 @@ import type { WorkflowClient } from "@alexkroman1/aai";
 import {
   createRunSnapshot,
   createToolContext,
-  createWorkflowCtx,
+  createWorkflowContext,
   parseSchemaInput,
   schemaInputIssues,
   stubGatewayRoute,
@@ -55,7 +55,7 @@ import {
 } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
-  mockWorkflows,
+  installStubWorkflows,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
@@ -89,14 +89,14 @@ const run = toolRunner(agentDef);
 /**
  * A `ctx.workflows` that records `start` and answers the lookups from a fixture.
  *
- * `mockWorkflows` (`@alexkroman1/aai/testing/vitest`) is the whole thing — a
+ * `installStubWorkflows` (`@alexkroman1/aai/testing/vitest`) is the whole thing — a
  * `vi.fn` per method over one `runs` list, with `stream`/`streamTail` left
  * rejecting because `recap_progress` reads progress through `lastLine` and
  * composing those two by hand is the hazard `lastLine` exists to remove. What
  * is local is only which workflow this desk declares.
  */
 function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
-  return mockWorkflows({ runs, names: ["recap"] });
+  return installStubWorkflows({ runs, names: ["recap"] });
 }
 
 /** A finished recap, as the workflow's output reaches the tools. */
@@ -399,7 +399,7 @@ describe("cancel_recap", () => {
  *
  * Published into `stepFetch`'s OWN slot, not over `globalThis.fetch`. Every
  * request in this file goes through `stepFetch` — `request()` and
- * `discardTranscript` reach it directly, `stepTranscribeSubmitClassified`
+ * `discardTranscript` reach it directly, `stepTranscribeSubmitOrFail`
  * through the SDK — and `step-fetch.ts` falls back to `globalThis.fetch` only
  * when nothing is published. A global stub therefore passed while exercising a
  * path production never takes; every sibling template already stubs the slot,
@@ -686,7 +686,7 @@ describe("summarize", () => {
     // The policy is an argument to `ctx.step` now, so it is observable only at
     // the call. `runSteps: false` and a skeleton of results: the subject is what
     // the body ASKED FOR.
-    const ctx = createWorkflowCtx({
+    const ctx = createWorkflowContext({
       runSteps: false,
       results: {
         submitRecording: { id: "t_1" },
@@ -724,7 +724,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
       { status: "processing" },
       { status: "completed", text: "Done.", audio_duration: 60 },
     ]);
-    const state = await awaitTranscript("t_1", createWorkflowCtx());
+    const state = await awaitTranscript("t_1", createWorkflowContext());
     expect(state).toMatchObject({ status: "completed", text: "Done." });
     expect(polls()).toBe(3);
   });
@@ -733,13 +733,15 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
     // `error` is terminal: polling a failed job to the bound would spend twenty
     // minutes learning what the first answer already said.
     const polls = stubStatuses([{ status: "error", error: "Transcoding failed" }]);
-    await expect(awaitTranscript("t_1", createWorkflowCtx())).rejects.toThrow(/Transcoding failed/);
+    await expect(awaitTranscript("t_1", createWorkflowContext())).rejects.toThrow(
+      /Transcoding failed/,
+    );
     expect(polls()).toBe(1);
   });
 
   test("gives up at the bound rather than polling a stuck job forever", async () => {
     stubStatuses([{ status: "processing" }]);
-    await expect(awaitTranscript("t_1", createWorkflowCtx())).rejects.toThrow(/Gave up/);
+    await expect(awaitTranscript("t_1", createWorkflowContext())).rejects.toThrow(/Gave up/);
   });
 
   /** A job still `processing` for `polls` turns, then completed. */
@@ -758,7 +760,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
     // the constant promises is eight sleeps, so the earliest honest turn to say
     // it is the ninth. Here the job finishes on that ninth poll, two minutes in
     // and not a second over, so the caller is told nothing.
-    const ctx = createWorkflowCtx();
+    const ctx = createWorkflowContext();
     stubSlowJob(8);
 
     await awaitTranscript("t_1", ctx);
@@ -773,7 +775,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
     // two minutes of waiting behind it — so the note goes out, and the eleven
     // polls after it say nothing more. A note per poll would be a caller told
     // the same sentence every fifteen seconds.
-    const ctx = createWorkflowCtx();
+    const ctx = createWorkflowContext();
     stubSlowJob(20);
 
     await awaitTranscript("t_1", ctx);
@@ -788,7 +790,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
   // cases are the REGRESSION guard for this section: the poll-only arm has to
   // keep behaving exactly as it did before there was a callback at all.
   //
-  // `createWorkflowCtx` is the only tier that can drive the answered branch:
+  // `createWorkflowContext` is the only tier that can drive the answered branch:
   // its `waitFor` reads `hooks` by token, so supplying a payload IS the delivery
   // landing and omitting one IS the window closing. The eval tier cannot —
   // nothing there can signal — so it only ever sees the fallback, which is
@@ -806,7 +808,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
       { status: "processing" },
       { status: "completed", text: "Done.", audio_duration: 60 },
     ]);
-    const ctx = createWorkflowCtx({
+    const ctx = createWorkflowContext({
       hooks: { [NUDGE]: { transcript_id: "t_1", status: "completed" } },
     });
 
@@ -831,7 +833,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
       { status: "processing" },
       { status: "completed", text: "The real transcript.", audio_duration: 60 },
     ]);
-    const ctx = createWorkflowCtx({
+    const ctx = createWorkflowContext({
       hooks: { [NUDGE]: { transcript_id: "t_1", status: "completed", text: "A LIE." } },
     });
 
@@ -850,7 +852,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
     // read as a failed run and answer by deleting the transcript. So the wait
     // may not be inside the loop, and this is what pins that: twenty turns, ONE
     // `waitFor`, and every other wait a plain sleep.
-    const ctx = createWorkflowCtx({ hooks: { [NUDGE]: {} } });
+    const ctx = createWorkflowContext({ hooks: { [NUDGE]: {} } });
     stubSlowJob(20);
 
     await awaitTranscript("t_1", ctx, NUDGE);
@@ -869,7 +871,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
       { status: "processing" },
       { status: "completed", text: "Done.", audio_duration: 60 },
     ]);
-    const ctx = createWorkflowCtx();
+    const ctx = createWorkflowContext();
 
     const state = await awaitTranscript("t_1", ctx, NUDGE);
 
@@ -885,7 +887,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
     // window — so whichever arm a run is on, a caller hears the sentence at the
     // same point. The note goes out at the TOP of a poll, so attempt 2 is the
     // first turn with a whole closed window behind it.
-    const ctx = createWorkflowCtx();
+    const ctx = createWorkflowContext();
     stubSlowJob(20);
 
     await awaitTranscript("t_1", ctx, NUDGE);
@@ -904,7 +906,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
     // The mirror of the case above, and what stops the note being a thing every
     // callback run says: the delivery lands, attempt 2 finds the job done, and
     // nobody is told a recording is a long one.
-    const ctx = createWorkflowCtx({ hooks: { [NUDGE]: {} } });
+    const ctx = createWorkflowContext({ hooks: { [NUDGE]: {} } });
     stubSlowJob(1);
 
     await awaitTranscript("t_1", ctx, NUDGE);
@@ -930,7 +932,9 @@ describe("askWhetherToKeep — the expense port", () => {
    * What is pinned is unchanged: the three outcomes and the safe default.
    */
   const gateCtx = (answer?: { keep: boolean }) =>
-    createWorkflowCtx(answer === undefined ? {} : { hooks: { [retentionToken("s_1")]: answer } });
+    createWorkflowContext(
+      answer === undefined ? {} : { hooks: { [retentionToken("s_1")]: answer } },
+    );
 
   test("keeps the transcript when the caller says to, and deletes nothing", async () => {
     const provider = installStubStepFetch();
@@ -1002,7 +1006,7 @@ describe("compensate — the saga port", () => {
         { label: "first", undo: async () => void order.push("first") },
       ],
       "because",
-      createWorkflowCtx(),
+      createWorkflowContext(),
     );
     expect(order).toEqual(["second", "first"]);
   });
@@ -1024,7 +1028,7 @@ describe("compensate — the saga port", () => {
           { label: "fine", undo: async () => void order.push("fine") },
         ],
         "because",
-        createWorkflowCtx(),
+        createWorkflowContext(),
       ),
     ).resolves.toBeUndefined();
     expect(order).toEqual(["fine"]);
@@ -1035,7 +1039,7 @@ describe("compensate — the saga port", () => {
     // run that narrated an unwind it did not perform would be lying to the
     // caller reading its progress.
     await expect(
-      compensate([], "nothing was acquired", createWorkflowCtx()),
+      compensate([], "nothing was acquired", createWorkflowContext()),
     ).resolves.toBeUndefined();
   });
 });

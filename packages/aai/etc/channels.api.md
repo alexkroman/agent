@@ -13,9 +13,6 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
 export const CHANNEL_POST_TIMEOUT_MS = 30000;
 
 // @public
-export function channelAdvice(channel: Channel, detail: string): string;
-
-// @public
 export class ChannelDeliveryError extends Error {
     constructor(message: string, init: {
         readonly channelKind: string;
@@ -41,7 +38,7 @@ export interface ChannelDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export interface ChannelKind {
+export interface ChannelHandler {
     readonly advice: (options: Record<string, unknown>, detail: string) => string;
     readonly kind: string;
     readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
@@ -75,16 +72,22 @@ export interface ChannelSection {
 export function escapeSlackMrkdwn(text: string): string;
 
 // @public
+export function explainChannelFailure(channel: Channel, detail: string): string;
+
+// @public
+export function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string;
+
+// @public
 export function isSlackWebhookUrl(value: string): boolean;
 
 // @public
 export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
-export function registerChannelKind(kind: ChannelKind): void;
+export function registerChannelHandler(kind: ChannelHandler): void;
 
 // @public
-export function registeredChannelKinds(): readonly string[];
+export function registeredChannelKindNames(): readonly string[];
 
 // @public
 export function renderChannelPayload(channel: Channel, message: ChannelMessage): ChannelPayload;
@@ -99,7 +102,7 @@ export function renderSlackPlainText(message: ChannelMessage): string;
 export function sendToChannel(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
-export const SLACK_CHANNEL: ChannelKind;
+export const SLACK_CHANNEL_HANDLER: ChannelHandler;
 
 // @public
 export const SLACK_CHANNEL_KIND = "slack";
@@ -112,9 +115,6 @@ export type SlackChannel = Channel & {
 
 // @public
 export function slackChannel(options: SlackChannelOptions): SlackChannel;
-
-// @public
-export function slackChannelAdvice(options: SlackChannelOptions, detail: string): string;
 
 // @public
 export interface SlackChannelOptions {

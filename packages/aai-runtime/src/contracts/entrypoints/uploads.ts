@@ -12,9 +12,9 @@
  */
 
 export {
-  createHttpUploadBlobs,
-  createMemoryUploadBlobs,
-  type HttpUploadBlobsOptions,
+  createHttpUploadBackend,
+  createMemoryUploadBackend,
+  type HttpUploadBackendOptions,
   partKey,
   partsOf,
   UPLOAD_KEY_PREFIX,
@@ -22,7 +22,7 @@ export {
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
   UPLOADS_TABLE,
-  type UploadBlobs,
+  type UploadBackend,
   type UploadMeta,
   type UploadPart,
   type UploadStore,

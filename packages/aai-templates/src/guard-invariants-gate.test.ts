@@ -242,7 +242,7 @@ const SAMPLES: Record<string, RuleSamples> = {
   rule16_sessionCallbackName: {
     matches: [
       // The three shapes the surface was declared in — a method signature on
-      // `SessionCore`, an optional one on `TransportCallbacks`, and a harness
+      // `ServerSession`, an optional one on `TransportCallbacks`, and a harness
       // stub. All three had to be edited to add one observer, which is the
       // multiplier the rule exists to hold.
       "  onUserTranscript(text: string): void;",

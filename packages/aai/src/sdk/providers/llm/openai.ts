@@ -19,7 +19,7 @@ export const OPENAI_KIND = "openai" as const;
 export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
 
 /**
- * Options for {@link openaiLlm}.
+ * Options for {@link openAILlm}.
  *
  * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
  * one model id, and every vendor still gets a NAME for its own options so its
@@ -35,15 +35,15 @@ export interface OpenAILlmOptions extends ModelOptions {}
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { openaiLlm } from "@alexkroman1/aai/llm";
+ * import { openAILlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   llm: openaiLlm({ model: "gpt-5.5" }),
+ *   llm: openAILlm({ model: "gpt-5.5" }),
  * });
  * ```
  */
-export function openaiLlm(opts: OpenAILlmOptions): LlmProvider {
+export function openAILlm(opts: OpenAILlmOptions): LlmProvider {
   return { kind: OPENAI_KIND, options: { ...opts } };
 }

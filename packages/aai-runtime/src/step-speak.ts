@@ -6,7 +6,7 @@
  * `sdk/step-speak.ts` is the surface a step calls and carries the argument for
  * why it exists — read that first. It may not import `ws`, being on the CLI's
  * zero-dependency startup path and riding the browser bundle, so the socket
- * lives here and `createServer` publishes it.
+ * lives here and `createRuntimeServer` publishes it.
  *
  * ## It is NOT the session opener, and the difference is the point
  *
@@ -167,7 +167,7 @@ function readFrame(
  * Synthesize one utterance and resolve its raw PCM16.
  *
  * The published implementation of {@link SpeechSynthesizer}, exported so
- * `createServer` can publish it and a spec can drive it directly.
+ * `createRuntimeServer` can publish it and a spec can drive it directly.
  *
  * @internal
  */

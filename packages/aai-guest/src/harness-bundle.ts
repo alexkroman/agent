@@ -285,7 +285,7 @@ export function ensureRuntime(state: HarnessState): GuestRuntime {
 }
 
 /**
- * The session-facing runtime handed to `createServer` — a lazy facade over
+ * The session-facing runtime handed to `createRuntimeServer` — a lazy facade over
  * `ensureRuntime` so the real runtime is built on the FIRST session (with
  * the loaded bundle's env), plus the live-session count the host's idle
  * eviction asks for over `status`.
@@ -327,7 +327,7 @@ export function lazyRuntime(
       runtime.startSession(ws, opts);
     },
     /**
-     * `ctx.workflows`, for the workflow API `createServer` mounts.
+     * `ctx.workflows`, for the workflow API `createRuntimeServer` mounts.
      *
      * A GETTER, and that is the whole point of it being here rather than a
      * captured value. The runtime is built on first use, and for a

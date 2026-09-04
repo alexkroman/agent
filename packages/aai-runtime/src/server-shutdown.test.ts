@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * What `createServer().close()` owes `runtime.shutdown()`.
+ * What `createRuntimeServer().close()` owes `runtime.shutdown()`.
  *
  * The describe was called "server shutdown timeout" and no test supplied a
  * shutdown that hung — because there is no timeout HERE: `close()` awaits
@@ -12,7 +12,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
 import type { Runtime } from "./runtime.ts";
-import { createServer } from "./server.ts";
+import { createRuntimeServer } from "./server.ts";
 
 /**
  * A server whose runtime does exactly what `shutdown` says.
@@ -24,7 +24,7 @@ import { createServer } from "./server.ts";
  */
 async function startServer(
   shutdown: () => Promise<void> = () => Promise.resolve(),
-): Promise<{ server: ReturnType<typeof createServer>; shutdown: ReturnType<typeof vi.fn> }> {
+): Promise<{ server: ReturnType<typeof createRuntimeServer>; shutdown: ReturnType<typeof vi.fn> }> {
   const spy = vi.fn(shutdown);
   const runtime: Runtime = {
     executeTool: vi.fn().mockResolvedValue(""),
@@ -34,7 +34,7 @@ async function startServer(
     startSession: vi.fn(),
     shutdown: spy,
   };
-  const server = createServer({ runtime, logger: silentLogger });
+  const server = createRuntimeServer({ runtime, logger: silentLogger });
   await server.listen(0);
   return { server, shutdown: spy };
 }

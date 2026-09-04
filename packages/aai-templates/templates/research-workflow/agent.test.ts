@@ -16,7 +16,7 @@
  * exported async function, so its prompt handling, its parsing and its
  * `FatalError` guards are all testable without an engine.
  *
- * The BODY is driven here only through `createWorkflowCtx`, which records what
+ * The BODY is driven here only through `createWorkflowContext`, which records what
  * it asked for and replays nothing. That is a choice rather than a limit now:
  * `runWorkflow` from `@alexkroman1/aai-runtime/testing` will run this body on
  * the real engine, and `link-digest` is the template that shows it — three
@@ -31,13 +31,16 @@ import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
   createRunSnapshot,
   createToolContext,
-  createWorkflowCtx,
+  createWorkflowContext,
   parseSchemaInput,
   type StubGatewayCall,
   schemaInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
-import { mockWorkflows, installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
+import {
+  installStubWorkflows,
+  installStubGateway as stubGateway,
+} from "@alexkroman1/aai/testing/vitest";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
@@ -89,7 +92,7 @@ const run = toolRunner(agentDef);
  *
  * Returned WITHOUT a cast, which is the property worth keeping: a cast would
  * also stop reporting the day `WorkflowClient` grows a method, and this stub is
- * how the template's tools reach the client at all. `mockWorkflows`
+ * how the template's tools reach the client at all. `installStubWorkflows`
  * (`@alexkroman1/aai/testing/vitest`) is what keeps that affordable — a `vi.fn`
  * per method over one `runs` list, filling in what this desk does not drive, so
  * the day the client does grow a method only the tests using it change.
@@ -101,7 +104,7 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
   // Name only: `WorkflowSummary.description` is optional, so passing this
   // desk's through would mean handing `description: undefined` to a field that
   // does not accept it. Nothing here reads the description anyway.
-  return mockWorkflows({ runs, names: ["research"] });
+  return installStubWorkflows({ runs, names: ["research"] });
 }
 
 describe("the agent declares its workflow", () => {
@@ -445,7 +448,7 @@ describe("the steps that research", () => {
     // could not have said differently.
     // `planAngles`' result is what the fan-out iterates, so it is supplied
     // rather than run — the rest of the body needs no page and no model.
-    const ctx = createWorkflowCtx({
+    const ctx = createWorkflowContext({
       runSteps: false,
       // Every step the body READS needs a value: with `runSteps: false` nothing
       // runs, so this is the skeleton of a run rather than a run. That is the
@@ -556,7 +559,7 @@ describe("the steps that research", () => {
 /**
  * `researchFlow` itself, on the real replay engine.
  *
- * The block above drives this body through `createWorkflowCtx`, which records
+ * The block above drives this body through `createWorkflowContext`, which records
  * what it ASKED for and replays nothing — right for the retry policy and the
  * step order, and silent about the desk's actual promise: **answer the caller
  * now, finish the work later**. `runWorkflow`

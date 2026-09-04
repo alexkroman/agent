@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "page",
+  "epoch": 2,
+  "sha256": "eb84756051baca0d48a7e22a711c62428597b061b0932a9939b6e7a3c6842793",
+  "exports": ["PageConfig", "PageHandle", "fetchClientConfig", "mountPage"]
+}

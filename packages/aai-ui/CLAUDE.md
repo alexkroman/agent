@@ -9,7 +9,7 @@ conventions and testing rules live in the root `CLAUDE.md`.
 - `./styles.css` — default styles
 - `./default-client/*` — prebuilt default client assets (`dist/default-client/`)
 - `./client-dir` — **Node only**: `defaultClientDir()`, the filesystem path of
-  those assets, for passing to `createServer`/`createAgentServer` as
+  those assets, for passing to `createRuntimeServer`/`createAgentServer` as
   `clientDir`. Its own subpath because it imports `node:module`/`node:path`,
   which must never reach the browser barrel. It is a FUNCTION, not a constant:
   resolution throws when the package is missing, and a module-level constant
@@ -30,9 +30,9 @@ new one fails `pnpm check:api-contracts` until it joins one:
 
 | Capability | What it promises |
 | --- | --- |
-| `client` | the voice mount — `client()`, the one flat `ClientConfig` it takes, the handle |
-| `page` | the workflow-app mount — `page()`, with no session under it, plus `fetchClientConfig()`: the lookup `client()` does for itself and a page must ask for |
-| `session` | the live call: `SessionCore`, the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors |
+| `client` | the voice mount — `mountClient()`, the one flat `ClientConfig` it takes, the handle |
+| `page` | the workflow-app mount — `mountPage()`, with no session under it, plus `fetchClientConfig()`: the lookup `mountClient()` does for itself and a page must ask for |
+| `session` | the live call: `BrowserSession`, the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors |
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from, `ConsoleShell` included. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
@@ -85,8 +85,8 @@ it off. It stood at eight — `SessionProvider`, `ThemeProvider`,
 `ToolConfigContext`, the three URL chips (`ApiUrlChip`, `UiUrlChip`,
 `SessionUrlChips`) and two thirds of the client-config trio (`buildAgentUrl`,
 `loadClientConfig`) — every one importable from the root and sitting in a
-client author's autocomplete beside `client()`, `<Form>` and `useWorkflowRun`
-while no capability contract covered it. `client()` and the default client
+client author's autocomplete beside `mountClient()`, `<Form>` and `useWorkflowRun`
+while no capability contract covered it. `mountClient()` and the default client
 install all eight, so deleting them was never the option; the tag was the only
 thing marking them, and a tag is not a boundary.
 
@@ -126,7 +126,7 @@ tagged `@internal` while a `@public` doc comment in the SDK
 wants `name`/`greeting` calls `fetchClientConfig()` itself" — so the published
 reference instructed a reader to use a symbol it excluded, and its return type
 `ClientConfigResponse` was a contracted public type no public signature could
-produce. It is `@public` now and belongs to the `page` capability, `page()`
+produce. It is `@public` now and belongs to the `page` capability, `mountPage()`
 being the mount that makes the lookup a caller's job — which is the first half
 of the rule above, applied before there was a subpath to apply the second half
 to. The other two stay internal and are on `/internal`:
@@ -135,8 +135,9 @@ detail, and `buildAgentUrl` is a two-line path join.
 
 **`SessionCoreOptions` is gone**, and epoch 1 of `session` went with it. It was
 an exact alias of `VoiceSessionOptions` with one referent —
-`createSessionCore`'s parameter, which names `VoiceSessionOptions` directly now
-— and `client()` never took it, so the "two names, one type" note the alias
+`createBrowserSession`'s parameter, which names `VoiceSessionOptions` directly
+now
+— and `mountClient()` never took it, so the "two names, one type" note the alias
 carried was an argument for having one.
 
 ## A memoized component must NAME its props type
@@ -182,17 +183,17 @@ Two consequences worth knowing before adding a component here:
 ## Key files
 
 - `index.ts` — main exports, React UI component
-- `internal.ts` — the `/internal` subpath: the eight names `client()` installs
+- `internal.ts` — the `/internal` subpath: the eight names `mountClient()` installs
   for itself, kept off the root barrel so the contracted surface and the
   importable one are the same list. See "The `@internal` ratchet" above
 - `session-core.ts` — WebSocket session management + reactive snapshot
-  (`createSessionCore`); split across `session-core-messages.ts`
+  (`createBrowserSession`); split across `session-core-messages.ts`
   (message/history handling) and `session-core-types.ts`
 - `context.ts` — SessionProvider, useSession, useSessionCore,
   useSessionSelector, ThemeProvider, useTheme
 - `hooks.ts` — useToolResult, useToolCallStart, useEvent
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
-- `define-client.tsx` — client mount helper, and the two pieces `page()` shares
+- `define-client.tsx` — client mount helper, and the two pieces `mountPage()` shares
   with it: `resolveContainer` (the default `#app` selector and its error
   sentence) and `mountRoot` (the root, the `flushSync`, and the disposable
   handle). Both mounts were written out in full, comments included; what
@@ -412,7 +413,7 @@ Four things to keep:
   found across five templates is `scrollbar-color`, which takes TWO values and
   has no utility: `infocom-adventure`'s transcript reads `theme.primary` and
   `theme.surface` for it rather than re-pinning the two hex codes its own
-  `client({ theme })` block already declares.
+  `mountClient({ theme })` block already declares.
 - **The page background is still painted imperatively on `html` AND `body`.** A
   variable only paints where some rule consumes it, and those two elements are
   the ones nothing in this package renders — that is the letterboxing bug
@@ -428,10 +429,10 @@ Four things to keep:
 accept: `StartScreen` takes `icon`, `subtitle`, `buttonText`; `SidebarLayout`
 takes `sidebarPosition`; none of the four was on `ClientConfig`. So `solo-rpg`
 wanted all four, could say none in config, and dropped to the `component:` tier
-for a 27-line wrapper whose only job was to re-say what `client()` already knows
-how to say — and which dragged `useAgentState` up a level so its `Sidebar` had
-to take the projection as a PROP. All four are `ClientConfig` fields now, the
-wrapper is deleted and the `Sidebar` subscribes itself.
+for a 27-line wrapper whose only job was to re-say what `mountClient()`
+already knows how to say — and which dragged `useAgentState` up a level so its
+`Sidebar` had to take the projection as a PROP. All four are `ClientConfig`
+fields now, the wrapper is deleted and the `Sidebar` subscribes itself.
 
 `sidebarPosition` routes through the same `rootFor` branch that already builds a
 `SidebarLayout` beside a `component`, for the reason `sidebar` itself does: the
@@ -593,7 +594,7 @@ product so far. `"static"` declares a **workflow app**: an ordinary web page
 over the workflow HTTP API, with no session, no WebSocket and no audio.
 
 This section covers the surface end to end because the author-facing half is
-here — `page()`, `createWorkflowApi()`, `useWorkflowRun()` — and
+here — `mountPage()`, `createWorkflowApi()`, `useWorkflowRun()` — and
 `packages/aai/CLAUDE.md` is at its size cap. The routes themselves are served by
 `aai/host/workflow-api.ts`, whose module doc is the authoritative table.
 
@@ -629,9 +630,9 @@ above it claimed `GET /client-config` served it; that endpoint serves `name`,
 templates are now three lines and every one of them does something.
 
 `greeting` survives as declarable because it is the one client-config field a
-workflow app can still use — but note `page()` does not fetch the endpoint the
-way `client()` does, so a page that wants `name`/`greeting` from the agent calls
-`fetchClientConfig()` itself rather than receiving them.
+workflow app can still use — but note `mountPage()` does not fetch the
+endpoint the way `mountClient()` does, so a page that wants `name`/`greeting`
+from the agent calls `fetchClientConfig()` itself rather than receiving them.
 
 ### Three factories, and the `Client` suffix is what tells them apart
 
@@ -642,9 +643,10 @@ is why they get read as one: **`createAgentClient`**
 SDK factory it wraps; **`createWorkflowApi`** is this package's wrapper over that
 narrow one. The SDK's names carry the `Client` suffix; the bare one is ours.
 
-### `page()` is a second mount, not a flag on `client()`
+### `mountPage()` is a second mount, not a flag on `mountClient()`
 
-`client()` unavoidably constructs a `SessionCore`, which owns a WebSocket URL
+`mountClient()` unavoidably constructs a `BrowserSession`, which owns a WebSocket
+URL
 provider, an audio graph and a microphone request. A flag would have to make all
 of that conditional, and every session hook would then have to answer "what does
 this mean with no session?" — so the honest split is two mounts. Authoring is
@@ -654,14 +656,14 @@ the two, asserting every template's mount matches what its own `agent.ts`
 declares — konsistent cannot express "one of two imports", and a rule that
 merely accepted either would pass the mistake worth catching.
 
-**The declaration is not decoration on the server side either.** `createServer`
+**The declaration is not decoration on the server side either.** `createRuntimeServer`
 declines `/websocket` for a static agent — COMPLETED and then closed with a
 protocol error naming the reason, rather than dropped, because a bare socket
 drop leaves a client reconnecting against a server that will never answer — and
 telephony defaults OFF, since an agent with no `stt`/`llm`/`tts` has nothing to
 put on a call. It is reported in `GET /client-config` so a browser knows before
 it dials, and `aai dev` and the deployed guest honour it identically: a page
-mounted with `client()` by mistake fails locally, not after a deploy.
+mounted with `mountClient()` by mistake fails locally, not after a deploy.
 
 **A workflow app therefore needs NO provider credential, and two places had to
 learn that separately.** An agent declaring no `stt`/`llm`/`tts` gets the
@@ -682,7 +684,7 @@ config reaches the deploy preflight the injection has already happened:
 "declared nothing" and "declared the default" are the same object there.
 Deferring rather than skipping keeps the honest error for the one path that
 can still open a session on a static agent — an embedder passing
-`createServer({ telephony: true })` — which resolves at session start and
+`createRuntimeServer({ telephony: true })` — which resolves at session start and
 reports the missing key by name.
 
 ### The API is `ctx.workflows` spelled over HTTP, and nothing more
@@ -793,10 +795,10 @@ O(n²) copy of a log the reader can only see one frame of at a time.
 The write half is the author's, and it is `getWritable()` from `workflow`
 (imported directly, like `sleep`) called from a STEP and never from the body —
 the body replays from the top, so a line written there is re-emitted on every
-resume. Both page templates carry the same six-line `report()` helper, which is
-best-effort deliberately: a run must not fail because its narration could not be
-written, and that is also what keeps a step callable from a spec, where there is
-no run and `getWritable()` throws by design.
+resume. Both page templates carry the same six-line `stepReport()` helper, which
+is best-effort deliberately: a run must not fail because its narration could not
+be written, and that is also what keeps a step callable from a spec, where there
+is no run and `getWritable()` throws by design.
 
 **`<WorkflowProgress runId>` is the rendered half**, and it holds the three
 rules a page kept re-deriving: render nothing until the agent HAS a stream and
@@ -816,7 +818,7 @@ rounds are where the history is worth seeing.
 
 `ctx.workflows.start()` only covers the case where a VOICE TURN starts a run; a
 page and a programmatic caller (`aai workflow`, a script, a cron job) had no
-surface at all. Mounted on `createServer`, so `aai dev`, a self-hosted server
+surface at all. Mounted on `createRuntimeServer`, so `aai dev`, a self-hosted server
 and every deployed agent serve it identically — the same reasoning `/phone` is
 mounted there rather than bolted onto the platform. On the platform the page's
 calls land on `/:slug/workflows/*` and are brokered (`aai-server/
@@ -875,12 +877,12 @@ engine, which is what keeps the rule above meaning what it says.
 **Bytes go in once and are read by window.** The body is the file itself — the
 name rides in `?name=`, the type in `Content-Type`, so there is no multipart
 envelope to parse and one chunk is in memory at a time. A step then reads what
-it needs with `readUpload(id, { start, end })` (`@alexkroman1/aai/utils`), which
-is IN-PROCESS: the DevKit dispatches a step to the same server that stored the
-upload, so the store is handed over through a `Symbol.for` slot exactly as the
-agent env is (`publishUploadReader`, published by `createServer`). Sixty steps
-therefore move a recording once between them, and a resumed run re-reads only
-its own window.
+it needs with `stepReadUpload(id, { start, end })` (`@alexkroman1/aai/utils`),
+which is IN-PROCESS: the DevKit dispatches a step to the same server that stored
+the upload, so the store is handed over through a `Symbol.for` slot exactly as
+the agent env is (`publishUploadReader`, published by `createRuntimeServer`).
+Sixty steps therefore move a recording once between them, and a resumed run
+re-reads only its own window.
 
 **An upload needs the database, and this is the one part of a workflow app
 that does.** Runs themselves fall back to the Local World with none
@@ -960,7 +962,7 @@ this route to describe the same 413.
 Every upload above travels one way — a person's file, in. The store serves the
 other direction too, and it is what makes a workflow app whose answer is not
 text possible at all: a run's OUTPUT is read back as JSON, so a step that made
-audio, an image or a PDF stores it with `writeUpload` and returns the ID, and
+audio, an image or a PDF stores it with `stepWriteUpload` and returns the ID, and
 `api.download(id)` reads the bytes back as a `Blob`.
 
 **A `Blob` rather than a URL, and the reason is one a page cannot discover on
@@ -1029,7 +1031,7 @@ answer. For a long recording that order is most of the wall clock.
 upload.** So the id exists before the bytes are sent, which is all a run input
 needs. The record then exists from the first byte with `complete: false` and a
 `size` that grows as chunks land, and the run reads whatever has arrived —
-`readUpload` already clamped its window to what is stored, which is why almost
+`stepReadUpload` already clamped its window to what is stored, which is why almost
 nothing else had to change.
 
 `useWorkflowStream(workflow)` is the browser half, and it is a drop-in sibling
@@ -1228,22 +1230,22 @@ overwrote a newer one's answer with a staler list, which for the
 Reach for the primitive rather than a `useRef(0)` counter — see "Concurrency
 primitives" in the root guide.
 
-### `report()` writes to the page AND the server log
+### `stepReport()` writes to the page AND the server log
 
-`report(line)` (`@alexkroman1/aai/utils`) is what a step says about itself. It
-replaced the twelve-line `getWritable()` helper each of the three workflow
+`stepReport(line)` (`@alexkroman1/aai/utils`) is what a step says about itself.
+It replaced the twelve-line `getWritable()` helper each of the three workflow
 templates had copied — this guide's own note said extracting it was not worth
-minting a subpath for, which was true of the helper and false of the FEATURE:
-a workflow app answered requests and then did minutes of work with nothing in
-the server log naming any of it, so "is it stuck, or is segment 41 of 60 slow?"
-was unanswerable without a browser open.
+minting a subpath for, which was true of the helper and false of the FEATURE: a
+workflow app answered requests and then did minutes of work with nothing in the
+server log naming any of it, so "is it stuck, or is segment 41 of 60 slow?" was
+unanswerable without a browser open.
 
 One call reaches both readers. The stream half is unchanged (`getWritable()`,
 read back by `useWorkflowProgress`); the log half is a `logger.info` line on the
 same server. `host/workflow-report.ts` is the published half and
-`createServer` publishes it, so the two mechanisms have one wiring point — the
-same slot trick uploads use, and for the same reason (`/utils` is on the CLI's
-zero-dependency startup path and may not import the DevKit).
+`createRuntimeServer` publishes it, so the two mechanisms have one wiring point
+— the same slot trick uploads use, and for the same reason (`/utils` is on the
+CLI's zero-dependency startup path and may not import the DevKit).
 
 **The ATTEMPT is part of the line, not just the log.** `getStepMetadata()` names
 the step and its attempt, and past the first the reporter appends
@@ -1251,30 +1253,30 @@ the step and its attempt, and past the first the reporter appends
 as one that is succeeding, sixty times, and a reader cannot tell a slow run from
 a wedged one.
 
-### `emit()` is the other channel, and it makes a run's ANSWER streamable
+### `stepEmit()` is the other channel, and it makes a run's ANSWER streamable
 
-`report()` writes a sentence for a person. **`emit(namespace, chunk)`** writes a
-VALUE for a program, into a stream named by the caller — which is what lets a long
-fan-out hand over each result as it lands. Without it a run's partial results have
-nowhere to go: a snapshot carries a status and, once terminal, an output, so a
-sixty-segment transcription that has finished forty of them has forty answers and
-no way to show any of them.
+`stepReport()` writes a sentence for a person. **`stepEmit(namespace, chunk)`**
+writes a VALUE for a program, into a stream named by the caller — which is what
+lets a long fan-out hand over each result as it lands. Without it a run's
+partial results have nowhere to go: a snapshot carries a status and, once
+terminal, an output, so a sixty-segment transcription that has finished forty of
+them has forty answers and no way to show any of them.
 
 The READ half already existed and needed nothing: `streamOutput({ namespace })`
 and `useWorkflowProgress<T>(runId, { namespace })` have taken one since they were
 written. What was missing was the write.
 
-**The namespace is REQUIRED, and that is the point of the argument.** The default
-stream is `report()`'s, and a page renders those chunks verbatim — an object in
-there is `[object Object]` in the middle of the progress log. A named stream is
-also what lets `useWorkflowProgress<T>` be typed at all, since a subscription
-then carries one shape.
+**The namespace is REQUIRED, and that is the point of the argument.** The
+default stream is `stepReport()`'s, and a page renders those chunks verbatim —
+an object in there is `[object Object]` in the middle of the progress log. A
+named stream is also what lets `useWorkflowProgress<T>` be typed at all, since a
+subscription then carries one shape.
 
-Everything else is `report()`'s rule: call it from a STEP (a body replays), it is
-best-effort, and the chunks are RETAINED with the run so a reader that arrives
-late gets the whole stream. It is NOT logged — a structured chunk per item would
-bury the narration beside it — which is the one place the two paths differ inside
-`host/workflow-report.ts`.
+Everything else is `stepReport()`'s rule: call it from a STEP (a body replays),
+it is best-effort, and the chunks are RETAINED with the run so a reader that
+arrives late gets the whole stream. It is NOT logged — a structured chunk per
+item would bury the narration beside it — which is the one place the two paths
+differ inside `host/workflow-report.ts`.
 
 `transcription-workflow` is the worked example on both ends: each segment is
 emitted as it lands, and the page stitches whatever has arrived with the RUN's own
@@ -1545,7 +1547,8 @@ the default client's pre-connection name/greeting render.
 ## A FATAL error must survive the frames that follow it
 
 **A live socket is not a live session, and every fatal path EMITS on its way
-down.** `SessionCore` had two independent rules that both read a later frame
+down.** `BrowserSession` had two independent rules that both read a later
+frame
 as evidence the failure had been survived: `clearRecoveredError` recovered an
 errored session to `listening` on any non-error event, and `reply_done` /
 `cancelled` / `reset` each wrote `state: "listening"` unconditionally. The
@@ -1890,12 +1893,12 @@ runaway loop is a named failure rather than a hang, and
 How the browser client reads `GET /client-config`. The endpoint itself is
 the SDK's — see "Pre-connection client config" in `packages/aai/CLAUDE.md`.
 
-`client()`'s config tier renders `DefaultRoot`, which fetches the config
+`mountClient()`'s config tier renders `DefaultRoot`, which fetches the config
 (any failure degrades to the empty default, so older servers keep working)
 and mounts the chat shell; the shell uses the server-declared `name` unless
-`client({ name })` overrides it. A custom `component` ignores all of it.
+`mountClient({ name })` overrides it. A custom `component` ignores all of it.
 
-**It skips the lookup entirely when `client({ name })` named the agent**, because
+**It skips the lookup entirely when `mountClient({ name })` named the agent**, because
 the response's only consumer there is that fallback — and on the platform this
 endpoint is the BROKER, so the discarded request is one that can boot a sandbox.
 The SESSION's lookup is a separate question and is deliberately left as it is:

@@ -56,7 +56,7 @@
  * rather than a fourth option. A single request moves a file at one connection's
  * throughput, which over any distance is a fraction of the link — so the SDK cuts
  * the file into megabyte-aligned parts and sends four at once. Nothing about the
- * workflow changes: the agent reassembles them, `readUpload` reads the same
+ * workflow changes: the agent reassembles them, `stepReadUpload` reads the same
  * windows, and the streaming flow still watches the file grow (what it polls is the
  * CONTIGUOUS prefix, which is honest whether one connection or four are filling
  * it).
@@ -83,7 +83,7 @@
  * - **The page stitches with the RUN's own function.** `stitchChunks` is
  *   `workflows/stitch.ts`, imported by both, so the live text and the stored one
  *   cannot drift into two different transcripts of one recording.
- * - **It is a SEPARATE stream from the progress log.** `report()`'s lines go to
+ * - **It is a SEPARATE stream from the progress log.** `stepReport()`'s lines go to
  *   the default one, which `<WorkflowProgress>` renders verbatim; objects in
  *   there would come out as `[object Object]` between the sentences.
  * - **The finished run wins.** Once `output` exists the panel renders that
@@ -193,7 +193,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import {
   Form,
   isTerminal,
-  page,
+  mountPage,
   SubmitButton,
   UploadProgressBar,
   useWorkflowRuns,
@@ -501,4 +501,4 @@ function UploadPicker({
   );
 }
 
-page({ name: "Transcription Desk", component: TranscriptionDesk });
+mountPage({ name: "Transcription Desk", component: TranscriptionDesk });

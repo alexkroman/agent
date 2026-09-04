@@ -2,17 +2,17 @@
 import { describe, expect, test } from "vitest";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import {
-  createFakeSttOpener,
-  createFakeTtsOpener,
-  FAKE_SPEECH_API_KEY_ENV,
-  installFakeSpeech,
-} from "./fake-speech.ts";
+  createStubSttOpener,
+  createStubTtsOpener,
+  installStubSpeechProviders,
+  STUB_SPEECH_API_KEY_ENV,
+} from "./stub-speech.ts";
 
 const OPEN = { sampleRate: 16_000, apiKey: "k", signal: AbortSignal.abort() };
 
 describe("the fake STT stage", () => {
   test("emits a partial and a committed turn to every subscriber", async () => {
-    const opener = createFakeSttOpener("spec-stt");
+    const opener = createStubSttOpener("spec-stt");
     const session = await opener.open(OPEN);
     const partials: string[] = [];
     const finals: string[] = [];
@@ -27,7 +27,7 @@ describe("the fake STT stage", () => {
   });
 
   test("swallows client audio and closes without error", async () => {
-    const session = await createFakeSttOpener("spec-stt").open(OPEN);
+    const session = await createStubSttOpener("spec-stt").open(OPEN);
     session.sendAudio(new Int16Array(160));
     await expect(session.close()).resolves.toBeUndefined();
   });
@@ -35,7 +35,7 @@ describe("the fake STT stage", () => {
 
 describe("the fake TTS stage", () => {
   test("records what reached TTS and ends the turn on flush", async () => {
-    const opener = createFakeTtsOpener("spec-tts");
+    const opener = createStubTtsOpener("spec-tts");
     const session = await opener.open({ sampleRate: 24_000, apiKey: "k", signal: OPEN.signal });
     let dones = 0;
     session.on("done", () => {
@@ -49,7 +49,7 @@ describe("the fake TTS stage", () => {
   });
 
   test("forwards NO audio, which is what stops the harness barging in", async () => {
-    const session = await createFakeTtsOpener("spec-tts").open({
+    const session = await createStubTtsOpener("spec-tts").open({
       sampleRate: 24_000,
       apiKey: "k",
       signal: OPEN.signal,
@@ -63,21 +63,21 @@ describe("the fake TTS stage", () => {
   });
 });
 
-describe("installFakeSpeech", () => {
+describe("installStubSpeechProviders", () => {
   test("registers both stages, so a runtime resolves them like any provider", () => {
-    const fake = installFakeSpeech();
+    const fake = installStubSpeechProviders();
     try {
       const needed = requiredProviderEnvVars({ stt: fake.stt, tts: fake.tts });
-      expect(needed).toContain(FAKE_SPEECH_API_KEY_ENV);
-      expect(fake.env[FAKE_SPEECH_API_KEY_ENV]).toBeTypeOf("string");
+      expect(needed).toContain(STUB_SPEECH_API_KEY_ENV);
+      expect(fake.env[STUB_SPEECH_API_KEY_ENV]).toBeTypeOf("string");
     } finally {
       fake.release();
     }
   });
 
   test("each install gets its OWN kinds, so two sessions cannot cross-talk", () => {
-    const a = installFakeSpeech();
-    const b = installFakeSpeech();
+    const a = installStubSpeechProviders();
+    const b = installStubSpeechProviders();
     try {
       expect(a.stt.kind).not.toBe(b.stt.kind);
       expect(a.tts.kind).not.toBe(b.tts.kind);
@@ -88,17 +88,17 @@ describe("installFakeSpeech", () => {
   });
 
   test("release unregisters the kinds it added", () => {
-    const fake = installFakeSpeech();
+    const fake = installStubSpeechProviders();
     fake.release();
     // An unregistered kind resolves no credential of its own; the registry
     // lookup that would open it is gone with it.
     expect(requiredProviderEnvVars({ stt: fake.stt, tts: fake.tts })).not.toContain(
-      FAKE_SPEECH_API_KEY_ENV,
+      STUB_SPEECH_API_KEY_ENV,
     );
   });
 
   test("no session exists until the runtime opens one", () => {
-    const fake = installFakeSpeech();
+    const fake = installStubSpeechProviders();
     try {
       expect(fake.sttSession()).toBeUndefined();
       expect(fake.ttsSession()).toBeUndefined();

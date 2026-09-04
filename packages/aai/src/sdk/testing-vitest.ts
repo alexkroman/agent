@@ -28,7 +28,7 @@
  * snapshots) gets no wrapper — there is nothing to restore, so a second name
  * for it would only be a second name.
  *
- * **`mockWorkflows` is here for the other half of the same rule: `vi.fn` IS its
+ * **`installStubWorkflows` is here for the other half of the same rule: `vi.fn` IS its
  * content.** It restores nothing and installs nothing, so it takes no `install`
  * prefix — but its methods have to be spies, because a spec of a
  * workflow-driving tool asserts on `start` and re-points `lastLine` per test.
@@ -169,8 +169,8 @@ export function installStubStepFetch(
  * Capture what a step narrates and emits, restored when this
  * test finishes.
  *
- * `stubReporter` with the bookkeeping done — see it for why `report()` and
- * `emit()` are separated the way the streams are.
+ * `stubReporter` with the bookkeeping done — see it for why `stepReport()` and
+ * `stepEmit()` are separated the way the streams are.
  *
  * @public
  */
@@ -212,15 +212,15 @@ export function installStubTranscribe(options: StubTranscribeOptions = {}): Stub
 }
 
 /**
- * What {@link mockWorkflows} answers each read with.
+ * What {@link installStubWorkflows} answers each read with.
  *
- * Every field has a default, so `mockWorkflows()` is a client whose reads all
+ * Every field has a default, so `installStubWorkflows()` is a client whose reads all
  * answer "nothing has run" — which is the arm a `*_status` tool branches on
  * first and the one most specs of one want.
  *
  * @public
  */
-export type MockWorkflowsOptions = {
+export type StubWorkflowsOptions = {
   /**
    * The runs `get`, `find` and `recent` answer from — `get` with the first,
    * the other two with the whole list. One list rather than three, because a
@@ -269,14 +269,14 @@ export type MockWorkflowsOptions = {
  * the wrong order waits forever with no error. A spec that really is testing
  * one of those overrides it, which reads as the deliberate act it is.
  *
- * Spread it to replace a method for one test: `{ ...mockWorkflows(), signal }`.
+ * Spread it to replace a method for one test: `{ ...installStubWorkflows(), signal }`.
  *
  * @example
  * ```ts
  * import { createRunSnapshot, createToolContext } from "@alexkroman1/aai/testing";
- * import { mockWorkflows } from "@alexkroman1/aai/testing/vitest";
+ * import { installStubWorkflows } from "@alexkroman1/aai/testing/vitest";
  *
- * const workflows = mockWorkflows({
+ * const workflows = installStubWorkflows({
  *   names: ["recap"],
  *   runs: [createRunSnapshot({ workflow: "recap", status: "running" })],
  * });
@@ -285,7 +285,7 @@ export type MockWorkflowsOptions = {
  *
  * @public
  */
-export function mockWorkflows(options: MockWorkflowsOptions = {}): WorkflowClient {
+export function installStubWorkflows(options: StubWorkflowsOptions = {}): WorkflowClient {
   const runs = options.runs ?? [];
   const runId = options.runId ?? "wrun_stub";
   const names = options.names ?? [];

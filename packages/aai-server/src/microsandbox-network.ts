@@ -100,7 +100,7 @@ export function rewriteLoopbackForGuest(env: Record<string, string>): LoopbackRe
  * covers the ones it mints at RUNTIME, and there is exactly one class of those:
  * `GET /:slug/uploads/:id/:offset` answers a **302 to a Supabase signed URL**, and
  * the guest follows it. Locally that URL is on `SUPABASE_URL`, i.e.
- * `http://127.0.0.1:54321` — the VM itself — so `readUpload` inside a step failed
+ * `http://127.0.0.1:54321` — the VM itself — so `stepReadUpload` inside a step failed
  * as a bare `TypeError: fetch failed`, retried four times, and killed the run:
  *
  *     [Workflow] Max retries reached, bubbling error to parent workflow

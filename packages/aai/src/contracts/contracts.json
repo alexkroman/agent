@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 18,
-    "supported": [18],
+    "current": 19,
+    "supported": [18, 19],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -31,9 +31,11 @@
     }
   },
   "channels": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Renamed for naming consistency (API naming review): the channel vocabulary now says handler rather than kind (ChannelKind -> ChannelHandler, SLACK_CHANNEL -> SLACK_CHANNEL_HANDLER, registerChannelKind -> registerChannelHandler), registeredChannelKinds -> registeredChannelKindNames says what it returns, and channelAdvice/slackChannelAdvice -> explainChannelFailure/explainSlackChannelFailure name the failure they explain."
+    }
   },
   "defaults": {
     "current": 1,
@@ -41,8 +43,8 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 14,
-    "supported": [14],
+    "current": 15,
+    "supported": [14, 15],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -78,10 +80,11 @@
     "dropped": {}
   },
   "llm": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Doc-comment relocation only. Eight LLM factories, stubReporter and ASSEMBLYAI_TTS_VOICES each had their doc block stranded above a NEIGHBOURING symbol's block, so TypeScript attached only the last one and the report recorded them as '@public (undocumented)'. Moving each block onto the symbol it describes changes no signature, parameter or export — the previous epoch compiles unchanged — but the release-tag annotation it restores moves the report hash. Dropped rather than retained because there are no external consumers, so a frozen example would be a promise about a surface nobody holds."
+      "1": "Doc-comment relocation only. Eight LLM factories, stubReporter and ASSEMBLYAI_TTS_VOICES each had their doc block stranded above a NEIGHBOURING symbol's block, so TypeScript attached only the last one and the report recorded them as '@public (undocumented)'. Moving each block onto the symbol it describes changes no signature, parameter or export — the previous epoch compiles unchanged — but the release-tag annotation it restores moves the report hash. Dropped rather than retained because there are no external consumers, so a frozen example would be a promise about a surface nobody holds.",
+      "2": "Renamed for naming consistency (API naming review): provider factory casing now derives from the Pascal spelling instead of being exempted in konsistent.json (openaiLlm -> openAILlm, openrouterLlm -> openRouterLlm, xaiLlm -> xAILlm, XaiLlmOptions -> XAILlmOptions)."
     }
   },
   "procedure": {
@@ -90,9 +93,11 @@
     "dropped": {}
   },
   "s2s": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Renamed for naming consistency (API naming review): openaiS2s -> openAIS2s, matching the Pascal spelling OpenAI as assemblyAIS2s already matched AssemblyAI."
+    }
   },
   "spoken": {
     "current": 1,
@@ -100,8 +105,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 14,
-    "supported": [14],
+    "current": 15,
+    "supported": [14, 15],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -119,22 +124,27 @@
     }
   },
   "step": {
-    "current": 7,
-    "supported": [3, 5, 7],
+    "current": 8,
+    "supported": [8],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "3": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises emit and report, now stepEmit and stepReport.",
       "4": "stepInfo/StepInfo join the capability: a step body can now read which attempt it is on and whether it is the last, which is what lets it degrade rather than fail.",
-      "6": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "5": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises emit and report, now stepEmit and stepReport.",
+      "6": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "7": "Renamed for naming consistency (API naming review): the two bare English verbs on this subpath took the module's own step prefix (emit -> stepEmit, report -> stepReport). mapConcurrent, isTransientStatus, retryAfter, encodeWav and wavHeader stay bare deliberately."
     }
   },
   "step-errors": {
-    "current": 5,
-    "supported": [3, 5],
+    "current": 6,
+    "supported": [6],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "FatalError and RetryableError are this SDK's own classes rather than @workflow/errors', and RetryableErrorOptions.retryAfter no longer accepts a duration string. Membership is a brand rather than instanceof.",
-      "4": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "3": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises the *Classified suffix and stepFetchOk, now *OrFail.",
+      "4": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "5": "Renamed for naming consistency (API naming review): this module had two suffixes for one idea, six *Classified plus stepFetchOk. All eight now end in OrFail, which names the retry verdict a caller gets rather than an internal act."
     }
   },
   "step-files": {
@@ -148,8 +158,8 @@
     "dropped": {}
   },
   "subagent": {
-    "current": 13,
-    "supported": [13],
+    "current": 14,
+    "supported": [13, 14],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
@@ -166,8 +176,8 @@
     }
   },
   "testing": {
-    "current": 21,
-    "supported": [20, 21],
+    "current": 22,
+    "supported": [22],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -187,12 +197,14 @@
       "16": "stubStepInfo joins the capability: it is how a spec reaches a step body's retry branch, which stepInfo() answering undefined outside a run made unreachable.",
       "17": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
       "18": "Collateral: this report names AgentDef through deployedAgent's ToolBearingAgent, and AgentDef gained one OPTIONAL field, mcpServers. Additive — no caller must set it and nothing in epoch 18 stops compiling. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ holds no testing template, matching every prior epoch entry here.",
-      "19": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "19": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "20": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises ok, okPosition, mockWorkflows, MockWorkflowsOptions and the WorkflowCtx family, all renamed.",
+      "21": "Renamed for naming consistency (API naming review): the bare names ok and okPosition became expectToolOk and expectDialogOk, mockWorkflows joined its six install* siblings as installStubWorkflows, and the WorkflowCtx family became WorkflowContext."
     }
   },
   "tool": {
-    "current": 14,
-    "supported": [14],
+    "current": 15,
+    "supported": [14, 15],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
@@ -222,10 +234,11 @@
     }
   },
   "uploads": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Purely additive — `requireCompleteUpload` and `UploadIncompleteError` join the surface and every epoch-1 caller still compiles. Dropped rather than retained on the same grounds as `aai-runtime:db` epoch 1: there is no external consumer to keep an epoch-1 template for, and no `uploads` example exists to extend, so a retain would oblige a frozen fixture exercising all eight names to evidence a compatibility nobody is relying on."
+      "1": "Purely additive — `requireCompleteUpload` and `UploadIncompleteError` join the surface and every epoch-1 caller still compiles. Dropped rather than retained on the same grounds as `aai-runtime:db` epoch 1: there is no external consumer to keep an epoch-1 template for, and no `uploads` example exists to extend, so a retain would oblige a frozen fixture exercising all eight names to evidence a compatibility nobody is relying on.",
+      "2": "Renamed for naming consistency (API naming review): the four step-vocabulary exports that lacked the module's prefix took it (readUpload -> stepReadUpload, writeUpload -> stepWriteUpload, uploadInfo -> stepUploadInfo, requireCompleteUpload -> stepRequireCompleteUpload)."
     }
   },
   "utils": {
@@ -234,8 +247,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 12,
-    "supported": [12],
+    "current": 13,
+    "supported": [13],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "A workflow body is now (input, ctx) and carries no compiler-stamped workflowId: the Workflow DevKit's \"use workflow\"/\"use step\" directives are replaced by ctx.step, so a body written at epoch 2 does not compile.",
@@ -247,12 +260,13 @@
       "8": "isWorkflowSuspend is REMOVED, because a suspension can no longer reach a workflow body at all. ctx.sleep and ctx.waitFor used to suspend by THROWING a branded signal, so a body's catch had to test it and re-throw — advice, which one shipped template forgot, deleting the transcript its run was waiting for. A wait now returns a promise that never settles and the engine races the body against an out-of-band interruption channel, so there is nothing for a catch to catch and nothing left for an author to remember. A body written at epoch 8 that named the predicate does not compile.",
       "9": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
       "10": "ctx.step and ctx.waitFor gained an optional `schema`, and WorkflowDef gained an optional `output` (with WorkflowOutputOf reading it). Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
-      "11": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "11": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "12": "Renamed for naming consistency (API naming review): WorkflowCtx -> WorkflowContext, the only *Ctx among eight context types and the one an author writes beside ToolContext."
     }
   },
   "workflow-api": {
-    "current": 11,
-    "supported": [11],
+    "current": 12,
+    "supported": [12],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -263,7 +277,8 @@
       "7": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "8": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
       "9": "Carries WorkflowDef/WorkflowSummary, which gained `output` and `outputSchema`. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
-      "10": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "10": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "11": "Renamed for naming consistency (API naming review): UploadPartsSettings -> UploadPartsOptions, the only Settings among 105 options bags, and UploadParallel -> UploadParallelOption, a value-or-thunk union named as an adjective."
     }
   }
 }

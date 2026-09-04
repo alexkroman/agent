@@ -9,7 +9,7 @@
  * remember — it has happened FOUR times, and each was found by somebody needing
  * the option rather than by anything checking:
  *
- * - **`telephony`** defaulted to `!isStatic` in `createServer` and was not
+ * - **`telephony`** defaulted to `!isStatic` in `createRuntimeServer` and was not
  *   forwarded, so every server built through the documented door — the
  *   scaffold's `server.mjs` included — mounted an unauthenticated `WS /phone`
  *   with no way to switch it off.
@@ -17,7 +17,7 @@
  *   through, so a `page: "static"` agent still got the voice surfaces and a
  *   voice `GET /client-config`.
  * - **`env`** was forwarded to the runtime alone, so three of the four things
- *   `createServer` reads out of an env were dropped: `AAI_WORKFLOW_API_TOKEN`
+ *   `createRuntimeServer` reads out of an env were dropped: `AAI_WORKFLOW_API_TOKEN`
  *   did nothing (the workflow API and its upload write routes stayed open),
  *   `AAI_SESSION_EVENTS_TOKEN` did nothing, and `DATABASE_URL` did nothing —
  *   so an upload's record went to a temp directory and was gone before a
@@ -60,7 +60,7 @@ import type { RuntimeOptions } from "./runtime-types.ts";
  * **The list is checked in BOTH directions**, and the reverse one caught three
  * wrong entries on its first run: a first draft excused `name`, `greeting` and
  * `hostBaseAgent`, none of which is a `RuntimeOptions` member at all — the first
- * two are `ServerOptions` fields this door DERIVES from the agent, and the third
+ * two are `RuntimeServerOptions` fields this door DERIVES from the agent, and the third
  * belongs to `createHostServer`'s own bag. Three plausible sentences about three
  * fields that were never in scope, which is exactly what a one-directional
  * deny-list accumulates. See {@link StaleExcuse}.
@@ -81,7 +81,7 @@ export type UnforwardedRuntimeOption =
    * opens, the `run_code` sandbox, the egress `fetch`, the tool-result hook,
    * the guidance injected into a prompt, the one-shot generator — and a caller
    * filling one is embedding the runtime rather than serving an agent, which
-   * is `createRuntime` + `createServer`. They are `@internal` or
+   * is `createRuntime` + `createRuntimeServer`. They are `@internal` or
    * platform-harness only.
    */
   | "executeTool"

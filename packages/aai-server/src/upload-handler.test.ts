@@ -67,7 +67,7 @@ function ramp(n: number, from = 0): Uint8Array {
   return Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
 }
 
-/** One buffer as the iterable `UploadBlobs.put` takes. */
+/** One buffer as the iterable `UploadBackend.put` takes. */
 async function* once(value: Uint8Array): AsyncGenerator<Uint8Array> {
   yield value;
 }

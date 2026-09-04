@@ -107,7 +107,7 @@
  * @module
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import type { DivergenceWatch } from "./workflow-replay-divergence.ts";
@@ -214,7 +214,7 @@ export type DeterminismOptions = {
  */
 export function createDeterminismReads(
   options: DeterminismOptions,
-): Pick<WorkflowCtx, "now" | "random" | "uuid"> {
+): Pick<WorkflowContext, "now" | "random" | "uuid"> {
   const { runId, journal, settled, divergence, refuse, hold } = options;
   /** Reaches so far, per kind. A property of the WALK, like `ctx.step`'s. */
   const occurrences = new Map<DeterminismKind, number>();

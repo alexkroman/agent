@@ -64,7 +64,7 @@ function resolvePipelineProviders(
  * preflights; "Workflow apps" in `packages/aai-ui/CLAUDE.md` has the story.)
  *
  * DEFERRED rather than skipped, because one path can still open a session on a
- * static agent — an embedder passing `createServer({ telephony: true })` — and
+ * static agent — an embedder passing `createRuntimeServer({ telephony: true })` — and
  * it should report the missing key by name rather than the transport factory's
  * "no transport for session", which is what a hardcoded null would produce.
  *

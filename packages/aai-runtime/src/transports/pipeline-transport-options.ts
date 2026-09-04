@@ -25,7 +25,7 @@ import {
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { LanguageModel } from "ai";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
-import type { SkipGreeting, TransportCallbacks, TransportSessionConfig } from "./types.ts";
+import type { SkipGreetingOption, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /**
  * Configuration for `createPipelineTransport`.
@@ -40,7 +40,7 @@ export interface PipelineTransportOptions {
   llm: LanguageModel;
   /** TTS opener (resolved from a TtsProvider descriptor). */
   tts: TtsOpener;
-  /** Transport-level callbacks into SessionCore. */
+  /** Transport-level callbacks into ServerSession. */
   callbacks: TransportCallbacks;
   /** Session config: systemPrompt, greeting, tools, history. */
   sessionConfig: TransportSessionConfig;
@@ -155,7 +155,7 @@ export interface PipelineTransportOptions {
   /** Logger. Defaults to consoleLogger. */
   logger?: Logger | undefined;
   /** Skip the initial greeting (used for session resume). */
-  skipGreeting?: SkipGreeting | undefined;
+  skipGreeting?: SkipGreetingOption | undefined;
   /**
    * How far behind the server's "audio forwarded" bookkeeping the caller's ear
    * is, in ms — subtracted from the estimated playback position to get the

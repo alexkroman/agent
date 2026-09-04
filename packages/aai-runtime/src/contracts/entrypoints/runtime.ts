@@ -14,13 +14,13 @@
 export {
   type AgentRuntime,
   createRuntime,
-  decliningRuntime,
   type ExecuteTool,
   type ExecuteToolOptions,
   type RunCodeExecutor,
   type Runtime,
   type RuntimeOptions,
+  rejectingRuntime,
   type SessionRuntime,
   type SessionStartOptions,
-  type SkipGreeting,
+  type SkipGreetingOption,
 } from "../../runtime-barrel.ts";

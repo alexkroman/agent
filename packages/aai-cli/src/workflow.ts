@@ -68,7 +68,7 @@ type WorkflowOptions = {
 /**
  * The base URL {@link createWorkflowApiClient} is given for `--agent`.
  *
- * A dev server has no slug: `createServer` mounts the workflow API at
+ * A dev server has no slug: `createRuntimeServer` mounts the workflow API at
  * `WORKFLOW_API_PREFIX` on the ORIGIN, where the platform serves it under
  * `/:slug`. So targeting one is not a matter of a different origin — it is the
  * absence of the path segment, which nothing in this command could express.

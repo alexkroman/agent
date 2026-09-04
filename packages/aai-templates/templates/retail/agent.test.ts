@@ -1,6 +1,6 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, ok } from "@alexkroman1/aai/testing";
+import { createToolContext, expectToolOk } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
 import type { StagedResult } from "./pending.ts";
@@ -32,7 +32,7 @@ function makeCtx(): ToolContext {
 /** A context already authenticated as `userId`, via the real tool. */
 async function authedCtx(email: string): Promise<ToolContext> {
   const ctx = makeCtx();
-  ok<AuthResult>(await findUserIdByEmail.execute({ email }, ctx));
+  expectToolOk<AuthResult>(await findUserIdByEmail.execute({ email }, ctx));
   return ctx;
 }
 
@@ -47,19 +47,19 @@ async function authedCtx(email: string): Promise<ToolContext> {
  * would let this gate pass while carrying nothing to confirm.
  */
 async function confirmed<R = unknown>(staged: unknown, ctx: ToolContext): Promise<R> {
-  const stage = ok<StagedResult>(staged);
+  const stage = expectToolOk<StagedResult>(staged);
   // A throw rather than an `expect`, which biome's `noMisplacedAssertion`
   // rightly refuses outside a test body. A staged change with no sentence to
   // read back is the one shape that would let the gate pass while carrying
   // nothing to confirm, so it stops the spec here rather than downstream.
   if (stage.read_back.length === 0) throw new Error(`${stage.staged} staged with no readback`);
-  return ok<R>(await confirmChange.execute({}, ctx));
+  return expectToolOk<R>(await confirmChange.execute({}, ctx));
 }
 
 describe("authentication", () => {
   test("find_user_id_by_email is case-insensitive and authenticates the session", async () => {
     const ctx = makeCtx();
-    const result = ok<AuthResult>(
+    const result = expectToolOk<AuthResult>(
       await findUserIdByEmail.execute({ email: "OLIVIA.ITO5204@EXAMPLE.COM" }, ctx),
     );
     expect(result.user_id).toBe("olivia_ito_3591");
@@ -81,7 +81,7 @@ describe("authentication", () => {
 
   test("find_user_id_by_name_zip is case-insensitive on names and exact on zip", async () => {
     const ctx = makeCtx();
-    const found = ok<AuthResult>(
+    const found = expectToolOk<AuthResult>(
       await findUserIdByNameZip.execute(
         { first_name: "aarav", last_name: "ANDERSON", zip: "19031" },
         ctx,
@@ -97,13 +97,13 @@ describe("authentication", () => {
   });
 
   test("two customers share a first name — the zip is what separates them", async () => {
-    const a = ok<AuthResult>(
+    const a = expectToolOk<AuthResult>(
       await findUserIdByNameZip.execute(
         { first_name: "Aarav", last_name: "Anderson", zip: "19031" },
         makeCtx(),
       ),
     );
-    const b = ok<AuthResult>(
+    const b = expectToolOk<AuthResult>(
       await findUserIdByNameZip.execute(
         { first_name: "Aarav", last_name: "Gonzalez", zip: "78268" },
         makeCtx(),
@@ -172,7 +172,7 @@ interface ProductTypesResult {
 describe("read tools", () => {
   test("get_user_details returns the caller's profile with gift-card balances", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    const result = ok<UserDetailsResult>(
+    const result = expectToolOk<UserDetailsResult>(
       await getUserDetails.execute({ user_id: "olivia_ito_3591" }, ctx),
     );
     expect(result.email).toBe("olivia.ito5204@example.com");
@@ -189,7 +189,7 @@ describe("read tools", () => {
 
   test("get_order_details resolves shorthand and sets focus", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    const result = ok<OrderDetailsResult>(
+    const result = expectToolOk<OrderDetailsResult>(
       await getOrderDetails.execute({ order_id: "the delivered one" }, ctx),
     );
     expect(result.order_id).toBe("#W5866402");
@@ -203,7 +203,7 @@ describe("read tools", () => {
   });
 
   test("get_product_details lists variants and needs no authentication", async () => {
-    const result = ok<ProductDetailsResult>(
+    const result = expectToolOk<ProductDetailsResult>(
       await getProductDetails.execute({ product_id: "9832717871" }, makeCtx()),
     );
     expect(result.name).toBe("Tea Kettle");
@@ -217,7 +217,7 @@ describe("read tools", () => {
   });
 
   test("get_item_details resolves an item without knowing its product", async () => {
-    const result = ok<ItemDetailsResult>(
+    const result = expectToolOk<ItemDetailsResult>(
       await getItemDetails.execute({ item_id: "3909406921" }, makeCtx()),
     );
     expect(result.price).toBe(98.25);
@@ -225,7 +225,9 @@ describe("read tools", () => {
   });
 
   test("list_all_product_types returns all 50, sorted by name", async () => {
-    const result = ok<ProductTypesResult>(await listAllProductTypes.execute({}, makeCtx()));
+    const result = expectToolOk<ProductTypesResult>(
+      await listAllProductTypes.execute({}, makeCtx()),
+    );
     expect(Object.keys(result.products)).toHaveLength(50);
     const names = Object.keys(result.products);
     // localeCompare, not the default lexicographic sort — the tool sorts for a
@@ -1148,7 +1150,7 @@ interface TransferResult {
 
 describe("transfer_to_human_agents", () => {
   test("works without authentication — the escape hatch cannot be gated", async () => {
-    const result = ok<TransferResult>(
+    const result = expectToolOk<TransferResult>(
       await transferToHumanAgents.execute(
         { summary: "Caller wants to dispute a charge from 2019." },
         makeCtx(),
@@ -1160,7 +1162,7 @@ describe("transfer_to_human_agents", () => {
 
   test("the handoff is terminal, so the call cannot be worked afterwards", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    ok(await transferToHumanAgents.execute({ summary: "wants a human" }, ctx));
+    expectToolOk(await transferToHumanAgents.execute({ summary: "wants a human" }, ctx));
 
     const at = callFlow.position(ctx);
     expect(at.state).toBe("transferred");

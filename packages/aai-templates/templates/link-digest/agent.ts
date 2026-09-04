@@ -13,8 +13,8 @@
  * the entire product, and the declaration says so:
  *
  * - `workflowApp()` is `agent({ …, page: "static" })` with the discriminant
- *   already set. The declaration is not decoration: `createServer` declines
- *   `/websocket` with a reason (so a page mounted with `client()` by mistake
+ *   already set. The declaration is not decoration: `createRuntimeServer` declines
+ *   `/websocket` with a reason (so a page mounted with `mountClient()` by mistake
  *   fails the same way in `aai dev` and in production rather than only after a
  *   deploy) and telephony defaults off.
  * - There is no `stt`/`llm`/`tts`, no `tools` and no `systemPrompt` — and they

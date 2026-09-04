@@ -23,13 +23,13 @@ import {
   resolveApiKey,
   resolveS2sEnvVar,
 } from "./providers/resolve.ts";
-import type { Logger, S2SConfig } from "./runtime-config.ts";
+import type { Logger, S2sConfig } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
-import type { SkipGreeting, Transport, TransportCallbacks } from "./transports/types.ts";
+import type { SkipGreetingOption, Transport, TransportCallbacks } from "./transports/types.ts";
 
 /**
  * Read the author-set `assemblyAIS2s({ voice, languages, keyterms })` options
@@ -65,7 +65,7 @@ export type TransportSessionOpts = {
   id: string;
   agent: string;
   client: ClientSink;
-  skipGreeting?: SkipGreeting;
+  skipGreeting?: SkipGreetingOption;
   /**
    * True when this connection presented an existing session id (`?sessionId=`),
    * so the session continues rather than begins.
@@ -103,7 +103,7 @@ export interface TransportFactoryDeps {
   toolSchemas: ToolSchema[];
   executeTool: ExecuteTool;
   env: Record<string, string>;
-  s2sConfig: S2SConfig;
+  s2sConfig: S2sConfig;
   /**
    * Resolves non-null exactly when the session mode is pipeline.
    *

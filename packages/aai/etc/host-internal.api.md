@@ -474,6 +474,12 @@ export function createEpoch(): Epoch;
 // @internal
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
 
+// @public
+export function createSttError(code: SttError["code"], message: string): SttError;
+
+// @public
+export function createTtsError(code: TtsError["code"], message: string): TtsError;
+
 // @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
@@ -730,12 +736,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
-
-// @public
-export function makeSttError(code: SttError["code"], message: string): SttError;
-
-// @public
-export function makeTtsError(code: TtsError["code"], message: string): TtsError;
 
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
@@ -1463,7 +1463,7 @@ type WakeUpOptions = {
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -1487,7 +1487,7 @@ type WorkflowClient = {
 };
 
 // @public
-type WorkflowCtx = {
+type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;

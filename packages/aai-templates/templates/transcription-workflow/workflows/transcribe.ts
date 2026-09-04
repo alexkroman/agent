@@ -48,7 +48,7 @@
  * - **The audio is addressed by BYTE RANGE, never carried.** A workflow's input
  *   is journaled and replayed on every resume, so the recording lives in the
  *   app's own upload store and the run carries only its id; each step reads
- *   exactly its own window with `readUpload`. Sixty steps therefore move the
+ *   exactly its own window with `stepReadUpload`. Sixty steps therefore move the
  *   recording once between them, not sixty times.
  * - **The fan-out is bounded by `mapConcurrent`, and the bound is not a detail.**
  *   The DevKit correlates a journal entry to a step call by the ORDER the call
@@ -57,20 +57,20 @@
  *   calls settle. Its module doc carries the argument; what matters here is that
  *   there is no barrier, so a slow segment costs only itself.
  * - **The transcript STREAMS as it is produced.** Each segment is emitted the
- *   moment it lands (`emit(TRANSCRIPT_STREAM, …)`), so the page renders the
+ *   moment it lands (`stepEmit(TRANSCRIPT_STREAM, …)`), so the page renders the
  *   answer growing rather than a status line and then everything at once. That is
  *   the difference a fan-out can make to a reader and a run output cannot: an
  *   `output` exists only when the last segment does.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import {
-  emit,
   mapConcurrent,
-  readUpload,
-  report,
-  requireCompleteUpload,
-  uploadInfo,
+  stepEmit,
+  stepReadUpload,
+  stepReport,
+  stepRequireCompleteUpload,
+  stepUploadInfo,
   wavHeader,
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
@@ -248,7 +248,7 @@ export type SegmentTranscript = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the
  * schema it is validated against before a run exists.
  */
-export async function transcribeFlow(input: { recording: string }, ctx: WorkflowCtx) {
+export async function transcribeFlow(input: { recording: string }, ctx: WorkflowContext) {
   // Both at once: neither needs the other, and issued together they are one
   // round trip instead of two before any audio is read. The ORDER is still a
   // pure function of this line — the two calls go out synchronously, left to
@@ -313,13 +313,13 @@ export async function splitRecording(uploadId: string): Promise<{
   // half-arrived recording this planned a fan-out over the first half and the run
   // returned a transcript of it, reporting success. `stream.ts` is the flow for a
   // recording that is still landing; this one wants all of it.
-  const stored = await requireCompleteUpload(uploadId);
-  const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
+  const stored = await stepRequireCompleteUpload(uploadId);
+  const head = await stepReadUpload(uploadId, { end: HEADER_PROBE_BYTES });
   const format = fatalOnUnsupported(() => parseWav(head.bytes, stored.size));
   const segments = fatalOnUnsupported(() => planSegments(format));
   const durationMs = segments.at(-1)?.endMs ?? 0;
 
-  await report(
+  await stepReport(
     `Split ${formatDuration(durationMs)} of audio into ${segments.length} ${plural(segments.length, "segment")}.`,
   );
   return { format, segments, durationMs };
@@ -345,12 +345,14 @@ export async function transcribeSegment(
   // calls together, so their lines interleave by completion — the page renders a
   // log, not a sequence, and `segment.index` is what puts the TRANSCRIPT back in
   // order.
-  await report(`Transcribing ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}.`);
+  await stepReport(
+    `Transcribing ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}.`,
+  );
 
   // `[start, end)`, the same half-open pair `planSegments` produced — the store
   // owns the conversion to HTTP's inclusive range, so there is no `- 1` here to
   // get wrong.
-  const audio = await readUpload(uploadId, { start: segment.start, end: segment.end });
+  const audio = await stepReadUpload(uploadId, { start: segment.start, end: segment.end });
 
   // The audio and nothing else. A `config` part carrying `language_code` used
   // to ride along, and it is gone with the picker that fed it: the model detects
@@ -401,15 +403,15 @@ export async function transcribeSegment(
   );
   // The LATENCY, which is what says whether the concurrency bound or the endpoint
   // is the thing limiting the run — see `timed`'s doc.
-  await report(
+  await stepReport(
     `Transcribed ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)} in ${elapsed(ms)}.`,
   );
   // And the WORDS, into their own stream, which is what makes this run's answer
   // streamable rather than only its narration: the page stitches whatever has
   // arrived and renders the transcript growing, minutes before `output` exists.
-  // Its own namespace because `report`'s stream carries sentences a page prints
-  // verbatim — see `emit`'s doc.
-  await emit(TRANSCRIPT_STREAM, {
+  // Its own namespace because `stepReport`'s stream carries sentences a page prints
+  // verbatim — see `stepEmit`'s doc.
+  await stepEmit(TRANSCRIPT_STREAM, {
     index: segment.index,
     startMs: segment.startMs,
     endMs: segment.endMs,
@@ -422,7 +424,7 @@ export async function transcribeSegment(
  * Stitch the segments into one transcript.
  *
  * A step rather than a pure call in the body, and the reason is the narration:
- * the body replays from the top on every resume, so a `report()` written there
+ * the body replays from the top on every resume, so a `stepReport()` written there
  * is re-emitted on each one. Journaling the finished transcript also means a
  * caller re-reading a completed run gets the same bytes rather than a value
  * recomputed from parts.
@@ -433,7 +435,7 @@ export async function mergeTranscript(
   parts: readonly SegmentTranscript[],
   startedAt: number,
 ): Promise<Transcript> {
-  await report(`Stitching ${parts.length} ${plural(parts.length, "segment")} together.`);
+  await stepReport(`Stitching ${parts.length} ${plural(parts.length, "segment")} together.`);
 
   // `mapConcurrent` resolves in ITEM order however the calls settled, so this is
   // already ordered — sorted anyway, because the merge is where an ordering
@@ -443,7 +445,7 @@ export async function mergeTranscript(
 
   // The FILENAME, not the id: the page prints this, and `upl_9f3…` tells a
   // reader nothing about which recording they are looking at.
-  const source = (await uploadInfo(uploadId)).name || uploadId;
+  const source = (await stepUploadInfo(uploadId)).name || uploadId;
   return {
     source,
     segments: parts.length,

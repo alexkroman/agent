@@ -24,7 +24,7 @@
  *   event stream wired into a live pipeline's playback, with a turn tracker and
  *   barge-in behind it, and a step has no turn to be part of and has to return
  *   a VALUE.
- * - **`writeUpload`** (same subpath) puts that value where a browser can reach
+ * - **`stepWriteUpload`** (same subpath) puts that value where a browser can reach
  *   it. A run's OUTPUT is read back as JSON, so audio cannot travel in one —
  *   the same rule that keeps a recording's bytes out of a run's INPUT, arriving
  *   at the other end of the run.
@@ -54,7 +54,7 @@
  * `POST /workflows/uploads` (the browser does this for you: `uploads` below is
  * what makes `<WorkflowFields>` render a file picker, and `useWorkflowSubmit`
  * stores the file before starting the run), the input carries the returned id,
- * and the step that needs the bytes streams them out with `readUpload`.
+ * and the step that needs the bytes streams them out with `stepReadUpload`.
  *
  * ## It is scriptable, which is the other half of having an API
  *
@@ -140,7 +140,7 @@ export const spokenSummary: WorkflowDef<typeof spokenSummaryInput, SpokenSummary
   input: spokenSummaryInput,
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
   // picker for this property, `useWorkflowSubmit` stores the chosen file, and
-  // the step that transcribes it reads it back with `readUpload`.
+  // the step that transcribes it reads it back with `stepReadUpload`.
   uploads: ["recording"],
   run: spokenSummaryFlow,
 });

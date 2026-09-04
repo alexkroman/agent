@@ -37,7 +37,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type {
   AnyWorkflowDef,
-  UploadParallel,
+  UploadParallelOption,
   UploadProgress,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
@@ -267,7 +267,7 @@ export type UseWorkflowSubmitOptions = {
    * the default costs nothing where it would not have paid. See
    * `UploadOptions.parallel`.
    */
-  parallel?: UploadParallel;
+  parallel?: UploadParallelOption;
 };
 
 /**

@@ -55,7 +55,7 @@ import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 import {
   partsPlan,
   partsSettings,
-  type UploadParallel,
+  type UploadParallelOption,
   type UploadPartsRequest,
   uploadInParts,
 } from "./workflow-upload-parts.ts";
@@ -135,7 +135,7 @@ export type UploadOptions = {
    * caller who knows something about their own link that this does not.
    * `workflow-upload-parts.ts` carries the rest.
    */
-  parallel?: UploadParallel | undefined;
+  parallel?: UploadParallelOption | undefined;
   /**
    * Continue an upload already begun under this id, sending only the windows that
    * are missing.
@@ -165,7 +165,7 @@ export type UploadOptions = {
   resume?: boolean | undefined;
 };
 
-export type { UploadParallel, UploadPartsSettings } from "./workflow-upload-parts.ts";
+export type { UploadParallelOption, UploadPartsOptions } from "./workflow-upload-parts.ts";
 
 /** A stored upload, as `WorkflowApi.upload` resolves it. */
 export type UploadRef = {
@@ -435,7 +435,7 @@ export async function streamUploadFile(
  * Read an upload's BYTES, as a `Blob` a page can play or save.
  *
  * The counterpart of {@link readUploadInfo}, and the browser half of
- * `writeUpload` — a run whose output is a file returns the id, and this is how
+ * `stepWriteUpload` — a run whose output is a file returns the id, and this is how
  * that id becomes something to hand an `<audio>` element or a download link.
  *
  * **A `Blob` rather than a URL, and the auth is why.** The byte route takes the
@@ -469,7 +469,7 @@ export async function downloadUpload(
  *
  * What a client watches its own streamed upload with, and what answers "why is
  * this run still waiting". A step reads the same record in-process
- * (`uploadInfo` on `@alexkroman1/aai/utils`), so this is for everything that is
+ * (`stepUploadInfo` on `@alexkroman1/aai/utils`), so this is for everything that is
  * not one: a script, a dashboard, a person with `curl`.
  *
  * @internal

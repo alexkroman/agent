@@ -7,8 +7,8 @@
  */
 
 import {
+  createSttError,
   DEEPGRAM_API_KEY_ENV,
-  makeSttError,
   resolveDeepgramSttSettings,
   type SttEvents,
   type SttOpener,
@@ -62,9 +62,9 @@ export function openDeepgram(opts: DeepgramSttOptions = {}): SttOpener {
     name: "deepgram",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
       const apiKey = requireApiKey(openOpts.apiKey, DEEPGRAM_API_KEY_ENV, "Deepgram STT", (msg) =>
-        makeSttError("stt_auth_failed", msg),
+        createSttError("stt_auth_failed", msg),
       );
-      const connectError = (msg: string) => makeSttError("stt_connect_failed", msg);
+      const connectError = (msg: string) => createSttError("stt_connect_failed", msg);
 
       const settings = resolveDeepgramSttSettings(opts);
       const client = new DeepgramClient({ apiKey });

@@ -3,7 +3,7 @@
  * The two durable WAITS a workflow body may reach: `ctx.sleep` and `ctx.waitFor`.
  *
  * Split out of `workflow-replay.ts` at the seam `createDeterminismReads` already
- * drew — a `Pick<WorkflowCtx, …>` factory bound to one walk, taking the walk's
+ * drew — a `Pick<WorkflowContext, …>` factory bound to one walk, taking the walk's
  * journal, its suspension channel and its refusal callback. That file is the one
  * two changes at a time land in and it sits against the 500-line cap; naming the
  * waits took it over.
@@ -104,7 +104,7 @@ import type {
   SleepOptions,
   WaitForOptions,
   WaitForSchemaOptions,
-  WorkflowCtx,
+  WorkflowContext,
 } from "@alexkroman1/aai";
 import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
 import type { JournalStore, SleepRecord } from "./workflow-journal-types.ts";
@@ -224,7 +224,9 @@ export type WaitOptions = {
  *
  * @internal
  */
-export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "sleep" | "waitFor"> {
+export function createWaitMethods(
+  options: WaitOptions,
+): Pick<WorkflowContext, "sleep" | "waitFor"> {
   const { runId, workflow, journal, sleeps: snapshot, suspend, refuse } = options;
   /**
    * Reaches so far, per NAME — a sleep by its label, a hook by its token.
@@ -446,7 +448,7 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
   }
 
   // Cast-free by construction: `sleep` takes a plain `string` label where
-  // `WorkflowCtx.sleep` constrains it to `Literal<Label>`, and a wider parameter
+  // `WorkflowContext.sleep` constrains it to `Literal<Label>`, and a wider parameter
   // is assignable to a narrower one. `waitFor`'s overloads resolve the same way.
   return { sleep, waitFor };
 }

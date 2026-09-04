@@ -14,7 +14,7 @@
  * these constants.
  *
  * **Two thirds of the table is IMPORTED, not transcribed.** Of the routes below,
- * ten are served by `@alexkroman1/aai-runtime` — six by `createServer` and four
+ * ten are served by `@alexkroman1/aai-runtime` — six by `createRuntimeServer` and four
  * by `handleWorkflowRequest`, which the harness mounts through the `request`
  * hook — and this package already depends on that one. They arrive as
  * `SERVER_ROUTES` and `WORKFLOW_CALLBACK_ROUTES`, so a rename there is a
@@ -282,7 +282,7 @@ export const GUEST_ROUTE_EXPOSURE = {
   workflowWebhook: {
     via: "proxied",
     // POST, and only POST — matching `WORKFLOW_CALLBACK_ROUTES.webhook.methods`,
-    // which is what the guest's `createServer` gates the route on (405 with
+    // which is what the guest's `createRuntimeServer` gates the route on (405 with
     // `Allow: POST` to anything else).
     //
     // This said "whatever verb the far side chooses: the sender owns that

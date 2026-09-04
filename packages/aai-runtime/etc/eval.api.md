@@ -30,19 +30,16 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-export function callsIn(turns: readonly EvalTurn[]): readonly EvalToolCall[];
-
-// @public
 export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
 
 // @public
-export function createFakeSttOpener(name: string): SttOpener & {
-    last(): FakeSttSession | undefined;
+export function createStubSttOpener(name: string): SttOpener & {
+    last(): StubSttSession | undefined;
 };
 
 // @public
-export function createFakeTtsOpener(name: string): TtsOpener & {
-    last(): FakeTtsSession | undefined;
+export function createStubTtsOpener(name: string): TtsOpener & {
+    last(): StubTtsSession | undefined;
 };
 
 // @public
@@ -185,40 +182,16 @@ export type EvalWorkflowsOptions = {
     readonly logger?: Logger | undefined;
 };
 
-// @public
-export const FAKE_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
-
-// @public
-export type FakeSpeech = {
-    readonly stt: SttProvider;
-    readonly tts: TtsProvider;
-    readonly env: Record<string, string>;
-    sttSession(): FakeSttSession | undefined;
-    ttsSession(): FakeTtsSession | undefined;
-    release(): void;
-};
-
-// @public
-export type FakeSttSession = SttSession & {
-    partial(text: string): void;
-    commit(text: string): void;
-};
-
-// @public
-export type FakeTtsSession = TtsSession & {
-    readonly spoken: readonly string[];
-};
-
 // @internal
 type HostGenerateFn = (options: GenerateOptions, callOpts?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
 // @public
-export function installFakeSpeech(): FakeSpeech;
+export function installStubLlm(script: StubScript): StubLlm;
 
 // @public
-export function installStubLlm(script: StubScript): StubLlm;
+export function installStubSpeechProviders(): StubSpeechProviders;
 
 // @public
 export function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
@@ -261,6 +234,9 @@ export { StepFetch }
 export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
 
 // @public
+export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+
+// @public
 export type StubLlm = {
     readonly llm: LlmProvider;
     readonly env: Record<string, string>;
@@ -271,11 +247,32 @@ export type StubLlm = {
 export type StubScript = string | readonly (string | StubStep)[];
 
 // @public
+export type StubSpeechProviders = {
+    readonly stt: SttProvider;
+    readonly tts: TtsProvider;
+    readonly env: Record<string, string>;
+    sttSession(): StubSttSession | undefined;
+    ttsSession(): StubTtsSession | undefined;
+    release(): void;
+};
+
+// @public
 export type StubStep = {
     readonly text: string;
 } | {
     readonly tool: string;
     readonly args?: Record<string, unknown>;
+};
+
+// @public
+export type StubSttSession = SttSession & {
+    partial(text: string): void;
+    commit(text: string): void;
+};
+
+// @public
+export type StubTtsSession = TtsSession & {
+    readonly spoken: readonly string[];
 };
 
 // @public
@@ -285,7 +282,10 @@ export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, sche
 export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
 
 // @public
-export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolCall[];
+export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
+
+// @public
+export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolCall[];
 
 // @public
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];

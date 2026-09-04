@@ -30,7 +30,7 @@
  * suppresses it because the client already has the result it computed.
  */
 
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { TransportCallbacks, TransportEventBody } from "./transports/types.ts";
 
@@ -38,11 +38,11 @@ import type { TransportCallbacks, TransportEventBody } from "./transports/types.
 export type SessionCallbackDeps = {
   /**
    * The session, resolved LATE. Callbacks are constructed before the
-   * `SessionCore` exists — the transport is built from them and the session is
+   * `ServerSession` exists — the transport is built from them and the session is
    * built from the transport — so this throws rather than returning undefined:
    * a callback firing before the session exists is a wiring bug, not a state.
    */
-  bindCore: () => SessionCore;
+  bindCore: () => ServerSession;
   /** This session's emitter, for the reports no session method owns. */
   emitter: SessionEmitter;
   /** True when the pipeline transport runs this session (tools run in `streamText`). */

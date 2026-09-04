@@ -56,7 +56,7 @@ export {
 } from "./form-fields.tsx";
 // Re-exported so `form.tsx` stays the one import path for everything a form
 // needs, definitions and components alike.
-export type { FieldShell, FileRead, FileValue, FormValues } from "./form-types.ts";
+export type { FieldShell, FileReadMode, FileValue, FormValues } from "./form-types.ts";
 
 /** Props of {@link Form}. */
 export type FormProps = {

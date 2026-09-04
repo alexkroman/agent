@@ -35,7 +35,7 @@ import type {
 import { useId } from "react";
 import { useTheme } from "../context.ts";
 import { FOCUS_RING, focusRingStyle } from "./_colors.ts";
-import type { FieldShell, FileRead, FileValue, FormValues } from "./form-types.ts";
+import type { FieldShell, FileReadMode, FileValue, FormValues } from "./form-types.ts";
 
 /**
  * Label + control + hint, in the layout every field here uses.
@@ -340,14 +340,14 @@ export function CheckboxField({
  * travel in it. With `upload` the field contributes the `File` itself,
  * `useWorkflowSubmit` stores it through `POST /workflows/uploads` before
  * starting the run, and the input carries the upload id — which a step reads
- * windows of with `readUpload`. Declaring the property in the workflow's
+ * windows of with `stepReadUpload`. Declaring the property in the workflow's
  * `uploads` list makes `<WorkflowFields>` render exactly this, so a declared
  * form needs no file markup at all.
  *
  * **Without it the field describes the file and does not read it.** `read`
  * exists for the cases where the bytes really are small and really are the
  * input — a CSV of ids, a config — and the size is the author's to check. See
- * {@link FileRead} for the four values; `upload` is shorthand for
+ * {@link FileReadMode} for the four values; `upload` is shorthand for
  * `read="upload"`.
  *
  * Otherwise accepts every `<input>` attribute except `name`, `className` and
@@ -368,7 +368,7 @@ export function FileField({
   upload = false,
   ...rest
 }: FieldShell & {
-  read?: FileRead;
+  read?: FileReadMode;
   /** Shorthand for `read="upload"` — see above. */
   upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">) {

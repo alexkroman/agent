@@ -443,7 +443,7 @@ export class CancelThenStrayAudio implements Cmd {
 }
 
 /**
- * Barge-in. Deliberately NOT charged to `faultBudget`: `SessionCore.onCancel`
+ * Barge-in. Deliberately NOT charged to `faultBudget`: `ServerSession.onCancel`
  * aborts the reply's tools but does NOT replace the reply, so their (error)
  * results still flush on `reply.done` — an S2S provider has no cancel RPC and is
  * still awaiting them. So a cancel does not strand a tool call the way a reset

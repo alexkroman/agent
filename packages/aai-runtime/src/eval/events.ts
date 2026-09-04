@@ -54,7 +54,7 @@ export type EvalToolCall = {
  * The events that END a reply.
  *
  * Declared ONCE, because two things must agree by construction: they partition
- * a run into turns for anything reading {@link toolCallsIn} per reply, and they
+ * a run into turns for anything reading {@link toolCallsInEvents} per reply, and they
  * are what `openEvalSession`'s `say()` waits for. The set used to be written out
  * in two files, and a third terminator added to one copy would make `say()`
  * return mid-reply while the assertions still thought the turn was open — which
@@ -82,7 +82,7 @@ export function saidIn(events: readonly SessionEvent[]): readonly string[] {
  * rather than dropped, because "it called the tool and the tool never returned"
  * is a finding.
  */
-export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolCall[] {
+export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[] {
   const results = new Map<string, string>();
   for (const event of events) {
     if (event.type === "tool.completed") results.set(event.toolCallId, event.result);
@@ -144,7 +144,7 @@ export function toolNames(calls: readonly EvalToolCall[]): readonly string[] {
  * was `undefined`, which a case then meets as a chai type error four lines
  * further on. `openEvalSession` refuses such a turn outright — this is what the
  * DIAGNOSTIC owes the cases that read a call list some other way (a cancelled
- * reply, `callsIn` over several turns).
+ * reply, `toolCallsInTurns` over several turns).
  *
  * ```ts
  * import { describeToolCalls, type EvalSession } from "@alexkroman1/aai-runtime/eval";

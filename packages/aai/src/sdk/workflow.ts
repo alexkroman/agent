@@ -5,7 +5,7 @@
  *
  * A workflow is a declaration — a description, an input schema, and a body — and
  * nothing here executes anything. The engine lives in
- * `@alexkroman1/aai-runtime`, and the seam between them is {@link WorkflowCtx},
+ * `@alexkroman1/aai-runtime`, and the seam between them is {@link WorkflowContext},
  * which the engine constructs and hands to the body. That split is what lets an
  * `agent.ts` import this module without pulling a journal, a queue client or a
  * database driver into the agent bundle.
@@ -33,9 +33,9 @@
  *
  * ```ts no-check
  * // workflows/digest.ts
- * import type { WorkflowCtx } from "@alexkroman1/aai/workflow";
+ * import type { WorkflowContext } from "@alexkroman1/aai/workflow";
  *
- * export async function digestFlow(input: { topic: string }, ctx: WorkflowCtx) {
+ * export async function digestFlow(input: { topic: string }, ctx: WorkflowContext) {
  *   const notes = await ctx.step("research", () => research(input.topic));
  *   await ctx.step("save", () => save(input.topic, notes));
  *   return { topic: input.topic };
@@ -61,7 +61,7 @@
  * exactly that reason — both belong inside a step, which runs at most once per
  * successful execution and has the whole Node runtime.
  *
- * {@link WorkflowCtx} carries the rest, including why step identity is a name
+ * {@link WorkflowContext} carries the rest, including why step identity is a name
  * plus an occurrence count — and that nothing checks the replay rule for you.
  */
 
@@ -77,7 +77,7 @@ import type { StandardSchemaV1 } from "./standard-schema.ts";
 // The body's second argument. Type-only here, but re-exported below: an author
 // writing a body needs to name it, and `workflow.ts` is the one module they
 // already import from.
-import type { WorkflowCtx } from "./workflow-ctx.ts";
+import type { WorkflowContext } from "./workflow-ctx.ts";
 // Type-only, so the cycle with `workflow-run.ts` (which names `WorkflowClient`
 // in its own docs) is erased rather than real. `WorkflowRunOf` composes the
 // snapshot with a def's output type, and the composition belongs beside the
@@ -103,31 +103,33 @@ export {
   type StepSchemaOptions,
   type WaitForOptions,
   type WaitForSchemaOptions,
-  type WorkflowCtx,
+  type WorkflowContext,
 } from "./workflow-ctx.ts";
 
 /**
  * A workflow body: an ordinary async function of its input and a
- * {@link WorkflowCtx}.
+ * {@link WorkflowContext}.
  *
  * **There is no `workflowId` any more, and its absence is the point.** Under the
- * Workflow DevKit this type carried one, attached by a compile-time transform,
- * and `start()` read it — so a body that the bundler plugin had not reached
- * looked perfectly valid at the declaration site and failed at the first
- * `start()` with `MISSING_WORKFLOW_ID`. An agent that builds, deploys, boots and
- * answers the phone but cannot start a run is a bad failure to design in. A
- * workflow is now identified by the key it is declared under in
- * `agent({ workflows })`, which cannot go missing because the declaration IS the
- * registration.
+ * Workflow DevKit this type carried one, attached by a compile-time transform, and
+ * `start()` read it — so a body that the bundler plugin had not reached looked
+ * perfectly valid at the declaration site and failed at the first `start()` with
+ * `MISSING_WORKFLOW_ID`. An agent that builds, deploys, boots and answers the
+ * phone but cannot start a run is a bad failure to design in. A workflow is now
+ * identified by the key it is declared under in `agent({ workflows })`, which
+ * cannot go missing because the declaration IS the registration.
  *
- * The body is REPLAYED — see {@link WorkflowCtx} for what that forbids.
+ * The body is REPLAYED — see {@link WorkflowContext} for what that forbids.
  *
  * @typeParam I - The body's validated input.
  * @typeParam R - What the body returns.
  *
  * @public
  */
-export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+export type WorkflowBody<I = unknown, R = unknown> = (
+  input: I,
+  ctx: WorkflowContext,
+) => Promise<R> | R;
 
 /**
  * Definition of one durable workflow: its schema, its description, and the
@@ -155,7 +157,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
    * A run's input is journaled and replayed on every resume, so a file's bytes
    * may not travel in it — the bytes go to `POST /workflows/uploads` and the
    * input carries the id it answered with, which a step reads windows of through
-   * `readUpload`. Naming the property here is what makes that automatic at both
+   * `stepReadUpload`. Naming the property here is what makes that automatic at both
    * ends: `<WorkflowFields>` renders a file picker for it instead of a text box,
    * and `useWorkflowSubmit` uploads the chosen file and substitutes its id.
    *
@@ -199,7 +201,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
   /**
    * The workflow body.
    *
-   * Takes the validated input and a {@link WorkflowCtx}. The input is ONE
+   * Takes the validated input and a {@link WorkflowContext}. The input is ONE
    * object rather than a positional list on purpose — it is schema-validated,
    * and a schema describes one value.
    */
@@ -330,7 +332,7 @@ export type WorkflowOutputOf<D> = D extends {
  * import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
  * import type { digest } from "../agent.ts";
  *
- * export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
+ * export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
  *   // `limit` is `number`, not `number | undefined` — the default already ran.
  *   return await research(input.topic, input.limit);
  * }

@@ -137,7 +137,7 @@ export function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onCle
           above, and the reason both exist: the status is `running` for the whole
           fan-out, so a sixty-segment recording and a one-segment recording look
           identical while they run. These lines come from the run itself
-          (`report()` in `workflows/transcribe.ts`), and they REPLAY, so looking a
+          (`stepReport()` in `workflows/transcribe.ts`), and they REPLAY, so looking a
           finished run up in the panel below shows how it got there. */}
       <WorkflowProgress runId={run.runId} />
 

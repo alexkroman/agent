@@ -17,9 +17,9 @@
  * its return value, and audio in one is megabytes replayed on every resume.
  */
 
-import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
+import { stepReadUpload, stepUploadInfo } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowCtx, stubGatewayRoute } from "@alexkroman1/aai/testing";
+import { createWorkflowContext, stubGatewayRoute } from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
   installStubReporter,
@@ -215,14 +215,14 @@ describe("speaking", () => {
 
     const { audio } = await speak("Hello.");
 
-    await expect(uploadInfo(audio)).resolves.toMatchObject({
+    await expect(stepUploadInfo(audio)).resolves.toMatchObject({
       name: "summary.wav",
       // The byte route serves this as `Content-Type`, and a browser will not
       // play inline a file it was handed as octet-stream.
       type: "audio/wav",
       size: 44 + 4000,
     });
-    const { bytes } = await readUpload(audio, { end: 12 });
+    const { bytes } = await stepReadUpload(audio, { end: 12 });
     expect(String.fromCharCode(...bytes.subarray(0, 4))).toBe("RIFF");
     expect(String.fromCharCode(...bytes.subarray(8, 12))).toBe("WAVE");
   });
@@ -292,7 +292,7 @@ describe("the whole run", () => {
     installStubReporter();
     installStubSpeech();
 
-    const summary = await spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowCtx());
+    const summary = await spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowContext());
 
     expect(summary).toEqual({
       source: "standup.wav",
@@ -314,7 +314,7 @@ describe("the whole run", () => {
     installStubReporter();
     const speech = installStubSpeech();
 
-    await spokenSummaryFlow({ recording: UPLOAD_ID, voice: "michael" }, createWorkflowCtx());
+    await spokenSummaryFlow({ recording: UPLOAD_ID, voice: "michael" }, createWorkflowContext());
 
     expect(speech.calls[0]).toMatchObject({ text: "Spoken.", voice: "michael" });
   });
@@ -324,9 +324,9 @@ describe("the whole run", () => {
     installStubReporter();
     installStubSpeech();
 
-    await expect(spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowCtx())).rejects.toThrow(
-      "corrupt audio",
-    );
+    await expect(
+      spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowContext()),
+    ).rejects.toThrow("corrupt audio");
   });
 });
 

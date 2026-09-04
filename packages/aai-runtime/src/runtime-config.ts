@@ -4,7 +4,7 @@
  * Runtime dependencies injected into the session pipeline.
  *
  * Defines the {@link Logger} interface, a default {@link consoleLogger},
- * and the {@link S2SConfig} for Speech-to-Speech endpoint configuration.
+ * and the {@link S2sConfig} for Speech-to-Speech endpoint configuration.
  */
 
 import {
@@ -153,7 +153,7 @@ export const silentLogger: Logger = {
  * Controls which AssemblyAI real-time WebSocket endpoint to connect to and
  * the audio sample rates for input (microphone → STT) and output (TTS → speaker).
  */
-export type S2SConfig = {
+export type S2sConfig = {
   /** The WebSocket URL of the S2S real-time endpoint. */
   wssUrl: string;
   /** Sample rate in Hz for audio sent to STT (microphone capture). */
@@ -166,18 +166,18 @@ export type S2SConfig = {
  * Default S2S endpoint configuration.
  * @internal
  */
-export const DEFAULT_S2S_CONFIG: S2SConfig = {
+export const DEFAULT_S2S_CONFIG: S2sConfig = {
   wssUrl: "wss://agents.assemblyai.com/v1/ws",
   inputSampleRate: DEFAULT_STT_SAMPLE_RATE,
   outputSampleRate: DEFAULT_TTS_SAMPLE_RATE,
 };
 
 /**
- * Force an {@link S2SConfig} onto the one sample rate AssemblyAI's Voice Agent
+ * Force an {@link S2sConfig} onto the one sample rate AssemblyAI's Voice Agent
  * API accepts ({@link ASSEMBLYAI_S2S_SAMPLE_RATE}) — call it only when the
  * session will run on that transport.
  *
- * `S2SConfig.inputSampleRate` serves three consumers with three contracts: the
+ * `S2sConfig.inputSampleRate` serves three consumers with three contracts: the
  * pipeline's STT stage (16 kHz is right there, and cheaper), OpenAI Realtime
  * (which honours whatever rate we declare), and this service (which honours
  * nothing and accepts only 24 kHz). One field, three contracts — so the rate
@@ -201,7 +201,7 @@ export const DEFAULT_S2S_CONFIG: S2SConfig = {
  *
  * @internal
  */
-export function pinAssemblyS2sRates(config: S2SConfig, log?: Logger): S2SConfig {
+export function pinAssemblyS2sRates(config: S2sConfig, log?: Logger): S2sConfig {
   const rate = ASSEMBLYAI_S2S_SAMPLE_RATE;
   if (config.inputSampleRate === rate && config.outputSampleRate === rate) return config;
   log?.warn("S2S sample rates pinned to the Voice Agent API's only supported rate", {

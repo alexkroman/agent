@@ -15,7 +15,7 @@
  */
 
 import { type AgentDef, agent, tool, workflow } from "@alexkroman1/aai";
-import { report, stepEnv } from "@alexkroman1/aai/step";
+import { stepEnv, stepReport } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { describeWorkflowEval } from "./describe-workflows.ts";
@@ -36,7 +36,7 @@ const digest = workflow({
   description: "Digest a link",
   input: z.object({ url: z.string() }),
   run: async (input: { url: string }, ctx) => {
-    await report(`reading ${input.url}`);
+    await stepReport(`reading ${input.url}`);
     await ctx.sleep("nap", SLEEP_MS);
     return { headline: `about ${input.url}` };
   },
@@ -179,7 +179,7 @@ describe("openEvalWorkflows", () => {
       // Deliberately never settles: the assertion is about the harness's own
       // deadline, and the message is the part with any value in it.
       run: async () => {
-        await report("thinking about it");
+        await stepReport("thinking about it");
         await new Promise(() => undefined);
       },
     });
@@ -272,7 +272,7 @@ describe("draining a run that is still in flight", () => {
     const narrating = workflow({
       input: z.object({}),
       run: async () => {
-        await report("halfway through");
+        await stepReport("halfway through");
         await gate.promise;
         return { ok: true };
       },

@@ -1,10 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
-import type { AgentServer, ServerOptions } from "./server-types.ts";
+import type { AgentServer, RuntimeServerOptions } from "./server-types.ts";
 
 /**
  * Self-hosted agent HTTP + WebSocket server.
  *
- * {@link createServer} wraps a runtime from `createRuntime` with an
+ * {@link createRuntimeServer} wraps a runtime from `createRuntime` with an
  * HTTP + WebSocket server using only `node:http` and `ws` (no framework
  * dependencies) — the same server `aai dev` runs. Use it to host an agent on
  * your own infrastructure instead of the managed platform: see
@@ -42,9 +42,9 @@ import { asSessionWebSocket } from "./ws-handler.ts";
 
 export type {
   AgentServer,
-  PassthroughServerOptions,
-  ServerOptions,
+  RuntimeServerOptions,
   SessionRuntime,
+  SharedServerOptions,
 } from "./server-types.ts";
 
 /**
@@ -66,7 +66,7 @@ const WEBHOOK_ALLOWED_METHODS = WORKFLOW_CALLBACK_ROUTES.webhook.methods.join(",
 
 // A socket this server will not serve is turned away with a REASON — see
 // `session-decline.ts`, which owns the three refusal paths.
-export { decliningRuntime } from "./session-decline.ts";
+export { rejectingRuntime } from "./session-decline.ts";
 
 /**
  * How often shutdown re-drops idle keep-alive connections — see `close()`.
@@ -108,20 +108,20 @@ const SERVER_KEEPALIVE_TIMEOUT_MS = 10_000;
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { createRuntime, createServer } from "@alexkroman1/aai-runtime";
+ * import { createRuntime, createRuntimeServer } from "@alexkroman1/aai-runtime";
  *
  * const myAgent = agent({ name: "Support", systemPrompt: "…" });
  * const runtime = createRuntime({
  *   agent: myAgent,
  *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
  * });
- * const server = createServer({ runtime, name: myAgent.name });
+ * const server = createRuntimeServer({ runtime, name: myAgent.name });
  * await server.listen(3000);
  * ```
  *
  * @public
  */
-export function createServer(options: ServerOptions): AgentServer {
+export function createRuntimeServer(options: RuntimeServerOptions): AgentServer {
   const { runtime, clientDir, logger = consoleLogger, env, hostBaseAgent } = options;
   const name = options.name ?? "agent";
   const isStatic = options.page === "static";
@@ -144,7 +144,7 @@ export function createServer(options: ServerOptions): AgentServer {
    * The durable-workflow API (`/workflows/*`).
    *
    * Mounted here rather than left to the `request` hook so every front door
-   * serves it identically — `aai dev`, a self-hosted `createServer`, and every
+   * serves it identically — `aai dev`, a self-hosted `createRuntimeServer`, and every
    * deployed guest — for the same reason `/phone` is mounted here. The client is
    * read through a GETTER because the guest harness builds its runtime lazily,
    * on the first thing that needs it: for a static app that first thing is a
@@ -169,7 +169,7 @@ export function createServer(options: ServerOptions): AgentServer {
    * third party.
    *
    * Mounted HERE, beside the workflow API and on the same lazy getter, because
-   * every front door goes through `createServer` — `aai dev`, a self-hosted
+   * every front door goes through `createRuntimeServer` — `aai dev`, a self-hosted
    * `server.mjs`, a deployed guest — and this route must answer identically on
    * all three. It used to be mounted by `createWorkflowSurface` instead, which
    * is gated on the DevKit's `workflowCode`/`stepCode` pair; those strings no
@@ -182,7 +182,7 @@ export function createServer(options: ServerOptions): AgentServer {
    * The session event stream's read surface (`/session-events/:id`).
    *
    * Mounted beside the workflow API and for the same reason: every front door —
-   * `aai dev`, a self-hosted `createServer`, a deployed guest — serves it
+   * `aai dev`, a self-hosted `createRuntimeServer`, a deployed guest — serves it
    * identically, so a feature developed locally cannot 404 once deployed. Same
    * lazy getter, for the same lazy-runtime reason.
    */
@@ -322,13 +322,13 @@ export function createServer(options: ServerOptions): AgentServer {
       // bare socket drop leaves the client reconnecting against a server that
       // will never answer, with nothing in the frame log explaining why — and
       // "this agent serves a static page" is exactly the sentence whoever wired
-      // `client()` into a `page: "static"` app needs to read.
+      // `mountClient()` into a `page: "static"` app needs to read.
       logger.warn(`WS upgrade ${url} rejected: this agent serves a static page`);
       wss.handleUpgrade(req, socket, head, (ws) => {
         declineSocket(
           ws,
           "this agent serves a static page, not voice sessions — " +
-            "mount it with page() and talk to it over the workflow API",
+            "mount it with mountPage() and talk to it over the workflow API",
           logger,
         );
       });

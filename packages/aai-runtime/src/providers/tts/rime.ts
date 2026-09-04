@@ -16,7 +16,7 @@
  */
 
 import {
-  makeTtsError,
+  createTtsError,
   RIME_API_KEY_ENV,
   resolveRimeTtsSettings,
   type TtsEvents,
@@ -100,9 +100,9 @@ export function openRime(opts: RimeTtsOptions): TtsOpener {
     name: "rime",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
       const apiKey = requireApiKey(openOpts.apiKey, RIME_API_KEY_ENV, "Rime TTS", (msg) =>
-        makeTtsError("tts_auth_failed", msg),
+        createTtsError("tts_auth_failed", msg),
       );
-      const connectError = (msg: string) => makeTtsError("tts_connect_failed", msg);
+      const connectError = (msg: string) => createTtsError("tts_connect_failed", msg);
 
       const sampleRate = assertPcm16Rate(openOpts.sampleRate, "Rime TTS", connectError);
       const { model, language: lang, voice } = resolveRimeTtsSettings(opts);

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { makeAgent, makeLogger, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
-import { createServer, type SessionRuntime } from "./server.ts";
+import { createRuntimeServer, type SessionRuntime } from "./server.ts";
 
 /**
  * `fetch` + drain the body, always. Every request in this file goes through
@@ -40,8 +40,8 @@ function makeRuntime(opts: { name?: string } = {}) {
   };
 }
 
-describe("createServer", () => {
-  let server: ReturnType<typeof createServer> | null = null;
+describe("createRuntimeServer", () => {
+  let server: ReturnType<typeof createRuntimeServer> | null = null;
 
   afterEach(async () => {
     await server?.close();
@@ -50,7 +50,7 @@ describe("createServer", () => {
 
   test("returns an object with listen and close", () => {
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, logger: silentLogger });
+    server = createRuntimeServer({ runtime, logger: silentLogger });
     expect(server).toHaveProperty("listen");
     expect(server).toHaveProperty("close");
   });
@@ -80,7 +80,7 @@ describe("createServer", () => {
   test("close finishes an in-flight request, then exits without waiting on it", async () => {
     const { runtime } = makeRuntime();
     const started = Promise.withResolvers<void>();
-    server = createServer({
+    server = createRuntimeServer({
       runtime,
       logger: silentLogger,
       // A handler that has sent headers but not the body when close() lands.
@@ -108,7 +108,7 @@ describe("createServer", () => {
 
   test("listen assigns an ephemeral port and close releases it", async () => {
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, logger: silentLogger });
+    server = createRuntimeServer({ runtime, logger: silentLogger });
     await server.listen(0);
 
     // `listen(0)` means "pick a free port", so the assignment is the only
@@ -120,7 +120,7 @@ describe("createServer", () => {
     await server.close();
     server = null;
     // Closed for real: the port is free to bind again.
-    const second = createServer({ runtime, logger: silentLogger });
+    const second = createRuntimeServer({ runtime, logger: silentLogger });
     await expect(second.listen(port)).resolves.toBeUndefined();
     await second.close();
   });
@@ -128,7 +128,7 @@ describe("createServer", () => {
   test("/ returns default HTML with escaped agent name", async () => {
     const name = '<script>alert("xss")</script>';
     const { runtime } = makeRuntime({ name });
-    server = createServer({ runtime, name, logger: silentLogger });
+    server = createRuntimeServer({ runtime, name, logger: silentLogger });
     await server.listen(0);
 
     const { body: html } = await get(`http://localhost:${server.port}/`);
@@ -139,7 +139,7 @@ describe("createServer", () => {
 
   test("/health returns JSON with agent name", async () => {
     const { runtime } = makeRuntime({ name: "my-agent" });
-    server = createServer({ runtime, name: "my-agent", logger: silentLogger });
+    server = createRuntimeServer({ runtime, name: "my-agent", logger: silentLogger });
     await server.listen(0);
 
     const { body } = await get(`http://localhost:${server.port}/health`);
@@ -154,7 +154,7 @@ describe("createServer", () => {
     // this assertion was doing, and why `makeLogger()` exists.
     const logger = makeLogger();
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, logger });
+    server = createRuntimeServer({ runtime, logger });
     await server.listen(0);
 
     expect(logger.error).not.toHaveBeenCalled();
@@ -164,7 +164,7 @@ describe("createServer", () => {
 
   test("close is safe to call without listen", async () => {
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, logger: silentLogger });
+    server = createRuntimeServer({ runtime, logger: silentLogger });
     // Stated, not merely survived: SIGINT before the listen resolves must not
     // reject, and the `afterEach` calling close again must not either.
     await expect(server.close()).resolves.toBeUndefined();
@@ -179,7 +179,7 @@ describe("createServer", () => {
 
   test("responses carry security headers", async () => {
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, logger: silentLogger });
+    server = createRuntimeServer({ runtime, logger: silentLogger });
     await server.listen(0);
 
     const { headers } = await get(`http://localhost:${server.port}/health`);
@@ -197,7 +197,7 @@ describe("createServer", () => {
   // `<track>`, which CSP governs with this directive too.
   test("the CSP lets a page play a blob: object URL", async () => {
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, logger: silentLogger });
+    server = createRuntimeServer({ runtime, logger: silentLogger });
     await server.listen(0);
 
     const { headers } = await get(`http://localhost:${server.port}/health`);
@@ -212,7 +212,7 @@ describe("createServer", () => {
 
   test("GET /client-config defaults to the agent kind", async () => {
     const { runtime } = makeRuntime({ name: "cfg-agent" });
-    server = createServer({ runtime, name: "cfg-agent", logger: silentLogger });
+    server = createRuntimeServer({ runtime, name: "cfg-agent", logger: silentLogger });
     await server.listen(0);
 
     const { status, body } = await get(`http://localhost:${server.port}/client-config`);
@@ -222,7 +222,7 @@ describe("createServer", () => {
 
   test("GET /client-config carries the declared greeting", async () => {
     const { runtime } = makeRuntime({ name: "wf-agent" });
-    server = createServer({
+    server = createRuntimeServer({
       runtime,
       name: "wf-agent",
       greeting: "Hi there!",
@@ -240,8 +240,8 @@ describe("createServer", () => {
   });
 });
 
-describe("createServer static client dir", () => {
-  let server: ReturnType<typeof createServer> | null = null;
+describe("createRuntimeServer static client dir", () => {
+  let server: ReturnType<typeof createRuntimeServer> | null = null;
   let dir: string | null = null;
 
   afterEach(async () => {
@@ -256,7 +256,7 @@ describe("createServer static client dir", () => {
     await fs.writeFile(path.join(dir, "index.html"), "<html>static index</html>");
     await fs.writeFile(path.join(dir, "app.js"), "console.log(1);");
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, clientDir: dir, logger: silentLogger });
+    server = createRuntimeServer({ runtime, clientDir: dir, logger: silentLogger });
     await server.listen(0);
     return `http://localhost:${server.port}`;
   }
@@ -326,8 +326,8 @@ describe("createServer static client dir", () => {
  * real runtime would need provider credentials to produce a single byte of
  * TTS, which is the one thing this route does not touch.
  */
-describe("createServer telephony route", () => {
-  let server: ReturnType<typeof createServer> | null = null;
+describe("createRuntimeServer telephony route", () => {
+  let server: ReturnType<typeof createRuntimeServer> | null = null;
 
   afterEach(async () => {
     await server?.close();
@@ -384,7 +384,7 @@ describe("createServer telephony route", () => {
 
   test("carries a call in both directions", async () => {
     const received: unknown[] = [];
-    server = createServer({ runtime: echoRuntime(received), logger: silentLogger });
+    server = createRuntimeServer({ runtime: echoRuntime(received), logger: silentLogger });
     await server.listen(0);
 
     const socket = await openCarrier(`ws://localhost:${server.port}/phone`);
@@ -412,7 +412,7 @@ describe("createServer telephony route", () => {
   });
 
   test("refuses an unknown carrier without upgrading", async () => {
-    server = createServer({ runtime: echoRuntime([]), logger: silentLogger });
+    server = createRuntimeServer({ runtime: echoRuntime([]), logger: silentLogger });
     await server.listen(0);
 
     const err = await refusal(`ws://localhost:${server.port}/phone?carrier=vonage`);
@@ -420,7 +420,11 @@ describe("createServer telephony route", () => {
   });
 
   test("telephony: false removes the route", async () => {
-    server = createServer({ runtime: echoRuntime([]), logger: silentLogger, telephony: false });
+    server = createRuntimeServer({
+      runtime: echoRuntime([]),
+      logger: silentLogger,
+      telephony: false,
+    });
     await server.listen(0);
 
     const err = await refusal(`ws://localhost:${server.port}/phone`);

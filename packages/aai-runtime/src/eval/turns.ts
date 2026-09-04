@@ -109,11 +109,11 @@ function elide(text: string): string {
  * same class of mistake as a claim about `said()` that does — see
  * {@link EvalTurn}.
  *
- * Hand-rolled in `travel-concierge` as `callsIn`, which is where the name comes
+ * Hand-rolled in `travel-concierge` as `callsIn`, which is where the shape comes
  * from. Pair it with `toolNames` for an order claim, or with `toolArgsIn` /
  * `toolResultsIn` for what each was asked and answered.
  */
-export function callsIn(turns: readonly EvalTurn[]): readonly EvalToolCall[] {
+export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolCall[] {
   return turns.flatMap((turn) => turn.toolCalls);
 }
 
@@ -136,8 +136,8 @@ export function callsIn(turns: readonly EvalTurn[]): readonly EvalToolCall[] {
  * singular form throws because for it an absent match can only be a mistake, and
  * the plural answers `[]` because "it never called this" is a claim a case
  * makes. The plural spelling of THIS claim is
- * `expect(toolNames(callsIn(turns))).not.toContain(name)`, which needs no turn
- * at all — so nothing is lost, and the return type is `EvalTurn` rather than
+ * `expect(toolNames(toolCallsInTurns(turns))).not.toContain(name)`, which needs
+ * no turn at all — so nothing is lost, and the return type is `EvalTurn` rather than
  * `EvalTurn | undefined`, which is what retires the optional chain.
  *
  * The throw carries what a hand-built message could not afford to: every turn's
@@ -173,7 +173,7 @@ export function turnCalling(
     turn.toolCalls.some((call) => call.name === name && (where === undefined || where(call))),
   );
   if (found !== undefined) return found;
-  const attempts = callsIn(turns).filter((call) => call.name === name);
+  const attempts = toolCallsInTurns(turns).filter((call) => call.name === name);
   const missed =
     attempts.length > 0
       ? `${attempts.length} call(s) to ${JSON.stringify(name)} and none matched the predicate`

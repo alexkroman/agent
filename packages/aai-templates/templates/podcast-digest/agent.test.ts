@@ -11,7 +11,7 @@
  *   HTTP handling, its partial-failure policy and its `FatalError` guards are
  *   all reachable — `installStubStepFetch` answers the network and
  *   `stubGateway` answers the model.
- * - The BODY, twice. `createWorkflowCtx` records what it asked for (the digest
+ * - The BODY, twice. `createWorkflowContext` records what it asked for (the digest
  *   loop, the shrinking pending set, the sleep BETWEEN digests and never after
  *   the last), and `runWorkflow` runs it on the real replay engine — which is
  *   what this file used to say a unit test could not do, on the ground that a
@@ -26,7 +26,7 @@
 
 import { type FeedItem, parseFeed } from "@alexkroman1/aai/html";
 import {
-  createWorkflowCtx,
+  createWorkflowContext,
   parseSchemaInput,
   routeStepFetch,
   schemaInputIssues,
@@ -846,7 +846,7 @@ describe("posting the digest", () => {
   });
 
   /**
-   * The 4xx/5xx split is the reason this is not a one-line `stepFetchOk`: a
+   * The 4xx/5xx split is the reason this is not a one-line `stepFetchOrFail`: a
    * revoked webhook answers 4xx identically on every retry, so retrying it
    * burns the DevKit's attempts and delays the real error by minutes.
    */
@@ -885,7 +885,7 @@ describe("the body — the run that IS the schedule", () => {
    * per-step spec can see, and all of which is the template's actual subject.
    */
   function driveTwoDigests(pollResults: unknown) {
-    const ctx = createWorkflowCtx({
+    const ctx = createWorkflowContext({
       runSteps: false,
       results: {
         discoverEpisodes: [EPISODE],
@@ -982,7 +982,7 @@ describe("the body — the run that IS the schedule", () => {
 /**
  * The schedule, on the real replay engine.
  *
- * The block above drives the same body through `createWorkflowCtx`, which
+ * The block above drives the same body through `createWorkflowContext`, which
  * RECORDS a sleep rather than taking one and replays nothing — right for the
  * loop's logic, and silent about the property this template is: a run that
  * sleeps for a day between digests and comes back. `runWorkflow`

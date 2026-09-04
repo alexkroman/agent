@@ -309,76 +309,6 @@ rather than above it, so `hint` is the place for guidance.
 
 ***
 
-### client()
-
-```ts
-function client(config: ClientConfig): ClientHandle;
-```
-
-Define and mount a client UI for a voice agent.
-
-**Config only:** leave `component` out and the default shell renders
-(StartScreen + ChatView, optional sidebar).
-
-**A custom component:** pass `component` and it is rendered inside the same
-providers instead of the default shell — beside a `sidebar` if one is given,
-in the same [SidebarLayout](#sidebarlayout). A provided `name` then also sets
-`document.title`, there being no shell header to show it in.
-
-Mounts into `target` — a CSS selector or DOM element, defaulting to
-`"#app"` — and throws `Element not found: <target>` when the selector
-matches nothing.
-
-#### Parameters
-
-##### config
-
-[`ClientConfig`](#clientconfig)
-
-#### Returns
-
-[`ClientHandle`](#clienthandle)
-
-A [ClientHandle](#clienthandle) for cleanup.
-
-#### Examples
-
-**The default shell**
-
-```tsx
-import { client } from "@alexkroman1/aai-ui";
-
-function OrderPanel() {
-  return <div>Cart</div>;
-}
-
-client({
-  name: "Pizza Ordering",
-  theme: { bg: "#1a1a1a", primary: "#e55" },
-  sidebar: OrderPanel,
-  tools: { add_pizza: { icon: "🍕", label: "Adding pizza" } },
-});
-```
-
-**A custom component**
-
-```tsx
-import { client, useSession } from "@alexkroman1/aai-ui";
-
-function MyCustomApp() {
-  const session = useSession();
-  return <div>{session.state}</div>;
-}
-
-client({ component: MyCustomApp });
-```
-
-#### Throws
-
-If the target element is not found in the DOM.
-
-***
-
 ### ConsoleShell()
 
 ```ts
@@ -408,7 +338,7 @@ Reach for it when the conversation is yours and the frame is not. Reach for
 `<ChatView>` when both are ours. Reach for `<SessionErrorBanner>` alone when
 neither is.
 
-Must be rendered inside the providers `client()` installs.
+Must be rendered inside the providers `mountClient()` installs.
 
 #### Parameters
 
@@ -458,10 +388,10 @@ function Console() {
 
 ***
 
-### createSessionCore()
+### createBrowserSession()
 
 ```ts
-function createSessionCore(options: VoiceSessionOptions): SessionCore;
+function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 ```
 
 Create a framework-agnostic voice session core that connects to an AAI
@@ -470,7 +400,7 @@ server via WebSocket.
 Uses a subscribe/getSnapshot pattern for state management, compatible with
 React's `useSyncExternalStore` and other external store integrations.
 
-Most clients never call this: `client()` creates a core and installs it in
+Most clients never call this: `mountClient()` creates a core and installs it in
 React context for the hooks. Reach for it directly when building a
 non-React UI (or wiring the session into another framework's store).
 
@@ -484,18 +414,18 @@ Session configuration including the platform server URL.
 
 #### Returns
 
-[`SessionCore`](#sessioncore)
+[`BrowserSession`](#browsersession)
 
-A [SessionCore](#sessioncore) handle for controlling the session.
+A [BrowserSession](#browsersession) handle for controlling the session.
 
 #### Example
 
 ```ts
-import { createSessionCore, type SessionSnapshot } from "@alexkroman1/aai-ui";
+import { createBrowserSession, type SessionSnapshot } from "@alexkroman1/aai-ui";
 
 declare function render(snapshot: SessionSnapshot): void;
 
-const session = createSessionCore({ platformUrl: "https://host/my-agent/" });
+const session = createBrowserSession({ platformUrl: "https://host/my-agent/" });
 session.subscribe(() => render(session.getSnapshot()));
 session.start();
 ```
@@ -630,8 +560,8 @@ Fetch the agent's declared `name`, `greeting` and front door; any failure
 yields the agent default (`{}`).
 
 **This is what a workflow app calls instead of receiving the config.**
-`client()` fetches `GET client-config` for itself before it renders the
-default chat shell, so a voice client never has to. `page()` mounts no
+`mountClient()` fetches `GET client-config` for itself before it renders the
+default chat shell, so a voice client never has to. `mountPage()` mounts no
 session and makes no such request — deliberately, since a page has no shell
 to put a name in — so a page that wants the agent's own `name` or `greeting`
 asks for them here.
@@ -678,7 +608,7 @@ The agent's config, or `{}` when the lookup produced no answer.
 #### Example
 
 ```tsx
-import { fetchClientConfig, page } from "@alexkroman1/aai-ui";
+import { fetchClientConfig, mountPage } from "@alexkroman1/aai-ui";
 
 const { name, greeting } = await fetchClientConfig(
   location.origin + location.pathname,
@@ -693,7 +623,7 @@ function App() {
   );
 }
 
-page({ name: name ?? "Workflows", component: App });
+mountPage({ name: name ?? "Workflows", component: App });
 ```
 
 ***
@@ -777,7 +707,7 @@ function ColorForm() {
 
 ```ts
 function FileField(props: FieldShell & {
-  read?: FileRead;
+  read?: FileReadMode;
   upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): Element;
 ```
@@ -790,14 +720,14 @@ the run record and replayed from it on every resume, so a file's BYTES cannot
 travel in it. With `upload` the field contributes the `File` itself,
 `useWorkflowSubmit` stores it through `POST /workflows/uploads` before
 starting the run, and the input carries the upload id — which a step reads
-windows of with `readUpload`. Declaring the property in the workflow's
+windows of with `stepReadUpload`. Declaring the property in the workflow's
 `uploads` list makes `<WorkflowFields>` render exactly this, so a declared
 form needs no file markup at all.
 
 **Without it the field describes the file and does not read it.** `read`
 exists for the cases where the bytes really are small and really are the
 input — a CSV of ids, a config — and the size is the author's to check. See
-[FileRead](#fileread) for the four values; `upload` is shorthand for
+[FileReadMode](#filereadmode) for the four values; `upload` is shorthand for
 `read="upload"`.
 
 Otherwise accepts every `<input>` attribute except `name`, `className` and
@@ -809,7 +739,7 @@ Otherwise accepts every `<input>` attribute except `name`, `className` and
 ##### props
 
 [`FieldShell`](#fieldshell) & \{
-  `read?`: [`FileRead`](#fileread);
+  `read?`: [`FileReadMode`](#filereadmode);
   `upload?`: `boolean`;
 \} & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"name"` \| `"className"` \| `"type"`\>
 
@@ -897,6 +827,129 @@ first poll has not landed) because that is what every call site holds.
 
 ***
 
+### mountClient()
+
+```ts
+function mountClient(config: ClientConfig): ClientHandle;
+```
+
+Define and mount a client UI for a voice agent.
+
+**Config only:** leave `component` out and the default shell renders
+(StartScreen + ChatView, optional sidebar).
+
+**A custom component:** pass `component` and it is rendered inside the same
+providers instead of the default shell — beside a `sidebar` if one is given,
+in the same [SidebarLayout](#sidebarlayout). A provided `name` then also sets
+`document.title`, there being no shell header to show it in.
+
+Mounts into `target` — a CSS selector or DOM element, defaulting to
+`"#app"` — and throws `Element not found: <target>` when the selector
+matches nothing.
+
+#### Parameters
+
+##### config
+
+[`ClientConfig`](#clientconfig)
+
+#### Returns
+
+[`ClientHandle`](#clienthandle)
+
+A [ClientHandle](#clienthandle) for cleanup.
+
+#### Examples
+
+**The default shell**
+
+```tsx
+import { mountClient } from "@alexkroman1/aai-ui";
+
+function OrderPanel() {
+  return <div>Cart</div>;
+}
+
+mountClient({
+  name: "Pizza Ordering",
+  theme: { bg: "#1a1a1a", primary: "#e55" },
+  sidebar: OrderPanel,
+  tools: { add_pizza: { icon: "🍕", label: "Adding pizza" } },
+});
+```
+
+**A custom component**
+
+```tsx
+import { mountClient, useSession } from "@alexkroman1/aai-ui";
+
+function MyCustomApp() {
+  const session = useSession();
+  return <div>{session.state}</div>;
+}
+
+mountClient({ component: MyCustomApp });
+```
+
+#### Throws
+
+If the target element is not found in the DOM.
+
+***
+
+### mountPage()
+
+```ts
+function mountPage(config: PageConfig): PageHandle;
+```
+
+Mount a page for an agent whose work happens in workflows.
+
+There is deliberately no session, no microphone, and no socket: the component
+talks to the agent over the workflow HTTP API
+(`createWorkflowApi`/`useWorkflowRun`), which is durable and outlives the tab.
+
+#### Parameters
+
+##### config
+
+[`PageConfig`](#pageconfig)
+
+#### Returns
+
+[`PageHandle`](#pagehandle)
+
+#### Example
+
+```tsx
+import { createWorkflowApi, mountPage, useWorkflowRun } from "@alexkroman1/aai-ui";
+import { useState } from "react";
+
+// Hoisted: a client built in render is a new object every render.
+const api = createWorkflowApi();
+
+function App() {
+  const [runId, setRunId] = useState<string>();
+  const { run } = useWorkflowRun(runId, { api });
+  return (
+    <button
+      type="button"
+      onClick={() => void api.start("digest", { topic: "ai" }).then(setRunId)}
+    >
+      {run ? run.status : "Start"}
+    </button>
+  );
+}
+
+mountPage({ name: "Digest", component: App });
+```
+
+#### Throws
+
+If the target element is not found in the DOM.
+
+***
+
 ### NumberField()
 
 ```ts
@@ -921,59 +974,6 @@ passed straight through.
 #### Returns
 
 `Element`
-
-***
-
-### page()
-
-```ts
-function page(config: PageConfig): PageHandle;
-```
-
-Mount a page for an agent whose work happens in workflows.
-
-There is deliberately no session, no microphone, and no socket: the component
-talks to the agent over the workflow HTTP API
-(`createWorkflowApi`/`useWorkflowRun`), which is durable and outlives the tab.
-
-#### Parameters
-
-##### config
-
-[`PageConfig`](#pageconfig)
-
-#### Returns
-
-[`PageHandle`](#pagehandle)
-
-#### Example
-
-```tsx
-import { createWorkflowApi, page, useWorkflowRun } from "@alexkroman1/aai-ui";
-import { useState } from "react";
-
-// Hoisted: a client built in render is a new object every render.
-const api = createWorkflowApi();
-
-function App() {
-  const [runId, setRunId] = useState<string>();
-  const { run } = useWorkflowRun(runId, { api });
-  return (
-    <button
-      type="button"
-      onClick={() => void api.start("digest", { topic: "ai" }).then(setRunId)}
-    >
-      {run ? run.status : "Start"}
-    </button>
-  );
-}
-
-page({ name: "Digest", component: App });
-```
-
-#### Throws
-
-If the target element is not found in the DOM.
 
 ***
 
@@ -1669,7 +1669,7 @@ function useConversation(): UseConversationResult;
 Subscribe to the conversation: the interleaved exchange, the streaming
 utterance, the live transcript and the thinking rule — with no markup.
 
-Must be used inside the provider `client()` installs.
+Must be used inside the provider `mountClient()` installs.
 
 #### Returns
 
@@ -1859,9 +1859,9 @@ Return the live [Session](#session-1): the current snapshot fields plus the
 control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
 `cancel`, `end`).
 
-Throws if used outside the provider `client()` installs (the error names
+Throws if used outside the provider `mountClient()` installs (the error names
 `<SessionProvider>` — you only mount that yourself when bypassing
-`client()`). Re-renders the component on *every* snapshot change; for a
+`mountClient()`). Re-renders the component on *every* snapshot change; for a
 component that reads one field, prefer [useSessionSelector](#usesessionselector) for a
 targeted subscription.
 
@@ -1919,9 +1919,9 @@ subscription tax.
 
 Identity-stable per core, so it is safe in a dependency array and in a
 `memo()` child's props: the methods are closures created once by
-`createSessionCore`, and the object wrapping them is memoized on the core.
+`createBrowserSession`, and the object wrapping them is memoized on the core.
 
-Throws outside the provider `client()` installs, like every session hook.
+Throws outside the provider `mountClient()` installs, like every session hook.
 
 #### Returns
 
@@ -2092,7 +2092,7 @@ default) from the nearest theme context. Returns the default theme when no
 provider is present, so components can call it unconditionally.
 
 This is how a custom component stays on the agent's palette: a
-`client({ theme })` override reaches it here, where a hardcoded colour or a
+`mountClient({ theme })` override reaches it here, where a hardcoded colour or a
 Tailwind class cannot see it.
 
 #### Returns
@@ -2856,7 +2856,7 @@ What a run has said so far, rendered.
 
 The complement of a status line, and the reason both exist: a run is
 `running` for its whole life, so a one-round job and a ten-round one look
-identical while they happen. These lines come from the run itself (`report()`
+identical while they happen. These lines come from the run itself (`stepReport()`
 in a `"use step"` body), which is the only channel a workflow has before it
 produces an output.
 
@@ -3132,6 +3132,230 @@ The seven members, in the order a call passes through them:
 
 ***
 
+### BrowserSession
+
+```ts
+type BrowserSession = {
+  [dispose]: void;
+  cancel: void;
+  connect: void;
+  disconnect: void;
+  end: void;
+  getSnapshot: SessionSnapshot;
+  reset: void;
+  resetState: void;
+  restart: void;
+  start: void;
+  subscribe: () => void;
+  toggle: void;
+};
+```
+
+A framework-agnostic voice session that manages WebSocket communication,
+audio capture/playback, and agent state transitions.
+
+Uses a subscribe/getSnapshot pattern (compatible with React's
+`useSyncExternalStore`). Implements `Disposable` for resource cleanup.
+
+#### Methods
+
+##### \[dispose\]()
+
+```ts
+dispose: void;
+```
+
+Alias for `disconnect` for use with `using`.
+
+###### Returns
+
+`void`
+
+##### cancel()
+
+```ts
+cancel(): void;
+```
+
+Cancel the current agent turn and discard in-flight TTS audio.
+
+###### Returns
+
+`void`
+
+##### connect()
+
+```ts
+connect(options?: {
+  signal?: AbortSignal;
+}): void;
+```
+
+Open a WebSocket connection to the server and begin audio capture,
+without touching the `started`/`running` flags — the low-level half of
+`start()`. Most UIs call `start()` (first activation) or `toggle()`
+(mute-style connect/disconnect) instead.
+
+###### Parameters
+
+###### options?
+
+Optional. `signal` is an AbortSignal that, when aborted, disconnects the session.
+
+###### signal?
+
+`AbortSignal`
+
+###### Returns
+
+`void`
+
+##### disconnect()
+
+```ts
+disconnect(): void;
+```
+
+Close the WebSocket and release all audio resources.
+
+###### Returns
+
+`void`
+
+##### end()
+
+```ts
+end(): void;
+```
+
+End the call: close the connection, clear the conversation, and return
+to the not-started state (`started` flips back to false, so a
+start-screen UI shows its Start control again). Unlike `reset()` —
+which keeps the call live and only clears the conversation — the next
+`start()` mints a brand-new session: a new session id, fresh
+per-session tool state, greeting included.
+
+###### Returns
+
+`void`
+
+##### getSnapshot()
+
+```ts
+getSnapshot(): SessionSnapshot;
+```
+
+Return the current immutable state snapshot.
+
+###### Returns
+
+[`SessionSnapshot`](#sessionsnapshot)
+
+##### reset()
+
+```ts
+reset(): void;
+```
+
+Reset the session: clear state as `resetState()` does, then drop and
+reopen the connection for a fresh conversation.
+
+###### Returns
+
+`void`
+
+##### resetState()
+
+```ts
+resetState(): void;
+```
+
+Clear messages, transcripts, and error state while keeping the current
+connection (unlike `reset()`, which also reconnects).
+
+###### Returns
+
+`void`
+
+##### restart()
+
+```ts
+restart(): void;
+```
+
+End the current call and immediately begin a new one — `end()` then
+`start()`, which is what "New Conversation" means for an agent that keeps
+SESSION-SCOPED STATE.
+
+`reset()` is the one whose name suggests this and it is not the same
+thing: it clears the transcript and reconnects, but the reconnect carries
+the same `?sessionId=`, so every `sessionSlot` on the server survives —
+the game world, the incident board, the cart. A caller who asked to start
+over gets a blank transcript in front of the old state. This drops the
+session id, so the next connect mints a fresh one and the greeting plays
+again.
+
+Three templates had each written `session.end(); session.start();` with
+the same paragraph explaining why `reset()` was wrong; the six on the
+stock shell could not, because [Controls](#controls) called `reset()` for them.
+
+###### Returns
+
+`void`
+
+###### Example
+
+```ts
+declare const session: import("@alexkroman1/aai-ui").Session;
+session.restart();
+```
+
+##### start()
+
+```ts
+start(): void;
+```
+
+Start the session for the first time: sets `started` and `running`, then
+connects. Use this for the initial "start conversation" action;
+afterwards `toggle()` is the pause/resume control.
+
+###### Returns
+
+`void`
+
+##### subscribe()
+
+```ts
+subscribe(callback: () => void): () => void;
+```
+
+Subscribe to state changes. Returns an unsubscribe function.
+
+###### Parameters
+
+###### callback
+
+() => `void`
+
+###### Returns
+
+() => `void`
+
+##### toggle()
+
+```ts
+toggle(): void;
+```
+
+Toggle between connected and disconnected states (after `start()`).
+
+###### Returns
+
+`void`
+
+***
+
 ### BulletListProps
 
 ```ts
@@ -3287,13 +3511,13 @@ type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" 
 };
 ```
 
-Configuration passed to [client](#client).
+Configuration passed to [mountClient](#mountclient).
 
 The session-forwarded fields are picked from [VoiceSessionOptions](#voicesessionoptions)
 (one source of truth for types and docs) rather than re-declared — a
 re-declared copy is exactly how doc comments drift. It is NOT the session's
 own options type: that is [VoiceSessionOptions](#voicesessionoptions), which
-`createSessionCore` takes and which three of these fields come from.
+`createBrowserSession` takes and which three of these fields come from.
 
 #### Type Declaration
 
@@ -3410,7 +3634,7 @@ optional tools?: ToolDisplayConfig;
 
 Tool display config: icon and label overrides keyed by tool name.
 
-Honoured with a custom `component` too: [client](#client) installs it into
+Honoured with a custom `component` too: [mountClient](#mountclient) installs it into
 `ToolConfigContext`, and the consumer is `ToolCallBlock` — which a custom
 component renders as soon as it uses `MessageList` or `ChatView`, the usual
 way to build one.
@@ -3423,12 +3647,12 @@ sidebar); present, the caller's own component inside the same providers —
 and that decision is made at runtime, where every field can be honoured. It
 used to be a union whose two arms banned each other's fields with `?: never`,
 and the failure that shape produces is recorded twice in this file's history:
-`client({ name, component })` and `client({ component, tools })` were both
+`mountClient({ name, component })` and `mountClient({ component, tools })` were both
 the natural thing to write, both were refused with *"Type 'string' is not
 assignable to type 'undefined'"*, and both cost a build round each time
 before the ban was lifted. What was left banned was `sidebar` beside a
 `component`, which invited the identical failure for a combination
-[client](#client) can simply render.
+[mountClient](#mountclient) can simply render.
 
 ***
 
@@ -3446,13 +3670,13 @@ Parsed body of `GET /client-config`.
 
 ```ts
 type ClientHandle = {
-  session: SessionCore;
+  session: BrowserSession;
   [dispose]: void;
   dispose: void;
 };
 ```
 
-Handle returned by [client](#client) for cleanup.
+Handle returned by [mountClient](#mountclient) for cleanup.
 
 Implements `Disposable` so it can be used with `using`.
 
@@ -3487,7 +3711,7 @@ Unmount the UI and disconnect the session.
 ##### session
 
 ```ts
-session: SessionCore;
+session: BrowserSession;
 ```
 
 The underlying session core.
@@ -3793,10 +4017,10 @@ Key this field contributes to [FormValues](#formvalues).
 
 ***
 
-### FileRead
+### FileReadMode
 
 ```ts
-type FileRead = "none" | "text" | "dataUrl" | "upload";
+type FileReadMode = "none" | "text" | "dataUrl" | "upload";
 ```
 
 How much of a chosen file a [FileField](#filefield) reads.
@@ -4012,7 +4236,7 @@ type PageConfig = {
 };
 ```
 
-Configuration for [page](#page).
+Configuration for [mountPage](#mountpage).
 
 #### Properties
 
@@ -4032,7 +4256,7 @@ optional name?: string;
 ```
 
 Page title. Set only when given, so a title the HTML shell declared is never
-clobbered — the same rule `client()`'s custom-component tier follows.
+clobbered — the same rule `mountClient()`'s custom-component tier follows.
 
 ##### target?
 
@@ -4061,7 +4285,7 @@ type PageHandle = {
 };
 ```
 
-Handle returned by [page](#page). `Disposable`, so `using` works.
+Handle returned by [mountPage](#mountpage). `Disposable`, so `using` works.
 
 #### Methods
 
@@ -4111,7 +4335,7 @@ client→server inputs are audio and the control methods above.
 ### SessionActions
 
 ```ts
-type SessionActions = Pick<SessionCore, 
+type SessionActions = Pick<BrowserSession, 
   | "start"
   | "cancel"
   | "resetState"
@@ -4129,231 +4353,7 @@ Declared once and merged into [Session](#session-1) rather than written out at b
 places: the two lists have to be the same list, and a member added to one and
 not the other is a hook that cannot do what `useSession()` can.
 
-Method signatures come from [SessionCore](#sessioncore) — one source of truth.
-
-***
-
-### SessionCore
-
-```ts
-type SessionCore = {
-  [dispose]: void;
-  cancel: void;
-  connect: void;
-  disconnect: void;
-  end: void;
-  getSnapshot: SessionSnapshot;
-  reset: void;
-  resetState: void;
-  restart: void;
-  start: void;
-  subscribe: () => void;
-  toggle: void;
-};
-```
-
-A framework-agnostic voice session that manages WebSocket communication,
-audio capture/playback, and agent state transitions.
-
-Uses a subscribe/getSnapshot pattern (compatible with React's
-`useSyncExternalStore`). Implements `Disposable` for resource cleanup.
-
-#### Methods
-
-##### \[dispose\]()
-
-```ts
-dispose: void;
-```
-
-Alias for `disconnect` for use with `using`.
-
-###### Returns
-
-`void`
-
-##### cancel()
-
-```ts
-cancel(): void;
-```
-
-Cancel the current agent turn and discard in-flight TTS audio.
-
-###### Returns
-
-`void`
-
-##### connect()
-
-```ts
-connect(options?: {
-  signal?: AbortSignal;
-}): void;
-```
-
-Open a WebSocket connection to the server and begin audio capture,
-without touching the `started`/`running` flags — the low-level half of
-`start()`. Most UIs call `start()` (first activation) or `toggle()`
-(mute-style connect/disconnect) instead.
-
-###### Parameters
-
-###### options?
-
-Optional. `signal` is an AbortSignal that, when aborted, disconnects the session.
-
-###### signal?
-
-`AbortSignal`
-
-###### Returns
-
-`void`
-
-##### disconnect()
-
-```ts
-disconnect(): void;
-```
-
-Close the WebSocket and release all audio resources.
-
-###### Returns
-
-`void`
-
-##### end()
-
-```ts
-end(): void;
-```
-
-End the call: close the connection, clear the conversation, and return
-to the not-started state (`started` flips back to false, so a
-start-screen UI shows its Start control again). Unlike `reset()` —
-which keeps the call live and only clears the conversation — the next
-`start()` mints a brand-new session: a new session id, fresh
-per-session tool state, greeting included.
-
-###### Returns
-
-`void`
-
-##### getSnapshot()
-
-```ts
-getSnapshot(): SessionSnapshot;
-```
-
-Return the current immutable state snapshot.
-
-###### Returns
-
-[`SessionSnapshot`](#sessionsnapshot)
-
-##### reset()
-
-```ts
-reset(): void;
-```
-
-Reset the session: clear state as `resetState()` does, then drop and
-reopen the connection for a fresh conversation.
-
-###### Returns
-
-`void`
-
-##### resetState()
-
-```ts
-resetState(): void;
-```
-
-Clear messages, transcripts, and error state while keeping the current
-connection (unlike `reset()`, which also reconnects).
-
-###### Returns
-
-`void`
-
-##### restart()
-
-```ts
-restart(): void;
-```
-
-End the current call and immediately begin a new one — `end()` then
-`start()`, which is what "New Conversation" means for an agent that keeps
-SESSION-SCOPED STATE.
-
-`reset()` is the one whose name suggests this and it is not the same
-thing: it clears the transcript and reconnects, but the reconnect carries
-the same `?sessionId=`, so every `sessionSlot` on the server survives —
-the game world, the incident board, the cart. A caller who asked to start
-over gets a blank transcript in front of the old state. This drops the
-session id, so the next connect mints a fresh one and the greeting plays
-again.
-
-Three templates had each written `session.end(); session.start();` with
-the same paragraph explaining why `reset()` was wrong; the six on the
-stock shell could not, because [Controls](#controls) called `reset()` for them.
-
-###### Returns
-
-`void`
-
-###### Example
-
-```ts
-declare const session: import("@alexkroman1/aai-ui").Session;
-session.restart();
-```
-
-##### start()
-
-```ts
-start(): void;
-```
-
-Start the session for the first time: sets `started` and `running`, then
-connects. Use this for the initial "start conversation" action;
-afterwards `toggle()` is the pause/resume control.
-
-###### Returns
-
-`void`
-
-##### subscribe()
-
-```ts
-subscribe(callback: () => void): () => void;
-```
-
-Subscribe to state changes. Returns an unsubscribe function.
-
-###### Parameters
-
-###### callback
-
-() => `void`
-
-###### Returns
-
-() => `void`
-
-##### toggle()
-
-```ts
-toggle(): void;
-```
-
-Toggle between connected and disconnected states (after `start()`).
-
-###### Returns
-
-`void`
+Method signatures come from [BrowserSession](#browsersession) — one source of truth.
 
 ***
 
@@ -5323,7 +5323,7 @@ type UseWorkflowSubmitOptions = {
   api?: WorkflowApi;
   intervalMs?: number;
   key?: string;
-  parallel?: UploadParallel;
+  parallel?: UploadParallelOption;
   recover?: boolean;
   wait?: number;
 };
@@ -5370,7 +5370,7 @@ typed — `use-run-key.ts` argues every alternative.
 ##### parallel?
 
 ```ts
-optional parallel?: UploadParallel;
+optional parallel?: UploadParallelOption;
 ```
 
 Send each chosen file as concurrent parts instead of in one request.
@@ -5430,8 +5430,8 @@ type VoiceSessionOptions = {
 ```
 
 Options for creating a voice session — the shared field set accepted by
-both `client()` and `createSessionCore`. The one difference: `client()`
-defaults `platformUrl` from `location.href`, while `createSessionCore`
+both `mountClient()` and `createBrowserSession`. The one difference: `mountClient()`
+defaults `platformUrl` from `location.href`, while `createBrowserSession`
 requires it.
 
 #### Properties
@@ -5595,7 +5595,7 @@ download(id: string, options?: {
 ```
 
 Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
-a file (`writeUpload` stores it, the output carries the id). A `Blob`
+a file (`stepWriteUpload` stores it, the output carries the id). A `Blob`
 rather than a URL because the byte route takes the same bearer every route
 here does and neither `<audio src>` nor `<a href>` can send one;
 `downloadUpload` carries the rest.
@@ -5973,7 +5973,7 @@ Store a file and resolve the handle a run input carries.
 The other half of `WorkflowDef.uploads`: a workflow's input is journaled and
 replayed on every resume, so bytes may not travel in it — they go here once,
 and the run carries [UploadRef.id](../aai/workflow-api.md#id), which a step reads windows of with
-`readUpload`.
+`stepReadUpload`.
 
 A `File` from an `<input type="file">` needs no second argument: its own
 `name` and `type` are what get stored. Anything else — a `Blob`, a
@@ -6216,7 +6216,7 @@ export const digest = workflow({
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import type { digest } from "../agent.ts";
 
-export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
   // `limit` is `number`, not `number | undefined` — the default already ran.
   return await research(input.topic, input.limit);
 }

@@ -18,7 +18,7 @@ import { omitUndefined, plural } from "@alexkroman1/aai/utils";
 import {
   type AgentServer,
   createRuntime,
-  createServer,
+  createRuntimeServer,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
   type Logger,
@@ -251,7 +251,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   // agent's runs read (`aai-runtime/workflow-data-dir.ts`).
   //
   // Set HERE, once, before anything builds a server: `installWorkflowSupport`
-  // reads it out of `process.env` on every `createServer`, and unset it falls
+  // reads it out of `process.env` on every `createRuntimeServer`, and unset it falls
   // back to a per-PROCESS `tmpdir()/aai-workflow-data-<pid>`. The directory
   // beside the project is what makes a restart a SAVE rather than a new
   // deployment — the same upload's bytes come back byte-identical, which that
@@ -356,7 +356,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       publicUrl: process.env.PUBLIC_URL?.trim() || `http://localhost:${backendPort}`,
     });
 
-    return createServer({
+    return createRuntimeServer({
       runtime,
       name: agentDef.name,
       // Makes host mode *available* in the dev server — it stays off unless
@@ -376,8 +376,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // A workflow app's declaration, honoured by the dev server exactly as the
       // deployed guest honours it: `/websocket` is declined with a reason and
       // telephony defaults off. Parity matters more here than usual, because a
-      // page mounted with `client()` by mistake fails identically in both places
-      // instead of only after a deploy.
+      // page mounted with `mountClient()` by mistake fails identically in both
+      // places instead of only after a deploy.
       ...omitUndefined({ page: agentDef.page }),
       // The PLATFORM's delivery door, and `aai dev` deliberately supplies no
       // `allowRemote`, so it answers 401. That is correct rather than an

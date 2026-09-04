@@ -32,7 +32,7 @@
  * property would pass just as well against a walk that skipped every claim.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { harness } from "./_workflow-engine-harness.ts";
 import type { JournalWrite } from "./_workflow-journal-log.ts";
@@ -50,7 +50,7 @@ const ROUNDS = 6;
  * subject. The loop counter is body state derived from journaled step results,
  * so a replay walks the identical sequence (the ordinary determinism rule).
  */
-const pollingBody = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+const pollingBody = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
   for (let i = 0; ; i++) {
     const done = await ctx.step("probe", () => i >= ROUNDS - 1);
     if (done) return i;
@@ -110,7 +110,7 @@ describe("what the snapshot may NOT answer", () => {
     // leave a wait no `wakeUp` and no reconcile can see — the run would report
     // itself waiting on nothing.
     const world = harness({
-      digest: async (_input, ctx: WorkflowCtx) => {
+      digest: async (_input, ctx: WorkflowContext) => {
         await ctx.sleep("nap", 60_000);
         return "through";
       },
@@ -132,7 +132,7 @@ describe("what the snapshot may NOT answer", () => {
     // asked about again — the round trip the snapshot exists to remove is only
     // the one whose answer cannot change.
     const world = harness({
-      digest: async (_input, ctx: WorkflowCtx) => {
+      digest: async (_input, ctx: WorkflowContext) => {
         await ctx.sleep("nap", 60_000);
         return "through";
       },
@@ -172,7 +172,7 @@ describe("what the snapshot may NOT answer", () => {
       input: {},
       journal,
       sleeps: Promise.resolve(stale),
-      run: async (_input, ctx: WorkflowCtx) => {
+      run: async (_input, ctx: WorkflowContext) => {
         await ctx.sleep("nap", 60_000);
         return "through";
       },

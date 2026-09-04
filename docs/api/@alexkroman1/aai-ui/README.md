@@ -20,9 +20,9 @@ session socket and the workflow HTTP API, so a component talks to a live
 agent with no glue file in between — a client is one `client.tsx` calling one
 mount.
 
-**Two front doors, two mounts.** A voice agent's page calls `client()` and
+**Two front doors, two mounts.** A voice agent's page calls `mountClient()` and
 talks to a live session. A workflow app's page (`workflowApp()`, or
-`agent({ page: "static" })`) calls `page()` and talks to the workflow HTTP
+`agent({ page: "static" })`) calls `mountPage()` and talks to the workflow HTTP
 API — no session, no socket, no microphone. Both are still `client.tsx`,
 still React, still the same theme tokens.
 
@@ -101,13 +101,13 @@ the arguments.
 
 ### Client `client.tsx`
 
-`client()` mounts the default chat shell — start screen, transcript,
+`mountClient()` mounts the default chat shell — start screen, transcript,
 controls — with your components in it. `sidebar` takes the COMPONENT, not an
 element:
 
 ```tsx no-check
 import "@alexkroman1/aai-ui/styles.css";
-import { client, useAgentState } from "@alexkroman1/aai-ui";
+import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import QuoteCard from "./quote-card.tsx";
 
 function Watchlist() {
@@ -122,7 +122,7 @@ function Watchlist() {
   );
 }
 
-client({
+mountClient({
   name: "Market Desk",
   sidebar: Watchlist,
   // Icon and label per tool, for the transcript's tool rows.
@@ -142,7 +142,7 @@ inside the same providers, so every hook here works in it unchanged.
 
 ## A workflow app
 
-`page()` mounts a form over the agent's workflows and installs no session.
+`mountPage()` mounts a form over the agent's workflows and installs no session.
 `<WorkflowFields>` renders one control per scalar property of the workflow's
 own input schema, so adding a field to the schema adds it to the page:
 
@@ -150,7 +150,7 @@ own input schema, so adding a field to the schema adds it to the page:
 import "@alexkroman1/aai-ui/styles.css";
 import {
   Form,
-  page,
+  mountPage,
   SubmitButton,
   UploadProgressBar,
   useWorkflowSubmit,
@@ -170,14 +170,14 @@ function App() {
       {/* The upload is its own wait: the run does not exist until the bytes
           are in, so nothing else on the page can describe it. */}
       <UploadProgressBar upload={upload} />
-      {/* What the run has SAID, from `report()` in its steps. */}
+      {/* What the run has SAID, from `stepReport()` in its steps. */}
       <WorkflowProgress runId={run?.runId} />
       {run?.status === "completed" && <pre>{JSON.stringify(run.output)}</pre>}
     </main>
   );
 }
 
-page({ name: "Digest", component: App });
+mountPage({ name: "Digest", component: App });
 ```
 
 Naming the workflow's def — `useWorkflowSubmit<typeof digest>("digest")`, off
@@ -191,10 +191,10 @@ bundle.
 The [API reference](https://alexkroman.github.io/agent/) groups by TypeScript
 kind. This is the same surface grouped by what it is for.
 
-**Mounts** — `client()`, `page()`, the config each takes and the handle each
-returns (`ClientConfig`, `ClientHandle`, `PageConfig`, `PageHandle`).
-`fetchClientConfig()` reads the agent's declared `name`/`greeting` on a page,
-which `client()` does for itself.
+**Mounts** — `mountClient()`, `mountPage()`, the config each takes and the
+handle each returns (`ClientConfig`, `ClientHandle`, `PageConfig`,
+`PageHandle`). `fetchClientConfig()` reads the agent's declared
+`name`/`greeting` on a page, which `mountClient()` does for itself.
 
 **The live call** — `useSession()` for the whole snapshot plus the controls
 (`start`, `toggle`, `cancel`, `reset`, `resetState`, `restart`, `disconnect`,
@@ -202,7 +202,7 @@ which `client()` does for itself.
 `useSessionError()` and `useSessionActions()` as the narrow reads a custom
 chrome repeats; `useUserTranscript()` for the caller's in-progress turn, which
 keeps `null` (silent) and `""` (speech, no words yet) apart; `useConversation()`
-for the interleaved transcript with nothing rendered. `createSessionCore()` is
+for the interleaved transcript with nothing rendered. `createBrowserSession()` is
 the same session as a plain store with an immutable snapshot per change, for a
 non-React client. `SessionSnapshot`, `AgentState`, `ChatMessage`,
 `ToolCallInfo`, `SessionError` and `SessionErrorCode` come with it.
@@ -245,8 +245,8 @@ of them something a `client.tsx` reaches for:
 
 | Subpath | Reach for it when |
 | --- | --- |
-| `/client-dir` | serving the prebuilt default client from Node — `defaultClientDir()`, the filesystem path `createServer({ clientDir })` wants |
-| `/internal` | never, from application code: the plumbing `client()` installs for itself (the session and theme providers, the default shell's URL chips, the tool-config context, the pre-connection lookup). Not a public API and not covered by semver |
+| `/client-dir` | serving the prebuilt default client from Node — `defaultClientDir()`, the filesystem path `createRuntimeServer({ clientDir })` wants |
+| `/internal` | never, from application code: the plumbing `mountClient()` installs for itself (the session and theme providers, the default shell's URL chips, the tool-config context, the pre-connection lookup). Not a public API and not covered by semver |
 
 ## Documentation
 

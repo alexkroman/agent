@@ -11,7 +11,7 @@
 import http from "node:http";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ClientSink, ReadyConfig, SessionEvent } from "@alexkroman1/aai/protocol";
-import type { SessionCore, SessionWebSocket } from "@alexkroman1/aai-runtime";
+import type { ServerSession, SessionWebSocket } from "@alexkroman1/aai-runtime";
 import { stampSessionEvent, wireSessionSocket } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { WebSocketServer } from "ws";
@@ -36,8 +36,8 @@ import { WebSocketServer } from "ws";
 function makeStubCore(
   sessionId = "stub",
   client?: ClientSink,
-  overrides: Partial<SessionCore> = {},
-): SessionCore {
+  overrides: Partial<ServerSession> = {},
+): ServerSession {
   return {
     id: sessionId,
     // No fault: this harness exercises the wire, and a session reporting one
@@ -69,11 +69,11 @@ const READY_CONFIG: ReadyConfig = {
   ttsSampleRate: 24_000,
 };
 
-type SessionCapture = { session: SessionCore; sessionId: string };
+type SessionCapture = { session: ServerSession; sessionId: string };
 
 /** Same shape as `wireSessionSocket`'s own `createSession`, so a test's override
  *  receives the id and the sink the real thing would. */
-type SessionFactory = (sessionId: string, client: ClientSink) => SessionCore;
+type SessionFactory = (sessionId: string, client: ClientSink) => ServerSession;
 
 function startTestServer(): Promise<{
   port: number;
@@ -95,7 +95,7 @@ function startTestServer(): Promise<{
 
     server.on("upgrade", (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        const sessions = createOwnedMap<string, SessionCore>();
+        const sessions = createOwnedMap<string, ServerSession>();
         wireSessionSocket(ws as unknown as SessionWebSocket, {
           sessions,
           createSession: (sid, client) => {

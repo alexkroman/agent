@@ -30,11 +30,11 @@
  */
 import agentDef from "virtual:aai/agent";
 import {
-  callsIn,
   describeTurn,
   type EvalSession,
   type EvalToolCall,
   lastStateIn,
+  toolCallsInTurns,
   toolNames,
   turnCalling,
 } from "@alexkroman1/aai-runtime/eval";
@@ -116,7 +116,7 @@ describeEval(agentDef, (test) => {
       // every turn's tool list AND tells the two findings apart: no
       // `update_ticket` at all, or calls that were all refused by the desk gate.
       const staging = turnCalling(turns, "update_ticket", stagedSomething);
-      const attempts = callsIn(turns).filter((call) => call.name === "update_ticket");
+      const attempts = toolCallsInTurns(turns).filter((call) => call.name === "update_ticket");
       // The staging call itself, by INDEX, because what follows it in the same
       // turn is the subject of the assertion below.
       const stagedAt = staging.toolCalls.findIndex(

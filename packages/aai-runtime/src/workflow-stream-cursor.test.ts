@@ -55,7 +55,7 @@
  */
 
 import { workflow } from "@alexkroman1/aai";
-import { report } from "@alexkroman1/aai/step";
+import { stepReport } from "@alexkroman1/aai/step";
 import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";
 import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -334,7 +334,7 @@ describe("the progress cursor", () => {
     const narrate = workflow({
       input: lines,
       run: async (input: { lines: string[] }) => {
-        for (const line of input.lines) await report(line);
+        for (const line of input.lines) await stepReport(line);
       },
     });
     let engine: EvalWorkflowEngine | undefined;

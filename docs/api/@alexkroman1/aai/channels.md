@@ -14,10 +14,10 @@ a channel's credential is passed in where a provider's is not.
 
 ```ts
 import { slackChannel } from "@alexkroman1/aai/channels";
-import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 
 export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
-  return await sendToChannelClassified(slackChannel({ webhookUrl }), {
+  return await sendToChannelOrFail(slackChannel({ webhookUrl }), {
     text: `Weekly summary: ${points.length} items`,
     heading: "Weekly summary",
     sections: [{ title: "Highlights", bullets: points }],
@@ -43,7 +43,7 @@ so what was left to write is the render-and-classify half.
   the value where a PERSON supplies it, which is a security boundary and not
   only a typo check.
 - [sendToChannel](#sendtochannel) — post, and throw a [ChannelDeliveryError](#channeldeliveryerror)
-  carrying the retry verdict. `sendToChannelClassified`
+  carrying the retry verdict. `sendToChannelOrFail`
   (`@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
   mapping already applied.
 - [renderChannelPayload](#renderchannelpayload) — the request that WOULD be sent, pure, so a
@@ -55,10 +55,35 @@ refinement without pulling either into its graph.
 
 ## Functions
 
-### channelAdvice()
+### escapeSlackMrkdwn()
 
 ```ts
-function channelAdvice(channel: Channel, detail: string): string;
+function escapeSlackMrkdwn(text: string): string;
+```
+
+The three characters Slack's mrkdwn reserves.
+
+Only three, and only these: Slack's own escaping rules say `&`, `<` and `>`
+and nothing else, so escaping more would put backslashes in front of the
+apostrophes in every summary. `&` first, or the ampersands introduced by the
+other two get double-escaped.
+
+#### Parameters
+
+##### text
+
+`string`
+
+#### Returns
+
+`string`
+
+***
+
+### explainChannelFailure()
+
+```ts
+function explainChannelFailure(channel: Channel, detail: string): string;
 ```
 
 The sentence a person can act on for a refusal this channel understands.
@@ -83,22 +108,26 @@ when `channel.kind` names no known channel.
 
 ***
 
-### escapeSlackMrkdwn()
+### explainSlackChannelFailure()
 
 ```ts
-function escapeSlackMrkdwn(text: string): string;
+function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string;
 ```
 
-The three characters Slack's mrkdwn reserves.
+The sentence a person can act on, chosen from what the URL and the body say.
 
-Only three, and only these: Slack's own escaping rules say `&`, `<` and `>`
-and nothing else, so escaping more would put backslashes in front of the
-apostrophes in every summary. `&` first, or the ampersands introduced by the
-other two get double-escaped.
+`workflow_not_published` is called out by name because it is the one 4xx
+with a fix that is not "check your URL" — the URL is fine and the workflow
+behind it was never published — and nothing in Slack's generic message says
+so.
 
 #### Parameters
 
-##### text
+##### options
+
+[`SlackChannelOptions`](#slackchanneloptions)
+
+##### detail
 
 `string`
 
@@ -173,10 +202,10 @@ A workflow trigger, which takes flat variables and not Block Kit.
 
 ***
 
-### registerChannelKind()
+### registerChannelHandler()
 
 ```ts
-function registerChannelKind(kind: ChannelKind): void;
+function registerChannelHandler(kind: ChannelHandler): void;
 ```
 
 Register a channel kind, so `sendToChannel` can dispatch a descriptor
@@ -200,7 +229,7 @@ overridable — and is why the tag is the identity rather than the value.
 
 ##### kind
 
-[`ChannelKind`](#channelkind-1)
+[`ChannelHandler`](#channelhandler)
 
 #### Returns
 
@@ -208,10 +237,10 @@ overridable — and is why the tag is the identity rather than the value.
 
 ***
 
-### registeredChannelKinds()
+### registeredChannelKindNames()
 
 ```ts
-function registeredChannelKinds(): readonly string[];
+function registeredChannelKindNames(): readonly string[];
 ```
 
 The tags [sendToChannel](#sendtochannel) can dispatch, in registration order.
@@ -318,7 +347,7 @@ and any `Retry-After` it named is carried on the error.
 
 The `ChannelDeliveryError` it throws is what `toStepError` reads, so a step
 body hands it straight on and the engine gives up or waits the right amount
-— see [ChannelDeliveryError](#channeldeliveryerror), or reach for `sendToChannelClassified`
+— see [ChannelDeliveryError](#channeldeliveryerror), or reach for `sendToChannelOrFail`
 (`@alexkroman1/aai/step-errors`) to skip the `.catch`.
 
 #### Parameters
@@ -380,45 +409,16 @@ Declare a Slack destination.
 
 ```ts
 import { slackChannel } from "@alexkroman1/aai/channels";
-import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 
 export async function postDigest(webhookUrl: string, summary: string): Promise<string> {
-  return await sendToChannelClassified(slackChannel({ webhookUrl }), {
+  return await sendToChannelOrFail(slackChannel({ webhookUrl }), {
     text: `Daily digest: ${summary}`,
     heading: "Daily digest",
     sections: [{ body: summary }],
   });
 }
 ```
-
-***
-
-### slackChannelAdvice()
-
-```ts
-function slackChannelAdvice(options: SlackChannelOptions, detail: string): string;
-```
-
-The sentence a person can act on, chosen from what the URL and the body say.
-
-`workflow_not_published` is called out by name because it is the one 4xx
-with a fix that is not "check your URL" — the URL is fine and the workflow
-behind it was never published — and nothing in Slack's generic message says
-so.
-
-#### Parameters
-
-##### options
-
-[`SlackChannelOptions`](#slackchanneloptions)
-
-##### detail
-
-`string`
-
-#### Returns
-
-`string`
 
 ## Classes
 
@@ -574,7 +574,7 @@ readonly options: Options;
 
 ***
 
-### ChannelKind
+### ChannelHandler
 
 Everything one channel kind supplies: how to turn a [ChannelMessage](#channelmessage)
 into the request body that platform takes, and what to say when the platform
@@ -892,13 +892,13 @@ and a step holding a socket open past that is a step nobody can cancel.
 
 ***
 
-### SLACK\_CHANNEL
+### SLACK\_CHANNEL\_HANDLER
 
 ```ts
-const SLACK_CHANNEL: ChannelKind;
+const SLACK_CHANNEL_HANDLER: ChannelHandler;
 ```
 
-Slack as a [ChannelKind](#channelkind-1) — what `sendToChannel` dispatches to for a
+Slack as a [ChannelHandler](#channelhandler) — what `sendToChannel` dispatches to for a
 `"slack"` descriptor.
 
 Exported so a host that assembles its own channel set can name it, and so

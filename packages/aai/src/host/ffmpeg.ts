@@ -19,11 +19,11 @@
  * - {@link runFfmpeg} — everything else, as an argv you build yourself.
  *
  * ```ts
- * import { readUpload } from "@alexkroman1/aai/step";
+ * import { stepReadUpload } from "@alexkroman1/aai/step";
  * import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
  *
  * export async function toPcm(uploadId: string) {
- *   const { bytes } = await readUpload(uploadId);
+ *   const { bytes } = await stepReadUpload(uploadId);
  *   const info = await probeMedia(bytes);
  *   if (info.audio?.codec === "pcm_s16le") return bytes;
  *   return await transcodeToWav(bytes, { sampleRate: 16_000, channels: 1 });
@@ -71,7 +71,7 @@
  * ## Bytes or a path
  *
  * Both take a {@link FfmpegSource}: a path string, or bytes piped in on `pipe:0`.
- * Bytes are what a step HAS (`readUpload` answers with them), so they are the
+ * Bytes are what a step HAS (`stepReadUpload` answers with them), so they are the
  * default shape here — but piping is not free of caveats, and they are the
  * caller's to know: a format whose index lives at the END of the file (a
  * non-faststart MP4) cannot be read from a pipe, and ffmpeg says so. Write those

@@ -167,7 +167,7 @@ describe("handleWorkflowRequest", () => {
 
   test("a resolver that THROWS answers 500 instead of killing the process", async () => {
     // `ensureRuntime` throws for a bundle that has not loaded or a missing
-    // provider credential. This runs inside `createServer`'s request hook, which
+    // provider credential. This runs inside `createRuntimeServer`'s request hook, which
     // is called with no `try`, so an escaping throw was an `uncaughtException` —
     // and the guest's guard exits the process, taking every live voice session
     // with it. Driven through a real server because an ANSWER is the proof.

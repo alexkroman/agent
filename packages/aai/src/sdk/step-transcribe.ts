@@ -29,11 +29,11 @@
  * `stepFetch` already keep.
  *
  * ```ts
- * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
+ * import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  * import { stepTranscribePoll, stepTranscribeSubmit, stepTranscribeUpload } from "@alexkroman1/aai/step";
  *
- * export async function transcribe(input: { recording: string }, ctx: WorkflowCtx) {
+ * export async function transcribe(input: { recording: string }, ctx: WorkflowContext) {
  *   const { audioUrl } = await ctx.step("upload", () =>
  *     stepTranscribeUpload(input.recording).catch(throwStepError),
  *   );
@@ -93,8 +93,8 @@ import {
   transcribeSignal,
 } from "./_transcribe-shared.ts";
 import { stepFetch } from "./step-fetch.ts";
-import { readUpload } from "./step-uploads.ts";
-import { requireCompleteUpload } from "./step-uploads-complete.ts";
+import { stepReadUpload } from "./step-uploads.ts";
+import { stepRequireCompleteUpload } from "./step-uploads-complete.ts";
 
 /** The async API's base. */
 export const TRANSCRIBE_API = "https://api.assemblyai.com";
@@ -180,7 +180,7 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
 /**
  * Send a stored upload to the provider, and answer with the URL it gave.
  *
- * The recording STREAMS out of the app's own store: `readUpload` hands back
+ * The recording STREAMS out of the app's own store: `stepReadUpload` hands back
  * bytes and a two-hour recording is not a value this process can hold, so the
  * body is an async iterable of windows — which `stepFetch` accepts precisely
  * for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
@@ -190,10 +190,10 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  * `UploadInfo.size` is the contiguous readable prefix, so reading it off a
  * still-arriving recording used to upload only what had landed and transcribe a
  * truncated file — a plausible wrong answer with no error anywhere.
- * `requireCompleteUpload` refuses instead, BEFORE the expensive leg; its module
+ * `stepRequireCompleteUpload` refuses instead, BEFORE the expensive leg; its module
  * doc carries why that is a refusal rather than a wait.
  *
- * @param uploadId - An upload in the agent's own store, as `writeUpload` or a
+ * @param uploadId - An upload in the agent's own store, as `stepWriteUpload` or a
  *   page's `api.upload(file)` produced. Must be complete.
  *
  * @throws {UploadIncompleteError} when the upload is still arriving.
@@ -203,7 +203,7 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  *
  * @public
  *
- * **From a step, prefer `stepTranscribeUploadClassified`
+ * **From a step, prefer `stepTranscribeUploadOrFail`
  * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
@@ -212,9 +212,9 @@ export async function stepTranscribeUpload(
   uploadId: string,
   opts: TranscribeRequestOptions = {},
 ): Promise<{ audioUrl: string }> {
-  // Not `uploadInfo`: `size` is the readable PREFIX, and a run started while the
+  // Not `stepUploadInfo`: `size` is the readable PREFIX, and a run started while the
   // recording was still arriving would upload the prefix and transcribe it.
-  const stored = await requireCompleteUpload(uploadId);
+  const stored = await stepRequireCompleteUpload(uploadId);
   const response = await stepFetch(`${TRANSCRIBE_API}/v2/upload`, {
     method: "POST",
     // The raw key — this API takes it unprefixed, and a `Bearer ` in front of
@@ -281,7 +281,7 @@ export async function stepTranscribeUpload(
  *
  * @public
  *
- * **From a step, prefer `stepTranscribeSubmitClassified`
+ * **From a step, prefer `stepTranscribeSubmitOrFail`
  * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
@@ -331,7 +331,7 @@ export async function stepTranscribeSubmit(
  *
  * @public
  *
- * **From a step, prefer `stepTranscribePollClassified`
+ * **From a step, prefer `stepTranscribePollOrFail`
  * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
@@ -376,8 +376,8 @@ export async function stepTranscribePoll(
 /**
  * A stored upload as a sequence of windows, with the next one already in flight.
  *
- * A generator rather than one `readUpload`, because the whole point is that the
- * file is never held: each window is read, sent, and dropped. `readUpload`
+ * A generator rather than one `stepReadUpload`, because the whole point is that the
+ * file is never held: each window is read, sent, and dropped. `stepReadUpload`
  * clamps to what is stored, so the loop ends on the real end of the file even
  * if `size` moved under it.
  *
@@ -389,7 +389,7 @@ export async function stepTranscribePoll(
  */
 async function* uploadWindows(uploadId: string, size: number): AsyncGenerator<Uint8Array> {
   const read = (at: number): Promise<Uint8Array> =>
-    readUpload(uploadId, { start: at, end: at + TRANSCRIBE_WINDOW_BYTES }).then(
+    stepReadUpload(uploadId, { start: at, end: at + TRANSCRIBE_WINDOW_BYTES }).then(
       (slice) => slice.bytes,
     );
   let at = 0;

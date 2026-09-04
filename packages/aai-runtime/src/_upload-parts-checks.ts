@@ -44,7 +44,7 @@ export function measuredPart(
     );
   }
   // A window of NO bytes, where the upload declares some. Refused rather than
-  // recorded, and this is not hypothetical: `UploadBlobs.size` read a missing
+  // recorded, and this is not hypothetical: `UploadBackend.size` read a missing
   // `Content-Length` as `0` for a while (see `contentLength`), so every part of
   // every parts upload on the platform was recorded as an empty window. Nothing
   // below could see it — a zero-length range is well formed and `contiguousBytes`

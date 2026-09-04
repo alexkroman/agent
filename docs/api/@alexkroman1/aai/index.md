@@ -1215,7 +1215,8 @@ one definition type, one config, one deploy path, and `page` is only ever
 about the front door.
 
 It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
-`page()` mounts a workflow app's UI and `client()` mounts a voice one,
+`mountPage()` mounts a workflow app's UI and `mountClient()` mounts a voice
+one,
 because a flag would leave every session-shaped question ("what does this
 mean with no session?") answered by a conditional. Same reasoning, same
 seam, other end of the wire.
@@ -1641,10 +1642,11 @@ What this agent's front door IS — and so whether it serves voice at all.
 `"static"` declares a WORKFLOW APP: an ordinary web page over the workflow
 HTTP API (`/workflows/*`), with no microphone, no WebSocket and no session.
 The page is still a `client.tsx`, still React, still Tailwind — it just
-mounts with `page()` instead of `client()` and reaches the agent through
+mounts with `mountPage()` instead of `mountClient()` and reaches the agent
+through
 `createWorkflowApi()` / `useWorkflowRun()` instead of `useSession()`.
 
-Declaring it is not decoration. `createServer` refuses the voice surfaces
+Declaring it is not decoration. `createRuntimeServer` refuses the voice surfaces
 for a static agent, so a page that has no session cannot be handed a socket
 that would never answer, and telephony defaults off for one — an agent with
 no `stt`/`llm`/`tts` has nothing to put on a phone call.
@@ -1756,7 +1758,7 @@ optional s2s?: S2sProvider;
 
 Pluggable S2S provider descriptor — the explicit opt-in to
 speech-to-speech mode (e.g. `assemblyAIS2s()` for AssemblyAI's Voice
-Agent API, or `openaiS2s()`). Unset, the agent runs the default
+Agent API, or `openAIS2s()`). Unset, the agent runs the default
 cascaded pipeline. Mutually exclusive with the `stt`/`llm`/`tts`
 pipeline triple.
 
@@ -4833,7 +4835,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 ```
 
 Descriptor for an S2S provider. Returned by `assemblyAIS2s(...)` (root
-export) or `openaiS2s(...)` from `@alexkroman1/aai/s2s`.
+export) or `openAIS2s(...)` from `@alexkroman1/aai/s2s`.
 
 #### Type Declaration
 
@@ -5205,7 +5207,8 @@ everything downstream of having a session at all.
 
 What it keeps is the surface a page and a deploy actually read: `name` and
 `greeting` (both served by `GET /client-config`, so a page can render its
-shell from the agent — `page()` does not fetch it the way `client()` does, so
+shell from the agent — `mountPage()` does not fetch it the way `mountClient()`
+does, so
 a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
 `requiredEnv` (a step reads keys with `stepEnv` from
 `@alexkroman1/aai/step`, and a deploy still checks they are present).
@@ -5908,14 +5911,14 @@ A schema that coerces or strips unknown keys is supported and is usually
 what a webhook wants; the validated value is what the body receives.
 
 ```ts
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
 // Derived from the run's own input, so the tool handing the URL out and the
-// body waiting on it agree — see `WorkflowCtx.waitFor`.
+// body waiting on it agree — see `WorkflowContext.waitFor`.
 declare function approvalToken(id: string): string;
 
-export async function reviewFlow(input: { id: string }, ctx: WorkflowCtx) {
+export async function reviewFlow(input: { id: string }, ctx: WorkflowContext) {
   const approval = await ctx.waitFor(approvalToken(input.id), {
     schema: z.object({ approved: z.boolean() }),
     timeoutMs: 24 * 60 * 60 * 1000,
@@ -6565,10 +6568,10 @@ in the run is interrupted.
 
 ***
 
-### WorkflowCtx
+### WorkflowContext
 
 ```ts
-type WorkflowCtx = {
+type WorkflowContext = {
   runId: string;
   workflow: string;
   now: Promise<number>;
@@ -6586,7 +6589,7 @@ The handle a workflow body receives as its second argument.
 // workflows/research.ts
 export async function researchFlow(
   input: { topic: string },
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ) {
   const brief = await ctx.step("writeBrief", () => writeBrief(input.topic));
   const notes = await ctx.step("investigate", () => investigate(brief));
@@ -6617,11 +6620,11 @@ number, and hands the identical number back forever after: it is the moment
 the run really reached this line, however many times the line is walked.
 
 ```ts
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 
 declare function transcribe(recording: string): Promise<string>;
 
-export async function timedFlow(input: { recording: string }, ctx: WorkflowCtx) {
+export async function timedFlow(input: { recording: string }, ctx: WorkflowContext) {
   const startedAt = await ctx.now();
   const transcript = await ctx.step("transcribe", () => transcribe(input.recording));
   const finishedAt = await ctx.now();
@@ -6629,7 +6632,7 @@ export async function timedFlow(input: { recording: string }, ctx: WorkflowCtx) 
 }
 ```
 
-**Not legal inside a [WorkflowCtx.step](#step)** — the engine refuses one and
+**Not legal inside a [WorkflowContext.step](#step)** — the engine refuses one and
 the message names the fix. A step's internals are not replayed, so a plain
 `Date.now()` inside one is already durable and is what to write there.
 
@@ -6659,8 +6662,8 @@ The cost is one journal row per call, which is the same trade `ctx.step` makes
 and the reason a BULK draw belongs in a step:
 `ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`.
 
-**Not legal inside a [WorkflowCtx.step](#step)**, for
-[WorkflowCtx.now](#now)'s reason.
+**Not legal inside a [WorkflowContext.step](#step)**, for
+[WorkflowContext.now](#now)'s reason.
 
 ###### Returns
 
@@ -6694,7 +6697,7 @@ a week-long `ctx.sleep` was skipped in full and the run reported
 `completed`, with the clock unmoved. `aai-runtime/workflow-replay-divergence.ts`
 carries that reproduction.
 
-So the same rules apply as to [WorkflowCtx.step](#step)'s name, and the
+So the same rules apply as to [WorkflowContext.step](#step)'s name, and the
 `Literal` constraint says so at the call site: make it a string literal,
 give two call sites two labels, and let a loop reuse one — the occurrence
 count is what separates the iterations.
@@ -6711,7 +6714,7 @@ decided ONCE. That matters because the body is replayed: computing the
 deadline from the clock on every replay would push it further out each time
 and a run could sleep forever.
 
-**Call it from the BODY, never from inside a [WorkflowCtx.step](#step)** — a
+**Call it from the BODY, never from inside a [WorkflowContext.step](#step)** — a
 step body that waits fails the run, and the message names the fix.
 
 ```ts no-check
@@ -6781,8 +6784,8 @@ step<S extends StandardSchemaV1<unknown, unknown>, Name extends string>(
 Run `fn` once and journal what it returns; on every later replay, return
 the journaled value without running it again.
 
-**`fn` may not wait.** [WorkflowCtx.sleep](#sleep) and
-[WorkflowCtx.waitFor](#waitfor) reached inside a step fail the run, because a
+**`fn` may not wait.** [WorkflowContext.sleep](#sleep) and
+[WorkflowContext.waitFor](#waitfor) reached inside a step fail the run, because a
 suspend unwinds out of the step without journaling it — so the body would
 re-run from the top on every delivery, and every later wait in the run would
 read the wrong record. Put the wait in the body, between two steps. For a
@@ -6886,23 +6889,23 @@ the same value after a crash, so the retry the far side sees is recognisably
 the same request rather than a second one.
 
 ```ts
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 
 declare function charge(amount: number, idempotencyKey: string): Promise<void>;
 
-export async function chargeFlow(input: { amount: number }, ctx: WorkflowCtx) {
+export async function chargeFlow(input: { amount: number }, ctx: WorkflowContext) {
   const idempotencyKey = await ctx.uuid();
   await ctx.step("charge", () => charge(input.amount, idempotencyKey));
 }
 ```
 
-**Not a hook TOKEN.** [WorkflowCtx.waitFor](#waitfor)'s token must be DERIVED
+**Not a hook TOKEN.** [WorkflowContext.waitFor](#waitfor)'s token must be DERIVED
 from the run's own input, because whoever signals is usually a tool and a tool
 cannot see the body's local variables — a journaled uuid is stable across
 replays and still unnameable from outside the body.
 
-**Not legal inside a [WorkflowCtx.step](#step)**, for
-[WorkflowCtx.now](#now)'s reason.
+**Not legal inside a [WorkflowContext.step](#step)**, for
+[WorkflowContext.now](#now)'s reason.
 
 ###### Returns
 
@@ -6918,13 +6921,13 @@ waitFor<S extends StandardSchemaV1<unknown, unknown>>(token: string, options: Wa
 
 Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
 
-Suspends like [WorkflowCtx.sleep](#sleep) and with no deadline at all: the run
+Suspends like [WorkflowContext.sleep](#sleep) and with no deadline at all: the run
 waits until `ctx.workflows.signal(token, payload)` is called. That is how a
 run parks on a human approval, a review that may take a week, or anything
 else somebody else decides.
 
 **The WEBHOOK route reaches this.** `ctx.workflows.publicWebhookUrl(token)`
-mints a URL that `createServer` serves, and a delivery to it resolves the
+mints a URL that `createRuntimeServer` serves, and a delivery to it resolves the
 wait: the route calls `WorkflowClient.signal`, which writes the payload
 against this hook's own journal row and re-walks the body. So a
 payment-callback flow is a supported shape.
@@ -7201,7 +7204,7 @@ run: WorkflowBody<InferSchemaOutput<P>, R>;
 
 The workflow body.
 
-Takes the validated input and a [WorkflowCtx](#workflowctx). The input is ONE
+Takes the validated input and a [WorkflowContext](#workflowcontext). The input is ONE
 object rather than a positional list on purpose — it is schema-validated,
 and a schema describes one value.
 
@@ -7216,7 +7219,7 @@ Input properties that carry an UPLOAD ID rather than a value of their own.
 A run's input is journaled and replayed on every resume, so a file's bytes
 may not travel in it — the bytes go to `POST /workflows/uploads` and the
 input carries the id it answered with, which a step reads windows of through
-`readUpload`. Naming the property here is what makes that automatic at both
+`stepReadUpload`. Naming the property here is what makes that automatic at both
 ends: `<WorkflowFields>` renders a file picker for it instead of a text box,
 and `useWorkflowSubmit` uploads the chosen file and substitutes its id.
 

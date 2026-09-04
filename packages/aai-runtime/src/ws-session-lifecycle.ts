@@ -7,7 +7,7 @@
  * argument. What was here was not a set of latches but something worse: a
  * NULLABLE RESOURCE HANDLE used as a phase.
  *
- * `session: SessionCore | null` meant three different things depending on where
+ * `session: ServerSession | null` meant three different things depending on where
  * you read it — "not created yet", "the close handler already cleaned up", and
  * "start() failed and cleaned up" — and the code said so out loud, in a comment
  * that had to explain which one a particular `if (session)` was testing before

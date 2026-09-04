@@ -45,8 +45,8 @@
  * ingest result, once as the plan) and buy nothing.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
-import { encodeWav, mapConcurrent, readUpload, report } from "@alexkroman1/aai/step";
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { encodeWav, mapConcurrent, stepReadUpload, stepReport } from "@alexkroman1/aai/step";
 import { countWords, formatDuration } from "@alexkroman1/aai/utils";
 // ERASED at build time, so the body can name the schema's own output type without
 // a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
@@ -156,7 +156,7 @@ export type CallAudit = {
  */
 export async function auditFlow(
   input: WorkflowInputOf<typeof audit>,
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<CallAudit> {
   // Both at once: neither needs the other, and issued together they are one round
   // trip instead of two before any audio moves. The ORDER is still a pure function
@@ -259,12 +259,14 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
   // ORDER is not guaranteed here and does not need to be — the calls go out
   // together, so their lines interleave by completion, and `segment.index` is what
   // puts the TRANSCRIPT back in order.
-  await report(`Transcribing ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}.`);
+  await stepReport(
+    `Transcribing ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}.`,
+  );
 
   // `[start, end)`, the same half-open pair `planSegments` produced — the store
   // owns the conversion to HTTP's inclusive range, so there is no `- 1` here to get
   // wrong.
-  const audio = await readUpload(audioId, { start: segment.startByte, end: segment.endByte });
+  const audio = await stepReadUpload(audioId, { start: segment.startByte, end: segment.endByte });
   const text = await transcribeSpan(
     encodeWav(audio.bytes, ANALYSIS_FORMAT),
     `segment-${segment.index}.wav`,

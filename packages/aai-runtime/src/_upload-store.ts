@@ -29,8 +29,8 @@
  * the Postgres one", which is what two implementations of one contract buy — and it
  * was the wrong axis. What a double has to stand in for here is BYTES, not records:
  * every rule below is about the record, and the record is Postgres either way. So
- * the seam moved one level down, to {@link UploadBlobs}, whose contract is a window
- * read and a length and is small enough that `createMemoryUploadBlobs` really is
+ * the seam moved one level down, to {@link UploadBackend}, whose contract is a window
+ * read and a length and is small enough that `createMemoryUploadBackend` really is
  * equivalent.
  *
  * ## Bytes are stored in WINDOWS, and read one window at a time
@@ -64,8 +64,8 @@
  *   the last byte is stored; for a `create`d one it is `true` from the moment the
  *   record exists, because that is when the upload starts existing. So the two
  *   kinds are distinguishable by every reader, and a reader that does not care
- *   (the byte range routes, `readUpload`) needs no change.
- * - **A short read is the honest answer, not an error.** `readUpload` clamps its
+ *   (the byte range routes, `stepReadUpload`) needs no change.
+ * - **A short read is the honest answer, not an error.** `stepReadUpload` clamps its
  *   window to `size`, which for an in-flight upload is what has arrived. That
  *   behaviour predates streaming — it exists so a plan computed from a header can
  *   end one byte past the file — and it is exactly what a run reading ahead of the
@@ -105,7 +105,7 @@
  *   land out of order, so a size that counted bytes would tell a reader it may read
  *   a window that is still a hole. Counting only from byte zero keeps `size`
  *   meaning exactly what it meant before parts existed — "you may read up to
- *   here" — so `readUpload`, the range route and a polling run all need no change,
+ *   here" — so `stepReadUpload`, the range route and a polling run all need no change,
  *   and a run reading ahead of the uplink still works.
  *
  * `complete` becomes true when that prefix reaches the declared total, which is the
@@ -313,7 +313,7 @@ export type UploadMeta = {
   type?: string | undefined;
 };
 
-/** The store, as the API routes and `readUpload` use it. */
+/** The store, as the API routes and `stepReadUpload` use it. */
 export type UploadStore = UploadReader & {
   /** {@link UploadReader.open}, REQUIRED here — the byte route has no fallback. */
   open(id: string): Promise<OpenUpload | undefined>;

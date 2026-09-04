@@ -15,8 +15,8 @@
  *
  * - **The UNWRAPS.** `runTool` and `toolOf(...).execute(...)` answer `unknown` —
  *   the registry lookup is by string and discovery is a build step, so there is
- *   no tool map at the type level to recover the author's `R` from. `ok` and
- *   `okPosition` are that recovery, and they THROW on a refusal quoting it,
+ *   no tool map at the type level to recover the author's `R` from. `expectToolOk` and
+ *   `expectDialogOk` are that recovery, and they THROW on a refusal quoting it,
  *   which is the half a cast cannot do: `(result as { result: Order }).result`
  *   reads `undefined` off a `ToolFailure` and fails several assertions later,
  *   with the sentence the dialog wrote about what has to happen first thrown
@@ -59,10 +59,10 @@ export {
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
-  createWorkflowCtx,
+  createWorkflowContext,
   deployedAgent,
-  ok,
-  okPosition,
+  expectDialogOk,
+  expectToolOk,
   type ProjectFiles,
   parseSchemaInput,
   parseToolInput,
@@ -122,9 +122,9 @@ export {
   toolInputIssues,
   toolOf,
   toolRunner,
-  WORKFLOW_CTX_NOW,
-  type WorkflowCtxOptions,
-  type WorkflowCtxRecorder,
+  WORKFLOW_CONTEXT_NOW,
+  type WorkflowContextOptions,
+  type WorkflowContextRecorder,
 } from "../../sdk/testing.ts";
 export {
   installStubGateway,
@@ -133,6 +133,6 @@ export {
   installStubStepFetch,
   installStubTranscribe,
   installStubUploads,
-  type MockWorkflowsOptions,
-  mockWorkflows,
+  installStubWorkflows,
+  type StubWorkflowsOptions,
 } from "../../sdk/testing-vitest.ts";

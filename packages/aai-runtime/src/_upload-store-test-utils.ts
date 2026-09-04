@@ -13,8 +13,8 @@
 import { createHash } from "node:crypto";
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { UploadBlobs, UploadPart } from "./_upload-blobs.ts";
-import { createMemoryUploadBlobs, createUploadStore, UPLOADS_TABLE } from "./workflow-uploads.ts";
+import type { UploadBackend, UploadPart } from "./_upload-blobs.ts";
+import { createMemoryUploadBackend, createUploadStore, UPLOADS_TABLE } from "./workflow-uploads.ts";
 
 /** One body, as the routes hand it over: an async iterable of chunks. */
 export async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array> {
@@ -78,7 +78,7 @@ type FakeRow = {
  * being made: the store used to hold bytes in a second table and derive a parts
  * upload's coverage with two window functions, so the fake had to reimplement an
  * islands walk and a contiguous-prefix query to answer them. Bytes are objects now
- * (`createMemoryUploadBlobs`) and coverage is one `jsonb` column the store merges
+ * (`createMemoryUploadBackend`) and coverage is one `jsonb` column the store merges
  * in JavaScript, so there is nothing left here but rows.
  */
 export function recordingDb(opts: { refuse?: string } = {}) {
@@ -214,13 +214,13 @@ export function recordingDb(opts: { refuse?: string } = {}) {
  * One arm rather than the `describe.each` pair this replaced. The old suites ran
  * every case twice — once over Postgres chunk rows, once over a temp directory —
  * because those were two BYTE backends behind one record contract, and the pair was
- * what made either trustworthy. The seam moved down a level: `UploadBlobs` is a
- * window read and a length, so `createMemoryUploadBlobs` is equivalent to a bucket
+ * what made either trustworthy. The seam moved down a level: `UploadBackend` is a
+ * window read and a length, so `createMemoryUploadBackend` is equivalent to a bucket
  * by construction, and the record has exactly one implementation to test.
  */
 export function memoryStore(opts: { refuse?: string; maxBytes?: number } = {}) {
   const recorder = recordingDb(omitUndefined({ refuse: opts.refuse }));
-  const inner = createMemoryUploadBlobs();
+  const inner = createMemoryUploadBackend();
   /**
    * Every byte operation, in order, as `"<verb> <key>"`.
    *
@@ -230,7 +230,7 @@ export function memoryStore(opts: { refuse?: string; maxBytes?: number } = {}) {
    * about the other.
    */
   const ops: string[] = [];
-  const blobs: UploadBlobs = {
+  const blobs: UploadBackend = {
     put: async (key, body, options) => {
       ops.push(`put ${key}`);
       return await inner.put(key, body, options);

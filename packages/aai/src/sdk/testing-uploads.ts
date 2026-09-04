@@ -32,7 +32,7 @@ export type StubUpload =
        * Whether every byte is in. Defaults to `true`.
        *
        * `false` stages a STREAMED upload that is still arriving, which is the state
-       * a step polling one has to handle and the only one where `readUpload`
+       * a step polling one has to handle and the only one where `stepReadUpload`
        * legitimately comes back short. Being able to write that down is most of why
        * this field exists: a body that treats a stalled size as the end returns a
        * transcript of most of a recording and reports success, and a spec cannot
@@ -48,13 +48,13 @@ export type StubUpload =
  */
 export type StubUploadsOptions = {
   /**
-   * Accept WRITES, so a step calling `writeUpload` can be tested.
+   * Accept WRITES, so a step calling `stepWriteUpload` can be tested.
    *
    * Off by default, and deliberately: a store that silently accepts writes it
    * was not asked for cannot fail a spec whose step wrote a file nobody meant
-   * it to, and `writeUpload` naming a read-only store is a better failure than
+   * it to, and `stepWriteUpload` naming a read-only store is a better failure than
    * an upload appearing from nowhere. What a step writes is readable through
-   * `readUpload`/`uploadInfo` on the id it was given, like any other upload.
+   * `stepReadUpload`/`stepUploadInfo` on the id it was given, like any other upload.
    */
   writable?: boolean | undefined;
   /**
@@ -83,7 +83,7 @@ export type StubUploadWrite = {
  * An OBJECT, like every other fake here (`stubSpeech`, `stubReporter`,
  * `stubStepFetch`) — this one used to be the bare `restore` function, which made
  * it the only stub in the family a spec had to remember was different, and left
- * a spec asserting on a WRITE to round-trip through `uploadInfo`/`readUpload`:
+ * a spec asserting on a WRITE to round-trip through `stepUploadInfo`/`stepReadUpload`:
  * the published slot, read back through the same seam the step wrote it through,
  * to answer "did it write anything at all".
  *
@@ -112,14 +112,14 @@ export type StubUploads = {
    * What is stored under `id` right now — a seeded file or one a step wrote.
    *
    * Synchronous and outside the published slot, so a spec asserting on bytes
-   * does not have to `await readUpload` through the very seam it is testing.
+   * does not have to `await stepReadUpload` through the very seam it is testing.
    */
   read(id: string): StubUploadWrite | undefined;
 };
 
 /**
  * Publish an in-memory upload store, so a step that calls
- * `readUpload` can be tested without a server.
+ * `stepReadUpload` can be tested without a server.
  *
  * A step reads uploads through a process-wide slot rather than dialling
  * anything, which is what makes this possible at all: a spec supplies its own
@@ -138,8 +138,8 @@ export type StubUploads = {
  * // … call the step …
  * uploads.restore();
  *
- * // A streamed upload mid-flight: `readUpload` comes back short and
- * // `uploadInfo(...).complete` is false, which is what a polling body sees.
+ * // A streamed upload mid-flight: `stepReadUpload` comes back short and
+ * // `stepUploadInfo(...).complete` is false, which is what a polling body sees.
  * const firstHalf = new Uint8Array([1, 2]);
  * stubUploads({ upl_2: { bytes: firstHalf, complete: false } }).restore();
  * ```

@@ -57,7 +57,7 @@ describe("buildWorkflowClient", () => {
       // `DATABASE_URL` as the key index deliberately — an asymmetry is a trap
       // either way, a key pointing at a run that is gone or the reverse.
       runStore: "postgres",
-      // And what `report()` writes into, which is a THIRD question and the only
+      // And what `stepReport()` writes into, which is a THIRD question and the only
       // one whose answer never changes: there is no durable stream store, so a
       // postgres journal here sits beside an in-process progress log.
       progress: expect.stringContaining("memory"),
@@ -263,7 +263,7 @@ describe("buildWorkflowClient", () => {
     test("SAYS the progress channel is memory when the journal is durable", () => {
       // The asymmetry nothing reported: a deployed guest gets a platform journal
       // and, because no platform-backed stream store exists, an in-memory
-      // `report()` channel. A run that outlives its sandbox therefore resumes
+      // `stepReport()` channel. A run that outlives its sandbox therefore resumes
       // with an empty progress log and `lastLine` answers `undefined` for a run
       // that narrated fine before the boot — which reads as a broken page rather
       // than as a store that was never durable. It cannot be FIXED here, so it is

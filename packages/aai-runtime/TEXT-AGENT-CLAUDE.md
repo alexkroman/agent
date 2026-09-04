@@ -15,13 +15,13 @@ and its slots, history trimming, the step budget, the event stream — with the 
 speech stages replaced by fakes, and hands back a `say()` that returns the TURN
 it provoked.
 
-**It was `aai-evals/session-target.ts` + `fake-speech.ts`, and publishing it is
+**It was `aai-evals/session-target.ts` + `stub-speech.ts`, and publishing it is
 what the templates forced.** That harness could answer the one question nothing
 else in the repo could ("given this utterance, did the agent do the right
 thing"), and it could only ever answer it about agents living in this repo. A
 user's project — and every template, which IS a user's project — had no way to
 ask it at all, and the alternative was each project reimplementing the two
-documented harness bugs `eval/fake-speech.ts` and `eval/session.ts` record in
+documented harness bugs `eval/stub-speech.ts` and `eval/session.ts` record in
 place (a fake TTS that forwards silence turns every case after the greeting into
 a barge-in; a `say()` that waits for "a reply" settles on the PREVIOUS one).
 `aai-evals` now imports it, so there is one copy of both.
@@ -34,7 +34,7 @@ Four decisions worth not relitigating:
   `said()` already has an entry before a case has spoken. The first draft's own
   unit test caught that.
 - **The assertion VOCABULARY is not published, and the READERS are.** `saidIn`,
-  `toolCallsIn` and `TURN_ENDS` are facts about an event list; `aai-evals`'
+  `toolCallsInEvents` and `TURN_ENDS` are facts about an event list; `aai-evals`'
   matcher surface (`calledTool`, `toolOrder`, `saidSomething`, the recording
   runner behind them) is a promise about a NOISY instrument and stays private
   until the variance work in that package's guide exists to measure it with. A

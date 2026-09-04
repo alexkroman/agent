@@ -3,7 +3,7 @@
  * `stepInfo()` — which step a body is running as, and which ATTEMPT of it.
  *
  * The engine already knows: `attemptLoop` tracks tries locally and hands the
- * number to `withStepContext`, which is how a `report()` line carries its
+ * number to `withStepContext`, which is how a `stepReport()` line carries its
  * `(attempt N)` suffix. Nothing else could read it. So a step body could not
  * tell its first attempt from its last, and the two decisions that wants are
  * exactly the ones a retry policy cannot make for an author:
@@ -17,7 +17,7 @@
  *   the retry is usually the same fault again.
  *
  * ```ts
- * import { report, stepInfo } from "@alexkroman1/aai/step";
+ * import { stepReport, stepInfo } from "@alexkroman1/aai/step";
  *
  * declare function summarize(text: string, model: string): Promise<string>;
  *
@@ -25,7 +25,7 @@
  *   const step = stepInfo();
  *   // The last attempt buys a smaller model rather than a failed run.
  *   const model = step?.isLastAttempt === true ? "small" : "large";
- *   if (step && step.attempt > 1) await report(`Retrying with ${model}.`);
+ *   if (step && step.attempt > 1) await stepReport(`Retrying with ${model}.`);
  *   return await summarize(text, model);
  * }
  * ```
@@ -34,7 +34,7 @@
  *
  * That function threw outside a step, which is why the DevKit-era
  * `workflow-report.ts` wrapped every call in a try/catch. This answers
- * `undefined` instead, for the reason {@link stepEnv} and `report()` do: an
+ * `undefined` instead, for the reason {@link stepEnv} and `stepReport()` do: an
  * exported step is also an ordinary async function, and every workflow
  * template's tests call one directly with no run anywhere. A body that must
  * branch on it therefore tests for `undefined` and takes its non-retrying path,
@@ -51,12 +51,12 @@
  * The answer lives in the host's `AsyncLocalStorage`
  * (`aai-runtime/workflow-run-context.ts`), and this module may not import it:
  * `@alexkroman1/aai/step` rides the browser bundle. So the host publishes a
- * READER — the same `Symbol.for` mechanism `report()` and `stepEnv` use, and for
+ * READER — the same `Symbol.for` mechanism `stepReport()` and `stepEnv` use, and for
  * the same reason: the agent bundle carries its own copy of this module, so the
  * publisher and the reader are two module instances in one realm.
  *
  * A reader rather than the VALUE, because the value changes per step and per
- * attempt while the slot is filled once, at `createServer`.
+ * attempt while the slot is filled once, at `createRuntimeServer`.
  *
  * @module
  */
@@ -115,7 +115,7 @@ type StepInfoSlot = { [STEP_INFO_SLOT]?: StepInfoReader };
 /**
  * Publish the reader for this process's steps.
  *
- * Called by whatever is about to serve workflows — `createServer`, the one front
+ * Called by whatever is about to serve workflows — `createRuntimeServer`, the one front
  * door `aai dev`, a self-hosted server and every deployed guest share.
  * Publishing again REPLACES, which is what a dev-server restart means; pass
  * `undefined` to unpublish, which is what a spec does when it is done with a

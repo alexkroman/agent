@@ -22,7 +22,7 @@
  * first byte with `complete: false` and its `size` grows as bytes land.
  *
  * The reader needed almost nothing for this, which is why this flow is so close to
- * the other one: `readUpload` already clamped its window to what is stored (so a
+ * the other one: `stepReadUpload` already clamped its window to what is stored (so a
  * plan computed from a header could end one byte past the file), and that clamp is
  * exactly "read what has arrived". So `transcribeSegment` below is `transcribe.ts`'s
  * OWN step, unchanged, called on windows this body has checked are present.
@@ -50,7 +50,7 @@
  *   0.9 MB/s: `size` was 0 at every poll for 45 seconds and then the whole file, so
  *   the run planned nothing, transcribed nothing, and did its entire fan-out after
  *   the upload — the classic flow, with extra steps. `segmentStored` reads `ranges`
- *   instead, and `readUpload` clamps to the run a read starts in rather than to the
+ *   instead, and `stepReadUpload` clamps to the run a read starts in rather than to the
  *   prefix, so a window that has landed is a window this flow can work on.
  * - **The stall test on the prefix would then FAIL a healthy upload.** A parts
  *   upload moving at full speed reports the same prefix at every poll, which is
@@ -167,13 +167,13 @@
  * what keeps that order a pure function of journaled values.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import {
   mapConcurrent,
-  readUpload,
-  report,
+  stepReadUpload,
+  stepReport,
+  stepUploadInfo,
   type UploadRange,
-  uploadInfo,
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { formatDuration, omitUndefined, plural } from "@alexkroman1/aai/utils";
@@ -308,7 +308,7 @@ export type StreamPlan = {
  * an upload id exactly as in the classic flow; what differs is that the client chose
  * it and the bytes are still on their way.
  */
-export async function transcribeStreamFlow(input: { recording: string }, ctx: WorkflowCtx) {
+export async function transcribeStreamFlow(input: { recording: string }, ctx: WorkflowContext) {
   // `ctx.now()`, not a step: the engine journals the read under its own key, so
   // every walk of this line sees the instant the first one did.
   const startedAt = await ctx.now();
@@ -364,7 +364,7 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
       // A segment is READY when its whole window is stored — except once the upload
       // is complete, where `at.size` is the true total and the plan came from the
       // header's DECLARED length: a recording that came up short leaves a final
-      // segment ending past the file, and `readUpload` clamping is what makes that
+      // segment ending past the file, and `stepReadUpload` clamping is what makes that
       // the right answer rather than an error.
       const ready = plan.segments.filter(
         (segment) =>
@@ -443,7 +443,7 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
  * from.
  */
 export async function probeUpload(id: string): Promise<UploadProgressView> {
-  const info = await uploadInfo(id);
+  const info = await stepUploadInfo(id);
   return {
     size: info.size,
     complete: info.complete,
@@ -609,7 +609,7 @@ export function storedBytes(size: number, ranges: readonly UploadRange[] | undef
  * only the prefix and the run has nothing to do until the upload is over, which
  * is the entire wait this flow exists to remove.
  *
- * A window has to be covered WHOLE by one run: `readUpload` clamps to the run a
+ * A window has to be covered WHOLE by one run: `stepReadUpload` clamps to the run a
  * read starts in, so a segment straddling a hole would come back short and be
  * transcribed as a fragment. `rangesOf` merges adjacent windows, so a run really
  * is a contiguous stretch and one containment test is the whole check.
@@ -636,7 +636,7 @@ export function segmentStored(segment: Segment, at: UploadProgressView): boolean
  * which is what the classic flow is for.
  */
 export async function planStreamed(id: string): Promise<StreamPlan> {
-  const head = await readUpload(id, { end: HEADER_PROBE_BYTES });
+  const head = await stepReadUpload(id, { end: HEADER_PROBE_BYTES });
   const format = fatalOnUnsupported(() => parseWav(head.bytes, Number.POSITIVE_INFINITY));
   if (!Number.isFinite(format.dataEnd)) {
     return throwFatalStepError(
@@ -647,7 +647,7 @@ export async function planStreamed(id: string): Promise<StreamPlan> {
     );
   }
   const segments = fatalOnUnsupported(() => planSegments(format));
-  await report(
+  await stepReport(
     `Planned ${formatDuration(segments.at(-1)?.endMs ?? 0)} of audio as ` +
       `${segments.length} ${plural(segments.length, "segment")} while it uploads.`,
   );

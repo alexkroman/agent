@@ -6,7 +6,7 @@
  * The one thing an agent author could not test. A workflow's steps are ordinary
  * exported functions and its declaration is a value, so both have always been
  * reachable from a vitest file; the BODY takes a `ctx` only an engine
- * constructs. `@alexkroman1/aai/testing`'s `createWorkflowCtx` gives it one that
+ * constructs. `@alexkroman1/aai/testing`'s `createWorkflowContext` gives it one that
  * records — which is the right tool for asserting what a body ASKED FOR, and
  * says outright that it is not a durability test — and this gives it the real
  * engine, over the memory journal, so a spec can assert that a run slept,
@@ -28,7 +28,7 @@
  * console.log(run.status); // "completed"
  * ```
  *
- * ## Why it is on the RUNTIME rather than beside `createWorkflowCtx`
+ * ## Why it is on the RUNTIME rather than beside `createWorkflowContext`
  *
  * `@alexkroman1/aai` is the shared core and imports no sibling package — a hard
  * boundary this repo checks with `konsistent`, and one the engine sits on the

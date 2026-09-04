@@ -35,7 +35,7 @@
  *
  * ## Every stage REPORTS, and the report goes two places
  *
- * `report()` (`@alexkroman1/aai/step`) writes to the run's own stream — which
+ * `stepReport()` (`@alexkroman1/aai/step`) writes to the run's own stream — which
  * `research_progress` reads back down the phone and a page renders — and to the
  * server log, with the attempt number appended past the first. A pass that is
  * retrying and one that is working print the same sentences otherwise.
@@ -49,9 +49,9 @@
  * researcher CONCLUDED, which is exactly what the step returns.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
-import { mapConcurrent, report } from "@alexkroman1/aai/step";
-import { stepGenerateClassified, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { mapConcurrent, stepReport } from "@alexkroman1/aai/step";
+import { stepGenerateJsonOrFail, stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { errorMessage, isToolFailure, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
@@ -107,7 +107,7 @@ export type Source = { title: string; url: string };
 
 // ---- What each stage's model call has to come back as ------------------------
 //
-// `stepGenerateJsonClassified` validates against these, so a reply that missed
+// `stepGenerateJsonOrFail` validates against these, so a reply that missed
 // is a plain throw and therefore a retry — where the hand-rolled `askJson<T>()`
 // this replaces returned a value the compiler believed and nothing checked. They are
 // deliberately LENIENT wherever the old hand-written coercion was: a model that
@@ -212,7 +212,7 @@ export type Findings = {
  */
 export async function researchFlow(
   input: { topic: string; requestedBy: string },
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ) {
   const brief = await ctx.step("writeBrief", () => writeBrief(input.topic));
   const angles = await ctx.step("planAngles", () => planAngles(brief));
@@ -270,11 +270,11 @@ export async function researchFlow(
  * later model call.
  */
 export async function writeBrief(topic: string): Promise<Brief> {
-  await report(`Working out what "${topic}" is really asking.`);
-  const parsed = await stepGenerateJsonClassified(
-    `Research request, as the caller said it: ${topic}`,
-    { system: BRIEF_SYSTEM, schema: BriefReply },
-  );
+  await stepReport(`Working out what "${topic}" is really asking.`);
+  const parsed = await stepGenerateJsonOrFail(`Research request, as the caller said it: ${topic}`, {
+    system: BRIEF_SYSTEM,
+    schema: BriefReply,
+  });
   return { brief: parsed.brief || topic, criteria: parsed.criteria.slice(0, MAX_ANGLES) };
 }
 
@@ -286,7 +286,7 @@ export async function writeBrief(topic: string): Promise<Brief> {
  * asking the model again and getting a different one.
  */
 export async function planAngles(brief: Brief): Promise<string[]> {
-  const parsed = await stepGenerateJsonClassified(briefText(brief), {
+  const parsed = await stepGenerateJsonOrFail(briefText(brief), {
     system: PLAN_SYSTEM,
     schema: AnglesReply,
   });
@@ -294,10 +294,10 @@ export async function planAngles(brief: Brief): Promise<string[]> {
   if (angles.length === 0) {
     // Nothing to fan out over is a plan failure, not an empty result: the brief
     // itself is the one angle that is always available.
-    await report("No angles came back; researching the brief itself.");
+    await stepReport("No angles came back; researching the brief itself.");
     return [brief.brief];
   }
-  await report(`Researching ${angles.length} ${plural(angles.length, "angle")}.`);
+  await stepReport(`Researching ${angles.length} ${plural(angles.length, "angle")}.`);
   return angles;
 }
 
@@ -309,7 +309,7 @@ export async function planAngles(brief: Brief): Promise<string[]> {
  * at the end, which is where it becomes small enough to journal.
  */
 export async function investigate(brief: Brief, angle: string): Promise<Note> {
-  await report(`Looking into: ${angle}`);
+  await stepReport(`Looking into: ${angle}`);
   const seen: string[] = [];
   const sources: Source[] = [];
 
@@ -323,7 +323,7 @@ export async function investigate(brief: Brief, angle: string): Promise<Note> {
       continue;
     }
     if (action.action === "read" && action.url) {
-      await report(`Reading ${hostname(action.url)}`);
+      await stepReport(`Reading ${hostname(action.url)}`);
       seen.push(`PAGE ${action.url}\n${await readPage(action.url)}`);
       continue;
     }
@@ -344,12 +344,12 @@ export async function investigate(brief: Brief, angle: string): Promise<Note> {
  */
 export async function findGaps(brief: Brief, notes: readonly Note[]): Promise<string[]> {
   if (notes.length === 0) return [];
-  const parsed = await stepGenerateJsonClassified(
+  const parsed = await stepGenerateJsonOrFail(
     `${briefText(brief)}\n\nWhat came back:\n${notes.map(noteText).join("\n\n")}`,
     { system: GAPS_SYSTEM, schema: AnglesReply },
   );
   const gaps = parsed.angles.slice(0, MAX_ANGLES - 1);
-  await report(
+  await stepReport(
     gaps.length === 0
       ? "The brief is covered; writing it up."
       : `Following up ${gaps.length} ${plural(gaps.length, "gap")}.`,
@@ -369,12 +369,12 @@ export async function writeReport(
   brief: Brief,
   notes: readonly Note[],
 ): Promise<{ report: string; summary: string }> {
-  await report(`Writing up ${notes.length} ${plural(notes.length, "angle")}.`);
-  const written = await stepGenerateClassified(
+  await stepReport(`Writing up ${notes.length} ${plural(notes.length, "angle")}.`);
+  const written = await stepGenerateOrFail(
     `${briefText(brief)}\n\nFindings:\n${notes.map(noteText).join("\n\n")}`,
     { system: REPORT_SYSTEM },
   );
-  const summary = await stepGenerateClassified(`Topic: ${topic}\n\nReport:\n${written}`, {
+  const summary = await stepGenerateOrFail(`Topic: ${topic}\n\nReport:\n${written}`, {
     system: BRIEF_SUMMARY_SYSTEM,
   });
   return { report: written, summary };
@@ -388,7 +388,7 @@ export async function writeReport(
  * parameters carry `_` for the same reason.
  */
 export async function file(_requestedBy: string, _topic: string): Promise<string> {
-  await report("Filing the findings.");
+  await stepReport("Filing the findings.");
   return "filed";
 }
 
@@ -404,7 +404,7 @@ async function nextAction(
   seen: readonly string[],
   left: number,
 ): Promise<Action> {
-  return await stepGenerateJsonClassified(
+  return await stepGenerateJsonOrFail(
     `${briefText(brief)}\n\nYour angle: ${angle}\n` +
       `Actions left: ${left}\n\n` +
       (seen.length === 0 ? "You have not looked at anything yet." : seen.join("\n\n")),
@@ -421,7 +421,7 @@ async function nextAction(
  * pages exist" and gets run again, differently worded, until the budget is gone.
  */
 async function search(query: string): Promise<{ summary: string; sources: Source[] }> {
-  await report(`Searching: ${query}`);
+  await stepReport(`Searching: ${query}`);
   try {
     const results = await webSearch<{ results?: { title?: string; url?: string }[] }>({
       query,
@@ -443,7 +443,7 @@ async function search(query: string): Promise<{ summary: string; sources: Source
     };
   } catch (err: unknown) {
     const summary = `That search failed: ${errorMessage(err)}`;
-    await report(summary);
+    await stepReport(summary);
     return { summary, sources: [] };
   }
 }
@@ -473,7 +473,7 @@ async function compress(angle: string, seen: readonly string[], sources: Source[
   if (seen.length === 0) {
     return { angle, findings: "Nothing was found on this angle.", sources: [] };
   }
-  const parsed = await stepGenerateJsonClassified(`Angle: ${angle}\n\n${seen.join("\n\n")}`, {
+  const parsed = await stepGenerateJsonOrFail(`Angle: ${angle}\n\n${seen.join("\n\n")}`, {
     system: COMPRESS_SYSTEM,
     schema: CompressReply,
   });
@@ -490,11 +490,11 @@ async function compress(angle: string, seen: readonly string[], sources: Source[
 //
 // There is none left, and its absence is the point. This desk carried an `ask()`
 // and an `askJson()` whose whole body was `.catch(throwStepError)`; the SDK's
-// `stepGenerateClassified` and `stepGenerateJsonClassified`
+// `stepGenerateOrFail` and `stepGenerateJsonOrFail`
 // (`@alexkroman1/aai/step-errors`) ARE that call — the `/step` one with the
 // gateway's verdict classified, so a terminal failure stays terminal and a rate
 // limit becomes a `RetryableError` carrying the delay the gateway itself named.
-// `stepGenerateJsonClassified` also owns the four things every JSON stage used
+// `stepGenerateJsonOrFail` also owns the four things every JSON stage used
 // to re-derive — unwrap the fence, parse, reject a non-object, check the shape —
 // and throws PLAINLY when any of them misses, which is what makes a malformed
 // reply a retry rather than a failure.

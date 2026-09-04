@@ -12,7 +12,7 @@
  *
  * **Every one of them is four lines, because the SDK owns the endpoint.**
  * `stepTranscribeUpload` / `stepTranscribeSubmit` / `stepTranscribePoll` on
- * `@alexkroman1/aai/step` — reached here through their `*Classified` callers on
+ * `@alexkroman1/aai/step` — reached here through their `*OrFail` callers on
  * `@alexkroman1/aai/step-errors` — carry the URL, the raw-key auth, the windowed
  * streaming upload, the PLURAL `speech_models` field and the failure
  * classification — all of which this file used to spell out, and all of which
@@ -40,11 +40,11 @@
  * the one leg that should be as boring as possible.
  */
 
-import { report, uploadInfo } from "@alexkroman1/aai/step";
+import { stepReport, stepUploadInfo } from "@alexkroman1/aai/step";
 import {
-  stepTranscribePollClassified,
-  stepTranscribeSubmitClassified,
-  stepTranscribeUploadClassified,
+  stepTranscribePollOrFail,
+  stepTranscribeSubmitOrFail,
+  stepTranscribeUploadOrFail,
 } from "@alexkroman1/aai/step-errors";
 import { countWords, formatBytes } from "@alexkroman1/aai/utils";
 
@@ -85,24 +85,24 @@ export type Transcript = {
  * expires before the next step runs; that costs one fresh upload, once, instead
  * of five.
  *
- * The `Classified` callers on `@alexkroman1/aai/step-errors` are the SDK's own
+ * The `OrFail` callers on `@alexkroman1/aai/step-errors` are the SDK's own
  * `stepTranscribe*` plus `throwStepError` and nothing else, which is what turns
  * the SDK's `TranscribeError` into the DevKit's verdict — a missing key and a
  * 400 stop, a 429 waits as long as the service asked. Every step here ends the
  * same way for the same reason.
  */
 export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: string }> {
-  const stored = await uploadInfo(uploadId);
-  await report(
+  const stored = await stepUploadInfo(uploadId);
+  await stepReport(
     `Uploading ${stored.name || uploadId} (${formatBytes(stored.size)}) for transcription.`,
   );
-  return await stepTranscribeUploadClassified(uploadId);
+  return await stepTranscribeUploadOrFail(uploadId);
 }
 
 /** Create the transcription job, and answer with the id that outlives this run. */
 export async function createJob(audioUrl: string): Promise<{ id: string }> {
-  const job = await stepTranscribeSubmitClassified(audioUrl);
-  await report(`Transcribing — job ${job.id}.`);
+  const job = await stepTranscribeSubmitOrFail(audioUrl);
+  await stepReport(`Transcribing — job ${job.id}.`);
   return job;
 }
 
@@ -119,11 +119,11 @@ export async function pollTranscript(
   uploadId: string,
   id: string,
 ): Promise<{ done: false } | { done: true; transcript: Transcript }> {
-  const progress = await stepTranscribePollClassified(id);
+  const progress = await stepTranscribePollOrFail(id);
   if (!progress.done) return { done: false };
 
-  const stored = await uploadInfo(uploadId);
-  await report(`Transcribed ${countWords(progress.transcript.text)} words.`);
+  const stored = await stepUploadInfo(uploadId);
+  await stepReport(`Transcribed ${countWords(progress.transcript.text)} words.`);
   return {
     done: true,
     transcript: {

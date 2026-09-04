@@ -42,8 +42,8 @@ export {
   OPENROUTER_BASE_URL,
   type OpenAILlmOptions,
   type OpenRouterLlmOptions,
-  openaiLlm,
-  openrouterLlm,
-  type XaiLlmOptions,
-  xaiLlm,
+  openAILlm,
+  openRouterLlm,
+  type XAILlmOptions,
+  xAILlm,
 } from "../../sdk/providers/llm-barrel.ts";

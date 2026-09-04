@@ -1,0 +1,19 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "runtime",
+  "epoch": 12,
+  "sha256": "604e917a1f9fcbd66dbb04bf9c8ddf3b496d7c470a9704ac896fa81bdfa1b615",
+  "exports": [
+    "AgentRuntime",
+    "ExecuteTool",
+    "ExecuteToolOptions",
+    "RunCodeExecutor",
+    "Runtime",
+    "RuntimeOptions",
+    "SessionRuntime",
+    "SessionStartOptions",
+    "SkipGreetingOption",
+    "createRuntime",
+    "rejectingRuntime"
+  ]
+}

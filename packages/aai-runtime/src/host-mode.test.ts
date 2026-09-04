@@ -613,7 +613,7 @@ describe("startHostSession (deferred host handshake)", () => {
   });
 
   test("a client tool_result unblocks a relayed tool call end-to-end", async () => {
-    // Wire a real SessionCore (relay mode) behind the real ws-handler dispatch,
+    // Wire a real ServerSession (relay mode) behind the real ws-handler dispatch,
     // proving: onToolCall relays via executeTool (no duplicate emit) and an
     // inbound tool_result frame routes through onToolResult to settle the call.
     // Live model-driven tool calls are exercised in Task A4.

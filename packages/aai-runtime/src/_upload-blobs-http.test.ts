@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the two real {@link UploadBlobs} implementations.
+ * Specs for the two real {@link UploadBackend} implementations.
  *
  * Both are one thin layer over `fetch` and the whole subject is the REQUEST each
  * operation composes — the `Range` header's inclusive last byte against every offset
@@ -15,7 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createBrokeredUploadBlobs } from "./_upload-blobs-brokered.ts";
-import { createHttpUploadBlobs, storageEndpoint } from "./_upload-blobs-http.ts";
+import { createHttpUploadBackend, storageEndpoint } from "./_upload-blobs-http.ts";
 import { UploadTooLargeError } from "./_upload-store.ts";
 
 /** One request the implementation made, reduced to what a spec asks about. */
@@ -59,7 +59,7 @@ describe("Storage over its REST API", () => {
     const script = scripted(answer);
     return {
       ...script,
-      blobs: createHttpUploadBlobs({
+      blobs: createHttpUploadBackend({
         url: "https://ref.supabase.co/",
         serviceKey: "sb_secret_x",
         bucket: "artifacts",
@@ -109,7 +109,7 @@ describe("Storage over its REST API", () => {
   });
 
   test("answers SHORT for 404 and 416, and THROWS for anything else", async () => {
-    // Clamped rather than refused — the behaviour `readUpload` has always had, so a plan
+    // Clamped rather than refused — the behaviour `stepReadUpload` has always had, so a plan
     // computed from a header may end one byte past the file. A 5xx is a different claim
     // and must not read as "there is nothing there".
     for (const status of [404, 416]) {
@@ -167,7 +167,7 @@ describe("Storage over its REST API", () => {
 
   test("still reads a MISSING OBJECT as short, which is a different 404", async () => {
     // The two 404s must not be conflated in either direction: an absent object is the
-    // clamp `readUpload` relies on, and an absent bucket is a configuration fault.
+    // clamp `stepReadUpload` relies on, and an absent bucket is a configuration fault.
     const { blobs } = open(() => new Response("", { status: 404 }));
     expect([...(await blobs.read("uploads/upl_a/0", 0, 8))]).toEqual([]);
     expect(await blobs.size("uploads/upl_a/0")).toBeUndefined();

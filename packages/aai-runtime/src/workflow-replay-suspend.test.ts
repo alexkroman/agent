@@ -11,7 +11,7 @@
  * module split already drew.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/host-internal";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, test, vi } from "vitest";
@@ -39,7 +39,7 @@ async function seed(): Promise<{ journal: JournalStore }> {
 /** Replay `run` against a journal, with the seeded run's identity. */
 function replay(
   journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown,
+  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
 ) {
   return replayRun({ runId: "wrun_1", workflow: "digest", input: {}, run, journal });
 }
@@ -170,7 +170,7 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     // the next delivery, which walks past the elapsed one and parks again on
     // what is left. Driven here by waking only the near wait.
     const { journal } = await seed();
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await Promise.all([
         ctx.sleep("far", WEEK_MS),
         ctx.sleep("near", 1000, { correlationId: "near" }),

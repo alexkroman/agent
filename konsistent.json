@@ -5,13 +5,12 @@
     "assemblyai": "AssemblyAI",
     "elevenlabs": "ElevenLabs",
     "openai": "OpenAI",
-    "openrouter": "OpenRouter"
+    "openrouter": "OpenRouter",
+    "xai": "XAI"
   },
   "kebabToCamelMap": {
     "assemblyai": "assemblyAI",
-    "elevenlabs": "elevenLabs",
-    "openai": "openai",
-    "openrouter": "openrouter"
+    "elevenlabs": "elevenLabs"
   },
   "conventions": [
     {
@@ -310,7 +309,7 @@
     },
     {
       "name": "channels",
-      "description": "Every channel module exports the same four-symbol shape: a kind tag, the options interface a factory takes, the factory itself, and the `ChannelKind` VALUE that `sendToChannel` dispatches to. The kind value is what makes a channel a self-contained unit \u2014 `send.ts` imports that one name rather than a render function, an advice function and an options type, so adding a channel touches no shared file. A channel is a serializable DESTINATION descriptor, so the pattern mirrors the four provider stages \u2014 and the reason it is checked here rather than left to review is the reason it is checked there: the shape is repeated BY CONSTRUCTION, so the second one drifts from the first in a way no per-file tool can see. Unlike a provider there is no *_API_KEY_ENV: a channel's credential is the destination itself and is passed in, never read from the agent env, so there is no variable name to publish. The factory carries the `Channel` suffix every other symbol here already carried: a channel is outbound-only by construction, so an inbound Slack surface would be a different concept and `slack()` is the name it would want \u2014 the same collision that made `elevenlabs()` into `elevenLabsStt()`, settled before it costs anything.",
+      "description": "Every channel module exports the same four-symbol shape: a kind tag, the options interface a factory takes, the factory itself, and the `ChannelHandler` VALUE that `sendToChannel` dispatches to. The handler value is what makes a channel a self-contained unit \u2014 `send.ts` imports that one name rather than a render function, an advice function and an options type, so adding a channel touches no shared file. A channel is a serializable DESTINATION descriptor, so the pattern mirrors the four provider stages \u2014 and the reason it is checked here rather than left to review is the reason it is checked there: the shape is repeated BY CONSTRUCTION, so the second one drifts from the first in a way no per-file tool can see. Unlike a provider there is no *_API_KEY_ENV: a channel's credential is the destination itself and is passed in, never read from the agent env, so there is no variable name to publish. The factory carries the `Channel` suffix every other symbol here already carried: a channel is outbound-only by construction, so an inbound Slack surface would be a different concept and `slack()` is the name it would want \u2014 the same collision that made `elevenlabs()` into `elevenLabsStt()`, settled before it costs anything.",
       "paths": [
         "packages/aai/src/sdk/channels/{channelId}.ts",
         "!packages/aai/src/sdk/channels/channel-types.ts",
@@ -320,7 +319,7 @@
       "must": {
         "exportConstants": [
           "${channelId.toConstantCase()}_CHANNEL_KIND",
-          "${channelId.toConstantCase()}_CHANNEL"
+          "${channelId.toConstantCase()}_CHANNEL_HANDLER"
         ],
         "exportInterfaces": [
           "${channelId.toPascalCase()}ChannelOptions"

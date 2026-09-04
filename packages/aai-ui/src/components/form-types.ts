@@ -50,7 +50,7 @@ export type FileValue = {
  *
  * @public
  */
-export type FileRead = "none" | "text" | "dataUrl" | "upload";
+export type FileReadMode = "none" | "text" | "dataUrl" | "upload";
 
 /**
  * The props every field in `form.tsx` shares.

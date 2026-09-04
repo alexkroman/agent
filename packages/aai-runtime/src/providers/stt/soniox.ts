@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import {
-  makeSttError,
+  createSttError,
   resolveSonioxSttSettings,
   SONIOX_API_KEY_ENV,
   type SttEvents,
@@ -137,7 +137,7 @@ export function openSoniox(opts: SonioxSttOptions = {}): SttOpener {
     name: "soniox",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
       const apiKey = requireApiKey(openOpts.apiKey, SONIOX_API_KEY_ENV, "Soniox STT", (msg) =>
-        makeSttError("stt_auth_failed", msg),
+        createSttError("stt_auth_failed", msg),
       );
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
@@ -150,7 +150,7 @@ export function openSoniox(opts: SonioxSttOptions = {}): SttOpener {
       const ws = await openGuardedWs({
         create: () => new WebSocket(SONIOX_WS_URL, PROVIDER_WS_OPTIONS),
         label: "Soniox STT",
-        makeConnectError: (msg) => makeSttError("stt_connect_failed", msg),
+        makeConnectError: (msg) => createSttError("stt_connect_failed", msg),
         signal: openOpts.signal,
         onOpen: (socket) =>
           socket.send(JSON.stringify(buildConfigFrame(apiKey, opts, openOpts.sampleRate))),

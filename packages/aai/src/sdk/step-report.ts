@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `report()` — what a running workflow says about itself, to a page AND to the
- * server log.
+ * `stepReport()` — what a running workflow says about itself, to a page AND to
+ * the server log.
  *
  * A run's snapshot carries a status and, once terminal, an output. Between those
  * two there is nothing: a sixty-segment transcription and a one-segment one both
@@ -13,10 +13,10 @@
  * So a step narrates with one call and it lands in both places:
  *
  * ```ts
- * import { report } from "@alexkroman1/aai/step";
+ * import { stepReport } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
- *   await report(`Transcribing segment ${index}.`);
+ *   await stepReport(`Transcribing segment ${index}.`);
  * }
  * ```
  *
@@ -31,12 +31,13 @@
  * module instances in one realm.
  *
  * `host/workflow-report.ts` is the published half, and it is what turns one
- * `report()` into a stream chunk plus a `logger.info` line.
+ * `stepReport()` into a stream chunk plus a `logger.info` line.
  *
  * ## Two channels, and the second is what makes a run's OUTPUT streamable
  *
- * {@link report} writes a sentence for a person. {@link emit} writes a VALUE for a
- * program, into a stream named by the caller — which is what lets a long fan-out
+ * {@link stepReport} writes a sentence for a person. {@link stepEmit} writes a
+ * VALUE for a program, into a stream named by the caller — which is what lets a
+ * long fan-out
  * hand over each result as it lands instead of only at the end. They share this
  * module, the slot, and the swallow-every-failure rule; what differs is the
  * destination and whether an operator sees it.
@@ -65,8 +66,8 @@ const STEP_REPORTER_SLOT = Symbol.for("@alexkroman1/aai.stepReporter");
  * What a published reporter does with one chunk.
  *
  * Returning a promise is allowed and awaited: the stream write is async, and a
- * step that awaits `report()` should not race the chunk it just wrote against
- * the request that reads it back.
+ * step that awaits `stepReport()` should not race the chunk it just wrote
+ * against the request that reads it back.
  *
  * One reporter rather than two, because everything except the destination is
  * shared — the swallowed failure, the step metadata, the debug line when a write
@@ -86,14 +87,14 @@ type StepReporterSlot = { [STEP_REPORTER_SLOT]?: StepReporter };
 /**
  * Publish the reporter for this process's steps.
  *
- * Called by whatever is about to serve workflows — `createServer`, which is the
+ * Called by whatever is about to serve workflows — `createRuntimeServer`, which is the
  * one front door `aai dev`, a self-hosted server and every deployed guest all
  * go through. Publishing again REPLACES, which is what a dev-server restart
  * means; pass `undefined` to unpublish, which is what a spec does when it is
  * done with a fake.
  *
  * @internal — a host concern, exported from `@alexkroman1/aai-runtime`. A step
- * author calls {@link report}.
+ * author calls {@link stepReport}.
  */
 export function publishStepReporter(reporter: StepReporter | undefined): void {
   if (reporter === undefined) delete (globalThis as StepReporterSlot)[STEP_REPORTER_SLOT];
@@ -122,7 +123,7 @@ export function publishStepReporter(reporter: StepReporter | undefined): void {
  *   over a machine token — the page renders these verbatim.
  * @public
  */
-export async function report(line: string): Promise<void> {
+export async function stepReport(line: string): Promise<void> {
   const reporter = (globalThis as StepReporterSlot)[STEP_REPORTER_SLOT];
   if (!reporter) {
     // No host in this process — a spec, or a script calling an exported step.
@@ -141,9 +142,9 @@ export async function report(line: string): Promise<void> {
 /**
  * Write one structured chunk into a NAMED stream of this run.
  *
- * The other half of {@link report}, and the split is what each is FOR: `report`
- * writes a sentence for a person, into the run's default stream and the server
- * log. This writes a VALUE for a program — a partial result, as the step produces
+ * The other half of {@link stepReport}, and the split is what each is FOR:
+ * `stepReport` writes a sentence for a person, into the run's default stream and
+ * the server log. This writes a VALUE for a program — a partial result, as the step produces
  * it — into a stream a reader asks for by name.
  *
  * That is what makes a long run's output streamable rather than only its
@@ -153,11 +154,11 @@ export async function report(line: string): Promise<void> {
  * the answer growing instead of a spinner:
  *
  * ```ts no-check
- * import { emit } from "@alexkroman1/aai/step";
+ * import { stepEmit } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
  *   const text = await transcribe(index);
- *   await emit("transcript", { index, text });
+ *   await stepEmit("transcript", { index, text });
  *   return { index, text };
  * }
  * ```
@@ -170,28 +171,28 @@ export async function report(line: string): Promise<void> {
  * ```
  *
  * **The namespace is REQUIRED, and that is the point of the argument.** The
- * default stream is `report()`'s, carrying lines a page renders verbatim — an
- * object written into it comes back as `[object Object]` in the middle of the
+ * default stream is `stepReport()`'s, carrying lines a page renders verbatim —
+ * an object written into it comes back as `[object Object]` in the middle of the
  * progress log, which is a trap rather than a decision. A named stream is also
  * how a reader gets ONE kind of chunk per subscription, so
  * `useWorkflowProgress<T>` can be typed at all.
  *
- * **Call it from a STEP, never from the workflow body**, for the reason `report`
+ * **Call it from a STEP, never from the workflow body**, for the reason `stepReport`
  * says: a body replays from the top on every resume, so a chunk written there is
  * re-emitted on each one.
  *
  * Chunks are RETAINED with the run, so a reader that arrives late or reloads gets
  * the whole stream from the beginning rather than only what arrives next.
  *
- * Failures are swallowed, exactly as `report`'s are: a run must not fail because
- * a reader could not be told about a result the run itself has.
+ * Failures are swallowed, exactly as `stepReport`'s are: a run must not fail
+ * because a reader could not be told about a result the run itself has.
  *
  * @param namespace - Which of the run's streams this belongs in. A short,
  *   stable name — a reader subscribes by it.
  * @param chunk - The value, which must survive the run's own serialization.
  * @public
  */
-export async function emit<T>(namespace: string, chunk: T): Promise<void> {
+export async function stepEmit<T>(namespace: string, chunk: T): Promise<void> {
   const reporter = (globalThis as StepReporterSlot)[STEP_REPORTER_SLOT];
   if (!reporter) {
     // No host in this process — a spec, or a script calling an exported step.
@@ -202,7 +203,7 @@ export async function emit<T>(namespace: string, chunk: T): Promise<void> {
   }
   try {
     // `log: false` — a structured chunk per item would bury the narration it
-    // sits beside in the server log, which is the reader `report` exists for.
+    // sits beside in the server log, which is the reader `stepReport` exists for.
     await reporter(chunk, { namespace, log: false });
   } catch {
     // A run must not fail because a reader could not be told.

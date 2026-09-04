@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The system under test for the S2S property test: one real `SessionCore` over
+ * The system under test for the S2S property test: one real `ServerSession` over
  * a real `createS2sTransport` over a real `connectS2s`, with the fake link
  * (`_s2s-fuzz-model.ts`) as its socket and a recording `ClientSink` at the far
  * end.
@@ -25,7 +25,7 @@ import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { silentLogger } from "../runtime-config.ts";
-import { createSessionCore, type SessionCore } from "../session-core.ts";
+import { createSessionCore, type ServerSession } from "../session-core.ts";
 import { createSessionEmitter } from "../session-emitter.ts";
 import { createSessionEventStream } from "../session-event-stream.ts";
 import { createMemoryStateBackend } from "../session-state-store.ts";
@@ -75,7 +75,7 @@ interface PendingTool {
 }
 
 export interface Harness {
-  session: SessionCore;
+  session: ServerSession;
   link: FakeS2sLink;
   /** Every client event, in order. */
   events: SessionEvent[];
@@ -185,7 +185,7 @@ export const FIRST_SESSION_ID = "sess-0";
 export async function createHarness(cov: Record<string, number>): Promise<Harness> {
   const link = createFakeS2sLink();
   const h: Harness = {
-    session: undefined as unknown as SessionCore,
+    session: undefined as unknown as ServerSession,
     link,
     events: [],
     pendingTools: [],
@@ -201,8 +201,8 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     cov[key] = (cov[key] ?? 0) + 1;
   };
 
-  let core: SessionCore | null = null;
-  const bind = (): SessionCore => {
+  let core: ServerSession | null = null;
+  const bind = (): ServerSession => {
     // An invariant rather than an oracle failure: `core` is this function's own
     // local, filled in below, so a null here is the HARNESS mis-ordering itself
     // and must not read as a finding about the transport under test. Same shape
@@ -261,7 +261,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     //  - It NEVER REJECTS. A throwing tool, a timeout, an abort — all come back
     //    as `serializeToolFailure(...)` strings, so "the tool blew up" is a resolved value.
     //  - An ALREADY-ABORTED signal is handled explicitly, because an abort
-    //    listener on one never fires. `SessionCore.onCancel` aborts the reply
+    //    listener on one never fires. `ServerSession.onCancel` aborts the reply
     //    WITHOUT replacing it, so a `tool.call` arriving after a client cancel
     //    gets exactly that signal. Only listening for `abort` left the promise
     //    pending forever, `stop()` awaiting the turn, and the property reporting

@@ -248,7 +248,7 @@ export function readBody(req: http.IncomingMessage, limit: number): Promise<Buff
 }
 
 /**
- * Turn an ASYNC route into the synchronous claim `ServerOptions.request` wants.
+ * Turn an ASYNC route into the synchronous claim `RuntimeServerOptions.request` wants.
  *
  * The contract this owns is the one both HTTP surfaces in this package restate
  * and neither states: **claiming is synchronous, handling is not, and a claimed

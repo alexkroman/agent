@@ -8,7 +8,7 @@
  * that: the guard must be invisible to every legal program.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type { JournalStore, RunRecord } from "./workflow-journal-types.ts";
@@ -31,7 +31,7 @@ async function seed(): Promise<JournalStore> {
 
 function replay(
   journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown,
+  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
 ) {
   return replayRun({ runId: "wrun_1", workflow: "digest", input: {}, run, journal });
 }
@@ -68,7 +68,7 @@ describe("a wait reached inside a step", () => {
     vi.useFakeTimers();
     const journal = await seed();
     const enters: string[] = [];
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) =>
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) =>
       ctx.step("napper", async () => {
         enters.push("napper");
         await ctx.sleep("nap", 2000);
@@ -108,7 +108,7 @@ describe("a wait reached inside a step", () => {
     vi.useFakeTimers();
     const journal = await seed();
     const claimSleep = vi.spyOn(journal, "claimSleep");
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await ctx.step("napper", async () => {
         await ctx.sleep("nap", 2000);
         return "x";
@@ -145,7 +145,7 @@ describe("a wait reached inside a step", () => {
     // check does not depend on the wait being lexically in the callback — which
     // is exactly where an accidental one hides.
     const journal = await seed();
-    const poll = async (ctx: WorkflowCtx) => {
+    const poll = async (ctx: WorkflowContext) => {
       await ctx.sleep("nap", 1000);
     };
     const outcome = await replay(journal, async (_input, ctx) =>
@@ -260,7 +260,7 @@ describe("a body that reaches a different NUMBER of waits", () => {
     vi.useFakeTimers();
     const journal = await seed();
     let takeEarly = true;
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       if (takeEarly) await ctx.sleep("early", 1000);
       await ctx.sleep("schedule", WEEK_MS);
       return "done";
@@ -283,7 +283,7 @@ describe("a body that reaches a different NUMBER of waits", () => {
     const journal = await seed();
     let takeLate = true;
     const seen: unknown[] = [];
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       if (takeLate) seen.push(await ctx.waitFor("late"));
       seen.push(await ctx.waitFor("final"));
       return "done";
@@ -318,7 +318,7 @@ describe("a body that reaches a different NUMBER of waits", () => {
         return journal.claimSleep(runId, key, wakeAt, correlationId, kind);
       },
     };
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       for (let round = 0; round < 3; round++) await ctx.sleep("poll", 1000);
       return "done";
     };

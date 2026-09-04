@@ -20,7 +20,7 @@ import {
   publishUploadReader,
   UPLOADS_UNAVAILABLE_MESSAGE,
 } from "@alexkroman1/aai/host-internal";
-import { readUpload, report, stepFetch } from "@alexkroman1/aai/step";
+import { stepFetch, stepReadUpload, stepReport } from "@alexkroman1/aai/step";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installWorkflowSupport } from "./workflow-install.ts";
 
@@ -67,7 +67,7 @@ async function* oneChunk(): AsyncGenerator<Uint8Array> {
   yield new Uint8Array([1, 2, 3, 4]);
 }
 
-/** A logger that records nothing anybody asserts on — see the `report` test for one that does. */
+/** A logger that records nothing anybody asserts on — see the `stepReport` test for one that does. */
 function quietLogger() {
   return { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
 }
@@ -77,15 +77,15 @@ function install() {
 }
 
 describe("installWorkflowSupport", () => {
-  test("publishes the upload reader, so a step's readUpload reaches a store", async () => {
-    await expect(readUpload("upl_missing")).rejects.toThrow(UPLOADS_UNAVAILABLE_MESSAGE);
+  test("publishes the upload reader, so a step's stepReadUpload reaches a store", async () => {
+    await expect(stepReadUpload("upl_missing")).rejects.toThrow(UPLOADS_UNAVAILABLE_MESSAGE);
     install();
     // A DIFFERENT failure, which is the point: the slot is filled and the store is
     // the thing that answered. With no database that store is the LOCAL one, so what
     // it answers for an id nobody uploaded is "no such upload" — the honest answer,
     // where the unpublished slot's message is about this process's wiring.
-    await expect(readUpload("upl_missing")).rejects.not.toThrow(UPLOADS_UNAVAILABLE_MESSAGE);
-    await expect(readUpload("upl_missing")).rejects.toThrow(/No upload with id upl_missing/);
+    await expect(stepReadUpload("upl_missing")).rejects.not.toThrow(UPLOADS_UNAVAILABLE_MESSAGE);
+    await expect(stepReadUpload("upl_missing")).rejects.toThrow(/No upload with id upl_missing/);
   });
 
   test("with no database, uploads WORK and live under the declared data directory", async () => {
@@ -247,7 +247,7 @@ describe("installWorkflowSupport", () => {
   test("publishes the reporter, so a step's report reaches the logger", async () => {
     const info = vi.fn();
     installWorkflowSupport({ logger: { ...quietLogger(), info } });
-    await report("halfway");
+    await stepReport("halfway");
     expect(info).toHaveBeenCalledWith("Workflow: halfway", expect.anything());
   });
 
@@ -278,7 +278,7 @@ describe("installWorkflowSupport", () => {
   });
 
   test("hands back a close, because the pools it opens are the SERVER's to release", async () => {
-    // `aai dev` re-runs `createServer` on every save. Before this, each rebuild
+    // `aai dev` re-runs `createRuntimeServer` on every save. Before this, each rebuild
     // stranded an upload pool and an undici keep-alive pool — nothing anywhere
     // held a reference to close. Idempotent, since a server may close twice.
     const support = install();

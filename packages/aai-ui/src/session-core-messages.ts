@@ -96,7 +96,7 @@ type MessageHandlers = {
  *
  * Encapsulates the per-session dedup counters (`customEventSeq`,
  * `messageSeq`, `toolCallSeq`) that previously lived as closure locals in
- * `createSessionCore`. The turn-boundary epoch is NOT one of them: it lives
+ * `createBrowserSession`. The turn-boundary epoch is NOT one of them: it lives
  * on `conn` because the session core bumps it on teardown too (see
  * `ConnState.turn`).
  */

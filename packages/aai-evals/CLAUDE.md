@@ -40,7 +40,7 @@ so the truncated-auth regression is invisible to it)". Level 1 cannot see an
 endpointing bug; level 2 without tools cannot see the bug an endpointing change
 caused. **Nothing here may be named, documented or reported in a way that
 implies level 2 coverage** — building level 1 and claiming level 2's questions
-would be a worse outcome than having neither. `eval/fake-speech.ts` in
+would be a worse outcome than having neither. `eval/stub-speech.ts` in
 `aai-runtime` repeats the warning at the seam where it would be forgotten.
 
 **Level 2's corpus decision is deferred, not made.** The honest options were a
@@ -129,7 +129,7 @@ The finding is the asymmetry: at this scope the SCORE is not the noisy thing,
 LATENCY is. Read the 100% carefully — it says these four cases do not
 discriminate between a good agent and a slightly worse one; it does not say they
 check nothing. They failed loudly on two real harness bugs during development
-(see `eval/fake-speech.ts` and `eval/session.ts`'s `repliedTo` in
+(see `eval/stub-speech.ts` and `eval/session.ts`'s `repliedTo` in
 `aai-runtime`), which is the
 discrimination evidence there is. A case that flips is more informative than one
 that always passes, and the way to get there is a harder case, never a lower
@@ -211,14 +211,14 @@ template is a user's project and had no way to ask this question at all — see
 `packages/aai-runtime/CLAUDE.md`. What stays here is the half that is a promise
 about a NOISY instrument: the recording runner, the spread report, and the
 assertion vocabulary. `assertions.ts` imports `TURN_ENDS`, `saidIn` and
-`toolCallsIn` from the published subpath rather than restating them, which is the
-same one-declaration rule that section records being bitten by twice, now across
-a package boundary. What is REAL: `createRuntime`, the pipeline transport, the
-LLM on a live key, the tool executor, `ctx` and its slots, history trimming, the
-step budget, and the session event stream. What is not, stated rather than
-papered over: `ws-handler.ts`, the audio pacer, and frame ordering — all of which
-have unit and scenario coverage, where "given this utterance, did the agent do
-the right thing" had none.
+`toolCallsInEvents` from the published subpath rather than restating them, which
+is the same one-declaration rule that section records being bitten by twice, now
+across a package boundary. What is REAL: `createRuntime`, the pipeline
+transport, the LLM on a live key, the tool executor, `ctx` and its slots,
+history trimming, the step budget, and the session event stream. What is not,
+stated rather than papered over: `ws-handler.ts`, the audio pacer, and frame
+ordering — all of which have unit and scenario coverage, where "given this
+utterance, did the agent do the right thing" had none.
 
 **The fakes go in through `registerSttKind`/`registerTtsKind` on
 `@alexkroman1/aai-runtime`.** That seam's own doc gives the reason: a fake
@@ -257,12 +257,13 @@ The declaration crossing a package boundary is what makes the rule hold now that
 the target is published.
 
 **`openEvalSession` releases the fake stages when its own setup throws.**
-`installFakeSpeech()` registers a PROCESS-GLOBAL kind pair and the only thing
-that unregisters it is the handle the function returns, so a runtime that would
-not start, or a greeting that timed out, left the pair registered for the
-worker's life with nobody holding a release. `runEval` catches the throw and runs
-the next repeat, which is what made it compound — `AAI_EVAL_REPEAT=5` against a
-failing agent orphaned five pairs. The runtime is shut down on that path too.
+`installStubSpeechProviders()` registers a PROCESS-GLOBAL kind pair and the only
+thing that unregisters it is the handle the function returns, so a runtime that
+would not start, or a greeting that timed out, left the pair registered for the
+worker's life with nobody holding a release. `runEval` catches the throw and
+runs the next repeat, which is what made it compound — `AAI_EVAL_REPEAT=5`
+against a failing agent orphaned five pairs. The runtime is shut down on that
+path too.
 
 ## The studio starter eval
 

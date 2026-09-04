@@ -19,7 +19,7 @@
  * downstream, so the two gates compose ("did this come through the platform" and
  * "does the caller hold the app's workflow token").
  *
- * `aai dev` and a self-hosted `createServer` have no platform and no
+ * `aai dev` and a self-hosted `createRuntimeServer` have no platform and no
  * `AAI_GUEST_TOKEN`, so this gate lives in the DEPLOYED-guest request hook only
  * (`createAgentRequestHandler`) and never runs there. What it must NOT rest on is
  * that fact plus `harness.ts`'s boot refusal — see
@@ -48,7 +48,7 @@ export const GUEST_PROXY_TOKEN_HEADER = "x-aai-guest-token";
  * their own gates, so they are deliberately NOT matched here. Two remain: the
  * platform's delivery door (`POST /workflow-queue`, which `handleWorkflowRequest`
  * claims before this runs and which fails CLOSED without the platform's bearer),
- * and the public webhook, mounted by `createServer` and authenticated by the
+ * and the public webhook, mounted by `createRuntimeServer` and authenticated by the
  * unguessable token IN its path.
  *
  * The DevKit's `flow` and `step` were the other two, and they are why this

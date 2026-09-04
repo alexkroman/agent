@@ -15,7 +15,7 @@ export function truncate(s: string, max = 80): string {
 
 /**
  * The page this UI is served from — the agent's base URL when none is
- * configured explicitly. One definition so `client()`'s default and the
+ * configured explicitly. One definition so `mountClient()`'s default and the
  * shareable-URL chip can never disagree about which agent the page is.
  */
 export function pageBaseUrl(): string {
@@ -27,8 +27,8 @@ export function pageBaseUrl(): string {
  * Set the document title, when there is one to set and a document to set it on.
  *
  * Both mounts do this and neither may clobber a title the page's own HTML
- * declared — `client()`'s custom-component tier because there is no shell header
- * to show the name in, `page()` because there is no shell at all. One copy, for
+ * declared — `mountClient()`'s custom-component tier because there is no shell header
+ * to show the name in, `mountPage()` because there is no shell at all. One copy, for
  * the reason `resolveContainer` and `mountRoot` are shared: the rule is the
  * same, so the two mounts must not be able to disagree about it.
  */

@@ -67,8 +67,8 @@ form-fronted workflow app instead.`,
   the user asks to submit a job, watch it run and read the result: an
   overnight digest, an upload that takes minutes, anything waiting on a
   third-party callback. Declare it with \`workflowApp({ name, workflows })\`
-  from "@alexkroman1/aai" and mount its client.tsx with \`page()\` instead of
-  \`client()\`. It has no session and no LLM loop, so systemPrompt, tools,
+  from "@alexkroman1/aai" and mount its client.tsx with \`mountPage()\` instead
+  of \`mountClient()\`. It has no session and no LLM loop, so systemPrompt, tools,
   maxSteps, state and every provider field are TYPE ERRORS on one — do not
   reach for \`agent({ page: "static" })\` and add them back.
 - Workflow BODIES go in \`workflows/*.ts\` — the build transforms that
@@ -160,7 +160,7 @@ it in the UI pane."`,
 };
 
 /**
- * Workflow mode: a STATIC workflow app — `workflowApp()` plus a `page()`.
+ * Workflow mode: a STATIC workflow app — `workflowApp()` plus a `mountPage()`.
  *
  * "Static" is the discriminant's own word (`page: "static"`, which
  * `workflowApp()` sets) and it is the default this mode has to hold, because
@@ -181,7 +181,7 @@ unless they ask outright for a voice agent instead.`,
 
 - **Default to a STATIC workflow app**: \`workflowApp({ name, workflows })\`
   from "@alexkroman1/aai" in agent.ts, workflow bodies in \`workflows/*.ts\`,
-  and a client.tsx mounted with \`page()\`. The front door is a FORM — submit
+  and a client.tsx mounted with \`mountPage()\`. The front door is a FORM — submit
   a job, watch it run, read the result — not a call.
 - **Start from the \`transcription-workflow\` template.** It is the worked example
   for exactly this shape: a \`<Form>\` that submits a job, a durable body that
@@ -257,9 +257,9 @@ unless they ask outright for a voice agent instead.`,
   clientUi: `A workflow app's client.tsx is its FRONT DOOR, not a decoration — the page
 is how a run gets started and how anyone sees it finish, so **every project
 here has one** and you write it in the same turn as the workflow. Mount it
-with \`page({ name, component })\` from "@alexkroman1/aai-ui", never
-\`client()\`: there is no session to build, and a page mounted with
-\`client()\` opens a \`/websocket\` the server declines. Start the file with
+with \`mountPage({ name, component })\` from "@alexkroman1/aai-ui", never
+\`mountClient()\`: there is no session to build, and a page mounted with
+\`mountClient()\` opens a \`/websocket\` the server declines. Start the file with
 \`import "@alexkroman1/aai-ui/styles.css";\` so Tailwind utilities work.
 
 The reference below documents the primitives in its "Workflow apps —

@@ -152,15 +152,15 @@ export type UploadOptions = {
     type?: string | undefined;
     signal?: AbortSignal | undefined;
     onProgress?: ((progress: UploadProgress) => void) | undefined;
-    parallel?: UploadParallel | undefined;
+    parallel?: UploadParallelOption | undefined;
     resume?: boolean | undefined;
 };
 
 // @public
-export type UploadParallel = boolean | UploadPartsSettings;
+export type UploadParallelOption = boolean | UploadPartsOptions;
 
 // @public
-export type UploadPartsSettings = {
+export type UploadPartsOptions = {
     partBytes?: number | undefined;
     concurrency?: number | undefined;
 };
@@ -255,7 +255,7 @@ export type WorkflowApiClientOptions = {
 };
 
 // @public
-export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public
 export type WorkflowClient = {
@@ -279,7 +279,7 @@ export type WorkflowClient = {
 };
 
 // @public
-export type WorkflowCtx = {
+export type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;

@@ -349,8 +349,9 @@ describe("workflowApp()", () => {
   });
 
   test("a greeting passes through, because `GET /client-config` serves it", () => {
-    // The one client-config field a workflow app can still put to work: `page()`
-    // does not fetch it the way `client()` does, so a page that wants it calls
+    // The one client-config field a workflow app can still put to work:
+    // `mountPage()` does not fetch it the way `mountClient()` does, so a page
+    // that wants it calls
     // `fetchClientConfig()`.
     const def = workflowApp({
       name: "Link Digest",

@@ -5,7 +5,7 @@
  *
  * This is what replaced the Workflow DevKit's `getWritable()` and
  * `getStepMetadata()`, and the reason it has to exist rather than being replaced
- * by a parameter: `report()` is called from deep inside a step's own helpers, and
+ * by a parameter: `stepReport()` is called from deep inside a step's own helpers, and
  * `stepGenerate` reports progress from a module that has never heard of
  * workflows. Passing the run down to those call sites would mean every
  * intermediate function taking a context it does not use, which is the
@@ -24,7 +24,7 @@
  *
  * A step is also an ordinary exported async function — every workflow template's
  * tests call one directly, with no run anywhere. So {@link currentRun} answers
- * `undefined` rather than throwing, and `report()` degrades to a log line. The
+ * `undefined` rather than throwing, and `stepReport()` degrades to a log line. The
  * DevKit's `getStepMetadata()` threw here, which is why `workflow-report.ts`
  * used to carry a try/catch around it; it does not now.
  */
@@ -61,7 +61,7 @@ export type RunContext = {
          * caller hangs up — `undefined` for a walk that has none (a spec).
          *
          * Here rather than as a parameter to the step body for the reason the
-         * module doc gives about `report()`: `stepFetch` is reached from deep
+         * module doc gives about `stepReport()`: `stepFetch` is reached from deep
          * inside a step's own helpers, and threading a signal down to it would
          * mean every intermediate function taking one it does not use. It is the
          * SAME signal `attemptLoop` classifies an abort against, which is what
@@ -88,18 +88,18 @@ export type RunContext = {
 /**
  * The one store for the process — and "the process" needs saying carefully.
  *
- * Two stores would each see only their own `run()` calls, so a `report()`
+ * Two stores would each see only their own `run()` calls, so a `stepReport()`
  * reaching the wrong one finds no context and degrades to log-only. This module
  * said that and then took a module-level `new AsyncLocalStorage()`, which is one
  * store per COPY of this package rather than one per process.
  *
  * **A deployed guest has two copies**, and that is by design rather than by
- * accident: the harness bundles its own `aai-runtime` and calls `createServer`
+ * accident: the harness bundles its own `aai-runtime` and calls `createRuntimeServer`
  * from it, while the agent's runtime is built by the BUNDLE's own
  * `__aaiCreateRuntime` so a deployed agent runs the SDK version it was tested
  * against (`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). So the
  * reporter `installWorkflowSupport` publishes belonged to the harness's copy and
- * the run context belonged to the bundle's, and every `report()` from inside a
+ * the run context belonged to the bundle's, and every `stepReport()` from inside a
  * step logged its line with an empty context and streamed NOTHING — a page
  * watching a fifty-minute transcription saw no progress at all, and the attempt
  * suffix that tells a reader a fan-out is retrying never appeared.

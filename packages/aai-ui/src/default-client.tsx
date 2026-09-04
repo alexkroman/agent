@@ -4,6 +4,6 @@
 // (`@alexkroman1/aai-ui/styles.css`) and a Vite asset, so it sits beside
 // `index.html` and `public/` where the exports map and `files` name it.
 import "../styles.css";
-import { client } from "./define-client.tsx";
+import { mountClient } from "./define-client.tsx";
 
-client({});
+mountClient({});

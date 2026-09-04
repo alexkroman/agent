@@ -535,7 +535,7 @@ What an upload call accepts as the file's bytes.
 type UploadOptions = {
   name?: string;
   onProgress?: (progress: UploadProgress) => void;
-  parallel?: UploadParallel;
+  parallel?: UploadParallelOption;
   resume?: boolean;
   signal?: AbortSignal;
   type?: string;
@@ -587,7 +587,7 @@ same URL, same headers, same failures.
 ##### parallel?
 
 ```ts
-optional parallel?: UploadParallel;
+optional parallel?: UploadParallelOption;
 ```
 
 Cut the file up and send the pieces at once, instead of in one request.
@@ -660,10 +660,10 @@ MIME type to store. Defaults to a `Blob`'s own `type`, else octet-stream.
 
 ***
 
-### UploadParallel
+### UploadParallelOption
 
 ```ts
-type UploadParallel = boolean | UploadPartsSettings;
+type UploadParallelOption = boolean | UploadPartsOptions;
 ```
 
 What [UploadOptions.parallel](#parallel) accepts: `true` for the defaults, or the
@@ -671,10 +671,10 @@ settings to tune them.
 
 ***
 
-### UploadPartsSettings
+### UploadPartsOptions
 
 ```ts
-type UploadPartsSettings = {
+type UploadPartsOptions = {
   concurrency?: number;
   partBytes?: number;
 };
@@ -907,7 +907,7 @@ download(id: string, options?: {
 ```
 
 Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
-a file (`writeUpload` stores it, the output carries the id). A `Blob`
+a file (`stepWriteUpload` stores it, the output carries the id). A `Blob`
 rather than a URL because the byte route takes the same bearer every route
 here does and neither `<audio src>` nor `<a href>` can send one;
 `downloadUpload` carries the rest.
@@ -1281,7 +1281,7 @@ Store a file and resolve the handle a run input carries.
 The other half of `WorkflowDef.uploads`: a workflow's input is journaled and
 replayed on every resume, so bytes may not travel in it — they go here once,
 and the run carries [UploadRef.id](#id), which a step reads windows of with
-`readUpload`.
+`stepReadUpload`.
 
 A `File` from an `<input type="file">` needs no second argument: its own
 `name` and `type` are what get stored. Anything else — a `Blob`, a
@@ -1512,23 +1512,22 @@ reader reach for a `!` or a conditional spread.
 ### WorkflowBody
 
 ```ts
-type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 ```
 
 A workflow body: an ordinary async function of its input and a
-[WorkflowCtx](index.md#workflowctx).
+[WorkflowContext](index.md#workflowcontext).
 
 **There is no `workflowId` any more, and its absence is the point.** Under the
-Workflow DevKit this type carried one, attached by a compile-time transform,
-and `start()` read it — so a body that the bundler plugin had not reached
-looked perfectly valid at the declaration site and failed at the first
-`start()` with `MISSING_WORKFLOW_ID`. An agent that builds, deploys, boots and
-answers the phone but cannot start a run is a bad failure to design in. A
-workflow is now identified by the key it is declared under in
-`agent({ workflows })`, which cannot go missing because the declaration IS the
-registration.
+Workflow DevKit this type carried one, attached by a compile-time transform, and
+`start()` read it — so a body that the bundler plugin had not reached looked
+perfectly valid at the declaration site and failed at the first `start()` with
+`MISSING_WORKFLOW_ID`. An agent that builds, deploys, boots and answers the
+phone but cannot start a run is a bad failure to design in. A workflow is now
+identified by the key it is declared under in `agent({ workflows })`, which
+cannot go missing because the declaration IS the registration.
 
-The body is REPLAYED — see [WorkflowCtx](index.md#workflowctx) for what that forbids.
+The body is REPLAYED — see [WorkflowContext](index.md#workflowcontext) for what that forbids.
 
 #### Type Parameters
 
@@ -1552,7 +1551,7 @@ What the body returns.
 
 ##### ctx
 
-[`WorkflowCtx`](index.md#workflowctx)
+[`WorkflowContext`](index.md#workflowcontext)
 
 #### Returns
 
@@ -1609,7 +1608,7 @@ export const digest = workflow({
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import type { digest } from "../agent.ts";
 
-export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
   // `limit` is `number`, not `number | undefined` — the default already ran.
   return await research(input.topic, input.limit);
 }
@@ -1962,9 +1961,9 @@ Re-exports [WorkflowClient](index.md#workflowclient)
 
 ***
 
-### WorkflowCtx
+### WorkflowContext
 
-Re-exports [WorkflowCtx](index.md#workflowctx)
+Re-exports [WorkflowContext](index.md#workflowcontext)
 
 ***
 

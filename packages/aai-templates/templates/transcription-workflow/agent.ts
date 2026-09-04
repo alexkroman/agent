@@ -40,7 +40,7 @@
  * `POST /workflows/uploads` (the browser does this for you: `uploads` below is
  * what makes `<WorkflowFields>` render a file picker, and `useWorkflowSubmit`
  * stores the file before starting the run), the input carries the returned id,
- * and each step reads exactly the window it needs with `readUpload` — which is
+ * and each step reads exactly the window it needs with `stepReadUpload` — which is
  * what keeps sixty steps from moving the same recording sixty times.
  *
  * None of that is this template's code. Uploads are the SDK's, for the reason
@@ -118,7 +118,7 @@ export const transcribe = workflow({
   }),
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
   // picker for this property, `useWorkflowSubmit` stores the chosen file, and
-  // the steps read it back with `readUpload`.
+  // the steps read it back with `stepReadUpload`.
   uploads: ["recording"],
   run: transcribeFlow,
 });

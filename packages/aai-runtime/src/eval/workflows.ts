@@ -165,9 +165,9 @@ export type EvalWorkflowRun<R = unknown> = {
   readonly error: string | undefined;
   /** `status === "completed"` — the run ended on its own terms. */
   readonly completed: boolean;
-  /** Every line this run's steps wrote with `report()`, oldest first. */
+  /** Every line this run's steps wrote with `stepReport()`, oldest first. */
   readonly reported: readonly string[];
-  /** Every chunk this run's steps wrote with `emit()`, oldest first. */
+  /** Every chunk this run's steps wrote with `stepEmit()`, oldest first. */
   readonly emitted: readonly EvalEmitted[];
   /**
    * Every durable `sleep()` the body asked for — recorded, never waited out.

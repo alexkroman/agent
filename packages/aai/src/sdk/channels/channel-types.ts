@@ -95,7 +95,7 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
  *
  * @public
  */
-export interface ChannelKind {
+export interface ChannelHandler {
   /** The `kind` tag its descriptors carry, e.g. `"slack"`. */
   readonly kind: string;
   /** Turn a message into this platform's request. */

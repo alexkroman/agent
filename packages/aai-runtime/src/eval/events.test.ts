@@ -14,7 +14,7 @@ import {
   statesIn,
   TURN_ENDS,
   toolArgsIn,
-  toolCallsIn,
+  toolCallsInEvents,
   toolNames,
   toolResultIn,
   toolResultsIn,
@@ -58,10 +58,10 @@ describe("saidIn", () => {
   });
 });
 
-describe("toolCallsIn", () => {
+describe("toolCallsInEvents", () => {
   test("pairs each call with the result that answered it", () => {
     expect(
-      toolCallsIn([
+      toolCallsInEvents([
         called("c1", "look_up", { id: "W1" }),
         completed("c1", '"shipped"'),
         called("c2", "cancel", { id: "W1" }),
@@ -74,7 +74,7 @@ describe("toolCallsIn", () => {
   });
 
   test("reports a call that never completed rather than dropping it", () => {
-    const calls = toolCallsIn([called("c1", "look_up", {})]);
+    const calls = toolCallsInEvents([called("c1", "look_up", {})]);
     expect(calls).toHaveLength(1);
     // The key is ABSENT rather than undefined: "it called the tool and the tool
     // never returned" is a finding, and a `result` of undefined reads as one.
@@ -139,7 +139,7 @@ describe("lastStateIn", () => {
 });
 
 describe("toolResultIn", () => {
-  const calls = toolCallsIn([
+  const calls = toolCallsInEvents([
     called("c1", "look_up", { id: "W1" }),
     completed("c1", '{"status":"shipped"}'),
   ]);
@@ -154,14 +154,14 @@ describe("toolResultIn", () => {
     // first into `SyntaxError: Unexpected token 'S'` thrown from inside the
     // reader, naming neither the tool nor the case — and it failed a real
     // template eval whose assertion was `toolResultsIn(...).join("\n")`.
-    const text = toolCallsIn([called("c1", "run_code", {}), completed("c1", "Saturday")]);
+    const text = toolCallsInEvents([called("c1", "run_code", {}), completed("c1", "Saturday")]);
     expect(toolResultIn(text, "run_code")).toBe("Saturday");
   });
 
   test("text WITH a schema throws, naming the tool and the text", () => {
     // A schema is a declaration that the result has a shape, so text there is a
     // real mismatch — and the message has to say which tool and what it said.
-    const text = toolCallsIn([called("c1", "run_code", {}), completed("c1", "Saturday")]);
+    const text = toolCallsInEvents([called("c1", "run_code", {}), completed("c1", "Saturday")]);
     expect(() => toolResultIn(text, "run_code", z.object({ a: z.string() }))).toThrow(
       /"run_code" answered text, not JSON.*Saturday/s,
     );
@@ -173,7 +173,7 @@ describe("toolResultIn", () => {
   });
 
   test("refuses to guess between two calls to the same tool", () => {
-    const twice = toolCallsIn([
+    const twice = toolCallsInEvents([
       called("c1", "look_up", {}),
       completed("c1", "1"),
       called("c2", "look_up", {}),
@@ -183,13 +183,13 @@ describe("toolResultIn", () => {
   });
 
   test("reports a call that never completed as exactly that", () => {
-    expect(() => toolResultIn(toolCallsIn([called("c9", "look_up", {})]), "look_up")).toThrow(
+    expect(() => toolResultIn(toolCallsInEvents([called("c9", "look_up", {})]), "look_up")).toThrow(
       /never completed/,
     );
   });
 });
 
-/** One `EvalToolCall`, the shape `toolCallsIn` hands the plural readers. */
+/** One `EvalToolCall`, the shape `toolCallsInEvents` hands the plural readers. */
 const call = (name: string, args: Record<string, unknown>, result?: string): EvalToolCall => ({
   toolCallId: `c-${name}-${result ?? "pending"}`,
   name,

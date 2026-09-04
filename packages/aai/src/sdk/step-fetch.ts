@@ -46,11 +46,11 @@
  *
  * ## What it is, mechanically
  *
- * A published slot, the mechanism {@link stepEnv} and {@link report} use and for
+ * A published slot, the mechanism {@link stepEnv} and {@link stepReport} use and for
  * the same reason: the HTTP/1.1 dispatcher needs `undici`, this module is on the
  * CLI's zero-dependency startup path and rides the browser bundle, and a step
  * artifact carries its own copy of this file — so the publisher and the reader
- * are two module instances in one realm. `createServer` publishes;
+ * are two module instances in one realm. `createRuntimeServer` publishes;
  * `host/step-fetch.ts` is the published half.
  *
  * An UNPUBLISHED slot falls back to `globalThis.fetch`, which is what keeps an
@@ -122,7 +122,7 @@ type StepFetchSlot = { [STEP_FETCH_SLOT]?: StepFetch };
 /**
  * Publish the HTTP/1.1 fetch for this process's steps.
  *
- * `createServer` does this, which is what makes a step's outbound calls behave
+ * `createRuntimeServer` does this, which is what makes a step's outbound calls behave
  * identically under `aai dev`, on a self-hosted server and in a deployed guest.
  * Pass `undefined` to unpublish.
  *
@@ -187,7 +187,7 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
  *   `404` is fatal.
  * @public
  *
- * **From a step, prefer `stepFetchOk`
+ * **From a step, prefer `stepFetchOrFail`
  * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
@@ -329,7 +329,7 @@ export type MultipartBody = {
  *
  * **A part's `name` and `filename` are ESCAPED, because they are the one thing
  * here that is routinely not the author's own string.** An upload's `name` is
- * "the filename the uploader gave" (`uploadInfo`), so it reaches a step from a
+ * "the filename the uploader gave" (`stepUploadInfo`), so it reaches a step from a
  * browser form and lands in a header this function writes — and a `"`, a CR or
  * an LF in it closed the quoted string and appended headers of the caller's
  * choosing to the request. The escaping is the HTML form-encoding algorithm's,

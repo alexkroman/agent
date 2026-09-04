@@ -5,7 +5,7 @@
  * One route now, where there were three. `flow` and `step` were the Workflow
  * DevKit's own queue callbacks and went with it — the replay engine executes a
  * step INLINE during the walk rather than as its own message, so there is nothing
- * left for a per-step callback to do. The webhook route moved to `createServer`
+ * left for a per-step callback to do. The webhook route moved to `createRuntimeServer`
  * (`workflow-webhook.ts`), which is the only place it could actually be reached.
  *
  * What remains is the door a deployed guest needs and no other deployment has: a
@@ -196,11 +196,11 @@ export function isLoopbackAddress(address: string | undefined): boolean {
 }
 
 /**
- * Serve the platform's delivery door, in the shape `createServer`'s `request`
+ * Serve the platform's delivery door, in the shape `createRuntimeServer`'s `request`
  * hook wants: `true` when this handler claimed the request.
  *
  * A node↔fetch adapter sits behind it (`workflow-http-adapter.ts`) because the
- * handler is fetch-style while `createServer` is `node:http`; that module's own
+ * handler is fetch-style while `createRuntimeServer` is `node:http`; that module's own
  * doc says why it is temporary.
  *
  * @internal
@@ -238,7 +238,7 @@ export function handleWorkflowRequest(
      * request that reached the hook. Two consequences, both real: an
      * unauthenticated `GET /` on the public sandbox tunnel forced runtime
      * construction, and `ensureRuntime` THROWS for a bundle that has not loaded
-     * or a missing provider credential — into `createServer`'s request hook,
+     * or a missing provider credential — into `createRuntimeServer`'s request hook,
      * which is called with no `try`, so it surfaced as an `uncaughtException` and
      * the guest's guard exited the process, taking every live voice session with
      * it.
@@ -266,7 +266,7 @@ export function handleWorkflowRequest(
 
   // A resolver that THREW could not build the runtime — a misconfigured agent
   // rather than one without workflows — so it answers 500 with the reason. The
-  // catch is the point: this runs inside `createServer`'s request hook, which is
+  // catch is the point: this runs inside `createRuntimeServer`'s request hook, which is
   // called with no `try`, so an escaping throw is an `uncaughtException` and the
   // guest's guard exits the process mid-call.
   // Resolved once, above the try: three readers now — the resolver's own

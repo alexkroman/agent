@@ -44,7 +44,7 @@
  * @module step-uploads-complete
  */
 
-import { type UploadInfo, uploadInfo } from "./step-uploads.ts";
+import { stepUploadInfo, type UploadInfo } from "./step-uploads.ts";
 
 /**
  * An upload that is still arriving, where the whole file was needed.
@@ -78,33 +78,33 @@ export class UploadIncompleteError extends Error {
  *
  * The read for a step that consumes a file END TO END — an upload to a provider,
  * a copy to local disk, a length a segment plan is computed from. A step that
- * works on a WINDOW wants {@link uploadInfo} and clamping, which is what
- * `readUpload` already does.
+ * works on a WINDOW wants {@link stepUploadInfo} and clamping, which is what
+ * `stepReadUpload` already does.
  *
  * @example
  * ```ts
- * import { requireCompleteUpload } from "@alexkroman1/aai/step";
+ * import { stepRequireCompleteUpload } from "@alexkroman1/aai/step";
  *
  * export async function wholeFileSize(uploadId: string): Promise<number> {
- *   const stored = await requireCompleteUpload(uploadId);
+ *   const stored = await stepRequireCompleteUpload(uploadId);
  *   return stored.size;
  * }
  * ```
  *
  * @throws {UploadIncompleteError} when the upload is still arriving — see this
  *   module's doc for why that is a refusal rather than a wait.
- * @throws when the id names no upload, exactly as {@link uploadInfo} does.
+ * @throws when the id names no upload, exactly as {@link stepUploadInfo} does.
  * @public
  */
-export async function requireCompleteUpload(id: string): Promise<UploadInfo> {
-  const info = await uploadInfo(id);
+export async function stepRequireCompleteUpload(id: string): Promise<UploadInfo> {
+  const info = await stepUploadInfo(id);
   if (!info.complete) {
     throw new UploadIncompleteError(
       `Upload ${id} is still arriving — ${info.size} byte(s) readable so far, which is the ` +
         "contiguous PREFIX of the file and not its length. Working on it now would produce a " +
         "result for part of the recording and report success. Wait for the upload to finish " +
-        "before starting this run, or poll `uploadInfo(id)` in a step and `ctx.sleep` between " +
-        "polls, working only on the windows that have landed.",
+        "before starting this run, or poll `stepUploadInfo` in a step and " +
+        "`ctx.sleep` between polls, working only on the windows that have landed.",
       info.size,
     );
   }

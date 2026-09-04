@@ -10,7 +10,7 @@
  * while the wiring answered `completed`.
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type { JournalStore } from "./workflow-journal-types.ts";
@@ -18,7 +18,7 @@ import { replayRun } from "./workflow-replay.ts";
 
 const RUN = "wrun_d";
 
-type Body = (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown;
+type Body = (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown;
 
 async function seed(): Promise<JournalStore> {
   const journal = createMemoryJournal();

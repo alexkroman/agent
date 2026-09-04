@@ -62,25 +62,25 @@ sites across eight templates** — every LLM and transcription call any of them
 makes. Two had already wrapped it in a local `ask()` whose only content was
 that `.catch`, each paying a doc block to say why, and the second one records
 that two OTHER templates wrote the same mapping before it was extracted. So it
-is hoisted one level further: [stepGenerateClassified](#stepgenerateclassified) and its
+is hoisted one level further: [stepGenerateOrFail](#stepgenerateorfail) and its
 siblings are the `/step` call and [throwStepError](#throwsteperror), nothing else.
 
 They live here rather than in `/step` because IMPORTING THEM IS THE OPT-IN.
 `/step` names no verdict vocabulary at all, and whether a terminal failure should
 burn a step's remaining attempts is the caller's decision — a `404` meaning
-"already deleted" wants the raw call. The `Classified` suffix keeps the `/step`
+"already deleted" wants the raw call. The `OrFail` suffix keeps the `/step`
 name intact, so a wrapper reads as the call it wraps.
 
 ## Functions
 
-### sendToChannelClassified()
+### sendToChannelOrFail()
 
 ```ts
-function sendToChannelClassified(channel: Channel, message: ChannelMessage): Promise<string>;
+function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string>;
 ```
 
 `sendToChannel` (`@alexkroman1/aai/channels`), with its failure classified —
-see [stepGenerateClassified](#stepgenerateclassified) for the family, and this module's doc for
+see [stepGenerateOrFail](#stepgenerateorfail) for the family, and this module's doc for
 why the wrapper lives here rather than beside the call it wraps.
 
 `ChannelDeliveryError` carries the platform's verdict AND its `Retry-After`,
@@ -116,19 +116,19 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
 ```ts
 import { slackChannel } from "@alexkroman1/aai/channels";
-import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 
 export async function announce(webhookUrl: string, headline: string): Promise<string> {
-  return await sendToChannelClassified(slackChannel({ webhookUrl }), { text: headline });
+  return await sendToChannelOrFail(slackChannel({ webhookUrl }), { text: headline });
 }
 ```
 
 ***
 
-### stepFetchOk()
+### stepFetchOrFail()
 
 ```ts
-function stepFetchOk(url: string, init?: StepFetchInit): Promise<Response>;
+function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
 ```
 
 `stepFetch`, with the non-2xx branch every caller was writing by hand.
@@ -180,10 +180,10 @@ that second case.
 #### Example
 
 ```ts
-import { stepFetchOk } from "@alexkroman1/aai/step-errors";
+import { stepFetchOrFail } from "@alexkroman1/aai/step-errors";
 
 export async function readFeed(url: string): Promise<string> {
-  return await (await stepFetchOk(url, { signal: AbortSignal.timeout(30_000) })).text();
+  return await (await stepFetchOrFail(url, { signal: AbortSignal.timeout(30_000) })).text();
 }
 ```
 
@@ -193,60 +193,14 @@ a `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
 ***
 
-### stepGenerateClassified()
+### stepGenerateJsonOrFail()
 
 ```ts
-function stepGenerateClassified(prompt: string, opts?: StepGenerateOptions): Promise<string>;
-```
-
-`stepGenerate`, with its failure classified — the whole of what the wrapper
-adds is [throwStepError](#throwsteperror), and see this module's doc for why that is
-worth an export rather than a line at each of the eight templates that wrote
-it. `StepGenerateError` carries the gateway's own verdict AND its
-`Retry-After`, so a rate-limited call waits the delay the gateway named
-instead of the default one-second delay.
-
-None of them takes a `message`: a caller with a label worth attaching wants
-the explicit `.catch((err) => throwStepError(err, …))`.
-
-#### Parameters
-
-##### prompt
-
-`string`
-
-##### opts?
-
-[`StepGenerateOptions`](step.md#stepgenerateoptions)
-
-#### Returns
-
-`Promise`\<`string`\>
-
-#### Throws
-
-A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
-
-#### Example
-
-```ts
-import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
-
-export async function summarize(text: string): Promise<string> {
-  return await stepGenerateClassified(text, { system: "Summarize in two sentences." });
-}
-```
-
-***
-
-### stepGenerateJsonClassified()
-
-```ts
-function stepGenerateJsonClassified<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+function stepGenerateJsonOrFail<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 ```
 
 `stepGenerateJson`, with its failure classified — see
-[stepGenerateClassified](#stepgenerateclassified). The most-copied member of the family (**7 of the
+[stepGenerateOrFail](#stepgenerateorfail). The most-copied member of the family (**7 of the
 17 sites**): a workflow that asks a model for a SHAPE is the usual shape.
 
 Worth knowing what it does NOT flatten: a gateway refusal arrives as a
@@ -281,14 +235,60 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
 ***
 
-### stepTranscribePollClassified()
+### stepGenerateOrFail()
 
 ```ts
-function stepTranscribePollClassified(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+```
+
+`stepGenerate`, with its failure classified — the whole of what the wrapper
+adds is [throwStepError](#throwsteperror), and see this module's doc for why that is
+worth an export rather than a line at each of the eight templates that wrote
+it. `StepGenerateError` carries the gateway's own verdict AND its
+`Retry-After`, so a rate-limited call waits the delay the gateway named
+instead of the default one-second delay.
+
+None of them takes a `message`: a caller with a label worth attaching wants
+the explicit `.catch((err) => throwStepError(err, …))`.
+
+#### Parameters
+
+##### prompt
+
+`string`
+
+##### opts?
+
+[`StepGenerateOptions`](step.md#stepgenerateoptions)
+
+#### Returns
+
+`Promise`\<`string`\>
+
+#### Throws
+
+A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
+
+#### Example
+
+```ts
+import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
+
+export async function summarize(text: string): Promise<string> {
+  return await stepGenerateOrFail(text, { system: "Summarize in two sentences." });
+}
+```
+
+***
+
+### stepTranscribePollOrFail()
+
+```ts
+function stepTranscribePollOrFail(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 ```
 
 `stepTranscribePoll`, with its failure classified — see
-[stepTranscribeSubmitClassified](#steptranscribesubmitclassified). A poll that answers is not a poll that
+[stepTranscribeSubmitOrFail](#steptranscribesubmitorfail). A poll that answers is not a poll that
 SUCCEEDED: an unfinished job comes back as a `TranscribeProgress` and only a
 transport or API failure rejects, so this classifies the rejection and says
 nothing about the job's own status.
@@ -313,17 +313,17 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
 ***
 
-### stepTranscribeSubmitClassified()
+### stepTranscribeSubmitOrFail()
 
 ```ts
-function stepTranscribeSubmitClassified(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+function stepTranscribeSubmitOrFail(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
   id: string;
 }>;
 ```
 
 `stepTranscribeSubmit`, with its failure classified — see
-[stepTranscribeSyncClassified](#steptranscribesyncclassified). Half of the async job API, whose other
-half is [stepTranscribePollClassified](#steptranscribepollclassified); both are wrapped because a submit
+[stepTranscribeSyncOrFail](#steptranscribesyncorfail). Half of the async job API, whose other
+half is [stepTranscribePollOrFail](#steptranscribepollorfail); both are wrapped because a submit
 and its poll are separate steps with separate attempt budgets — classify one
 and not the other and the run gives up in one place and never in the other.
 
@@ -349,10 +349,10 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
 ***
 
-### stepTranscribeSyncClassified()
+### stepTranscribeSyncOrFail()
 
 ```ts
-function stepTranscribeSyncClassified(bytes: 
+function stepTranscribeSyncOrFail(bytes: 
   | Uint8Array<ArrayBufferLike>
   | readonly Uint8Array<ArrayBufferLike>[], opts?: TranscribeSyncOptions): Promise<{
   text: string;
@@ -360,7 +360,7 @@ function stepTranscribeSyncClassified(bytes:
 ```
 
 `stepTranscribeSync`, with its failure classified — see
-[stepGenerateClassified](#stepgenerateclassified).
+[stepGenerateOrFail](#stepgenerateorfail).
 
 This is the arm where classifying earns the most. `TranscribeError` carries
 `retryable`, and a refusal the PROVIDER decided — a recording with no speech in
@@ -391,16 +391,16 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
 ***
 
-### stepTranscribeUploadClassified()
+### stepTranscribeUploadOrFail()
 
 ```ts
-function stepTranscribeUploadClassified(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+function stepTranscribeUploadOrFail(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
   audioUrl: string;
 }>;
 ```
 
 `stepTranscribeUpload`, with its failure classified — see
-[stepTranscribeSyncClassified](#steptranscribesyncclassified) for what a transcription verdict carries.
+[stepTranscribeSyncOrFail](#steptranscribesyncorfail) for what a transcription verdict carries.
 
 #### Parameters
 

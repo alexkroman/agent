@@ -93,10 +93,10 @@ export default agent({
 `;
 
 const WORKFLOW_TS = `
-import type { WorkflowCtx } from "@alexkroman1/aai";
-import { report } from "@alexkroman1/aai/step";
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepReport } from "@alexkroman1/aai/step";
 
-export async function researchFlow(input: { topic: string }, ctx: WorkflowCtx) {
+export async function researchFlow(input: { topic: string }, ctx: WorkflowContext) {
   const findings = await ctx.step("gather", () => gather(input.topic));
   // The suspension is the point: it is what a tool cannot do, and it is what
   // makes the resume path (a second delivery) part of this test.
@@ -106,7 +106,7 @@ export async function researchFlow(input: { topic: string }, ctx: WorkflowCtx) {
 }
 
 async function gather(topic: string) {
-  await report("gathering " + topic);
+  await stepReport("gathering " + topic);
   return { topic, sources: 3 };
 }
 
@@ -114,7 +114,7 @@ async function gather(topic: string) {
 // across a suspension — the run resumes in a fresh delivery and has to append to
 // the same stream rather than starting a new one.
 async function file(topic: string) {
-  await report("filed " + topic);
+  await stepReport("filed " + topic);
 }
 `;
 
@@ -131,7 +131,7 @@ async function file(topic: string) {
  *
  * It is not true any more. `createWebhookHandler` (aai-runtime's
  * `workflow-webhook.ts`) answers that path from `WorkflowClient.signal`, and
- * `createServer` mounts it — so `aai dev` serves it and this tier can reach it
+ * `createRuntimeServer` mounts it — so `aai dev` serves it and this tier can reach it
  * with a plain POST. Restoring a `waitFor` fixture and delivering to that URL is
  * the missing case, and it is the ONE thing in the durable path that no cheaper
  * tier can cover.
@@ -166,10 +166,10 @@ async function file(topic: string) {
  * inside an SDK helper.
  */
 const FAN_OUT_TS = `
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 
-export async function fanOutFlow(input: { words: string[] }, ctx: WorkflowCtx) {
+export async function fanOutFlow(input: { words: string[] }, ctx: WorkflowContext) {
   return {
     shouted: await mapConcurrent(input.words, 3, (word, index) =>
       ctx.step("shout", () => shout(word, index)),
@@ -189,7 +189,7 @@ async function shout(word: string, index: number) {
 /**
  * The SDK's own two narration channels, against a real world.
  *
- * `report()` and `emit()` write to the same run through the same published
+ * `stepReport()` and `stepEmit()` write to the same run through the same published
  * reporter, and what separates them is a DevKit namespace — which is precisely
  * the part a mocked `getWritable` cannot check. If the namespace did not really
  * key a distinct stream, the two would land in one and a page reading progress
@@ -199,10 +199,10 @@ async function shout(word: string, index: number) {
  * real template calls them from.
  */
 const NARRATE_TS = `
-import type { WorkflowCtx } from "@alexkroman1/aai";
-import { emit, mapConcurrent, report } from "@alexkroman1/aai/step";
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepEmit, mapConcurrent, stepReport } from "@alexkroman1/aai/step";
 
-export async function narrateFlow(input: { items: string[] }, ctx: WorkflowCtx) {
+export async function narrateFlow(input: { items: string[] }, ctx: WorkflowContext) {
   const seen = await mapConcurrent(input.items, 2, (item, index) =>
     ctx.step("handle", () => handle(item, index)),
   );
@@ -210,8 +210,8 @@ export async function narrateFlow(input: { items: string[] }, ctx: WorkflowCtx) 
 }
 
 async function handle(item: string, index: number) {
-  await report("handling " + item);
-  await emit("results", { index, shouted: item.toUpperCase() });
+  await stepReport("handling " + item);
+  await stepEmit("results", { index, shouted: item.toUpperCase() });
   return item.toUpperCase();
 }
 `;
@@ -231,10 +231,10 @@ async function handle(item: string, index: number) {
  * — if the global does not cross the bundle boundary this run fails.
  */
 const SECRET_TS = `
-import type { WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { requireStepEnv, stepEnv } from "@alexkroman1/aai/step";
 
-export async function secretFlow(_input: Record<string, unknown>, ctx: WorkflowCtx) {
+export async function secretFlow(_input: Record<string, unknown>, ctx: WorkflowContext) {
   return await ctx.step("readSecret", () => readSecret());
 }
 
@@ -475,10 +475,10 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(body).toContain("event: done");
   }, 40_000);
 
-  test("`emit` streams results into their OWN namespace, beside the narration", async () => {
+  test("`stepEmit` streams results into their OWN namespace, beside the narration", async () => {
     // The half a mocked `getWritable` cannot reach: whether a namespace really
-    // keys a distinct stream in a real world. It has to, or `report()`'s lines
-    // and `emit()`'s objects share one channel and a page renders
+    // keys a distinct stream in a real world. It has to, or `stepReport()`'s lines
+    // and `stepEmit()`'s objects share one channel and a page renders
     // `[object Object]` in the middle of its progress log.
     const started = await api("/workflows/runs", {
       method: "POST",

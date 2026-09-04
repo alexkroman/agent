@@ -53,7 +53,7 @@ import { pipeline } from "node:stream/promises";
 import { assertUploadToken } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { ensureOnce } from "./_ensure-once.ts";
-import { partsOf, type UploadBlobs } from "./_upload-blobs.ts";
+import { partsOf, type UploadBackend } from "./_upload-blobs.ts";
 import { concat } from "./_upload-byte-util.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
 import { UploadIdTakenError, UploadTooLargeError } from "./_upload-store.ts";
@@ -225,7 +225,7 @@ function parseRecord(raw: string): UploadRecord | undefined {
  *
  * @internal
  */
-export function createFileUploadBlobs(opts: { dir: string }): UploadBlobs {
+export function createFileUploadBlobs(opts: { dir: string }): UploadBackend {
   const root = join(opts.dir, OBJECTS_DIR);
   const pathOf = (key: string): string => join(root, ...safeSegments(key));
 
@@ -268,7 +268,7 @@ export function createFileUploadBlobs(opts: { dir: string }): UploadBlobs {
       let held = 0;
       // A stream rather than one `read` into a buffer sized from the request: `end`
       // is a plan computed from a header and may sit past the file, which is
-      // legitimate (see `UploadBlobs.read`) — and a 2 GiB allocation for a window
+      // legitimate (see `UploadBackend.read`) — and a 2 GiB allocation for a window
       // nobody stored is not.
       try {
         for await (const piece of createReadStream(pathOf(key), { start: from, end: end - 1 })) {

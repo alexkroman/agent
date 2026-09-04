@@ -48,8 +48,8 @@ export {
  *
  * On `@alexkroman1/aai-ui/internal` rather than the root barrel, for the same
  * reason as the audio budgets above: it is a framework decision with no
- * `client()` field to set, and the root is the authoring surface. A custom
- * chrome that bypasses `client()` and opens its own microphone reaches it there
+ * `mountClient()` field to set, and the root is the authoring surface. A custom
+ * chrome that bypasses `mountClient()` and opens its own microphone reaches it there
  * alongside the providers it also needs.
  */
 export const VOICE_CAPTURE_CONSTRAINTS = {
@@ -196,8 +196,8 @@ export type SessionError = {
 
 /**
  * Options for creating a voice session — the shared field set accepted by
- * both `client()` and `createSessionCore`. The one difference: `client()`
- * defaults `platformUrl` from `location.href`, while `createSessionCore`
+ * both `mountClient()` and `createBrowserSession`. The one difference: `mountClient()`
+ * defaults `platformUrl` from `location.href`, while `createBrowserSession`
  * requires it.
  *
  * @public

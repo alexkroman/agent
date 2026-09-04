@@ -29,13 +29,13 @@ import type { Transport, TransportEventBody } from "./transports/types.ts";
  *
  * @internal
  */
-export type SessionCoreOptions = {
+export type ServerSessionOptions = {
   id: string;
   agent: string;
   client: ClientSink;
   /**
    * The one way this session publishes an event — see `session-emitter.ts`. It
-   * records into the retained stream, sends to {@link SessionCoreOptions.client},
+   * records into the retained stream, sends to {@link ServerSessionOptions.client},
    * and runs the agent's hooks, in that order. `client` is still here for the
    * audio path, which is binary and deliberately outside the event vocabulary.
    */
@@ -60,11 +60,11 @@ export type SessionCoreOptions = {
 /**
  * One live server-side session: the runtime's bridge between a transport
  * (S2S, pipeline, or OpenAI Realtime) and the connected client. Distinct from
- * aai-ui's browser-side `SessionCore`.
+ * aai-ui's browser-side `BrowserSession`.
  *
  * @public
  */
-export type SessionCore = {
+export type ServerSession = {
   readonly id: string;
   /**
    * Announce the session to its client: the handshake frame, carrying the audio
@@ -76,7 +76,7 @@ export type SessionCore = {
    * literal written straight to the socket, which is precisely what made the
    * handshake a frame no event log could contain.
    *
-   * Sent at zero RTT, before {@link SessionCore.start}, and that ordering is
+   * Sent at zero RTT, before {@link ServerSession.start}, and that ordering is
    * load-bearing: a socket open for seconds carrying nothing is a wedged peer,
    * not a slow one, and aai-ui's handshake guard is armed on exactly this frame.
    */

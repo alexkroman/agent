@@ -49,13 +49,13 @@
  * @module digest
  */
 
-import type { WorkflowCtx } from "@alexkroman1/aai";
-import { mapConcurrent, report, TRANSCRIBE_API } from "@alexkroman1/aai/step";
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { mapConcurrent, stepReport, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import {
   FatalError,
-  stepGenerateJsonClassified,
-  stepTranscribePollClassified,
-  stepTranscribeSubmitClassified,
+  stepGenerateJsonOrFail,
+  stepTranscribePollOrFail,
+  stepTranscribeSubmitOrFail,
 } from "@alexkroman1/aai/step-errors";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
@@ -160,7 +160,7 @@ export type DailyDigestOutput = {
   } | null;
 };
 
-/** What the model must answer with, and what `stepGenerateJsonClassified` enforces. */
+/** What the model must answer with, and what `stepGenerateJsonOrFail` enforces. */
 const SummaryReply = z.object({
   summary: z.string().trim().min(1),
   keyPoints: z.array(z.string().trim().min(1)).min(1).max(5),
@@ -178,7 +178,7 @@ const SummaryReply = z.object({
  */
 export async function dailyDigestFlow(
   input: DigestInput,
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<DailyDigestOutput> {
   // No `??` fallbacks: {@link DigestInput} is the schema's OUTPUT, so every
   // `.default()` has already run by the time a run reaches this line. The
@@ -269,7 +269,7 @@ export async function dailyDigestFlow(
  */
 async function waitForTranscripts(
   jobs: TranscriptJob[],
-  ctx: WorkflowCtx,
+  ctx: WorkflowContext,
 ): Promise<TranscriptState[]> {
   let pending = jobs;
   // Keyed by episode id rather than appended, and that is what keeps the digest
@@ -324,7 +324,7 @@ function gaveUpOn(job: TranscriptJob): TranscriptState {
  * an `unavailable` VALUE rather than a throw, because one bad episode must not
  * sink a digest of five.
  *
- * The verdict itself is the SDK's: `stepTranscribeSubmitClassified` reads
+ * The verdict itself is the SDK's: `stepTranscribeSubmitOrFail` reads
  * `TranscribeError`'s own `retryable` AND its `retryAfter`, and throws a
  * `FatalError` or a `RetryableError` accordingly. The hand-written
  * `err instanceof TranscribeError && err.retryable` this replaces read only the
@@ -332,9 +332,9 @@ function gaveUpOn(job: TranscriptJob): TranscriptState {
  * one-second default instead.
  */
 export async function submitTranscript(episode: Episode): Promise<TranscriptJob> {
-  await report(`Submitting ${episode.title} for transcription.`);
+  await stepReport(`Submitting ${episode.title} for transcription.`);
   try {
-    const { id } = await stepTranscribeSubmitClassified(episode.audioUrl, {
+    const { id } = await stepTranscribeSubmitOrFail(episode.audioUrl, {
       // A digest quotes nobody, so who spoke costs time for nothing.
       params: { speaker_labels: false },
     });
@@ -358,12 +358,12 @@ export async function pollTranscript(job: TranscriptJob): Promise<TranscriptStat
   if (job.transcriptStatus === "unavailable") return job;
 
   try {
-    const progress = await stepTranscribePollClassified(job.transcriptId);
+    const progress = await stepTranscribePollOrFail(job.transcriptId);
     // Branch on `done`, never on a status string: a vocabulary this body does
     // not own would otherwise read as "not finished yet" forever.
     if (!progress.done) return job;
 
-    await report(`Transcribed ${job.title}.`);
+    await stepReport(`Transcribed ${job.title}.`);
     return {
       ...job,
       transcriptStatus: "done",
@@ -393,8 +393,8 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
     };
   }
 
-  await report(`Summarizing ${state.title}.`);
-  const parsed = await stepGenerateJsonClassified(
+  await stepReport(`Summarizing ${state.title}.`);
+  const parsed = await stepGenerateJsonOrFail(
     [
       `Podcast: ${state.podcastTitle}`,
       `Episode: ${state.title}`,

@@ -1,5 +1,5 @@
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
-import { createToolContext, ok, okPosition } from "@alexkroman1/aai/testing";
+import { createToolContext, expectDialogOk, expectToolOk } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {
@@ -237,16 +237,16 @@ describe("retailTool", () => {
   test("runs once the flow says serving", async () => {
     const ctx = makeCtx();
     serve(ctx);
-    expect(ok(await gated.execute({}, ctx))).toEqual({ ok: true });
+    expect(expectToolOk(await gated.execute({}, ctx))).toEqual({ ok: true });
   });
 
   test("the result carries the position the call landed in", async () => {
     const ctx = makeCtx();
     serve(ctx);
-    // `okPosition` rather than a cast to `{ instruction?: string }`: it keeps
+    // `expectDialogOk` rather than a cast to `{ instruction?: string }`: it keeps
     // the envelope this test is about, and a refusal fails here naming what the
     // flow said instead of reading `undefined` off a field nobody assigned.
-    const answered = okPosition<{ ok: boolean }>(await gated.execute({}, ctx));
+    const answered = expectDialogOk<{ ok: boolean }>(await gated.execute({}, ctx));
     expect(answered).toMatchObject({ state: "serving.helping", done: false });
     expect(answered.instruction).toMatch(/one identified customer/);
   });
@@ -307,7 +307,7 @@ describe("the call flow", () => {
       summary: () => "ran",
       execute: () => ({ ok: true }),
     });
-    expect(ok(await anywhere.execute({}, ctx))).toEqual({ ok: true });
+    expect(expectToolOk(await anywhere.execute({}, ctx))).toEqual({ ok: true });
 
     const at = callFlow.send(ctx, { type: "TRANSFERRED" });
     expect(at.state).toBe("transferred");

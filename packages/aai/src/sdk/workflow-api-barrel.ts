@@ -75,7 +75,7 @@ export { type EventStreamFrame, readEventStream } from "./event-stream.ts";
  */
 export type {
   AnyWorkflowDef,
-  // `WorkflowCtx` is `WorkflowBody`'s second parameter and these three are its
+  // `WorkflowContext` is `WorkflowBody`'s second parameter and these three are its
   // own methods' option bags, so all four travel with it under the rule the
   // comment below states: a type a public signature names must be reachable
   // from this entry point.
@@ -85,7 +85,7 @@ export type {
   WaitForOptions,
   WaitForSchemaOptions,
   WorkflowBody,
-  WorkflowCtx,
+  WorkflowContext,
   // `WorkflowDef` and `WorkflowClient` belong to the `workflow` capability and
   // stay on the ROOT — they are what an `agent.ts` declares with. They are
   // reachable here only because the run types' own docs `{@link}` them, and a
@@ -114,8 +114,8 @@ export {
   type UploadBody,
   type UploadInfo,
   type UploadOptions,
-  type UploadParallel,
-  type UploadPartsSettings,
+  type UploadParallelOption,
+  type UploadPartsOptions,
   type UploadProgress,
   type UploadRange,
   type UploadRef,

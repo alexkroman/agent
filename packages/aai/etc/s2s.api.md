@@ -15,7 +15,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function openaiS2s(opts?: OpenAIS2sOptions): S2sProvider;
+export function openAIS2s(opts?: OpenAIS2sOptions): S2sProvider;
 
 // @public
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {

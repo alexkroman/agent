@@ -62,7 +62,7 @@ export type SessionWebSocket = {
  * own event map, which is not assignable to the four overloads declared above.
  *
  * ONE helper rather than a cast per call site. Every front door over
- * `createServer` needs this same narrowing — the `/websocket` session path,
+ * `createRuntimeServer` needs this same narrowing — the `/websocket` session path,
  * host mode, the telephony bridge — and a cast repeated per door is both a
  * suppression per door and an invitation to widen one of them by accident.
  * This is the seam; nothing else may cast to `SessionWebSocket`.

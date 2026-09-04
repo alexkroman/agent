@@ -3,7 +3,7 @@
  * A `node:http` ↔ `fetch` adapter for the workflow routes.
  *
  * Its own module because two unrelated doors need it and neither owns the other:
- * the webhook route, mounted on `createServer` (`workflow-webhook.ts`), and the
+ * the webhook route, mounted on `createRuntimeServer` (`workflow-webhook.ts`), and the
  * platform's delivery door (`workflow-serve.ts`). Putting it with either would
  * make one door import the other's module for an HTTP shim.
  *

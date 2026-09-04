@@ -13,10 +13,10 @@
  * step reads exactly the window it needs:
  *
  * ```ts no-check
- * import { readUpload } from "@alexkroman1/aai/step";
+ * import { stepReadUpload } from "@alexkroman1/aai/step";
  *
  * export async function readHeader(uploadId: string) {
- *   const { bytes, info } = await readUpload(uploadId, { end: 64 * 1024 });
+ *   const { bytes, info } = await stepReadUpload(uploadId, { end: 64 * 1024 });
  *   return parseHeader(bytes, info.size);
  * }
  * ```
@@ -41,23 +41,23 @@
  *
  * The reader needs almost nothing for this, which is the point:
  *
- * - {@link uploadInfo} reports `size` — what has ARRIVED — and `complete`.
- * - {@link readUpload} already clamps its window to `size`, so a step asking for
+ * - {@link stepUploadInfo} reports `size` — what has ARRIVED — and `complete`.
+ * - {@link stepReadUpload} already clamps its window to `size`, so a step asking for
  *   bytes that have not arrived yet gets what has, and says so in the `end` it
  *   returns. That was true before streaming existed and is what makes it work.
  *
- * So a body polls `uploadInfo` in a step and transcribes whatever windows are
+ * So a body polls `stepUploadInfo` in a step and transcribes whatever windows are
  * fully present, exactly as it would over a finished file:
  *
  * ```ts
- * import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
- * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
+ * import { stepReadUpload, stepUploadInfo } from "@alexkroman1/aai/step";
+ * import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
  *
- * export async function transcribeStream(input: { recording: string }, ctx: WorkflowCtx) {
+ * export async function transcribeStream(input: { recording: string }, ctx: WorkflowContext) {
  *   for (;;) {
  *     // In a step, so each poll's answer is journaled rather than re-read on
  *     // every replay — `arrived#0`, `arrived#1`, … one per round of the loop.
- *     const { size, complete } = await ctx.step("arrived", () => uploadInfo(input.recording));
+ *     const { size, complete } = await ctx.step("arrived", () => stepUploadInfo(input.recording));
  *     // … work on every segment whose `end` is inside `size` …
  *     if (complete) break;
  *     await ctx.sleep("poll", 5000);
@@ -65,15 +65,14 @@
  * }
  * ```
  *
- * **`complete` is the field to branch on, never `size`.** A size that stopped
- * growing means "nothing arrived recently", which is what a slow link and a dead
- * client both look like; only `complete` says the file is all there. A body that
- * treated a stalled size as the end would return a transcript of most of a
- * recording and report success.
+ * **`complete` is the field to branch on, never `size`.** A size that stopped growing
+ * means "nothing arrived recently", which is what a slow link and a dead client both
+ * look like; only `complete` says the file is all there. A body that treated a stalled
+ * size as the end would return a transcript of most of a recording and report success.
  *
  * Two rules a body written on this has to keep, and neither is enforceable here:
  *
- * - **Poll in a STEP, loop in the body.** `uploadInfo` is I/O, so a body may not
+ * - **Poll in a STEP, loop in the body.** `stepUploadInfo` is I/O, so a body may not
  *   call it; and the result must be journaled, because what the body does next is
  *   derived from it. A body reading it directly would take a different branch on
  *   every replay.
@@ -84,24 +83,22 @@
  *
  * ## The store is also where a step PUTS a file
  *
- * {@link writeUpload} is the other direction, and it is the same rule arriving
- * at the other end of the run: an OUTPUT is journaled and read back as JSON, so
- * audio, an image or a PDF cannot travel in one either. A step writes the bytes
- * here, the output carries the id, and a page turns it back into a file with
- * `api.download(id)`. Its own doc carries what that obliges — chiefly that the
- * write belongs in the step that MAKES the file, so a resumed run replays an id
- * rather than redoing the work.
+ * {@link stepWriteUpload} is the other direction, and it is the same rule arriving at
+ * the other end of the run: an OUTPUT is journaled and read back as JSON, so audio, an
+ * image or a PDF cannot travel in one either. A step writes the bytes here, the output
+ * carries the id, and a page turns it back into a file with `api.download(id)`. Its own
+ * doc carries what that obliges — chiefly that the write belongs in the step that MAKES
+ * the file, so a resumed run replays an id rather than redoing the work.
  *
  * ## Why a published slot rather than an HTTP call
  *
- * A step runs in the SAME process as the server that stored the upload: the
- * engine walks the body in the process serving the run. So the
- * reader is handed over in-process through a `Symbol.for` slot — the mechanism
- * {@link stepEnv} uses and for the same reason (the agent bundle carries its
- * own copy of this module, so publisher and reader are two instances in one
- * realm). Going out over HTTP instead would mean a loopback port to discover, a
- * bearer to present, and on the platform a round trip through the broker for
- * bytes that are already local.
+ * A step runs in the SAME process as the server that stored the upload: the engine
+ * walks the body in the process serving the run. So the reader is handed over
+ * in-process through a `Symbol.for` slot — the mechanism {@link stepEnv} uses and
+ * for the same reason (the agent bundle carries its own copy of this module, so
+ * publisher and reader are two instances in one realm). Going out over HTTP
+ * instead would mean a loopback port to discover, a bearer to present, and on the
+ * platform a round trip through the broker for bytes that are already local.
  */
 
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
@@ -123,7 +120,7 @@ export type UploadInfo = {
    * Bytes STORED so far.
    *
    * The whole file for a finished upload, and a growing number for one still
-   * arriving — which is why {@link readUpload} clamps to it rather than to
+   * arriving — which is why {@link stepReadUpload} clamps to it rather than to
    * anything the uploader declared. Never trust it as a total: see
    * {@link UploadInfo.complete}.
    */
@@ -146,7 +143,7 @@ export type UploadInfo = {
    * contiguous prefix, which {@link UploadInfo.size} already states), and a
    * finished parts upload is covered end to end by construction.
    *
-   * **A READER may act on it, and {@link readUpload} already does.** This used to
+   * **A READER may act on it, and {@link stepReadUpload} already does.** This used to
    * say `size` was the only field a reader could trust, on the ground that a range
    * past the prefix names bytes with a hole in front of them. The bytes are still
    * there — the store maps a window onto the objects covering it and never
@@ -164,17 +161,17 @@ export type UploadInfo = {
    *
    * **A LIST rather than a single offset, and that is the whole of what it buys.**
    * The obvious cheaper shape is one number — "everything up to here has landed" —
-   * which is what a sequential append protocol reports (tus's `Upload-Offset`, where
-   * a `PATCH` at any other offset is a 409). A single cursor cannot represent a GAP
-   * at all, so under it an upload whose second part was lost has to re-send
+   * which is what a sequential append protocol reports (tus's `Upload-Offset`,
+   * where a `PATCH` at any other offset is a 409). A single cursor cannot represent
+   * a GAP at all, so under it an upload whose second part was lost has to re-send
    * everything after the first, and a fan-out that lands parts out of order has
    * nothing to report until they happen to join up. {@link UploadInfo.size} already
    * IS that number. This is the strictly larger fact.
    *
-   * Absent also means "cannot say", not "nothing landed" — the store may decline to
-   * report windows, and an agent too old to have this field says nothing either. A
-   * reader's answer to an absent list is therefore to assume nothing about what is
-   * stored, which for an uploader means sending the file.
+   * Absent also means "cannot say", not "nothing landed" — the store may decline
+   * to report windows, and an agent too old to have this field says nothing
+   * either. A reader's answer to an absent list is therefore to assume nothing
+   * about what is stored, which for an uploader means sending the file.
    */
   ranges?: readonly UploadRange[];
 };
@@ -182,7 +179,7 @@ export type UploadInfo = {
 /** A half-open window of an upload's bytes, `[start, end)`. */
 export type UploadRange = { start: number; end: number };
 
-/** One window of an upload, as {@link readUpload} resolves it. */
+/** One window of an upload, as {@link stepReadUpload} resolves it. */
 export type UploadSlice = {
   /** The upload this came from — `size` is the WHOLE file, not this window. */
   info: UploadInfo;
@@ -195,7 +192,7 @@ export type UploadSlice = {
 };
 
 /**
- * Options for {@link readUpload}.
+ * Options for {@link stepReadUpload}.
  *
  * Both bounds admit `undefined` explicitly rather than being merely optional:
  * a step computes them from a plan, and under `exactOptionalPropertyTypes` a
@@ -217,15 +214,16 @@ export type ReadUploadOptions = {
  * each resolve the record for themselves, and every caller needs both — so the
  * obvious composition costs TWO look-ups of one row for one logical read, and the
  * byte route costs one per CHUNK. Measured against a counting record backend, a
- * `readUpload` was 2 and a range download of an N-window upload was N+1; both are
+ * `stepReadUpload` was 2 and a range download of an N-window upload was N+1; both are
  * 1 through here. On a deployed guest a look-up is a `POST /:slug/upload-records`
  * across the platform, so those are round trips rather than map reads.
  *
- * **It also PINS the window map for the operation, which is the correctness half.**
- * A read resolved its ceiling from one record and then fetched its bytes against a
- * possibly newer one, and the byte route wrote a `Content-Length` from a record it
- * then read N chunks against — so a part landing mid-download could answer bytes
- * the header had already promised were something else. One record, one answer.
+ * **It also PINS the window map for the operation, which is the correctness
+ * half.** A read resolved its ceiling from one record and then fetched its bytes
+ * against a possibly newer one, and the byte route wrote a `Content-Length` from a
+ * record it then read N chunks against — so a part landing mid-download could
+ * answer bytes the header had already promised were something else. One record,
+ * one answer.
  *
  * @public
  */
@@ -270,16 +268,15 @@ export type UploadWriteMeta = {
 };
 
 /**
- * The half of an upload store {@link writeUpload} needs: minting a new file.
+ * The half of an upload store {@link stepWriteUpload} needs: minting a new file.
  *
- * Separate from {@link UploadReader} rather than an optional method on it, and
- * the reason is mechanical as well as tidy. `UploadStore` in `host/` already
- * declares its own `create` with a third `{ limit }` parameter — an
- * INTERSECTION with a second declaration of the same method makes an
- * overloaded type its own implementation no longer satisfies, which is a
- * compile error in the store rather than at any call site. Keeping the two
- * halves apart and intersecting them only at the SLOT leaves each declaration
- * the single one for its method.
+ * Separate from {@link UploadReader} rather than an optional method on it, and the
+ * reason is mechanical as well as tidy. `UploadStore` in `host/` already declares
+ * its own `create` with a third `{ limit }` parameter — an INTERSECTION with a
+ * second declaration of the same method makes an overloaded type its own
+ * implementation no longer satisfies, which is a compile error in the store rather
+ * than at any call site. Keeping the two halves apart and intersecting them only
+ * at the SLOT leaves each declaration the single one for its method.
  *
  * @internal
  */
@@ -293,7 +290,7 @@ export type UploadWriter = {
  *
  * The write half is optional and that is not an oversight — a store that only
  * reads is a legitimate thing to publish (a spec supplying its own bytes is
- * the common one), and {@link writeUpload} naming what is missing beats every
+ * the common one), and {@link stepWriteUpload} naming what is missing beats every
  * stub in the repo having to grow a writer it does not use.
  *
  * @internal
@@ -309,7 +306,7 @@ type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadAccess };
 /**
  * Publish the upload store for this process's steps.
  *
- * `createServer` does this, which is what makes uploads work identically under
+ * `createRuntimeServer` does this, which is what makes uploads work identically under
  * `aai dev`, on a self-hosted server and in a deployed guest. Pass `undefined`
  * to unpublish.
  *
@@ -330,7 +327,7 @@ export function publishUploadReader(reader: UploadAccess | undefined): void {
  * @internal
  */
 export const UPLOADS_UNAVAILABLE_MESSAGE =
-  "No upload store in this process. Uploads are served by `createServer`, which every " +
+  "No upload store in this process. Uploads are served by `createRuntimeServer`, which every " +
   "deployed agent, every self-hosted server and `aai dev` go through. In a test, publish " +
   "a reader of your own with the `publishUploadReader` helper on the runtime subpath.";
 
@@ -367,7 +364,7 @@ export function requireUploadAccess(): UploadAccess {
  *   still arriving.
  * @public
  */
-export async function uploadInfo(id: string): Promise<UploadInfo> {
+export async function stepUploadInfo(id: string): Promise<UploadInfo> {
   const info = await requireUploadAccess().info(id);
   if (!info) throw new Error(`No upload with id ${id}`);
   return info;
@@ -391,22 +388,25 @@ export async function uploadInfo(id: string): Promise<UploadInfo> {
  * Write in one step, read a window back in another — an id crosses the journal,
  * bytes never do.
  * ```ts
- * import { readUpload, writeUpload } from "@alexkroman1/aai/step";
+ * import { stepReadUpload, stepWriteUpload } from "@alexkroman1/aai/step";
  *
  * export async function store(bytes: Uint8Array): Promise<string> {
- *   const { id } = await writeUpload(bytes, { name: "summary.wav" });
+ *   const { id } = await stepWriteUpload(bytes, { name: "summary.wav" });
  *   return id;
  * }
  *
  * export async function firstSecond(uploadId: string): Promise<Uint8Array> {
- *   const { bytes } = await readUpload(uploadId, { start: 44, end: 44 + 32_000 });
+ *   const { bytes } = await stepReadUpload(uploadId, { start: 44, end: 44 + 32_000 });
  *   return bytes;
  * }
  * ```
  *
  * @public
  */
-export async function readUpload(id: string, opts: ReadUploadOptions = {}): Promise<UploadSlice> {
+export async function stepReadUpload(
+  id: string,
+  opts: ReadUploadOptions = {},
+): Promise<UploadSlice> {
   // ONE look-up of the record, not two — see {@link OpenUpload}. The clamp below
   // is unchanged and still runs HERE rather than in the store: it is the reader's
   // contract (a plan may end one byte past the file) and there is one copy of it.

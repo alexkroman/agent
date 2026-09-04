@@ -13,7 +13,7 @@ import {
   simulateTextFrame,
   waitForSessionReady,
 } from "./_ws-handler-test-utils.ts";
-import type { SessionCore } from "./session-core.ts";
+import type { ServerSession } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 describe("wireSessionSocket", () => {
@@ -102,7 +102,7 @@ describe("wireSessionSocket", () => {
   });
 
   test("session is added to sessions map on open", () => {
-    const sessions = createOwnedMap<string, SessionCore>();
+    const sessions = createOwnedMap<string, ServerSession>();
     const core = makeMockCore();
     const ws = openSocket();
 
@@ -117,7 +117,7 @@ describe("wireSessionSocket", () => {
   });
 
   test("session is removed from sessions map on close", async () => {
-    const sessions = createOwnedMap<string, SessionCore>();
+    const sessions = createOwnedMap<string, ServerSession>();
     const ws = openSocket();
 
     wireSessionSocket(ws, {

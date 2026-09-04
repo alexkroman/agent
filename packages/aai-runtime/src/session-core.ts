@@ -6,8 +6,8 @@
  * ## Two inbound vocabularies, and the session speaks both by name
  *
  * A session has exactly two things talking to it, and the protocol already names
- * everything either of them can say. So it takes a {@link SessionCore.command} —
- * one `SessionCommand`, what the CLIENT asks for — and a {@link SessionCore.report}
+ * everything either of them can say. So it takes a {@link ServerSession.command} —
+ * one `SessionCommand`, what the CLIENT asks for — and a {@link ServerSession.report}
  * — one `TransportEventBody`, what the TRANSPORT observed. That is the whole
  * inbound surface, plus the two audio paths, which are binary and in neither
  * vocabulary.
@@ -29,7 +29,7 @@ import { createCommandDispatcher } from "./session-commands.ts";
 // Imported as well as re-exported below: a re-export does not bring the names
 // into scope, and `createSessionCore`'s signature needs both. Same trap the
 // root guide records for `ToolContext` in `sdk/types.ts`.
-import type { SessionCore, SessionCoreOptions } from "./session-core-types.ts";
+import type { ServerSession, ServerSessionOptions } from "./session-core-types.ts";
 import { historyMessageOf } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
@@ -55,8 +55,8 @@ import type { TransportEventBody } from "./transports/types.ts";
 type ReplyState = ReplyToolState;
 
 export type {
-  SessionCore,
-  SessionCoreOptions,
+  ServerSession,
+  ServerSessionOptions,
 } from "./session-core-types.ts";
 
 /**
@@ -64,7 +64,7 @@ export type {
  *
  * @internal
  */
-export function createSessionCore(opts: SessionCoreOptions): SessionCore {
+export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   const log = opts.logger ?? consoleLogger;
   const rawIdleMs = opts.agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
 
@@ -82,7 +82,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
   let stopped = false;
-  /** For {@link SessionCore.faultCode} — see there for the log it exists to fix. */
+  /** For {@link ServerSession.faultCode} — see there for the log it exists to fix. */
   let faultCode: string | undefined;
   const emit = opts.emitter.emit;
 
@@ -178,7 +178,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     ...omitUndefined({ onToolResult: opts.onToolResult }),
   });
 
-  /** One tool call the transport reported. See {@link SessionCore.report}. */
+  /** One tool call the transport reported. See {@link ServerSession.report}. */
   function handleToolCalled(event: Extract<TransportEventBody, { type: "tool.called" }>): void {
     resetIdle();
     // See onReplyStarted: a trailing tool.called during stop()'s transport
@@ -199,7 +199,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     if (p !== undefined) turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
   }
 
-  /** One transport report. See {@link SessionCore.report}. */
+  /** One transport report. See {@link ServerSession.report}. */
   function handleReport(event: TransportEventBody): void {
     switch (event.type) {
       case "reply.completed":

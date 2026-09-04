@@ -10,7 +10,7 @@
  * sandbox. One stream per tab replaces all of that with one connection.
  *
  * **SSE, not a WebSocket, and that is not a preference.** A page mounts with
- * `page()`, which deliberately constructs no `SessionCore` — no socket, no audio
+ * `page()`, which deliberately constructs no `BrowserSession` — no socket, no audio
  * graph, no microphone. Adding a WebSocket here would put back the one thing
  * that split exists to keep out, for a stream that is one-directional anyway.
  *

@@ -1,6 +1,6 @@
 import { formatMoney } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
-import { client, useAgentState } from "@alexkroman1/aai-ui";
+import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import { orderProjection, pizzaPrice } from "./shared.ts";
 
 function PizzaIcon({ size }: { size: string }) {
@@ -80,7 +80,7 @@ function OrderSidebar() {
   );
 }
 
-client({
+mountClient({
   name: "Pizza Palace",
   sidebar: OrderSidebar,
   theme: {

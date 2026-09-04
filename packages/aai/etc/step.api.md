@@ -5,9 +5,6 @@
 ```ts
 
 // @public
-export function emit<T>(namespace: string, chunk: T): Promise<void>;
-
-// @public
 export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
 
 // @public
@@ -49,19 +46,10 @@ export type PcmFormat = {
 };
 
 // @public
-export function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
-
-// @public
 export type ReadUploadOptions = {
     start?: number | undefined;
     end?: number | undefined;
 };
-
-// @public
-export function report(line: string): Promise<void>;
-
-// @public
-export function requireCompleteUpload(id: string): Promise<UploadInfo>;
 
 // @public
 export function requireStepEnv(name: string): string;
@@ -129,6 +117,9 @@ export const STEP_SPEAK_SAMPLE_RATE = 24000;
 export const STEP_SPEAK_TIMEOUT_MS = 120000;
 
 // @public
+export function stepEmit<T>(namespace: string, chunk: T): Promise<void>;
+
+// @public
 export function stepEnv(name: string): string | undefined;
 
 // @public
@@ -190,6 +181,15 @@ export type StepInfo = {
 export function stepInfo(): StepInfo | undefined;
 
 // @public
+export function stepReadUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+
+// @public
+export function stepReport(line: string): Promise<void>;
+
+// @public
+export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
+
+// @public
 export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public
@@ -219,7 +219,13 @@ export class StepTransportError extends Error {
 }
 
 // @public
+export function stepUploadInfo(id: string): Promise<UploadInfo>;
+
+// @public
 export function stepWebhookUrl(token: string): string;
+
+// @public
+export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
 
 // @public
 export function stripJsonFence(reply: string): string;
@@ -316,9 +322,6 @@ export type UploadInfo = {
 };
 
 // @public
-export function uploadInfo(id: string): Promise<UploadInfo>;
-
-// @public
 export type UploadRange = {
     start: number;
     end: number;
@@ -337,9 +340,6 @@ export const WAV_HEADER_BYTES = 44;
 
 // @public
 export function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<ArrayBuffer>;
-
-// @public
-export function writeUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
 
 // @public
 export type WriteUploadOptions = {

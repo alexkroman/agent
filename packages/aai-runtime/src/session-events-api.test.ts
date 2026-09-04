@@ -71,7 +71,7 @@ async function call(
     logger: silentLogger,
   });
   const res = makeRes();
-  // `createServer` strips the query before dispatching, and passes the full URL
+  // `createRuntimeServer` strips the query before dispatching, and passes the full URL
   // on the request — so the helper models both halves rather than one.
   const claimed = api(makeReq(url, opts.bearer), res, requestPath(url), opts.method ?? "GET");
   // The handler claims synchronously and answers from a promise. `waitUntil`

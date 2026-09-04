@@ -63,7 +63,7 @@ export type RetryableErrorOptions = {
 };
 
 // @public
-export function sendToChannelClassified(channel: Channel, message: ChannelMessage): Promise<string>;
+export function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
 interface StandardSchemaIssue {
@@ -107,18 +107,15 @@ type StepFetchInit = {
 };
 
 // @public
-export function stepFetchOk(url: string, init?: StepFetchInit): Promise<Response>;
-
-// @public
-export function stepGenerateClassified(prompt: string, opts?: StepGenerateOptions): Promise<string>;
-
-// @public
-export function stepGenerateJsonClassified<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+export function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
 
 // @public
 type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
     schema: S;
 };
+
+// @public
+export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
 // @public
 type StepGenerateOptions = {
@@ -132,20 +129,23 @@ type StepGenerateOptions = {
 };
 
 // @public
-export function stepTranscribePollClassified(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+export function stepGenerateOrFail(prompt: string, opts?: StepGenerateOptions): Promise<string>;
 
 // @public
-export function stepTranscribeSubmitClassified(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+export function stepTranscribePollOrFail(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+
+// @public
+export function stepTranscribeSubmitOrFail(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
     id: string;
 }>;
 
 // @public
-export function stepTranscribeSyncClassified(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
+export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 
 // @public
-export function stepTranscribeUploadClassified(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+export function stepTranscribeUploadOrFail(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
     audioUrl: string;
 }>;
 

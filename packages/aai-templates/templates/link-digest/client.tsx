@@ -2,7 +2,7 @@
 /**
  * The browser half of a workflow app.
  *
- * Mounted with `page()` rather than `client()`: there is no session to build, so
+ * Mounted with `mountPage()` rather than `mountClient()`: there is no session to build, so
  * there is no socket, no audio graph, and no microphone request. Everything else
  * is the same — the same `client.tsx` filename, React, Tailwind, and the same
  * theme tokens the voice components read.
@@ -49,7 +49,7 @@
  *
  * `useWorkflowSubmit` answers "where has this got to" from the world's own
  * record — pending, running, completed. `<WorkflowProgress>` answers "what is it
- * doing" from what the run wrote itself (`report()` in `workflows/digest.ts`). A
+ * doing" from what the run wrote itself (`stepReport()` in `workflows/digest.ts`). A
  * page with only the first shows "Working…" for the length of the run; a page
  * with only the second cannot tell a finished run from a quiet one. Both are
  * cheap: one stream each, ended by the agent when there is nothing left to say.
@@ -64,7 +64,7 @@
  * where a fan-out makes the history worth seeing.
  */
 
-import { BulletList, page, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
+import { BulletList, mountPage, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
@@ -195,4 +195,4 @@ export function App() {
   );
 }
 
-page({ name: "Link Digest", component: App });
+mountPage({ name: "Link Digest", component: App });

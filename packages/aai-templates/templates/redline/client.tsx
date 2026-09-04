@@ -63,7 +63,7 @@ import {
   Facts,
   Form,
   type FormValues,
-  page,
+  mountPage,
   SubmitButton,
   TextAreaField,
   useWorkflowSubmit,
@@ -216,7 +216,7 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => 
       {/* The run's own narration — the complement of the status line, which is
           `running` for a run's whole life, so a one-round redline and a
           three-round one look identical while they happen. These lines come from
-          the run itself (`report()` in `workflows/redline.ts`), and they REPLAY,
+          the run itself (`stepReport()` in `workflows/redline.ts`), and they REPLAY,
           so a reload mid-run catches up rather than starting from whatever
           arrives next. */}
       <WorkflowProgress runId={run.runId} />
@@ -265,4 +265,4 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => 
  */
 const STATUS_LINE = { ...WORKFLOW_STATUS_LABELS, running: "Writing…" };
 
-page({ name: "Redline", component: RedlineDesk });
+mountPage({ name: "Redline", component: RedlineDesk });

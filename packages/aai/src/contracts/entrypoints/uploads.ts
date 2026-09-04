@@ -12,7 +12,7 @@
  * template's fan-out is written on top of, and none of it moves when a
  * zero-dependency helper next door does.
  *
- * `writeUpload` is here for the same reason and not in `utils`: it is the same
+ * `stepWriteUpload` is here for the same reason and not in `utils`: it is the same
  * store from the other side — the way a step hands a file it PRODUCED to a
  * caller that can only read JSON.
  *
@@ -24,17 +24,17 @@
 
 export {
   type ReadUploadOptions,
-  readUpload,
+  stepReadUpload,
   // The other half of the `size`-versus-`complete` promise, and it belongs to
   // THIS capability rather than to `transcribe` or `step-files`: it is a claim
   // about the store — `size` is the readable prefix — and both of those readers
   // got it wrong independently before there was one place to get it right.
-  requireCompleteUpload,
+  stepRequireCompleteUpload,
+  stepUploadInfo,
+  stepWriteUpload,
   UploadIncompleteError,
   type UploadInfo,
   type UploadRange,
   type UploadSlice,
-  uploadInfo,
   type WriteUploadOptions,
-  writeUpload,
 } from "../../sdk/step-barrel.ts";

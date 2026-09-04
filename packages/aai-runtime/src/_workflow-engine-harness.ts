@@ -56,7 +56,7 @@
  * with them.
  */
 
-import { type WorkflowCtx, type WorkflowDef, workflow } from "@alexkroman1/aai";
+import { type WorkflowContext, type WorkflowDef, workflow } from "@alexkroman1/aai";
 import { expect, type Mock, onTestFinished, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
 import { checkJournalInvariants } from "./_workflow-journal-invariants.ts";
@@ -75,7 +75,7 @@ import { createMemoryStreams } from "./workflow-streams.ts";
 type DispatchSpy = Mock<(runId: string, at?: number) => void | Promise<void>>;
 
 /** A workflow body, as the engine's registry holds one. */
-type Body = (input: Record<string, unknown>, ctx: WorkflowCtx) => unknown;
+type Body = (input: Record<string, unknown>, ctx: WorkflowContext) => unknown;
 
 /** An engine, its journal, and everything the post-condition needs. */
 export type EngineWorld = {

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `@alexkroman1/aai-ui/internal` — the plumbing `client()` and the default
+ * `@alexkroman1/aai-ui/internal` — the plumbing `mountClient()` and the default
  * client install for themselves, NOT part of the public client API and not
  * covered by semver. A `client.tsx` should never import from here; everything
  * an author writes a page or a custom chrome against lives on the root export
@@ -8,7 +8,7 @@
  *
  * These names used to ride on the root barrel, tagged `@internal` and nothing
  * else, which meant they were in a client author's autocomplete beside
- * `client()`, `<Form>`, `useAgentState` and `useWorkflowRun` — eight symbols an
+ * `mountClient()`, `<Form>`, `useAgentState` and `useWorkflowRun` — eight symbols an
  * author is invited to reach for and no capability contract covers. Keeping
  * them on their own subpath keeps the root importable surface the same shape as
  * the promise: what is on it is contracted.
@@ -36,30 +36,30 @@
  */
 
 // Two thirds of the client-config trio. `fetchClientConfig` is the PUBLIC half
-// — a workflow app's replacement for the lookup `client()` makes for itself,
-// since `page()` makes none — and stays on the root. These two are the default
+// — a workflow app's replacement for the lookup `mountClient()` makes for itself,
+// since `mountPage()` makes none — and stays on the root. These two are the default
 // client's and the session's own plumbing: `loadClientConfig`'s `null`-vs-`{}`
 // distinction is a broker-decision detail, and `buildAgentUrl` is a two-line
 // path join.
 export { buildAgentUrl, loadClientConfig } from "./client-config.ts";
-// Tool display config context — installed by `client()` from
+// Tool display config context — installed by `mountClient()` from
 // `ClientConfig.tools`; not something component-tier users pass themselves.
 // Its VALUE type, `ToolDisplayConfig`, is public and stays on the root: a
 // caller names it to write `ClientConfig.tools`, which is authoring API.
 export { ToolConfigContext } from "./components/tool-config-context.ts";
-// The default shell's URL chips. Rendered by `client()` in every session mode;
+// The default shell's URL chips. Rendered by `mountClient()` in every session mode;
 // a custom chrome composes its own header rather than borrowing these.
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";
-// The two providers `client()` mounts around the tree. A custom tree only needs
-// them when it bypasses `client()` and mounts React itself — which is the case
+// The two providers `mountClient()` mounts around the tree. A custom tree only needs
+// them when it bypasses `mountClient()` and mounts React itself — which is the case
 // this subpath exists to keep possible without advertising it.
 export { SessionProvider, ThemeProvider } from "./context.ts";
 // The `getUserMedia` constraints every capture path in this package shares.
 // The same category as the audio budgets `types.ts` re-exports from the SDK's
-// own `/internal`: a framework decision with no `client()` field to set. It was
+// own `/internal`: a framework decision with no `mountClient()` field to set. It was
 // on the root barrel and no `client.tsx` in the tree ever named it — a custom
 // chrome opening its own microphone is the case it was published for, and one
-// that bypasses `client()` reaches it here along with the providers.
+// that bypasses `mountClient()` reaches it here along with the providers.
 export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
 // The four tuning numbers the hooks are built around: the transcript
 // placeholder, the two poll intervals and the missing-read tolerance. Every one

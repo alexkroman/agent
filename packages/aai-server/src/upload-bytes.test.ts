@@ -66,7 +66,7 @@ describe("the Supabase arm", () => {
   });
 
   test("writes and measures through the SDK's own implementation", async () => {
-    // The byte half is `createHttpUploadBlobs`, so a guest brokering through this route
+    // The byte half is `createHttpUploadBackend`, so a guest brokering through this route
     // and a dev server talking to a bucket directly cannot diverge on how an object is
     // written — which is the whole reason it is not a second HTTP client here.
     const script = scripted((_url, init) =>

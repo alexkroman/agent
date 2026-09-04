@@ -28,6 +28,24 @@ export function ApiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
 
+// @public
+type BrowserSession = {
+    getSnapshot(): SessionSnapshot;
+    subscribe(callback: () => void): () => void;
+    connect(options?: {
+        signal?: AbortSignal;
+    }): void;
+    cancel(): void;
+    resetState(): void;
+    reset(): void;
+    disconnect(): void;
+    start(): void;
+    toggle(): void;
+    end(): void;
+    restart(): void;
+    [Symbol.dispose](): void;
+};
+
 // @internal
 export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
 
@@ -60,24 +78,6 @@ export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThi
 export const MAX_MISSING_READS = 3;
 
 // @public
-type SessionCore = {
-    getSnapshot(): SessionSnapshot;
-    subscribe(callback: () => void): () => void;
-    connect(options?: {
-        signal?: AbortSignal;
-    }): void;
-    cancel(): void;
-    resetState(): void;
-    reset(): void;
-    disconnect(): void;
-    start(): void;
-    toggle(): void;
-    end(): void;
-    restart(): void;
-    [Symbol.dispose](): void;
-};
-
-// @public
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -86,9 +86,9 @@ type SessionError = {
 
 // @internal
 export function SessionProvider(input: {
-    value: SessionCore;
+    value: BrowserSession;
     children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<SessionCore | null>>;
+}): FunctionComponentElement<ProviderProps<BrowserSession | null>>;
 
 // @public
 type SessionSnapshot = {

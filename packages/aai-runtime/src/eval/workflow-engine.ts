@@ -20,7 +20,7 @@
  * run, in what order, what they ask a provider, what the run returns, and what it
  * narrated on the way. What it cannot measure is every property the word
  * "durable" refers to. Do not name or report a case here in a way that implies
- * one — the same rule `eval/fake-speech.ts` states at the audio boundary, for
+ * one — the same rule `eval/stub-speech.ts` states at the audio boundary, for
  * the same reason: the seam is where a reader forgets.
  *
  * The tier that DOES exercise the real thing end to end is `aai-cli`'s
@@ -81,11 +81,11 @@
  * PREVIOUS engine's value.
  *
  * Every one of them is process-global and publishing REPLACES, so one engine at a
- * time — the same constraint `installFakeSpeech` carries, and the reason
+ * time — the same constraint `installStubSpeechProviders` carries, and the reason
  * {@link EvalWorkflowEngine.release} is not optional.
  *
  * Narration is attributed to a run with an `AsyncLocalStorage`, which is the only
- * thing that can do it: `report()` takes no run id (a real step is dispatched
+ * thing that can do it: `stepReport()` takes no run id (a real step is dispatched
  * with one), and a fan-out has several steps narrating at once.
  *
  * @module
@@ -104,7 +104,7 @@ import type {
   StepOptions,
   WaitForOptions,
   WaitForSchemaOptions,
-  WorkflowCtx,
+  WorkflowContext,
   WorkflowDef,
 } from "@alexkroman1/aai/workflow-api";
 import { checkedStepOutput } from "../workflow-replay-schema.ts";
@@ -158,7 +158,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     if (!byName.has(name)) byName.set(name, { name, def });
   }
 
-  // The narration channel. `report()` and `emit()` carry no run id — a real step
+  // The narration channel. `stepReport()` and `stepEmit()` carry no run id — a real step
   // is dispatched with one — so the only thing that can attribute a line is the
   // async context the body is running in.
   const current = new AsyncLocalStorage<EvalRunRecord>();
@@ -221,11 +221,11 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
    * a reader can see the whole of, which is strictly better even though it
    * measures exactly as much.
    */
-  function evalCtx(record: EvalRunRecord): WorkflowCtx {
+  function evalCtx(record: EvalRunRecord): WorkflowContext {
     return {
       runId: record.runId,
       workflow: record.workflowName,
-      // The parameters are annotated because `WorkflowCtx.step` is OVERLOADED —
+      // The parameters are annotated because `WorkflowContext.step` is OVERLOADED —
       // a schema selects a second signature — and TypeScript contextually types
       // a function expression from one signature only. The pass-through is
       // unchanged; what it gained is that a declared `schema` is still CHECKED
@@ -237,7 +237,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // LIVE, not journaled — the same pass-through `step` is, and for the same
       // reason: there is no journal here, so there is nothing to answer a second
       // walk from and no second walk to answer. A case that needs a FIXED clock
-      // or a fixed id wants `createWorkflowCtx` from `@alexkroman1/aai/testing`,
+      // or a fixed id wants `createWorkflowContext` from `@alexkroman1/aai/testing`,
       // which freezes all three; what this preserves is that the body can be
       // WRITTEN the way a deployed body is written.
       now: async () => Date.now(),
@@ -253,7 +253,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       sleep: async (label, until) => {
         record.slept.push({ label, duration: until });
       },
-      // REFUSED, and named. A hook is the one thing on `WorkflowCtx` this engine
+      // REFUSED, and named. A hook is the one thing on `WorkflowContext` this engine
       // cannot fake: a sleep can be skipped because the body continues either
       // way, but a `waitFor` is defined by what the SIGNALLER sends, and
       // inventing a payload would evaluate a run nobody could have produced.
@@ -313,7 +313,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     }
   }
 
-  /** The chunks one stream of a run holds — `report`'s, or a named `emit`'s. */
+  /** The chunks one stream of a run holds — `stepReport`'s, or a named `stepEmit`'s. */
   function chunksOf(record: EvalRunRecord, namespace: string | undefined): unknown[] {
     if (namespace === undefined) return [...record.reported];
     return record.emitted.filter((one) => one.namespace === namespace).map((one) => one.chunk);
@@ -372,7 +372,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
         settled: Promise.resolve(),
       };
       runs.set(runId, record);
-      // `current.run` is what puts the record in scope for every `report()` the
+      // `current.run` is what puts the record in scope for every `stepReport()` the
       // body's steps make, including the ones a fan-out makes concurrently.
       record.settled = current.run(record, () => execute(record, entry.def.run, args[0]));
       return Promise.resolve(runId);

@@ -1,0 +1,32 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "channels",
+  "epoch": 2,
+  "sha256": "c76a6f5971290d4f2643e5c129034ff44d20f3114ab4560f3ac8229c2ec5fa05",
+  "exports": [
+    "CHANNEL_POST_TIMEOUT_MS",
+    "Channel",
+    "ChannelDeliveryError",
+    "ChannelDescriptor",
+    "ChannelHandler",
+    "ChannelMessage",
+    "ChannelPayload",
+    "ChannelSection",
+    "SLACK_CHANNEL_HANDLER",
+    "SLACK_CHANNEL_KIND",
+    "SlackChannel",
+    "SlackChannelOptions",
+    "escapeSlackMrkdwn",
+    "explainChannelFailure",
+    "explainSlackChannelFailure",
+    "isSlackWebhookUrl",
+    "isSlackWorkflowTriggerUrl",
+    "registerChannelHandler",
+    "registeredChannelKindNames",
+    "renderChannelPayload",
+    "renderSlackChannelPayload",
+    "renderSlackPlainText",
+    "sendToChannel",
+    "slackChannel"
+  ]
+}

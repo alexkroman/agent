@@ -6,7 +6,7 @@
  * `sdk/step-fetch.ts` is the surface a step calls and carries the whole argument
  * for why it exists, with the measurements — read that first. It may not import
  * `undici`, being on the CLI's zero-dependency startup path and riding the
- * browser bundle, so the dispatcher lives here and `createServer` publishes it.
+ * browser bundle, so the dispatcher lives here and `createRuntimeServer` publishes it.
  *
  * ## `allowH2: false` is the entire mechanism, and it lives in `_egress-pool.ts`
  *
@@ -64,7 +64,7 @@ type StepFetchHandle = {
 };
 
 /**
- * Build the fetch `createServer` publishes for this process's steps.
+ * Build the fetch `createRuntimeServer` publishes for this process's steps.
  *
  * One dispatcher per call and one call per server, so a fan-out's segments share
  * a warm pool — a TLS handshake per request cost ~20% of wall time in the

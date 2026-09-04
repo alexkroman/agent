@@ -10,11 +10,13 @@
     }
   },
   "eval": {
-    "current": 4,
-    "supported": [3, 4],
+    "current": 5,
+    "supported": [5],
     "dropped": {
       "1": "The eval workflow engine's WorkflowCtx gained sleep (recorded, not taken) and waitFor (refused with a named message, a hook's payload coming from outside the run). Its types also moved to workflow-engine-types.ts under the 500-line cap, which the rollup's provenance shows.",
-      "2": "EvalSleep carries the wait's label, so a workflow eval can assert which of a body's waits it reached rather than only a duration."
+      "2": "EvalSleep carries the wait's label, so a workflow eval can assert which of a body's waits it reached rather than only a duration.",
+      "3": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises the Fake* speech doubles and toolCallsIn, now Stub* and toolCallsInEvents.",
+      "4": "Renamed for naming consistency (API naming review): the eval speech doubles joined the repo's single Stub vocabulary (FakeSpeech -> StubSpeechProviders and family), since Fake vs Stub carried no meaning while the shared word Speech did. callsIn and toolCallsIn, which differed only in what they took, became toolCallsInTurns and toolCallsInEvents."
     }
   },
   "keys": {
@@ -30,40 +32,54 @@
     "dropped": {}
   },
   "providers": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Renamed for naming consistency (API naming review): S2SConfig -> S2sConfig, the lone S2S spelling among seven S2s."
+    }
   },
   "runtime": {
-    "current": 11,
-    "supported": [3, 4, 6, 10, 11],
+    "current": 12,
+    "supported": [12],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
+      "3": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises decliningRuntime and SkipGreeting, now rejectingRuntime and SkipGreetingOption.",
+      "4": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises decliningRuntime and SkipGreeting, now rejectingRuntime and SkipGreetingOption.",
       "5": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
+      "6": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises decliningRuntime and SkipGreeting, now rejectingRuntime and SkipGreetingOption.",
       "7": "Additive only: RunRecord gained one OPTIONAL field, codeVersion, so a walk can say whether the code changed under an in-flight run rather than handing the reader a test. RunRecord reaches this capability's report through RuntimeOptions.journal, and nothing in epoch 7 stops compiling — no caller must set the field and none may be broken by reading it. Dropped rather than retained because a retained epoch-7 template would be byte-identical to the retained epoch-6 one (contracts/compatibility/runtime/v6.ts): that file is frozen, still compiles against these types, and therefore ALREADY holds the property a v7 template would assert. A second near-duplicate starter is the catalogue this directory's own doc warns against.",
       "8": "JournalStore gained a required readStep(runId, key) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers ONE settled step by key, undefined when it has not settled, and both shipped databases key the table (run_id, key) so it is an index seek.",
-      "9": "JournalStore gained a required readSleeps(runId) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers EVERY durable wait of a run, ordered by key, as SleepEntry (a SleepRecord plus its key), and both shipped databases key the sleeps table (run_id, key) so it is a range scan already in that order. It is what stops a replay re-claiming every elapsed sleep it walks past — measured in production at 2,675 journal POSTs on one run, rising +1 per delivery across 69 deliveries."
+      "9": "JournalStore gained a required readSleeps(runId) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers EVERY durable wait of a run, ordered by key, as SleepEntry (a SleepRecord plus its key), and both shipped databases key the sleeps table (run_id, key) so it is a range scan already in that order. It is what stops a replay re-claiming every elapsed sleep it walks past — measured in production at 2,675 journal POSTs on one run, rising +1 per delivery across 69 deliveries.",
+      "10": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises decliningRuntime and SkipGreeting, now rejectingRuntime and SkipGreetingOption.",
+      "11": "Renamed for naming consistency (API naming review): decliningRuntime -> rejectingRuntime, pairing with the existing rejectingWorkflows, and SkipGreeting -> SkipGreetingOption, a boolean-or-thunk union named as a verb."
     }
   },
   "server": {
-    "current": 13,
-    "supported": [4, 6, 8, 12, 13],
+    "current": 14,
+    "supported": [14],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
       "3": "Additive only: AgentServerOptions gained two OPTIONAL fields (workflowCode, stepCode) so that the self-hosted door can configure a workflow world and mount the DevKit's flow/step callback routes — durable workflows did not run through this door at all before. Nothing in epoch 3 stops compiling. It is dropped rather than retained on the same pre-release grounds as epoch 1: this package has no external consumers, so no superseded authoring style is owed a frozen compiling example.",
+      "4": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises createServer, ServerOptions and PassthroughServerOptions, all renamed.",
       "5": "AgentServerOptions loses workflowCode and stepCode. They carried the DevKit's compiled surface as two strings the CLI left on the bundle, and nothing reads them now: the replay engine runs a run off the agent's own workflows declaration. Optional fields, but a TS caller that passed either gets an excess-property error, so an epoch-5 call site does not compile.",
+      "6": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises createServer, ServerOptions and PassthroughServerOptions, all renamed.",
       "7": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
+      "8": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises createServer, ServerOptions and PassthroughServerOptions, all renamed.",
       "9": "Additive only: RunRecord gained one OPTIONAL field, codeVersion, and it reaches this capability's report through AgentServerOptions.journal. Nothing in epoch 9 stops compiling — no caller must set the field, and a caller reading a run record is not broken by one more optional member. Dropped rather than retained on the same ground as aai-runtime:runtime epoch 7: a retained epoch-9 template would be byte-identical to the retained epoch-8 one (contracts/compatibility/server/v8.ts), which is frozen, still compiles against these types, and therefore already holds the property a v9 template would assert.",
       "10": "JournalStore gained a required readStep(runId, key) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers ONE settled step by key, undefined when it has not settled, and both shipped databases key the table (run_id, key) so it is an index seek.",
-      "11": "JournalStore gained a required readSleeps(runId) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers EVERY durable wait of a run, ordered by key, as SleepEntry (a SleepRecord plus its key), and both shipped databases key the sleeps table (run_id, key) so it is a range scan already in that order. It is what stops a replay re-claiming every elapsed sleep it walks past — measured in production at 2,675 journal POSTs on one run, rising +1 per delivery across 69 deliveries."
+      "11": "JournalStore gained a required readSleeps(runId) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers EVERY durable wait of a run, ordered by key, as SleepEntry (a SleepRecord plus its key), and both shipped databases key the sleeps table (run_id, key) so it is a range scan already in that order. It is what stops a replay re-claiming every elapsed sleep it walks past — measured in production at 2,675 journal POSTs on one run, rising +1 per delivery across 69 deliveries.",
+      "12": "Renamed for naming consistency (API naming review): this epoch's export list promises a name the rename removed, so source written at it does not compile today and advertising it as supported was a promise the tree contradicts. Promises createServer, ServerOptions and PassthroughServerOptions, all renamed.",
+      "13": "Renamed for naming consistency (API naming review): createServer -> createRuntimeServer so the generic name stops reading as the default when createAgentServer is the documented front door; ServerOptions -> RuntimeServerOptions follows it, and PassthroughServerOptions -> SharedServerOptions matches the existing SharedAgentParams."
     }
   },
   "session": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Renamed for naming consistency (API naming review): SessionCore -> ServerSession, resolving the one cross-package collision on the published surface, where aai-ui exported a SessionCore meaning the browser session."
+    }
   },
   "session-state": {
     "current": 3,
@@ -101,10 +117,11 @@
     "dropped": {}
   },
   "uploads": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "UploadStore gained a required `open(id)`: the byte route reads one window per chunk and every one of them resolved the record for itself, so a range download cost a look-up per megabyte. An epoch-1 IMPLEMENTOR of UploadStore no longer compiles; a caller of createUploadStore is unaffected. UploadReader.open is optional for exactly that reason, so no published fake breaks."
+      "1": "UploadStore gained a required `open(id)`: the byte route reads one window per chunk and every one of them resolved the record for itself, so a range download cost a look-up per megabyte. An epoch-1 IMPLEMENTOR of UploadStore no longer compiles; a caller of createUploadStore is unaffected. UploadReader.open is optional for exactly that reason, so no published fake breaks.",
+      "2": "Renamed for naming consistency (API naming review): the upload storage driver is an UploadBackend, matching the SessionStateBackend it sits beside, rather than UploadBlobs; UploadStore keeps its name as the facade."
     }
   },
   "workflow": {

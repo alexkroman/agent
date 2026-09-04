@@ -100,7 +100,7 @@ import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_HOST,
   assemblyAITtsLanguageCodes,
-  makeTtsError,
+  createTtsError,
   resolveAssemblyAITtsLanguage,
   resolveAssemblyAITtsSettings,
   TTS_RECONNECT_TIMEOUT_MS,
@@ -172,9 +172,9 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         openOpts.apiKey,
         ASSEMBLYAI_TTS_API_KEY_ENV,
         "AssemblyAI TTS",
-        (msg) => makeTtsError("tts_auth_failed", msg),
+        (msg) => createTtsError("tts_auth_failed", msg),
       );
-      const connectError = (msg: string) => makeTtsError("tts_connect_failed", msg);
+      const connectError = (msg: string) => createTtsError("tts_connect_failed", msg);
       const sampleRate = assertPcm16Rate(openOpts.sampleRate, "AssemblyAI TTS", connectError);
       // Built once so an unsupported language throws here, at open, rather
       // than on a cancel-triggered reconnect mid-conversation.
