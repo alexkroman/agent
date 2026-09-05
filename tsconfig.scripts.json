@@ -69,7 +69,14 @@
     //
     // `ws` is mapped like `tsconfig.tools.json` maps `zod`: not ours, so there
     // is no source to point at, and the entry names where the workspace already
-    // installed it.
+    // installed it — its `@types`, NOT the implementation directory. `ws` is a
+    // plain JS package that bundles no declarations, so the old entry resolved
+    // `examples/host-server/bench/fakes.mjs`'s `import { WebSocketServer } from
+    // "ws"` to a directory with nothing to read. Under this program's
+    // `noImplicitAny: false` that is not a TS7016 — it is a silent `any`, so the
+    // only third-party import in the examples that the compiler could have
+    // checked was the one it did not. Verified by calling a method
+    // `WebSocketServer` does not have: no diagnostic before, TS2339 after.
     "paths": {
       "@alexkroman1/aai": ["./packages/aai/src/index.ts"],
       "@alexkroman1/aai/*": [
@@ -86,7 +93,7 @@
         "./packages/aai-runtime/src/*-barrel.ts",
         "./packages/aai-runtime/src/*.ts"
       ],
-      "ws": ["./packages/aai-runtime/node_modules/ws"],
+      "ws": ["./packages/aai-runtime/node_modules/@types/ws"],
       "zod": ["./packages/aai/node_modules/zod"]
     }
   },
