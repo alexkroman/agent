@@ -2,7 +2,7 @@
 // wireSessionSocket startup, CONFIG frame, and client-frame routing specs.
 // Lifecycle/callback/ClientSink specs live in ws-handler-lifecycle.test.ts.
 
-import { createOwnedMap } from "@alexkroman1/aai/host-internal";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";

@@ -38,11 +38,8 @@
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import {
-  rejectingWorkflows,
-  requestPath,
-  UPLOAD_CHUNK_BYTES,
-} from "@alexkroman1/aai/host-internal";
+import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
+import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";
 import { afterEach, expect, test } from "vitest";
 import { silentLogger } from "./_test-utils.ts";

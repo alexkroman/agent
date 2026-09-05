@@ -15,7 +15,7 @@
  * assertion in it would still pass.
  */
 
-import { createDevAuth } from "aai-server/supabase-auth";
+import { createDevAuth } from "aai-server/http";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { createTestCombined } from "./_test-combined.ts";
 

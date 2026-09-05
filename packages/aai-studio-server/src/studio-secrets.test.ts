@@ -4,11 +4,15 @@
 // production alone. It also has to reach the agents it does not have YET: the
 // panel is usable from the moment a project exists, so the project holds its
 // own record and each deploy claims what it is owed.
-import { localSlugLock } from "aai-server/platform-lock";
-import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
-import type { BundleStore } from "aai-server/store-types";
+import { localSlugLock } from "aai-server/platform";
+import type { BundleStore } from "aai-server/stores";
+import {
+  createMemorySecretStore,
+  createMemoryWorkspaceStore,
+  type SecretStore,
+  type WorkspaceStore,
+} from "aai-server/stores";
 import { createTestStore } from "aai-server/test-utils";
-import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { claimSlug } from "./_studio-agents-test-utils.ts";
 import { secretsDeployHook } from "./studio-secret-routes.ts";

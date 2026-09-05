@@ -83,8 +83,7 @@
  */
 
 import type http from "node:http";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
-import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
+import { WORKFLOW_API_PREFIX, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { runIdOr400 } from "./_workflow-run-id.ts";
 import type { Logger } from "./runtime-config.ts";

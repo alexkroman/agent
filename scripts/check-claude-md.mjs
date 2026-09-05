@@ -24,6 +24,11 @@
  * directory) and leave a pointer, as the root file's "Package guides" table
  * does.
  *
+ * `.agents/*.md` is included for the same reason the guides are: those files
+ * exist so AGENTS.md can stay small, and an agent reads one whole when it
+ * follows the pointer. A cap that stopped at the root would just relocate the
+ * problem.
+ *
  * `packages/aai-templates/scaffold/CLAUDE.md` is INCLUDED deliberately. It is
  * a product artifact — scaffolded into every `aai init` project and embedded
  * in the studio system prompt — so it is read by an agent in exactly the same
@@ -75,7 +80,20 @@ const files = [
   ...new Set(
     execFileSync(
       "git",
-      ["ls-files", "--cached", "--others", "--exclude-standard", "*CLAUDE.md", "AGENTS.md"],
+      [
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "*CLAUDE.md",
+        "AGENTS.md",
+        // The on-demand references AGENTS.md's "Detailed references" table
+        // points at. They are read by an agent exactly the way a guide is —
+        // whole, into context — so the same cap applies. Leaving them out
+        // would move the failure rather than fix it: a section pushed here to
+        // get the root under the cap would sit in a file nothing measures.
+        ".agents/*.md",
+      ],
       {
         cwd: ROOT,
         encoding: "utf8",

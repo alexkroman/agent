@@ -1,39 +1,17 @@
 # testing/vitest
 
-The vitest-coupled half of the test helpers (`@alexkroman1/aai/testing/vitest`).
+`@alexkroman1/aai/testing/vitest` — the vitest-coupled half of the test helpers — everything that INSTALLS or RESTORES.
 
-`sdk/testing.ts` is framework-agnostic on purpose — it returns fakes rather
-than installing them, so it carries no test-runner dependency and a project
-using another runner can still build a `ToolContext`. That is the right
-default and it is not free: `stubGateway` (`@alexkroman1/aai/testing`)
-hands back a `fetch`
-implementation, and the INSTALLATION of it was then written out by hand in
-every workflow template, four times, each with the same paragraph explaining
-why the SDK had not done it.
+A FACADE. The subpath resolves here rather than at `testing-vitest.ts`, which buys two
+things the direct form could not. That module can be SPLIT as it grows without
+moving the published entry point — the path an implementation file happens to
+have is not a thing to promise anyone — and a name it gains next reaches the
+public surface only when a line is added below, rather than the moment it is
+written.
 
-So the coupling gets its own subpath instead of leaking into the main one.
-`vitest` is an OPTIONAL peer dependency: importing this module is what pulls
-it, importing `@alexkroman1/aai/testing` is not, and a project that never
-writes a test resolves neither.
-
-**The rule for what belongs here: anything that installs, and anything that
-restores.** Every fake on `@alexkroman1/aai/testing` that fills a published
-slot hands back a `restore` the caller owns, and owning it means a registry —
-`const restores: (() => void)[]` with an `afterEach` that splices it, written
-out in template after template, three times in one file. The `install*` half
-of this module is that fake plus `onTestFinished(restore)`: same object,
-unwound by the runner in reverse order when the test that installed it ends.
-
-A fake with no lifetime (`stubGenerate`, `createToolContext`, the workflow
-snapshots) gets no wrapper — there is nothing to restore, so a second name
-for it would only be a second name.
-
-**`installStubWorkflows` is here for the other half of the same rule: `vi.fn` IS its
-content.** It restores nothing and installs nothing, so it takes no `install`
-prefix — but its methods have to be spies, because a spec of a
-workflow-driving tool asserts on `start` and re-points `lastLine` per test.
-A plain-function version would be a helper neither caller could use, so the
-coupling is the feature rather than a leak.
+Named re-exports rather than `export *` for the second half of that: the
+wildcard form re-exports whatever arrives, and needs a `noReExportAll`
+suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 

@@ -15,7 +15,7 @@
  * whose runtime is built lazily by the first request to it.
  */
 
-import { rejectingWorkflows } from "@alexkroman1/aai/host-internal";
+import { rejectingWorkflows } from "@alexkroman1/aai/internal";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";

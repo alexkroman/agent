@@ -4,7 +4,7 @@
 // its ordering against audio_done and against a barge-in load-bearing. Other
 // wireSessionSocket lifecycle specs live in ws-handler-lifecycle.test.ts.
 
-import { createOwnedMap } from "@alexkroman1/aai/host-internal";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import type { MockWebSocket } from "./_mock-ws.ts";

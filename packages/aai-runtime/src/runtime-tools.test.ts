@@ -11,8 +11,11 @@
 
 import type { AgentDef, ToolContext } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
-import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/host-internal";
-import { MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "@alexkroman1/aai/internal";
+import {
+  createOwnedMap,
+  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+  type OwnedMap,
+} from "@alexkroman1/aai/internal";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { makeAgent } from "./_test-utils.ts";

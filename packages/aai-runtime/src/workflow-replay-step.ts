@@ -72,7 +72,8 @@
  * `workflow-replay.ts` runs the arm.
  */
 
-import { type StandardSchemaV1, sleep } from "@alexkroman1/aai/host-internal";
+import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+import { sleep } from "@alexkroman1/aai/internal";
 import { stepReport } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";

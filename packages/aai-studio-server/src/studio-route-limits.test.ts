@@ -8,7 +8,7 @@
  * does not move when the bearer does.
  */
 
-import { createRateLimiter } from "aai-server/rate-limit";
+import { createRateLimiter } from "aai-server/http";
 import { describe, expect, test } from "vitest";
 import { createRouteLimits } from "./studio-route-limits.ts";
 

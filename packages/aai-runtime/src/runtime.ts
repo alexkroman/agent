@@ -7,12 +7,8 @@
  * lifecycle hooks, and session management.
  */
 
-import {
-  buildSystemPrompt,
-  createOwnedMap,
-  DEFAULT_SHUTDOWN_TIMEOUT_MS,
-} from "@alexkroman1/aai/host-internal";
-import { invariant } from "@alexkroman1/aai/internal";
+import { buildSystemPrompt, DEFAULT_SHUTDOWN_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import { createOwnedMap, invariant } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";

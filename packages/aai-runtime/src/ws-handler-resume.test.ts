@@ -3,7 +3,8 @@
 // the resume-while-draining overlap races, and superseded-session eviction.
 // Split from ws-handler-lifecycle.test.ts for file length.
 
-import { createOwnedMap, DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";

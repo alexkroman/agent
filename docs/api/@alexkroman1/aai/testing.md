@@ -1,39 +1,17 @@
 # testing
 
-Test helpers for agent code (the `@alexkroman1/aai/testing` subpath).
+`@alexkroman1/aai/testing` — framework-agnostic test helpers for agent code.
 
-**Framework-agnostic on purpose.** Everything here returns a fake rather than
-installing one — `createToolContext`'s `send` records into an array instead of
-calling a mock library, and each `stub*` hands back a `restore` the caller
-owns. So this module carries no test-runner dependency, a project on another
-runner can still use all of it, and a spy can be passed IN wherever a spec
-wants call-order assertions. The half that installs into vitest, including an
-`install*` per fake that registers its own cleanup, is
-`@alexkroman1/aai/testing/vitest`.
+A FACADE. The subpath resolves here rather than at `testing.ts`, which buys two
+things the direct form could not. That module can be SPLIT as it grows without
+moving the published entry point — the path an implementation file happens to
+have is not a thing to promise anyone — and a name it gains next reaches the
+public surface only when a line is added below, rather than the moment it is
+written.
 
-**This module is the assembly point, not the implementation.** Each fake is a
-function plus the shape of what it records, and lives in its own module beside
-this one; what is here is the re-export surface and `stubReporter`. Reading
-order, roughly by what a spec reaches for first:
-
-- `_testing-context.ts` — `createToolContext`, and the stub `db`/`workflows`
-  its defaults are built from.
-- `testing-tools.ts` — `toolOf` / `runTool` / `toolRunner`, the tool under the
-  name the model calls it by, the last of those being `runTool` with the agent
-  bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
-  own FILES (`tools/`, `system-prompt.md`) onto its `agent.ts` default export
-  the way the build does — the one function a spec needs.
-- `_testing-tool-results.ts` — `expectToolOk` / `expectDialogOk`, unwrapping what a gated
-  tool answered; `_testing-schema.ts` — what a tool's or workflow's input
-  schema accepts, without reaching through `~standard`.
-- `testing-delegate.ts` — `stubDelegate`, the same seam one loop up: what a
-  SUBAGENT concluded, without running one.
-- `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
-  `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
-  slots a step reaches through, each answered in memory.
-- `testing-workflows.ts` — run snapshots and progress streams, for a page;
-  `testing-workflow-ctx.ts` — `createWorkflowContext`, the `ctx` a workflow BODY
-  takes, which nothing else can hand it.
+Named re-exports rather than `export *` for the second half of that: the
+wildcard form re-exports whatever arrives, and needs a `noReExportAll`
+suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 

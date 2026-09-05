@@ -8,11 +8,8 @@
 // `describe`), which was over the 700-line test cap. That file keeps the
 // happy-path turn: STT final → LLM stream → TTS, tool calls, deferral, commit.
 
-import {
-  DEAD_AIR_OPENING_PHRASE,
-  DEFAULT_TTS_SAMPLE_RATE,
-  sleep,
-} from "@alexkroman1/aai/host-internal";
+import { DEAD_AIR_OPENING_PHRASE, DEFAULT_TTS_SAMPLE_RATE } from "@alexkroman1/aai/host-internal";
+import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, createTestClock, speakFor } from "../_pipeline-test-fakes.ts";
 import {

@@ -12,12 +12,11 @@
  * platform core, and studio-specific state is the studio's to carry.
  */
 
-import type { ChatStore } from "aai-server/chat-store";
-import type { HonoEnv } from "aai-server/context";
-import type { PlatformEvents } from "aai-server/platform-events";
-import { resolvePublicOrigin } from "aai-server/public-origin";
-import { guestReachableUrl } from "aai-server/sandbox-vm";
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import type { HonoEnv } from "aai-server/http";
+import { resolvePublicOrigin } from "aai-server/http";
+import type { PlatformEvents } from "aai-server/platform";
+import { guestReachableUrl } from "aai-server/sandbox";
+import type { ChatStore, WorkspaceStore } from "aai-server/stores";
 import type { Context } from "hono";
 
 export type StudioHonoEnv = HonoEnv & {

@@ -14,7 +14,7 @@ import type { GenerateResult } from '@alexkroman1/aai';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import type { OwnedMap } from '@alexkroman1/aai/host-internal';
+import { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
@@ -118,27 +118,7 @@ export function createUploadStore(options: {
 }): UploadStore;
 
 // @internal
-export function decodeStorageJson(text: string): unknown;
-
-// @internal
 export const EGRESS_KEEP_ALIVE_MS = 30000;
-
-// @internal
-export function encodeStorageJson(value: unknown): string;
-
-// @public
-type EnqueueBody = {
-    queueName: string;
-    runId: string;
-    data: string;
-    deploymentId?: string | undefined;
-    idempotencyKey?: string | undefined;
-    headers?: Record<string, string> | undefined;
-    delaySeconds?: number | undefined;
-};
-
-// @internal
-export function enqueueToPlatform(options: PlatformQueueOptions, body: EnqueueBody): Promise<string>;
 
 // @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
@@ -277,9 +257,6 @@ export function parsePlatformFrame<T>(schema: z.ZodType<T>, text: string): T | u
 export function parseTraceparent(header: string | null | undefined): TraceParent | undefined;
 
 // @internal
-export function payloadRunId(message: unknown): string | undefined;
-
-// @internal
 export const PLATFORM_ROUTES: {
     readonly sessionState: "/session-state";
     readonly uploadRecords: "/upload-records";
@@ -353,9 +330,6 @@ export function platformSocketUrl(base: string): string;
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
 
-// @internal
-export function platformUrl(base: string, route: PlatformRoute, segment?: string): string;
-
 export { publishStepEnv }
 
 // @internal
@@ -371,9 +345,6 @@ type ResumableRun = {
     runId: string;
     wakeAt?: number | undefined;
 };
-
-// @internal
-export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
 
 // @public
 type RunRecord = {

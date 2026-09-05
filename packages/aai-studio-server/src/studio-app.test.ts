@@ -7,10 +7,9 @@
  * row's deploy version — covered in aai-server's sandbox-resolve tests).
  */
 
-import { createMemoryChatStore } from "aai-server/chat-store";
-import { createMemoryPlatformEvents } from "aai-server/platform-events";
+import { createMemoryPlatformEvents } from "aai-server/platform";
+import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { createTestStore } from "aai-server/test-utils";
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clientDistFile, clientShellHtml } from "./_studio-client-dist-test-utils.ts";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";

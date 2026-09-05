@@ -10,8 +10,8 @@
  * - `GET /studio/events` — the caller's project list (`projects` frames)
  */
 
-import { MAX_LIVE_STREAMS_PER_SCOPE } from "aai-server/constants";
-import { reservedLiveStreams, reserveLiveStream, resetLiveStreams } from "aai-server/live-streams";
+import { MAX_LIVE_STREAMS_PER_SCOPE } from "aai-server/config";
+import { reservedLiveStreams, reserveLiveStream, resetLiveStreams } from "aai-server/platform";
 import { authHeaders, type TestFetch } from "aai-server/test-utils";
 import { afterEach, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";

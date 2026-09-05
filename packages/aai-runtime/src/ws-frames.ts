@@ -4,7 +4,7 @@
 // runtime accepts, the `audio_done` frame, and a send that tolerates the close
 // race. Split out so those two modules need not import from each other.
 
-import { WS_OPEN } from "@alexkroman1/aai/host-internal";
+import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 

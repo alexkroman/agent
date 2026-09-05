@@ -9,8 +9,8 @@
  * about databases.
  */
 
-import { hashApiKey } from "aai-server/secrets";
-import type { BundleStore } from "aai-server/store-types";
+import type { BundleStore } from "aai-server/stores";
+import { hashApiKey } from "aai-server/stores";
 
 export function claimSlug(store: BundleStore, slug: string, key: string): Promise<void> {
   return store.putAgent({

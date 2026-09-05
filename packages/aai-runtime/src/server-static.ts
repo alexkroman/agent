@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import type http from "node:http";
 import path from "node:path";
-import { requestPath } from "@alexkroman1/aai/host-internal";
+import { requestPath } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { lookup as mimeLookup } from "mime-types";
 import { decodePathSegment } from "./_path-decode.ts";

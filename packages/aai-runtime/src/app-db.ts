@@ -40,8 +40,28 @@
  * the connection that is not there — never silent.
  */
 
-import { APP_DB_POOL_MAX } from "@alexkroman1/aai/host-internal";
 import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
+
+/**
+ * The guest's ONE handle on the database it was given.
+ *
+ * `ctx.db`, the session-state backend, workflow uploads and the wake hint all used
+ * to lease off it; all four are gone, and what still does is the workflow
+ * correlation-key index (`workflow-runtime.ts`) and the queue-lock sweep. Three
+ * remains the size because a pool that is full QUEUES the next query
+ * (postgres.js), where a role at its limit REFUSES the next connection — so a
+ * tight pool costs a few milliseconds of latency and a loose one costs a failure,
+ * which is the whole reason this number is small.
+ *
+ * A pool SIZE rather than an entitlement: there are no per-app databases any more,
+ * so the sums that used to size a role's `connection limit` went with the
+ * provisioning. What is left is true wherever a `DATABASE_URL` comes from, which
+ * on the surviving paths is the AUTHOR's own secret — a self-hosted
+ * `createRuntimeServer`, or `aai dev` against a project with one. The `APP_DB_`
+ * prefix is vocabulary from that removed feature; read it as "the database this
+ * guest was given", whoever gave it.
+ */
+export const APP_DB_POOL_MAX = 3;
 
 /** The registry-wide slot — see the module doc for why it is not a module-level `Map`. */
 const APP_DB_POOLS = Symbol.for("@alexkroman1/aai.appDbPools");

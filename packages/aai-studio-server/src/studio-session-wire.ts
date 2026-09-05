@@ -16,11 +16,10 @@
  */
 
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import type { ChatStore } from "aai-server/chat-store";
-import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
-import type { WarmHarness } from "aai-server/sandbox-vm";
-import { SafePathSchema } from "aai-server/schemas";
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import { SafePathSchema } from "aai-server/config";
+import type { WarmHarness } from "aai-server/sandbox";
+import { GUEST_ROUTES, guestHttpUrl } from "aai-server/sandbox";
+import type { ChatStore, WorkspaceStore } from "aai-server/stores";
 import { z } from "zod";
 import {
   DEFAULT_LOG_TOOL_LINES,

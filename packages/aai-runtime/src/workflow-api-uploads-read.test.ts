@@ -12,11 +12,8 @@
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import {
-  rejectingWorkflows,
-  requestPath,
-  UPLOAD_CHUNK_BYTES,
-} from "@alexkroman1/aai/host-internal";
+import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
+import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { silentLogger, tick } from "./_test-utils.ts";

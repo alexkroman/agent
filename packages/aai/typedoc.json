@@ -2,23 +2,23 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": [
     "dist/index.d.ts",
-    "dist/sdk/utils.d.ts",
+    "dist/sdk/utils-barrel.d.ts",
     "dist/sdk/step-barrel.d.ts",
-    "dist/sdk/testing.d.ts",
-    "dist/sdk/testing-vitest.d.ts",
-    "dist/sdk/step-errors.d.ts",
+    "dist/sdk/testing-barrel.d.ts",
+    "dist/sdk/testing-vitest-barrel.d.ts",
+    "dist/sdk/step-errors-barrel.d.ts",
     "dist/sdk/channels-barrel.d.ts",
     "dist/sdk/workflow-api-barrel.d.ts",
-    "dist/sdk/protocol.d.ts",
+    "dist/sdk/protocol-barrel.d.ts",
     "dist/sdk/manifest-barrel.d.ts",
     "dist/sdk/providers/stt-barrel.d.ts",
     "dist/sdk/providers/tts-barrel.d.ts",
     "dist/sdk/providers/llm-barrel.d.ts",
     "dist/sdk/providers/s2s-barrel.d.ts",
-    "dist/host/agent-tools.d.ts",
-    "dist/host/ffmpeg.d.ts",
-    "dist/host/html.d.ts",
-    "dist/host/step-files.d.ts"
+    "dist/host/tools-barrel.d.ts",
+    "dist/host/ffmpeg-barrel.d.ts",
+    "dist/host/html-barrel.d.ts",
+    "dist/host/step-files-barrel.d.ts"
   ],
   "externalSymbolLinkMappings": {
     "ai": {

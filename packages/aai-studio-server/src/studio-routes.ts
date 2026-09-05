@@ -62,10 +62,9 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { authMw, userApiKeySecretName } from "aai-server/http";
 import { createLogger } from "aai-server/logger";
-import { authMw } from "aai-server/middleware";
-import { TtlCache } from "aai-server/platform-barrel";
-import { userApiKeySecretName } from "aai-server/supabase-auth";
+import { TtlCache } from "aai-server/platform";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { registerAccountRoutes } from "./studio-account-routes.ts";

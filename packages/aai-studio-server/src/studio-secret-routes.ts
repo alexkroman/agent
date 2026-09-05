@@ -19,7 +19,7 @@
  */
 
 import { zValidator } from "@hono/zod-validator";
-import { SecretKeySchema, SecretUpdatesSchema } from "aai-server/schemas";
+import { SecretKeySchema, SecretUpdatesSchema } from "aai-server/config";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";

@@ -1,5 +1,5 @@
 {
-  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 336 left. The value is always 1 — see scripts/check-module-tests.mjs.",
+  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 334 left. The value is always 1 \u2014 see scripts/check-module-tests.mjs.",
   "modules-without-tests": {
     "packages/aai-cli/src/_deploy.ts": 1,
     "packages/aai-cli/src/_mock-api.ts": 1,
@@ -279,7 +279,6 @@
     "packages/aai/src/sdk/agent-config.ts": 1,
     "packages/aai/src/sdk/agent-csp.ts": 1,
     "packages/aai/src/sdk/agent-defaults.ts": 1,
-    "packages/aai/src/sdk/app-db-budget.ts": 1,
     "packages/aai/src/sdk/channels/channel-types.ts": 1,
     "packages/aai/src/sdk/channels/send.ts": 1,
     "packages/aai/src/sdk/channels/slack.ts": 1,
@@ -321,7 +320,6 @@
     "packages/aai/src/sdk/response-body.ts": 1,
     "packages/aai/src/sdk/s2s-constants.ts": 1,
     "packages/aai/src/sdk/safe-json-parse.ts": 1,
-    "packages/aai/src/sdk/session-event-constants.ts": 1,
     "packages/aai/src/sdk/session-state.ts": 1,
     "packages/aai/src/sdk/slug.ts": 1,
     "packages/aai/src/sdk/standard-schema.ts": 1,

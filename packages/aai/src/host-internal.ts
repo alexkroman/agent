@@ -17,61 +17,22 @@
  * epoch, and no TypeDoc page.
  */
 
-/**
- * The ffmpeg knobs an OPERATOR sets and a step body never reads.
- *
- * `AAI_FFMPEG_PATH`/`AAI_FFPROBE_PATH` are deployment configuration — where
- * the binaries are on this machine — and the three budgets are what the runner
- * spends when a caller names nothing. A `.d.ts` an agent author imports is the
- * wrong place to publish either; `@alexkroman1/aai/ffmpeg` keeps the four
- * things a step actually calls.
- */
-export {
-  DEFAULT_FFMPEG_TIMEOUT_MS,
-  DEFAULT_MAX_FFMPEG_OUTPUT_BYTES,
-  FFMPEG_PATH_ENV,
-  FFMPEG_STDERR_TAIL_CHARS,
-  FFPROBE_PATH_ENV,
-} from "./host/_ffmpeg-spawn.ts";
-export { ffmpegVersion } from "./host/_ffmpeg-version.ts";
-export {
-  asDispatcher,
-  type PinnedRequestInit,
-  pinnedFetch,
-} from "./host/_undici.ts";
+export { asDispatcher, type PinnedRequestInit, pinnedFetch } from "./host/_undici.ts";
 export type { RunCodeExecutor } from "./host/builtin-run-code.ts";
 export {
   type BuiltinToolOptions,
   type ResolvedBuiltins,
   resolveAllBuiltins,
-  resolveBuiltin,
   SANDBOX_ONLY_BUILTINS,
   type ToolDefRecord,
 } from "./host/builtin-tools.ts";
-export {
-  builtinFetch,
-  CONTAINED_ENV,
-  isPrivateIp,
-  resolveAndAssertPublic,
-  safeFetch,
-  ssrfSafeFetch,
-} from "./host/ssrf.ts";
+export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
 export { serializeToolFailure } from "./sdk/_tool-failure-wire.ts";
 export { RETRYABLE_STATUS } from "./sdk/_upload-retry.ts";
-export type {
-  ExecuteTool,
-  ExecuteToolOptions,
-} from "./sdk/agent-config.ts";
+export type { ExecuteTool, ExecuteToolOptions } from "./sdk/agent-config.ts";
 export { AGENT_CSP } from "./sdk/agent-csp.ts";
-export { APP_DB_POOL_MAX, APP_DB_PRESENCE_LOCK } from "./sdk/app-db-budget.ts";
-export {
-  CLIENT_AUDIO_LEAD_MS,
-  PACER_BURST_MS,
-  PLAYBACK_FILL_MS,
-} from "./sdk/client-audio-constants.ts";
-export { createCoalescingRunner } from "./sdk/coalescing-runner.ts";
 export { assertProviderTriple } from "./sdk/config-rules.ts";
 export {
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
@@ -92,21 +53,8 @@ export {
   SESSION_KEEPALIVE_INTERVAL_MS,
   SESSION_RESUME_GRACE_MS,
   WS_NORMAL_CLOSURE,
-  WS_OPEN,
 } from "./sdk/constants.ts";
-export type {
-  AgentEnv,
-  HostCredentialEnv,
-  ProviderEnv,
-} from "./sdk/env-types.ts";
-export {
-  createEpoch,
-  type Epoch,
-} from "./sdk/epoch.ts";
-export {
-  createOwnedMap,
-  type OwnedMap,
-} from "./sdk/owned-map.ts";
+export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "./sdk/env-types.ts";
 export {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
@@ -129,10 +77,6 @@ export {
   TTS_CANCEL_ACK_TIMEOUT_MS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./sdk/pipeline-tuning-constants.ts";
-export {
-  HEARD_AUDIO_LAG_MS,
-  PIPELINE_PLAYBACK_GRACE_MS,
-} from "./sdk/playback-timing-constants.ts";
 export { defaultProviders } from "./sdk/providers/_default-providers.ts";
 /**
  * The eighteen `*_KIND` / `*_API_KEY_ENV` pairs, one per provider module.
@@ -179,10 +123,7 @@ export {
   ASSEMBLYAI_S2S_API_KEY_ENV,
   ASSEMBLYAI_S2S_KIND,
 } from "./sdk/providers/s2s/assemblyai.ts";
-export {
-  OPENAI_S2S_API_KEY_ENV,
-  OPENAI_S2S_KIND,
-} from "./sdk/providers/s2s/openai.ts";
+export { OPENAI_S2S_API_KEY_ENV, OPENAI_S2S_KIND } from "./sdk/providers/s2s/openai.ts";
 export {
   ASSEMBLYAI_STT_API_KEY_ENV,
   ASSEMBLYAI_STT_DEFAULT_MODEL,
@@ -243,30 +184,21 @@ export {
   type TtsWordTiming,
   type Unsubscribe,
 } from "./sdk/providers.ts";
-export {
-  requestPath,
-  requestQuery,
-} from "./sdk/request-url.ts";
 export { ASSEMBLYAI_S2S_SAMPLE_RATE } from "./sdk/s2s-constants.ts";
-export {
-  isConvertibleSchema,
-  toToolJsonSchema,
-} from "./sdk/schema.ts";
-export {
-  MAX_SESSION_EVENTS,
-  SESSION_EVENT_FLUSH_THRESHOLD,
-  SESSION_EVENT_READ_LIMIT,
-} from "./sdk/session-event-constants.ts";
-export {
-  createDetachedSlotStore,
-  freezeStorable,
-} from "./sdk/session-state.ts";
-export { sleep } from "./sdk/sleep.ts";
+export { isConvertibleSchema, toToolJsonSchema } from "./sdk/schema.ts";
+export { createDetachedSlotStore, freezeStorable } from "./sdk/session-state.ts";
 // The formatter AND the two types beside it. The type was reachable from no
 // published subpath at all, so the runtime's eval readers — which validate a
 // caller's schema rather than casting the value — had no way to name their own
 // parameter. Not authoring API: an author writes `z.object(…)` and never spells
 // the spec's interface.
+// `formatSchemaIssues` is deliberately NOT deduped onto `./internal`, though it
+// is on both. The host is a real reader of it — the runtime's generate path, its
+// tool executor and both workflow schema readers validate a caller's schema and
+// render what failed — so it belongs beside the two types that describe its
+// input, and the `/internal` copy is the BROWSER's. Moving it would also leave
+// this clause type-only, which re-renders every dependent report's import line
+// and bumps the `aai-runtime:eval` epoch over a change no consumer can observe.
 export {
   formatSchemaIssues,
   type StandardSchemaIssue,
@@ -274,10 +206,7 @@ export {
 } from "./sdk/standard-schema.ts";
 export { publishStepInfoReader, type StepInfoReader } from "./sdk/step-attempt.ts";
 export { publishStepEnv } from "./sdk/step-env.ts";
-export {
-  publishStepFetch,
-  type StepFetch,
-} from "./sdk/step-fetch.ts";
+export { publishStepFetch, type StepFetch } from "./sdk/step-fetch.ts";
 export {
   STEP_FETCH_CONNECTIONS,
   STEP_FETCH_INACTIVITY_MS,
@@ -285,11 +214,7 @@ export {
   STEP_FETCH_PIPELINING,
 } from "./sdk/step-fetch-constants.ts";
 export { publishStepReporter, type StepReporter } from "./sdk/step-report.ts";
-export {
-  publishSpeechSynthesizer,
-  SPEECH_UNAVAILABLE_MESSAGE,
-  type SpeechSynthesizer,
-} from "./sdk/step-speak.ts";
+export { publishSpeechSynthesizer, type SpeechSynthesizer } from "./sdk/step-speak.ts";
 export {
   assertUploadToken,
   type OpenUpload,
@@ -300,7 +225,6 @@ export {
   type UploadWriteMeta,
   type UploadWriter,
 } from "./sdk/step-uploads.ts";
-export { UPLOAD_WRITES_UNAVAILABLE_MESSAGE } from "./sdk/step-uploads-write.ts";
 // The publisher half of a step's webhook URL — the READER (`stepWebhookUrl`) is
 // authoring API on `@alexkroman1/aai/step`. Only a host calls this, and it
 // publishes a MINTER rather than an origin because the route belongs to whoever
@@ -322,9 +246,4 @@ export {
   UPLOAD_PART_BYTES,
   UPLOAD_TOKEN_RE,
 } from "./sdk/upload-constants.ts";
-export {
-  PUBLIC_URL_UNCONFIGURED_MESSAGE,
-  rejectingWorkflows,
-  WORKFLOWS_UNAVAILABLE_MESSAGE,
-} from "./sdk/workflow-unavailable.ts";
-export { parseWsUpgradeParams } from "./sdk/ws-upgrade.ts";
+export { PUBLIC_URL_UNCONFIGURED_MESSAGE } from "./sdk/workflow-unavailable.ts";

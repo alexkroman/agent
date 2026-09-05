@@ -30,9 +30,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
-import { deleteAgentResources } from "aai-server/delete";
-import { RESERVED_SLUGS } from "aai-server/schemas";
-import { WorkspaceConflictError } from "aai-server/workspace-store";
+import { RESERVED_SLUGS } from "aai-server/config";
+import { deleteAgentResources } from "aai-server/platform";
+import { WorkspaceConflictError } from "aai-server/stores";
 import type { Context, Hono } from "hono";
 import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
 import { ownedProjectSlugs } from "./studio-project-slugs.ts";

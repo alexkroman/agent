@@ -26,7 +26,7 @@
  * no frame carries anything but a just-read row.
  */
 
-import { reserveLiveStream } from "aai-server/live-streams";
+import { reserveLiveStream } from "aai-server/platform";
 import type { Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";

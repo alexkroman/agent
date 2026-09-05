@@ -17,7 +17,7 @@
  * length cap; the shared fakes live in _studio-routes-test-utils.ts.
  */
 
-import { createRateLimiter } from "aai-server/rate-limit";
+import { createRateLimiter } from "aai-server/http";
 import { authFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";

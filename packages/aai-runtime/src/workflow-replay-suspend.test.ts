@@ -12,7 +12,7 @@
  */
 
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { sleep } from "@alexkroman1/aai/host-internal";
+import { sleep } from "@alexkroman1/aai/internal";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";

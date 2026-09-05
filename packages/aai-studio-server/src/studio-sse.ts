@@ -7,7 +7,7 @@
 
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { registerLiveStream } from "aai-server/live-streams";
+import { registerLiveStream } from "aai-server/platform";
 import type { SSEStreamingApi } from "hono/streaming";
 import { type ProjectKind, resolveProjectKind } from "./studio-project-kind.ts";
 import {

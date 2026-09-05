@@ -10,7 +10,8 @@
 
 import { createServer, type IncomingMessage } from "node:http";
 import { networkInterfaces } from "node:os";
-import { requestPath, STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
+import { STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
+import { requestPath } from "@alexkroman1/aai/internal";
 import { stepWebhookUrl } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";

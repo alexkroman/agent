@@ -21,15 +21,13 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { zValidator } from "@hono/zod-validator";
 import {
+  apiKeyOwnerSecretName,
+  cliLinkSecretName,
   invalidateApiKeyOwner,
   invalidateUserApiKey,
   requireStudioUser,
-} from "aai-server/middleware";
-import {
-  apiKeyOwnerSecretName,
-  cliLinkSecretName,
   userApiKeySecretName,
-} from "aai-server/supabase-auth";
+} from "aai-server/http";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { StudioHonoEnv } from "./studio-context.ts";

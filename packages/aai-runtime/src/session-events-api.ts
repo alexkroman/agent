@@ -41,14 +41,10 @@
  * caller holding one id must not be able to walk the space.
  */
 
-import {
-  requestPath,
-  requestQuery,
-  SESSION_EVENT_READ_LIMIT,
-} from "@alexkroman1/aai/host-internal";
+import { requestPath, requestQuery } from "@alexkroman1/aai/internal";
 import { decodePathSegment } from "./_path-decode.ts";
 import type { Logger } from "./runtime-config.ts";
-import type { SessionEventStream } from "./session-event-stream.ts";
+import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "./session-event-stream.ts";
 import { bearerMatches, claimUnder, type JsonResponse, sendJson } from "./workflow-api-http.ts";
 
 /** Path prefix this surface lives under. */

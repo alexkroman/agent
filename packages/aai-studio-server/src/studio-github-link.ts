@@ -27,7 +27,7 @@
  * uid means the question "who authorized this" has exactly one answer.
  */
 
-import type { SecretStore } from "aai-server/secret-store";
+import type { SecretStore } from "aai-server/stores";
 import { z } from "zod";
 import { readJsonSecret, writeJsonSecret } from "./studio-secret-record.ts";
 

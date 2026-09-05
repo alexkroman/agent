@@ -49,8 +49,8 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
+import { createMemoryWorkspaceStore } from "aai-server/stores";
 import { captureLogs } from "aai-server/test-utils";
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import fc from "fast-check";
 import { expect, test } from "vitest";
 import { createPreviewDeployer, type PreviewDeployerOptions } from "./studio-preview.ts";

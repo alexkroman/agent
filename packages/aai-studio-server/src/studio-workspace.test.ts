@@ -4,7 +4,7 @@ import {
   createMemoryWorkspaceStore,
   WorkspaceConflictError,
   type WorkspaceStore,
-} from "aai-server/workspace-store";
+} from "aai-server/stores";
 import { describe, expect, test } from "vitest";
 import {
   MAX_STUDIO_FILE_BYTES,

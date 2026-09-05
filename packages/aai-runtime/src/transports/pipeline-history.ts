@@ -17,8 +17,7 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import { createEpoch, type Epoch } from "@alexkroman1/aai/host-internal";
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
+import { createEpoch, DEFAULT_MAX_HISTORY, type Epoch } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
 import { toModelMessage } from "./pipeline-stream.ts";
 

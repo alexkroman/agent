@@ -19,21 +19,19 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { DEFAULT_PORT } from "aai-server/constants";
-import { createLogger } from "aai-server/logger";
-import { createOrchestrator } from "aai-server/orchestrator";
-import { resolvePort } from "aai-server/platform-barrel";
-import { createPgAgentRateLimiters } from "aai-server/rate-limit";
-import { startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
   assertStorageBucket,
   buildServiceConfig,
+  DEFAULT_PORT,
   installProcessSafetyNets,
+  isStudioPath,
   type ServiceConfig,
-} from "aai-server/service-config";
-import { isStudioPath } from "aai-server/studio-paths";
-import { teardownSandboxes } from "aai-server/teardown-sandboxes";
+} from "aai-server/config";
+import { createPgAgentRateLimiters, startService } from "aai-server/http";
+import { createLogger } from "aai-server/logger";
+import { resolvePort } from "aai-server/platform";
+import { createOrchestrator, teardownSandboxes } from "aai-server/sandbox";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createMemoryPreviewQueue, createPgPreviewQueue } from "./studio-preview-queue.ts";
 import { createPgStudioRateLimiters } from "./studio-rate-limit.ts";

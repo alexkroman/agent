@@ -5,7 +5,7 @@
 // (tested in aai-server). What's left here: target construction, deploy
 // metadata stamping, and passing the CLI's output through for the chat.
 
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
+import { createMemoryWorkspaceStore } from "aai-server/stores";
 import { describe, expect, test, vi } from "vitest";
 import { deployStudioProject, type StudioDeployDeps } from "./studio-deploy.ts";
 import type { WorkspaceDeployOutcome } from "./studio-session-broker.ts";

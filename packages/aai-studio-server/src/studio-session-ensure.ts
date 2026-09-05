@@ -19,11 +19,11 @@
 import { randomBytes } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import type { createOwnedMap } from "@alexkroman1/aai/internal";
-import { resolveHarnessPath } from "aai-server/constants";
+import { resolveHarnessPath } from "aai-server/config";
 import { createLogger } from "aai-server/logger";
-import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-directory";
-import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox";
+import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox";
+import type { WorkspaceStore } from "aai-server/stores";
 import { MAX_CHAT_STEPS } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import type { PreviewOrigin } from "./studio-preview.ts";

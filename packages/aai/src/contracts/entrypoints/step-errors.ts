@@ -60,4 +60,4 @@ export {
   throwFfmpegStepError,
   throwStepError,
   toStepError,
-} from "../../sdk/step-errors.ts";
+} from "../../sdk/step-errors-barrel.ts";

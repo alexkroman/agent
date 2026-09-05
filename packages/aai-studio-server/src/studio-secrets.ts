@@ -32,15 +32,13 @@
  */
 
 import { createLogger } from "aai-server/logger";
+import type { BundleStore, SecretStore, WorkspaceStore } from "aai-server/stores";
 import {
   deleteSlugSecret,
   listSlugSecrets,
   type SecretEnv,
   setSlugSecrets,
-} from "aai-server/secret-handler";
-import type { SecretStore } from "aai-server/secret-store";
-import type { BundleStore } from "aai-server/store-types";
-import type { WorkspaceStore } from "aai-server/workspace-store";
+} from "aai-server/stores";
 import { z } from "zod";
 import { forcePreviewRedeploy } from "./studio-preview.ts";
 import {

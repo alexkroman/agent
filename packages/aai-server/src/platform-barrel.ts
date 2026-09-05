@@ -1,14 +1,56 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Named re-exports over aai-server's `_`-internal utility modules for the
- * aai-studio-server package. Internal modules must not be imported
- * cross-package (biome noPrivateImports); this module is the sanctioned
- * import path for the utilities the studio service legitimately shares.
- * Named (not `export *`) so the shared surface stays deliberate.
+ * `aai-server/platform` — the platform's own runtime surface — its events, its locks, its live streams, and the shared internals.
+ *
+ * A CAPABILITY entry, not a module. This package used to publish one subpath per
+ * module — thirty-five of them, every one imported by `aai-studio-server` and by
+ * nothing else — which is a file listing rather than a boundary: it named what
+ * happened to be in the directory, so it said nothing about what the other side
+ * may depend on, and a bare `aai-server` specifier appeared nowhere, which is why
+ * a konsistent rule naming it matched no files at all.
+ *
+ * Grouping by what a caller is trying to DO makes the boundary reviewable and
+ * gives the dependency rule something to name. It costs nothing at runtime:
+ * `aai-studio-server` compiles this package into its single `dist/index.mjs`
+ * (see its `tsdown.config.ts`), so a barrel is tree-shaken rather than evaluated.
+ *
+ * **A name is here because `aai-studio-server` imports it, and for no other
+ * reason** — the rule `aai-runtime/internal` states for the same kind of seam.
+ * Re-exporting each member module wholesale would have put 240 names on this
+ * boundary where 101 actually cross it; knip reports the difference, which is
+ * how that draft was caught. Adding a member module here is therefore not
+ * automatic: name what the other side needs.
+ *
+ * Named re-exports rather than `export *`: the wildcard form needs a
+ * `noReExportAll` suppression and the escape-hatch ratchet only moves down.
+ *
+ * @module platform
  */
 
-export { resolvePort } from "./_boot.ts";
-export { createKeyedLock, withLock } from "./_keyed-lock.ts";
-export { createCachedDirReader } from "./_static-files.ts";
-export { constantTimeEquals } from "./_timing-safe.ts";
-export { TtlCache } from "./_ttl-cache.ts";
+export { deleteAgentResources } from "./delete.ts";
+export {
+  constantTimeEquals,
+  createCachedDirReader,
+  createKeyedLock,
+  resolvePort,
+  TtlCache,
+  withLock,
+} from "./internals-barrel.ts";
+export {
+  endLiveStreams,
+  liveStreamCount,
+  registerLiveStream,
+  reservedLiveStreams,
+  reserveLiveStream,
+  resetLiveStreams,
+} from "./live-streams.ts";
+export {
+  createMemoryPlatformEvents,
+  type PlatformEvents,
+  projectKey,
+} from "./platform-events.ts";
+export {
+  createMutationLock,
+  localSlugLock,
+  type SlugMutationLock,
+} from "./platform-lock.ts";

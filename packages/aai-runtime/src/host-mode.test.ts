@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { createOwnedMap } from "@alexkroman1/aai/host-internal";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";

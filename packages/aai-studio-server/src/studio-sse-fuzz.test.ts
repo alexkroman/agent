@@ -38,7 +38,7 @@ import {
   liveStreamCount,
   registerLiveStream,
   resetLiveStreams,
-} from "aai-server/live-streams";
+} from "aai-server/platform";
 import fc from "fast-check";
 import type { SSEMessage } from "hono/streaming";
 import { afterEach, beforeEach, expect, test } from "vitest";

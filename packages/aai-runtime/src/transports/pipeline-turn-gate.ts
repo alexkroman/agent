@@ -19,7 +19,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
  * conversation itself, so pending persistence is stale too.
  */
 
-import { createEpoch } from "@alexkroman1/aai/host-internal";
+import { createEpoch } from "@alexkroman1/aai/internal";
 
 export interface TurnGate {
   /** Epoch to capture when queueing a turn (chainTurn). */

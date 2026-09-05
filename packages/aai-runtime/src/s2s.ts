@@ -8,8 +8,8 @@ import {
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   LOG_PREVIEW_CHARS,
   WS_NORMAL_CLOSURE,
-  WS_OPEN,
 } from "@alexkroman1/aai/host-internal";
+import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { errorMessage, isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createAudioSendGate } from "./_audio-gate.ts";

@@ -32,8 +32,8 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createLogger } from "aai-server/logger";
-import { createKeyedLock, TtlCache, withLock } from "aai-server/platform-barrel";
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import { createKeyedLock, TtlCache, withLock } from "aai-server/platform";
+import type { WorkspaceStore } from "aai-server/stores";
 import {
   type ClaimedPreviewJob,
   PREVIEW_JOB_MAX_ATTEMPTS,

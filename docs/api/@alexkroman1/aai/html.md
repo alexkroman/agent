@@ -1,49 +1,17 @@
 # html
 
-Reading somebody else's markup — a real parse, once, for the steps that do it.
+`@alexkroman1/aai/html` — reading somebody else's markup — a real parse, once, for the steps that do it.
 
-## Why this exists
+A FACADE. The subpath resolves here rather than at `html.ts`, which buys two
+things the direct form could not. That module can be SPLIT as it grows without
+moving the published entry point — the path an implementation file happens to
+have is not a thing to promise anyone — and a name it gains next reaches the
+public surface only when a line is added below, rather than the moment it is
+written.
 
-Two shipped templates scrape the web with regexes. `link-digest` reduces a
-fetched page to text with three `replace` calls; `podcast-digest` reads an
-RSS feed with `indexOf` slicing (`textBetween`), an
-`<item[\s\S]*?</item>` alternation, a hand-written `stripCdata`, and a
-`RegExp` built per `<meta>` lookup. Together that is ~65 lines of parser,
-and every one of those lines is a claim about a language with syntax that a
-pattern cannot see:
-
-- **A `>` inside a quoted attribute ends a tag.** `<[^>]+>` cuts
-  `<a title="a > b">` in half and leaves `b">` in the text.
-- **An unclosed `<script>` leaks its whole body.** `<script[^>]*>[\s\S]*?</script>`
-  needs the close tag, so a truncated page — a byte cap, a dropped
-  connection — removes nothing and the `<[^>]+>` pass strips only the open
-  tag, putting the script into the prose. Measured: `Before var leaked = 1;`
-  against `Before`.
-- **`indexOf("<title>")` finds the FIRST one at any depth.** In an Atom feed
-  the channel title and the first entry's title are both `<title>`, so a
-  channel-level read can answer with an entry's.
-- **CDATA is not decoded, and feeds put HTML in it.** `stripCdata` peels the
-  wrapper and leaves `&amp;` behind, so the model reads the entity.
-
-The SDK already carries both parsers as dependencies — `htmlparser2` and
-`html-to-text`, used by `host/page-design.ts`, `host/web-search.ts` and
-`host/builtin-tools.ts` — and the templates could not reach either, because
-no published subpath exposed them. That is the whole of the gap: not a
-missing library, a missing export.
-
-## What is here, and what is deliberately not
-
-Three functions, each backed by a parse rather than a pattern:
-[htmlToText](#htmltotext) (markup to prose), [parseFeed](#parsefeed) (RSS/Atom to items),
-and [pageMetadata](#pagemetadata-1) (the three things a scraper reads off a page's
-head). They are the intersection of what the two templates actually do —
-this is not a general scraping toolkit and should not grow into one. A step
-that needs the DOM wants `htmlparser2` in its own project.
-
-`decodeHtmlEntities` on `@alexkroman1/aai/utils` stays exactly as it is, and
-the two are not competitors: that one decodes six entities with no
-dependency and runs in a browser bundle, which is what a `client.tsx` needs.
-This subpath pulls two parsers and is for a Node step.
+Named re-exports rather than `export *` for the second half of that: the
+wildcard form re-exports whatever arrives, and needs a `noReExportAll`
+suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 

@@ -20,7 +20,7 @@
  */
 
 import type http from "node:http";
-import { requestQuery } from "@alexkroman1/aai/host-internal";
+import { requestQuery } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { StreamOptions } from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";

@@ -16,7 +16,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createLogger } from "aai-server/logger";
-import type { SecretStore } from "aai-server/secret-store";
+import type { SecretStore } from "aai-server/stores";
 import { resolveInstallation } from "./studio-github-client.ts";
 import type { GithubAppConfig } from "./studio-github-config.ts";
 import { writeGithubLink } from "./studio-github-link.ts";

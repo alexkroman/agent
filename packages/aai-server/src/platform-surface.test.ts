@@ -6,7 +6,7 @@
  *
  * It exists because the map used to be `"./*": "./*.ts"` — every one of the
  * package's 70-odd modules, published to the sibling service. The guide called
- * `platform-barrel.ts` "the sanctioned path" and described a shared core, but
+ * `internals-barrel.ts` "the sanctioned path" and described a shared core, but
  * nothing in the code distinguished core from the agent service's own
  * internals: `aai-studio-server` reached into 31 modules and no import could
  * be called a boundary violation, because there was no boundary. Enumerating
@@ -33,14 +33,30 @@ const repoRoot = path.resolve(packageDir, "../..");
 
 /** Subpaths declared in the exports map (the root `.` entry excluded). */
 function declaredSubpaths(): Set<string> {
+  return new Set(declaredTargets().keys());
+}
+
+/**
+ * Each published subpath and the file it names, read off the manifest.
+ *
+ * Read rather than DERIVED: a subpath's target is `src/<capability>-barrel.ts`
+ * now, and a test that reconstructs a path from the subpath name is asserting
+ * about its own guess. It did — the rule was `src/<subpath>.ts`, which quietly
+ * kept passing for three of the seven capabilities because a same-named module
+ * happened to exist beside the barrel.
+ */
+function declaredTargets(): Map<string, string> {
   const manifest = JSON.parse(readFileSync(path.join(packageDir, "package.json"), "utf-8")) as {
-    exports: Record<string, unknown>;
+    exports: Record<string, string | Record<string, string>>;
   };
-  return new Set(
-    Object.keys(manifest.exports)
-      .filter((key) => key !== ".")
-      .map((key) => key.replace(/^\.\//, "")),
-  );
+  const out = new Map<string, string>();
+  for (const [key, target] of Object.entries(manifest.exports)) {
+    if (key === "." || key === "./package.json") continue;
+    const file = typeof target === "string" ? target : target["@dev/source"];
+    if (file === undefined) continue;
+    out.set(key.replace(/^\.\//, ""), file.replace(/^\.\//, ""));
+  }
+  return out;
 }
 
 function sourceFiles(dir: string): string[] {
@@ -82,10 +98,21 @@ describe("the aai-server cross-package surface is declared", () => {
   });
 
   test("every exported subpath resolves to a real module", () => {
-    const missing = [...declaredSubpaths()].filter(
-      (subpath) => !existsSyncSafe(path.join(packageDir, "src", `${subpath}.ts`)),
-    );
+    const missing = [...declaredTargets()]
+      .filter(([, file]) => !existsSyncSafe(path.join(packageDir, file)))
+      .map(([subpath, file]) => `${subpath} -> ${file}`);
     expect(missing).toEqual([]);
+  });
+
+  test("every exported subpath is a capability barrel, not a module", () => {
+    // The reason the surface is seven entries and not thirty-five: a subpath
+    // per module names what is in the directory, which is a file listing
+    // rather than a boundary. Pinning the SHAPE is what stops the next
+    // shared module from arriving as a thirty-sixth entry.
+    const notBarrels = [...declaredTargets()]
+      .filter(([, file]) => !file.endsWith("-barrel.ts"))
+      .map(([subpath, file]) => `${subpath} -> ${file}`);
+    expect(notBarrels).toEqual([]);
   });
 
   test("no exported subpath is unimported — the surface only widens deliberately", () => {
@@ -98,7 +125,7 @@ describe("the aai-server cross-package surface is declared", () => {
 
   test("no `_`-internal module is exported directly", () => {
     // Biome's noPrivateImports blocks the import side; this blocks the
-    // publish side, so platform-barrel.ts stays the one sanctioned path.
+    // publish side, so internals-barrel.ts stays the one sanctioned path.
     expect([...declaredSubpaths()].filter((subpath) => subpath.startsWith("_"))).toEqual([]);
   });
 });

@@ -7,8 +7,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { createMemoryChatStore } from "aai-server/chat-store";
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
+import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { describe, expect, test, vi } from "vitest";
 import {
   type FakeGuest,

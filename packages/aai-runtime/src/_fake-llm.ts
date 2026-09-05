@@ -9,7 +9,7 @@
  * @internal Not part of the public API.
  */
 
-import { sleep } from "@alexkroman1/aai/host-internal";
+import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { LanguageModel } from "ai";
 

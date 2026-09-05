@@ -50,13 +50,6 @@ export { WORKFLOW_API_PREFIX } from "./sdk/_workflow-api-envelope.ts";
 // composed, so no `agent.ts` names it — while a client rendering it before a
 // socket exists does.
 export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
-// Pool SIZES for a database a guest was GIVEN — an author's own `DATABASE_URL`,
-// on a self-hosted `createRuntimeServer` or under `aai dev`. Here rather than in the
-// runtime because both ends of that number have to agree and the platform
-// provisions no database of its own to derive it from; `sdk/app-db-budget.ts`
-// carries each measurement and why the `APP_DB_` prefix is now a misnomer. Pure
-// constants, so nothing host-only rides in behind them.
-export { APP_DB_POOL_MAX, APP_DB_PRESENCE_LOCK } from "./sdk/app-db-budget.ts";
 // The `aai login` confirmation code and the slug shape: the two contracts BOTH
 // ends of a platform interaction must derive identically. They were on `/utils`,
 // which is a published subpath an agent author reads — a platform contract is

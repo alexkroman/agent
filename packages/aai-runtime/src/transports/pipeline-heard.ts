@@ -43,7 +43,7 @@
  */
 
 import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
-import { HEARD_AUDIO_LAG_MS, PIPELINE_PLAYBACK_GRACE_MS } from "@alexkroman1/aai/host-internal";
+import { HEARD_AUDIO_LAG_MS, PIPELINE_PLAYBACK_GRACE_MS } from "@alexkroman1/aai/internal";
 import { buildTailResumePrompt, tailResumeWorthRunning } from "./pipeline-recovery.ts";
 
 /** Estimated client-side playback clock — see {@link createPlaybackClock}. */

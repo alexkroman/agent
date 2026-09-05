@@ -16,7 +16,7 @@
  * legitimate caller's own limit is what they see when they hit one.
  */
 
-import { clientIp } from "aai-server/client-ip";
+import { clientIp } from "aai-server/http";
 import {
   CHAT_IP_RATE_LIMIT,
   CHAT_RATE_LIMIT,

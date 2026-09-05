@@ -17,8 +17,8 @@
 
 import { hash } from "node:crypto";
 import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
-import { verifySlugOwner } from "aai-server/secrets";
-import type { BundleStore } from "aai-server/store-types";
+import type { BundleStore } from "aai-server/stores";
+import { verifySlugOwner } from "aai-server/stores";
 import type { StudioWorkspace } from "./studio-workspace.ts";
 
 /** The two agents a project deploys. */

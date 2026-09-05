@@ -38,7 +38,7 @@
  * emptied by the `clear` frame — see {@link CarrierCodec.clear}.
  */
 
-import { WS_OPEN } from "@alexkroman1/aai/host-internal";
+import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";

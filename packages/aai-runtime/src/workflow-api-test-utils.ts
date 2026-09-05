@@ -16,7 +16,7 @@
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/host-internal";
+import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { vi } from "vitest";
