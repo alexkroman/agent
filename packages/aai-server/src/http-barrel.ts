@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `aai-server/platform` — the platform's own runtime surface — its events, its locks, its live streams, and the shared internals.
+ * `aai-server/http` — the HTTP edge: what wraps a request, what identifies its caller, and what bounds it.
  *
  * A CAPABILITY entry, not a module. This package used to publish one subpath per
  * module — thirty-five of them, every one imported by `aai-studio-server` and by
@@ -24,33 +24,41 @@
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression and the escape-hatch ratchet only moves down.
  *
- * @module platform
+ * @module http
  */
 
-export { deleteAgentResources } from "./delete.ts";
+export type { ApiKeyVerifier } from "./api-key-verify.ts";
 export {
-  constantTimeEquals,
-  createCachedDirReader,
-  createKeyedLock,
-  resolvePort,
-  TtlCache,
-  withLock,
-} from "./internals-barrel.ts";
+  addHealthRoute,
+  applyPlatformMiddleware,
+  bindFetchEnv,
+} from "./app-middleware.ts";
+export { clientIp } from "./client-ip.ts";
+export type {
+  AppContext,
+  HonoEnv,
+} from "./context.ts";
 export {
-  endLiveStreams,
-  liveStreamCount,
-  registerLiveStream,
-  reservedLiveStreams,
-  reserveLiveStream,
-  resetLiveStreams,
-} from "./live-streams.ts";
+  authMw,
+  invalidateApiKeyOwner,
+  invalidateUserApiKey,
+  requireStudioUser,
+} from "./middleware.ts";
+export { resolvePublicOrigin } from "./public-origin.ts";
 export {
-  createMemoryPlatformEvents,
-  type PlatformEvents,
-  projectKey,
-} from "./platform-events.ts";
+  CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+  createPgAgentRateLimiters,
+  createPgRateLimiter,
+  createRateLimiter,
+  type RateLimiter,
+  type RateLimitVerdict,
+} from "./rate-limit.ts";
+export { startService } from "./serve-lifecycle.ts";
 export {
-  createMutationLock,
-  localSlugLock,
-  type SlugMutationLock,
-} from "./platform-lock.ts";
+  apiKeyOwnerSecretName,
+  cliLinkSecretName,
+  createDevAuth,
+  type StudioAuth,
+  type StudioAuthClientConfig,
+  userApiKeySecretName,
+} from "./supabase-auth.ts";

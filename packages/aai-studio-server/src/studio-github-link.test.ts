@@ -5,7 +5,7 @@
 // and every way a stored document can be wrong reads as "not connected" — the
 // state whose recovery (connect again) is the one the user needs.
 
-import { createMemorySecretStore } from "aai-server/secret-store";
+import { createMemorySecretStore } from "aai-server/stores";
 import { describe, expect, test } from "vitest";
 import {
   deleteGithubLink,

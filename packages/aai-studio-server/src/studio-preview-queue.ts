@@ -38,7 +38,7 @@
 import { safeJsonParse } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { createLogger } from "aai-server/logger";
-import type { SqlExec } from "aai-server/secret-store";
+import type { SqlExec } from "aai-server/stores";
 
 const log = createLogger("studio.preview.queue");
 

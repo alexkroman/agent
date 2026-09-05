@@ -13,7 +13,7 @@
  * modules under the file-length cap.
  */
 
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import type { WorkspaceStore } from "aai-server/stores";
 import {
   forcePreviewRedeploy,
   type PreviewDeployer,

@@ -8,12 +8,11 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { ChatStore } from "aai-server/chat-store";
-import type { OrchestratorOpts } from "aai-server/orchestrator";
-import { createMemorySecretStore } from "aai-server/secret-store";
-import { isStudioPath } from "aai-server/studio-paths";
+import { isStudioPath } from "aai-server/config";
+import type { OrchestratorOpts } from "aai-server/sandbox";
+import type { ChatStore, WorkspaceStore } from "aai-server/stores";
+import { createMemorySecretStore } from "aai-server/stores";
 import { createTestOrchestrator, type TestFetch } from "aai-server/test-utils";
-import type { WorkspaceStore } from "aai-server/workspace-store";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 

@@ -3,11 +3,11 @@ import { defineConfig } from "tsdown";
 /**
  * `aai-server` is COMPILED IN, and the pattern has to match its subpaths.
  *
- * Every import of it is a subpath (`aai-server/orchestrator`,
- * `aai-server/platform-barrel`, … — all 31 exports), so a bare `/^aai-server$/`
- * matches nothing and the whole package stays external. It did, for a long
- * time, and nothing said so: the build succeeds, `dist/index.mjs` is merely
- * 150 KB of import statements instead of a bundle, and the entry runs.
+ * Every import of it is a subpath (`aai-server/stores`, `aai-server/platform`,
+ * … — all seven capability entries), so a bare `/^aai-server$/` matches nothing
+ * and the whole package stays external. It did, for a long time, and nothing
+ * said so: the build succeeds, `dist/index.mjs` is merely 150 KB of import
+ * statements instead of a bundle, and the entry runs.
  *
  * What it costs is paid at every container COLD START. aai-server's exports map
  * resolves to `.ts` SOURCE — there is no build — so an externalized entry makes

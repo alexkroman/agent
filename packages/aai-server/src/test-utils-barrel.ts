@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `aai-server/platform` — the platform's own runtime surface — its events, its locks, its live streams, and the shared internals.
+ * `aai-server/test-utils` — the fakes and fixtures a spec on the other side of this boundary builds on.
  *
  * A CAPABILITY entry, not a module. This package used to publish one subpath per
  * module — thirty-five of them, every one imported by `aai-studio-server` and by
@@ -24,33 +24,19 @@
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression and the escape-hatch ratchet only moves down.
  *
- * @module platform
+ * @module test-utils
  */
 
-export { deleteAgentResources } from "./delete.ts";
+export { ensurePlatformTables } from "./platform-schema-test-utils.ts";
 export {
-  constantTimeEquals,
-  createCachedDirReader,
-  createKeyedLock,
-  resolvePort,
-  TtlCache,
-  withLock,
-} from "./internals-barrel.ts";
-export {
-  endLiveStreams,
-  liveStreamCount,
-  registerLiveStream,
-  reservedLiveStreams,
-  reserveLiveStream,
-  resetLiveStreams,
-} from "./live-streams.ts";
-export {
-  createMemoryPlatformEvents,
-  type PlatformEvents,
-  projectKey,
-} from "./platform-events.ts";
-export {
-  createMutationLock,
-  localSlugLock,
-  type SlugMutationLock,
-} from "./platform-lock.ts";
+  authFetch,
+  authHeaders,
+  captureLogs,
+  createRecordingSql,
+  createTestOrchestrator,
+  createTestStore,
+  deployAgent,
+  describeWithStack,
+  pgUrl,
+  type TestFetch,
+} from "./test-utils.ts";

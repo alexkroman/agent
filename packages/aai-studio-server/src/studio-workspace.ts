@@ -19,10 +19,9 @@
 
 import { hash } from "node:crypto";
 import { isRecord } from "@alexkroman1/aai/utils";
-import { createKeyedLock, withLock } from "aai-server/platform-barrel";
-import { projectKey as platformProjectKey } from "aai-server/platform-events";
-import { SafePathSchema } from "aai-server/schemas";
-import { WorkspaceConflictError, type WorkspaceStore } from "aai-server/workspace-store";
+import { SafePathSchema } from "aai-server/config";
+import { createKeyedLock, projectKey as platformProjectKey, withLock } from "aai-server/platform";
+import { WorkspaceConflictError, type WorkspaceStore } from "aai-server/stores";
 import {
   MAX_STUDIO_FILE_BYTES,
   MAX_STUDIO_FILES,

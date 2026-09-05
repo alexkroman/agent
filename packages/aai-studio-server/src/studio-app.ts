@@ -22,16 +22,13 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { ApiKeyVerifier } from "aai-server/api-key-verify";
-import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/app-middleware";
-import type { ChatStore } from "aai-server/chat-store";
-import type { PlatformEvents } from "aai-server/platform-events";
-import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
-import { SLUG_PATTERN_SOURCE } from "aai-server/schemas";
-import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
-import type { BundleStore } from "aai-server/store-types";
-import type { StudioAuth } from "aai-server/supabase-auth";
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import { SLUG_PATTERN_SOURCE } from "aai-server/config";
+import type { ApiKeyVerifier, StudioAuth } from "aai-server/http";
+import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/http";
+import type { PlatformEvents } from "aai-server/platform";
+import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform";
+import type { BundleStore, ChatStore, WorkspaceStore } from "aai-server/stores";
+import { createMemorySecretStore, type SecretStore } from "aai-server/stores";
 import { Hono } from "hono";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";

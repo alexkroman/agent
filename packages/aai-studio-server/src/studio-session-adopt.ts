@@ -22,8 +22,8 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import { createLogger } from "aai-server/logger";
+import { GUEST_ROUTES, guestHttpUrl } from "aai-server/sandbox";
 import pTimeout from "p-timeout";
 import type { StudioSessionRecord } from "./studio-session-registry.ts";
 

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `aai-server/platform` — the platform's own runtime surface — its events, its locks, its live streams, and the shared internals.
+ * `aai-server/stores` — everything the platform PERSISTS, and the interfaces those stores satisfy.
  *
  * A CAPABILITY entry, not a module. This package used to publish one subpath per
  * module — thirty-five of them, every one imported by `aai-studio-server` and by
@@ -24,33 +24,32 @@
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression and the escape-hatch ratchet only moves down.
  *
- * @module platform
+ * @module stores
  */
 
-export { deleteAgentResources } from "./delete.ts";
 export {
-  constantTimeEquals,
-  createCachedDirReader,
-  createKeyedLock,
-  resolvePort,
-  TtlCache,
-  withLock,
-} from "./internals-barrel.ts";
+  type ChatStore,
+  createMemoryChatStore,
+} from "./chat-store.ts";
 export {
-  endLiveStreams,
-  liveStreamCount,
-  registerLiveStream,
-  reservedLiveStreams,
-  reserveLiveStream,
-  resetLiveStreams,
-} from "./live-streams.ts";
+  deleteSlugSecret,
+  listSlugSecrets,
+  type SecretEnv,
+  setSlugSecrets,
+} from "./secret-handler.ts";
 export {
-  createMemoryPlatformEvents,
-  type PlatformEvents,
-  projectKey,
-} from "./platform-events.ts";
+  createMemorySecretStore,
+  type SecretStore,
+  type SqlExec,
+} from "./secret-store.ts";
 export {
-  createMutationLock,
-  localSlugLock,
-  type SlugMutationLock,
-} from "./platform-lock.ts";
+  hashApiKey,
+  verifySlugOwner,
+} from "./secrets.ts";
+export type { BundleStore } from "./store-types.ts";
+export {
+  createMemoryWorkspaceStore,
+  createPgWorkspaceStore,
+  WorkspaceConflictError,
+  type WorkspaceStore,
+} from "./workspace-store.ts";

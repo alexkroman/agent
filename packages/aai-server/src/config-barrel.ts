@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `aai-server/platform` — the platform's own runtime surface — its events, its locks, its live streams, and the shared internals.
+ * `aai-server/config` — the shapes and the settings — request schemas, slugs, budgets, and where the service thinks things live.
  *
  * A CAPABILITY entry, not a module. This package used to publish one subpath per
  * module — thirty-five of them, every one imported by `aai-studio-server` and by
@@ -24,33 +24,29 @@
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression and the escape-hatch ratchet only moves down.
  *
- * @module platform
+ * @module config
  */
 
-export { deleteAgentResources } from "./delete.ts";
 export {
-  constantTimeEquals,
-  createCachedDirReader,
-  createKeyedLock,
-  resolvePort,
-  TtlCache,
-  withLock,
-} from "./internals-barrel.ts";
+  DEFAULT_PORT,
+  MAX_LIVE_STREAMS_PER_SCOPE,
+  resolveHarnessPath,
+} from "./constants.ts";
+export type { GuestConnection } from "./rpc-schemas.ts";
 export {
-  endLiveStreams,
-  liveStreamCount,
-  registerLiveStream,
-  reservedLiveStreams,
-  reserveLiveStream,
-  resetLiveStreams,
-} from "./live-streams.ts";
+  RESERVED_SLUGS,
+  SafePathSchema,
+  SecretKeySchema,
+  SecretUpdatesSchema,
+  SLUG_PATTERN_SOURCE,
+  VALID_SLUG_RE,
+} from "./schemas.ts";
 export {
-  createMemoryPlatformEvents,
-  type PlatformEvents,
-  projectKey,
-} from "./platform-events.ts";
-export {
-  createMutationLock,
-  localSlugLock,
-  type SlugMutationLock,
-} from "./platform-lock.ts";
+  assertSandboxBackendOrWarn,
+  assertStorageBucket,
+  buildServiceConfig,
+  installProcessSafetyNets,
+  type ServiceConfig,
+} from "./service-config.ts";
+export { generatedSlug } from "./slug-generate.ts";
+export { isStudioPath } from "./studio-paths.ts";

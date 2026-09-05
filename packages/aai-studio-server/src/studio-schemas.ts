@@ -4,8 +4,7 @@
 import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/internal";
 import { slugifyName } from "@alexkroman1/aai/slugify";
 import { isRecord } from "@alexkroman1/aai/utils";
-import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
-import { generatedSlug } from "aai-server/slug-generate";
+import { generatedSlug, RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/config";
 import { z } from "zod";
 import { GITHUB_NAME_RE } from "./studio-github-sync.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";

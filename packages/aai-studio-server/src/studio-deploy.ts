@@ -10,7 +10,7 @@
  * a publish reports itself, since nothing is written into the chat.
  */
 
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import type { WorkspaceStore } from "aai-server/stores";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import { getWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
 

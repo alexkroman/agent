@@ -31,10 +31,9 @@
 
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { ChatStore } from "aai-server/chat-store";
-import { createKeyedLock, withLock } from "aai-server/platform-barrel";
-import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import { createKeyedLock, withLock } from "aai-server/platform";
+import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox";
+import type { ChatStore, WorkspaceStore } from "aai-server/stores";
 import { createPreviewDeployer, type PreviewOrigin, type PreviewTarget } from "./studio-preview.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";

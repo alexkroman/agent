@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { createOwnedMap } from "@alexkroman1/aai/internal";
-import type { WarmHarness } from "aai-server/sandbox-vm";
+import type { WarmHarness } from "aai-server/sandbox";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";

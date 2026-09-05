@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `aai-server/platform` — the platform's own runtime surface — its events, its locks, its live streams, and the shared internals.
+ * `aai-server/sandbox` — standing a guest up, routing to it, and taking it down.
  *
  * A CAPABILITY entry, not a module. This package used to publish one subpath per
  * module — thirty-five of them, every one imported by `aai-studio-server` and by
@@ -24,33 +24,28 @@
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression and the escape-hatch ratchet only moves down.
  *
- * @module platform
+ * @module sandbox
  */
 
-export { deleteAgentResources } from "./delete.ts";
 export {
-  constantTimeEquals,
-  createCachedDirReader,
-  createKeyedLock,
-  resolvePort,
-  TtlCache,
-  withLock,
-} from "./internals-barrel.ts";
+  GUEST_ROUTES,
+  guestHttpUrl,
+} from "./guest-routes.ts";
 export {
-  endLiveStreams,
-  liveStreamCount,
-  registerLiveStream,
-  reservedLiveStreams,
-  reserveLiveStream,
-  resetLiveStreams,
-} from "./live-streams.ts";
+  createOrchestrator,
+  type OrchestratorOpts,
+} from "./orchestrator.ts";
 export {
-  createMemoryPlatformEvents,
-  type PlatformEvents,
-  projectKey,
-} from "./platform-events.ts";
+  resolveSandboxBackend,
+  type SandboxBackend,
+} from "./sandbox-backend.ts";
 export {
-  createMutationLock,
-  localSlugLock,
-  type SlugMutationLock,
-} from "./platform-lock.ts";
+  SandboxNameTakenError,
+  studioSandboxName,
+} from "./sandbox-directory.ts";
+export {
+  guestReachableUrl,
+  spawnWarmHarness,
+  type WarmHarness,
+} from "./sandbox-vm.ts";
+export { teardownSandboxes } from "./teardown-sandboxes.ts";

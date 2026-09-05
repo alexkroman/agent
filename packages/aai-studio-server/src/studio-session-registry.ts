@@ -43,7 +43,7 @@
  * registry is what dev and tests run on.
  */
 
-import type { SqlExec } from "aai-server/secret-store";
+import type { SqlExec } from "aai-server/stores";
 import { projectKey } from "./studio-workspace.ts";
 
 /**

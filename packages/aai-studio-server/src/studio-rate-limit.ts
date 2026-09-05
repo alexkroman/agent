@@ -21,8 +21,8 @@ import {
   CLIENT_IP_RATE_LIMIT_WINDOW_MS,
   createPgRateLimiter,
   type RateLimiter,
-} from "aai-server/rate-limit";
-import type { SqlExec } from "aai-server/secret-store";
+} from "aai-server/http";
+import type { SqlExec } from "aai-server/stores";
 
 /** `POST /studio/projects/:project/session` — each request can spawn a Modal sandbox. */
 export const CHAT_RATE_LIMIT = { limit: 30, windowMs: 5 * 60_000 } as const;
@@ -96,8 +96,8 @@ export type StudioRateLimiters = {
   githubSyncIp?: RateLimiter;
 };
 
-export type { RateLimiter, RateLimitVerdict } from "aai-server/rate-limit";
-export { createPgRateLimiter, createRateLimiter } from "aai-server/rate-limit";
+export type { RateLimiter, RateLimitVerdict } from "aai-server/http";
+export { createPgRateLimiter, createRateLimiter } from "aai-server/http";
 
 /**
  * EVERY studio window, Postgres-backed, from one factory — the shape

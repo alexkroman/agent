@@ -11,7 +11,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import nodePath from "node:path";
-import type { AppContext } from "aai-server/context";
+import type { AppContext } from "aai-server/http";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chatUrlForGuest } from "./studio-session-broker.ts";

@@ -22,9 +22,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { resolveHarnessPath } from "aai-server/constants";
+import { resolveHarnessPath } from "aai-server/config";
 import { createLogger } from "aai-server/logger";
-import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
+import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox";
 import { z } from "zod";
 
 const log = createLogger("studio.publish");

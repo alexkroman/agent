@@ -35,7 +35,7 @@
 import { createHmac, hash } from "node:crypto";
 import { safeJsonParse } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { constantTimeEquals } from "aai-server/platform-barrel";
+import { constantTimeEquals } from "aai-server/platform";
 import { z } from "zod";
 import type { GithubAppConfig } from "./studio-github-config.ts";
 

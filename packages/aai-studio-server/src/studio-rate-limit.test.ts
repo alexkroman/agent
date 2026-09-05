@@ -11,7 +11,7 @@
 // surface's workflow limiters ran at 3x their written value for months.
 
 import { readFileSync } from "node:fs";
-import { CLIENT_IP_RATE_LIMIT_WINDOW_MS } from "aai-server/rate-limit";
+import { CLIENT_IP_RATE_LIMIT_WINDOW_MS } from "aai-server/http";
 import { describe, expect, test } from "vitest";
 import {
   createPgStudioRateLimiters,

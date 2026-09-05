@@ -43,7 +43,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import type { WorkspaceStore } from "aai-server/workspace-store";
+import type { WorkspaceStore } from "aai-server/stores";
 import { type ProjectEnvironment, projectSlugFor } from "./studio-project-slugs.ts";
 import { getWorkspace } from "./studio-workspace.ts";
 

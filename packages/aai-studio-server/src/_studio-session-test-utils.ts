@@ -7,10 +7,9 @@
  * whichever suite happened to be written first.
  */
 
-import { createMemoryChatStore } from "aai-server/chat-store";
-import type { GuestConnection } from "aai-server/rpc-schemas";
-import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
+import type { GuestConnection } from "aai-server/config";
+import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox";
+import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { type Mock, vi } from "vitest";
 import { createMemoryPreviewQueue, type PreviewJob } from "./studio-preview-queue.ts";
 import { createStudioSessionBroker } from "./studio-session-broker.ts";

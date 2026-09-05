@@ -9,9 +9,8 @@
  * `afterDeploy` hook, none of which is about session lifecycle.
  */
 
-import { createMemoryChatStore } from "aai-server/chat-store";
-import type { spawnWarmHarness } from "aai-server/sandbox-vm";
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
+import type { spawnWarmHarness } from "aai-server/sandbox";
+import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { describe, expect, test, vi } from "vitest";
 import { fakeGuest, makeBroker, PROJECT, SCOPE } from "./_studio-session-test-utils.ts";
 import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";

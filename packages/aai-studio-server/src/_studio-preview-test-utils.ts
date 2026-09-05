@@ -10,8 +10,8 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
+import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/stores";
 import { captureLogs } from "aai-server/test-utils";
-import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
 import { vi } from "vitest";
 import {
   createWorkspace,

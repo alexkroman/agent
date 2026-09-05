@@ -10,9 +10,8 @@
  * length cap; the shared fakes live in _studio-routes-test-utils.ts.
  */
 
-import { createMemorySecretStore } from "aai-server/secret-store";
+import { createMemorySecretStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
 import {

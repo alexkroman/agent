@@ -20,7 +20,7 @@
  */
 
 import { safeJsonParse } from "@alexkroman1/aai";
-import type { SecretStore } from "aai-server/secret-store";
+import type { SecretStore } from "aai-server/stores";
 import type { z } from "zod";
 
 /**

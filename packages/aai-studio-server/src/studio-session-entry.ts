@@ -9,7 +9,7 @@
  * broker time rather than resolved later.
  */
 
-import type { WarmHarness } from "aai-server/sandbox-vm";
+import type { WarmHarness } from "aai-server/sandbox";
 import type { PreviewTarget } from "./studio-preview.ts";
 
 export type SessionEntry = {

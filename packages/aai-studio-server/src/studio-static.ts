@@ -13,11 +13,10 @@
 
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { AppContext } from "aai-server/context";
-import { createCachedDirReader } from "aai-server/platform-barrel";
-import { resolveSandboxBackend, type SandboxBackend } from "aai-server/sandbox-backend";
-import { SafePathSchema } from "aai-server/schemas";
-import type { StudioAuthClientConfig } from "aai-server/supabase-auth";
+import { SafePathSchema } from "aai-server/config";
+import type { AppContext, StudioAuthClientConfig } from "aai-server/http";
+import { createCachedDirReader } from "aai-server/platform";
+import { resolveSandboxBackend, type SandboxBackend } from "aai-server/sandbox";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 

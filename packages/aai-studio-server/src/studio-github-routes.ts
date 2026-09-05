@@ -35,8 +35,8 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { zValidator } from "@hono/zod-validator";
+import { requireStudioUser } from "aai-server/http";
 import { createLogger } from "aai-server/logger";
-import { requireStudioUser } from "aai-server/middleware";
 import type { Context, Hono } from "hono";
 import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
 import {

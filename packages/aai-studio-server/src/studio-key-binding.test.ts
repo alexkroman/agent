@@ -8,7 +8,7 @@
  * true right up until the second writer is not a teammate.
  */
 
-import type { ApiKeyVerifier } from "aai-server/api-key-verify";
+import type { ApiKeyVerifier } from "aai-server/http";
 import { authFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";

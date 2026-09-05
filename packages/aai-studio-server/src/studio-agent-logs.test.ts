@@ -4,7 +4,7 @@
  * workspace rather than from anything the guest said.
  */
 
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
+import { createMemoryWorkspaceStore } from "aai-server/stores";
 import { describe, expect, test, vi } from "vitest";
 import { readProjectLogs } from "./studio-agent-logs.ts";
 import { createWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";

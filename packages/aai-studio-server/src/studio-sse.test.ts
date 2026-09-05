@@ -13,7 +13,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
-import { endLiveStreams, resetLiveStreams } from "aai-server/live-streams";
+import { endLiveStreams, resetLiveStreams } from "aai-server/platform";
 import type { SSEMessage } from "hono/streaming";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSharedReads, createSsePusher, type SseStream } from "./studio-sse.ts";

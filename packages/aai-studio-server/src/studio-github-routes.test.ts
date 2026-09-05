@@ -8,7 +8,7 @@
 // callback in particular is a PUBLIC route whose only authentication is the
 // state, so its negative cases carry the weight here.
 
-import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
+import { createMemorySecretStore, type SecretStore } from "aai-server/stores";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test } from "vitest";
 import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
