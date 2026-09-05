@@ -21,10 +21,28 @@
  * failed four specs on contention alone.
  *
  * **NOT `test:e2e`**, which already passes `--concurrency=1` — one task, and
- * bounding a serial run buys nothing. And nothing in CI's test matrix goes
+ * bounding a serial run buys nothing. And nothing in CI's test MATRIX goes
  * through here: those jobs are `turbo run test:coverage --filter <one package>`,
  * a single task that should keep the full worker budget, which is exactly what
  * an unset `TURBO_CONCURRENCY` gives it.
+ *
+ * **One CI job does go through here, and it is the seventh door.**
+ * `check.yml`'s `integration-and-scenario` step runs BOTH slow tiers in one
+ * turbo invocation, which is a workspace fan-out by any other name — and it was
+ * a bare `pnpm exec turbo run check:integration check:scenario` for as long as
+ * it existed, so the paragraph above ("nothing in CI") was read as covering it.
+ * It is not a matrix job and it is not one task: unbounded, the scenario tier's
+ * harness spawns, bundlers and servers run on top of the integration tier's
+ * CPU-bound property tests. Measured on 3 cores over that exact command,
+ * `aai-runtime`'s `pipeline-history-rollback` property took **5,896 ms
+ * unbounded against 2,994 ms bounded** — 2,740 ms is what it costs run alone,
+ * so the budget gives back all of the contention — and the tier 30.5s against
+ * 22.5s. On the smaller macOS runner the unbounded copy crossed the integration
+ * tier's 30s ceiling and failed the job on main as well as on the branch that
+ * found it. It is spelled `pnpm exec node scripts/with-worker-budget.mjs …`
+ * there because a GitHub `run:` step is a bare shell: this script spawns
+ * `turbo` by NAME, and without `pnpm exec` putting `node_modules/.bin` on PATH
+ * it dies with `spawn turbo ENOENT` before bounding anything.
  *
  * Flags of this script's own would go before the command; it has none today, so
  * `parseLeadingFlags` is here for the error it produces on a stray leading flag
