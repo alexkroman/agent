@@ -170,6 +170,20 @@ export const SCRIPT_PATHSPECS = ["scripts/*.mjs", "scripts/**/*.mjs"];
 export const TEMPLATE_PATHSPECS = ["packages/aai-templates/templates"];
 
 /**
+ * Rule 33's scope: this repo's own test files.
+ *
+ * `.tsx` is listed separately and not folded into a brace pattern, because a
+ * git pathspec is fnmatch and the 43 `.test.tsx` files are all in `aai-ui` and
+ * `aai-studio-client` — the two packages whose specs render components, which
+ * is exactly where a tautological assertion would be least noticed.
+ *
+ * Both globs already require a directory under `packages/`, which every test
+ * file has, so neither hits the missing-`scripts/*.mjs` trap that
+ * {@link SCRIPT_PATHSPECS} records. Verified with `git ls-files`: 807 + 43.
+ */
+export const TEST_FILE_PATHSPECS = ["packages/**/*.test.ts", "packages/**/*.test.tsx"];
+
+/**
  * Rule 26's scope: the shipped WORKFLOW BODIES — every `workflows/*.ts` in a
  * template.
  *
@@ -283,7 +297,7 @@ export const RUNTIME_EGRESS_PATHSPECS = [
  * The floors under every scan — see `_ratchet.mjs` on why they measure the
  * CORPUS.
  *
- * SEVEN of them, because the rules walk seven different scopes and only two
+ * EIGHT of them, because the rules walk eight different scopes and only two
  * were floored. Each number is set well below the measured actual, recorded beside
  * it, so ordinary movement in the tree does not trip a floor while a scan that
  * has gone blind does.
@@ -319,6 +333,7 @@ export const SCAN_CORPORA = [
   },
   { what: "rule 12's guest HTTP-surface scan", pathspecs: GUEST_SURFACE_PATHSPECS, minFiles: 20 }, // 32
   { what: "rule 13's template scan", pathspecs: TEMPLATE_PATHSPECS, minFiles: 100 }, // 175
+  { what: "rule 33's test-file scan", pathspecs: TEST_FILE_PATHSPECS, minFiles: 600 }, // 850
   {
     what: "rule 26's shipped workflow-body scan",
     pathspecs: WORKFLOW_BODY_PATHSPECS,

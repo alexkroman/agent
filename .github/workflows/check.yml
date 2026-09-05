@@ -451,6 +451,38 @@ jobs:
           ffmpeg -version | sed -n 1p
           ffprobe -version | sed -n 1p
           echo "AAI_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
+      # Deno for the CLI's Deno-target scenario suite
+      # (aai-cli/_deno-output.scenario.test.ts). Its portability case is the ONLY
+      # thing in the repo that proves `aai build --target deno` emits a directory
+      # which BOOTS — no node_modules, the worker and the built client copied in
+      # — and it SKIPS without a `deno` on PATH. Nothing installed one, so on the
+      # branch that ADDED the target that case reported green on every leg while
+      # checking nothing, which is why the flag below exists.
+      #
+      # Both legs, unlike the ffmpeg step above: that suite is OS-independent and
+      # brew would spend minutes rebuilding the Linux leg's coverage, whereas this
+      # one symlinks a node_modules tree, resolves paths and reads
+      # `import.meta.dirname`, so macOS is real coverage — and setup-deno fetches
+      # a prebuilt binary on both.
+      #
+      # The version is EXACT, not a range: a moving runtime turns somebody else's
+      # regression into a red required check on unrelated pull requests, the same
+      # determinism the tiers keep by carrying no `retry`. Bump it deliberately —
+      # 2.9.5 is the version the target was verified against.
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: "2.9.5"
+      # And make a SKIP fail, exactly as AAI_REQUIRE_PG and AAI_REQUIRE_FFMPEG
+      # above. The action resolving is not the same fact as `deno` answering on
+      # PATH; if it did not, the suite would skip itself and this job would pass.
+      - name: Require Deno for the Deno-target suite
+        run: |
+          set -euo pipefail
+          # `sed -n 1p` rather than `head -1` for the reason the ffmpeg step
+          # gives: head exits after one line and, under pipefail, a SIGPIPE'd
+          # producer would fail this step for printing its own version.
+          deno --version | sed -n 1p
+          echo "AAI_REQUIRE_DENO=1" >> "$GITHUB_ENV"
       # Both slow tiers below e2e, in one job. They are separate TASKS — the
       # integration tier is in-memory only and the scenario tier is what needs the
       # Postgres started above — but they share this job's checkout and build, and

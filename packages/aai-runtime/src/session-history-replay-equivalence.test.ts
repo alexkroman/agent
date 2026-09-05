@@ -626,37 +626,45 @@ describe("a conversation read back out of its own event log", () => {
           expect(driven.spoken, "a replayed failure phrase never reached TTS").toContain(m.content);
         }
       }),
-      { numRuns: 120 },
+      // 400, up from 120, for `syntheticRolledBack` below: CI observed 0
+      // against its `> 10` floor, so the state that floor proves was never
+      // reached on the machine that gates a merge. This property runs no
+      // timers (52 ms/file), so its distribution is instrument-INDEPENDENT
+      // and the 0 was a left-tail draw — the case more runs really fixes.
+      // Measured, it took that counter's minimum from 14 to 111, for 18 ms.
+      { numRuns: 400 },
     );
 
     // `REPLAY_FUZZ_COVERAGE=1` prints the table, the way the pipeline and S2S
     // properties do. It is how the actuals below were taken, and how the next
     // person re-takes them.
     if (process.env.REPLAY_FUZZ_COVERAGE === "1") console.log(JSON.stringify(reached));
-    // Ranges over 20 runs. Without these the equality above is satisfied by a
-    // corpus of plain spoken turns, which is exactly the corpus that has no
-    // boundary in it to pin.
-    expect(reached.spokenTurns, "no turn ever spoke").toBeGreaterThan(800); // 1141-1567
-    expect(reached.interruptedKept, "no barge-in ever recorded heard words").toBeGreaterThan(350); // 501-850
+    // Ranges over 22 runs at `numRuns: 400`. Without these the equality above
+    // is satisfied by a corpus of plain spoken turns, which has no boundary in
+    // it to pin. The floors are deliberately NOT raised to match their 5-18x
+    // headroom: calibrating eight numbers off ten local runs is the mistake
+    // that put the pipeline floor above CI's whole range.
+    expect(reached.spokenTurns, "no turn ever spoke").toBeGreaterThan(800); // 4558-5029
+    expect(reached.interruptedKept, "no barge-in ever recorded heard words").toBeGreaterThan(350); // 2190-2508
     expect(
       reached.interruptedSilent,
       "no barge-in left the caller hearing nothing",
-    ).toBeGreaterThan(90); // 148-330
+    ).toBeGreaterThan(90); // 718-992
     expect(
       reached.strandedBargeIns,
       "no deferred persistence was stranded by a reset",
-    ).toBeGreaterThan(240); // 360-622
-    expect(reached.syntheticRetained, "no injected prompt survived its turn").toBeGreaterThan(520); // 759-1046
+    ).toBeGreaterThan(240); // 1279-1855
+    expect(reached.syntheticRetained, "no injected prompt survived its turn").toBeGreaterThan(520); // 2598-3092
     // The widest spread here by a factor of six — it needs BOTH no completed
     // step and nothing heard, which is one draw in eight of the shape that
     // generates it — so the floor sits well under the minimum rather than near it.
     expect(reached.syntheticRolledBack, "no injected prompt was ever rolled back").toBeGreaterThan(
       10,
-    ); // 21-120
-    expect(reached.errorPhrases, "no turn ever failed").toBeGreaterThan(220); // 341-608
-    expect(reached.startFailures, "no session ever failed to start").toBeGreaterThan(210); // 323-592
-    expect(reached.resets, "no reset ever discarded the conversation").toBeGreaterThan(600); // 849-1159
-    expect(reached.backToBackUsers, "two user turns never landed in a row").toBeGreaterThan(200); // 314-571
+    ); // 111-355
+    expect(reached.errorPhrases, "no turn ever failed").toBeGreaterThan(220); // 1335-1752
+    expect(reached.startFailures, "no session ever failed to start").toBeGreaterThan(210); // 1384-1792
+    expect(reached.resets, "no reset ever discarded the conversation").toBeGreaterThan(600); // 3052-3578
+    expect(reached.backToBackUsers, "two user turns never landed in a row").toBeGreaterThan(200); // 1310-1718
   });
 
   test("agrees on the TAIL when the 200-message window has slid past the difference", async () => {

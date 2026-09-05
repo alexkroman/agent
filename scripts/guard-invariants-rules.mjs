@@ -67,6 +67,7 @@
 
 import { SHAPE_RULES } from "./guard-invariants-rules-shape.mjs";
 import { STATE_RULES } from "./guard-invariants-rules-state.mjs";
+import { TESTING_RULES } from "./guard-invariants-rules-testing.mjs";
 import { TIMING_RULES } from "./guard-invariants-rules-timing.mjs";
 import { WORKFLOW_BODY_RULES } from "./guard-invariants-rules-workflow.mjs";
 
@@ -79,6 +80,7 @@ export {
   SHIPPED_SOURCE_PATHSPECS,
   SOURCE_PATHSPECS,
   TEMPLATE_PATHSPECS,
+  TEST_FILE_PATHSPECS,
   WORKFLOW_BODY_PATHSPECS,
 } from "./guard-invariants-scopes.mjs";
 
@@ -153,7 +155,7 @@ export const LINE_RULES = [...SHAPE_RULES, ...STATE_RULES, ...WORKFLOW_BODY_RULE
 );
 
 /**
- * Every node rule, SORTED BY ID — the timing family, and so far only it.
+ * Every node rule, SORTED BY ID — the timing family, and the testing one.
  *
  * Separate from {@link LINE_RULES} because the two are SCANNED differently and
  * by nothing else: they share the baseline file, the per-file budgets, the
@@ -169,4 +171,4 @@ export const LINE_RULES = [...SHAPE_RULES, ...STATE_RULES, ...WORKFLOW_BODY_RULE
  *
  * @type {NodeRule[]}
  */
-export const NODE_RULES = [...TIMING_RULES].sort((a, b) => a.id - b.id);
+export const NODE_RULES = [...TIMING_RULES, ...TESTING_RULES].sort((a, b) => a.id - b.id);

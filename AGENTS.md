@@ -593,7 +593,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   Rule 22 counts that family instead, the first rule here **seeded as debt** (145
   across 75 files, goal zero) — its entries are lines nobody has read yet.
 
-  **Seven scopes, seven corpus FLOORS**, and three were missing — the
+  **Eight scopes, eight corpus FLOORS**, and three were missing — the
   shipped-source corpus rules 11 and 27 share (1,224 files, and 11 is the
   Windows-portability rule whose regressions are invisible on every machine
   that runs CI), rule 12's guest HTTP surface, and rule 13's 175 template

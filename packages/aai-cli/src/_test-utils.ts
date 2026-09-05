@@ -157,3 +157,34 @@ export function makeBundle(overrides?: Partial<DirectoryBundleOutput>): Director
     ...overrides,
   };
 }
+
+/**
+ * A project whose `node_modules` resolves the CLI as well as the SDK.
+ *
+ * {@link linkSdkNodeModules} symlinks this package's own `node_modules`, which
+ * holds every dependency a bundled deployment entry needs but NOT
+ * `@alexkroman1/aai-cli` itself — a package has no self-link — and every
+ * target's entry imports that published subpath.
+ *
+ * Needed by the self-contained targets' scenario suites, which bundle an entry
+ * and then run it. `_deno-output.scenario.test.ts` carries its own copy of this
+ * for now; the two are the same helper and that one should switch over.
+ */
+export async function linkProjectNodeModules(dir: string): Promise<void> {
+  await linkSdkNodeModules(dir);
+  const packages = path.resolve(import.meta.dirname, "../..");
+  const real = await fs.realpath(path.join(dir, "node_modules"));
+  await fs.rm(path.join(dir, "node_modules"), { force: true });
+  await fs.mkdir(path.join(dir, "node_modules", "@alexkroman1"), { recursive: true });
+  for (const entry of await fs.readdir(real)) {
+    if (entry === "@alexkroman1") continue;
+    await fs.symlink(path.join(real, entry), path.join(dir, "node_modules", entry));
+  }
+  for (const pkg of ["aai", "aai-runtime", "aai-ui", "aai-cli"]) {
+    await fs.symlink(
+      path.join(packages, pkg),
+      path.join(dir, "node_modules", "@alexkroman1", pkg),
+      "dir",
+    );
+  }
+}

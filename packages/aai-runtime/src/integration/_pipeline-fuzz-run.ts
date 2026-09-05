@@ -58,6 +58,18 @@ export const SHORT_RUNS = 120;
  * not by the run count, so doubling widens the sample without narrowing the
  * ratio much. If it misses again, raise this rather than the floor — and if
  * that stops helping, the generator is what needs the nudge.
+ *
+ * **That last sentence has one documented exception, and it already fired.**
+ * Raising this answers a LEFT-TAIL draw on one instrument. It does not answer a
+ * shifted DISTRIBUTION across instruments, which is what `llmRequestAtHistoryCap`
+ * turned out to have: 199-425 locally against 44-68 in CI, because the config
+ * this file installs is tuned to "a run lasts ~250 ms" of REAL time and a
+ * 2-core runner does not honour that. Covering a 4x shift needs ~3x the runs on
+ * a property already at 5.9 s under a 60 s timeout, so that floor was moved
+ * under CI's own minimum instead — the reasoning is at the assertion, in
+ * `pipeline-fuzz.integration.test.ts`. Before raising this again, check WHICH
+ * of the two you are looking at: if local and CI disagree, more runs is the
+ * expensive way to not fix it.
  */
 export const LONG_RUNS = 6;
 /** Steps per long run — enough turns to trim at the cap. */

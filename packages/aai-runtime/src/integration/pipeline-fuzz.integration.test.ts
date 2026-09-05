@@ -272,17 +272,37 @@ describe("pipeline transport — randomized interleaving", () => {
     // The state this property exists for: past DEFAULT_MAX_HISTORY the cap
     // trims on every push, which is what can orphan a tool result.
     //
-    // The one floor in this file that was never MEASURED — 10 was a guess, and
-    // a floor with no recorded actual cannot be re-checked (which is the whole
-    // argument of `check-property-floors`, where this line was the tree's only
-    // baselined entry). Measured 2026-09-01 over 24 consecutive runs:
-    // 229-425, minimum 229. The floor sits under that observed MINIMUM rather
-    // than under a fraction of the mean, on the rule the root guide states: a
-    // walk's counters are correlated within a run, so these distributions have
-    // long left tails and only the unluckiest run observed is evidence.
+    // THE INSTRUMENT DECIDES THIS COUNTER, and that is the whole story of the
+    // number below. It was 75, justified by 229-425 measured over 24 runs on a
+    // developer machine — and CI's band is 44-68 (observed 44 and 65 on the two
+    // platforms of one run, 68 on another). So the floor sat ABOVE the entire
+    // range of the only environment that gates a merge, and `main` was red on
+    // it. A floor calibrated on a 14-core laptop is not a floor.
+    //
+    // The mechanism is wall clock. This property runs on REAL timers — see the
+    // `heardLagMs: 0` / `speechIdleTimeoutMs: 1` / `silenceTimeoutMs: 5` block
+    // in `_pipeline-fuzz-run.ts`, every value of which is justified by "a run
+    // lasts ~250 ms" — so on a 2-core runner, event-loop latency swamps those
+    // windows and changes how many turns commit. Local reproduction attempts
+    // FAILED to reach CI's band: 199/211/283/315/323 across five runs,
+    // including one under 24 spinners of CPU contention (211) and two with
+    // `CI=true` (199, 323).
+    //
+    // Raising `LONG_RUNS` is what that constant's own doc prescribes for a
+    // miss, and it is the wrong remedy HERE: it answers a left-tail draw, and
+    // this is a 4x shift in the whole distribution. Covering that needs ~3x the
+    // runs, on a property already costing 5.9 s locally under a 60 s timeout —
+    // i.e. trading a floor flake for a timeout flake on the slower machine.
+    //
+    // So the floor moves under the unluckiest run of the unluckiest instrument.
+    // It still does the job it exists for: the state going UNEXERCISED reads as
+    // 0, and a collapse to single digits is what this catches. If it ever needs
+    // to discriminate more finely than that, the property has to stop
+    // depending on wall clock (root guide: "a spec that observes a TIMER runs
+    // on virtual time"), not get a bigger number.
     expect(
       harness.cov.llmRequestAtHistoryCap ?? 0,
       "never reached the history cap",
-    ).toBeGreaterThan(75); // 229-425 over 24 runs
+    ).toBeGreaterThan(20); // CI 44-68 (n=3); local 199-425 (n=29)
   }, 60_000);
 });

@@ -32,7 +32,7 @@
 import path from "node:path";
 
 /** The targets `aai build --target` accepts. */
-export const BUILD_TARGETS = ["node", "vercel", "deno"] as const;
+export const BUILD_TARGETS = ["node", "vercel", "deno", "modal"] as const;
 
 export type BuildTarget = (typeof BUILD_TARGETS)[number];
 
@@ -53,16 +53,55 @@ export const DEFAULT_BUILD_TARGET: BuildTarget = "node";
  * rather than a single "am I in CI" test, because a GitHub Action building a
  * container image is CI too and wants the default.
  *
- * `DENO_DEPLOY` is Deno Deploy's documented "you are running here" variable.
- * Two honest caveats, stated because a marker that never fires is dead config:
- * it is documented for the RUNTIME and this reads it at BUILD time, which is
- * unverified; and the ordinary Deno flow does not need it anyway, since
- * `deno deploy` uploads a directory built on the developer's own machine. The
- * flag is the path that matters here — detection is the convenience.
+ * `DENO_DEPLOY` and `DENO_DEPLOYMENT_ID` are both Deno Deploy's "you are
+ * running here" variables, and BOTH are listed because neither one covers both
+ * GENERATIONS of the platform. Deno Deploy Classic sets `DENO_DEPLOYMENT_ID`
+ * and `DENO_REGION` and no `DENO_DEPLOY` at all; the current platform sets
+ * both. So `DENO_DEPLOYMENT_ID` is the only marker present in either, and
+ * reading just `DENO_DEPLOY` — as this did — left Classic undetectable. That is
+ * why `std-env` (the library Nitro detects providers with) tests the pair as
+ * ONE signal, and why Nitro's Deno preset reads that one for its manifest.
+ *
+ * These are read at BUILD time, and that is reachable rather than theoretical:
+ * Deno Deploy's git integration runs the build on its OWN infrastructure with
+ * them set — its reference singles out `DENO_TIMELINE` as the one variable NOT
+ * set during a build — so `aai build` there resolves this target with no flag,
+ * the same zero-config property `VERCEL` gives.
+ *
+ * What detection cannot see is the documented LOCAL flow, and the reason is
+ * ORDERING rather than a missing marker: `aai build --target deno` then
+ * `deno deploy` from `.aai/deno/` finishes the build on the developer's own
+ * machine before the upload command runs at all, so there is no host
+ * environment left to advertise itself. Nitro has the identical hole and
+ * answers it the same way — its own docs pass `NITRO_PRESET=deno_deploy`
+ * explicitly. The flag is the path that matters; detection covers the host that
+ * builds FOR you.
+ *
+ * **`modal` has NO marker, and cannot**: it is the LOCAL flow above with no
+ * host-built alternative. Modal runs no build of its own — `modal deploy`
+ * uploads a directory whose build already finished — so every Modal deploy is
+ * the case the paragraph above says detection cannot see, and any variable
+ * listed here would be dead config by construction.
+ *
+ * Worse than dead, and this is the part specific to us. The two variables that
+ * DO appear in a Modal environment are set inside a CONTAINER
+ * (`MODAL_IS_REMOTE`, `MODAL_TASK_ID`), which is the wrong end — and this
+ * repo's own guest sandboxes ARE Modal Sandboxes, with studio Publish running
+ * the CLI inside one, so detecting on them would flip the platform's own build
+ * to this target. `MODAL_TOKEN_ID` fails the ordinary way: credentials in the
+ * environment are not a statement about what a build is FOR, so anyone with
+ * Modal creds exported would get Modal output from a Vercel build.
+ *
+ * So `modal` is reachable by its flag alone. The reachability test in
+ * `_build-target.test.ts` asserts every target is selectable that way, rather
+ * than demanding a marker per target — which reads as the same claim and is
+ * not, since it would force a host like this one to invent a variable no build
+ * ever sees.
  */
 export const TARGET_ENV_MARKERS: Readonly<Record<string, BuildTarget>> = {
   VERCEL: "vercel",
   DENO_DEPLOY: "deno",
+  DENO_DEPLOYMENT_ID: "deno",
 };
 
 export function isBuildTarget(value: string): value is BuildTarget {
@@ -284,6 +323,34 @@ export const DENO_OUTPUT_DIR = path.join(".aai", "deno");
 /** The bundled entry inside {@link DENO_OUTPUT_DIR}, and Deploy's entrypoint. */
 export const DENO_ENTRY_FILE = "server.mjs";
 
+/** Deno's own project file inside {@link DENO_OUTPUT_DIR}. */
+export const DENO_CONFIG_FILE = "deno.json";
+
+/**
+ * The `deno.json` written beside the entry, so the output DESCRIBES how to run
+ * itself.
+ *
+ * Without it every command against this directory has to re-supply the
+ * entrypoint — `deno deploy --entrypoint server.mjs`, `deno run -A server.mjs`
+ * — which is a fact about the emit that the emit already knows and the user has
+ * to remember. Nitro's `deno-server` preset writes the same file for the same
+ * reason (its `compiled` hook, a `tasks.start`), and its own test suite then
+ * runs a bare `deno task start`.
+ *
+ * `-A` rather than a narrowed permission set, and that is deliberate: the
+ * server binds a port, reads the client directory and the worker off disk, and
+ * reads the environment, so an enumerated list here would be a second
+ * declaration of the runtime's needs that drifts the first time one changes.
+ * Deno Deploy grants its own permissions regardless; this file is what makes
+ * the directory runnable BY HAND, which is how a failed deployment gets
+ * diagnosed.
+ */
+export const DENO_CONFIG_SOURCE = `${JSON.stringify(
+  { tasks: { start: `deno run -A ./${DENO_ENTRY_FILE}` } },
+  null,
+  2,
+)}\n`;
+
 /**
  * The Deno entry, bundled into {@link DENO_ENTRY_FILE}.
  *
@@ -315,4 +382,86 @@ import { createProjectServer } from "@alexkroman1/aai-cli/start";
 const server = await createProjectServer({ cwd: import.meta.dirname });
 
 await server.listen(Number(globalThis.Deno?.env.get("PORT") ?? 8000), "0.0.0.0");
+`;
+
+/**
+ * Where a self-contained Modal deployment is emitted, relative to the project.
+ *
+ * A directory, for the reason {@link DENO_OUTPUT_DIR} is one and then some: the
+ * emitted `app.py` hands this path to Modal's `add_local_dir`, which uploads
+ * the tree wholesale into the image. Pointed at the project root that would
+ * bake `node_modules`, the source and the developer's `.env` into a container
+ * image — and an image layer is not something you can un-push.
+ */
+export const MODAL_OUTPUT_DIR = path.join(".aai", "modal");
+
+/** The bundled server inside {@link MODAL_OUTPUT_DIR}, spawned by `app.py`. */
+export const MODAL_ENTRY_FILE = "server.mjs";
+
+/** The Modal app definition inside {@link MODAL_OUTPUT_DIR} — what `modal deploy` reads. */
+export const MODAL_APP_FILE = "app.py";
+
+/**
+ * The port the node process binds and Modal proxies to.
+ *
+ * ONE constant, interpolated into both files the emit writes, because the two
+ * halves cannot be allowed to disagree: `@modal.web_server(port=…)` is how the
+ * platform learns where to route, and a node process reading a different number
+ * from its environment listens where nothing is routed. The symptom is a
+ * deployment that builds, starts, reports healthy, and answers no request —
+ * Modal's proxy simply never connects.
+ */
+export const MODAL_PORT = 8000;
+
+/**
+ * The Modal entry, bundled into {@link MODAL_ENTRY_FILE}.
+ *
+ * ## The same binding shape as Deno, for a different host
+ *
+ * `@modal.web_server` runs a container command and proxies HTTP *and*
+ * WebSocket traffic to a port that command opens, so this is the long-lived
+ * `aai start` shape rather than the serverless one — `listen()`, `0.0.0.0`
+ * (the proxy reaches this from outside the process), and artifacts resolved
+ * from {@link MODAL_ENTRY_FILE}'s own directory rather than from a working
+ * directory the platform owns. It is NOT shared with
+ * {@link DENO_ENTRY_SOURCE}: the two differ in how the port is read and in
+ * whether they drain, which is the whole body, so a shared constant would be a
+ * template with a hole where each host's contract goes.
+ *
+ * ## Why this one DRAINS, where the Deno entry does not
+ *
+ * Modal stops a container on every scale-in and every redeploy, which for a
+ * voice agent is a live call being cut mid-sentence. `server.close()` shuts the
+ * runtime down with it, so a signal that reaches this process ends sessions
+ * rather than dropping sockets. Two things have to be true for that to fire,
+ * and the other half is in `app.py`: Modal signals its own Python runtime, and
+ * a child spawned with a bare `subprocess.Popen` receives nothing — the
+ * platform's own deploy learned that when orphaned guest sandboxes billed ~20
+ * minutes each on every release (see `run_node` in `scripts/modal_image.py`).
+ *
+ * The listeners are SYNCHRONOUS for the reason `executeStart` documents: an
+ * `async` listener hands its promise to `process`, which discards it, so a
+ * failed shutdown would surface as an unhandled rejection rather than a
+ * non-zero exit.
+ */
+export const MODAL_ENTRY_SOURCE = `// Generated by \`aai build --target modal\` — do not edit, and do not commit.
+// Modal runs this as a long-lived process behind \`@modal.web_server\`, which
+// proxies HTTP and WebSocket traffic to the port it binds.
+// See @alexkroman1/aai-cli/start.
+import { createProjectServer } from "@alexkroman1/aai-cli/start";
+
+const server = await createProjectServer({ cwd: import.meta.dirname });
+
+await server.listen(Number(process.env.PORT ?? ${MODAL_PORT}), "0.0.0.0");
+
+// app.py forwards the container's stop signal here and waits for this process
+// to go; closing the server ends live sessions instead of dropping sockets.
+for (const name of ["SIGINT", "SIGTERM"]) {
+  process.once(name, () => {
+    server.close().then(
+      () => process.exit(0),
+      () => process.exit(1),
+    );
+  });
+}
 `;
