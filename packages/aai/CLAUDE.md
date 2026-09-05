@@ -999,28 +999,25 @@ for convenience: a dialog's snapshot is PERSISTED, so it must survive
 by construction. `meta` is `Record<string, any>`, read back untyped, so
 `instructions` (plural) compiled, deployed, and produced refusals with no
 recovery text — the failure the `when` gate exists to prevent, arriving through
-the field meant to explain it. A declared `instruction?: string` makes it a typo
-the compiler catches. The machine overload STAYS (`procedure()` needs full
+the field meant to explain it. A declared `instruction?: string` catches it.
+The machine overload STAYS (`procedure()` needs full
 XState); the spec compiles to an ordinary machine, so a `durable: true` dialog
 resumes across an author's switch between the two forms. Two type-level traps,
-both learned by getting them wrong, are argued where they live in
-`sdk/dialog-types.ts`: `DialogEvent<S>` has to DISTRIBUTE over the states map's
-values, and `DialogStateSpec.states` has to stay OPTIONAL or the constraint
-walks into `TS2589`.
+both learned by getting them wrong, are argued in
+`sdk/dialog-types.ts`, where they live.
 
 **A dialog also moves on the CALL.** An `on` key starting with `@` is a SESSION
-event (`"@session.timed-out": "abandoned"`), checked against `SessionEventType`
-at declaration and kept out of the union an author may `send`; `Dialog.receive`
-offers one and sends only what the active state declares, a send writing the
-slot either way. A state may also carry `timeout: { afterMs, send }`, armed by
-the runtime around the turn, and the knobs
-`voice`/`bargeIn`/`keyterms`/`toolChoice`/`temperature`. Both read
-deepest-active-state-first like `instruction` and ride in `meta`, so the stored
-snapshot is unchanged and a `durable` dialog predating them resumes. **`after`
-is REFUSED in both forms**: the actor is stopped inside the window it was
-started in, so a delay can never fire, and every guard here passed one — the
+event (`"@session.timed-out": "abandoned"`), checked at declaration and kept out
+of the union an author may `send`; `Dialog.receive` offers one. A state may also
+carry `timeout: { afterMs, send }` and the knobs
+`voice`/`bargeIn`/`keyterms`/`toolChoice`/`temperature`, both read
+deepest-active-state-first like `instruction` and riding in `meta`, so the
+stored snapshot is unchanged and a `durable` dialog predating them resumes.
+**`after` is REFUSED in both forms**: the actor is stopped inside the window it
+was started in, so a delay can never fire, and every guard here passed one — the
 graph guard's own fixture included. `agent({ dialogs })` wires the three to a
-session; `sdk/_dialog-events.ts` and `sdk/_dialog-meta.ts` argue it.
+session. **`packages/aai-runtime/DIALOG-CLAUDE.md` owns the rest**, including
+what each knob can and cannot do.
 
 **Three tool builders bind `R`; all three thread it out now.** `tool()` always
 did. `dialog.tool`, `slot.tool` and `slot.updateTool` bound `R` and answered
