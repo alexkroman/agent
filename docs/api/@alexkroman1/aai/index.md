@@ -2,37 +2,41 @@
 
 The AAI voice-agent SDK — the AUTHORING surface, and only that.
 
-What an `agent.ts` imports: `agent()` and `tool()`, `sessionSlot()` and
-`workflow()`, the types they take and return, the recommended
-`assemblyAIPipeline()` preset, and the `assemblyAIS2s()` opt-in.
+## What you import from here
 
-**The membership TEST is that an `agent.ts`, a tool module, or a
-`workflow()` would NAME the symbol.** Two corollaries decide every case this
-barrel has got wrong: a budget the framework enforces on its own does not
-qualify however public it is, and neither does a value whose only use is
-READING BACK what the framework already did — reproducing a default is what
-`@alexkroman1/aai/internal` is for.
+| Declaring | Use |
+| --- | --- |
+| the agent | [agent](#agent) — one object; [AgentDef](#agentdef) documents every field and default, [AgentParams](#agentparams) which combinations are legal |
+| a tool | [tool](#tool-2) — but a tool is a FILE: `tools/<name>.ts` default-exporting one IS the tool `<name>`, and `agent({ tools })` is a compile error |
+| session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projection()` shows it to the browser |
+| conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
+| work that outlives the call | [workflow](#workflow-1) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
+| a second tool loop | [subagent](#subagent), reached with `ctx.delegate` |
+| the default pipeline, spelled out | [assemblyAIPipeline](#assemblyaipipeline); [assemblyAIS2s](#assemblyais2s) opts into speech-to-speech instead |
 
-That test is why `sdk/constants.ts` is no longer re-exported here at all.
-Eighteen `DEFAULT_*`/`MAX_*` constants were, on the argument that each one
-documents an `agent()` field — but the field's own JSDoc already carries the
-value (`@defaultValue \`10\``), so the constant answered nothing an author
-could not read at the field, and none of the 25 templates, the scaffold, or
-the shipped authoring guide named one. Their readers are a client sizing a
-buffer, a harness matching the host's endpointing and a test asserting the
-shipped value — framework code, which is the `/internal` audience exactly.
-`MAX_DB_RESULT_ROWS` and `STORAGE_DISABLED_MESSAGE` went with them, which is
-why `sdk/db.ts` is named rather than wildcarded below.
+```ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
 
-`DEFAULT_SYSTEM_PROMPT` is the one that stayed, and it stayed by PASSING the
-test rather than as an exception: `agent({ systemPrompt })` replaces the
-~10,000 characters of measured voice rules wholesale, so naming the constant
-is the only way to keep them and add domain rules on top. That recipe is
-documented on the constant and compiled by `check:doc-examples`; it reaches
-this barrel through `./sdk/types.ts`.
+export const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
 
-Everything else the package publishes is on a subpath, chosen by WHO READS
-IT:
+export default agent({
+  name: "Storefront",
+  systemPrompt: "You help callers order from the catalog.",
+  voice: "michael",
+  syncState: cart.projection((c) => ({ count: c.items.length })),
+});
+```
+
+With no provider fields that runs the all-AssemblyAI STT → LLM → TTS
+pipeline on one `ASSEMBLYAI_API_KEY`. Set any subset of `stt`, `llm`, `tts`
+to swap a stage; the rest keep the default.
+
+**Three primitives here run a defined process, and they are not
+interchangeable.** A [dialog](#dialog-1) gates a CONVERSATION — what the agent may
+say or do next, across turns. A [procedure](#procedure-2) runs ONE UNIT OF WORK inside
+a single tool call. A [workflow](#workflow-1) runs DURABLY, outliving the session.
+
+## Everything else is on a subpath, chosen by WHO READS IT
 
 | Subpath | Reach for it when |
 | --- | --- |
@@ -46,10 +50,9 @@ IT:
 | `@alexkroman1/aai-runtime` | self-hosting the Node runtime |
 | `@alexkroman1/aai/protocol`, `/manifest`, `/internal` | framework internals; not covered by semver |
 
-Three primitives here run a defined process, and they are not
-interchangeable. A `dialog()` gates a CONVERSATION — what the agent may say
-or do next, across turns. A `procedure()` runs ONE UNIT OF WORK inside a
-single tool call. A `workflow()` runs DURABLY, outliving the session.
+A `workflows/*.ts` body is the one file that reads from two of these: the
+declaration and its `…Of<typeof def>` readings are here, the step vocabulary
+is `/step`.
 
 ## Functions
 
@@ -7557,7 +7560,7 @@ cannot:
   typed-JSON codec and an HTTP hop before a page reads it, and
   `useWorkflowRun<R>`'s `run.output` is otherwise an unchecked CLAIM about
   everything that happened in between.
-- **[WorkflowOutputOf](workflow-api.md#workflowoutputof) reads THIS**, so a page's type comes from the
+- **`WorkflowOutputOf` reads THIS**, so a page's type comes from the
   declaration rather than from inferring the body — which is what lets an
   annotated `agent.ts` resolve it without the body's signature. See that
   type for the circularity that removes.
@@ -7604,6 +7607,111 @@ Declared on the workflow rather than in the schema because the schema may be
 any Standard Schema, and a marker inside one would only work for the library
 that happened to carry it. The property itself stays an ordinary
 `z.string()` — an upload id is what the run really receives.
+
+***
+
+### WorkflowInputOf
+
+```ts
+type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+```
+
+A workflow's INPUT type — what its declared schema parses to, which is
+exactly what the body's parameter should be.
+
+**The reason it exists is that nothing checks a hand-written parameter.**
+[WorkflowBody](workflow-api.md#workflowbody) takes its input as a function PARAMETER, so it is
+contravariant: a body declaring a WIDER shape than the schema produces is
+assignable, and a body declaring the same shape with a field's optionality or
+a default's type subtly different is assignable too. Both compile. A
+`z.number().default(5)` against a body that writes `input.limit ?? 3` is the
+sharp version — the schema guarantees `limit` is present, the `??` is dead,
+and the two numbers disagree with nothing to report it.
+
+Two details a restated shape gets wrong by hand, both of which this gets
+right for free. A zod `.optional()` infers a property that may be PRESENT AND
+`undefined`, which under `exactOptionalPropertyTypes` is `?: T | undefined`
+and not `?: T` — two templates carry the same four-line comment explaining
+that, which is a comment `z.infer` makes unnecessary. And a `.default()` makes
+the OUTPUT property required while the input stays optional, so a body reading
+it needs no fallback at all.
+
+Like [WorkflowOutputOf](workflow-api.md#workflowoutputof), it needs no build step: `import type` is
+erased, so a body in `workflows/` naming `WorkflowInputOf<typeof theDef>`
+through a type-only import of `../agent.ts` drags no runtime cycle behind it.
+
+#### Type Parameters
+
+##### D
+
+`D`
+
+#### Example
+
+```ts no-check
+// agent.ts
+export const digest = workflow({
+  input: z.object({ topic: z.string(), limit: z.number().default(5) }),
+  run: digestFlow,
+});
+
+// workflows/digest.ts — `import type` is erased, so there is no cycle.
+import type { WorkflowInputOf } from "@alexkroman1/aai";
+import type { digest } from "../agent.ts";
+
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
+  // `limit` is `number`, not `number | undefined` — the default already ran.
+  return await research(input.topic, input.limit);
+}
+```
+
+Published from `@alexkroman1/aai` as well as `@alexkroman1/aai/workflow-api`.
+The root is the one an author wants: this annotation lives in a
+`workflows/*.ts` body, next to the `workflow()` that declared it.
+
+***
+
+### WorkflowRunOf
+
+```ts
+type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
+```
+
+A run of `D`, with its output already typed — `WorkflowRunSnapshot` and
+[WorkflowOutputOf](workflow-api.md#workflowoutputof) composed.
+
+The composition is what a tool reporting on a run actually holds, and writing
+it out costs a three-name import (`WorkflowRunSnapshot`, `WorkflowOutputOf`,
+and the def) at every such tool. Two templates compose it by hand today, in
+files whose whole job is to answer "how is that run going".
+
+The result is still the DISCRIMINATED union, so `isTerminal(run)` and
+`run.status === "completed"` narrow exactly as they do on the uncomposed type
+— this names the shape, it does not flatten it.
+
+#### Type Parameters
+
+##### D
+
+`D`
+
+#### Example
+
+```ts no-check
+import type { WorkflowRunOf } from "@alexkroman1/aai";
+import { isTerminal } from "@alexkroman1/aai/workflow-api";
+import type { research } from "../agent.ts";
+
+function describe(run: WorkflowRunOf<typeof research>): string {
+  if (!isTerminal(run)) return "still working on it";
+  return run.status === "completed" ? run.output.summary : "that one did not finish";
+}
+```
+
+Published from `@alexkroman1/aai` as well as `@alexkroman1/aai/workflow-api`,
+because the caller this composition was written for is a `*_status` TOOL.
+Note `isTerminal` is on `/workflow-api` only — it is a value, so it is not
+erased, and a tool importing it is importing the client half on purpose.
 
 ## Variables
 

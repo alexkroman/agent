@@ -1,5 +1,57 @@
 # index
 
+The browser client for aai agents — React 19 hooks and components over a
+framework-agnostic session core (WebSocket + microphone + playback).
+
+## Start with a mount
+
+A client is one `client.tsx` calling one mount, and WHICH mount is the only
+structural decision on this surface — it follows the agent's front door:
+
+| The agent is | The page calls | It talks to |
+| --- | --- | --- |
+| a voice agent (the default) | [mountClient](#mountclient) | a live session: socket, microphone, playback |
+| a `workflowApp()` / `agent({ page: "static" })` | [mountPage](#mountpage) | the workflow HTTP API — no session, no socket, no mic |
+
+There is no route to write and no glue file: the agent server already serves
+both, so a component talks to a live agent directly. [createBrowserSession](#createbrowsersession)
+is the same session core with no React, for a page built on something else.
+
+## Then the hook that answers your question
+
+The hooks are grouped by what they read, and within a group the narrow one
+exists so a component re-renders on its own slice rather than on every frame:
+
+| Reading | Hooks |
+| --- | --- |
+| the call itself | [useSession](#usesession) (everything), [useSessionStatus](#usesessionstatus), [useSessionError](#usesessionerror), [useSessionActions](#usesessionactions), [useSessionSelector](#usesessionselector) |
+| what was said | [useConversation](#useconversation), [useUserTranscript](#useusertranscript) |
+| what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projection(…)` the agent declared, and it types the state AND supplies the frame rendered before the first push |
+| tools, as they run | [useToolCallStart](#usetoolcallstart), [useToolResult](#usetoolresult), [useEvent](#useevent) |
+| a durable run | [useWorkflowSubmit](#useworkflowsubmit) (start one), [useWorkflowRun](#useworkflowrun) (watch one), [useWorkflowRuns](#useworkflowruns) / [useWorkflows](#useworkflows) (list), [useWorkflowProgress](#useworkflowprogress) / [useWorkflowStream](#useworkflowstream) (its output as it arrives) |
+| page chrome | [useTheme](#usetheme), [useCopy](#usecopy), [useFlash](#useflash), [useDownloadUrl](#usedownloadurl), [useRunKey](#userunkey) |
+
+Everything else here is a COMPONENT — chat chrome ([MessageList](#messagelist),
+[ChatView](#chatview), [Controls](#controls), [StartScreen](#startscreen)), workflow forms
+([Form](#form), [WorkflowFields](#workflowfields), the `*Field` set), and the small
+primitives pages kept re-writing ([AutoScroll](#autoscroll), [Markdown](#markdown),
+[Facts](#facts), [ToolCallRow](#toolcallrow)). None is required: the hooks are the API
+and the components are one rendering of it.
+
+## Two things worth knowing before the reference below
+
+**Three names are re-exported from `@alexkroman1/aai`** — [WorkflowInputOf](#workflowinputof),
+[WorkflowOutputOf](#workflowoutputof) and [WorkflowSummary](#workflowsummary), plus [isTerminal](#isterminal)
+and [ClientConfigResponse](#clientconfigresponse). They are one declaration with two reference
+pages, not two types; a page takes them from here, an `agent.ts` from there.
+
+**[createWorkflowApi](#createworkflowapi) is the browser's workflow client, and there are two
+others.** `createWorkflowApiClient` (`@alexkroman1/aai/workflow-api`) is the
+same call set for a caller with no page to default its base URL from — a
+script, a cron job, a server — and `createAgentClient` on that subpath is a
+superset that also reaches `/client-config`. Reach for the one here whenever
+the code runs in a page the agent serves.
+
 ## Functions
 
 ### AutoScroll()
@@ -6539,7 +6591,7 @@ export const digest = workflow({
 });
 
 // workflows/digest.ts — `import type` is erased, so there is no cycle.
-import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowInputOf } from "@alexkroman1/aai";
 import type { digest } from "../agent.ts";
 
 export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
@@ -6547,6 +6599,10 @@ export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: Wor
   return await research(input.topic, input.limit);
 }
 ```
+
+Published from `@alexkroman1/aai` as well as `@alexkroman1/aai/workflow-api`.
+The root is the one an author wants: this annotation lives in a
+`workflows/*.ts` body, next to the `workflow()` that declared it.
 
 ***
 
@@ -6607,7 +6663,7 @@ the other half of this rewrite. `D extends WorkflowDef<ToolInputSchema, infer
 R>` is an assignability test over the whole def, and `run`'s input is a
 function PARAMETER — so a def carrying an input schema is not assignable to
 one taking the open `Record<string, unknown>`, and the conditional silently
-fell to `never`. It is the same contravariance [AnyWorkflowDef](../aai/workflow-api.md#anyworkflowdef) was
+fell to `never`. It is the same contravariance `AnyWorkflowDef` was
 written for, reached by the other route, and it is why the test below matches
 `run` as `WorkflowBody<never, infer R>` — `never` is assignable to every
 parameter type.
@@ -6619,6 +6675,11 @@ fires for a def-shaped object that names no output at all.
 
 `Awaited` because a body may be sync or async and the snapshot always holds
 the settled value.
+
+On `@alexkroman1/aai/workflow-api` only, unlike its two siblings: its reader
+is a page. Both templates that name it are a `client.tsx` parameterizing
+`useWorkflowRun<…>`, and a `*_status` tool wants `WorkflowRunOf`, which
+composes this in already.
 
 ***
 

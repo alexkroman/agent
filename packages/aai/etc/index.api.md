@@ -1001,12 +1001,24 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
+export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+
+// @public
+type WorkflowOutputOf<D> = D extends {
+    run: WorkflowBody<never, infer R>;
+    output?: StandardSchemaV1<unknown, infer O> | undefined;
+} ? Awaited<unknown extends O ? R : O> : never;
+
+// @public
 type WorkflowRunBase = {
     runId: string;
     workflow: string;
     createdAt: number;
     key?: string;
 };
+
+// @public
+export type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
 
 // @public
 type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {

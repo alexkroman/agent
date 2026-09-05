@@ -2,48 +2,38 @@
 /**
  * The network builtins, callable from your own tool code.
  *
- * `web_search`, `visit_webpage` and `fetch_json` are MODEL-facing: they are
- * declared to the LLM and the LLM calls them. Nothing exposed them to the
- * `execute` body of a tool the author wrote — and authors kept reaching for
- * them anyway. Across the starter evals, nine separate runs wrote
- * `ctx.fetch_json(...)`, `ctx.run_code(...)` or
- * `import { fetch_json } from "@alexkroman1/aai"`, most at several call
- * sites, and each one cost a build round.
+ * ## The three calls
  *
- * That is not a misunderstanding worth correcting with documentation. Someone
- * writing a tool that needs a REST call reasonably expects the framework's
- * REST call to be reachable; "which side of the model boundary does this live
- * on" is framework internals, and the author should not have to hold it. So
- * the capability is exposed rather than the rule restated.
+ * | Call | Answers |
+ * | --- | --- |
+ * | {@link fetchJson} | a JSON body from a URL |
+ * | {@link visitWebpage} | a page, reduced to prose |
+ * | {@link webSearch} | search results |
  *
- * These are the SAME implementations the builtins use, reached through the
- * same factories — so URL screening, redirect re-validation, credential-header
- * stripping, response-size caps and timeouts all apply identically. Whether
- * the URL is screened at all is `builtinFetch`'s decision, not one made here:
- * inside a container it is plain `pinnedFetch` (the container is the
- * boundary, and tool code has open egress anyway), and on a developer's own
- * machine under `aai dev` it is `safeFetch`, because there the host IS
- * someone's laptop.
+ * Each takes positional arguments or the option object the model-facing builtin
+ * declares, and each ANSWERS `T | ToolFailure` rather than throwing — so the
+ * one thing to write is the narrowing:
+ *
+ * ```ts
+ * import { fetchJson } from "@alexkroman1/aai/tools";
+ * import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
+ *
+ * export async function priceOf(url: string): Promise<number | ToolFailure> {
+ *   const quote = await fetchJson<{ price: number }>(url);
+ *   // Hand the model the failure rather than turning it into a wrong answer.
+ *   if (isToolFailure(quote)) return quote;
+ *   return quote.price;
+ * }
+ * ```
+ *
+ * Pass a type argument for real checking; the default keeps a field read
+ * loose, which is what the untyped call sites need. No credential and no
+ * setup: these are the SAME implementations the builtins use, so URL
+ * screening, redirect re-validation, credential-header stripping,
+ * response-size caps and timeouts all apply identically.
  *
  * `run_code` is deliberately NOT here. It exists to run code the MODEL wrote;
  * tool code that wants to compute something can just compute it.
- *
- * Two shapes of every call, and a permissive result, both for the same
- * reason: the first version of this module took only positional arguments
- * and returned `Promise<unknown>`, and in the very next eval EVERY call site
- * had to cast — `const data: any = await fetchJson(url)`,
- * `(await webSearch(query)) as any[]`. That is the mistake `useToolResult`
- * and `ToolCallInfo.args` had already been fixed for, reintroduced in a new
- * API hours later. A remote JSON body is not knowable by the framework, so
- * `unknown` buys no safety here — it only makes correct code fail to compile,
- * and it does not stop at the first read: `isToolFailure` narrows an `unknown`
- * to `ToolFailure` on the true side and to `unknown` on the false one, so the
- * cast comes back one line later. Pass a type argument
- * (`fetchJson<Quote>(url)`) for real checking.
- *
- * The object form exists because agents reach for the shape they already
- * know from the model-facing builtin (`{ query, max_results }`), and guessing
- * wrong cost a build round.
  *
  * ## All three can ANSWER with a failure, and the type says so
  *
@@ -76,8 +66,8 @@
  * properties. The union survives, so the first field read off an unnarrowed
  * result fails with `Property 'price' does not exist on type 'ToolFailure'`,
  * which names the thing that was forgotten; and past the narrowing a field is
- * `any` again, so the loose call sites the permissive-result note above exists
- * for still compile with no cast. What it costs is a JSON body that is not an
+ * `any` again, so a call site that never named a shape still compiles with no
+ * cast. What it costs is a JSON body that is not an
  * object — a top-level array, a bare string — which needs the type argument
  * (`fetchJson<Item[]>(url)`) it should be naming anyway.
  *

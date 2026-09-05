@@ -73,6 +73,47 @@ plus committed API reports rather than a rendered page. And the `aai` CLI
 [README](https://github.com/alexkroman/agent/tree/main/packages/aai-cli#readme)
 — its importable subpaths are internal build hooks, not a public API.
 
+## Which one do I import?
+
+**For a single name, read
+[`API-INDEX.md`](https://github.com/alexkroman/agent/blob/main/API-INDEX.md)** —
+every published symbol against the subpath to import it from, generated from
+the same reports this reference is.
+
+Three places on this surface publish more than one way to do a thing. Each
+distinction is real; none is guessable from the names alone.
+
+**A workflow client** — all three return a call set over the workflow HTTP API:
+
+| Factory | From | For |
+| --- | --- | --- |
+| `createWorkflowApi()` | `@alexkroman1/aai-ui` | a page the agent serves — the base URL defaults to the page's own origin |
+| `createWorkflowApiClient()` | `@alexkroman1/aai/workflow-api` | a caller with no page: a script, a cron job, a server |
+| `createAgentClient()` | `@alexkroman1/aai/workflow-api` | the same, plus `/client-config` — one object for everything one agent answers |
+
+**Testing** — five subpaths, split by what each one stands up:
+
+| Subpath | Drives | Reach for it when |
+| --- | --- | --- |
+| `@alexkroman1/aai/testing` | nothing — it hands out fakes | calling one tool in isolation: `createToolContext`, `deployedAgent`, `runTool` |
+| `@alexkroman1/aai/testing/vitest` | the same fakes, installed | you want `installStubGateway` to register its own cleanup |
+| `@alexkroman1/aai-runtime/eval` | a real session, from text | asserting what the agent DID — which tools, in what order, and what it said |
+| `@alexkroman1/aai-runtime/eval/vitest` | the same, as `describeEval` | writing those cases as vitest tests, run by `aai eval` |
+| `@alexkroman1/aai-runtime/testing` | the real workflow engine / text agent | asserting a run slept, resumed, retried, or survived a dead worker |
+
+**Reading a live session** — one hook returns everything and the rest are
+slices of it, so a component re-renders on its own data rather than every
+frame:
+
+| Hook | Returns |
+| --- | --- |
+| `useSession()` | the whole snapshot, plus the actions |
+| `useSessionStatus()` / `useSessionError()` | one field of the snapshot each |
+| `useSessionActions()` | just the control methods — `start`, `toggle`, `reset`, `end`, … — which never change, so a button re-renders on nothing |
+| `useSessionSelector(fn)` | whatever `fn` picks — the escape hatch for a slice with no hook |
+| `useAgentState(projection)` | what the agent projects with `syncState`, typed by the projection |
+| `useConversation()` / `useUserTranscript()` | what has been said |
+
 ## More
 
 - [GitHub repository](https://github.com/alexkroman/agent)

@@ -500,6 +500,7 @@
     "WorkflowClient",
     "WorkflowContext",
     "WorkflowRunBase",
+    "WorkflowRunOf",
     "WorkflowRunStatus",
     "WorkflowSummary"
   ]

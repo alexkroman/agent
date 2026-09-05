@@ -10,10 +10,28 @@
  * rather than two implementations, and the barrel exists because pointing the
  * subpath at either one directly would be an import cycle.
  *
- * It also owns the RUN vocabulary — the snapshot union, its guard, and
- * {@link WorkflowOutputOf} — which used to sit on the root barrel beside
- * `agent()` and `tool()`. See the re-export below for the line that puts it
- * here.
+ * It also owns the RUN vocabulary — the snapshot union and its guard — which
+ * used to sit on the root barrel beside `agent()` and `tool()`. See the
+ * re-export below for the line that puts it here.
+ *
+ * **Two of the three `…Of<typeof def>` helpers are on the ROOT as well.**
+ * {@link WorkflowInputOf} and {@link WorkflowRunOf} came here with the rest of
+ * that vocabulary on the reading that a body names the input and a page names
+ * the output, so neither is `agent.ts`. Both are in fact author-side: a
+ * `workflows/*.ts` body must annotate its parameter with `WorkflowInputOf`
+ * (nothing checks a hand-written one — see that type's doc), and a `*_status`
+ * tool holds a `WorkflowRunOf`. Those are files `workflow()` and `tool()` live
+ * in, which is the root barrel's membership test, so an author reaching for the
+ * type the compiler is asking for no longer has to find the subpath for callers
+ * OUTSIDE the agent. This capability still OWNS them, by the rule that a name
+ * on both `.` and a narrower subpath belongs to the narrower one; the reference
+ * renders them on the root page and links here.
+ *
+ * {@link WorkflowOutputOf} stayed HERE, and the template API ratchet is what
+ * settled that: no author-side example exercises it, because a page is what
+ * parameterizes `useWorkflowRun<…>` and a status tool takes `WorkflowRunOf`,
+ * which composes it in. Moving all three because they read alike would have
+ * published a name with no author to reach for it.
  *
  * **What this subpath is NOT is the SERVER's half.** Four names were here that
  * only the thing ANSWERING these routes ever needed — the wait clamp
@@ -63,10 +81,14 @@ export { type EventStreamFrame, readEventStream } from "./event-stream.ts";
  *
  * Here rather than on the root barrel because the reader is never `agent.ts`.
  * The root's membership test is "would an `agent.ts`, a tool module, or a
- * `workflow()` NAME it", and these names fail it: a page renders a run, a script
- * polls one, and a tool body that starts one gets a typed value back without
- * importing anything. Declaring a workflow is still `workflow()` on the root;
- * this is everything about the run it starts.
+ * `workflow()` NAME it", and the run types fail it: a page renders a run, a
+ * script polls one, and a tool body that starts one gets a typed value back
+ * without importing anything. Declaring a workflow is still `workflow()` on the
+ * root; this is everything about the run it starts.
+ *
+ * The `…Of<typeof def>` helpers below are the three that PASS it and are
+ * published from both — see this module's own doc. They are exported here as
+ * well because a page names them too, and because this capability owns them.
  *
  * {@link WorkflowOutputOf} is the type a page's `useWorkflowRun<…>` is
  * parameterized by, which is the clearest case of all — it is imported by a
@@ -94,7 +116,9 @@ export type {
   WorkflowDef,
   // The three `…Of<typeof def>` helpers travel together: a body names the
   // input, a page names the output, and a tool reporting on a run names the
-  // snapshot the two compose into.
+  // snapshot the two compose into. The first and third of those readers are
+  // author-side, so those two are on the ROOT as well — the reference renders
+  // them there and links back here. `WorkflowOutputOf` is page-side only.
   WorkflowInputOf,
   WorkflowOutputOf,
   WorkflowRunOf,

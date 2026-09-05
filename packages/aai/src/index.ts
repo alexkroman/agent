@@ -2,37 +2,41 @@
 /**
  * The AAI voice-agent SDK — the AUTHORING surface, and only that.
  *
- * What an `agent.ts` imports: `agent()` and `tool()`, `sessionSlot()` and
- * `workflow()`, the types they take and return, the recommended
- * `assemblyAIPipeline()` preset, and the `assemblyAIS2s()` opt-in.
+ * ## What you import from here
  *
- * **The membership TEST is that an `agent.ts`, a tool module, or a
- * `workflow()` would NAME the symbol.** Two corollaries decide every case this
- * barrel has got wrong: a budget the framework enforces on its own does not
- * qualify however public it is, and neither does a value whose only use is
- * READING BACK what the framework already did — reproducing a default is what
- * `@alexkroman1/aai/internal` is for.
+ * | Declaring | Use |
+ * | --- | --- |
+ * | the agent | {@link agent} — one object; {@link AgentDef} documents every field and default, {@link AgentParams} which combinations are legal |
+ * | a tool | {@link tool} — but a tool is a FILE: `tools/<name>.ts` default-exporting one IS the tool `<name>`, and `agent({ tools })` is a compile error |
+ * | session state | {@link sessionSlot} — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projection()` shows it to the browser |
+ * | conversation order | {@link dialog} — a tool declared `when` simply does not run outside those states |
+ * | work that outlives the call | {@link workflow} — journaled, resumable; {@link workflowApp} for an agent whose front door is a form |
+ * | a second tool loop | {@link subagent}, reached with `ctx.delegate` |
+ * | the default pipeline, spelled out | {@link assemblyAIPipeline}; {@link assemblyAIS2s} opts into speech-to-speech instead |
  *
- * That test is why `sdk/constants.ts` is no longer re-exported here at all.
- * Eighteen `DEFAULT_*`/`MAX_*` constants were, on the argument that each one
- * documents an `agent()` field — but the field's own JSDoc already carries the
- * value (`@defaultValue \`10\``), so the constant answered nothing an author
- * could not read at the field, and none of the 25 templates, the scaffold, or
- * the shipped authoring guide named one. Their readers are a client sizing a
- * buffer, a harness matching the host's endpointing and a test asserting the
- * shipped value — framework code, which is the `/internal` audience exactly.
- * `MAX_DB_RESULT_ROWS` and `STORAGE_DISABLED_MESSAGE` went with them, which is
- * why `sdk/db.ts` is named rather than wildcarded below.
+ * ```ts
+ * import { agent, sessionSlot } from "@alexkroman1/aai";
  *
- * `DEFAULT_SYSTEM_PROMPT` is the one that stayed, and it stayed by PASSING the
- * test rather than as an exception: `agent({ systemPrompt })` replaces the
- * ~10,000 characters of measured voice rules wholesale, so naming the constant
- * is the only way to keep them and add domain rules on top. That recipe is
- * documented on the constant and compiled by `check:doc-examples`; it reaches
- * this barrel through `./sdk/types.ts`.
+ * export const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
  *
- * Everything else the package publishes is on a subpath, chosen by WHO READS
- * IT:
+ * export default agent({
+ *   name: "Storefront",
+ *   systemPrompt: "You help callers order from the catalog.",
+ *   voice: "michael",
+ *   syncState: cart.projection((c) => ({ count: c.items.length })),
+ * });
+ * ```
+ *
+ * With no provider fields that runs the all-AssemblyAI STT → LLM → TTS
+ * pipeline on one `ASSEMBLYAI_API_KEY`. Set any subset of `stt`, `llm`, `tts`
+ * to swap a stage; the rest keep the default.
+ *
+ * **Three primitives here run a defined process, and they are not
+ * interchangeable.** A {@link dialog} gates a CONVERSATION — what the agent may
+ * say or do next, across turns. A {@link procedure} runs ONE UNIT OF WORK inside
+ * a single tool call. A {@link workflow} runs DURABLY, outliving the session.
+ *
+ * ## Everything else is on a subpath, chosen by WHO READS IT
  *
  * | Subpath | Reach for it when |
  * | --- | --- |
@@ -46,10 +50,9 @@
  * | `@alexkroman1/aai-runtime` | self-hosting the Node runtime |
  * | `@alexkroman1/aai/protocol`, `/manifest`, `/internal` | framework internals; not covered by semver |
  *
- * Three primitives here run a defined process, and they are not
- * interchangeable. A `dialog()` gates a CONVERSATION — what the agent may say
- * or do next, across turns. A `procedure()` runs ONE UNIT OF WORK inside a
- * single tool call. A `workflow()` runs DURABLY, outliving the session.
+ * A `workflows/*.ts` body is the one file that reads from two of these: the
+ * declaration and its `…Of<typeof def>` readings are here, the step vocabulary
+ * is `/step`.
  *
  * @module
  */
@@ -136,16 +139,43 @@ export type {
   TtsProvider,
 } from "./sdk/providers.ts";
 /**
- * DECLARING a workflow — and only that.
+ * DECLARING a workflow, and the three types a DECLARATION is read back through.
  *
  * `workflow()` is on the root barrel because declaring one sits beside declaring
  * a tool: an author writes both in `agent.ts`. Everything about the RUN it
- * starts — the option bags, the snapshot union, its guard, `WorkflowOutputOf`,
- * the wait cap — is on `@alexkroman1/aai/workflow-api`, whose reader is a page,
- * a script, or a tool annotating a result — and the barrel's membership test is
- * exactly that.
+ * starts — the option bags, the snapshot union, its guard, the wait cap — is on
+ * `@alexkroman1/aai/workflow-api`, whose reader is a page, a script, or a tool
+ * annotating a result, and the barrel's membership test is exactly that.
  *
  * `WorkflowClient` stays because `ToolContext.workflows` names it.
+ *
+ * **{@link WorkflowInputOf} and {@link WorkflowRunOf} are on BOTH, and the root
+ * is where an author meets them.** They were on `/workflow-api` alone, on the
+ * reading that a body names the input, a page names the output, and neither is
+ * `agent.ts`. The second half is right and the first is not: the membership
+ * test is "would an `agent.ts`, a TOOL MODULE, or a `workflow()` name it", and
+ * both of those clauses hit here. A body in `workflows/` is what `workflow()`
+ * declares — the three shipped templates that have one (`call-audit`,
+ * `podcast-digest`, `spoken-summary`) each annotate its parameter with
+ * `WorkflowInputOf`, which is the ONE annotation that is not optional (see that
+ * type's doc: a hand-written parameter is contravariant, so a body disagreeing
+ * with its own schema compiles). `WorkflowRunOf` is what a `*_status` TOOL
+ * holds, in two more. So an author reaching for the type the compiler is asking
+ * them for had to find a subpath documented as the surface for a caller OUTSIDE
+ * the agent.
+ *
+ * **`WorkflowOutputOf` deliberately did NOT come with them.** It is the third
+ * of the same family and the temptation is to move all three together, but its
+ * reader really is a page: it is what `useWorkflowRun<…>` is parameterized by,
+ * and the two templates that name it are both a `client.tsx`. The template API
+ * ratchet is what settled it — no author-side example exercises it, and an
+ * export no example exercises is either missing its example or should not be
+ * public here. A `*_status` tool does not need it either, because
+ * `WorkflowRunOf` already composes it in.
+ *
+ * Both names stay on `/workflow-api` too — that is still where a page imports
+ * them — and `workflow-api` still OWNS the capability, by the rule that a name
+ * on both `.` and a narrower subpath belongs to the narrower one.
  *
  * What a BODY is written against joins it, because that is authoring too:
  * {@link WorkflowContext} (an author annotates a body's second parameter with it),
@@ -273,5 +303,11 @@ export {
   // parameter with it, which is the membership test this barrel applies.
   type WorkflowContext,
   type WorkflowDef,
+  // Two of the three `…Of<typeof def>` readings of a declaration — see above.
+  // Also on `/workflow-api`, which owns the capability; these are the copies a
+  // `workflows/*.ts` body and a `*_status` tool reach for. `WorkflowOutputOf`
+  // is the one that stayed there, its reader being a `client.tsx`.
+  type WorkflowInputOf,
+  type WorkflowRunOf,
   workflow,
 } from "./sdk/workflow.ts";

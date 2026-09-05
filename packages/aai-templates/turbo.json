@@ -12,7 +12,9 @@
     // script, `scripts/check.mjs`, root `package.json` and the CI check job
     // still agree with each other; `konsistent-config.test.ts` reads
     // `konsistent.json` the same way; `api-surface-file.test.ts` reads
-    // `../../API.md` and every `../*/etc/*.api.md`; `api-contracts-gate.test.ts`
+    // `../../API.md` and every `../*/etc/*.api.md`, and
+    // `api-index-file.test.ts` reads `../../API-INDEX.md` against
+    // `../../API-EXPORTS.json`; `api-contracts-gate.test.ts`
     // reads `../../API-EXPORTS.json` and the whole of
     // every `../*/contracts/` tree (the capability roots, the epoch metadata,
     // and the frozen compatibility examples — `aai` and `aai-ui` both carry
@@ -51,6 +53,7 @@
         "$TURBO_ROOT$/packages/*/CLAUDE.md",
         "$TURBO_ROOT$/API.md",
         "$TURBO_ROOT$/API-EXPORTS.json",
+        "$TURBO_ROOT$/API-INDEX.md",
         "$TURBO_ROOT$/packages/*/etc/*.api.md",
         "$TURBO_ROOT$/packages/*/src/contracts/**",
         "$TURBO_ROOT$/package.json",
@@ -72,6 +75,7 @@
         "$TURBO_ROOT$/packages/*/CLAUDE.md",
         "$TURBO_ROOT$/API.md",
         "$TURBO_ROOT$/API-EXPORTS.json",
+        "$TURBO_ROOT$/API-INDEX.md",
         "$TURBO_ROOT$/packages/*/etc/*.api.md",
         "$TURBO_ROOT$/packages/*/src/contracts/**",
         "$TURBO_ROOT$/package.json",

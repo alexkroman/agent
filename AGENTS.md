@@ -415,7 +415,7 @@ about one surface and used to be argued in three places:
 
 | Artifact | Gate | Question it answers |
 | --- | --- | --- |
-| `packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json` | `pnpm check:api-report` | did a SIGNATURE move, and is a name in or out |
+| `packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`, `API-INDEX.md` | `pnpm check:api-report` | did a SIGNATURE move, is a name in or out, and where is it imported FROM |
 | `contracts/epochs/<capability>/v<N>.json` + `contracts/compatibility/**` | `pnpm check:api-contracts` | is that move BREAKING, and for whom |
 | `docs/api/**`, `docs/dist/**` | `pnpm check:docs-md`, the turbo `docs` task | what does it MEAN (the doc comments) |
 

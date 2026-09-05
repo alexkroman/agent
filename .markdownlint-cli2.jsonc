@@ -20,6 +20,11 @@
     // for the same reason and ignored on the same grounds: prose findings in it
     // can only be fixed by editing a file the next run overwrites.
     "API.md",
+    // The reverse index over the same reports (`pnpm api-report`): every
+    // published name against the subpath to import it from. Generated, so a
+    // prose finding in it can only be fixed by editing a file the next run
+    // overwrites — the same grounds as the two above.
+    "API-INDEX.md",
     // TypeDoc's markdown output (`pnpm docs:md`) — the committed API
     // reference an agent reads instead of the published site. Generated on
     // the same grounds as the two above: a prose finding in it can only be

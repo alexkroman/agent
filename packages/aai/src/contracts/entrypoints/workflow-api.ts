@@ -27,6 +27,20 @@
  * (and did: several workflow bodies re-implemented their own schema defaults
  * with `??`).
  *
+ * **`WorkflowInputOf` and `WorkflowRunOf` are ALSO published from
+ * `@alexkroman1/aai`, and this capability still owns them** — by the rule that
+ * a name on both `.` and a narrower subpath belongs to the narrower one, so
+ * nothing about this contract moves. What moved is where an AUTHOR finds them:
+ * the paragraph above reads all three as page-and-script types, and two of them
+ * are not. A `workflows/*.ts` body annotating its parameter with
+ * `WorkflowInputOf` is the one annotation that is not optional, and a
+ * `*_status` tool holds a `WorkflowRunOf` — both are files `workflow()` and
+ * `tool()` live in, which is the ROOT barrel's membership test. Sending an
+ * author to the subpath this file's own first paragraph describes as "for a
+ * caller OUTSIDE the agent" was the defect. `WorkflowOutputOf` did not go with
+ * them: its reader really is a page, which the template API ratchet is what
+ * proved.
+ *
  * Four names then LEFT for `@alexkroman1/aai/internal`, all of them the SERVER's
  * half rather than the client's: `clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`,
  * `TERMINAL_WORKFLOW_STATUSES` and `WORKFLOW_API_PREFIX`. Each had
