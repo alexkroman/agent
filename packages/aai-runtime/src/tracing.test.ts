@@ -76,6 +76,25 @@ describe("the env gate", () => {
     expect(errors).not.toHaveBeenCalled();
   });
 
+  test("a configured start with the peers absent names the install line", async () => {
+    // The optional-peer path a self-hoster really takes: a collector set, the
+    // exporter never installed. Simulated by failing the dynamic import, since
+    // this workspace HAS the peers — what is asserted is the message, because a
+    // bare ERR_MODULE_NOT_FOUND names an internal chunk the reader never wrote.
+    vi.doMock("./_tracing-otel.ts", () => {
+      throw new Error("Cannot find package '@opentelemetry/api'");
+    });
+    onTestFinished(() => {
+      vi.doUnmock("./_tracing-otel.ts");
+      vi.resetModules();
+    });
+    vi.resetModules();
+    const { startTracing: fresh } = await import("./tracing.ts");
+    await expect(fresh({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318" })).rejects.toThrow(
+      /optional OpenTelemetry peers[\s\S]*npm i @opentelemetry\/api/,
+    );
+  });
+
   test("the detached start does nothing at all when unconfigured", async () => {
     clearTelemetryRegistry();
     onTestFinished(clearTelemetryRegistry);

@@ -152,13 +152,43 @@ export async function startTracing(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RuntimeTracing | undefined> {
   if (!tracingEndpoint(env)) return undefined;
-  const { startTracingOtel } = await import("./_tracing-otel.ts");
+  const { startTracingOtel } = await loadTracingOtel();
   // The service name is resolved HERE and passed down, so the OTel module
   // imports nothing from this one — see `TracingHandle` there for why a
   // cycle is not merely a lint failure.
   const handle = startTracingOtel(env[OTEL_SERVICE_NAME_ENV]?.trim() || DEFAULT_SERVICE_NAME);
   setRequestTraceAdopter(handle.adoptRequestTrace);
   return handle;
+}
+
+/**
+ * The OTel graph, loaded on the first start rather than imported at module
+ * load — and answered with the INSTALL LINE when the optional peers are absent.
+ *
+ * Same shape and same reason as `mcp-connect.ts`'s `loadCreateMcpClient`: the
+ * packages are optional peers, so "configured a collector but never installed
+ * the exporter" is a real path a self-hoster takes, not a theoretical one. Left
+ * bare it surfaces as `ERR_MODULE_NOT_FOUND` naming `_tracing-otel.ts` — an
+ * internal module, which after bundling is a hashed chunk — so the reader is
+ * told a file they did not write cannot be found, rather than which five
+ * packages to install.
+ *
+ * A guest never reaches this: `aai-guest` declares the peers as its own
+ * dependencies and tsdown inlines them into `dist/harness.mjs`.
+ */
+async function loadTracingOtel(): Promise<typeof import("./_tracing-otel.ts")> {
+  try {
+    return await import("./_tracing-otel.ts");
+  } catch (cause) {
+    throw new Error(
+      "A collector is configured, which needs the optional OpenTelemetry peers. " +
+        "Install them alongside `@alexkroman1/aai-runtime`: `npm i " +
+        "@opentelemetry/api @opentelemetry/sdk-trace-base " +
+        "@opentelemetry/exporter-trace-otlp-proto @opentelemetry/resources " +
+        "@opentelemetry/context-async-hooks`.",
+      { cause },
+    );
+  }
 }
 
 /**
