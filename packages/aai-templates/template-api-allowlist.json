@@ -162,8 +162,6 @@
     "OTEL_ENDPOINT_ENVS",
     "OTEL_SERVICE_NAME_ENV",
     "RuntimeTracing",
-    "adoptRequestTrace",
-    "setRequestTraceAdopter",
     "startTracing",
     "startTracingDetached",
     "tracingEndpoint"

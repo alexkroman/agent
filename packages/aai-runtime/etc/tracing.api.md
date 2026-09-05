@@ -4,9 +4,6 @@
 
 ```ts
 
-// @internal
-export function adoptRequestTrace(headers: Record<string, string | string[] | undefined>): void;
-
 // @public
 export const DEFAULT_SERVICE_NAME = "aai-agent";
 
@@ -16,17 +13,11 @@ export const OTEL_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
 // @public
 export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
 
-// @internal
-type RequestTraceAdopter = (headers: Record<string, string | string[] | undefined>) => void;
-
 // @public
 export type RuntimeTracing = {
     forceFlush: () => Promise<void>;
     shutdown: () => Promise<void>;
 };
-
-// @internal
-export function setRequestTraceAdopter(next: RequestTraceAdopter | undefined): void;
 
 // @public
 export function startTracing(env?: NodeJS.ProcessEnv): Promise<RuntimeTracing | undefined>;

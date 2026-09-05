@@ -96,8 +96,7 @@ export type TracingHandle = {
   shutdown: () => Promise<void>;
   /**
    * Make an inbound request's `traceparent` the ambient context for the rest of
-   * that request. Handed BACK to `tracing.ts`, which owns the seam the
-   * harness calls — see that module's `setRequestTraceAdopter`.
+   * that request. Handed BACK to `tracing.ts`, which installs it into `_request-trace.ts` — see `_request-trace.ts`.
    */
   adoptRequestTrace: (headers: Record<string, string | string[] | undefined>) => void;
 };

@@ -78,6 +78,8 @@
  * @module
  */
 
+import { setRequestTraceAdopter } from "./_request-trace.ts";
+
 /** The standard variables that name a collector. Either one arms this. */
 export const OTEL_ENDPOINT_ENVS = [
   "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
@@ -157,59 +159,6 @@ export async function startTracing(
   const handle = startTracingOtel(env[OTEL_SERVICE_NAME_ENV]?.trim() || DEFAULT_SERVICE_NAME);
   setRequestTraceAdopter(handle.adoptRequestTrace);
   return handle;
-}
-
-/**
- * Adopt an inbound request's `traceparent` as the ambient context, if tracing
- * is on. A no-op otherwise, and that is the point.
- *
- * ## Why a function POINTER rather than an import
- *
- * Extraction needs `@opentelemetry/api`, and this module's whole contract is
- * that it imports no OTel — everything that does sits behind the dynamic
- * `import()` in {@link startTracing}, because this file is in
- * `dist/harness.mjs` on every sandbox's cold-start path. So the OTel module
- * INSTALLS its adopter when it starts, and until then (and forever, on an
- * unconfigured guest) this is one undefined check on a request.
- *
- * ## Why `enterWith` and not `with`
- *
- * The caller is the harness's `request` hook, which returns a boolean and does
- * not wrap the work the request goes on to do — `/workflows/*` falls through it
- * to the runtime's own router. `with(ctx, fn)` needs a function to wrap;
- * `enterWith` sets the context for the remainder of THIS async resource, which
- * is exactly a request's own subtree and nothing else. Node warns it is easy to
- * misuse, and the misuse is calling it somewhere that is not a request
- * boundary — which is why this is exported as one named thing with one caller
- * per surface rather than as the context manager itself.
- *
- * @internal
- */
-export function adoptRequestTrace(headers: Record<string, string | string[] | undefined>): void {
-  adopter?.(headers);
-}
-
-/** What {@link startTracingOtel} installs. Undefined until it runs. @internal */
-type RequestTraceAdopter = (headers: Record<string, string | string[] | undefined>) => void;
-
-let adopter: RequestTraceAdopter | undefined;
-
-/**
- * Install the adopter {@link adoptRequestTrace} delegates to.
- *
- * Called by {@link startTracing} with the adopter the OTel module RETURNED.
- *
- * The direction matters: `_tracing-otel.ts` may not import this module —
- * that is the cycle its `TracingHandle` doc refuses, and a bundler would
- * take it as licence to hoist the lazy chunk out of the dynamic `import()` the
- * whole design rests on. So the OTel module hands its adopter back on the
- * handle and this module installs it, exactly as the service name travels the
- * other way.
- *
- * @internal
- */
-export function setRequestTraceAdopter(next: RequestTraceAdopter | undefined): void {
-  adopter = next;
 }
 
 /**
