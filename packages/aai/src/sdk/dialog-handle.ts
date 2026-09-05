@@ -79,10 +79,20 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
    * is — both carry `slots` and `sessionId` — so an author can drive a dialog
    * from an `events` handler today, with no declaration at all:
    *
-   * ```ts no-check
-   * agent({
+   * ```ts
+   * import { agent, dialog } from "@alexkroman1/aai";
+   *
+   * const claim = dialog("claim", {
+   *   initial: "verifying",
+   *   states: {
+   *     verifying: { on: { "@session.timed-out": "abandoned" } },
+   *     abandoned: { final: true },
+   *   },
+   * });
+   *
+   * export default agent({
    *   name: "Support",
-   *   events: { "session.timed-out": (e, ctx) => void claim.receive(ctx, e) },
+   *   events: { "session.timed-out": (event, ctx) => void claim.receive(ctx, event) },
    * });
    * ```
    */
