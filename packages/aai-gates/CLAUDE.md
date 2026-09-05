@@ -55,11 +55,14 @@ repo requires of anything a gate reads), `numericConstant` (a cap read out of a
 gate script's source rather than restated), `workflowJobs` + `bracketList` (a
 workflow's jobs, bounded by the next job KEY rather than by the name of whatever
 job follows) and `withoutYamlComments` (a workflow with its prose removed, so a
-`toContain` cannot find a step's explanation instead of the step). The wiring block alone stood in FIVE
-specs at seventeen lines each, differing only in the gate name the caller then
-asserts; `sole` replaced two dozen reads that spelled the globbed path TWICE,
-once for the transform and once to index the result — a pair that drifted would
-have read `undefined`, i.e. a gate checking an empty string.
+`toContain` cannot find a step's explanation instead of the step) and
+`packageDirOf` (the workspace package a glob key names). The wiring block alone
+stood in FIVE specs at seventeen lines each, differing only in the gate name the
+caller then asserts; `sole` replaced two dozen reads that spelled the globbed
+path TWICE, once for the transform and once to index the result — a pair that
+drifted would have read `undefined`, i.e. a gate checking an empty string;
+`packageDirOf` stood six times, twice under a duplicated paragraph of its own
+rationale.
 
 Sharing them is safe precisely because none of it is an assertion: each spec
 still makes its own, over its own gate, and a glob that stopped resolving leaves
@@ -67,6 +70,22 @@ still makes its own, over its own gate, and a glob that stopped resolving leaves
 fails. What must NOT move here is a positive/negative sample or a floor — the
 per-gate discipline is the whole point of these files, and one spec asserting
 another's samples is the vacuous-guard failure they exist to prevent.
+
+**A reading only some specs want gets its own module, not a section of
+`_gate-support.ts`.** That one is imported by all 29 specs, so anything eager
+and large in it is inlined into 29 workers to serve however few callers actually
+read it. `_doc-example-corpus.ts` is the worked case: the five-glob markdown
+corpus, the `?raw` read of `check-doc-examples.mjs` and the `MARKDOWN_FILES`
+scrape stood byte-for-byte in both doc-examples specs — ~40 lines each, so a
+document added to the gate's list needed the corpus widened in two places — but
+it serves two callers, and putting that markdown in the shared module would have
+cost the other 27. The same rule is why each whole-repo tree glob stays in the
+spec that walks it, and why `vitest-setup-wiring.test.ts` keeps the widest glob
+in the package (8.6 MB, ~40% of the suite's wall clock): its 60 non-`src/`
+matches are template agent tests that can legitimately carry the opt-out it
+counts, so narrowing the glob would narrow the GATE. Making that one cheap means
+moving it to a `guard-invariants` rule with a baseline of 1, not a tighter
+pattern.
 
 `import.meta.glob` is a compile-time transform, so a caller cannot hoist the
 pattern OR the options object into a constant. It can import the result, which

@@ -92,12 +92,24 @@ export const DOC_EXAMPLE_MARKDOWN: Record<string, string> = Object.fromEntries(
  * Sorted, so a caller comparing its own corpus against this one is comparing
  * two lists in the same order.
  */
-export function declaredMarkdown(): string[] {
-  const block = /const MARKDOWN_FILES = \[([\s\S]*?)\];/.exec(docExamplesSource ?? "");
+export function parseDeclaredMarkdown(source: string): string[] {
+  const block = /const MARKDOWN_FILES = \[([\s\S]*?)\];/.exec(source);
   if (block?.[1] === undefined)
     throw new Error(`${DOC_EXAMPLES_SCRIPT} no longer declares MARKDOWN_FILES`);
   return [...block[1].matchAll(/"([^"]+)"/g)]
     .map((found) => found[1])
     .filter((file): file is string => file !== undefined)
     .sort(byCodeUnit);
+}
+
+/**
+ * The same, over the gate source read above.
+ *
+ * Split from {@link parseDeclaredMarkdown} so the THROW can be exercised: a
+ * reader that answered `[]` on a renamed constant would turn every per-document
+ * assertion in both specs into a statement about an empty corpus, and that path
+ * is unreachable from a tree where the constant is present.
+ */
+export function declaredMarkdown(): string[] {
+  return parseDeclaredMarkdown(docExamplesSource ?? "");
 }
