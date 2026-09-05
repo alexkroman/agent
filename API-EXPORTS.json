@@ -308,6 +308,8 @@
     "WorkflowClient",
     "WorkflowContext",
     "WorkflowDef",
+    "WorkflowInputOf",
+    "WorkflowRunOf",
     "agent",
     "assemblyAIPipeline",
     "assemblyAIS2s",

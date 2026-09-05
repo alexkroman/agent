@@ -582,6 +582,62 @@ later replay returns the journaled value without running it again. The step
 functions themselves are ordinary functions — which is also what lets a spec call
 one directly, with no engine in the path.
 
+**Type the body's input from the SCHEMA, not by hand.** The example above writes
+`input: { url: string }`, which is fine only while the workflow declares no
+input schema. Once it does, a hand-written parameter is unchecked: `run` takes
+its input as a function PARAMETER, so it is contravariant, and a body declaring
+a wider shape — or the same shape with one field's optionality or default
+wrong — is assignable and compiles. A `z.number().default(5)` against a body
+that writes `input.limit ?? 3` is the sharp version: the schema guarantees
+`limit` is there, the `??` is dead, and the two numbers disagree with nothing
+to report it. `WorkflowInputOf<typeof theDef>` reads the declaration instead.
+
+**Reaching for it needs one thing that is not obvious: ANNOTATE the def.** The
+obvious spelling does not compile —
+
+```text
+error TS7022: 'digest' implicitly has type 'any' because it does not have a type
+annotation and is referenced directly or indirectly in its own initializer.
+```
+
+— because `workflow()` infers its output from `run`, so `typeof digest` needs
+the body's signature while the body's signature needs `typeof digest`. Naming
+the schema in a `const` and annotating the def breaks the cycle:
+
+```ts
+import {
+  type WorkflowContext,
+  type WorkflowDef,
+  type WorkflowInputOf,
+  workflow,
+} from "@alexkroman1/aai";
+import { z } from "zod";
+
+const digestInput = z.object({ url: z.string(), limit: z.number().default(5) });
+
+// The annotation is what `typeof digest` resolves to, so it no longer depends
+// on the body below it.
+export const digest: WorkflowDef<typeof digestInput, { headline: string }> = workflow({
+  description: "Summarize a page",
+  input: digestInput,
+  run: digestFlow,
+});
+
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
+  // `limit` is `number`, not `number | undefined` — the default already ran.
+  return await ctx.step("summarize", () => ({ headline: `${input.url} (${input.limit})` }));
+}
+```
+
+Declaring an `output` schema is what makes the annotation cheap: with one, the
+output type is stated once, in the schema, and checked where the run completes.
+
+Two of that family are on `@alexkroman1/aai` — `WorkflowInputOf` for a body's
+parameter and `WorkflowRunOf` for a `*_status` tool's snapshot. The third,
+`WorkflowOutputOf`, is on `@alexkroman1/aai/workflow-api` only, because its
+reader is a `client.tsx` parameterizing `useWorkflowRun<…>`; a status tool wants
+`WorkflowRunOf`, which composes the output in already.
+
 Three rules, and all three fail silently if broken — nothing scans a body for
 them:
 

@@ -49,7 +49,7 @@
  * @module digest
  */
 
-import type { WorkflowContext } from "@alexkroman1/aai";
+import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
 import { mapConcurrent, stepReport, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import {
   FatalError,
@@ -58,7 +58,6 @@ import {
   stepTranscribeSubmitOrFail,
 } from "@alexkroman1/aai/step-errors";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
 import type { dailyDigest } from "../agent.ts";
 import { discoverEpisodes, type Episode } from "./feeds.ts";

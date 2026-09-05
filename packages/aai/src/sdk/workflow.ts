@@ -78,11 +78,6 @@ import type { StandardSchemaV1 } from "./standard-schema.ts";
 // writing a body needs to name it, and `workflow.ts` is the one module they
 // already import from.
 import type { WorkflowContext } from "./workflow-ctx.ts";
-// Type-only, so the cycle with `workflow-run.ts` (which names `WorkflowClient`
-// in its own docs) is erased rather than real. `WorkflowRunOf` composes the
-// snapshot with a def's output type, and the composition belongs beside the
-// two halves an author already reads here.
-import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /**
  * `ctx.workflows` — the type of the handle, re-exported because `ToolContext`
@@ -105,6 +100,14 @@ export {
   type WaitForSchemaOptions,
   type WorkflowContext,
 } from "./workflow-ctx.ts";
+// The three `…Of<typeof def>` readings of a declaration, one file over — see
+// that module's doc for the seam. Re-exported so every subpath that resolved
+// them through this module still does.
+export type {
+  WorkflowInputOf,
+  WorkflowOutputOf,
+  WorkflowRunOf,
+} from "./workflow-readings.ts";
 
 /**
  * A workflow body: an ordinary async function of its input and a
@@ -181,7 +184,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
    *   typed-JSON codec and an HTTP hop before a page reads it, and
    *   `useWorkflowRun<R>`'s `run.output` is otherwise an unchecked CLAIM about
    *   everything that happened in between.
-   * - **{@link WorkflowOutputOf} reads THIS**, so a page's type comes from the
+   * - **`WorkflowOutputOf` reads THIS**, so a page's type comes from the
    *   declaration rather than from inferring the body — which is what lets an
    *   annotated `agent.ts` resolve it without the body's signature. See that
    *   type for the circularity that removes.
@@ -230,146 +233,6 @@ export type AnyWorkflowDef<R = unknown> = {
   output?: StandardSchemaV1<unknown, R>;
   run: WorkflowBody<never, R>;
 };
-
-/**
- * A workflow's OUTPUT type, for a page that polls its runs.
- *
- * This is the end-to-end typing a static page would otherwise be missing.
- * `useWorkflowRun<R>` makes `run.status === "completed"` narrow to a typed
- * `run.output`, and without this the page has to name `R` by hand — restating a
- * shape the agent module already declares, with nothing checking the two agree.
- *
- * It needs no build step and no generated `.d.ts`, because the reason a page
- * "cannot import the agent" does not survive contact with `import type`: a
- * type-only import is ERASED, so it drags no server graph into the browser
- * bundle.
- *
- * @example
- * ```ts no-check
- * // agent.ts
- * export const transcribe = workflow({ input: …, output: transcriptSchema, run: transcribeFlow });
- *
- * // client.tsx — `import type` is erased, so nothing server-side is bundled.
- * import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
- * import type { transcribe } from "./agent.ts";
- *
- * const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
- * if (run?.status === "completed") console.log(run.output.text); // typed
- * ```
- *
- * ## It reads the declared SCHEMA first, and that is what breaks a cycle
- *
- * The DECLARATION is the better source of this type, and the worse one used to
- * be the only one. Deriving `R` from the body means `typeof theDef` needs the
- * body's signature — while a body annotated `WorkflowInputOf<typeof theDef>`
- * needs `typeof theDef`, which is `TS7022` reported against `agent.ts`. The
- * documented way out is to ANNOTATE the declaration, and an annotation whose
- * `R` comes from a schema (`WorkflowDef<typeof digestInput, z.infer<typeof
- * digestOutput>>`) states the output type once, in the schema, rather than
- * naming it a second time by hand.
- *
- * That annotated shape is also what the second reading gets WRONG, which is
- * the other half of this rewrite. `D extends WorkflowDef<ToolInputSchema, infer
- * R>` is an assignability test over the whole def, and `run`'s input is a
- * function PARAMETER — so a def carrying an input schema is not assignable to
- * one taking the open `Record<string, unknown>`, and the conditional silently
- * fell to `never`. It is the same contravariance {@link AnyWorkflowDef} was
- * written for, reached by the other route, and it is why the test below matches
- * `run` as `WorkflowBody<never, infer R>` — `never` is assignable to every
- * parameter type.
- *
- * `unknown extends O` is how "declared nothing" is told from "declared a
- * schema": a def with no output schema still HAS the optional property in its
- * type, carrying `R` — so the two readings agree, and the fallback only ever
- * fires for a def-shaped object that names no output at all.
- *
- * `Awaited` because a body may be sync or async and the snapshot always holds
- * the settled value.
- *
- * @public
- */
-export type WorkflowOutputOf<D> = D extends {
-  run: WorkflowBody<never, infer R>;
-  output?: StandardSchemaV1<unknown, infer O> | undefined;
-}
-  ? Awaited<unknown extends O ? R : O>
-  : never;
-
-/**
- * A workflow's INPUT type — what its declared schema parses to, which is
- * exactly what the body's parameter should be.
- *
- * **The reason it exists is that nothing checks a hand-written parameter.**
- * {@link WorkflowBody} takes its input as a function PARAMETER, so it is
- * contravariant: a body declaring a WIDER shape than the schema produces is
- * assignable, and a body declaring the same shape with a field's optionality or
- * a default's type subtly different is assignable too. Both compile. A
- * `z.number().default(5)` against a body that writes `input.limit ?? 3` is the
- * sharp version — the schema guarantees `limit` is present, the `??` is dead,
- * and the two numbers disagree with nothing to report it.
- *
- * Two details a restated shape gets wrong by hand, both of which this gets
- * right for free. A zod `.optional()` infers a property that may be PRESENT AND
- * `undefined`, which under `exactOptionalPropertyTypes` is `?: T | undefined`
- * and not `?: T` — two templates carry the same four-line comment explaining
- * that, which is a comment `z.infer` makes unnecessary. And a `.default()` makes
- * the OUTPUT property required while the input stays optional, so a body reading
- * it needs no fallback at all.
- *
- * Like {@link WorkflowOutputOf}, it needs no build step: `import type` is
- * erased, so a body in `workflows/` naming `WorkflowInputOf<typeof theDef>`
- * through a type-only import of `../agent.ts` drags no runtime cycle behind it.
- *
- * @example
- * ```ts no-check
- * // agent.ts
- * export const digest = workflow({
- *   input: z.object({ topic: z.string(), limit: z.number().default(5) }),
- *   run: digestFlow,
- * });
- *
- * // workflows/digest.ts — `import type` is erased, so there is no cycle.
- * import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
- * import type { digest } from "../agent.ts";
- *
- * export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
- *   // `limit` is `number`, not `number | undefined` — the default already ran.
- *   return await research(input.topic, input.limit);
- * }
- * ```
- *
- * @public
- */
-export type WorkflowInputOf<D> =
-  D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
-
-/**
- * A run of `D`, with its output already typed — `WorkflowRunSnapshot` and
- * {@link WorkflowOutputOf} composed.
- *
- * The composition is what a tool reporting on a run actually holds, and writing
- * it out costs a three-name import (`WorkflowRunSnapshot`, `WorkflowOutputOf`,
- * and the def) at every such tool. Two templates compose it by hand today, in
- * files whose whole job is to answer "how is that run going".
- *
- * The result is still the DISCRIMINATED union, so `isTerminal(run)` and
- * `run.status === "completed"` narrow exactly as they do on the uncomposed type
- * — this names the shape, it does not flatten it.
- *
- * @example
- * ```ts no-check
- * import { isTerminal, type WorkflowRunOf } from "@alexkroman1/aai/workflow-api";
- * import type { research } from "../agent.ts";
- *
- * function describe(run: WorkflowRunOf<typeof research>): string {
- *   if (!isTerminal(run)) return "still working on it";
- *   return run.status === "completed" ? run.output.summary : "that one did not finish";
- * }
- * ```
- *
- * @public
- */
-export type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
 
 /**
  * One declared workflow, as `GET /workflows` lists it.

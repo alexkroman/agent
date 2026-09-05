@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budget of `no-check` doc fences \u2014 examples this repo SHIPS and compiles nowhere. See scripts/check-doc-examples.mjs. Goal is zero; `--update` lowers an entry and refuses to raise one.",
+  "_description": "Per-file budget of `no-check` doc fences — examples this repo SHIPS and compiles nowhere. See scripts/check-doc-examples.mjs. Goal is zero; `--update` lowers an entry and refuses to raise one.",
   "no-check": {
     "README.md": 1,
     "packages/aai-cli/src/start.ts": 1,
@@ -55,6 +55,7 @@
     "packages/aai/src/sdk/testing-workflow-ctx.ts": 1,
     "packages/aai/src/sdk/testing.ts": 1,
     "packages/aai/src/sdk/workflow-ctx.ts": 3,
-    "packages/aai/src/sdk/workflow.ts": 7
+    "packages/aai/src/sdk/workflow-readings.ts": 3,
+    "packages/aai/src/sdk/workflow.ts": 4
   }
 }

@@ -177,6 +177,22 @@ a `typedoc.json` list a new subpath must remember to join). A new subpath export
 therefore gets a report on its first run, and `--check` fails until it is
 committed, which is correct: a new subpath IS a public API change.
 
+**`API-INDEX.md` is the third derived file, and it is the same names INVERTED.**
+A report and `API-EXPORTS.json` are both indexed BY subpath, which is the wrong
+direction for the question a reader actually arrives with: thirty-six subpaths
+publish 1,100-odd names, so "which import gives me `WorkflowInputOf`?" was a
+grep or a guess. It is generated in the same pass, gated by the same `--check`,
+and split into an authoring half and a framework-internals half by a
+`/internal`-and-`/host-internal` deny-list — a new subpath defaults into the
+authoring half, for the reason every deny-list here exists. It carries a floor
+(`MIN_INDEXED_SYMBOLS`, 600 against a measured 823) because `--check` reports a
+collapsed extraction as "out of date", which invites regenerating and
+committing the empty file; and
+`packages/aai-templates/src/api-index-file.test.ts` is the guard under the
+gate, asserting the index really is `API-EXPORTS.json` turned inside out rather
+than two derivations of one broken scan agreeing with each other. Fifty-one
+names list more than one subpath — that is the case worth seeing, not an error.
+
 **`API.md` is for READERS; the per-entry-point reports are for reviewers.** One
 file per entry point is the right shape for a diff — a signature change lands in
 the one report that owns it — and the wrong shape for "what does this SDK

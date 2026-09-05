@@ -45,13 +45,12 @@
  * ingest result, once as the plan) and buy nothing.
  */
 
-import type { WorkflowContext } from "@alexkroman1/aai";
-import { encodeWav, mapConcurrent, stepReadUpload, stepReport } from "@alexkroman1/aai/step";
-import { countWords, formatDuration } from "@alexkroman1/aai/utils";
 // ERASED at build time, so the body can name the schema's own output type without
 // a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
 // for `WorkflowOutputOf`.
-import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
+import { encodeWav, mapConcurrent, stepReadUpload, stepReport } from "@alexkroman1/aai/step";
+import { countWords, formatDuration } from "@alexkroman1/aai/utils";
 import type { audit } from "../agent.ts";
 import { ingestRecording } from "./ingest.ts";
 import {

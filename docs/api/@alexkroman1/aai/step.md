@@ -3,16 +3,7 @@
 `@alexkroman1/aai/step` — the surface a step body is written
 against.
 
-This is the half of `/utils` that has an AUDIENCE rather than a build
-property. That subpath's membership rule was "zod-free, so the CLI can import
-it on every invocation without a startup cost" — true, load-bearing, and not
-something anybody imports BY: nobody reaches for a module because of its
-dependency graph. Seventy-nine exports served three unrelated readers (a step
-body, a tool body, and the framework's own plumbing), so the import line said
-nothing about which layer you were in and the reference page for the step
-vocabulary was a list you had to filter by hand.
-
-**That reader is a `workflows/*.ts` module in an agent project.** Nothing here
+**The reader is a `workflows/*.ts` module in an agent project.** Nothing here
 is durable on its own: a call becomes a journaled step only when the body puts
 it inside `ctx.step(name, fn)`, and outside one it runs inline on every replay
 with no journal and no retry. So the loop is: `workflow` on the root DECLARES

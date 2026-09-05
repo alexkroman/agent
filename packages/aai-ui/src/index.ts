@@ -1,4 +1,59 @@
 // Copyright 2025 the AAI authors. MIT license.
+/**
+ * The browser client for aai agents — React 19 hooks and components over a
+ * framework-agnostic session core (WebSocket + microphone + playback).
+ *
+ * ## Start with a mount
+ *
+ * A client is one `client.tsx` calling one mount, and WHICH mount is the only
+ * structural decision on this surface — it follows the agent's front door:
+ *
+ * | The agent is | The page calls | It talks to |
+ * | --- | --- | --- |
+ * | a voice agent (the default) | {@link mountClient} | a live session: socket, microphone, playback |
+ * | a `workflowApp()` / `agent({ page: "static" })` | {@link mountPage} | the workflow HTTP API — no session, no socket, no mic |
+ *
+ * There is no route to write and no glue file: the agent server already serves
+ * both, so a component talks to a live agent directly. {@link createBrowserSession}
+ * is the same session core with no React, for a page built on something else.
+ *
+ * ## Then the hook that answers your question
+ *
+ * The hooks are grouped by what they read, and within a group the narrow one
+ * exists so a component re-renders on its own slice rather than on every frame:
+ *
+ * | Reading | Hooks |
+ * | --- | --- |
+ * | the call itself | {@link useSession} (everything), {@link useSessionStatus}, {@link useSessionError}, {@link useSessionActions}, {@link useSessionSelector} |
+ * | what was said | {@link useConversation}, {@link useUserTranscript} |
+ * | what the agent projects | {@link useAgentState} — pass the `slot.projection(…)` the agent declared, and it types the state AND supplies the frame rendered before the first push |
+ * | tools, as they run | {@link useToolCallStart}, {@link useToolResult}, {@link useEvent} |
+ * | a durable run | {@link useWorkflowSubmit} (start one), {@link useWorkflowRun} (watch one), {@link useWorkflowRuns} / {@link useWorkflows} (list), {@link useWorkflowProgress} / {@link useWorkflowStream} (its output as it arrives) |
+ * | page chrome | {@link useTheme}, {@link useCopy}, {@link useFlash}, {@link useDownloadUrl}, {@link useRunKey} |
+ *
+ * Everything else here is a COMPONENT — chat chrome ({@link MessageList},
+ * {@link ChatView}, {@link Controls}, {@link StartScreen}), workflow forms
+ * ({@link Form}, {@link WorkflowFields}, the `*Field` set), and the small
+ * primitives pages kept re-writing ({@link AutoScroll}, {@link Markdown},
+ * {@link Facts}, {@link ToolCallRow}). None is required: the hooks are the API
+ * and the components are one rendering of it.
+ *
+ * ## Two things worth knowing before the reference below
+ *
+ * **Three names are re-exported from `@alexkroman1/aai`** — {@link WorkflowInputOf},
+ * {@link WorkflowOutputOf} and {@link WorkflowSummary}, plus {@link isTerminal}
+ * and {@link ClientConfigResponse}. They are one declaration with two reference
+ * pages, not two types; a page takes them from here, an `agent.ts` from there.
+ *
+ * **{@link createWorkflowApi} is the browser's workflow client, and there are two
+ * others.** `createWorkflowApiClient` (`@alexkroman1/aai/workflow-api`) is the
+ * same call set for a caller with no page to default its base URL from — a
+ * script, a cron job, a server — and `createAgentClient` on that subpath is a
+ * superset that also reaches `/client-config`. Reach for the one here whenever
+ * the code runs in a page the agent serves.
+ *
+ * @module
+ */
 
 // The seven default state words, so a chrome overrides the one it has a better
 // term for instead of writing a ternary chain over the whole union. Same shape

@@ -3,15 +3,41 @@
  * The failure a step should throw (the
  * `@alexkroman1/aai/step-errors` subpath).
  *
- * The engine retries a step that throws, gives up on a `FatalError`,
- * and honours the delay on a `RetryableError` — so every step body that calls
- * an HTTP API owns the same three-way decision, and `@alexkroman1/aai/step`
- * already carries the two halves it can answer with no verdict vocabulary at all
- * (`isTransientStatus` and `retryAfter`). What it could not do is
- * CONSTRUCT the error. So the mapping was left as a snippet in a module doc — and
- * both templates that needed it copied the snippet out, verbatim and
- * character-identical. That is what this module is: the last function of an
- * extraction that stopped one function short.
+ * ## What is here
+ *
+ * The engine retries a step that throws and gives up on a `FatalError`, so a
+ * step body that calls an HTTP API owes a three-way verdict on every failure:
+ * retry now, retry when the far side said, or stop. This subpath is the
+ * vocabulary for saying it.
+ *
+ * | Reach for | When |
+ * | --- | --- |
+ * | {@link throwStepError} | you have caught something and want it classified |
+ * | {@link toStepError} | same, as a value rather than a throw |
+ * | {@link throwFatalStepError} | this one will never succeed — stop retrying |
+ * | {@link stepFetchOrFail} | a `stepFetch` whose non-OK status should end the step |
+ * | `FatalError` / `RetryableError` | constructing the verdict yourself |
+ *
+ * ```ts
+ * import { stepEnv, stepFetch } from "@alexkroman1/aai/step";
+ * import { throwStepError } from "@alexkroman1/aai/step-errors";
+ *
+ * export async function fetchQuote(symbol: string) {
+ *   // A 429 becomes a RetryableError carrying the far side's own Retry-After;
+ *   // a 400 becomes a FatalError, so the attempt budget is not spent on it.
+ *   const response = await stepFetch(`https://api.example/q/${symbol}`, {
+ *     headers: { authorization: `Bearer ${stepEnv("QUOTE_KEY") ?? ""}` },
+ *   }).catch(throwStepError);
+ *   return await response.json();
+ * }
+ * ```
+ *
+ * The `*OrFail` callers on this subpath — the two `stepGenerate` halves, the
+ * four transcription entry points and `sendToChannel` — are each the
+ * underlying call plus `throwStepError` and nothing else. The raw calls stay
+ * on `@alexkroman1/aai/step`: importing from HERE is the opt-in, because
+ * whether a terminal failure burns a step's remaining attempts is the
+ * caller's decision.
  *
  * ## Why this is not simply part of `@alexkroman1/aai/step`
  *

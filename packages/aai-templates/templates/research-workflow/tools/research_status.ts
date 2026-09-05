@@ -1,6 +1,6 @@
-import { tool } from "@alexkroman1/aai";
+import { tool, type WorkflowRunOf } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
-import { isTerminal, type WorkflowRunOf } from "@alexkroman1/aai/workflow-api";
+import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import { research } from "../shared.ts";
 
 /** How many past runs the status tool will look at. Newest first. */
