@@ -60,6 +60,15 @@ const guides: Record<string, string> = {
     import: "default",
     eager: true,
   }),
+  // The on-demand references AGENTS.md's "Detailed references" table points
+  // at. Measured on the same budget: they exist so the root guide can stay
+  // small, and an agent following a pointer reads one whole. Capping only the
+  // root would relocate the failure into a file nothing measures.
+  ...import.meta.glob("../../../.agents/*.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
 };
 
 /** The root `CLAUDE.md` shim, read separately — it is pinned, not measured. */
@@ -80,8 +89,10 @@ const entries = Object.entries(guides)
 
 const remedy =
   "Move sections into the owning package's CLAUDE.md and leave a pointer in " +
-  'the root guide\'s "Package guides" table (see "Updating CLAUDE.md"). Only ' +
-  "the scaffold guide, which ships to users, has to be cut instead.";
+  'the root guide\'s "Package guides" table, or — for a repo-wide section that ' +
+  "is REFERENCE rather than something every task needs — into .agents/ and its " +
+  '"Detailed references" table (see "Updating AGENTS.md"). Only the scaffold ' +
+  "guide, which ships to users, has to be cut instead.";
 
 describe("agent guide size", () => {
   test("the guides are discovered", () => {
@@ -90,6 +101,7 @@ describe("agent guide size", () => {
     expect(entries.map((e) => e.path)).toContain("packages/aai/CLAUDE.md");
     expect(entries.map((e) => e.path)).toContain("packages/aai-templates/scaffold/CLAUDE.md");
     expect(entries.map((e) => e.path)).toContain("packages/aai-templates/CLAUDE.md");
+    expect(entries.map((e) => e.path)).toContain(".agents/ratchets.md");
     expect(entries.length).toBeGreaterThanOrEqual(9);
   });
 

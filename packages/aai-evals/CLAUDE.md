@@ -1,7 +1,8 @@
 # packages/aai-evals — the behaviour eval tier
 
-The repo's eval runner and its cases (private package). Repo-wide conventions,
-the test-tier table and the turbo rules live in the root `AGENTS.md`.
+The repo's eval runner and its cases (private package). Repo-wide conventions and
+the test-tier table live in the root `AGENTS.md`; the turbo rules are in
+`.agents/ci.md`.
 
 ## What this exists for
 

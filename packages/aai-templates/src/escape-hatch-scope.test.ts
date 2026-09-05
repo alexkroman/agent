@@ -85,13 +85,24 @@ const scaffoldGuide = sole(
  * inert, and the gate would have reported `now=0 ✓` over a tree full of
  * violations with this file staying green.
  *
- * Every guide here is prose that genuinely DISCUSSES suppressions: AGENTS.md's
- * ratchets section names each pattern by name, several of them repeatedly. A
- * pattern added without any prose naming it fails below, and the remedy is to
- * document it — which every pattern here already is.
+ * Every guide here is prose that genuinely DISCUSSES suppressions: the ratchets
+ * reference names each pattern by name, several of them repeatedly. A pattern
+ * added without any prose naming it fails below, and the remedy is to document
+ * it — which every pattern here already is.
+ *
+ * `.agents/*.md` is in the corpus because that ratchets section LIVES there
+ * now (AGENTS.md's "Detailed references" table points at it). Six of the seven
+ * patterns matched nothing the moment it moved, which is this spec working as
+ * designed: it cannot tell a narrowed pattern from a relocated paragraph, so
+ * it fails on either and makes somebody look.
  */
 const proseDocs: Record<string, string> = {
   ...import.meta.glob<string>("../../../AGENTS.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+  ...import.meta.glob<string>("../../../.agents/*.md", {
     query: "?raw",
     import: "default",
     eager: true,
@@ -198,7 +209,7 @@ describe("escape-hatch ratchet scope", () => {
       const hits = proseLines.filter(({ line }) => new RegExp(re).test(line));
       expect(
         hits.length,
-        `pattern "${label}" matches no line of AGENTS.md or a package guide — ` +
+        `pattern "${label}" matches no line of AGENTS.md, .agents/ or a package guide — ` +
           "either it has been narrowed to something inert, or the prose that " +
           "justifies excluding markdown from the scan is gone",
       ).toBeGreaterThan(0);

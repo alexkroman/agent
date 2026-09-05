@@ -1089,7 +1089,7 @@ AAI_TEST_PM=npm pnpm test:e2e
 That line only works because `AAI_TEST_PM` is declared in the `check:e2e` task's
 `env` — under turbo's strict env mode it was stripped before the task started, so
 the documented command ran pnpm and said nothing. See "strict env mode" in
-`AGENTS.md`, which keeps that half of the rule because it is repo-wide.
+`.agents/ci.md`, which keeps that half of the rule because it is repo-wide.
 
 Treat those two branches as a debugging tool, not covered ground.
 

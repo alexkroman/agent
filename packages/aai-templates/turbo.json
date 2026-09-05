@@ -28,19 +28,31 @@
     // required gate job).
     //
     // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
-    // the input here, not documentation about it.
+    // the input here, not documentation about it. `.agents/*.md` joins it for
+    // the same reason: `claude-md-limit.test.ts` measures those on the same
+    // budget now, so a section moved there to get AGENTS.md under the cap has
+    // to be able to invalidate this hash.
+    //
+    // `packages/*/src/contracts/**` had lost its `src/` when every package's
+    // TypeScript moved under one (see "Package layout"), so it matched NOTHING
+    // and `api-contracts-gate.test.ts` — which globs `../../*/src/contracts/`
+    // — was replayed from cache exactly when a capability, an epoch or a
+    // frozen example changed. Verify a glob with `git ls-files` rather than by
+    // reading it; that is the same trap `check-file-length.mjs`'s `scripts/`
+    // pathspec fell into.
     "test": {
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "../../vitest.shared.ts",
         "$TURBO_ROOT$/AGENTS.md",
+        "$TURBO_ROOT$/.agents/*.md",
         "$TURBO_ROOT$/CLAUDE.md",
         "$TURBO_ROOT$/packages/*/CLAUDE.md",
         "$TURBO_ROOT$/API.md",
         "$TURBO_ROOT$/API-EXPORTS.json",
         "$TURBO_ROOT$/packages/*/etc/*.api.md",
-        "$TURBO_ROOT$/packages/*/contracts/**",
+        "$TURBO_ROOT$/packages/*/src/contracts/**",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/lefthook.yml",
@@ -55,12 +67,13 @@
         "$TURBO_DEFAULT$",
         "../../vitest.shared.ts",
         "$TURBO_ROOT$/AGENTS.md",
+        "$TURBO_ROOT$/.agents/*.md",
         "$TURBO_ROOT$/CLAUDE.md",
         "$TURBO_ROOT$/packages/*/CLAUDE.md",
         "$TURBO_ROOT$/API.md",
         "$TURBO_ROOT$/API-EXPORTS.json",
         "$TURBO_ROOT$/packages/*/etc/*.api.md",
-        "$TURBO_ROOT$/packages/*/contracts/**",
+        "$TURBO_ROOT$/packages/*/src/contracts/**",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/lefthook.yml",
