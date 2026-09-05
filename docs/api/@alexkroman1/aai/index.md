@@ -2854,11 +2854,11 @@ receive(ctx: SlotHolder, event:
   code:   | "stt"
      | "llm"
      | "tts"
-     | "tool"
      | "audio"
      | "connection"
      | "internal"
-     | "protocol";
+     | "protocol"
+     | "tool";
   fatal: boolean;
   message: string;
   meta: {
@@ -2887,7 +2887,7 @@ receive(ctx: SlotHolder, event:
   | {
   messages: {
      content: string;
-     role: "user" | "assistant";
+     role: "assistant" | "user";
   }[];
   meta: {
      at: number;
@@ -3065,11 +3065,11 @@ export default agent({
   `code`:   \| `"stt"`
      \| `"llm"`
      \| `"tts"`
-     \| `"tool"`
      \| `"audio"`
      \| `"connection"`
      \| `"internal"`
-     \| `"protocol"`;
+     \| `"protocol"`
+     \| `"tool"`;
   `fatal`: `boolean`;
   `message`: `string`;
   `meta`: \{
@@ -3098,7 +3098,7 @@ export default agent({
   \| \{
   `messages`: \{
      `content`: `string`;
-     `role`: `"user"` \| `"assistant"`;
+     `role`: `"assistant"` \| `"user"`;
   \}[];
   `meta`: \{
      `at`: `number`;

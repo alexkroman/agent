@@ -588,7 +588,7 @@ type: "function";
 ### HOST\_ONLY\_AGENT\_FIELDS
 
 ```ts
-const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "events"];
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events"];
 ```
 
 `AgentDef` fields that must never cross the serialization boundary — the

@@ -1,15 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai:dialog` epoch 16.
+ * Frozen authoring example: `aai:dialog` epoch 17.
  *
- * A roadside call flow as it was declared at epoch 16 — the whole vocabulary a
+ * A roadside call flow as it was declared at epoch 17 — the whole vocabulary a
  * dialog had then: `instruction` on every state, `on` maps naming the author's
  * own events, a nested pair under `dispatching`, a `final` state, and tools
  * gated with `when` plus the two ways to advance (`send` for a fixed
  * transition, `sendFrom` when the result decides). It must keep compiling for
  * as long as that epoch is advertised as supported.
  *
- * ## What moved, and why epoch 16 survives it
+ * ## What moved, and why epoch 17 survives it
  *
  * Two things, and they are different kinds of change.
  *
@@ -40,14 +40,14 @@
  * Note what this file does NOT do, on purpose: it declares no `timeout`, no
  * `@`-prefixed session event and no per-state knob, and it is never handed to
  * `agent({ dialogs })`. That is exactly the shape of a dialog written before
- * any of that existed, which is what epoch 16 means.
+ * any of that existed, which is what epoch 17 means.
  */
 
 import { z } from "zod";
 import { dialog, type ToolFailure, tool } from "../../../index.ts";
 
-/** The call, in the six states epoch 16 could describe. */
-export const call = dialog("roadside-v16", {
+/** The call, in the six states epoch 17 could describe. */
+export const call = dialog("roadside-v17", {
   initial: "locating",
   states: {
     locating: {

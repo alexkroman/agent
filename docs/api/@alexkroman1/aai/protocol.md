@@ -411,7 +411,7 @@ event(event:
   | {
   messages: {
      content: string;
-     role: "user" | "assistant";
+     role: "assistant" | "user";
   }[];
   meta: {
      at: number;
@@ -590,7 +590,7 @@ event the stream had already recorded under another.
   \| \{
   `messages`: \{
      `content`: `string`;
-     `role`: `"user"` \| `"assistant"`;
+     `role`: `"assistant"` \| `"user"`;
   \}[];
   `meta`: \{
      `at`: `number`;
