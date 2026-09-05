@@ -1,5 +1,54 @@
 # @alexkroman1/aai-cli
 
+## 15.2.0
+
+### Minor Changes
+
+- e845c19: Improve the Deno Deploy target. `aai build --target deno` now emits a `deno.json` with a `start` task, so the output directory describes how to run itself and no command against it has to re-supply `--entrypoint`. Auto-detection also reads `DENO_DEPLOYMENT_ID` alongside `DENO_DEPLOY`: neither marker covers both generations of the platform, since Deno Deploy Classic sets only the former, so reading just `DENO_DEPLOY` left Classic undetectable.
+- e845c19: Add `aai build --target modal` for Modal deploys: emits a self-contained `.aai/modal/` directory plus a generated `app.py` that runs the bundled server behind `@modal.web_server`
+- 3b33de3: Deploy targets: adopt four properties from Nitro's presets.
+  
+  - **`aai build` now prints the deploy command for every target**, and returns it
+    (plus the output directory) on the result so `--json` sees both. `--target
+    vercel` printed the directory it wrote and no command at all.
+  - **The Vercel routing table brackets `handle: filesystem`** with an
+    `immutable` cache-control header for the content-hashed `/assets/` prefix and
+    a CDN-level `404` for a miss under it, so hashed assets stop re-validating on
+    every load and a stale bundle request stops costing a function invocation.
+  - **The function's Node major rounds UP** to the smallest version Vercel offers
+    that is at least the one running the build, clamping at the newest. It
+    rounded down, so a build on Node 23 deployed onto `nodejs22.x`.
+  - **The Deno entry drains on `SIGINT`/`SIGTERM`**, which only the Modal entry
+    did — Deno Deploy stops a deployment on the same events, so a live call lost
+    its socket rather than its session. Both entries now share one drain.
+  
+  Vercel build-environment detection also reads `VERCEL_ENV` and `NOW_BUILDER`
+  alongside `VERCEL`.
+- dae6658: Add `aai build --target deno`, which emits a self-contained `.aai/deno/` for Deno Deploy: a bundled server, the built worker, the browser client and `.env.example`, with no install step. Voice works there unchanged — Deno runs `node:http` and the `ws` server path, so the session reaches the same AgentServer `aai dev` runs; verified against a live deployment with real speech. Also fixes the CLI's `enableCompileCache` import, a NAMED import of a Node-only export that made `bin.mjs` unusable on any runtime lacking it.
+
+### Patch Changes
+
+- aa105a4: Move the vitest launcher `aai test`, `aai eval` and `aai build`'s pre-build gate share out of `test.ts` into `_vitest-runner.ts` — binary resolution, which spec files a run covers, which it does not, and the unrun-spec notice. The two commands are disjoint by construction (a positional argument to `vitest run` is a substring filter, not an include glob), and an import edge from `eval.ts` into the file named after the other command was the one thing that could quietly grow the coupling that design prevents; each tier's filenames now stay with the command that owns them, `TEST_FILES` beside `EVAL_FILES`. Internal module boundaries only — no command, result shape, CLI argument or published export changed.
+- 0666785: `aai init` no longer copies the 120KB authoring guide into the project. A scaffolded `CLAUDE.md` is now a ~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` — the version-matched copy that ships in the SDK tarball, which the SDK's own skill has always named as the authoritative one.
+  
+  The copy it replaces could not be right. It froze at the moment `aai init` ran and went stale on the project's next `pnpm update @alexkroman1/aai`, which is what `AGENT_GUIDE.md` exists to fix; and Claude Code loads a project-root `CLAUDE.md` in full at launch against a documented 200-line target, so every session in a user's agent project paid ~30k tokens for 2,533 lines of guidance whose own publisher told agents to prefer the other file. Splitting it behind an `@import` would not have helped — imports are expanded at launch too — so the pointer names the path in a fence, the documented spelling for "mention, do not import", and an agent reads it on demand out of the tarball the project actually resolved.
+  
+  A scaffolded project is 21KB across 12 files instead of 136KB. Nothing else in `scaffold/` changed, a project's own `CLAUDE.md` still wins, and a template that ships one still has it copied — only the scaffold's guide is filtered.
+- Updated dependencies [b890150]
+- Updated dependencies [1ecf911]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [b890150]
+- Updated dependencies [4986d01]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [31bec98]
+- Updated dependencies [b890150]
+- Updated dependencies [0b81685]
+- Updated dependencies [0666785]
+- Updated dependencies [55ddb0a]
+  - @alexkroman1/aai-runtime@15.2.0
+  - @alexkroman1/aai@15.2.0
+  - @alexkroman1/aai-ui@15.2.0
+
 ## 15.1.0
 
 ### Minor Changes

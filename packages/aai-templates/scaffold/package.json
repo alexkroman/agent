@@ -15,10 +15,10 @@
     "publish:agent": "aai publish"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^15.1.0",
-    "@alexkroman1/aai-cli": "^15.1.0",
-    "@alexkroman1/aai-runtime": "^15.1.0",
-    "@alexkroman1/aai-ui": "^15.1.0",
+    "@alexkroman1/aai": "^15.2.0",
+    "@alexkroman1/aai-cli": "^15.2.0",
+    "@alexkroman1/aai-runtime": "^15.2.0",
+    "@alexkroman1/aai-ui": "^15.2.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.0.0",

@@ -1,5 +1,31 @@
 # @alexkroman1/aai
 
+## 15.2.0
+
+### Minor Changes
+
+- 1ecf911: Publish `WorkflowInputOf` and `WorkflowRunOf` from the package root, and lead each module's reference page with what is in it.
+  
+  Both were reachable only from `@alexkroman1/aai/workflow-api`, documented as the surface for a caller OUTSIDE the agent — while a `workflows/*.ts` body annotating its parameter and a `*_status` tool holding a run snapshot are exactly what the root barrel's membership test names. They stay on `/workflow-api` too, which still owns the capability. `WorkflowOutputOf` did not move: its reader really is a `client.tsx`.
+  
+  The scaffold guide now carries the convention that makes them reachable at all: `workflow()` infers its output from `run`, so the obvious spelling is a `TS7022` circularity, and the way out is to name the input schema in a const and annotate the def.
+  
+  Also: `@alexkroman1/aai-ui`'s root had no module doc, so its reference page opened on an alphabetically-first component; the module docs that led with why-this-exists now lead with what-is-here; and `API-INDEX.md` is a new generated reverse index of every published name against the subpath to import it from.
+- 55ddb0a: zod is a peerDependency of @alexkroman1/aai and @alexkroman1/aai-runtime rather than a plain dependency. Both packages expose zod types in their published .d.ts, so a consumer's schema has to be the same type the SDK accepts — which only a peer can promise. Install zod alongside them (the scaffold already does); npm 7+ and pnpm 8+ install peers automatically.
+
+### Patch Changes
+
+- b890150: Declare @types/json-schema as a runtime dependency of aai and aai-runtime, and drop ten dependencies no package imports.
+- 55ddb0a: Shrink the aai/host-internal seam: move the session-event and app-db budgets to their only consumer in aai-runtime, drop twelve unimported value exports, and stop double-publishing eighteen names that already sit on the zod-free /internal subpath.
+- 31bec98: Docs: install the CLI globally with npm rather than invoking it through npx, and correct stale CLI/storage references.
+- b890150: Correct the ffmpeg capability contract's account of where ffmpegVersion lives.
+- 0666785: `aai init` no longer copies the 120KB authoring guide into the project. A scaffolded `CLAUDE.md` is now a ~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` — the version-matched copy that ships in the SDK tarball, which the SDK's own skill has always named as the authoritative one.
+  
+  The copy it replaces could not be right. It froze at the moment `aai init` ran and went stale on the project's next `pnpm update @alexkroman1/aai`, which is what `AGENT_GUIDE.md` exists to fix; and Claude Code loads a project-root `CLAUDE.md` in full at launch against a documented 200-line target, so every session in a user's agent project paid ~30k tokens for 2,533 lines of guidance whose own publisher told agents to prefer the other file. Splitting it behind an `@import` would not have helped — imports are expanded at launch too — so the pointer names the path in a fence, the documented spelling for "mention, do not import", and an agent reads it on demand out of the tarball the project actually resolved.
+  
+  A scaffolded project is 21KB across 12 files instead of 136KB. Nothing else in `scaffold/` changed, a project's own `CLAUDE.md` still wins, and a template that ships one still has it copied — only the scaffold's guide is filtered.
+- 55ddb0a: Every published subpath of @alexkroman1/aai now resolves to an explicit re-export facade rather than to an implementation file, so an implementation module can be split without moving a published entry point and a new export joins the public surface only deliberately. No published name or signature changes.
+
 ## 15.1.0
 
 ## 15.0.0

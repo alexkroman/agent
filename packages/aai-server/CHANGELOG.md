@@ -1,5 +1,29 @@
 # @alexkroman1/aai-server
 
+## 5.3.3
+
+### Patch Changes
+
+- 4986d01: Inject the platform's own span context as `traceparent` on the platform→guest hop, so a model call inside a sandbox joins the trace of the request that caused it. The header is minted from the active span, never relayed from the caller: this hop's callers are the open internet and third-party webhook senders, and forwarding an inbound one would let any of them choose the trace id a tenant's spans are filed under.
+- b890150: Share one firstWriteWins between the runtime and platform journals instead of two byte-identical copies.
+- b890150: Declare @types/json-schema as a runtime dependency of aai and aai-runtime, and drop ten dependencies no package imports.
+- 55ddb0a: Collapse aai-server's 35 per-module subpath exports into seven capability entries carrying only the 101 names aai-studio-server actually imports.
+- Updated dependencies [b890150]
+- Updated dependencies [1ecf911]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [b890150]
+- Updated dependencies [4986d01]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [31bec98]
+- Updated dependencies [b890150]
+- Updated dependencies [0b81685]
+- Updated dependencies [0666785]
+- Updated dependencies [55ddb0a]
+  - @alexkroman1/aai-runtime@15.2.0
+  - @alexkroman1/aai@15.2.0
+  - aai-guest@0.6.3
+  - @alexkroman1/aai-ui@15.2.0
+
 ## 5.3.2
 
 ### Patch Changes
