@@ -34,7 +34,7 @@
  * contract every other generated artifact here has.
  */
 
-import { MODAL_APP_FILE, MODAL_ENTRY_FILE, MODAL_PORT } from "./_build-target.ts";
+import { MODAL_APP_FILE, MODAL_ENTRY_FILE, MODAL_PORT } from "./_modal-target.ts";
 
 /**
  * The Node major the emitted image may not go below — the SDK's own `engines`

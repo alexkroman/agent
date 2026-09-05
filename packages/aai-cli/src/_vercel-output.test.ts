@@ -18,9 +18,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { VERCEL_FUNCTION_DIR, VERCEL_OUTPUT_DIR, VERCEL_STATIC_DIR } from "./_build-target.ts";
 import { withTempDir } from "./_test-utils.ts";
 import { emitVercelOutput } from "./_vercel-output.ts";
+import { VERCEL_FUNCTION_DIR, VERCEL_OUTPUT_DIR, VERCEL_STATIC_DIR } from "./_vercel-target.ts";
 
 const STUB = "export default function handler() {}\n";
 const stubBundle = () => Promise.resolve(STUB);

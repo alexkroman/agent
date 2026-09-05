@@ -173,9 +173,55 @@ the single definition of both, so there is no second copy to pin against.
 **`aai build --target` is the other half, and it is Nitro's shape.** A host that
 wants a specific entry file gets one EMITTED into the build output rather than
 committed to the project — `_build-target.ts` carries the argument and the
-precedent. The target is detected from the host's own build environment
-(`VERCEL`), so a git-push deploy configures nothing, and `node` — which emits
-nothing extra — is what every other build gets.
+precedent, and each host's own constants and emitted sources sit one module over
+(`_vercel-target.ts`, `_deno-target.ts`, `_modal-target.ts`, with
+`_target-drain.ts` for the fragment the two long-lived ones share). That is
+Nitro's `presets/<provider>/` shape and it is also just where the file ended up:
+holding all three it went over the 500-line cap. The dependency runs one way —
+`_build-target.ts` reads each host's output directory for `TARGET_OUTPUTS`, and
+no host module reads it back — so a fourth target is a fourth file plus two
+lines.
+
+**The target is detected from the host's own build environment**
+(`VERCEL`, `VERCEL_ENV` or `NOW_BUILDER` — all three of `std-env`'s Vercel
+tests, since a host that advertises itself with three keys and is read for one
+is the same hole the Deno pair below already had), so a git-push deploy
+configures nothing, and `node` — which emits nothing extra — is what every other
+build gets.
+
+**Every target names the command that ships it, and that is DATA**
+(`TARGET_OUTPUTS`). Nitro's presets each carry a `commands: { preview, deploy }`
+pair, written into the build output's own `nitro.json` and printed after every
+build; here the strings were a `log.info` per `case` arm and had drifted exactly
+the way a per-arm string does — `--target vercel`, the one target reachable with
+no flag at all, printed the directory it wrote and no deploy command
+whatsoever. A total record over `BuildTarget` cannot be added to without
+answering both questions. Both fields are on the RESULT as well as in the log,
+for the reason `systemPrompt` is: `log` is silenced under `--json`, so a CI job
+that builds and then deploys could read neither.
+
+**`--target vercel`'s routing table brackets `handle: filesystem` with two
+rules about `/assets/`**, which is Vite's content-addressed output directory and
+therefore the only prefix where a filename changes with its bytes. Before it, a
+`cache-control: public, max-age=31536000, immutable` header with
+`continue: true` — without it the CDN serves the bundle on Vercel's default
+freshness and every client re-validates every asset on every load, for bytes
+that cannot change. After it, a terminal `404` with `no-store`: a miss under a
+hashed name is a stale `index.html` asking for a bundle this deployment does
+not have, so falling through to the function buys an invocation to produce the
+404 the CDN already could — and the immutable header above is already attached,
+so a dynamic response inheriting it would be cached for a year. Both are
+Nitro's `getPublicAssetRoutes` shape, including the `no-store`. Everything
+outside `/assets/` still falls through, which is what keeps `/`,
+`/favicon.ico` and every agent route working.
+
+**And the function's Node major rounds UP.** `vercelNodeRuntime` picks the
+smallest major Vercel offers that is at least the one running the build,
+clamping at the newest — it used to round DOWN, so a build on Node 23 named
+`nodejs22.x` and put a bundle that resolved its dependencies for 23 onto an
+older runtime, where an API added in 23 is a `TypeError` in a function that
+built clean. Rounding up cannot produce that failure. Nitro's
+`resolveVercelRuntime` picks the same direction over the same list.
 
 **`--target deno` emits a SELF-CONTAINED directory**, and that is forced rather
 than chosen: handed an unbundled project, Deno Deploy caches the dependency
@@ -193,6 +239,20 @@ reason is ordering rather than a missing marker: `deno deploy` uploads a
 directory whose build finished on your machine before the upload command ran.
 Nitro has the identical hole and answers it the same way, passing
 `NITRO_PRESET=deno_deploy` explicitly in its own docs.
+
+**The Deno entry DRAINS on `SIGINT`/`SIGTERM`**, which for a long time only the
+Modal entry did — a gap rather than a decision, since Deno Deploy stops a
+deployment on the same events Modal stops a container on, and for a voice agent
+that is a live call losing its socket instead of its session. It is one shared
+constant now (`TARGET_DRAIN_SOURCE`), interpolated into both long-lived
+entries, so the next one does not get to rediscover it; Nitro has no such
+asymmetry because every long-lived preset it ships serves through srvx, which
+closes on both signals, with `setupCloseHooks` hanging the framework's own
+teardown off that single path. Registration is wrapped in a `try`, because
+signal support is a property of the HOST: Deno routes `process.on("SIGTERM")`
+through `Deno.addSignalListener`, which throws where the platform has no signal
+to deliver, and a throw at the top level of the entry is a deployment that does
+not boot at all.
 
 **The output also carries a `deno.json`** with a `start` task, so the directory
 describes how to run itself and no command against it has to re-supply
@@ -231,6 +291,13 @@ A/B'd: removing the client directory from the deployed copy fails the suite,
 where the `/health`-only version passed. The driver fences its JSON between
 sentinels because booting the server writes a banner to stdout — which is why
 the old assertion was a `toContain("200")` that a banner could satisfy.
+
+**It also has the Modal suite's SIGTERM twin**, and that is worth running in
+both places rather than once: the drain is one shared source, but whether a
+signal ARRIVES is a property of the runtime — Deno routes
+`process.on("SIGTERM")` through `Deno.addSignalListener`, so this is the only
+thing in the repo that says the handler is reached under Deno rather than under
+Node.
 
 **`--target modal` emits a self-contained directory AND an `app.py`**, and
 that second file is what makes it differ in KIND from the other three. Every

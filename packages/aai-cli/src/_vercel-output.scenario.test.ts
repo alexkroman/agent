@@ -24,10 +24,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
-import { VERCEL_ENTRY_SOURCE, VERCEL_FUNCTION_DIR } from "./_build-target.ts";
 import { bundleTargetEntry } from "./_target-bundle.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 import { emitVercelOutput } from "./_vercel-output.ts";
+import { VERCEL_ENTRY_SOURCE, VERCEL_FUNCTION_DIR } from "./_vercel-target.ts";
 
 const run = promisify(execFile);
 

@@ -20,13 +20,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import {
-  DENO_CONFIG_FILE,
-  DENO_ENTRY_FILE,
-  DENO_OUTPUT_DIR,
-  MODAL_APP_FILE,
-} from "./_build-target.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
+import { DENO_CONFIG_FILE, DENO_ENTRY_FILE, DENO_OUTPUT_DIR } from "./_deno-target.ts";
+import { MODAL_APP_FILE } from "./_modal-target.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 const STUB = "// bundled entry\n";

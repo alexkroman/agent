@@ -15,19 +15,19 @@
  * `defaultClientDir()` on a `require.resolve` with nothing to answer it.
  */
 
-import { execFile, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
+import { emitDenoOutput } from "./_deno-output.ts";
 import {
   DENO_CONFIG_FILE,
   DENO_ENTRY_FILE,
   DENO_ENTRY_SOURCE,
   DENO_OUTPUT_DIR,
-} from "./_build-target.ts";
-import { emitDenoOutput } from "./_deno-output.ts";
+} from "./_deno-target.ts";
 import { bundleTargetEntry } from "./_target-bundle.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 
@@ -139,6 +139,22 @@ describe("the bundled Deno entry", () => {
   }, 120_000);
 });
 
+/**
+ * The emitted directory copied to a SIBLING of the project, never a child, and
+ * that is the whole validity of these tests. Copied to `<project>/deployed`
+ * the boot case passed with the client copy REMOVED — module resolution walks
+ * UP, so it found the project's own `node_modules` and the "no node_modules"
+ * claim was false. A/B'd both ways; only the sibling reproduces a deployment.
+ */
+async function deployedCopy(dir: string): Promise<string> {
+  const deployed = await fs.mkdtemp(path.join(os.tmpdir(), "aai_deno_deployed_"));
+  await fs.cp(path.join(dir, DENO_OUTPUT_DIR), deployed, { recursive: true });
+  onTestFinished(async () => {
+    await fs.rm(deployed, { recursive: true, force: true });
+  });
+  return deployed;
+}
+
 describeWithDeno("the emitted Deno output, run under Deno", () => {
   test("boots from a directory with no node_modules", async () => {
     await withTempDir(
@@ -153,16 +169,7 @@ describeWithDeno("the emitted Deno output, run under Deno", () => {
         ) as { tasks?: Record<string, string> };
         expect(task.tasks?.start).toContain(DENO_ENTRY_FILE);
 
-        // A SIBLING of the project, never a child, and that is the whole
-        // validity of this test. Copied to `<project>/deployed` it passed with
-        // the client copy REMOVED — module resolution walks UP, so it found the
-        // project's own `node_modules` and the "no node_modules" claim was
-        // false. A/B'd both ways; only the sibling reproduces a deployment.
-        const deployed = await fs.mkdtemp(path.join(os.tmpdir(), "aai_deno_deployed_"));
-        await fs.cp(path.join(dir, DENO_OUTPUT_DIR), deployed, { recursive: true });
-        onTestFinished(async () => {
-          await fs.rm(deployed, { recursive: true, force: true });
-        });
+        const deployed = await deployedCopy(dir);
 
         // Three routes rather than one, because BOOTING is not the claim —
         // serving out of this layout is. `/health` was all this asserted, and
@@ -220,6 +227,47 @@ process.exit(0);
         // resolves it with no `node_modules` to answer `defaultClientDir()`.
         expect(probes.get("/")?.status).toBe(200);
         expect(probes.get("/")?.body).toContain("<html");
+      }),
+    );
+  }, 120_000);
+
+  test("closes the server on SIGTERM instead of dropping the process", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await builtProject(dir);
+        await emitDenoOutput(dir);
+        const deployed = await deployedCopy(dir);
+
+        // The Modal suite's twin, and the reason it is worth running twice:
+        // the drain is one shared source, but whether a signal ARRIVES is a
+        // property of the runtime. Deno routes `process.on("SIGTERM")` through
+        // `Deno.addSignalListener`, so this is the only thing in the repo that
+        // says the handler is reached under Deno rather than under Node — and
+        // a zero exit is what says the server closed rather than the process
+        // being killed with live sessions still open.
+        const child = spawn("deno", ["run", "-A", path.join(deployed, DENO_ENTRY_FILE)], {
+          cwd: deployed,
+          env: { ...process.env, PORT: "8792", ASSEMBLYAI_API_KEY: "scenario-test-key" },
+          stdio: "ignore",
+        });
+        onTestFinished(() => {
+          if (child.exitCode === null) child.kill("SIGKILL");
+        });
+
+        // `vi.waitFor`, never a hand-rolled poll: a bare loop over `fetch` to
+        // a closed port spins as fast as the connection is refused.
+        await vi.waitFor(
+          async () => {
+            expect((await fetch("http://127.0.0.1:8792/health")).ok).toBe(true);
+          },
+          { timeout: 30_000, interval: 100 },
+        );
+
+        const exit = new Promise<number | null>((resolve) => {
+          child.once("exit", (code) => resolve(code));
+        });
+        child.kill("SIGTERM");
+        expect(await exit).toBe(0);
       }),
     );
   }, 120_000);

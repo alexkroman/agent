@@ -26,7 +26,7 @@ import {
   DENO_ENTRY_FILE,
   DENO_ENTRY_SOURCE,
   DENO_OUTPUT_DIR,
-} from "./_build-target.ts";
+} from "./_deno-target.ts";
 import { type EmitSelfContainedOptions, emitSelfContainedOutput } from "./_target-output.ts";
 
 /** Options for {@link emitDenoOutput}. */

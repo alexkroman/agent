@@ -27,9 +27,23 @@
  * is genuinely running on that host — a laptop sets none of them and gets
  * {@link DEFAULT_BUILD_TARGET}, which emits nothing extra and is what every
  * existing project already does.
+ *
+ * ## What is here, and what is one module over
+ *
+ * This file is the VOCABULARY: which targets exist, which one this build is,
+ * and — through {@link TARGET_OUTPUTS} — what each produced and how it ships.
+ * Each host's own constants and emitted sources live beside it, one module per
+ * host (`_vercel-target.ts`, `_deno-target.ts`, `_modal-target.ts`), which is
+ * the shape Nitro's `presets/<provider>/` has and the shape this file grew out
+ * of: it held all three and went over the 500-line cap. The dependency runs one
+ * way — this module reads each host's output directory, and no host module
+ * reads this one — so a fourth target is a fourth file plus two lines here.
  */
 
 import path from "node:path";
+import { DENO_OUTPUT_DIR } from "./_deno-target.ts";
+import { MODAL_APP_FILE, MODAL_OUTPUT_DIR } from "./_modal-target.ts";
+import { VERCEL_OUTPUT_DIR } from "./_vercel-target.ts";
 
 /** The targets `aai build --target` accepts. */
 export const BUILD_TARGETS = ["node", "vercel", "deno", "modal"] as const;
@@ -52,6 +66,15 @@ export const DEFAULT_BUILD_TARGET: BuildTarget = "node";
  * `VERCEL` is set for every Vercel build and deployment. Detection is per host
  * rather than a single "am I in CI" test, because a GitHub Action building a
  * container image is CI too and wants the default.
+ *
+ * **Three keys for Vercel, not one**, and they are the three `std-env` tests —
+ * the library Nitro detects providers with, and which this file already cites
+ * for the Deno pair below. `VERCEL_ENV` is the variable Vercel's own docs point
+ * at for "which environment is this" and is present wherever `VERCEL` is;
+ * `NOW_BUILDER` is set on the BUILD container and predates both, so it is the
+ * one a legacy or a `vercel build` invocation may carry alone. Reading one key
+ * for a host that advertises itself with three is the same hole the Deno pair
+ * below was found to have, one platform generation earlier.
  *
  * `DENO_DEPLOY` and `DENO_DEPLOYMENT_ID` are both Deno Deploy's "you are
  * running here" variables, and BOTH are listed because neither one covers both
@@ -100,6 +123,8 @@ export const DEFAULT_BUILD_TARGET: BuildTarget = "node";
  */
 export const TARGET_ENV_MARKERS: Readonly<Record<string, BuildTarget>> = {
   VERCEL: "vercel",
+  VERCEL_ENV: "vercel",
+  NOW_BUILDER: "vercel",
   DENO_DEPLOY: "deno",
   DENO_DEPLOYMENT_ID: "deno",
 };
@@ -134,334 +159,67 @@ export function resolveBuildTarget(
 }
 
 /**
- * Where a PREBUILT Vercel deployment lives, relative to the project root.
+ * What one target's emit produces, and the commands that run it.
  *
- * The Build Output API rather than an `api/` entry plus a `vercel.json`, and
- * the reason is ORDERING. Vercel reads `vercel.json` and decides what to build
- * BEFORE it runs the build command, so a `vercel.json` that the build WRITES
- * configures the NEXT deployment and not this one — a clean clone deploys with
- * no rewrite and no function at all. The `api/` shape only ever appeared to
- * work because a previous local `aai build --target vercel` had left both
- * files in the working tree, which is a property of one laptop rather than of
- * the repository. `.vercel/output/` is read AFTER the build command; it is the
- * only place a build can describe its own deployment.
+ * Nitro's presets each carry a `commands: { preview, deploy }` pair, which it
+ * writes into the build output's own `nitro.json` and prints after a build
+ * ("You can deploy this build using …"). The reason to copy that shape rather
+ * than keep the strings at the log site is what it fixes here: the Vercel
+ * target printed the DIRECTORY it wrote and never the command that ships it, so
+ * the one target reachable with no flag at all was also the one that told you
+ * nothing about what to do next. A target that emits an artifact nobody knows
+ * how to deploy has emitted nothing.
  *
- * Two more things fall out of owning the directory, both of which the `api/`
- * shape got wrong and could not fix. The function bundle is ASSEMBLED here
- * rather than traced, so `.aai/worker.mjs` — loaded through a dynamic
- * `import(pathToFileURL(...))` that no static tracer can follow — and
- * `.env.example` — the file that DECLARES which variables become `ctx.env` —
- * are present because they were copied in. And the built client is served by
- * the CDN out of `static/` instead of through the function.
- *
- * Nitro's vercel preset is the worked precedent and lands in exactly here:
- * `output.dir = {{rootDir}}/.vercel/output`, `serverDir` a `.func` under it.
- *
- * @see https://vercel.com/docs/build-output-api/v3
+ * Data rather than a `case` arm per target for the ordinary reason: this is a
+ * total record over {@link BuildTarget}, so a new target cannot be added
+ * without answering both questions, where a `log.info` inside a switch can be
+ * — and was — simply left out.
  */
-export const VERCEL_OUTPUT_DIR = path.join(".vercel", "output");
-
-/**
- * The one function every request that is not a static file reaches.
- *
- * The Build Output API derives a function's ROUTE from its path, so the
- * directory name IS a URL and must not collide with one the static output
- * claims. **`index.func` collides**, which a deployment is the only way to
- * find out: it is served at `/index`, and Vercel's directory index resolves
- * `/` to the extensionless `/index` — so the function won `/`, every other
- * asset came off the CDN correctly, and the home page 500'd on a deployment
- * whose static output was perfect. Measured on a real preview:
- * `/favicon.ico`, `/index.html` and both hashed `/assets/*` returned 200
- * while `/` and `/index` did not.
- *
- * `__server` is Nitro's answer to the same problem (`__server.func`) and the
- * reason is this one: a double-underscore prefix is not a path any bundler
- * emits, so no static file can ever take the name.
- */
-export const VERCEL_FUNCTION_DIR = path.join(VERCEL_OUTPUT_DIR, "functions", "__server.func");
-
-/**
- * The route {@link VERCEL_FUNCTION_DIR} is served at — its directory name
- * without `.func`, which is how the Build Output API names a function.
- */
-export const VERCEL_FUNCTION_ROUTE = "/__server";
-
-/** Static assets the Vercel CDN serves directly, never reaching the function. */
-export const VERCEL_STATIC_DIR = path.join(VERCEL_OUTPUT_DIR, "static");
-
-/**
- * Node versions Vercel offers. A build on anything newer picks the newest of
- * these rather than naming a runtime the platform will reject.
- *
- * @see https://vercel.com/docs/functions/runtimes/node-js/node-js-versions
- */
-const SUPPORTED_NODE_MAJORS = [20, 22, 24] as const;
-
-/** `nodejs<major>.x` for the Node running this build, clamped to what Vercel offers. */
-export function vercelNodeRuntime(version: string = process.versions.node): string {
-  const major = Number.parseInt(version.split(".")[0] ?? "", 10);
-  const supported = Number.isNaN(major)
-    ? 22
-    : (SUPPORTED_NODE_MAJORS.findLast((v) => v <= major) ?? SUPPORTED_NODE_MAJORS[0]);
-  return `nodejs${supported}.x`;
+export interface TargetOutput {
+  /**
+   * Where the emit lands, relative to the project root. Absent for a target
+   * that writes nothing beyond the worker and the client.
+   */
+  readonly dir?: string;
+  /**
+   * Run this deployment locally, the way the host runs it. Absent where there
+   * is no honest answer: Vercel's function is invoked by a platform launcher
+   * that nothing local reproduces, and offering `vercel dev` — which rebuilds
+   * from source and ignores `.vercel/output/` — would be pointing a user at a
+   * different program than the one they just built.
+   */
+  readonly preview?: string;
+  /** Ship what was just emitted. */
+  readonly deploy?: string;
 }
 
 /**
- * The Vercel function entry, emitted into {@link VERCEL_FUNCTION_DIR}.
+ * Every target's output and commands.
  *
- * ## Why a `(req, res)` handler and not `export default server`
- *
- * `export default <http.Server>` is what Vercel's own `@vercel/node` BUILDER
- * accepts, and it is the shape the previous `api/index.mjs` used. The Build
- * Output API has no builder in the path: `launcherType: "Nodejs"` invokes the
- * module's default export as a request handler, so the server never gets
- * bound and there is nothing to raise an `upgrade` event on it.
- *
- * ## How a WebSocket survives that
- *
- * Vercel hands a Node function the raw upgrade through its PER-REQUEST
- * context — `globalThis[Symbol.for("@vercel/request-context")].get()
- * .upgradeWebSocket()` returns the `{ req, socket, head }` triple — rather
- * than as an event. Nitro reaches it through `crossws/adapters/vercel`; here
- * the adapter is three lines, because {@link AgentServer.node} is a real
- * `http.Server` that already has both an `upgrade` and a `request` listener
- * registered. Re-emitting onto it is the whole translation, and it means the
- * deployed path through `server.ts` is the same one `aai dev` and `aai start`
- * take — no second WebSocket entry point to keep in step.
- *
- * The `204` afterwards is what the launcher needs to consider the invocation
- * finished; the socket the agent is now talking on is not this `res`.
- *
- * ## `import.meta.dirname`, not `process.cwd()`
- *
- * The function's working directory belongs to the platform, but `.aai/` and
- * `.env.example` were copied in BESIDE this file. Resolving from the module
- * keeps that a fact about the bundle rather than about how Vercel happens to
- * invoke it.
+ * The two directory-shaped hosts get a `cd` rather than a path argument,
+ * because that is what their tooling takes: `deno deploy` uploads the WORKING
+ * directory (see {@link DENO_OUTPUT_DIR}), so running it from the project root
+ * would upload the project. Nitro's `deno-deploy` preset writes its command
+ * with the same `cd`.
  */
-export const VERCEL_ENTRY_SOURCE = `// Generated by \`aai build --target vercel\` — do not edit, and do not commit.
-// Vercel invokes this handler per request and delivers a WebSocket upgrade
-// through its request context. See @alexkroman1/aai-cli/start.
-import { createProjectServer } from "@alexkroman1/aai-cli/start";
-
-const server = (await createProjectServer({ cwd: import.meta.dirname })).node;
-
-const REQUEST_CONTEXT = Symbol.for("@vercel/request-context");
-
-export default function handler(req, res) {
-  if (req.method === "GET" && req.headers.upgrade?.toLowerCase() === "websocket") {
-    const upgrade = globalThis[REQUEST_CONTEXT]?.get?.()?.upgradeWebSocket?.();
-    if (upgrade) {
-      server.emit("upgrade", upgrade.req, upgrade.socket, upgrade.head);
-      if (!res.headersSent && !res.writableEnded) {
-        res.statusCode = 204;
-        res.end();
-      }
-      return;
-    }
-  }
-  server.emit("request", req, res);
-}
-`;
-
-/**
- * `.vc-config.json` — how the platform runs {@link VERCEL_ENTRY_SOURCE}.
- *
- * `supportsResponseStreaming` is not optional here: an agent streams TTS audio
- * and SSE workflow events, and without it the platform buffers a response to
- * completion, which for a stream that ends when the call does means it never
- * arrives. `shouldAddHelpers` stays off — the entry speaks `node:http`, and
- * the helpers exist to bolt Express-shaped sugar onto a handler that does not.
- */
-export function vercelFunctionConfigSource(runtime: string = vercelNodeRuntime()): string {
-  return `${JSON.stringify(
-    {
-      runtime,
-      handler: "index.mjs",
-      launcherType: "Nodejs",
-      shouldAddHelpers: false,
-      supportsResponseStreaming: true,
-    },
-    null,
-    2,
-  )}\n`;
-}
-
-/**
- * `config.json` — the routing table, and the reason static assets stop paying
- * for a function invocation.
- *
- * `{ "handle": "filesystem" }` serves anything present in
- * {@link VERCEL_STATIC_DIR} from the CDN and only then falls through, so the
- * client bundle, its assets and the worklets are edge-served while
- * `/client-config`, `/websocket`, `/workflows/*` and the webhook route reach
- * the agent. The `api/` shape routed EVERY request through the function, which
- * this file's earlier revision noted as deliberate and "not what makes a
- * deployment work or not" — true of correctness, false of cost, and free here
- * because the Build Output API already separates the two directories.
- */
-export const VERCEL_BUILD_CONFIG_SOURCE = `${JSON.stringify(
-  {
-    version: 3,
-    routes: [{ handle: "filesystem" }, { src: "/(.*)", dest: VERCEL_FUNCTION_ROUTE }],
+export const TARGET_OUTPUTS: Readonly<Record<BuildTarget, TargetOutput>> = {
+  // Nothing is emitted, so there is nothing to name — `aai start` boots the
+  // worker `aai build` already wrote, which is what the scaffold's own `start`
+  // script runs and what a container platform is pointed at.
+  node: { preview: "aai start" },
+  vercel: { dir: VERCEL_OUTPUT_DIR, deploy: "vercel deploy --prebuilt" },
+  deno: {
+    dir: DENO_OUTPUT_DIR,
+    // The `start` task {@link DENO_CONFIG_SOURCE} writes — which is the whole
+    // reason that file is emitted, so the command that uses it belongs here.
+    preview: `cd ${DENO_OUTPUT_DIR} && deno task start`,
+    deploy: `cd ${DENO_OUTPUT_DIR} && deno deploy`,
   },
-  null,
-  2,
-)}\n`;
-
-/**
- * Where a self-contained Deno deployment is emitted, relative to the project.
- *
- * A DIRECTORY to deploy rather than files scattered through the project, and
- * `deno deploy` from inside it uploads exactly this and nothing else. That
- * matters more here than it does on Vercel: Deploy uploads the working
- * directory, so an emit into the project root would ship `node_modules`, the
- * source, and the developer's `.env` alongside the thing meant to run.
- */
-export const DENO_OUTPUT_DIR = path.join(".aai", "deno");
-
-/** The bundled entry inside {@link DENO_OUTPUT_DIR}, and Deploy's entrypoint. */
-export const DENO_ENTRY_FILE = "server.mjs";
-
-/** Deno's own project file inside {@link DENO_OUTPUT_DIR}. */
-export const DENO_CONFIG_FILE = "deno.json";
-
-/**
- * The `deno.json` written beside the entry, so the output DESCRIBES how to run
- * itself.
- *
- * Without it every command against this directory has to re-supply the
- * entrypoint — `deno deploy --entrypoint server.mjs`, `deno run -A server.mjs`
- * — which is a fact about the emit that the emit already knows and the user has
- * to remember. Nitro's `deno-server` preset writes the same file for the same
- * reason (its `compiled` hook, a `tasks.start`), and its own test suite then
- * runs a bare `deno task start`.
- *
- * `-A` rather than a narrowed permission set, and that is deliberate: the
- * server binds a port, reads the client directory and the worker off disk, and
- * reads the environment, so an enumerated list here would be a second
- * declaration of the runtime's needs that drifts the first time one changes.
- * Deno Deploy grants its own permissions regardless; this file is what makes
- * the directory runnable BY HAND, which is how a failed deployment gets
- * diagnosed.
- */
-export const DENO_CONFIG_SOURCE = `${JSON.stringify(
-  { tasks: { start: `deno run -A ./${DENO_ENTRY_FILE}` } },
-  null,
-  2,
-)}\n`;
-
-/**
- * The Deno entry, bundled into {@link DENO_ENTRY_FILE}.
- *
- * ## Why this BINDS, where the Vercel entry does not
- *
- * Deno Deploy runs a long-lived process and expects it to listen, which is the
- * ordinary `aai start` shape rather than the serverless one — so this is the
- * only target whose entry calls `listen()`. There is no `(req, res)` adapter
- * and no upgrade translation: `node:http` and the `ws` server path both work
- * on Deno, so the session reaches the same `AgentServer` that `aai dev` and
- * `aai start` run. Verified against a live deployment with real speech: 74
- * audio frames back, transcript and reply intact.
- *
- * `0.0.0.0`, not the loopback default: the platform reaches this from outside
- * the process, so binding loopback answers nothing.
- *
- * `import.meta.dirname` rather than `process.cwd()` — the artifacts are copied
- * in BESIDE this file, and the working directory belongs to the platform.
- *
- * `globalThis.Deno?.env` rather than `Deno.env`: this file is bundled by a
- * Node-side build and is read by Node tooling (its own spec included), where a
- * bare `Deno` is a `ReferenceError` at parse-adjacent evaluation time.
- */
-export const DENO_ENTRY_SOURCE = `// Generated by \`aai build --target deno\` — do not edit, and do not commit.
-// Deno Deploy runs this as a long-lived process and expects it to listen.
-// See @alexkroman1/aai-cli/start.
-import { createProjectServer } from "@alexkroman1/aai-cli/start";
-
-const server = await createProjectServer({ cwd: import.meta.dirname });
-
-await server.listen(Number(globalThis.Deno?.env.get("PORT") ?? 8000), "0.0.0.0");
-`;
-
-/**
- * Where a self-contained Modal deployment is emitted, relative to the project.
- *
- * A directory, for the reason {@link DENO_OUTPUT_DIR} is one and then some: the
- * emitted `app.py` hands this path to Modal's `add_local_dir`, which uploads
- * the tree wholesale into the image. Pointed at the project root that would
- * bake `node_modules`, the source and the developer's `.env` into a container
- * image — and an image layer is not something you can un-push.
- */
-export const MODAL_OUTPUT_DIR = path.join(".aai", "modal");
-
-/** The bundled server inside {@link MODAL_OUTPUT_DIR}, spawned by `app.py`. */
-export const MODAL_ENTRY_FILE = "server.mjs";
-
-/** The Modal app definition inside {@link MODAL_OUTPUT_DIR} — what `modal deploy` reads. */
-export const MODAL_APP_FILE = "app.py";
-
-/**
- * The port the node process binds and Modal proxies to.
- *
- * ONE constant, interpolated into both files the emit writes, because the two
- * halves cannot be allowed to disagree: `@modal.web_server(port=…)` is how the
- * platform learns where to route, and a node process reading a different number
- * from its environment listens where nothing is routed. The symptom is a
- * deployment that builds, starts, reports healthy, and answers no request —
- * Modal's proxy simply never connects.
- */
-export const MODAL_PORT = 8000;
-
-/**
- * The Modal entry, bundled into {@link MODAL_ENTRY_FILE}.
- *
- * ## The same binding shape as Deno, for a different host
- *
- * `@modal.web_server` runs a container command and proxies HTTP *and*
- * WebSocket traffic to a port that command opens, so this is the long-lived
- * `aai start` shape rather than the serverless one — `listen()`, `0.0.0.0`
- * (the proxy reaches this from outside the process), and artifacts resolved
- * from {@link MODAL_ENTRY_FILE}'s own directory rather than from a working
- * directory the platform owns. It is NOT shared with
- * {@link DENO_ENTRY_SOURCE}: the two differ in how the port is read and in
- * whether they drain, which is the whole body, so a shared constant would be a
- * template with a hole where each host's contract goes.
- *
- * ## Why this one DRAINS, where the Deno entry does not
- *
- * Modal stops a container on every scale-in and every redeploy, which for a
- * voice agent is a live call being cut mid-sentence. `server.close()` shuts the
- * runtime down with it, so a signal that reaches this process ends sessions
- * rather than dropping sockets. Two things have to be true for that to fire,
- * and the other half is in `app.py`: Modal signals its own Python runtime, and
- * a child spawned with a bare `subprocess.Popen` receives nothing — the
- * platform's own deploy learned that when orphaned guest sandboxes billed ~20
- * minutes each on every release (see `run_node` in `scripts/modal_image.py`).
- *
- * The listeners are SYNCHRONOUS for the reason `executeStart` documents: an
- * `async` listener hands its promise to `process`, which discards it, so a
- * failed shutdown would surface as an unhandled rejection rather than a
- * non-zero exit.
- */
-export const MODAL_ENTRY_SOURCE = `// Generated by \`aai build --target modal\` — do not edit, and do not commit.
-// Modal runs this as a long-lived process behind \`@modal.web_server\`, which
-// proxies HTTP and WebSocket traffic to the port it binds.
-// See @alexkroman1/aai-cli/start.
-import { createProjectServer } from "@alexkroman1/aai-cli/start";
-
-const server = await createProjectServer({ cwd: import.meta.dirname });
-
-await server.listen(Number(process.env.PORT ?? ${MODAL_PORT}), "0.0.0.0");
-
-// app.py forwards the container's stop signal here and waits for this process
-// to go; closing the server ends live sessions instead of dropping sockets.
-for (const name of ["SIGINT", "SIGTERM"]) {
-  process.once(name, () => {
-    server.close().then(
-      () => process.exit(0),
-      () => process.exit(1),
-    );
-  });
-}
-`;
+  modal: {
+    dir: MODAL_OUTPUT_DIR,
+    // Modal is pointed at a MODULE rather than at a directory, so both of these
+    // name `app.py` — there is nothing in the directory to infer it from.
+    preview: `modal serve ${path.join(MODAL_OUTPUT_DIR, MODAL_APP_FILE)}`,
+    deploy: `modal deploy ${path.join(MODAL_OUTPUT_DIR, MODAL_APP_FILE)}`,
+  },
+};
