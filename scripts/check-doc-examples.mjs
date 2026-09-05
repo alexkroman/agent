@@ -113,49 +113,32 @@ const MARKDOWN_FILES = [
 ];
 
 /**
- * The DIRECTORY of studio prompt modules, plus the one that sits elsewhere.
+ * Prompt text the studio's coding agent treats as ground truth — a DIRECTORY,
+ * plus the one module that sits outside it.
  *
- * `packages/aai-studio-server/src/prompts/` exists so this corpus is a
- * directory listing rather than a hand-kept list, and the difference is the
- * failure the old list documented on itself: `studio-preamble-mode.ts` carried
- * no fence and was listed anyway, "so the first example added is checked rather
- * than discovered by a user" — which is a note saying the list has to be
- * remembered. A sixth prompt module written into that directory is checked
- * with no edit here.
- *
- * `MARKDOWN_FILES` above is floored at 8 by two gate specs that parse this
- * script; a resolved directory cannot be floored that way, so
- * {@link MIN_PROMPT_SOURCES} below does it here — a discovery change that stops matching the directory
- * would otherwise print the same checkmark, which is exactly what the corpus
- * floor further down exists to prevent for the fences themselves.
- *
- * `aai-guest/src/studio-chat.ts` stays named: it is the guest's HTTP chat
- * surface that happens to carry prompt text, not a prompt module, and it lives
- * in a different package.
- *
- * Fences arrive escaped (`\`\`\``), so the extractor unescapes before scanning.
+ * `src/prompts/` exists so this corpus is resolved rather than remembered. The
+ * hand-written list it replaced documented its own cost:
+ * `studio-preamble-mode.ts` carried no fence and was listed anyway, "so the
+ * first example added is checked rather than discovered by a user". Nothing
+ * floored it either, the way two gate specs floor `MARKDOWN_FILES` above at 8,
+ * so a fifth prompt module would have compiled under no gate —
+ * {@link MIN_PROMPT_SOURCES} is that floor, since a resolved directory cannot
+ * be parsed out of this file. `aai-guest/src/studio-chat.ts` stays named: the
+ * guest's HTTP chat surface, which carries prompt text without being a prompt
+ * module. Fences arrive escaped (`\`\`\``); the extractor unescapes first.
  */
 const PROMPT_DIR = "packages/aai-studio-server/src/prompts";
 const PROMPT_SOURCES = [
-  // Through `sourceFiles` (hoisted, below) rather than a `readdirSync` here,
-  // and the comment on that function is the reason: git already knows what is
-  // source, so `.gitignore` is honoured for free and `--others` still includes
-  // a prompt module added in the working tree but not yet committed. It also
-  // drops the co-located `*.test.ts` and survives a deletion in progress.
+  // `sourceFiles` (hoisted) rather than a `readdirSync`, for the reasons on
+  // that function: git honours `.gitignore`, `--others` still sees an uncommitted
+  // module, and it drops the co-located spec and a deletion in progress.
   ...sourceFiles(repo, PROMPT_DIR)
     .map((absolute) => path.relative(repo, absolute))
     .sort(),
   "packages/aai-guest/src/studio-chat.ts",
 ];
 
-/**
- * Floor on the prompt corpus, for the reason `MIN_EXAMPLES` has one.
- *
- * Four modules in `prompts/` plus the guest's chat surface; floored at the
- * count so a module LEAVING the directory is a decision somebody makes in this
- * file rather than a silent narrowing. Lower it deliberately, in the same
- * commit as the removal.
- */
+/** Four modules in `prompts/` plus the guest's chat surface. Lower it deliberately. */
 const MIN_PROMPT_SOURCES = 5;
 if (PROMPT_SOURCES.length < MIN_PROMPT_SOURCES) {
   console.error(
