@@ -3,7 +3,7 @@
 The `aai` command — scaffold, run, test, and publish aai voice agents.
 
 ```sh
-npm i -g @alexkroman1/aai-cli   # or: npx @alexkroman1/aai-cli@latest
+npm i -g @alexkroman1/aai-cli
 ```
 
 ## Commands
@@ -20,9 +20,12 @@ npm i -g @alexkroman1/aai-cli   # or: npx @alexkroman1/aai-cli@latest
 | `aai pull <project>` | Pull a studio project into a local directory, ready for `aai dev` |
 | `aai push` | Sync this project's source to its studio workspace (fast-forward-checked; `--force` overwrites) |
 | `aai publish` | Push, then deploy to production — the studio's Publish button from the terminal (`.env` syncs as agent secrets) |
+| `aai start` | Serve the built agent from a plain Node process — no platform account |
 | `aai delete` | Remove a deployed agent |
+| `aai login` | Link the account the CLI acts as |
 | `aai secret put\|delete\|list` | Manage a deployed agent's secrets |
-| `aai storage status\|enable\|disable` | Manage the agent's opt-in SQL database (`ctx.db`) |
+| `aai logs` | Read the deployed agent's log ring (`--follow` polls it) |
+| `aai workflow list\|runs\|show\|cancel` | Inspect the deployed agent's durable workflow runs |
 
 Every command accepts `--json` for machine-readable output (auto-detected
 when stdout is not a TTY). `aai <command> --help` shows flags.
@@ -43,9 +46,9 @@ coding agent), and `aai pull` brings those edits back to your machine.
 `push`/`pull` are fast-forward-only — an edit made in the studio since your
 last pull surfaces as a conflict instead of being overwritten.
 
-Publishes type-check the project locally, then build and deploy inside the
-project's sandbox — byte-for-byte the studio's Publish path — preflight
-required credentials, and print the agent's public URL.
+`aai publish` type-checks the project locally, then builds and deploys inside
+the project's sandbox — byte-for-byte the studio's Publish path. It preflights
+the credentials the agent declares, and prints the agent's public URL.
 
 ## Notes
 

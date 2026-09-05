@@ -4,9 +4,10 @@ Voice agent development kit. Define a voice agent as a TypeScript file,
 run it locally with a browser voice client, and deploy it with one command.
 
 ```sh
-npx @alexkroman1/aai-cli@latest init my-agent
+npm i -g @alexkroman1/aai-cli
+aai init my-agent
 cd my-agent
-npx aai dev
+aai dev
 ```
 
 `agent.ts` — the definition:

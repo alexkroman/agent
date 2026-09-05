@@ -35,6 +35,8 @@ npm run dev        # Run locally on http://localhost:3000 (opens browser)
 The \`aai\` CLI is a devDependency of this project, so it lives in
 \`node_modules/.bin\` rather than on your \`PATH\`. Run it through npm
 (\`npm run dev\`, \`npm test\`, \`npm run build\`) or with \`npx aai <command>\`.
+Installing it globally (\`npm i -g @alexkroman1/aai-cli\`) also works, and is
+what the project docs assume.
 
 ### The one key local development needs
 
