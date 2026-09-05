@@ -1,5 +1,25 @@
 # @alexkroman1/aai-runtime
 
+## 15.2.0
+
+### Minor Changes
+
+- 4986d01: Move OTLP span export into the runtime, so self-hosted and `aai dev` agents can point at a collector — not only the managed platform. The OpenTelemetry packages are optional peer dependencies loaded through a dynamic import, so nothing is installed or constructed unless a deployment enables tracing. Adds the `@alexkroman1/aai-runtime/tracing` subpath, and joins a model call to the request that caused it by forwarding W3C `traceparent` across the platform hop.
+- 0b81685: Publish the eval and workflow-test types that were referenced by public options and exported by nothing (`HostGenerateFn`, `EvalWorkflowEngineOptions`, `JournalStore` and its six records, `DeterminismKind`, `JournalConflictError`, `DEFAULT_RUN_TIMEOUT_MS`), and render `/eval`, `/eval/vitest` and `/testing` in the API reference.
+
+### Patch Changes
+
+- b890150: Load the six @ai-sdk provider packages and the Postgres driver on first use instead of at import.
+- Updated dependencies [1ecf911]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [b890150]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [31bec98]
+- Updated dependencies [b890150]
+- Updated dependencies [0666785]
+- Updated dependencies [55ddb0a]
+  - @alexkroman1/aai@15.2.0
+
 ## 15.1.0
 
 ### Patch Changes

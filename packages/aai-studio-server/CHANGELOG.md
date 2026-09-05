@@ -1,5 +1,33 @@
 # aai-studio-server
 
+## 0.11.13
+
+### Patch Changes
+
+- 0666785: `aai init` no longer copies the 120KB authoring guide into the project. A scaffolded `CLAUDE.md` is now a ~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` — the version-matched copy that ships in the SDK tarball, which the SDK's own skill has always named as the authoritative one.
+  
+  The copy it replaces could not be right. It froze at the moment `aai init` ran and went stale on the project's next `pnpm update @alexkroman1/aai`, which is what `AGENT_GUIDE.md` exists to fix; and Claude Code loads a project-root `CLAUDE.md` in full at launch against a documented 200-line target, so every session in a user's agent project paid ~30k tokens for 2,533 lines of guidance whose own publisher told agents to prefer the other file. Splitting it behind an `@import` would not have helped — imports are expanded at launch too — so the pointer names the path in a fence, the documented spelling for "mention, do not import", and an agent reads it on demand out of the tarball the project actually resolved.
+  
+  A scaffolded project is 21KB across 12 files instead of 136KB. Nothing else in `scaffold/` changed, a project's own `CLAUDE.md` still wins, and a template that ships one still has it copied — only the scaffold's guide is filtered.
+- Updated dependencies [b890150]
+- Updated dependencies [4986d01]
+- Updated dependencies [b890150]
+- Updated dependencies [1ecf911]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [b890150]
+- Updated dependencies [4986d01]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [31bec98]
+- Updated dependencies [b890150]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [0b81685]
+- Updated dependencies [0666785]
+- Updated dependencies [55ddb0a]
+  - @alexkroman1/aai-runtime@15.2.0
+  - aai-server@5.3.3
+  - @alexkroman1/aai@15.2.0
+  - aai-studio-client@0.6.26
+
 ## 0.11.12
 
 ### Patch Changes
