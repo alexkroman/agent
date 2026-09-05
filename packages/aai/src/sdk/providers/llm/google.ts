@@ -12,7 +12,7 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
-import type { ModelOptions } from "./model-options.ts";
+import type { ModelOptions } from "./shared/model-options.ts";
 
 export const GOOGLE_KIND = "google" as const;
 

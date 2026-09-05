@@ -28,7 +28,7 @@ const PAIRS: readonly (readonly [string, string, string])[] = [
   ["stepTranscribeUpload", "step-transcribe.ts", "stepTranscribeUploadOrFail"],
   ["stepTranscribePoll", "step-transcribe.ts", "stepTranscribePollOrFail"],
   ["stepTranscribeSubmit", "step-transcribe.ts", "stepTranscribeSubmitOrFail"],
-  ["sendToChannel", "channels/send.ts", "sendToChannelOrFail"],
+  ["sendToChannel", "channels/shared/send.ts", "sendToChannelOrFail"],
 ];
 
 const here = fileURLToPath(new URL(".", import.meta.url));

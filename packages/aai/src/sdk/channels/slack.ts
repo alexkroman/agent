@@ -41,7 +41,7 @@ import type {
   ChannelMessage,
   ChannelPayload,
   ChannelSection,
-} from "./channel-types.ts";
+} from "./shared/channel-types.ts";
 
 /** The `kind` tag on a Slack channel descriptor. */
 export const SLACK_CHANNEL_KIND = "slack";

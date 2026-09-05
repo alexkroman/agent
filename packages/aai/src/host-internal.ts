@@ -97,8 +97,13 @@ export {
   ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_KIND,
 } from "./sdk/providers/llm/assemblyai.ts";
-export { normalizeLlm } from "./sdk/providers/llm/from-string.ts";
 export { GATEWAY_API_KEY_ENV, GATEWAY_KIND } from "./sdk/providers/llm/gateway.ts";
+export { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "./sdk/providers/llm/google.ts";
+export { GROQ_API_KEY_ENV, GROQ_KIND } from "./sdk/providers/llm/groq.ts";
+export { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "./sdk/providers/llm/mistral.ts";
+export { OPENAI_API_KEY_ENV, OPENAI_KIND } from "./sdk/providers/llm/openai.ts";
+export { OPENROUTER_API_KEY_ENV, OPENROUTER_KIND } from "./sdk/providers/llm/openrouter.ts";
+export { normalizeLlm } from "./sdk/providers/llm/shared/from-string.ts";
 /**
  * The generated gateway catalog and its row type.
  *
@@ -112,12 +117,7 @@ export {
   ASSEMBLYAI_GATEWAY_MODELS,
   type GatewayModelInfo,
   gatewayModelIds,
-} from "./sdk/providers/llm/gateway-models.ts";
-export { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "./sdk/providers/llm/google.ts";
-export { GROQ_API_KEY_ENV, GROQ_KIND } from "./sdk/providers/llm/groq.ts";
-export { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "./sdk/providers/llm/mistral.ts";
-export { OPENAI_API_KEY_ENV, OPENAI_KIND } from "./sdk/providers/llm/openai.ts";
-export { OPENROUTER_API_KEY_ENV, OPENROUTER_KIND } from "./sdk/providers/llm/openrouter.ts";
+} from "./sdk/providers/llm/shared/gateway-models.ts";
 export { XAI_API_KEY_ENV, XAI_KIND } from "./sdk/providers/llm/xai.ts";
 export {
   ASSEMBLYAI_S2S_API_KEY_ENV,

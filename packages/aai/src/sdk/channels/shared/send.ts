@@ -32,12 +32,12 @@
  * author can see it.
  */
 
-import { stepFetch } from "../step-fetch.ts";
-import { isTransientStatus, retryAfter } from "../step-retry.ts";
-import { responseErrorMessage } from "../utils.ts";
+import { stepFetch } from "../../step-fetch.ts";
+import { isTransientStatus, retryAfter } from "../../step-retry.ts";
+import { responseErrorMessage } from "../../utils.ts";
+import { SLACK_CHANNEL_HANDLER } from "../slack.ts";
 import type { Channel, ChannelHandler, ChannelMessage, ChannelPayload } from "./channel-types.ts";
 import { ChannelDeliveryError } from "./channel-types.ts";
-import { SLACK_CHANNEL_HANDLER } from "./slack.ts";
 
 /**
  * A platform is not slow. A post that has not answered in 30s is not going to,

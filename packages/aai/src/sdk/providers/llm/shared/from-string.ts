@@ -12,9 +12,9 @@
  *   `ASSEMBLYAI_API_KEY` — the key every published agent already has.
  */
 
-import type { LlmProvider } from "../../providers.ts";
-import { assemblyAILlm } from "./assemblyai.ts";
-import { gatewayLlm } from "./gateway.ts";
+import type { LlmProvider } from "../../../providers.ts";
+import { assemblyAILlm } from "../assemblyai.ts";
+import { gatewayLlm } from "../gateway.ts";
 
 /**
  * One descriptor per model id, so repeated desugaring of the same string

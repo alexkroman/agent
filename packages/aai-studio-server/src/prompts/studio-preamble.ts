@@ -17,10 +17,10 @@
  * them and says why those five and no others).
  */
 
+import type { ProjectKind } from "../studio-project-kind.ts";
+import { sdkSpecifiers } from "../studio-sdk-exports.ts";
 import { PREAMBLE_MODES } from "./studio-preamble-mode.ts";
 import { STUDIO_SDK_GUIDANCE } from "./studio-preamble-sdk.ts";
-import type { ProjectKind } from "./studio-project-kind.ts";
-import { sdkSpecifiers } from "./studio-sdk-exports.ts";
 
 /**
  * The importable-subpath rule, read from the SDK's own exports map so it can't

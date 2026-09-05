@@ -73,15 +73,15 @@ export {
   assemblyAILlm,
 } from "./llm/assemblyai.ts";
 export { type GatewayLlmOptions, gatewayLlm } from "./llm/gateway.ts";
-export type { AssemblyAIGatewayModel } from "./llm/gateway-models.ts";
 export { type GoogleLlmOptions, googleLlm } from "./llm/google.ts";
 export { type GroqLlmOptions, groqLlm } from "./llm/groq.ts";
 export { type MistralLlmOptions, mistralLlm } from "./llm/mistral.ts";
-export type { ModelOptions } from "./llm/model-options.ts";
 export { type OpenAILlmOptions, openAILlm } from "./llm/openai.ts";
 export {
   OPENROUTER_BASE_URL,
   type OpenRouterLlmOptions,
   openRouterLlm,
 } from "./llm/openrouter.ts";
+export type { AssemblyAIGatewayModel } from "./llm/shared/gateway-models.ts";
+export type { ModelOptions } from "./llm/shared/model-options.ts";
 export { type XAILlmOptions, xAILlm } from "./llm/xai.ts";

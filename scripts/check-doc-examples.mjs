@@ -113,24 +113,41 @@ const MARKDOWN_FILES = [
 ];
 
 /**
- * Prompt modules whose template literals embed markdown with code fences —
- * prompt text the studio's coding agent treats as ground truth (the main
- * studio guide is the scaffold CLAUDE.md above; these carry the rest, e.g.
- * the fallback guide). Fences arrive escaped (`\`\`\``), so the extractor
- * unescapes before scanning.
+ * Prompt text the studio's coding agent treats as ground truth — a DIRECTORY,
+ * plus the one module that sits outside it.
+ *
+ * `src/prompts/` exists so this corpus is resolved rather than remembered. The
+ * hand-written list it replaced documented its own cost:
+ * `studio-preamble-mode.ts` carried no fence and was listed anyway, "so the
+ * first example added is checked rather than discovered by a user". Nothing
+ * floored it either, the way two gate specs floor `MARKDOWN_FILES` above at 8,
+ * so a fifth prompt module would have compiled under no gate —
+ * {@link MIN_PROMPT_SOURCES} is that floor, since a resolved directory cannot
+ * be parsed out of this file. `aai-guest/src/studio-chat.ts` stays named: the
+ * guest's HTTP chat surface, which carries prompt text without being a prompt
+ * module. Fences arrive escaped (`\`\`\``); the extractor unescapes first.
  */
+const PROMPT_DIR = "packages/aai-studio-server/src/prompts";
 const PROMPT_SOURCES = [
-  // The main studio guide is the scaffold CLAUDE.md, covered above via
-  // MARKDOWN_FILES; these are the other modules that compose prompt text.
-  "packages/aai-studio-server/src/studio-prompt.ts",
-  "packages/aai-studio-server/src/studio-preamble.ts",
-  // The preamble's mode-dependent fragments (voice agent vs workflow app).
-  // Carries no fence today; listed because it is prompt text, so the first
-  // example added is checked rather than discovered by a user.
-  "packages/aai-studio-server/src/studio-preamble-mode.ts",
-  "packages/aai-studio-server/src/studio-preamble-sdk.ts",
+  // `sourceFiles` (hoisted) rather than a `readdirSync`, for the reasons on
+  // that function: git honours `.gitignore`, `--others` still sees an uncommitted
+  // module, and it drops the co-located spec and a deletion in progress.
+  ...sourceFiles(repo, PROMPT_DIR)
+    .map((absolute) => path.relative(repo, absolute))
+    .sort(),
   "packages/aai-guest/src/studio-chat.ts",
 ];
+
+/** Four modules in `prompts/` plus the guest's chat surface. Lower it deliberately. */
+const MIN_PROMPT_SOURCES = 5;
+if (PROMPT_SOURCES.length < MIN_PROMPT_SOURCES) {
+  console.error(
+    `check-doc-examples: found only ${PROMPT_SOURCES.length} prompt sources, expected at ` +
+      `least ${MIN_PROMPT_SOURCES}. Either ${PROMPT_DIR} stopped resolving, or prompt ` +
+      "modules were genuinely removed — in which case lower MIN_PROMPT_SOURCES deliberately.",
+  );
+  process.exit(1);
+}
 
 /**
  * Source files of one package, from git rather than a recursive `readdirSync`.

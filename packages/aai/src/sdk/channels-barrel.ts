@@ -66,7 +66,7 @@ export {
   type ChannelMessage,
   type ChannelPayload,
   type ChannelSection,
-} from "./channels/channel-types.ts";
+} from "./channels/shared/channel-types.ts";
 export {
   CHANNEL_POST_TIMEOUT_MS,
   explainChannelFailure,
@@ -74,7 +74,7 @@ export {
   registeredChannelKindNames,
   renderChannelPayload,
   sendToChannel,
-} from "./channels/send.ts";
+} from "./channels/shared/send.ts";
 export {
   escapeSlackMrkdwn,
   explainSlackChannelFailure,

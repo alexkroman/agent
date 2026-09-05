@@ -25,8 +25,8 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { createLogger } from "aai-server/logger";
+import { DEFAULT_PROJECT_KIND, type ProjectKind } from "../studio-project-kind.ts";
 import { studioPreamble } from "./studio-preamble.ts";
-import { DEFAULT_PROJECT_KIND, type ProjectKind } from "./studio-project-kind.ts";
 
 const log = createLogger("studio.prompt");
 

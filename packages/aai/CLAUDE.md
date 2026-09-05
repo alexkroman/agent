@@ -1398,7 +1398,7 @@ copying fields:
   (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) plus
   three author-only conveniences `agent()` normalizes away (`system` as an
   alias of `systemPrompt`, `llm` accepting a gateway model-id string —
-  `sdk/providers/llm/from-string.ts` — and `voice` desugaring to
+  `sdk/providers/llm/shared/from-string.ts` — and `voice` desugaring to
   `tts: assemblyAITts({ voice })`), instead
   of re-declaring it inline — the inline form is how `send` and `state`
   shipped as runtime-working but excess-property errors for authors

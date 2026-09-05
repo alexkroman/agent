@@ -75,7 +75,7 @@
     "packages/aai/src/sdk/tool-context.ts": 9
   },
   "rule25_channelMessageField": {
-    "packages/aai/src/sdk/channels/channel-types.ts": 29
+    "packages/aai/src/sdk/channels/shared/channel-types.ts": 29
   },
   "rule27_explicitDisposeCall": {
     "packages/aai-studio-server/src/studio-session-idle.ts": 1,

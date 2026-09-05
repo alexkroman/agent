@@ -25,7 +25,7 @@
 
 import { omitUndefined } from "../../omit-undefined.ts";
 import type { LlmProvider, ProviderCredentialOptions } from "../../providers.ts";
-import type { AssemblyAIGatewayModel } from "./gateway-models.ts";
+import type { AssemblyAIGatewayModel } from "./shared/gateway-models.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_LLM_KIND = "assemblyai" as const;
