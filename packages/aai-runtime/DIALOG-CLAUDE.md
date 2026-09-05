@@ -188,6 +188,7 @@ session takes one of those branches with knobs declared.
   out of `INERT_KNOBS` for that branch only — which is a transport-aware check,
   where today's is transport-blind.
 - **A dialog's deadline does not survive a process restart.** It is a
-  `setTimeout` in this process; a session that resumes onto a replacement process
-  re-arms from the state it hydrates into, with the elapsed window lost. Making it
-  durable means a wake hint beside the workflow one, which is its own change.
+  `setTimeout` in this process; a session that resumes onto a replacement
+  process re-arms from the state it hydrates into, with the elapsed window
+  lost. Making it durable means a wake hint beside the workflow one, which is
+  its own change.
