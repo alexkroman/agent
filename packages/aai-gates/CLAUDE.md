@@ -6,7 +6,7 @@ their own contracts. Nothing here is about the product. Nothing here ships.
 
 ## Why it is its own package
 
-These 28 suites lived in `aai-templates` for as long as they existed, which put
+These 29 suites lived in `aai-templates` for as long as they existed, which put
 7,700 lines of test about the REPOSITORY inside the package that holds the
 example agents — 265 lines of source against 8,846 lines of test, four of the
 files about templates and the rest about `ship.yml`.
@@ -44,13 +44,18 @@ it is the shape `aai-server`'s exports map is criticized for.
 ## A gate spec's SOURCES are shared; its assertions are not
 
 `_gate-support.ts` holds what every gate spec here reads and none of them owns:
-`GATE_WIRING` (the three files a gate must be NAMED in — `package.json`,
-`scripts/check.mjs`, `.github/workflows/check.yml`), `ERE_UNSUPPORTED` (the regex
-constructs POSIX ERE has no answer for, banned by both pattern-shipping gates),
-`repoPathOf` (a Vite glob key as a repo-relative path), `sole` (the one value a
-single-file glob resolved to), `byCodeUnit` (the explicit comparator the repo
-requires of anything a gate reads) and `numericConstant` (a cap read out of a
-gate script's source rather than restated). The wiring block alone stood in FIVE
+`GATE_WIRING` (the two files a gate must be NAMED in — `package.json` and
+`scripts/check.mjs`; `.github/workflows/check.yml` is deliberately NOT one, and
+re-adding it would fail for every gate at once — the argument is at the
+declaration, and `gate-wiring.test.ts` owns the CI half), `ERE_UNSUPPORTED` (the
+regex constructs POSIX ERE has no answer for, banned by both pattern-shipping
+gates), `repoPathOf` (a Vite glob key as a repo-relative path), `sole` (the one
+value a single-file glob resolved to), `byCodeUnit` (the explicit comparator the
+repo requires of anything a gate reads), `numericConstant` (a cap read out of a
+gate script's source rather than restated), `workflowJobs` + `bracketList` (a
+workflow's jobs, bounded by the next job KEY rather than by the name of whatever
+job follows) and `withoutYamlComments` (a workflow with its prose removed, so a
+`toContain` cannot find a step's explanation instead of the step). The wiring block alone stood in FIVE
 specs at seventeen lines each, differing only in the gate name the caller then
 asserts; `sole` replaced two dozen reads that spelled the globbed path TWICE,
 once for the transform and once to index the result — a pair that drifted would

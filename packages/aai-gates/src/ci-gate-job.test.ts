@@ -22,10 +22,9 @@
  * against — something green that checked nothing — sitting on the one check
  * protecting `main`, so it belongs here beside them rather than in a comment.
  *
- * It lives in aai-templates for the reason its sibling gate specs do: this
- * package already owns the tests for repo-level wiring, and `?raw` imports
- * reach the workflow with no node types, which this package's tsconfig has none
- * of.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  *
  * The parsing is deliberately not a YAML library. Five facts are read — the job
  * names, one `needs:` list, one shell loop, the `push:` branch list and the

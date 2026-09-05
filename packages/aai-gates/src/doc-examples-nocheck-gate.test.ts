@@ -32,9 +32,9 @@
  *     unclaimed headroom as a WARNING on purpose, and a spec demanding equality
  *     would turn "somebody made an example compile" into a red test.
  *
- * It lives in aai-templates for the reason its sibling gate specs do: this
- * package already owns the tests for repo-level scripts, and `?raw` imports
- * reach them with no node types, which this package's tsconfig has none of.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";

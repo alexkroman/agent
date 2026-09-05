@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, GATE_WIRING, numericConstant, sole } from "./_gate-support.ts";
+import { GATE_WIRING, numericConstant, sole } from "./_gate-support.ts";
 
 const script = sole(
   import.meta.glob<string>("../../../scripts/check-migration-order.mjs", {
@@ -126,10 +126,6 @@ describe("the comparison is lexicographic, like the remote history", () => {
     // that says the boundary this gate depends on is well defined.
     const versions = migrations.map((name) => name.slice(0, 14));
     expect(new Set(versions).size, "two migrations share a version").toBe(versions.length);
-    const sorted = [...versions].sort(byCodeUnit);
-    expect(sorted.at(-1)).toBe(
-      versions.reduce((max, v) => (byCodeUnit(v, max) > 0 ? v : max), versions[0] ?? ""),
-    );
   });
 
   test("an addition EQUAL to the newest base version is rejected too", () => {

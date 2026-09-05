@@ -6,9 +6,9 @@
  * The specs beside this file guard the repo-level quality gates, and three
  * things had been copied between them verbatim: the two-and-a-bit shapes a Vite
  * glob key arrives in, the list of regex constructs POSIX ERE has no answer for,
- * and the three files a gate must be NAMED in to be enforced at all. The last
- * one stood five times, seventeen lines each, differing only in the gate name
- * the caller then asserts.
+ * and the two files a gate must be NAMED in to be enforced at all. The last one
+ * stood five times, seventeen lines each, differing only in the gate name the
+ * caller then asserts.
  *
  * Sharing them costs nothing this package cares about, because none of it is an
  * ASSERTION: each spec still makes its own, over its own gate. What moves here

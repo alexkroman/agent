@@ -26,9 +26,9 @@
  * assertion with a floor (`toBeGreaterThanOrEqual(7)`). Hence the import, and
  * hence that floor.
  *
- * It lives in aai-templates for the reason the sibling gate specs do: this
- * package already owns the tests for repo-level scripts, and raw imports reach
- * them with no node types, which this package's tsconfig does not have.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
@@ -110,7 +110,7 @@ interface LineRule {
 }
 
 /**
- * Every source file in the repo, for rule 16's pathspec check below.
+ * Every source file in the repo, for the literal-path check below.
  *
  * `query: "?raw"` is deliberately absent — only the KEYS are read, so eagerly
  * loading a few hundred modules' contents would be pure cost.
@@ -433,10 +433,13 @@ describe("guard-invariants gate", () => {
     // either would have gone to `0 ✓` forever on a rename.
     // `guard-invariants-scopes.mjs` asserts as fact at both declarations that
     // this spec covers them; for rule 24 that sentence was false.
+    // A literal FILE: no glob magic, not an exclusion, and named down to its
+    // extension — which is what separates these lists from the bare directory
+    // pathspecs (`packages`, `scripts`) most rules carry.
+    const namesAFile = (path: string): boolean =>
+      !(path.includes("*") || path.startsWith(":!")) && path.endsWith(".ts");
     const literal = shippedRules.flatMap((rule) =>
-      rule.paths
-        .filter((path) => !path.includes("*") && !path.startsWith(":!") && path.endsWith(".ts"))
-        .map((path) => ({ id: rule.id, path })),
+      rule.paths.filter(namesAFile).map((path) => ({ id: rule.id, path })),
     );
     // The floor is over the DERIVATION, not over one rule: a filter that stopped
     // recognising literal paths would otherwise assert nothing over an empty

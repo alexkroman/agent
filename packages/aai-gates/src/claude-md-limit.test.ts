@@ -34,16 +34,16 @@
  * at launch, which is also why `aai init` writes a POINTER at the SDK copy as
  * a project's `CLAUDE.md` rather than copying this file into it.
  *
- * This lives in aai-templates because that package owns the documentation
- * shipped to users (the scaffold guide above), and because raw imports reach
- * the sibling guides with no node types — this package's tsconfig has none.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  * `pnpm check:claude-md` runs the same cap over `git ls-files` in
  * `scripts/check.mjs`, the pre-push hook, and the CI check job; the last test
  * here is what keeps the two from drifting apart.
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, numericConstant, repoPathOf, sole } from "./_gate-support.ts";
 
 /** The point past which an agent's context silently drops the remainder. */
 const HARD_LIMIT = 150_000;
@@ -159,11 +159,7 @@ describe("agent guide size", () => {
       }),
     );
     if (!script) throw new Error("scripts/check-claude-md.mjs not found");
-    const declared = script.match(/const MAX_CHARS = ([\d_]+)/)?.[1];
-    expect(declared, "scripts/check-claude-md.mjs no longer declares MAX_CHARS").toBeTypeOf(
-      "string",
-    );
-    expect(Number(declared?.replaceAll("_", ""))).toBe(BUDGET);
+    expect(numericConstant(script, "MAX_CHARS", "scripts/check-claude-md.mjs")).toBe(BUDGET);
 
     // And it warns BEFORE the cap. A guide gains a paragraph as a side effect
     // of shipping something else, so the author who trips the cap is never the
@@ -172,11 +168,12 @@ describe("agent guide size", () => {
     // state this warning exists to announce while there is still room to plan
     // the split. It is advisory by design, so nothing else would notice it
     // being deleted.
-    const ratio = Number(script.match(/const WARN_RATIO = ([\d.]+)/)?.[1]);
-    expect(
-      ratio,
-      "scripts/check-claude-md.mjs no longer declares WARN_RATIO",
-    ).toBeGreaterThanOrEqual(0.75);
+    // Through `numericConstant`, whose THROW is the load-bearing half: this read
+    // answered `Number(undefined)` on a renamed constant, and `NaN` fails the
+    // comparison below with a message about the ratio rather than about the
+    // declaration being gone.
+    const ratio = numericConstant(script, "WARN_RATIO", "scripts/check-claude-md.mjs");
+    expect(ratio).toBeGreaterThanOrEqual(0.75);
     expect(ratio).toBeLessThan(1);
     // Derived from the constant rather than a second hardcoded threshold.
     expect(script).toContain("MAX_CHARS * WARN_RATIO");

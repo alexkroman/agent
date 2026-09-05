@@ -45,6 +45,20 @@ const combined: string | undefined = sole(
 const api: string = combined ?? "";
 
 /**
+ * `API.md`'s lines, trimmed, for exact membership.
+ *
+ * Built once: the per-report check below asked `api.includes(line)` for each of
+ * 1,218 declarations against a 304 KB string, which was measured at 41ms — this
+ * file's whole assertion cost — against 2.4ms for the `Set`.
+ */
+const apiLines: ReadonlySet<string> = new Set(
+  api
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => line.trim()),
+);
+
+/**
  * The exported lines inside a report's ```ts fence, one per line.
  *
  * Deliberately a different parse from the script's: it takes the lines that
@@ -115,7 +129,11 @@ describe("API.md", () => {
   });
 
   test.each(entries)("$path made it into API.md", ({ path, declarations: lines }) => {
-    const missing = lines.filter((line) => !api.includes(line));
+    // Set membership, not `api.includes` — 1,218 substring scans of a 304 KB
+    // string, measured at 41ms against 2.4ms here and the whole of this file's
+    // assertion time. It is also the STRONGER claim: `includes` accepted a
+    // declaration that merely appeared as a substring of some longer line.
+    const missing = lines.filter((line) => !apiLines.has(line.trim()));
     expect(
       missing,
       `${missing.length} declaration(s) from ${path} are absent from API.md, ` +

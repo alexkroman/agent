@@ -14,9 +14,10 @@
  * derived from and the one a reader would otherwise have to grep instead.
  *
  * So this suite reads both files INDEPENDENTLY of the script and asserts the
- * index is exactly that JSON turned inside out. It lives in aai-templates for
- * the reason `api-surface-file.test.ts` does: raw imports reach the repo root,
- * and this package's tsconfig pulls in no node types.
+ * index is exactly that JSON turned inside out.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";

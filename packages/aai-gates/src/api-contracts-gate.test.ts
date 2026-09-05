@@ -22,9 +22,9 @@
  * because the assertions are about the SHAPE of a contract tree and a
  * second package would otherwise be unguarded by the guard.
  *
- * It lives in aai-templates for the same reason `api-surface-file.test.ts` and
- * `claude-md-limit.test.ts` do: raw imports reach the sibling packages and the
- * repo root, and this package's tsconfig pulls in no node types.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";

@@ -23,16 +23,16 @@
  * - the markdown config still declares the plugin and the module-per-file
  *   strategy, since losing either changes the artifact into something with the
  *   same name and a different shape;
- * - the gate is named in all three wiring files, and the generated tree is
+ * - the gate is named in both wiring files, and the generated tree is
  *   excluded from markdownlint.
  *
- * It lives in aai-templates for the reason the other gate specs do: this
- * package owns the documentation artifacts, and raw imports reach repo-root
- * files with no node types, which this package's tsconfig does not have.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
 
 /**
  * Floors for the COMMITTED tree, deliberately looser than the script's floors
@@ -91,8 +91,20 @@ const markdownlintConfig = sole(
   }),
 );
 
+/**
+ * Every committed markdown reference file, keyed by REPO PATH.
+ *
+ * Keyed once rather than converted back: `committed[`../../../${tts}`]` rebuilt
+ * the glob prefix by hand from a path that had just come OUT of `repoPathOf`,
+ * which is the spell-it-twice hazard that helper exists to remove — a prefix
+ * that drifted would read `undefined` and assert over an empty string.
+ */
+const committedByPath = new Map(
+  Object.entries(committed).map(([key, text]) => [repoPathOf(key), text]),
+);
+
 /** Repo-relative paths of every committed markdown reference file. */
-const committedPaths = Object.keys(committed).map(repoPathOf).sort();
+const committedPaths = [...committedByPath.keys()].sort(byCodeUnit);
 
 /** Every `exports` key of a package's manifest whose target declares `types`. */
 function typedSubpathsOf(pkg: string): { subpath: string; types: string }[] {
@@ -126,7 +138,7 @@ describe("the committed markdown API reference", () => {
     // and worth nothing.
     const tts = committedPaths.find((path) => path.endsWith("/tts.md"));
     expect(tts, `no tts.md among ${committedPaths.join(", ")}`).toBeTypeOf("string");
-    const text = committed[`../../../${tts}`];
+    const text = committedByPath.get(tts ?? "");
     expect(text).toContain("subpath barrel");
   });
 

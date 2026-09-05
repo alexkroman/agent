@@ -21,9 +21,11 @@
  * because the image is fetched at SPAWN time and not at deploy time.
  *
  * Deploy runs on no pull request, so nothing else reads this wiring before
- * production does. It lives in aai-templates because this package already owns
- * the tests for repo-level scripts and workflow wiring, and reaches them with
- * raw/eager imports.
+ * production does.
+ *
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";

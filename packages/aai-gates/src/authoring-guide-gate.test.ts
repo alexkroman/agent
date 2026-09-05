@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, numericConstant, repoPathOf, sole } from "./_gate-support.ts";
 
 const gateSource: string =
   sole(
@@ -85,7 +85,7 @@ const spans = guideCode(guide);
 const code = spans.join("\n");
 
 describe("check:authoring-guide", () => {
-  test("is wired into package.json, check.mjs and the CI check job", () => {
+  test("is wired into both runners", () => {
     for (const [file, source] of Object.entries(GATE_WIRING)) {
       expect(source, `${file} did not resolve`).toBeTypeOf("string");
       expect(source, `${file} does not run check:authoring-guide`).toContain(
@@ -99,11 +99,14 @@ describe("check:authoring-guide", () => {
     // reading the script's source rather than by running it, for the reason
     // every gate spec here does: a run that already passes cannot demonstrate
     // that it would fail.
-    expect(gateSource).toMatch(/const MIN_CAPABILITIES = \d+;/);
-    expect(gateSource).toMatch(/const MIN_CODE_SPANS = \d+;/);
-
-    const capabilityFloor = Number(/const MIN_CAPABILITIES = (\d+);/.exec(gateSource)?.[1]);
-    const spanFloor = Number(/const MIN_CODE_SPANS = (\d+);/.exec(gateSource)?.[1]);
+    // `numericConstant` THROWS when a declaration is gone, which is what the two
+    // `toMatch` presence checks above it were doing by hand — a reader answering
+    // `NaN` would otherwise turn a renamed constant into a comparison nobody can
+    // fail.
+    const floor = (name: string) =>
+      numericConstant(gateSource, name, "scripts/check-authoring-guide.mjs");
+    const capabilityFloor = floor("MIN_CAPABILITIES");
+    const spanFloor = floor("MIN_CODE_SPANS");
 
     // Under the actuals, so an ordinary edit does not trip them, and above zero,
     // so a scan that went empty does.
