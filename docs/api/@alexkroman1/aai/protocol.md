@@ -423,7 +423,7 @@ event(event:
      callId: string;
      name: string;
      result?: string;
-     status: "pending" | "done";
+     status: "done" | "pending";
   }[];
   type: "history.restored";
 }): void;
@@ -602,7 +602,7 @@ event the stream had already recorded under another.
      `callId`: `string`;
      `name`: `string`;
      `result?`: `string`;
-     `status`: `"pending"` \| `"done"`;
+     `status`: `"done"` \| `"pending"`;
   \}[];
   `type`: `"history.restored"`;
 \}
