@@ -25,10 +25,10 @@ import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 export const DEFAULT_MAX_DELIVERIES = 50;
 
 // @public
-type DeterminismKind = "now" | "random" | "uuid";
+export type DeterminismKind = "now" | "random" | "uuid";
 
 // @public
-type HookRecord = {
+export type HookRecord = {
     token: string;
     delivered: boolean;
     payload?: unknown;
@@ -36,7 +36,13 @@ type HookRecord = {
 };
 
 // @public
-type JournalStore = {
+export class JournalConflictError extends Error {
+    constructor(message: string);
+    static is(value: unknown): value is JournalConflictError;
+}
+
+// @public
+export type JournalStore = {
     createRun(record: RunRecord): Promise<void>;
     getRun(runId: string): Promise<RunRecord | undefined>;
     listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
@@ -73,13 +79,13 @@ type Logger = Record<LogLevel, LogFn>;
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
-type ResumableRun = {
+export type ResumableRun = {
     runId: string;
     wakeAt?: number | undefined;
 };
 
 // @public
-type RunRecord = {
+export type RunRecord = {
     runId: string;
     workflow: string;
     status: RunStatus;
@@ -93,7 +99,7 @@ type RunRecord = {
 };
 
 // @public
-type RunStatus = WorkflowRunStatus;
+export type RunStatus = WorkflowRunStatus;
 
 // @public
 export function runTextAgent(def: AgentDef, input: string | readonly ModelMessage[], options: RunTextAgentOptions): Promise<TextAgentTestRun>;
@@ -132,12 +138,12 @@ export type ScriptedToolCall = {
 };
 
 // @public
-type SleepEntry = SleepRecord & {
+export type SleepEntry = SleepRecord & {
     key: string;
 };
 
 // @public
-type SleepRecord = {
+export type SleepRecord = {
     wakeAt: number;
     woken: boolean;
     correlationId?: string | undefined;
@@ -145,7 +151,7 @@ type SleepRecord = {
 };
 
 // @public
-type StepEntry = {
+export type StepEntry = {
     key: string;
     name: string;
     status: "ok" | "failed";
@@ -159,7 +165,7 @@ type StepEntry = {
 };
 
 // @public
-interface TextAgentOptions {
+export interface TextAgentOptions {
     agent: AgentDef;
     db?: Db | undefined;
     env?: AgentEnv;
@@ -193,7 +199,7 @@ export type TextAgentTestToolCall = {
 };
 
 // @public
-interface TextTurnOptions {
+export interface TextTurnOptions {
     maxSteps?: number;
     messages: ModelMessage[];
     onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;

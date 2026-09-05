@@ -11,8 +11,8 @@
     }
   },
   "eval": {
-    "current": 7,
-    "supported": [7],
+    "current": 8,
+    "supported": [7, 8],
     "dropped": {
       "1": "The eval workflow engine's WorkflowCtx gained sleep (recorded, not taken) and waitFor (refused with a named message, a hook's payload coming from outside the run). Its types also moved to workflow-engine-types.ts under the 500-line cap, which the rollup's provenance shows.",
       "2": "EvalSleep carries the wait's label, so a workflow eval can assert which of a body's waits it reached rather than only a duration.",
@@ -45,8 +45,8 @@
     }
   },
   "runtime": {
-    "current": 13,
-    "supported": [13],
+    "current": 14,
+    "supported": [13, 14],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
@@ -63,8 +63,8 @@
     }
   },
   "server": {
-    "current": 17,
-    "supported": [16, 17],
+    "current": 18,
+    "supported": [16, 17, 18],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
@@ -108,8 +108,8 @@
     }
   },
   "testing": {
-    "current": 7,
-    "supported": [4, 7],
+    "current": 8,
+    "supported": [4, 7, 8],
     "dropped": {
       "1": "Additive only: RunRecord gained codeVersion and StepEntry gained startedAt, both OPTIONAL, and both reach this capability's report because runWorkflow answers a run and its steps. Nothing in epoch 1 stops compiling — no caller must set either field, and a caller reading a run or a step is not broken by one more optional member. Dropped rather than retained on the pre-release grounds epoch 1 of every capability here carries: this package has no external consumers, so no superseded authoring style is owed a frozen compiling example — and this capability landed one day before the bump, so an epoch-1 template would be a starter nobody ever wrote against.",
       "2": "JournalStore gained a required readStep(runId, key) method, so a host that IMPLEMENTS the interface no longer satisfies it — the whole point of RuntimeOptions.journal being that a deployment with its own database supplies one. The frozen templates only CONSUME a journal, so they still compile; that is the documented gap between classification coverage and compile-time exercise, not evidence the epoch holds. Consumers add the method: it answers ONE settled step by key, undefined when it has not settled, and both shipped databases key the table (run_id, key) so it is an index seek.",

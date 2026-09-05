@@ -199,7 +199,7 @@ type HookRecord = {
     closed?: boolean;
 };
 
-// @internal
+// @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;

@@ -33,7 +33,11 @@ import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
  * executor binds the issuing turn's abort signal so an in-flight generation
  * stops on barge-in / reset / session stop.
  *
- * @internal
+ * Public because `EvalSessionOptions.generate` takes one: substituting the
+ * in-tool LLM call is how a case asserts on what a tool DID without paying for
+ * a second live model, and an option whose type has no name is an option a
+ * spec can pass and not hold in a variable. It was `@internal` while nothing
+ * published a field of this type.
  */
 export type HostGenerateFn = (
   options: GenerateOptions,

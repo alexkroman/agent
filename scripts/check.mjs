@@ -224,6 +224,12 @@ const GATES = [
     why: "Reads the emitted dist/*.d.ts. A committed API report per published entry point, so a SIGNATURE change is a reviewable diff — exports.test.ts pins names, publint and attw check packaging, and neither sees a widened parameter or a newly optional field.",
   },
   {
+    script: "check:api-nameable",
+    phase: "after-build",
+    fatal: true,
+    why: "Beside api-report because it reads the same reports: that gate asks whether a signature MOVED, this asks whether the types in it can be NAMED. `includeForgottenExports` records a type a published signature references and no subpath exports, and recording is not refusing — so the surface a consumer must satisfy and the surface a consumer can import had drifted apart with nothing measuring the gap.",
+  },
+  {
     script: "check:api-contracts",
     phase: "after-build",
     fatal: true,

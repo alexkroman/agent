@@ -589,14 +589,16 @@
     "docs": {
       "dependsOn": [
         "@alexkroman1/aai#build",
-        "@alexkroman1/aai-ui#build"
+        "@alexkroman1/aai-ui#build",
+        "@alexkroman1/aai-runtime#build"
       ],
       "inputs": [
         "typedoc.json",
         "home.md",
         "tsconfig.typedoc.json",
         "$TURBO_ROOT$/packages/aai/typedoc.json",
-        "$TURBO_ROOT$/packages/aai-ui/typedoc.json"
+        "$TURBO_ROOT$/packages/aai-ui/typedoc.json",
+        "$TURBO_ROOT$/packages/aai-runtime/typedoc.json"
       ],
       "outputs": [
         "dist/**"

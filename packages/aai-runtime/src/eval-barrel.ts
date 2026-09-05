@@ -167,11 +167,17 @@ export { createVmRunCode, type VmRunCodeOptions } from "./eval/vm-run-code.ts";
 // case asserts on, and because the SLEEP one is the harness admitting what it
 // cannot do: a durable suspension is recorded, never taken.
 export type { EvalEmitted, EvalSleep } from "./eval/workflow-engine.ts";
+// `EvalWorkflowsOptions` indexes into this for its `speech` and `stepFetch`
+// fields, so the options type was unreadable without it: an author could see
+// `EvalWorkflowEngineOptions["speech"]` in a signature and had no subpath to
+// import the thing being indexed from.
+export type { EvalWorkflowEngineOptions } from "./eval/workflow-engine-types.ts";
 // Driving a WORKFLOW. The engine underneath is NOT durable — no journal, no
 // replay, no retry — and `eval/workflow-engine.ts` is where that is spelled out;
 // a case declared here may not be reported as covering any of the three.
 export {
   completedOutput,
+  DEFAULT_RUN_TIMEOUT_MS,
   type EvalRunOptions,
   type EvalWorkflowRun,
   type EvalWorkflows,
@@ -179,3 +185,12 @@ export {
   evalWorkflowCredentials,
   openEvalWorkflows,
 } from "./eval/workflows.ts";
+// The two types `EvalSessionOptions` names and this subpath did not publish, so
+// a case that wanted to hold either field in a variable — a shared `generate`
+// double, a `logger` that collects lines for an assertion — could pass one and
+// not name it. `Logger` is the same declaration `@alexkroman1/aai-runtime`
+// exports, re-exported rather than redeclared, on the principle the
+// `host-internal` line above already applies: a subpath names the types of its
+// own options.
+export type { HostGenerateFn } from "./generate.ts";
+export type { LogContext, LogFn, Logger, LogLevel } from "./runtime-config.ts";

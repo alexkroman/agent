@@ -46,19 +46,30 @@ Set any of `stt`, `llm`, `tts` to swap a single stage — e.g.
 
 ## What's documented here
 
-This is the API reference for the two published SDK packages:
+This is the API reference for what you write an agent AGAINST:
 
 - **`@alexkroman1/aai`** — the SDK an `agent.ts` imports. Start with
   `agent()` and `tool()` on the root module, then the provider factory
   subpaths (`stt`, `llm`, `tts`, `s2s`) to swap pipeline stages, `tools`
-  for the keyless network helpers callable from tool code, and `runtime`
-  for self-hosting.
+  for the keyless network helpers callable from tool code, and `testing`
+  for the fakes a spec hands a tool.
 - **`@alexkroman1/aai-ui`** — the browser client for custom UIs:
   `mountClient()`, the session hooks (`useSession`, `useAgentState`,
   `useToolResult`, `useEvent`), and the framework-agnostic
   `createBrowserSession()`.
+- **`@alexkroman1/aai-runtime/eval` and `/testing`** — measuring what an
+  agent DID. `describeEval` and `openEvalSession` drive a real session from
+  text and assert on the tools it called and what it said; `runWorkflow` and
+  `runTextAgent` drive a durable workflow run and a text turn against the real
+  engine. Both are written in the same vitest project as the agent.
 
-The `aai` CLI (`@alexkroman1/aai-cli`) is documented in its
+Two published surfaces are deliberately absent. The rest of
+`@alexkroman1/aai-runtime` — `createRuntime`, `createAgentServer`, the
+transports and the provider openers — is aimed at somebody EMBEDDING an agent
+rather than writing one, and has its
+[README](https://github.com/alexkroman/agent/tree/main/packages/aai-runtime#readme)
+plus committed API reports rather than a rendered page. And the `aai` CLI
+(`@alexkroman1/aai-cli`) is documented in its
 [README](https://github.com/alexkroman/agent/tree/main/packages/aai-cli#readme)
 — its importable subpaths are internal build hooks, not a public API.
 

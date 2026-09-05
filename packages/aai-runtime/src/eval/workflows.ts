@@ -99,7 +99,7 @@ import {
  * that does not fit in a turn — a fan-out over sixty segments, seven long-form
  * model calls — and the eval tier's own budget is 1800s.
  */
-const DEFAULT_RUN_TIMEOUT_MS = 300_000;
+export const DEFAULT_RUN_TIMEOUT_MS = 300_000;
 
 /**
  * Can this machine run workflow evals against `agent`?

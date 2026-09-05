@@ -595,13 +595,21 @@ the scan is recursive so a file one directory deep reaches that nested-file
 error instead of being silently absent, which is the failure the whole mechanism
 replaces. A MISSING directory throws for the same reason.
 
-## Rendering this package is a docs decision, and it cannot be half-made
+## Three subpaths are RENDERED, and the root barrel is not
 
-There is no `typedoc.json` here, and the absence is measured rather than an
-oversight: a package-local config alone turns the docs gate red, and the answer
-today is no. **[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "Rendering
-`aai-runtime` is a docs decision"** has the five files one change must touch
-together, what a real render measured, and what would change the answer.
+`typedoc.json` here names `dist/eval-barrel.d.ts`, `dist/eval-vitest-barrel.d.ts`
+and `dist/testing-barrel.d.ts` — and nothing else. The split is by READER rather
+than by package: an eval and a workflow spec are written by whoever wrote the
+`agent.ts`, in the same vitest project, beside `@alexkroman1/aai/testing`, so
+they belong in the authoring reference. The root barrel and `/internal` stay
+deny-listed in `scripts/docs-markdown.mjs` for the reasons written there.
+
+The `aai` README teaches `describeEval` and then links the rendered reference,
+which is what made the absence a defect rather than a preference. **See
+[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "Rendering `aai-runtime` is a docs
+decision"** for the files one change has to touch together and what the render
+found — three unnameable types on this surface, plus five dead `{@link}`s that
+had been invisible while nothing rendered these subpaths.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 

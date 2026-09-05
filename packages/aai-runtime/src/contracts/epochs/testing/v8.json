@@ -1,0 +1,32 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing",
+  "epoch": 8,
+  "sha256": "c0484e03ea794c21cd39c6f4d950f5aafb2b866f6ef1d4c70c55046feb409033",
+  "exports": [
+    "DEFAULT_MAX_DELIVERIES",
+    "DeterminismKind",
+    "HookRecord",
+    "JournalConflictError",
+    "JournalStore",
+    "ResumableRun",
+    "RunRecord",
+    "RunStatus",
+    "RunTextAgentOptions",
+    "RunWorkflowOptions",
+    "ScriptedTextStep",
+    "ScriptedToolCall",
+    "SleepEntry",
+    "SleepRecord",
+    "StepEntry",
+    "TextAgentTestRun",
+    "TextAgentTestToolCall",
+    "WorkflowTestHandle",
+    "WorkflowTestRead",
+    "WorkflowTestRun",
+    "WorkflowTestStep",
+    "runTextAgent",
+    "runWorkflow",
+    "scriptedTextModel"
+  ]
+}

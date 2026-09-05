@@ -7459,6 +7459,9 @@ export function customEventsIn(events: readonly SessionEvent[], name?: string): 
 }[];
 
 // @public
+export const DEFAULT_RUN_TIMEOUT_MS = 300000;
+
+// @public
 export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 
 // @public
@@ -7563,7 +7566,7 @@ export type EvalTurn = {
 export function evalWorkflowCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
 
 // @public
-type EvalWorkflowEngineOptions = {
+export type EvalWorkflowEngineOptions = {
     readonly workflows: Readonly<Record<string, WorkflowDef>>;
     readonly env: Readonly<Record<string, string>>;
     readonly stepFetch?: StepFetch | undefined;
@@ -7614,8 +7617,8 @@ export type EvalWorkflowsOptions = {
     readonly logger?: Logger | undefined;
 };
 
-// @internal
-type HostGenerateFn = (options: GenerateOptions, callOptions?: {
+// @public
+export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -7632,16 +7635,16 @@ export function lastStateIn<T>(events: readonly SessionEvent[], schema: Standard
 export function lastStateIn(events: readonly SessionEvent[]): unknown;
 
 // @public
-type LogContext = Record<string, unknown>;
+export type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (message: string, ctx?: LogContext) => void;
+export type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
-type Logger = Record<LogLevel, LogFn>;
+export type Logger = Record<LogLevel, LogFn>;
 
 // @public
-type LogLevel = "info" | "warn" | "error" | "debug";
+export type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
 export function openEvalSession(options: EvalSessionOptions): Promise<EvalSession>;
@@ -7922,7 +7925,7 @@ export type EvalWorkflowTestContext = {
     readonly mode: EvalMode;
 };
 
-// @internal
+// @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
@@ -8241,7 +8244,7 @@ type HookRecord = {
 
 export { HostCredentialEnv }
 
-// @internal
+// @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
@@ -9150,7 +9153,7 @@ type HookRecord = {
     closed?: boolean;
 };
 
-// @internal
+// @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
@@ -9677,10 +9680,10 @@ import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 export const DEFAULT_MAX_DELIVERIES = 50;
 
 // @public
-type DeterminismKind = "now" | "random" | "uuid";
+export type DeterminismKind = "now" | "random" | "uuid";
 
 // @public
-type HookRecord = {
+export type HookRecord = {
     token: string;
     delivered: boolean;
     payload?: unknown;
@@ -9688,7 +9691,13 @@ type HookRecord = {
 };
 
 // @public
-type JournalStore = {
+export class JournalConflictError extends Error {
+    constructor(message: string);
+    static is(value: unknown): value is JournalConflictError;
+}
+
+// @public
+export type JournalStore = {
     createRun(record: RunRecord): Promise<void>;
     getRun(runId: string): Promise<RunRecord | undefined>;
     listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
@@ -9725,13 +9734,13 @@ type Logger = Record<LogLevel, LogFn>;
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
-type ResumableRun = {
+export type ResumableRun = {
     runId: string;
     wakeAt?: number | undefined;
 };
 
 // @public
-type RunRecord = {
+export type RunRecord = {
     runId: string;
     workflow: string;
     status: RunStatus;
@@ -9745,7 +9754,7 @@ type RunRecord = {
 };
 
 // @public
-type RunStatus = WorkflowRunStatus;
+export type RunStatus = WorkflowRunStatus;
 
 // @public
 export function runTextAgent(def: AgentDef, input: string | readonly ModelMessage[], options: RunTextAgentOptions): Promise<TextAgentTestRun>;
@@ -9784,12 +9793,12 @@ export type ScriptedToolCall = {
 };
 
 // @public
-type SleepEntry = SleepRecord & {
+export type SleepEntry = SleepRecord & {
     key: string;
 };
 
 // @public
-type SleepRecord = {
+export type SleepRecord = {
     wakeAt: number;
     woken: boolean;
     correlationId?: string | undefined;
@@ -9797,7 +9806,7 @@ type SleepRecord = {
 };
 
 // @public
-type StepEntry = {
+export type StepEntry = {
     key: string;
     name: string;
     status: "ok" | "failed";
@@ -9811,7 +9820,7 @@ type StepEntry = {
 };
 
 // @public
-interface TextAgentOptions {
+export interface TextAgentOptions {
     agent: AgentDef;
     db?: Db | undefined;
     env?: AgentEnv;
@@ -9845,7 +9854,7 @@ export type TextAgentTestToolCall = {
 };
 
 // @public
-interface TextTurnOptions {
+export interface TextTurnOptions {
     maxSteps?: number;
     messages: ModelMessage[];
     onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
