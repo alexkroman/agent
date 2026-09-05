@@ -39,6 +39,7 @@ each is for.
 | `AgentServerOptions` | `@alexkroman1/aai-runtime` |
 | `AgentState` | `@alexkroman1/aai-ui` |
 | `AnthropicLlmOptions` | `@alexkroman1/aai/llm` |
+| `AnyDialog` | `@alexkroman1/aai` |
 | `AnyWorkflowDef` | `@alexkroman1/aai/workflow-api` |
 | `AssemblyAIGatewayModel` | `@alexkroman1/aai/llm` |
 | `AssemblyAILlmOptions` | `@alexkroman1/aai/llm` |
@@ -120,13 +121,18 @@ each is for.
 | `DescribeEvalOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `DeterminismKind` | `@alexkroman1/aai-runtime/testing` |
 | `Dialog` | `@alexkroman1/aai` |
+| `DialogBargeIn` | `@alexkroman1/aai` |
 | `DialogEvent` | `@alexkroman1/aai` |
 | `DialogOptions` | `@alexkroman1/aai` |
 | `DialogPosition` | `@alexkroman1/aai` |
+| `DialogSessionEventName` | `@alexkroman1/aai` |
 | `DialogSpec` | `@alexkroman1/aai` |
 | `DialogStateSpec` | `@alexkroman1/aai` |
+| `DialogTimeout` | `@alexkroman1/aai` |
+| `DialogTimeoutSpec` | `@alexkroman1/aai` |
 | `DialogToolDef` | `@alexkroman1/aai` |
 | `DialogToolResult` | `@alexkroman1/aai` |
+| `DialogVoiceConfig` | `@alexkroman1/aai` |
 | `EVENT_ID_PREFIX` | `@alexkroman1/aai/protocol` |
 | `ElevenLabsSttOptions` | `@alexkroman1/aai/stt` |
 | `EvalCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |

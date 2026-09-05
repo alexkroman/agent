@@ -5,7 +5,7 @@
 ```ts
 
 import { AnyStateMachine } from 'xstate';
-import { EventFromLogic } from 'xstate';
+import type { EventFromLogic } from 'xstate';
 import { InputFrom } from 'xstate';
 import { OutputFrom } from 'xstate';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ export function agent(def: AgentParams): AgentDef;
 // @public
 export interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
+    dialogs?: readonly AnyDialog[];
     events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
@@ -44,6 +45,9 @@ export interface AgentDef extends PipelineVoiceTuning {
 
 // @public
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
+
+// @public
+export type AnyDialog = Dialog<AnyStateMachine, unknown>;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -160,9 +164,12 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     matches(ctx: SlotHolder, state: string): boolean;
     position(ctx: SlotHolder): DialogPosition;
     projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
+    receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
+    timeout(ctx: SlotHolder): DialogTimeout | undefined;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public
@@ -172,7 +179,13 @@ export function dialog<M extends AnyStateMachine>(key: string, machine: M, optio
 export function dialog<const S extends DialogSpec>(key: string, spec: S, options?: DialogOptions): Dialog<AnyStateMachine, DialogEvent<S>>;
 
 // @public
-export type DialogEvent<S extends DialogSpec> = EventOf<NamesInMap<S["states"]>>;
+export type DialogBargeIn = "default" | "off" | {
+    minWords?: number;
+    minDurationMs?: number;
+};
+
+// @public
+export type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
 
 // @public
 export interface DialogOptions {
@@ -187,6 +200,9 @@ export interface DialogPosition {
 }
 
 // @public
+export type DialogSessionEventName = `@${SessionEventType}`;
+
+// @public
 export interface DialogSpec {
     initial: string;
     states: Record<string, DialogStateSpec>;
@@ -194,11 +210,31 @@ export interface DialogSpec {
 
 // @public
 export interface DialogStateSpec {
+    bargeIn?: DialogBargeIn;
     final?: true;
     initial?: string;
     instruction?: string;
+    keyterms?: readonly string[];
     on?: Record<string, string>;
     states?: Record<string, DialogStateSpec>;
+    temperature?: number;
+    timeout?: DialogTimeoutSpec;
+    toolChoice?: ToolChoice;
+    voice?: string;
+}
+
+// @public
+export interface DialogTimeout {
+    readonly afterMs: number;
+    readonly event: {
+        readonly type: string;
+    };
+}
+
+// @public
+export interface DialogTimeoutSpec {
+    afterMs: number;
+    send: string;
 }
 
 // @public
@@ -214,6 +250,15 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
 // @public
 export interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
+}
+
+// @public
+export interface DialogVoiceConfig {
+    readonly bargeIn?: DialogBargeIn;
+    readonly keyterms?: readonly string[];
+    readonly temperature?: number;
+    readonly toolChoice?: ToolChoice;
+    readonly voice?: string;
 }
 
 // @public
