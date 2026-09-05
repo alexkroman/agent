@@ -1907,6 +1907,8 @@ What an unrecognised request means.
 type StubDelegateReply = 
   | string
   | {
+  complaint?: string;
+  revisions?: number;
   steps?: number;
   text: string;
   toolCalls?: readonly SubagentToolCall[];
@@ -1918,6 +1920,65 @@ What one route answers with.
 A bare string is the subagent's final text with an empty cost report, which
 is what a tool that only reads `text` wants. The object form fills in
 `steps` and `toolCalls` for a tool that narrates the wait.
+
+#### Union Members
+
+`string`
+
+***
+
+##### Type Literal
+
+```ts
+{
+  complaint?: string;
+  revisions?: number;
+  steps?: number;
+  text: string;
+  toolCalls?: readonly SubagentToolCall[];
+}
+```
+
+###### complaint?
+
+```ts
+optional complaint?: string;
+```
+
+Stage a run the subagent's GUARDRAIL never accepted: the complaint the
+real runtime returns beside the last rejected attempt.
+
+Its presence is what makes the result's `accepted` false — the
+two cannot be staged apart, because in the runtime they cannot occur
+apart. A spec cannot describe an unaccepted answer with no reason, and
+a caller reading `complaint` on an accepted one would be reading a
+field that is never set.
+
+###### revisions?
+
+```ts
+optional revisions?: number;
+```
+
+How many times a guardrail sent an answer back. Defaults to `0`.
+
+###### steps?
+
+```ts
+optional steps?: number;
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### toolCalls?
+
+```ts
+optional toolCalls?: readonly SubagentToolCall[];
+```
 
 ***
 

@@ -399,6 +399,7 @@ would put top-level `await` in a bundle the guest loads.
 ```ts
 function withTools<D extends {
   builtinTools?: readonly string[];
+  subagents?: readonly unknown[];
   tools: ToolRegistry;
 }>(def: D, registry: ToolRegistry): D;
 ```
@@ -446,6 +447,7 @@ carries none still passes and this module still names no builtin catalog.
 
 `D` *extends* \{
   `builtinTools?`: readonly `string`[];
+  `subagents?`: readonly `unknown`[];
   `tools`: [`ToolRegistry`](#toolregistry);
 \}
 
@@ -586,7 +588,7 @@ type: "function";
 ### HOST\_ONLY\_AGENT\_FIELDS
 
 ```ts
-const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "events"];
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "events"];
 ```
 
 `AgentDef` fields that must never cross the serialization boundary — the

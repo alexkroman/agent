@@ -824,10 +824,10 @@ interface DelegateOptions {
 }
 
 // @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
 }
 
 // @public
@@ -936,6 +936,9 @@ export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
 
 // @public (undocumented)
 export const GROQ_KIND: "groq";
+
+// @public
+type GuardrailVerdict = true | string;
 
 // @public
 export type HostCredentialEnv = Record<string, string> & {
@@ -1423,16 +1426,30 @@ export type SttTurnMeta = {
 };
 
 // @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
+    maxRetries?: number;
     maxSteps?: number;
     name: string;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
 // @public
 interface SubagentToolCall {
@@ -1775,6 +1792,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     silenceTimeoutMs?: number;
     stt?: SttProvider;
     sttPrompt?: string;
+    subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     telephony?: TelephonyAccess;
@@ -1863,6 +1881,9 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 } : T;
 
 // @public
+export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
+
+// @public
 export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
 
 // @public
@@ -1875,6 +1896,9 @@ type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 export type DefaultToolResult = any;
 
 // @public
+export const DELEGATE_TOOL_NAME = "delegate";
+
+// @public
 export type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @public
@@ -1885,10 +1909,10 @@ export interface DelegateOptions {
 }
 
 // @public
-export interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
+export interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
 }
 
 // @public
@@ -2005,6 +2029,9 @@ export type GenerateResult = {
     text: string;
     object?: unknown;
 };
+
+// @public
+export type GuardrailVerdict = true | string;
 
 // @public
 export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -2572,16 +2599,33 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 export function subagent(def: SubagentDef): SubagentDef;
 
 // @public
+export interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 export interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
+    maxRetries?: number;
     maxSteps?: number;
     name: string;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
+
+// @public
+export type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+export type SubagentRoster = readonly SubagentDef[];
 
 // @public
 export interface SubagentToolCall {
@@ -2694,7 +2738,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
@@ -3500,6 +3544,7 @@ interface AgentDef extends PipelineVoiceTuning {
     silenceTimeoutMs?: number;
     stt?: SttProvider;
     sttPrompt?: string;
+    subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     telephony?: TelephonyAccess;
@@ -3543,10 +3588,10 @@ interface DelegateOptions {
 }
 
 // @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
 }
 
 // @public
@@ -3585,7 +3630,10 @@ type GenerateResult = {
 };
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "events"];
+type GuardrailVerdict = true | string;
+
+// @public
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "events"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -3936,16 +3984,33 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
+    maxRetries?: number;
     maxSteps?: number;
     name: string;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+type SubagentRoster = readonly SubagentDef[];
 
 // @public
 interface SubagentToolCall {
@@ -4044,6 +4109,7 @@ export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
 export function withTools<D extends {
     readonly tools: ToolRegistry;
     readonly builtinTools?: readonly string[] | undefined;
+    readonly subagents?: readonly unknown[] | undefined;
 }>(def: D, registry: ToolRegistry): D;
 
 // @public
@@ -5234,6 +5300,7 @@ interface AgentDef extends PipelineVoiceTuning {
     silenceTimeoutMs?: number;
     stt?: SttProvider;
     sttPrompt?: string;
+    subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     telephony?: TelephonyAccess;
@@ -5283,10 +5350,10 @@ interface DelegateOptions {
 }
 
 // @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
 }
 
 // @public
@@ -5344,6 +5411,9 @@ type GenerateResult = {
     text: string;
     object?: unknown;
 };
+
+// @public
+type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -5749,6 +5819,8 @@ export type StubDelegateReply = string | {
     text: string;
     steps?: number;
     toolCalls?: readonly SubagentToolCall[];
+    revisions?: number;
+    complaint?: string;
 };
 
 // @public
@@ -5955,16 +6027,33 @@ export type StubUploadWrite = {
 };
 
 // @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
+    maxRetries?: number;
     maxSteps?: number;
     name: string;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+type SubagentRoster = readonly SubagentDef[];
 
 // @public
 interface SubagentToolCall {

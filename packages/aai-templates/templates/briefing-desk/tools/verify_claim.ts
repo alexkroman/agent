@@ -47,6 +47,7 @@ export default tool({
 
     let verdict: string;
     let searches: number;
+    let unusable: string | undefined;
     try {
       // What the checker gets of the conversation, and no more: the finding the
       // claim came out of, so it can tell a misquote from a disagreement.
@@ -60,6 +61,12 @@ export default tool({
       });
       verdict = result.text;
       searches = countWork(result.toolCalls).searches;
+      // The checker's `guardrail` sends a verdict back when it does not start
+      // with one of the three words. Exhausting that budget is not a failure —
+      // there IS an answer, and on a live call the desk is better off reading a
+      // hedged one and saying it is hedged than apologizing for the tooling.
+      // What it must not do is treat it as a verdict it can correct itself from.
+      unusable = result.accepted ? undefined : result.complaint;
     } catch (err: unknown) {
       return toolFailure(`The check did not come back: ${errorMessage(err)}`);
     }
@@ -69,9 +76,12 @@ export default tool({
       verdict,
       searches,
       checkedAgainst: source?.angle ?? null,
-      message:
-        "Say the verdict plainly, in the caller's words. If it is contradicted, " +
-        "correct what you told them earlier rather than defending it.",
+      ...omitUndefined({ unusable }),
+      message: unusable
+        ? "The checker never gave a clear verdict. Tell the caller it is unresolved " +
+          "and offer to research it properly — do not present this as confirmation."
+        : "Say the verdict plainly, in the caller's words. If it is contradicted, " +
+          "correct what you told them earlier rather than defending it.",
     };
   },
 });

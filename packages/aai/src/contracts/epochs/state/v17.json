@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "state",
+  "epoch": 17,
+  "sha256": "74747600a33420b50b1b5d6db7b16deccc03de2dfb0ed89c50b600087bff29db",
+  "exports": [
+    "DeepReadonly",
+    "SessionSlot",
+    "SessionSlotOptions",
+    "SlotHolder",
+    "SlotStore",
+    "SlotToolDef",
+    "StateProjection",
+    "sessionSlot"
+  ]
+}

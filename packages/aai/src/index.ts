@@ -242,6 +242,10 @@ export * from "./sdk/spoken.ts";
  * between it and `generate` — one prompt, or a loop — is the whole decision.
  */
 export * from "./sdk/subagent.ts";
+// The ROSTER half — `agent({ subagents })` and the tool it mints. Its own module
+// because `subagent.ts` holds the `ctx.delegate` contract and this holds the
+// other way of choosing one; see that file's "Two ways to choose a subagent".
+export { DELEGATE_TOOL_NAME, type SubagentRoster } from "./sdk/subagent-roster.ts";
 export * from "./sdk/types.ts";
 /**
  * The utilities written INSIDE a tool body — all fifteen of them, which is

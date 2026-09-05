@@ -13,26 +13,12 @@ import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./provi
 import type { ToolInputSchema } from "./schema.ts";
 import type { SessionEventHandlers } from "./session-events.ts";
 import type { StateProjection } from "./session-state.ts";
+import type { SubagentRoster } from "./subagent-roster.ts";
 import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolDef`.
 import type { ToolChoice, ToolDef } from "./tool-def.ts";
 import type { WorkflowDef } from "./workflow.ts";
-
-/**
- * A single message in the conversation history.
- *
- * Messages are passed to tool `execute` functions via
- * {@link ToolContext.messages} to provide conversation context.
- *
- * @public
- */
-export type Message = {
-  /** The role of the message sender. */
-  role: "user" | "assistant" | "tool";
-  /** The text content of the message. */
-  content: string;
-};
 
 export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 /**
@@ -51,6 +37,10 @@ export {
   type McpServers,
   mcpToolName,
 } from "./mcp-config.ts";
+// What the agent is LOOKING AT, split off as this file reached the 500-line cap
+// — the fifth such split, and re-exported here like the other four so no import
+// moved. See `sdk/message.ts` for the seam.
+export type { Message } from "./message.ts";
 /**
  * The one default constant still on the root barrel, and the only one that
  * passes its membership test: `agent({ systemPrompt })` REPLACES the whole
@@ -213,6 +203,17 @@ export interface AgentDef extends PipelineVoiceTuning {
    * state shape back to `unknown`, which is a problem a slot does not have.
    */
   tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+  /**
+   * Specialists the MODEL may hand a task to, published as one `delegate` tool.
+   *
+   * The other half of `ctx.delegate`: a tool body naming a subagent is the
+   * AUTHOR routing in code, a roster is the MODEL routing per turn. Every entry
+   * needs a {@link SubagentDef.description} — the only thing the router reads —
+   * and `agent()` refuses one without it. The one field whose declaration MINTS
+   * A TOOL, so a `tools/delegate.ts` beside a roster is a collision; host-only,
+   * like `tools`. Worked example and argument: `sdk/subagent-roster.ts`.
+   */
+  subagents?: SubagentRoster;
   /**
    * Durable workflows this agent may start, keyed by workflow name.
    *

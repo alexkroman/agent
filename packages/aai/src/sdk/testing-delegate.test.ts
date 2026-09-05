@@ -19,8 +19,26 @@ describe("stubDelegate", () => {
   it("answers a single route for every subagent", async () => {
     const desk = stubDelegate("Found it.");
     const result = await desk.delegate(researcher, { task: "look" });
-    expect(result).toEqual({ text: "Found it.", steps: 1, toolCalls: [] });
+    expect(result).toEqual({
+      text: "Found it.",
+      steps: 1,
+      toolCalls: [],
+      revisions: 0,
+      accepted: true,
+    });
     expect(await desk.delegate(checker, { task: "check" })).toMatchObject({ text: "Found it." });
+  });
+
+  it("stages a run the subagent's guardrail never accepted", async () => {
+    const desk = stubDelegate({ researcher: { text: "thin", complaint: "no sources" } });
+
+    // The complaint IS the rejection — a spec cannot describe one without the
+    // other, because the runtime never produces one without the other.
+    expect(await desk.delegate(researcher, { task: "look" })).toMatchObject({
+      text: "thin",
+      accepted: false,
+      complaint: "no sources",
+    });
   });
 
   it("routes by subagent name and records every call", async () => {

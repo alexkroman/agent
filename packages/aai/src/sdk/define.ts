@@ -9,6 +9,7 @@ import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { ToolInputSchema } from "./schema.ts";
+import { DELEGATE_TOOL_NAME, rosterTool } from "./subagent-roster.ts";
 import { type AgentDef, DEFAULT_SYSTEM_PROMPT, type ToolContext, type ToolDef } from "./types.ts";
 
 /**
@@ -158,8 +159,15 @@ function buildAgent(def: object): AgentDef {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
     maxSteps: DEFAULT_MAX_STEPS,
-    tools: {},
     ...params,
+    // AFTER the spread, and it is the one thing that may be: `tools` is the
+    // field `agent()` refuses an argument for, so there is nothing in `params`
+    // to overwrite. A declared roster becomes an ordinary entry in this table —
+    // see `sdk/subagent-roster.ts` — so it is schema'd, dispatched and executed
+    // by the same paths a `tools/` file takes, on all three transports, and the
+    // sandbox path needs nothing: the guest holds the real definition, which is
+    // the only side that can hold a `SubagentDef`'s functions anyway.
+    tools: params.subagents ? { [DELEGATE_TOOL_NAME]: rosterTool(params.subagents) } : {},
   };
 }
 

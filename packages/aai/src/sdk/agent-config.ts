@@ -243,6 +243,11 @@ export const HOST_ONLY_AGENT_FIELDS = [
   "tools",
   "syncState",
   "workflows",
+  // A `SubagentDef` may carry tool FUNCTIONS, so a roster cannot be serialized —
+  // and nothing downstream of the wire needs it: the roster's whole effect on
+  // the deployed config is the `delegate` entry `agent()` already put in `tools`,
+  // whose schema travels with every other tool's.
+  "subagents",
   // Handlers are functions, same as `workflows` — and unlike `page`, nothing
   // downstream of the wire has any use for knowing an agent observes itself.
   "events",

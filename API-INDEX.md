@@ -97,6 +97,7 @@ each is for.
 | `ConversationItem` | `@alexkroman1/aai-ui` |
 | `CreatePostgresDbOptions` | `@alexkroman1/aai-runtime` |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | `@alexkroman1/aai/stt` |
+| `DEFAULT_GUARDRAIL_MAX_RETRIES` | `@alexkroman1/aai` |
 | `DEFAULT_LISTEN_HOST` | `@alexkroman1/aai-runtime` |
 | `DEFAULT_LOG_BUFFER_LINES` | `@alexkroman1/aai-runtime` |
 | `DEFAULT_LOG_LINE_BYTES` | `@alexkroman1/aai-runtime` |
@@ -109,6 +110,7 @@ each is for.
 | `DEFAULT_STEP_MAX_ATTEMPTS` | `@alexkroman1/aai` |
 | `DEFAULT_SYSTEM_PROMPT` | `@alexkroman1/aai` |
 | `DEFAULT_WORKFLOW_FIND_LIMIT` | `@alexkroman1/aai-runtime` |
+| `DELEGATE_TOOL_NAME` | `@alexkroman1/aai` |
 | `DeepReadonly` | `@alexkroman1/aai` |
 | `DeepgramSttOptions` | `@alexkroman1/aai/stt` |
 | `DefaultToolResult` | `@alexkroman1/aai` |
@@ -177,6 +179,7 @@ each is for.
 | `GlobalConfig` | `@alexkroman1/aai-cli/project-config` |
 | `GoogleLlmOptions` | `@alexkroman1/aai/llm` |
 | `GroqLlmOptions` | `@alexkroman1/aai/llm` |
+| `GuardrailVerdict` | `@alexkroman1/aai` |
 | `HOST_ONLY_AGENT_FIELDS` | `@alexkroman1/aai/manifest` |
 | `HookRecord` | `@alexkroman1/aai-runtime/testing` |
 | `HostConfig` | `@alexkroman1/aai/protocol` |
@@ -423,7 +426,10 @@ each is for.
 | `StubUploads` | `@alexkroman1/aai/testing` |
 | `StubUploadsOptions` | `@alexkroman1/aai/testing` |
 | `StubWorkflowsOptions` | `@alexkroman1/aai/testing/vitest` |
+| `SubagentAnswer` | `@alexkroman1/aai` |
 | `SubagentDef` | `@alexkroman1/aai` |
+| `SubagentGuardrail` | `@alexkroman1/aai` |
+| `SubagentRoster` | `@alexkroman1/aai` |
 | `SubagentToolCall` | `@alexkroman1/aai` |
 | `SubmitButton` | `@alexkroman1/aai-ui` |
 | `SubmitInputOf` | `@alexkroman1/aai-ui` |

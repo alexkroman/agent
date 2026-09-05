@@ -1,5 +1,5 @@
 /**
- * The desk's two subagents, and the board of what they have found.
+ * The desk's subagents, and the board of what they have found.
  *
  * **This template is the worked example for `ctx.delegate`.** Everything here
  * exists to show the three things a subagent buys that `ctx.generate` cannot:
@@ -16,6 +16,26 @@
  *    `factChecker` can only search it, on a cheaper model with a third of the
  *    budget. Neither can reach the other's tools, and the DESK — the voice
  *    agent the caller is talking to — has no web tools at all.
+ *
+ * **And it is the worked example for the two ways to CHOOSE one**, which is the
+ * split to read this file for:
+ *
+ * - `researcher` and `factChecker` are chosen in CODE, by the tool that names
+ *   them. `research_topic` runs ONE subagent N times in parallel and
+ *   `verify_claim` reads the board to turn "the second thing you told me" into
+ *   a sentence — neither is a choice a model could make, and neither is a shape
+ *   a roster can express.
+ * - `explainer` and `counterpoint` are on the ROSTER (`agent({ subagents })`),
+ *   because choosing between them IS reading what the caller asked: "what does
+ *   curtailment mean" and "who says otherwise" want different specialists and
+ *   nothing else about them differs. They reach the model as one `delegate`
+ *   tool whose `coworker` argument is the two names, described by their own
+ *   {@link SubagentDef.description}s.
+ *
+ * The rule that follows: **name a subagent in code when the tool IS the choice;
+ * put it on the roster when the caller's words are.** An agent that grew a
+ * fourth `tools/ask_the_<x>.ts` whose body was one `ctx.delegate` line has been
+ * hand-rolling the roster.
  */
 
 import {
@@ -24,6 +44,7 @@ import {
   type DelegateOptions,
   type DelegateResult,
   pushCapped,
+  type SubagentRoster,
   type SubagentToolCall,
   sessionSlot,
   subagent,
@@ -40,12 +61,13 @@ import { assemblyAILlm } from "@alexkroman1/aai/llm";
 export const MAX_RESEARCH_STEPS = 6;
 
 /**
- * The researcher, and the one line that decides whether any of this works.
+ * The researcher, and the field that decides whether any of this works.
  *
- * "Finish with a summary" is not politeness. The parent gets the subagent's
- * FINAL message, so a run that ends by saying "Done." has thrown away
- * everything it read and no budget recovers it — this is the failure mode the
- * `SubagentDef.systemPrompt` contract warns about, stated once, here.
+ * `expectedOutput` is not politeness. The parent gets the subagent's FINAL
+ * message, so a run that ends by saying "Done." has thrown away everything it
+ * read and no budget recovers it. That used to be a paragraph of `systemPrompt`
+ * every author had to remember to write; declaring it is what makes the runtime
+ * responsible for putting it in front of the model instead.
  */
 export const researcher = subagent({
   name: "researcher",
@@ -55,17 +77,20 @@ export const researcher = subagent({
     "Search, then open the two or three most promising pages and read them.",
     "Prefer primary sources and recent ones. If the sources disagree, say so",
     "rather than picking a side.",
-    "",
-    "IMPORTANT: your FINAL message is the only thing the desk receives — it",
-    "does not see your searches, the pages you opened, or your reasoning. End",
-    "with a self-contained paragraph of what you found, naming the sources you",
-    "trusted. Three sentences is plenty; do not write a report.",
+  ].join("\n"),
+  expectedOutput: [
+    "A self-contained paragraph of what you found, naming the sources you",
+    "trusted. Three sentences is plenty; do not write a report. The desk does",
+    "not see your searches, the pages you opened, or your reasoning — only this.",
   ].join("\n"),
   // Read/browse. Independent of the desk's own builtins, which are none: the
   // agent the caller talks to never touches the network.
   builtinTools: ["web_search", "visit_webpage"],
   maxSteps: MAX_RESEARCH_STEPS,
 });
+
+/** The three verdicts a check may come back with — see {@link factChecker}. */
+export const VERDICT_PREFIXES = ["Confirmed:", "Contradicted:", "Unclear:"] as const;
 
 /**
  * The fact-checker: a second ROLE, deliberately narrower than the first.
@@ -74,20 +99,102 @@ export const researcher = subagent({
  * `researcher` does), its own budget, and search only. That split is the third
  * reason to reach for a subagent: a capability a run does not need is one it
  * cannot misuse.
+ *
+ * **And it is the worked example for `guardrail`.** The verdict prefix is not a
+ * style preference — `tools/verify_claim.ts` tells the desk to CORRECT itself
+ * when a claim comes back contradicted, and the desk can only act on that if
+ * the answer says which of the three it is. Asking for the prefix in the prompt
+ * and hoping is what every version of this before the guardrail did; the check
+ * is four lines and the retry costs one extra run of a run that takes two steps
+ * on the cheapest model here.
+ *
+ * A schema could not do this job. `ctx.generate({ schema })` constrains the
+ * SHAPE of an answer, and what is wrong with "It seems that prices did fall" is
+ * not its shape.
  */
 export const factChecker = subagent({
   name: "fact-checker",
   systemPrompt: [
     "You check ONE claim against what you can find on the web.",
     "",
-    "Search for it. Answer in one sentence, starting with one of",
-    "'Confirmed:', 'Contradicted:' or 'Unclear:', and name what you found.",
-    "'Unclear' is a real answer — say it rather than guessing.",
+    "Search for it. 'Unclear' is a real answer — say it rather than guessing.",
   ].join("\n"),
+  expectedOutput: [
+    `One sentence, starting with one of ${VERDICT_PREFIXES.join(" ")} and naming`,
+    "what you found.",
+  ].join("\n"),
+  guardrail: ({ text }) =>
+    VERDICT_PREFIXES.some((prefix) => text.trimStart().startsWith(prefix)) ||
+    `Start your answer with exactly one of ${VERDICT_PREFIXES.join(" ")} — the desk decides ` +
+      "whether to correct itself from that word, and cannot from a sentence that only implies it.",
   llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
   builtinTools: ["web_search"],
   maxSteps: 2,
 });
+
+/**
+ * The ROSTER's first specialist: what a word means.
+ *
+ * No tools at all, which is legal and is the point — a definition is a
+ * reasoning pass, and giving this one a search would let it wander off into
+ * researching the thing rather than explaining it.
+ *
+ * The `description` is what the model reads when it picks; the `systemPrompt`
+ * is what this subagent reads once it has been picked. Keeping them apart is
+ * the difference between a roster the model can route and a list of names.
+ */
+export const explainer = subagent({
+  name: "explainer",
+  description: "Explains a term, unit or concept in plain language, from general knowledge",
+  systemPrompt: [
+    "You explain one thing to someone who is LISTENING, not reading, and who",
+    "asked because they did not want to look it up.",
+    "",
+    "Use no jargon to explain jargon. If a number makes it concrete, give one.",
+    "If you are not sure what the term means in this context, say so — a wrong",
+    "definition is worse than an admitted gap.",
+  ].join("\n"),
+  expectedOutput: "Two sentences, spoken plainly. No preamble and no list.",
+  llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
+  maxSteps: 1,
+});
+
+/**
+ * The roster's second: who argues the other way.
+ *
+ * Searches, like the fact-checker, and is told to do a different job with the
+ * results — which is exactly the case a roster is for. Nothing about
+ * `counterpoint` differs from `explainer` except what the caller wanted, so a
+ * tool file per specialist would be two bodies differing in one identifier.
+ */
+export const counterpoint = subagent({
+  name: "counterpoint",
+  description: "Finds the strongest argument AGAINST something the desk has said",
+  systemPrompt: [
+    "You are given a claim and you look for the best case against it.",
+    "",
+    "Search for the objection, not for the claim. Report the strongest version",
+    "you find, and say who makes it. If the objection is weak or fringe, say",
+    "that plainly rather than inflating it — the caller is deciding something.",
+  ].join("\n"),
+  expectedOutput:
+    "Two or three sentences: the objection, who makes it, and how seriously to take it.",
+  llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
+  builtinTools: ["web_search"],
+  maxSteps: 3,
+});
+
+/**
+ * The roster `agent({ subagents })` publishes — the specialists the MODEL picks
+ * between.
+ *
+ * Declared here rather than inline in `agent.ts` so that membership sits beside
+ * the definitions, which is where the question "should this one be routable?"
+ * gets answered. `researcher` and `factChecker` are deliberately absent: each is
+ * reached by a tool that does real work around the delegation, and a specialist
+ * reachable both ways gives the model a second, worse route to it.
+ */
+export const roster: SubagentRoster = [explainer, counterpoint];
 
 /** One angle, as the desk holds it. */
 export interface Finding {

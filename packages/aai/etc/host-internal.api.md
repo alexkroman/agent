@@ -531,10 +531,10 @@ interface DelegateOptions {
 }
 
 // @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
 }
 
 // @public
@@ -643,6 +643,9 @@ export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
 
 // @public (undocumented)
 export const GROQ_KIND: "groq";
+
+// @public
+type GuardrailVerdict = true | string;
 
 // @public
 export type HostCredentialEnv = Record<string, string> & {
@@ -1130,16 +1133,30 @@ export type SttTurnMeta = {
 };
 
 // @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
+    maxRetries?: number;
     maxSteps?: number;
     name: string;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
 // @public
 interface SubagentToolCall {
