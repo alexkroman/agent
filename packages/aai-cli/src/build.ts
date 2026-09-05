@@ -26,8 +26,9 @@ import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
 import { emitVercelOutput } from "./_vercel-output.ts";
+import { classifyVitestError, runVitest } from "./_vitest-runner.ts";
 import { determinismWarnings, scanWorkflowDeterminism } from "./_workflow-determinism.ts";
-import { classifyVitestError, runVitest, TEST_FILES } from "./test.ts";
+import { TEST_FILES } from "./test.ts";
 
 /**
  * Where the built worker lands, relative to the project root — under `.aai/`,

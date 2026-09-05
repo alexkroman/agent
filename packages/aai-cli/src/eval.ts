@@ -26,7 +26,7 @@
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
-import { classifyVitestError, runVitest } from "./test.ts";
+import { classifyVitestError, runVitest } from "./_vitest-runner.ts";
 
 type EvalData = {
   passed: boolean;

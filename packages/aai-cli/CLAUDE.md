@@ -31,6 +31,19 @@ knowing:
   own include globs already matched, not an include glob — so `agent.test.ts`
   cannot match `agent.eval.test.ts` and vice versa. Neither command needs to
   know the other's file, which is what stops the pair drifting.
+
+  **That is also why the launcher is `_vitest-runner.ts` and not `test.ts`.**
+  `aai test`, `aai eval` and `aai build`'s pre-build gate all spawn the
+  project's own vitest, and all three used to import `runVitest` /
+  `classifyVitestError` from `test.ts` — so the eval command took its runner
+  from the file named after the other command, which is the one edge that could
+  quietly grow the coupling the disjointness above exists to prevent. The
+  shared module owns everything that follows from pointing vitest at a SUBSET
+  (binary resolution, which files a run covers, which it does not, and the
+  notice below); each tier's filenames stay with the command that owns them,
+  `TEST_FILES` in `test.ts` beside `EVAL_FILES` in `eval.ts`. `candidates` has
+  no default for exactly that reason — a default here would be the runner
+  naming one of the tiers.
 - **It passes `--testTimeout`** (`EVAL_TEST_TIMEOUT_MS`, 5 min). Vitest's 5s
   default is shorter than one live model turn, so without it every case fails as
   a timeout and the report says nothing about the agent. The diagnostic worth
@@ -672,8 +685,11 @@ the user requests outright is unaffected.
 - `_cli-common.ts` — shared citty plumbing (`sharedArgs`, `setup`,
   `runCommand`); `_studio-commands.ts` — the list/pull/push/publish command
   definitions
-- `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` (internal) / `delete.ts` /
-  `secret.ts` — subcommand entry points
+- `init.ts` / `dev.ts` / `test.ts` / `eval.ts` / `deploy.ts` (internal) /
+  `delete.ts` / `secret.ts` — subcommand entry points
+- `_vitest-runner.ts` — the vitest launcher `aai test`, `aai eval` and
+  `aai build`'s pre-build gate share, plus the project spec inventory and the
+  unrun-spec notice (see above)
 - `studio.ts` / `_studio.ts` — the studio round-trip: pull/push/publish
   executors over the `/studio/projects` routes, the local source walk
   (the walk, caps, skip rules and strict UTF-8 decode all come from
