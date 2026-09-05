@@ -5,24 +5,25 @@ talk to it in your browser, put it on a phone number, publish it to the
 managed platform with one command, or self-host the same runtime.
 
 What makes it a **voice** kit rather than a chat framework with a microphone
-bolted on: the parts of a spoken conversation that are hard — turn-taking,
-barge-in, recovering from a false interruption, dead air, what the caller
-actually *heard* — are handled by the runtime with measured defaults, and
-each one is a field on `agent()` for when you disagree.
+bolted on: the runtime handles the hard parts of a spoken conversation —
+turn-taking, barge-in, recovering from a false interruption, dead air, what
+the caller actually *heard* — with measured defaults, each one a field on
+`agent()` for when you disagree.
 
 ## Quickstart
 
 ```sh
-npx @alexkroman1/aai-cli@latest init my-agent
+npm i -g @alexkroman1/aai-cli
+aai init my-agent
 cd my-agent
-npx aai dev        # local dev server + browser voice client
-npx aai publish    # ship it to the managed platform
+aai dev        # local dev server + browser voice client
+aai publish    # ship it to the managed platform
 ```
 
 Requires Node.js 24+. `aai init` scaffolds a project from a template
-(`aai templates` lists all 22 — `--template pizza-ordering`) and writes a
-`.env` for your `ASSEMBLYAI_API_KEY`: the one key the default pipeline needs
-for speech-to-text, the LLM gateway, and text-to-speech alike.
+(`aai templates` lists them; `--template pizza-ordering` picks one) and writes
+a `.env` for your `ASSEMBLYAI_API_KEY` — the one key the default pipeline
+needs for speech-to-text, the LLM gateway, and text-to-speech alike.
 
 ## The filesystem is the authoring interface
 
@@ -256,12 +257,12 @@ lock. That matters because the model runs a step's tool calls
 *concurrently*. Reads are handed a deeply frozen value, so mutating one is a
 compile error rather than a write that silently goes nowhere.
 
-Enable storage (`aai storage enable`, or a `DATABASE_URL` locally) and the
-same code becomes durable: a crash, a redeploy, or a caller redialing into a
-replacement process no longer loses the cart. That asymmetry is why it
-matters — a client can replay the transcript, and nothing can replay state
-back. Persistence is reliable across crashes and best-effort across
-redeploys.
+Point a `DATABASE_URL` at your own Postgres — in `.env` locally, as a secret
+in production — and the same code becomes durable: a crash, a redeploy, or a
+caller redialing into a replacement process no longer loses the cart. That
+asymmetry is why it matters — a client can replay the transcript, and nothing
+can replay state back. Persistence is reliable across crashes and best-effort
+across redeploys.
 
 **A workflow run is durable in a stronger sense.** Bodies live in
 `workflows/`, and the build transforms that directory into journaled steps.
@@ -412,7 +413,7 @@ runs — so a test reaches a tool by the name the model calls it by.
 | [`@alexkroman1/aai`](./packages/aai/README.md) | The SDK: `agent()`, `tool()`, `sessionSlot()`, provider factories |
 | [`@alexkroman1/aai-ui`](./packages/aai-ui/README.md) | Browser client: React components, hooks, and the framework-agnostic session core |
 | [`@alexkroman1/aai-runtime`](./packages/aai-runtime/README.md) | The host runtime: `createRuntime()`, `createAgentServer()`, the thing that runs an `agent.ts` |
-| [`@alexkroman1/aai-cli`](./packages/aai-cli/README.md) | The `aai` CLI: init, dev, test, build, publish, secret, storage |
+| [`@alexkroman1/aai-cli`](./packages/aai-cli/README.md) | The `aai` CLI: init, dev, test, build, publish, secret, logs |
 
 ## Self-hosting
 
