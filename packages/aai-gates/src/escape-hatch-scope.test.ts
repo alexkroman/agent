@@ -29,10 +29,9 @@
  * them out here would make this the second file whose source is a list of the
  * patterns, and it would need its own exclusion exactly as the script does.
  *
- * It lives in aai-templates for the same reason `claude-md-limit.test.ts`
- * does: the package already owns the tests for repo-level scripts, and raw
- * imports reach a sibling script with no node types — this package's tsconfig
- * has none.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
@@ -59,15 +58,6 @@ const script = sole(
  */
 const engine = sole(
   import.meta.glob("../../../scripts/_ratchet.mjs", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }),
-);
-
-/** A real, human-written guide in this repo — prose, not code. */
-const scaffoldGuide = sole(
-  import.meta.glob("../../aai-templates/scaffold/CLAUDE.md", {
     query: "?raw",
     import: "default",
     eager: true,
@@ -120,16 +110,14 @@ const proseDocs: Record<string, string> = {
 };
 
 /**
- * Every line of that corpus, tagged with the document it came from.
+ * Every line of that corpus.
  *
  * Split ONCE, at module scope, rather than per call: the per-pattern liveness
  * case below reads it for each of the seven patterns, and the corpus is every
  * guide in the repo — half a megabyte of markdown re-split eight times for an
  * answer that cannot change between cases.
  */
-const proseLines: { doc: string; line: string }[] = Object.entries(proseDocs).flatMap(
-  ([doc, text]) => text.split("\n").map((line) => ({ doc, line })),
-);
+const proseLines: string[] = Object.values(proseDocs).flatMap((text) => text.split("\n"));
 
 /**
  * The committed per-file budgets the gate now checks against.
@@ -171,7 +159,6 @@ const patterns = shippedPatterns(script ?? "");
 describe("escape-hatch ratchet scope", () => {
   test("the script and the prose corpus are readable", () => {
     expect(script, "scripts/check-escape-hatches.mjs not found").toBeTypeOf("string");
-    expect(scaffoldGuide, "scaffold/CLAUDE.md not found").toBeTypeOf("string");
     // A corpus floor, for the reason the ratchets themselves carry one: every
     // per-pattern assertion below is "this pattern found prose", and an empty
     // corpus turns all of them into statements about nothing.
@@ -206,13 +193,18 @@ describe("escape-hatch ratchet scope", () => {
       // A failure here is far likelier to be a narrowed pattern than a reworded
       // guide, but either way the reasoning behind the markdown exclusion needs
       // re-checking before this is "fixed" by deleting it.
-      const hits = proseLines.filter(({ line }) => new RegExp(re).test(line));
+      // Compiled ONCE per pattern, not once per line: this filter built a fresh
+      // `RegExp` for each of ~19,600 lines × 7 patterns — ~137,000
+      // constructions, measured at 24ms against 10ms hoisted. `.some()` rather
+      // than `.filter().length`, since the only question is whether the pattern
+      // is still alive.
+      const pattern = new RegExp(re);
       expect(
-        hits.length,
+        proseLines.some((line) => pattern.test(line)),
         `pattern "${label}" matches no line of AGENTS.md, .agents/ or a package guide — ` +
           "either it has been narrowed to something inert, or the prose that " +
           "justifies excluding markdown from the scan is gone",
-      ).toBeGreaterThan(0);
+      ).toBe(true);
     },
   );
 

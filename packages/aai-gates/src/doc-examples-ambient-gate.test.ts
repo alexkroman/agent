@@ -35,26 +35,22 @@
  *     ambient themselves are among them (`TS2882` on
  *     `import "@alexkroman1/aai-ui/styles.css"`).
  *
- * It lives in aai-templates for the reason its sibling gate specs do: this
- * package already owns the tests for repo-level scripts, and `?raw` imports
- * reach them with no node types, which this package's tsconfig has none of.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * docExamplesSource it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
+import {
+  DOC_EXAMPLE_MARKDOWN,
+  DOC_EXAMPLES_SCRIPT,
+  declaredMarkdown,
+  docExamplesSource,
+} from "./_doc-example-corpus.ts";
+import { GATE_WIRING, sole } from "./_gate-support.ts";
 
-const SCRIPT = "scripts/check-doc-examples.mjs";
 const AMBIENTS_MODULE = "scripts/_doc-example-ambients.mjs";
 const GLOBAL_DTS = "packages/aai-templates/scaffold/global.d.ts";
-
-/** The gate's ENTRY POINT: the corpus lists, the `include` and the fence parser. */
-const script = sole(
-  import.meta.glob("../../../scripts/check-doc-examples.mjs", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }),
-);
 
 /** The harness transformation, read as SOURCE — for the wiring assertions. */
 const ambientsSource = sole(
@@ -90,56 +86,6 @@ const globalDts = sole(
 );
 
 /**
- * Every markdown source the gate might read, by repo-relative path — globbed
- * wider than the gate's own list and INTERSECTED with it below, exactly as
- * `doc-examples-nocheck-gate.test.ts` does and for the same reason: a literal
- * pattern is what `import.meta.glob` requires, and reading the list off the
- * script is what makes "the gate stopped reading a document" visible here.
- *
- * Scoped to markdown rather than the doc-comment half because that is where
- * every directive in the corpus lives today, and because a `?raw` read of one
- * markdown file is one glob where the source trees are thousands.
- */
-const markdown: Record<string, string> = Object.fromEntries(
-  Object.entries({
-    ...import.meta.glob<string>("../../../README.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-    ...import.meta.glob<string>("../../../docs/home.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-    ...import.meta.glob<string>("../../*/README.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-    ...import.meta.glob<string>("../../../examples/*/README.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-    ...import.meta.glob<string>("../../aai-templates/scaffold/CLAUDE.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-  }).map(([key, source]) => [repoPathOf(key), source]),
-);
-
-/** The gate's own `MARKDOWN_FILES`, read as data rather than restated. */
-function declaredMarkdown(): string[] {
-  const block = /const MARKDOWN_FILES = \[([\s\S]*?)\];/.exec(script ?? "");
-  if (block?.[1] === undefined) throw new Error(`${SCRIPT} no longer declares MARKDOWN_FILES`);
-  return [...block[1].matchAll(/"([^"]+)"/g)]
-    .map((found) => found[1])
-    .filter((file): file is string => file !== undefined);
-}
-
-/**
  * Every CHECKED ts/tsx fence body in one document.
  *
  * Written from the markdown spec rather than copied from the gate, on the rule
@@ -167,10 +113,13 @@ function checkedFences(source: string): string[] {
   return bodies;
 }
 
+/** The declared documents this suite can actually READ. Asserted TOTAL below. */
+const readable = declaredMarkdown().filter((file) => DOC_EXAMPLE_MARKDOWN[file] !== undefined);
+
 /** The checked fences of every document this suite can both READ and prove the gate reads. */
-const corpus = declaredMarkdown()
-  .filter((file) => markdown[file] !== undefined)
-  .flatMap((file) => checkedFences(markdown[file] ?? "").map((code) => ({ file, code })));
+const corpus = readable.flatMap((file) =>
+  checkedFences(DOC_EXAMPLE_MARKDOWN[file] ?? "").map((code) => ({ file, code })),
+);
 
 /** A leading-trivia reference directive, re-derived — the property under test. */
 function leadingDirectives(code: string): string[] {
@@ -190,7 +139,7 @@ function leadingDirectives(code: string): string[] {
 
 describe("the ambient stripper's wiring", () => {
   test("both sources are readable, and the module is importable", () => {
-    expect(script, `${SCRIPT} not found`).toBeTypeOf("string");
+    expect(docExamplesSource, `${DOC_EXAMPLES_SCRIPT} not found`).toBeTypeOf("string");
     expect(ambientsSource, `${AMBIENTS_MODULE} not found`).toBeTypeOf("string");
     // The module must stay side-effect-free to be importable at all; a top-level
     // read or a `process.exit` here would fail this line rather than the suite.
@@ -202,20 +151,22 @@ describe("the ambient stripper's wiring", () => {
   test("the entry point still RUNS it on every fence it writes", () => {
     // The split is for file size; the wiring is what makes it a transformation.
     // A module nothing calls leaves the leak open with no diff saying so.
-    expect(script, `${SCRIPT} no longer imports ${AMBIENTS_MODULE}`).toContain(
-      "_doc-example-ambients.mjs",
-    );
-    expect(script, `${SCRIPT} no longer calls the stripper`).toContain(
+    expect(
+      docExamplesSource,
+      `${DOC_EXAMPLES_SCRIPT} no longer imports ${AMBIENTS_MODULE}`,
+    ).toContain("_doc-example-ambients.mjs");
+    expect(docExamplesSource, `${DOC_EXAMPLES_SCRIPT} no longer calls the stripper`).toContain(
       "stripReferenceDirectives(ex.code)",
     );
-    expect(script, `${SCRIPT} no longer reports how many it stripped`).toContain(
-      "directivesStripped",
-    );
+    expect(
+      docExamplesSource,
+      `${DOC_EXAMPLES_SCRIPT} no longer reports how many it stripped`,
+    ).toContain("directivesStripped");
   });
 
   test("the gate that carries it is enforced by both runners", () => {
     // Same argument as every other gate spec here: a gate in package.json but in
-    // neither runner is a script nobody runs. This transformation rides the
+    // neither runner is a docExamplesSource nobody runs. This transformation rides the
     // EXISTING `check:doc-examples` row rather than adding a name to keep in
     // step across files.
     const wiring = Object.entries(GATE_WIRING);
@@ -235,14 +186,15 @@ describe("the harness owns the ambients, not a sibling fence", () => {
     // themselves. So this is not redundancy with the stripping — it is the
     // replacement for the leak, and removing it is a red gate.
     //
-    // Matched as the `path.join` EXPRESSION, not as the bare path: the script
+    // Matched as the `path.join` EXPRESSION, not as the bare path: the docExamplesSource
     // discusses that file in three comments, so `toContain("global.d.ts")`
     // passed the A/B above with the real `include` entry deleted — a spec
     // satisfied by the prose ABOUT the mechanism it is checking, which is the
     // self-referential trap `guard-invariants.mjs` keeps its own set for.
-    expect(script ?? "", `${SCRIPT} no longer includes ${GLOBAL_DTS} in the program`).toMatch(
-      /path\.join\(\s*repo,\s*"packages\/aai-templates\/scaffold\/global\.d\.ts"\s*\)/,
-    );
+    expect(
+      docExamplesSource ?? "",
+      `${DOC_EXAMPLES_SCRIPT} no longer includes ${GLOBAL_DTS} in the program`,
+    ).toMatch(/path\.join\(\s*repo,\s*"packages\/aai-templates\/scaffold\/global\.d\.ts"\s*\)/);
     expect(globalDts, `${GLOBAL_DTS} not found`).toBeTypeOf("string");
     expect(globalDts, `${GLOBAL_DTS} no longer references vite/client`).toMatch(
       /^\s*\/\/\/\s*<reference\s+types="vite\/client"\s*\/>/,
@@ -259,6 +211,11 @@ describe("the harness owns the ambients, not a sibling fence", () => {
     // of an empty corpus.
     expect(declaredMarkdown().length, "MARKDOWN_FILES parsed to nothing").toBeGreaterThanOrEqual(8);
     expect(corpus.length, "no checked ts/tsx fence was readable").toBeGreaterThan(30);
+    // The intersection is TOTAL, and asserting so is the half the floor above
+    // cannot cover: a document the gate declares and this file's five literal
+    // globs cannot reach used to drop out silently, leaving the fence floor
+    // satisfied by the other documents and that one's directives unchecked.
+    expect(readable).toEqual(declaredMarkdown());
   });
 
   test("the stripper still has work to do", () => {

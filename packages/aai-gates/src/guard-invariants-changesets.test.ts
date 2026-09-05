@@ -53,6 +53,7 @@ const changesets = sole(
     ) => { file: string; line: number; text: string }[];
     workspacePackageNames: () => Set<string>;
     versionablePackageNames: () => Set<string>;
+    SHIPS_VIA: readonly { name: string; carriers: readonly string[]; via: string }[];
   }>("../../../scripts/guard-invariants-changesets.mjs", { eager: true }),
 );
 
@@ -189,14 +190,15 @@ describe("guard-invariants rule 20 (changeset package names)", () => {
         // too; pinning it here is what makes a rename fail in the ordinary test
         // run rather than only under `pnpm check`.
         const known = changesets?.workspacePackageNames() ?? new Set<string>();
-        for (const name of [
-          "aai-studio-client",
-          "aai-guest",
-          "aai-templates",
-          "aai-server",
-          "aai-studio-server",
-          "@alexkroman1/aai-cli",
-        ]) {
+        // DERIVED from the real table rather than restated. A hand-copied roster
+        // covers the packages that were in `SHIPS_VIA` the day it was written:
+        // the seventh entry — a plausible near-term addition, the comment names
+        // three carriers today — would join the table and be guarded by nothing,
+        // which is the same `0 ✓`-over-a-hole this test exists to prevent.
+        const table = changesets?.SHIPS_VIA ?? [];
+        const named = [...new Set(table.flatMap(({ name, carriers }) => [name, ...carriers]))];
+        expect(named.length, "SHIPS_VIA resolved to nothing").toBeGreaterThanOrEqual(6);
+        for (const name of named) {
           expect(known, `${name} is no longer a workspace package`).toContain(name);
         }
       });

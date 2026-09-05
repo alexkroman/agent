@@ -24,10 +24,9 @@
  * `git push --no-verify` skipped them entirely; a new gate has to be in both
  * places or it is enforced by a hook the author can bypass.
  *
- * This lives in aai-templates for the same reason `claude-md-limit.test.ts`
- * and `test-assertion-gate.test.ts` do: it is the package that owns
- * repo-level meta checks, and `?raw` imports reach repo-root files without
- * node types, which this package's tsconfig has none of.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
@@ -70,31 +69,6 @@ const raw = sole(
 ) as string | undefined;
 
 /**
- * Repo-relative paths of everything a convention could plausibly point at, so a
- * glob typo has something concrete to fail against.
- *
- * Vite resolves `import.meta.glob` keys relative to THIS file and collapses the
- * result, so the same target arrives under different prefixes depending on which
- * glob found it. `repoPathOf` resolves a key rather than matching its prefix, so
- * no shape here has to be enumerated — see its doc in `_gate-support.ts`.
- *
- * Only the KEYS are wanted — `eager: false` plus `?raw` keeps every entry a
- * lazy text import that nothing ever calls.
- *
- * The templates tree is reached through its **markdown**, not its `.ts`, and
- * that is load-bearing: knip resolves an `import.meta.glob` pattern whatever
- * its query, so a code glob here marks every template file as reached and knip
- * then reports `"templates/**"` in its `ignore` (and `@alexkroman1/aai-ui` in
- * `ignoreDependencies`) as removable. Those entries are what keep a template's
- * unused exports out of knip's report, so acting on that hint would hide real
- * findings — and a test about another gate's config should not reshape this
- * one's graph. Markdown is not a knip project file, so it carries no edge.
- * Every template path pattern in the config has its first placeholder at the
- * template-name segment, so one `.md` hit under `templates/` proves the whole
- * family's prefix.
- */
-
-/**
  * Everything a `paths` pattern could select, FILES and DIRECTORIES both.
  *
  * ONE corpus, deep, because a shallow sample is NOT all a literal-prefix check
@@ -115,10 +89,11 @@ const raw = sole(
  * own `repoFiles`, so no new module edge reaches the templates tree.
  */
 const repoPaths = (() => {
-  // Two key shapes, exactly as the shallow globs above produce, and `repoPathOf`
-  // is what knows them: Vite normalizes to the shortest relative form, so a
-  // sibling package arrives as `../aai/index.ts` and THIS package's own files as
-  // `./templates/…/agent.ts`.
+  // Only the KEYS are read, so this is a lazy import nothing ever calls.
+  // `repoPathOf` resolves a key rather than matching its prefix: Vite normalizes
+  // to the shortest relative form, so the same target arrives under different
+  // prefixes depending on which glob found it, and no shape has to be
+  // enumerated here — see its doc in `_gate-support.ts`.
   const files = Object.keys(import.meta.glob("../../*/**/*.{ts,tsx,json,md}")).map(repoPathOf);
   const paths = new Set(files);
   for (const file of files) {
@@ -127,6 +102,14 @@ const repoPaths = (() => {
   }
   return paths;
 })();
+
+/**
+ * The same corpus as an array, materialized ONCE.
+ *
+ * Both scans below spread the ~2,600-entry `Set` afresh for every convention ×
+ * every pattern. The `Set` stays for the membership check that wants it.
+ */
+const allPaths: readonly string[] = [...repoPaths];
 
 const config = JSON.parse(raw ?? "{}") as KonsistentConfig;
 
@@ -239,34 +222,27 @@ const blocksOf = (convention: Convention): MustBlock[] => {
 };
 
 /**
- * A konsistent `paths` pattern as a regex over repo-relative paths.
- *
- * `{placeholder}` is konsistent's per-segment capture, `*` is a single segment
- * and `**` crosses them — the three kinds of magic these thirteen conventions
- * use. Leading `!` is stripped by the caller; polarity is not this function's
- * question.
- */
-/**
  * One glob segment's worth of literal text, with `*` and `**` translated.
  *
- * The sentinels are spelled `\u0000` and NOT as raw NUL bytes. One literal
- * NUL makes the whole file BINARY to `git grep`, which silently exempts it
- * from every guard-invariants line rule and every check-escape-hatches
- * pattern — and the corpus floor cannot see it, because the file is still
- * present in `git ls-files`. That has now happened three times in this repo
- * (`host/workflow-notify.ts`, `host/workflow-keys.ts`, and here); the third
- * is what `assertScanCorpus`'s `git ls-files` vs `git grep -lI` diff now
- * catches. The escape is byte-identical at runtime.
+ * ONE alternation pass, ordered longest-first, so a replacement cannot re-match
+ * an earlier one's output. This stood as six chained `.replace`/`.replaceAll`
+ * calls round-tripping through `\u0000DEEP\u0000`-style sentinels for exactly
+ * that reason, under a comment explaining why the sentinels had to be spelled as
+ * escapes rather than raw NUL bytes (one literal NUL makes the whole file BINARY
+ * to `git grep`, silently exempting it from every line rule — which had happened
+ * three times in this repo). A hazard that only existed because the sentinels
+ * did: there are none now, so there is nothing to spell carefully.
  */
+const GLOB_MAGIC: Record<string, string> = {
+  "**/": "(?:[^/]+/)*",
+  "**": ".*",
+  "*": "[^/]*",
+};
+
 const globChunk = (text: string): string =>
   text
     .replace(/[.+^$()|[\]\\]/g, "\\$&")
-    .replace(/\*\*\//g, "\u0000DEEP\u0000")
-    .replace(/\*\*/g, "\u0000ANY\u0000")
-    .replace(/\*/g, "\u0000SEG\u0000")
-    .replaceAll("\u0000SEG\u0000", "[^/]*")
-    .replaceAll("\u0000DEEP\u0000", "(?:[^/]+/)*")
-    .replaceAll("\u0000ANY\u0000", ".*");
+    .replace(/\*\*\/|\*\*|\*/g, (magic) => GLOB_MAGIC[magic] ?? magic);
 
 /**
  * A `{placeholder}` or `{placeholder:constraint(arg)}` as a regex fragment.
@@ -294,7 +270,14 @@ const placeholderToRegExp = (inner: string): string => {
   return `(?:${matches[1].replace(/^\^/, "").replace(/\$$/, "")})`;
 };
 
-/** A `paths` pattern as an anchored regex over repo-relative paths. */
+/**
+ * A konsistent `paths` pattern as an ANCHORED regex over repo-relative paths.
+ *
+ * `{placeholder}` is konsistent's per-segment capture, `*` is a single segment
+ * and `**` crosses them — the three kinds of magic these thirteen conventions
+ * use. Leading `!` is stripped by the caller; polarity is not this function's
+ * question.
+ */
 const patternToRegExp = (pattern: string): RegExp => {
   const source = pattern.replace(/^!/, "");
   let body = "";
@@ -381,7 +364,7 @@ describe("konsistent.json", () => {
         const prefix = literalPrefix(pattern);
         if (prefix === "") continue; // Pattern is magic from the first segment.
         expect(
-          [...repoPaths].some((path) => path.startsWith(prefix)),
+          allPaths.some((path) => path.startsWith(prefix)),
           `${convention.name}: no file in the repo lives under "${prefix}" (from "${pattern}")`,
         ).toBe(true);
       }
@@ -416,12 +399,11 @@ describe("konsistent.json", () => {
           continue;
         }
         const matcher = patternToRegExp(pattern);
-        const matched = [...repoPaths].filter((path) => matcher.test(path));
         expect(
-          matched.length,
+          allPaths.some((path) => matcher.test(path)),
           `${convention.name}: "${pattern}" selects NOTHING — konsistent would check zero ` +
             'files and print "No violations found"',
-        ).toBeGreaterThan(0);
+        ).toBe(true);
       }
     }
   });

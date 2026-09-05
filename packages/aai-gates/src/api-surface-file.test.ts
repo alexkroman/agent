@@ -13,10 +13,11 @@
  * a gate whose entire success output is a count, agreeing with itself.
  *
  * So this suite reads the per-entry-point reports and `API.md` INDEPENDENTLY of
- * the script and asserts the second contains the first. It lives in
- * aai-templates for the same reason `claude-md-limit.test.ts` does: raw imports
- * reach the sibling packages and the repo root, and this package's tsconfig
- * pulls in no node types.
+ * the script and asserts the second contains the first.
+ *
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
@@ -43,6 +44,20 @@ const combined: string | undefined = sole(
  * spelling `combined ?? ""` again.
  */
 const api: string = combined ?? "";
+
+/**
+ * `API.md`'s lines, trimmed, for exact membership.
+ *
+ * Built once: the per-report check below asked `api.includes(line)` for each of
+ * 1,218 declarations against a 304 KB string, which was measured at 41ms — this
+ * file's whole assertion cost — against 2.4ms for the `Set`.
+ */
+const apiLines: ReadonlySet<string> = new Set(
+  api
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => line.trim()),
+);
 
 /**
  * The exported lines inside a report's ```ts fence, one per line.
@@ -115,7 +130,11 @@ describe("API.md", () => {
   });
 
   test.each(entries)("$path made it into API.md", ({ path, declarations: lines }) => {
-    const missing = lines.filter((line) => !api.includes(line));
+    // Set membership, not `api.includes` — 1,218 substring scans of a 304 KB
+    // string, measured at 41ms against 2.4ms here and the whole of this file's
+    // assertion time. It is also the STRONGER claim: `includes` accepted a
+    // declaration that merely appeared as a substring of some longer line.
+    const missing = lines.filter((line) => !apiLines.has(line.trim()));
     expect(
       missing,
       `${missing.length} declaration(s) from ${path} are absent from API.md, ` +
@@ -199,7 +218,7 @@ describe("release tags", () => {
     }
     const split = [...tagsByName]
       .filter(([, tags]) => tags.size > 1)
-      .map(([name, tags]) => `${name} (${[...tags].sort().join(" + ")})`);
+      .map(([name, tags]) => `${name} (${[...tags].sort(byCodeUnit).join(" + ")})`);
     expect(
       split,
       `${path} tags ${split.length} symbol(s) two ways: ${split.join(", ")}. ` +

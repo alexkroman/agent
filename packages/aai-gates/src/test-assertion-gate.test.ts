@@ -18,9 +18,9 @@
  * vacuous, and only one floored count noticed. That module exists to be
  * importable — no side effects — for exactly this reason.
  *
- * This lives in aai-templates for the same reason `claude-md-limit.test.ts`
- * does: it is the package that owns repo-level documentation/meta checks, and
- * `?raw` imports reach sibling files without node types.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";

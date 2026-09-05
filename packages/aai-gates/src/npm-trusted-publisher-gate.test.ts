@@ -31,7 +31,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { repoPathOf } from "./_gate-support.ts";
+import { repoPathOf, withoutYamlComments, workflowJobs } from "./_gate-support.ts";
 
 /**
  * The workflow filename configured as the trusted publisher on npmjs.com, for
@@ -48,6 +48,33 @@ const workflows = import.meta.glob<string>("../../../.github/workflows/*.yml", {
   import: "default",
   eager: true,
 });
+
+/**
+ * `ship.yml`, looked up by REPO PATH.
+ *
+ * The glob prefix used to be spelled a second and third time by hand
+ * (`workflows[`../../../${TRUSTED_PUBLISHER_WORKFLOW}`]`), which is the
+ * spell-the-path-twice hazard `repoPathOf` exists to remove: a prefix that
+ * drifted read `undefined`, and one of the three call sites turned that into an
+ * empty search with `?? ""`.
+ */
+const byRepoPath: Record<string, string | undefined> = Object.fromEntries(
+  Object.entries(workflows).map(([key, text]) => [repoPathOf(key), text]),
+);
+
+const shipSource: string = byRepoPath[TRUSTED_PUBLISHER_WORKFLOW] ?? "";
+
+/**
+ * The `release` job, bounded by the next job KEY.
+ *
+ * Both readers below used to slice it with
+ * `indexOf("\n  release:\n") … indexOf("\n  guest-image:")` — the job's extent
+ * defined by the IDENTITY of the job that follows it. A job inserted between the
+ * two widened the slice silently, and renaming `guest-image` made the second
+ * `indexOf` answer -1, so `slice(start, -1)` ran to the end of the file. See
+ * {@link workflowJobs}.
+ */
+const releaseJob: string = workflowJobs(shipSource, TRUSTED_PUBLISHER_WORKFLOW).body("release");
 
 /** The step that uploads to npm, as opposed to the prose about it. */
 const PUBLISHES = /^\s*run: pnpm exec changeset publish/m;
@@ -72,7 +99,7 @@ describe("the publishing workflow is the one npm trusts", () => {
   });
 
   test("the publishing job can request an OIDC token", () => {
-    const source = workflows[`../../../${TRUSTED_PUBLISHER_WORKFLOW}`];
+    const source = byRepoPath[TRUSTED_PUBLISHER_WORKFLOW];
     expect(source).toBeTypeOf("string");
     // Without `id-token: write` the runner exposes no
     // ACTIONS_ID_TOKEN_REQUEST_URL, npm skips the exchange entirely, and the
@@ -110,15 +137,7 @@ describe("the publishing workflow is the one npm trusts", () => {
    * the line a reader deleting "the npm config" would take with it.
    */
   test("the publish step passes no npm token", () => {
-    const source = workflows[`../../../${TRUSTED_PUBLISHER_WORKFLOW}`] ?? "";
-    const release = source.slice(
-      source.indexOf("\n  release:\n"),
-      source.indexOf("\n  guest-image:"),
-    );
-    const steps = release
-      .split("\n")
-      .filter((line) => !line.trimStart().startsWith("#"))
-      .join("\n");
+    const steps = withoutYamlComments(releaseJob);
     expect(steps, "the release job no longer slices out — its shape moved").toContain(
       "changeset publish",
     );
@@ -133,11 +152,7 @@ describe("the publishing workflow is the one npm trusts", () => {
   });
 
   test("the release job claims no environment", () => {
-    const source = workflows[`../../../${TRUSTED_PUBLISHER_WORKFLOW}`] ?? "";
-    const release = source.slice(
-      source.indexOf("\n  release:\n"),
-      source.indexOf("\n  guest-image:"),
-    );
+    const release = releaseJob;
     expect(release).toContain("changeset publish");
     // An `environment:` here would add an `environment` claim to the OIDC
     // token. npm's config for these packages names none, so the exchange would

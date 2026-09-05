@@ -19,8 +19,8 @@
   // on it. It must not import the script it guards — they reach `node:`
   // builtins, and a spec importing one would be asserting a module against
   // itself — nor any workspace package, which `gates-package-boundary`
-  // enforces. `_gate-support.ts`'s hand-rolled path walk and its three-line
-  // `isRecord` exist for that reason and say so at the declaration.
+  // enforces. `_gate-support.ts`'s hand-rolled path walk exists for that reason
+  // and says so at the declaration.
   //
   // `*.ts` beside `src` for the reason the paragraph above gives, applied one
   // level up: `vitest.config.ts` sits at the package ROOT, is imported by

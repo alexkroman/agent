@@ -41,10 +41,16 @@ const source: string = script ?? "";
 /**
  * Every TypeScript file the gate could select, repo-relative.
  *
- * Only the KEYS are read, so these are lazy imports nothing ever calls — the
+ * Only the KEYS are read, so this is a lazy import nothing ever calls — the
  * pattern `guard-invariants-gate.test.ts` and `file-length-gate.test.ts` both
- * use. Two globs because a git pathspec's trap has a Vite counterpart: `**\/`
- * carries a literal slash, so the shallow level needs its own pattern.
+ * use.
+ *
+ * ONE glob. A second, shallow `../../*\/*.{ts,tsx}` stood beside it, justified
+ * by the git-pathspec trap where `**\/` carries a literal slash and so misses
+ * the top level. That is true of `git ls-files` and FALSE of Vite: measured
+ * through Vite's own matcher, the shallow pattern returned 18 files, all 18
+ * already among the deep pattern's 2,174. The two siblings named above have
+ * always used the deep pattern alone.
  *
  * `dist/` is dropped because the gate's corpus is `git ls-files` and Vite's is
  * the filesystem: on a tree that has been built, the four publishable packages
@@ -52,10 +58,7 @@ const source: string = script ?? "";
  * independent corpus is the point of globbing here rather than shelling out —
  * it just has to be independent about the same SET.
  */
-const repoFiles = Object.keys({
-  ...import.meta.glob("../../*/*.{ts,tsx}"),
-  ...import.meta.glob("../../*/**/*.{ts,tsx}"),
-})
+const repoFiles = Object.keys(import.meta.glob("../../*/**/*.{ts,tsx}"))
   .map(repoPathOf)
   .filter((f) => !f.includes("/dist/"));
 

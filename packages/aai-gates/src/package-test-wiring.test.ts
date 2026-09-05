@@ -32,19 +32,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, repoPathOf } from "./_gate-support.ts";
-
-/**
- * The package directory a glob key names.
- *
- * Through `repoPathOf` rather than a prefix test on the key, because Vite
- * normalizes the globbing package's OWN file to a different spelling than the
- * siblings' (`./package.json` against `../../aai/package.json`) — resolving
- * both against this file's directory is what makes the self entry land in the
- * set. Getting it wrong is silent: the entry drops out, and the package this
- * spec lives in is the one that stops being checked.
- */
-const dirOf = (key: string): string => repoPathOf(key).split("/")[1] ?? "";
+import { byCodeUnit, packageDirOf } from "./_gate-support.ts";
 
 /** Every workspace package's manifest, as source. */
 const manifests = Object.entries(
@@ -53,7 +41,7 @@ const manifests = Object.entries(
     import: "default",
     eager: true,
   }),
-).map(([key, source]) => ({ dir: dirOf(key), source }));
+).map(([key, source]) => ({ dir: packageDirOf(key), source }));
 
 /** Every workspace package's vitest config, as source. */
 const configs = Object.entries(
@@ -62,7 +50,7 @@ const configs = Object.entries(
     import: "default",
     eager: true,
   }),
-).map(([key, source]) => ({ dir: dirOf(key), source }));
+).map(([key, source]) => ({ dir: packageDirOf(key), source }));
 
 /** The scripts a fan-out door needs a package to declare, and what skips it. */
 const REQUIRED_SCRIPTS = [

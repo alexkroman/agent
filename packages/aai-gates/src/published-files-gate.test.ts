@@ -37,6 +37,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { byCodeUnit, repoPathOf } from "./_gate-support.ts";
 
 /** Every package manifest in the workspace, keyed by path relative to this file. */
 const manifests: Record<string, string> = import.meta.glob("../../*/package.json", {
@@ -63,8 +64,14 @@ interface Manifest {
 }
 
 const parsed: { path: string; manifest: Manifest }[] = Object.entries(manifests)
-  .map(([path, raw]) => ({ path, manifest: JSON.parse(raw) as Manifest }))
-  .sort((a, b) => (a.path < b.path ? -1 : 1));
+  // Through `repoPathOf`, like every sibling spec: a raw Vite key names the file
+  // the way the bundler sees it, not the way a developer reading the failure
+  // does. And through `byCodeUnit` — the comparator this repo requires of
+  // anything a gate reads — rather than a third hand-rolled spelling of it,
+  // which was also subtly wrong: it had no `a === b` branch, so equal keys
+  // compared as `1`.
+  .map(([key, raw]) => ({ path: repoPathOf(key), manifest: JSON.parse(raw) as Manifest }))
+  .sort((a, b) => byCodeUnit(a.path, b.path));
 
 const publishable = parsed.filter(({ manifest }) => manifest.private !== true);
 
@@ -129,31 +136,28 @@ const exportTargets = (exports: unknown): string[] => {
   return found;
 };
 
+/** One case per publishable package, built once rather than per `test.each`. */
+const cases = publishable.map(({ path, manifest }) => [manifest.name ?? path, manifest] as const);
+
 describe("publishable packages declare what they ship", () => {
   test("the manifest glob still finds the workspace", () => {
     expect(parsed.length).toBeGreaterThanOrEqual(MIN_PUBLISHABLE);
     expect(publishable.length).toBeGreaterThanOrEqual(MIN_PUBLISHABLE);
   });
 
-  test.each(publishable.map(({ path, manifest }) => [manifest.name ?? path, manifest] as const))(
-    "%s declares a non-empty files field",
-    (_name, manifest) => {
-      expect(Array.isArray(manifest.files)).toBe(true);
-      expect(filesOf(manifest).length).toBeGreaterThan(0);
-    },
-  );
+  test.each(cases)("%s declares a non-empty files field", (_name, manifest) => {
+    expect(Array.isArray(manifest.files)).toBe(true);
+    expect(filesOf(manifest).length).toBeGreaterThan(0);
+  });
 
-  test.each(publishable.map(({ path, manifest }) => [manifest.name ?? path, manifest] as const))(
-    "%s covers every exports target with files",
-    (_name, manifest) => {
-      const declared = filesOf(manifest);
-      const targets = exportTargets(manifest.exports);
-      expect(targets.length).toBeGreaterThan(0);
-      const uncovered = targets.filter((target) => {
-        if (ALWAYS_PACKED.test(target)) return false;
-        return !declared.some((entry) => target === entry || target.startsWith(`${entry}/`));
-      });
-      expect(uncovered, `${_name} exports paths no files entry packs`).toEqual([]);
-    },
-  );
+  test.each(cases)("%s covers every exports target with files", (name, manifest) => {
+    const declared = filesOf(manifest);
+    const targets = exportTargets(manifest.exports);
+    expect(targets.length).toBeGreaterThan(0);
+    const uncovered = targets.filter((target) => {
+      if (ALWAYS_PACKED.test(target)) return false;
+      return !declared.some((entry) => target === entry || target.startsWith(`${entry}/`));
+    });
+    expect(uncovered, `${name} exports paths no files entry packs`).toEqual([]);
+  });
 });

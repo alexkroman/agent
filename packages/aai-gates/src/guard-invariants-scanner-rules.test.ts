@@ -23,9 +23,9 @@
  * the file count — so its corpus is re-derived here independently, which is the
  * only way a renamed directory fails rather than reporting zero.
  *
- * It lives in aai-templates for the reason its siblings do: this package owns
- * the tests for repo-level scripts, and raw imports reach them with no node
- * types, which this package's tsconfig does not have.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
@@ -219,11 +219,10 @@ describe("rule 14 — a fixture directory nothing reads", () => {
     // its only reader by five commits while this string sat in the tree the
     // entire time, pointing at its own sibling — so a scan matching the NAME
     // finds a reader for the dead directory and reports a clean tree.
+    // Note which package: the resolution names `aai`'s directory, NOT the
+    // `aai-server` sibling whose name the string also spells.
     expect(resolveAgainstFile?.(COMPAT, "compat-fixtures")).toBe(
       "packages/aai/src/sdk/compat-fixtures",
-    );
-    expect(resolveAgainstFile?.(COMPAT, "compat-fixtures")).not.toBe(
-      "packages/aai-server/src/compat-fixtures",
     );
   });
 

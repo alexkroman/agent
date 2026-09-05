@@ -14,9 +14,10 @@
  * derived from and the one a reader would otherwise have to grep instead.
  *
  * So this suite reads both files INDEPENDENTLY of the script and asserts the
- * index is exactly that JSON turned inside out. It lives in aai-templates for
- * the reason `api-surface-file.test.ts` does: raw imports reach the repo root,
- * and this package's tsconfig pulls in no node types.
+ * index is exactly that JSON turned inside out.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
@@ -74,47 +75,53 @@ function rowsUnder(heading: string): Map<string, string[]> {
   return rows;
 }
 
+/**
+ * Both derivations, evaluated ONCE.
+ *
+ * `expectedIndex()` JSON-parses a 30 KB artifact and builds two ~700-entry Maps;
+ * `rowsUnder` slices and `matchAll`s a 62 KB document. Nothing between the calls
+ * can change either answer, and they stood at three and four call sites.
+ */
+const { authoring: expectedAuthoring, internal: expectedInternal } = expectedIndex();
+const authoringRows = rowsUnder("Authoring surface");
+const internalRows = rowsUnder("Framework internals");
+
 describe("API-INDEX.md", () => {
   test("both artifacts are readable", () => {
     // A broken glob would make every assertion below vacuously pass — the exact
     // failure this file exists to catch one level up.
     expect(index, `API-INDEX.md is missing. ${remedy}`).not.toBe("");
     expect(exportsJson, "API-EXPORTS.json is missing.").not.toBe("");
-    const { authoring, internal } = expectedIndex();
-    expect(authoring.size).toBeGreaterThan(600);
-    expect(internal.size).toBeGreaterThan(100);
+    expect(expectedAuthoring.size).toBeGreaterThan(600);
+    expect(expectedInternal.size).toBeGreaterThan(100);
   });
 
   test("the authoring half is API-EXPORTS.json inverted", () => {
-    const { authoring } = expectedIndex();
-    const rows = rowsUnder("Authoring surface");
     expect(
-      [...rows.keys()],
-      `the index lists ${rows.size} authoring name(s), the surface has ` +
-        `${authoring.size}. ${remedy}`,
-    ).toEqual([...authoring.keys()].sort(byCodeUnit));
-    for (const [name, specifiers] of authoring) {
-      expect(rows.get(name), `${name} is indexed against the wrong subpath(s)`).toEqual(specifiers);
+      [...authoringRows.keys()],
+      `the index lists ${authoringRows.size} authoring name(s), the surface has ` +
+        `${expectedAuthoring.size}. ${remedy}`,
+    ).toEqual([...expectedAuthoring.keys()].sort(byCodeUnit));
+    for (const [name, specifiers] of expectedAuthoring) {
+      expect(authoringRows.get(name), `${name} is indexed against the wrong subpath(s)`).toEqual(
+        specifiers,
+      );
     }
   });
 
   test("the internal half holds what the authoring half does not", () => {
-    const { internal } = expectedIndex();
-    const rows = rowsUnder("Framework internals");
-    expect([...rows.keys()], remedy).toEqual([...internal.keys()].sort(byCodeUnit));
-    const authoringRows = rowsUnder("Authoring surface");
+    expect([...internalRows.keys()], remedy).toEqual([...expectedInternal.keys()].sort(byCodeUnit));
     // A name in both halves would tell a reader they have a choice of import
     // where one of the two is explicitly not covered by semver.
-    for (const name of rows.keys()) expect(authoringRows.has(name)).toBe(false);
+    for (const name of internalRows.keys()) expect(authoringRows.has(name)).toBe(false);
   });
 
   test("it answers the question it exists for", () => {
     // The worked case from the audit that added this file: three of the names a
     // workflow author must write were reachable only from the subpath
     // documented as the surface for a caller OUTSIDE the agent.
-    const rows = rowsUnder("Authoring surface");
-    expect(rows.get("WorkflowInputOf")).toContain("@alexkroman1/aai");
-    expect(rows.get("WorkflowRunOf")).toContain("@alexkroman1/aai");
-    expect(rows.get("agent")).toEqual(["@alexkroman1/aai"]);
+    expect(authoringRows.get("WorkflowInputOf")).toContain("@alexkroman1/aai");
+    expect(authoringRows.get("WorkflowRunOf")).toContain("@alexkroman1/aai");
+    expect(authoringRows.get("agent")).toEqual(["@alexkroman1/aai"]);
   });
 });
