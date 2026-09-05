@@ -513,12 +513,25 @@ class UI {
     this.wireControls();
   }
 
+  // Throws rather than returning `HTMLElement | null`. Every id here is one this
+  // file just rendered, so a null means the markup and the code that reads it
+  // have gone out of step — and the difference is where you find out: this says
+  // which id is missing, where the null propagates to a "Cannot set properties
+  // of null" three frames away from the cause. It is also the single choke point
+  // the whole file's DOM access goes through, so annotating it is what lets a
+  // type-checker see the other 14 reads as safe.
+  /**
+   * @param {string} id
+   * @returns {HTMLElement}
+   */
   el(id) {
-    return document.getElementById(id);
+    const found = document.getElementById(id);
+    if (!found) throw new Error(`no element with id "${id}"`);
+    return found;
   }
 
   render() {
-    document.getElementById("app").innerHTML = `
+    this.el("app").innerHTML = `
       <div class="dc-header">
         <div class="dc-title">
           <span style="color:#3b82f6">&#9670;</span>

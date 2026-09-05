@@ -69,7 +69,14 @@
     //
     // `ws` is mapped like `tsconfig.tools.json` maps `zod`: not ours, so there
     // is no source to point at, and the entry names where the workspace already
-    // installed it.
+    // installed it — its `@types`, NOT the implementation directory. `ws` is a
+    // plain JS package that bundles no declarations, so the old entry resolved
+    // `examples/host-server/bench/fakes.mjs`'s `import { WebSocketServer } from
+    // "ws"` to a directory with nothing to read. Under this program's
+    // `noImplicitAny: false` that is not a TS7016 — it is a silent `any`, so the
+    // only third-party import in the examples that the compiler could have
+    // checked was the one it did not. Verified by calling a method
+    // `WebSocketServer` does not have: no diagnostic before, TS2339 after.
     "paths": {
       "@alexkroman1/aai": ["./packages/aai/src/index.ts"],
       "@alexkroman1/aai/*": [
@@ -86,12 +93,21 @@
         "./packages/aai-runtime/src/*-barrel.ts",
         "./packages/aai-runtime/src/*.ts"
       ],
-      "ws": ["./packages/aai-runtime/node_modules/ws"],
+      "ws": ["./packages/aai-runtime/node_modules/@types/ws"],
       "zod": ["./packages/aai/node_modules/zod"]
     }
   },
   // Generic on purpose, same as `tsconfig.tools.json`: tsc's `include` only
   // sets ROOT files, and a script is imported by nothing, so anything not
   // matched here is checked by nothing at all.
-  "include": ["scripts/**/*.mjs", "examples/**/*.mjs"]
+  //
+  // `*.mjs` is the ROOT level, and it was the hole this pair left between them:
+  // `tsconfig.tools.json` takes root `*.ts`, this one took `scripts/**` and
+  // `examples/**`, and neither claimed a `.mjs` sitting at the root. That is
+  // `stryker.base.config.mjs` and `stryker.sdk.config.mjs` — checked by no
+  // program in the repo, confirmed by giving one a `/** @type {number} */ const
+  // x = "s"` and watching all four type gates stay green. Same argument as the
+  // `.ts` half one file over: a root config is imported by nothing, so a glob
+  // is the only thing that ever sees it.
+  "include": ["*.mjs", "scripts/**/*.mjs", "examples/**/*.mjs"]
 }

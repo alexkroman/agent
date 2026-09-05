@@ -144,6 +144,28 @@ const stepArb: fc.Arbitrary<ReconnectStep> = fc.oneof(
  * a floor placed under the mean flakes. The job of the floor is to catch a
  * state that is NEVER reached, not to pin how often; a state whose whole range
  * is small therefore gets `> 0`, which is still the assertion that matters.
+ *
+ * **`nonBrokerLatches` is why `numRuns` is 240 rather than 60.** It was the one
+ * counter small enough to need that `> 0` carve-out — recorded as 1-9 — and a
+ * floor whose observed MINIMUM is 1 has no margin left: `> 0` demands the very
+ * value the unluckiest sampled run produced, and `>= 0` would assert nothing at
+ * all. It duly came out at 0 on CI and failed the suite. The state is rare by
+ * construction and not by accident: `setConfigOutcome` is weight 20 of 100 and
+ * spreads over four outcomes, so only ~5% of steps arm `no-broker`, it then has
+ * to survive to an actual config fetch, and `checkBrokerLatch`'s three
+ * preconditions have to hold on top of that.
+ *
+ * Raising the run count is the fix that leaves the GENERATOR alone — the same
+ * distribution, sampled enough times for the counter to have a distribution of
+ * its own — where reweighting the steps would change which histories this
+ * property is tested over, and the weights deliberately mirror the roll
+ * thresholds that predate fast-check. It costs ~6%: 2.6s to 2.75s over three
+ * runs each, because the file's time is module load and fake-timer setup rather
+ * than the walk. At 240 the counter measures 17-33 and has graduated off the
+ * carve-out onto a real floor.
+ *
+ * Every range below was re-measured at 240 across 25 runs; the old ones were
+ * taken at 60 and none of them survives a 4x change in sample size.
  */
 type Reached = {
   /** Runs where R2 had a resumed attempt to check. */
@@ -349,23 +371,24 @@ describe("fuzz: reconnect + broker resolution", () => {
       fc.asyncProperty(fc.array(stepArb, { minLength: 1, maxLength: 14 }), (steps) =>
         runScript(steps),
       ),
-      { numRuns: 60 },
+      { numRuns: 240 },
     );
 
-    // Coverage floors — see `Reached` for how these are placed. Ranges are
-    // over 17 runs of 60. Each names the invariant that goes unasserted when
-    // its precondition stops holding.
-    expect(reached.resumeIdChecks, "R2: no attempt ever carried a resume id").toBeGreaterThan(5); // 20-36
-    expect(reached.reconnectsScanned, "R4: no run ever reconnected").toBeGreaterThan(25); // 89-148
+    // Coverage floors — see `Reached` for how these are placed, and for why the
+    // run count is 240. Ranges are over 25 runs of 240. Each names the
+    // invariant that goes unasserted when its precondition stops holding.
+    expect(reached.resumeIdChecks, "R2: no attempt ever carried a resume id").toBeGreaterThan(22); // 91-119
+    expect(reached.reconnectsScanned, "R4: no run ever reconnected").toBeGreaterThan(100); // 400-510
     expect(
       reached.brokerRedials,
       "R1: the broker never got to answer again — the re-broker path went unchecked",
-    ).toBeGreaterThan(7); // 27-39
+    ).toBeGreaterThan(27); // 109-137
     expect(
       reached.nonBrokerLatches,
       "R5: no run ever latched a non-broker answer — the latch went unchecked",
-      // The narrowest: a run must ANSWER "not a broker" and then still produce
-      // a further attempt to check. Measured 1-9.
-    ).toBeGreaterThan(0);
+      // Still the narrowest: a run must ANSWER "not a broker" and then produce a
+      // further attempt to check. At 60 runs this was 1-9 and floored at `> 0`,
+      // which CI hit at 0.
+    ).toBeGreaterThan(4); // 17-33
   }, 120_000);
 });

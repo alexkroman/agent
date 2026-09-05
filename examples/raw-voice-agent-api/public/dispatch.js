@@ -22,7 +22,12 @@ export function createKv() {
       const storageKey = localStorage.key(i);
       if (storageKey?.startsWith(KV_PREFIX)) {
         const key = storageKey.slice(KV_PREFIX.length);
-        mem.set(key, JSON.parse(localStorage.getItem(storageKey)));
+        // `getItem` is `string | null`, and the null branch is reachable: another
+        // tab can remove the key between `key(i)` and this read. `JSON.parse(null)`
+        // does not throw — it stringifies to "null" and yields null — so the entry
+        // would silently arrive as a null value instead of being skipped.
+        const raw = localStorage.getItem(storageKey);
+        if (raw !== null) mem.set(key, JSON.parse(raw));
       }
     }
   } catch {
@@ -157,6 +162,12 @@ export function calculateTriageScore(severity, type, casualties, hazards) {
   return Math.round(Math.min(score, 250));
 }
 
+// Annotated as an array of PAIRS. Left bare, the literal widens to
+// `(string | string[])[][]` — the tuple shape is lost — so `kws` in
+// `recommendSeverity` below comes out as `string | string[]` and `.some` is not
+// a method on it. The code is right and the inferred type is wrong; this is the
+// one-line way to say which.
+/** @type {Array<[string, string[]]>} */
 const SEVERITY_KEYWORDS = [
   [
     "critical",

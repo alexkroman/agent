@@ -31,9 +31,34 @@
     // workspace already installed it. An example tool declares its arguments
     // the way every template does, so leaving it unresolvable would mean
     // either an example that is not checked or an example nobody would copy.
+    // The SUBPATH entries are ordered FALLBACKS, not a hand-kept list, exactly
+    // as in `tsconfig.scripts.json`: tsc tries each substitution and takes the
+    // first that resolves to a real file, so a new subpath export is covered on
+    // creation rather than on the next edit to this file.
+    //
+    // `ws` names `@types/ws` rather than the implementation directory. It is a
+    // JS package with no bundled declarations, so pointing at `ws` itself gets
+    // TS7016 ("could not find a declaration file") the moment anything pulls
+    // `aai-runtime` source in — which `scripts/loadtest-stub-agent/host.ts` now
+    // does. (`tsconfig.scripts.json` still names the implementation dir; that
+    // program never reaches the sockets, so the entry has never been exercised.)
     "paths": {
       "@alexkroman1/aai": ["./packages/aai/src/index.ts"],
+      "@alexkroman1/aai/*": [
+        "./packages/aai/src/sdk/providers/*-barrel.ts",
+        "./packages/aai/src/sdk/*-barrel.ts",
+        "./packages/aai/src/sdk/*.ts",
+        "./packages/aai/src/host/*.ts",
+        "./packages/aai/src/*.ts"
+      ],
       "@alexkroman1/aai-ui": ["./packages/aai-ui/src/index.ts"],
+      "@alexkroman1/aai-ui/*": ["./packages/aai-ui/src/*.ts"],
+      "@alexkroman1/aai-runtime": ["./packages/aai-runtime/src/runtime-barrel.ts"],
+      "@alexkroman1/aai-runtime/*": [
+        "./packages/aai-runtime/src/*-barrel.ts",
+        "./packages/aai-runtime/src/*.ts"
+      ],
+      "ws": ["./packages/aai-runtime/node_modules/@types/ws"],
       "zod": ["./packages/aai/node_modules/zod"]
     }
   },
@@ -42,5 +67,20 @@
   // config or example is covered on creation rather than on the next edit to
   // this file — the argument `packages/aai-templates/tsconfig.json` spells out
   // after its own hand-kept list fell three files behind.
-  "include": ["*.ts", "examples/**/*.ts"]
+  //
+  // `scripts/**/*.ts` is the third hole this pair left. `tsconfig.scripts.json`
+  // claims `scripts/` but stops at `.mjs`; this file claims `.ts` but only at
+  // the ROOT level — so the five TypeScript sources under
+  // `scripts/loadtest-stub-agent/` and `scripts/loadtest-workflow-agent/` were
+  // in no program at all. They are AGENT code, importing the SDK and the
+  // runtime the way a user's `agent.ts` does, so a rename on either side broke
+  // them silently and the load harness only found out at run time.
+  //
+  // They land HERE rather than in `tsconfig.scripts.json` — which already has
+  // the right `paths` and is literally the "scripts/" program — because that
+  // config buys its three relaxations with an argument about annotation-free
+  // JavaScript, and its own header says they "must not reach the `.ts` files".
+  // TypeScript in this repo is checked at full strength; that is the whole
+  // reason the two programs are separate.
+  "include": ["*.ts", "examples/**/*.ts", "scripts/**/*.ts"]
 }

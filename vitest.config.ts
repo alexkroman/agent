@@ -100,6 +100,28 @@ export default defineConfig({
           },
         },
       },
+      // `aai-runtime` has had `providers/providers.test-d.ts` since the runtime
+      // split and no project here, so the rule stated above ("one typecheck
+      // project PER PACKAGE that has `.test-d.ts` files") described two thirds
+      // of the packages that have one. Nothing was UNGATED by that — as the note
+      // above says, what fails a wrong `expectTypeOf` is `turbo run typecheck`,
+      // and this package's tsconfig includes `src` — but the fast path these
+      // projects exist to provide was missing for the one package whose type
+      // tests cover the provider contracts.
+      {
+        ...sharedConfig,
+        test: {
+          ...sharedConfig.test,
+          name: "aai-runtime-types",
+          root: "packages/aai-runtime",
+          include: [],
+          typecheck: {
+            enabled: true,
+            only: true,
+            include: ["**/*.test-d.ts"],
+          },
+        },
+      },
     ],
   },
 });

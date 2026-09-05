@@ -1,0 +1,46 @@
+{
+  // The BROWSER JavaScript that no other program could see.
+  //
+  // Third in the pair `tsconfig.tools.json` and `tsconfig.scripts.json` started,
+  // and it exists because neither of them can hold these files. Both set
+  // `types: ["node"]` and inherit `lib: ["ES2025"]`, and this is 2,200 lines of
+  // vanilla browser code — `document`, `WebSocket`, `AudioWorklet`,
+  // `navigator.mediaDevices`. Under a Node program every one of those is an
+  // unresolved name, so the files were left out of both and checked by NOTHING:
+  // the reference client for the raw Voice Agent API, the one a user reads to
+  // learn the wire protocol without an SDK in the way, had lint and no compiler.
+  //
+  // It found 15 real ones on the first run — every DOM read in `app.js` went
+  // through a helper returning `HTMLElement | null` that no caller checked.
+  //
+  // A THIRD program rather than a widening, for the reason `tsconfig.scripts.json`
+  // gives for being a second: `lib` and `types` here are incompatible with both.
+  // A browser file must not see `node`, and a script must not see `DOM`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./.tsbuildinfo/browser.tsbuildinfo",
+    // No `node`. These run in a page; resolving `process` or `Buffer` here would
+    // type-check code the browser cannot execute.
+    "types": [],
+    "lib": ["ES2025", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    // `checkJs` is the half that matters — `allowJs` alone only lets these files
+    // be pulled in as imports, parsed and never checked. Same note as
+    // `tsconfig.scripts.json`.
+    "checkJs": true,
+    // The same three relaxations `tsconfig.scripts.json` argues for, for the
+    // same reason and no other: this is annotation-free JavaScript, so
+    // `noImplicitAny` would demand JSDoc on every parameter in the file before
+    // the compiler could report a single real mistake. Everything that catches
+    // an actual defect — `strict`, and `strictNullChecks` with it — stays on,
+    // which is what surfaced all 15.
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": false,
+    "useUnknownInCatchVariables": false
+  },
+  // Generic on purpose, like the other two: tsc's `include` only sets ROOT
+  // files, and a browser entry is imported by nothing, so anything not matched
+  // here is checked by nothing at all.
+  "include": ["examples/**/public/**/*.js"]
+}

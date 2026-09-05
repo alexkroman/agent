@@ -577,6 +577,12 @@
         "packages/aai-runtime/**/*.ts"
       ]
     },
+    // No `packages/**` entries, unlike the two tasks around it: this program
+    // `paths`-maps nothing and the browser files import only each other, so the
+    // workspace source it reads is none.
+    "//#typecheck:browser": {
+      "inputs": ["examples/**/public/**/*.js", "tsconfig.browser.json"]
+    },
     "//#typecheck:tools": {
       "inputs": [
         "*.ts",

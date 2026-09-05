@@ -96,9 +96,7 @@
         "scripts/gen-gateway-models.mjs",
         "stryker*.config.mjs"
       ],
-      "ignoreDependencies": [
-        "@stryker-mutator/api"
-      ]
+      "ignoreDependencies": []
     },
     "packages/aai": {
       "entry": [
@@ -181,6 +179,18 @@
       // count, so the entry became a redundant-pattern error. If that eval ever
       // goes away, restore the entry with the paragraph above rather than
       // dropping the dependency: the scaffold still needs it to resolve.
+      //
+      // The two below are that same shape, live: `scaffold/vite.config.ts` is
+      // their only importer, and it is `ignore`d above while being SHIPPED to
+      // every `aai init` user and compiled by `check:template-types`. They were
+      // added to this package precisely so that gate could reach the file —
+      // before it, the scaffold's two configs were type-checked by no program in
+      // the repo. Dropping either dependency does not make the file resolve; it
+      // makes the gate stop covering it.
+      "ignoreDependencies": [
+        "@tailwindcss/vite",
+        "@vitejs/plugin-react"
+      ]
     },
     "packages/aai-guest": {
       "entry": [

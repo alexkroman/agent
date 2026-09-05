@@ -15,6 +15,23 @@ import path from "node:path";
 import { WebSocketServer } from "ws";
 
 /**
+ * Bytes in one `ws` message, across all three shapes `RawData` can take.
+ *
+ * `data.length` was wrong on two of them and this benchmark REPORTS the number:
+ * an `ArrayBuffer` has `byteLength` and no `length`, so the total went `NaN`,
+ * and a `Buffer[]` (what ws hands over a fragmented message) answers the count
+ * of CHUNKS, so the total silently undercounted by orders of magnitude. Neither
+ * shows up as a failure — the bench just prints a wrong throughput.
+ *
+ * @param {import("ws").RawData} data
+ * @returns {number}
+ */
+const messageBytes = (data) => {
+  if (Array.isArray(data)) return data.reduce((total, chunk) => total + chunk.length, 0);
+  return data instanceof ArrayBuffer ? data.byteLength : data.length;
+};
+
+/**
  * The port a listening server bound to.
  *
  * `address()` answers `string | AddressInfo | null` — `null` before `listen`
@@ -84,7 +101,7 @@ export function startFakeStt({ key, cert, partialEveryFrames = 25 }) {
     let n = 0;
     ws.on("message", (data, isBinary) => {
       if (!isBinary) return;
-      audioBytes += data.length;
+      audioBytes += messageBytes(data);
       if (++n % partialEveryFrames !== 0) return;
       ws.send(
         JSON.stringify({
