@@ -21,11 +21,14 @@ import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import {
   type BuildTarget,
   DENO_OUTPUT_DIR,
+  MODAL_APP_FILE,
+  MODAL_OUTPUT_DIR,
   resolveBuildTarget,
   VERCEL_OUTPUT_DIR,
 } from "./_build-target.ts";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
+import { emitModalOutput } from "./_modal-output.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
@@ -170,7 +173,7 @@ export async function executeBuild(opts: {
   await fs.mkdir(path.dirname(worker), { recursive: true });
   await fs.writeFile(worker, bundle.worker, "utf-8");
 
-  await emitTargetFiles(cwd, target);
+  await emitTargetFiles(cwd, target, { name: agentDef.name });
 
   // Reported in BOTH modes, deliberately: `log` is silenced under --json, and a
   // field on the result is invisible on a TTY, so the swap this exists to
@@ -195,9 +198,18 @@ export async function executeBuild(opts: {
  * generated file. `vercel` writes a complete prebuilt deployment under
  * `.vercel/output/` — see `_vercel-output.ts`, and `VERCEL_OUTPUT_DIR` in
  * `_build-target.ts` for why that directory and not an `api/` entry beside a
- * generated `vercel.json`.
+ * generated `vercel.json`. `deno` and `modal` write a self-contained directory
+ * each — `_target-output.ts` for the half they share.
+ *
+ * The agent's `name` reaches only `modal`, which needs it for the app name a
+ * deployment is served under. It is threaded through rather than re-read
+ * because `executeBuild` has already evaluated the bundle to report it.
  */
-async function emitTargetFiles(cwd: string, target: BuildTarget): Promise<void> {
+async function emitTargetFiles(
+  cwd: string,
+  target: BuildTarget,
+  agent: { name: string },
+): Promise<void> {
   // A SWITCH rather than an if-chain, so `BuildTarget` gaining a member is a
   // compile error here rather than a build that silently emits nothing for it
   // — which presents as a deploy 404 rather than as anything about the build.
@@ -211,6 +223,16 @@ async function emitTargetFiles(cwd: string, target: BuildTarget): Promise<void> 
     case "deno":
       await emitDenoOutput(cwd);
       log.info(`Target ${target}: wrote ${DENO_OUTPUT_DIR} — deploy it with \`deno deploy\``);
+      return;
+    case "modal":
+      await emitModalOutput(cwd, { name: agent.name });
+      // The command NAMES the app file, because `modal deploy` takes a path to
+      // a Python module and there is nothing in the directory to infer it from
+      // — unlike `deno deploy`, which is pointed at the directory itself.
+      log.info(
+        `Target ${target}: wrote ${MODAL_OUTPUT_DIR} — deploy it with ` +
+          `\`modal deploy ${path.join(MODAL_OUTPUT_DIR, MODAL_APP_FILE)}\``,
+      );
       return;
     default: {
       // Biome requires a default; this one is what makes the switch EXHAUSTIVE.

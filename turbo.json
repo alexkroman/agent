@@ -322,6 +322,15 @@
         // is a failure" would be silently inert, which is precisely the state
         // that suite shipped in.
         "AAI_REQUIRE_DENO",
+        // python3 + the `modal` client for
+        // `aai-cli/_modal-output.scenario.test.ts`. The generated `app.py` is
+        // the one artifact in this repo that no other gate reads — tsc cannot
+        // see it and Biome does not lint it — so those two arms are the only
+        // thing between a broken template and a user's `modal deploy`. No job
+        // installs the client today, so this is the local escape hatch;
+        // declared regardless, because strict env mode strips an undeclared
+        // variable and a flag that silently does nothing is worse than none.
+        "AAI_REQUIRE_MODAL",
         "AAI_FAULT_PROFILE",
         "VITEST_PROFILE",
         "VITEST_INCLUDE",

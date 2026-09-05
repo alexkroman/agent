@@ -232,6 +232,75 @@ where the `/health`-only version passed. The driver fences its JSON between
 sentinels because booting the server writes a banner to stdout — which is why
 the old assertion was a `toContain("200")` that a banner could satisfy.
 
+**`--target modal` emits a self-contained directory AND an `app.py`**, and
+that second file is what makes it differ in KIND from the other three. Every
+other target's descriptor is data the host already understands — a routing
+table, a `deno.json` task. Modal has none to write: its deploy unit IS a Python
+module — an image recipe, a `modal.App`, a decorated function — and
+`modal deploy` RUNS that module rather than reading a manifest out of it. So
+this is the one target whose emit generates code in another language.
+`.aai/modal/` carries the bundled server, the built worker, the browser client
+and `.env.example` — the same set `--target deno` needs, and the same module
+now assembles both (`_target-output.ts`); `app.py` is written into it last and
+is the only part `_modal-app.ts` owns. Deploy it with
+`modal deploy .aai/modal/app.py`, which the build prints.
+
+**Three things in that file are load-bearing and none is obvious.**
+`@modal.concurrent` is the sharpest: Modal serves ONE input per container by
+default and a WebSocket is one input for the life of the call, so without it
+the second caller waits out the first — and every asset request for the browser
+client queues behind whichever call is in progress, since the same node process
+serves both. `_run_node` forwards the container's stop signal to node rather
+than spawning a bare `subprocess.Popen`, because Modal signals its own Python
+runtime and a bare child receives nothing; the platform's own deploy learned
+that by billing orphaned guest sandboxes ~20 minutes each on every release (see
+`run_node` in `scripts/modal_image.py`). And `PORT` is interpolated from one
+constant into both the image env and `@modal.web_server(port=…)`, because the
+proxy routes to the port it was told about and a node process reading a
+different one produces a deployment that builds, starts, reports healthy and
+answers nothing.
+
+**Its policy is DEPLOY-TIME ENV, not an edit to the generated file.** Modal's
+scaling and resources are Python arguments rather than dashboard settings, so a
+generated `app.py` stamped "do not edit" would be a lie the first time somebody
+wanted a warm container. Four knobs therefore come from the environment —
+`AAI_MODAL_APP`, `AAI_MODAL_SECRET`, `AAI_MODAL_MIN_CONTAINERS`,
+`AAI_MODAL_MAX_CONTAINERS` (`AAI_MODAL_MIN_CONTAINERS=1 modal deploy …`) — and
+`_modal-app.test.ts` asserts every knob the docstring advertises is one the
+file really reads, in both directions. cpu, memory, timeout and concurrency
+stay visible constants: those are numbers a reader needs to SEE to trust the
+deployment.
+
+**There is NO auto-detection for it, deliberately.** Detection only works where
+the HOST runs the build, which is what makes `VERCEL` zero-config; `modal
+deploy` uploads a directory whose build already finished on the developer's
+machine, so `aai build` never runs on Modal's infrastructure. The two variables
+that do exist in a Modal environment are set inside a CONTAINER
+(`MODAL_IS_REMOTE`, `MODAL_TASK_ID`) — the wrong end, and dangerously so here,
+since this repo's own guest sandboxes are Modal Sandboxes and studio Publish
+runs the CLI inside one, so detecting on them would flip the platform's own
+build to this target. `MODAL_TOKEN_ID` is worse in the ordinary way: having
+credentials exported is not a statement about what a build is FOR. The
+reachability test in `_build-target.test.ts` asserts every target is selectable
+by FLAG for this reason, rather than demanding a marker per target.
+
+**Its scenario suite is the only thing in the repo that reads the generated
+Python.** `tsc` cannot see `app.py`, Biome does not lint it, and the next thing
+to evaluate it is `modal deploy` on a user's machine — so
+`_modal-output.scenario.test.ts` parses it with `python3 -m py_compile` and,
+where the client is installed, IMPORTS it, which evaluates `from_registry`,
+`add_local_dir`, every `@app.function` kwarg, `@modal.concurrent` and
+`@modal.web_server` against the real API. A renamed parameter in any of them is
+a `TypeError` at import — the failure a user would otherwise meet first. Both
+arms announce their skip and **`AAI_REQUIRE_MODAL`** turns it into a hard
+failure, declared in `check:scenario`'s `env` in `turbo.json` because strict env
+mode would otherwise strip it; no CI job installs the client today, so unlike
+`AAI_REQUIRE_DENO` it is the local escape hatch rather than an enforced gate.
+The boot arm needs no gate at all, which is why it is worth more than the Deno
+one it mirrors: Modal runs plain `node`, so it proves the no-`node_modules`
+claim and this entry's own two properties — that it reads `process.env.PORT`,
+and that a SIGTERM closes the server instead of dropping it — on every machine.
+
 **`bin.mjs` is the bin in BOTH layouts** — the source checkout (where it loads
 `cli.ts`) and the published tarball (where only `dist/` ships, so it loads
 `dist/cli.mjs`); there is no `publishConfig.bin` override any more. One wrapper
