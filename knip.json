@@ -212,9 +212,6 @@
         "**/*.test.ts"
       ],
       "includeEntryExports": true,
-      "ignoreDependencies": [
-        "@types/json-schema"
-      ],
       "ignoreBinaries": [
         "modal"
       ]
@@ -251,13 +248,7 @@
       "entry": [
         "**/*.test.ts"
       ],
-      "includeEntryExports": true,
-      "ignoreDependencies": [
-        "@alexkroman1/aai-ui",
-        "react",
-        "react-dom",
-        "tailwindcss"
-      ]
+      "includeEntryExports": true
     }
   }
 }

@@ -27,7 +27,6 @@
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-runtime": "workspace:*",
-    "@alexkroman1/aai-ui": "workspace:*",
     "@hono/zod-validator": "catalog:",
     "@octokit/auth-app": "^8.3.1",
     "@octokit/core": "^7.0.8",
@@ -36,9 +35,6 @@
     "hono": "catalog:",
     "mime-types": "catalog:",
     "p-timeout": "catalog:",
-    "react": "catalog:",
-    "react-dom": "catalog:",
-    "tailwindcss": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
