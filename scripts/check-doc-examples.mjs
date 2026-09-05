@@ -113,24 +113,58 @@ const MARKDOWN_FILES = [
 ];
 
 /**
- * Prompt modules whose template literals embed markdown with code fences —
- * prompt text the studio's coding agent treats as ground truth (the main
- * studio guide is the scaffold CLAUDE.md above; these carry the rest, e.g.
- * the fallback guide). Fences arrive escaped (`\`\`\``), so the extractor
- * unescapes before scanning.
+ * The DIRECTORY of studio prompt modules, plus the one that sits elsewhere.
+ *
+ * `packages/aai-studio-server/src/prompts/` exists so this corpus is a
+ * directory listing rather than a hand-kept list, and the difference is the
+ * failure the old list documented on itself: `studio-preamble-mode.ts` carried
+ * no fence and was listed anyway, "so the first example added is checked rather
+ * than discovered by a user" — which is a note saying the list has to be
+ * remembered. A sixth prompt module written into that directory is checked
+ * with no edit here.
+ *
+ * `MARKDOWN_FILES` above is floored at 8 by two gate specs that parse this
+ * script; a resolved directory cannot be floored that way, so
+ * {@link MIN_PROMPT_SOURCES} below does it here — a discovery change that stops matching the directory
+ * would otherwise print the same checkmark, which is exactly what the corpus
+ * floor further down exists to prevent for the fences themselves.
+ *
+ * `aai-guest/src/studio-chat.ts` stays named: it is the guest's HTTP chat
+ * surface that happens to carry prompt text, not a prompt module, and it lives
+ * in a different package.
+ *
+ * Fences arrive escaped (`\`\`\``), so the extractor unescapes before scanning.
  */
+const PROMPT_DIR = "packages/aai-studio-server/src/prompts";
 const PROMPT_SOURCES = [
-  // The main studio guide is the scaffold CLAUDE.md, covered above via
-  // MARKDOWN_FILES; these are the other modules that compose prompt text.
-  "packages/aai-studio-server/src/studio-prompt.ts",
-  "packages/aai-studio-server/src/studio-preamble.ts",
-  // The preamble's mode-dependent fragments (voice agent vs workflow app).
-  // Carries no fence today; listed because it is prompt text, so the first
-  // example added is checked rather than discovered by a user.
-  "packages/aai-studio-server/src/studio-preamble-mode.ts",
-  "packages/aai-studio-server/src/studio-preamble-sdk.ts",
+  // Through `sourceFiles` (hoisted, below) rather than a `readdirSync` here,
+  // and the comment on that function is the reason: git already knows what is
+  // source, so `.gitignore` is honoured for free and `--others` still includes
+  // a prompt module added in the working tree but not yet committed. It also
+  // drops the co-located `*.test.ts` and survives a deletion in progress.
+  ...sourceFiles(repo, PROMPT_DIR)
+    .map((absolute) => path.relative(repo, absolute))
+    .sort(),
   "packages/aai-guest/src/studio-chat.ts",
 ];
+
+/**
+ * Floor on the prompt corpus, for the reason `MIN_EXAMPLES` has one.
+ *
+ * Four modules in `prompts/` plus the guest's chat surface; floored at the
+ * count so a module LEAVING the directory is a decision somebody makes in this
+ * file rather than a silent narrowing. Lower it deliberately, in the same
+ * commit as the removal.
+ */
+const MIN_PROMPT_SOURCES = 5;
+if (PROMPT_SOURCES.length < MIN_PROMPT_SOURCES) {
+  console.error(
+    `check-doc-examples: found only ${PROMPT_SOURCES.length} prompt sources, expected at ` +
+      `least ${MIN_PROMPT_SOURCES}. Either ${PROMPT_DIR} stopped resolving, or prompt ` +
+      "modules were genuinely removed — in which case lower MIN_PROMPT_SOURCES deliberately.",
+  );
+  process.exit(1);
+}
 
 /**
  * Source files of one package, from git rather than a recursive `readdirSync`.

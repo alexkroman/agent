@@ -17,7 +17,7 @@
 import { assertTurnSilenceWindow, ENDPOINTING_KEYS } from "./config-rules.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import { normalizeLlm } from "./providers/llm/from-string.ts";
+import { normalizeLlm } from "./providers/llm/shared/from-string.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 

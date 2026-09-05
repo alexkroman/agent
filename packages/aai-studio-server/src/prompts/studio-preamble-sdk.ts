@@ -19,7 +19,7 @@
  */
 
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
-import { STUDIO_LLM_MODELS } from "./studio-llm.ts";
+import { STUDIO_LLM_MODELS } from "../studio-llm.ts";
 
 /** Sections: Data Persistence → AI, Models, and Providers. */
 export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage

@@ -102,8 +102,8 @@
 
 import { throwFatalStepError, throwStepError, toStepError } from "./_step-verdict.ts";
 import type { TranscribeRequestOptions } from "./_transcribe-shared.ts";
-import type { Channel, ChannelMessage } from "./channels/channel-types.ts";
-import { sendToChannel } from "./channels/send.ts";
+import type { Channel, ChannelMessage } from "./channels/shared/channel-types.ts";
+import { sendToChannel } from "./channels/shared/send.ts";
 import { isRecord } from "./is-record.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
 import { type StepFetchInit, stepFetch } from "./step-fetch.ts";

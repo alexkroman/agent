@@ -23,12 +23,20 @@ The browser studio's server side (documented below):
   `studio-session-adopt.ts` (installing a session into a PEER's guest over
   HTTP), `studio-llm.ts` (gateway model config; the key is always the
   caller's), `studio-deploy.ts` (guest build → validate config →
-  deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts`
-  (system prompt from the scaffold CLAUDE.md, one per project kind),
-  `studio-project-kind.ts` (voice agent vs static workflow app — the
-  new-project switcher's choice), `studio-preamble-mode.ts` (the five preamble
-  fragments that differ between them), `studio-static.ts` (serves
-  the built client)
+  deploy), `studio-workspace.ts` (project file store),
+  `prompts/studio-prompt.ts` (system prompt from the scaffold CLAUDE.md, one
+  per project kind), `studio-project-kind.ts` (voice agent vs static workflow
+  app — the new-project switcher's choice),
+  `prompts/studio-preamble-mode.ts` (the five preamble fragments that differ
+  between them), `studio-static.ts` (serves the built client)
+
+**The prompt modules are a DIRECTORY, `src/prompts/`, so a new one is checked
+by default.** `check-doc-examples` compiles every `ts` fence in prompt text —
+what the studio's coding agent treats as ground truth — and it used to reach
+these through four hand-written paths, floored by nothing (its `MARKDOWN_FILES`
+neighbour is floored at 8 by two gate specs), so a fifth prompt module would
+have compiled under no gate. It reads the directory now. Prompt text goes in
+`src/prompts/`; anything else does not.
 
 ## Browser studio
 

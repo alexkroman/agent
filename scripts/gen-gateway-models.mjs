@@ -39,7 +39,10 @@ const { values: FLAGS } = parseScriptArgs({
 const US = "https://llm-gateway.assemblyai.com/v1/models";
 const EU = "https://llm-gateway.eu.assemblyai.com/v1/models";
 const CHAT = "https://llm-gateway.assemblyai.com/v1/chat/completions";
-const TARGET = new URL("../packages/aai/src/sdk/providers/llm/gateway-models.ts", import.meta.url);
+const TARGET = new URL(
+  "../packages/aai/src/sdk/providers/llm/shared/gateway-models.ts",
+  import.meta.url,
+);
 
 /**
  * One entry of the gateway's `/models` list, as this generator reads it.

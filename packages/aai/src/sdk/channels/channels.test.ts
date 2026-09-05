@@ -2,13 +2,13 @@
 import { describe, expect, test } from "vitest";
 import type { StubStepAnswer } from "../testing.ts";
 import { installStubStepFetch } from "../testing-vitest.ts";
-import { ChannelDeliveryError } from "./channel-types.ts";
+import { ChannelDeliveryError } from "./shared/channel-types.ts";
 import {
   CHANNEL_POST_TIMEOUT_MS,
   explainChannelFailure,
   renderChannelPayload,
   sendToChannel,
-} from "./send.ts";
+} from "./shared/send.ts";
 import {
   escapeSlackMrkdwn,
   isSlackWebhookUrl,

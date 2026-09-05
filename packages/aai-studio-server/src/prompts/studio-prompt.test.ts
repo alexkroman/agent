@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { afterEach, describe, expect, test } from "vitest";
-import { STUDIO_LLM_MODELS } from "./studio-llm.ts";
+import { STUDIO_LLM_MODELS } from "../studio-llm.ts";
 import {
   _resetStudioPromptCache,
   composeStudioPrompt,

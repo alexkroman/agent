@@ -15,7 +15,7 @@
  * shared this. What is common here is the SHAPE, not the vendor.
  */
 
-import type { ProviderCredentialOptions } from "../../providers.ts";
+import type { ProviderCredentialOptions } from "../../../providers.ts";
 
 /** Options for an LLM factory whose only setting is which model to run. */
 export interface ModelOptions extends ProviderCredentialOptions {

@@ -46,7 +46,7 @@ export const TOOL_CONTEXT_PATHS = ["packages/aai/src/sdk/tool-context.ts"];
  * from a path, and the gate spec asserts it exists so a rename cannot empty the
  * corpus silently.
  */
-export const CHANNEL_MESSAGE_PATHS = ["packages/aai/src/sdk/channels/channel-types.ts"];
+export const CHANNEL_MESSAGE_PATHS = ["packages/aai/src/sdk/channels/shared/channel-types.ts"];
 
 export const SESSION_SURFACE_PATHS = [
   "packages/aai-runtime/src/session-core.ts",

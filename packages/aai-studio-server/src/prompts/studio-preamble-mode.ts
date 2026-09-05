@@ -32,7 +32,7 @@
  * shared text in `studio-preamble.ts` and `studio-preamble-sdk.ts`.
  */
 
-import type { ProjectKind } from "./studio-project-kind.ts";
+import type { ProjectKind } from "../studio-project-kind.ts";
 
 type PreambleMode = {
   /** One sentence in `## Overview`, naming what this project builds. */
