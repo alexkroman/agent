@@ -19,13 +19,13 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { modalAppSource } from "./_modal-app.ts";
 import {
   MODAL_APP_FILE,
   MODAL_ENTRY_FILE,
   MODAL_ENTRY_SOURCE,
   MODAL_OUTPUT_DIR,
-} from "./_build-target.ts";
-import { modalAppSource } from "./_modal-app.ts";
+} from "./_modal-target.ts";
 import { type EmitSelfContainedOptions, emitSelfContainedOutput } from "./_target-output.ts";
 
 /** Options for {@link emitModalOutput}. */

@@ -14,7 +14,6 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { MODAL_APP_FILE, MODAL_ENTRY_FILE, MODAL_PORT } from "./_build-target.ts";
 import {
   MODAL_ENV_KNOBS,
   modalAppName,
@@ -22,6 +21,7 @@ import {
   modalNodeImageTag,
   modalSecretName,
 } from "./_modal-app.ts";
+import { MODAL_APP_FILE, MODAL_ENTRY_FILE, MODAL_PORT } from "./_modal-target.ts";
 
 describe("modalAppName", () => {
   test("free-text agent names become legal hostname labels", () => {

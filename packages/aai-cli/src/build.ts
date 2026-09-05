@@ -18,14 +18,7 @@ import path from "node:path";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import {
-  type BuildTarget,
-  DENO_OUTPUT_DIR,
-  MODAL_APP_FILE,
-  MODAL_OUTPUT_DIR,
-  resolveBuildTarget,
-  VERCEL_OUTPUT_DIR,
-} from "./_build-target.ts";
+import { type BuildTarget, resolveBuildTarget, TARGET_OUTPUTS } from "./_build-target.ts";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
 import { emitModalOutput } from "./_modal-output.ts";
@@ -59,6 +52,17 @@ type BuildData = {
   systemPrompt: string;
   /** Which deployment shape this build emitted — see `_build-target.ts`. */
   target: BuildTarget;
+  /**
+   * Where the target's output landed, relative to the project root, and the
+   * command that ships it — `undefined` for a target that has neither.
+   *
+   * On the RESULT and not only in a log line, for the reason `systemPrompt`
+   * above is: `log` is silenced under `--json`, so a CI job that builds and
+   * then deploys could read neither the directory it should upload nor the
+   * command that uploads it, and had to restate both from this file.
+   */
+  outputDir: string | undefined;
+  deploy: string | undefined;
 };
 
 /**
@@ -174,6 +178,12 @@ export async function executeBuild(opts: {
   await fs.writeFile(worker, bundle.worker, "utf-8");
 
   await emitTargetFiles(cwd, target, { name: agentDef.name });
+  const output = TARGET_OUTPUTS[target];
+  if (output.dir !== undefined) log.info(`Target ${target}: wrote ${output.dir}`);
+  // Nitro prints the same line after every build, and for the same reason: the
+  // artifact is useless to somebody who does not know the command that ships
+  // it, and `--target vercel` used to print only the directory.
+  if (output.deploy !== undefined) log.info(`Deploy it with \`${output.deploy}\``);
 
   // Reported in BOTH modes, deliberately: `log` is silenced under --json, and a
   // field on the result is invisible on a TTY, so the swap this exists to
@@ -188,6 +198,8 @@ export async function executeBuild(opts: {
     worker,
     systemPrompt,
     target,
+    outputDir: output.dir,
+    deploy: output.deploy,
   });
 }
 
@@ -197,9 +209,14 @@ export async function executeBuild(opts: {
  * `node` writes nothing: a long-lived process runs `aai start`, which needs no
  * generated file. `vercel` writes a complete prebuilt deployment under
  * `.vercel/output/` — see `_vercel-output.ts`, and `VERCEL_OUTPUT_DIR` in
- * `_build-target.ts` for why that directory and not an `api/` entry beside a
+ * `_vercel-target.ts` for why that directory and not an `api/` entry beside a
  * generated `vercel.json`. `deno` and `modal` write a self-contained directory
  * each — `_target-output.ts` for the half they share.
+ *
+ * WHERE each lands and how it is deployed is `TARGET_OUTPUTS`, not this
+ * function, and the caller reports it. Those strings were a `log.info` per
+ * `case` and drifted the way a per-arm string does: `vercel` named its
+ * directory and no deploy command at all.
  *
  * The agent's `name` reaches only `modal`, which needs it for the app name a
  * deployment is served under. It is threaded through rather than re-read
@@ -218,21 +235,12 @@ async function emitTargetFiles(
       return;
     case "vercel":
       await emitVercelOutput(cwd);
-      log.info(`Target ${target}: wrote ${VERCEL_OUTPUT_DIR}`);
       return;
     case "deno":
       await emitDenoOutput(cwd);
-      log.info(`Target ${target}: wrote ${DENO_OUTPUT_DIR} — deploy it with \`deno deploy\``);
       return;
     case "modal":
       await emitModalOutput(cwd, { name: agent.name });
-      // The command NAMES the app file, because `modal deploy` takes a path to
-      // a Python module and there is nothing in the directory to infer it from
-      // — unlike `deno deploy`, which is pointed at the directory itself.
-      log.info(
-        `Target ${target}: wrote ${MODAL_OUTPUT_DIR} — deploy it with ` +
-          `\`modal deploy ${path.join(MODAL_OUTPUT_DIR, MODAL_APP_FILE)}\``,
-      );
       return;
     default: {
       // Biome requires a default; this one is what makes the switch EXHAUSTIVE.

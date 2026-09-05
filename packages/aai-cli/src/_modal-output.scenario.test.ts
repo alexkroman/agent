@@ -28,13 +28,13 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
+import { emitModalOutput } from "./_modal-output.ts";
 import {
   MODAL_APP_FILE,
   MODAL_ENTRY_FILE,
   MODAL_ENTRY_SOURCE,
   MODAL_OUTPUT_DIR,
-} from "./_build-target.ts";
-import { emitModalOutput } from "./_modal-output.ts";
+} from "./_modal-target.ts";
 import { bundleTargetEntry } from "./_target-bundle.ts";
 import { linkProjectNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 

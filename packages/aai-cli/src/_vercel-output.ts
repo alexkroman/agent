@@ -4,7 +4,7 @@
  * `aai build` just produced.
  *
  * The argument for the Build Output API over an `api/` entry is in
- * `_build-target.ts` at {@link VERCEL_OUTPUT_DIR}; what this module adds is the
+ * `_vercel-target.ts` at {@link VERCEL_OUTPUT_DIR}; what this module adds is the
  * consequence of it. A `.func` directory is a directory WE fill, so every file
  * the server reads at runtime is present because it was copied in, and nothing
  * depends on a static tracer following a path it structurally cannot:
@@ -30,6 +30,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
+import { bundleTargetEntry, targetPathExists } from "./_target-bundle.ts";
 import {
   VERCEL_BUILD_CONFIG_SOURCE,
   VERCEL_ENTRY_SOURCE,
@@ -37,8 +38,7 @@ import {
   VERCEL_OUTPUT_DIR,
   VERCEL_STATIC_DIR,
   vercelFunctionConfigSource,
-} from "./_build-target.ts";
-import { bundleTargetEntry, targetPathExists } from "./_target-bundle.ts";
+} from "./_vercel-target.ts";
 
 /**
  * Files copied verbatim into the function, each one read at RUNTIME by a path

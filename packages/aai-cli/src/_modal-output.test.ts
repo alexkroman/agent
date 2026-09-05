@@ -15,8 +15,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import { MODAL_APP_FILE, MODAL_ENTRY_FILE, MODAL_OUTPUT_DIR } from "./_build-target.ts";
 import { emitModalOutput } from "./_modal-output.ts";
+import { MODAL_APP_FILE, MODAL_ENTRY_FILE, MODAL_OUTPUT_DIR } from "./_modal-target.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 const STUB = "// bundled entry\n";
