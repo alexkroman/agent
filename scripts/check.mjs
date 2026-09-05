@@ -197,6 +197,12 @@ const GATES = [
     fatal: false,
     why: "The other diff-scoped one, and a merge hazard rather than an authoring one: each branch picks a plausible next timestamp against the main it can see, both apply cleanly in isolation, and the inversion exists only in the merge. `supabase db push` then REFUSES a pending file older than the last remote row — at release time, after the npm publish, on a branch that has merged and gone. It has already cost a manual re-dating of two migrations (f376585). platform-schema.test.ts catches two files claiming ONE version; nothing caught one file claiming an older one.",
   },
+  {
+    script: "check:untyped-imports",
+    phase: "ratchets",
+    fatal: false,
+    why: "`tsconfig.scripts.json` and `tsconfig.browser.json` buy `noImplicitAny: false` with an argument about annotation-free JavaScript that is correct — and the same flag is what turns a MISSING DECLARATION into an error, so the one finding those programs exist for was the one they could not report. `ws` was mapped to the implementation directory of a JS package with `@types/ws` installed beside it, and `examples/host-server/bench/fakes.mjs` imported it as a silent `any` rather than a TS7016; pointing the mapping at the types surfaced a bench that totalled `RawData` with `.length` (NaN on the ArrayBuffer arm, a chunk count on the Buffer[] arm). This re-runs both with the flag FORCED on and fails on TS7016 only, so the relaxation keeps suppressing the ~500 TS7006 it was written for. Each program also has to report a floor of TS7006, because a gate whose healthy output is zero cannot otherwise tell a clean tree from a tsc that resolved nothing.",
+  },
 
   // --- after the test run ------------------------------------------------
   {

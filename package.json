@@ -51,6 +51,7 @@
     "check:syncpack": "syncpack lint",
     "check:template-types": "node scripts/check-template-types.mjs",
     "check:test-assertions": "node scripts/check-test-assertions.mjs",
+    "check:untyped-imports": "node scripts/check-untyped-imports.mjs",
     "dev:aai-server": "pnpm --filter aai-studio-server dev",
     "docs:api": "pnpm --filter aai-docs docs",
     "docs:md": "node scripts/docs-markdown.mjs",
