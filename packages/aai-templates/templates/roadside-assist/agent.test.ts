@@ -1,0 +1,423 @@
+import agentDef from "virtual:aai/agent";
+import type {
+  DialogBargeIn,
+  DialogPosition,
+  DialogSessionEventName,
+  DialogTimeout,
+  DialogVoiceConfig,
+  ToolContext,
+} from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
+import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import { createToolContext, expectDialogOk } from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
+import { roadsideCall } from "./call.ts";
+import { disclosureFor, NON_MEMBER, PLANS, quoteFee, rateFor, roadsideSlot } from "./shared.ts";
+import acknowledgeDisclosure from "./tools/acknowledge_disclosure.ts";
+import dispatchTruck from "./tools/dispatch_truck.ts";
+import jobStatus from "./tools/job_status.ts";
+import lookupCoverage from "./tools/lookup_coverage.ts";
+import reportLocation from "./tools/report_location.ts";
+import serviceDisclosure from "./tools/service_disclosure.ts";
+
+/** One call per context: `createToolContext` gives each its own slot store. */
+const makeCtx = (): ToolContext => createToolContext();
+
+/** Where the call is, without going through a tool. */
+const at = (ctx: ToolContext): DialogPosition => roadsideCall.position(ctx);
+
+/**
+ * The deadline declared where the call currently is — a READ, not a timer.
+ *
+ * This is the same call the runtime makes once per turn before arming its own
+ * `setTimeout`, so asserting on it is asserting on what the session will do.
+ * Nothing here starts a clock, which is why these tests can be in the unit tier.
+ */
+const deadlineAt = (ctx: ToolContext): DialogTimeout | undefined => roadsideCall.timeout(ctx);
+
+/** The voice settings in force where the call is — deepest declaring state wins. */
+const knobsAt = (ctx: ToolContext): DialogVoiceConfig | undefined => roadsideCall.voiceConfig(ctx);
+
+/** How interruptible the agent is right here. See `UNINTERRUPTIBLE` in `call.ts`. */
+const bargeInAt = (ctx: ToolContext): DialogBargeIn | undefined => knobsAt(ctx)?.bargeIn;
+
+/**
+ * The session events this dialog declares a transition on, each paired with the
+ * WIRE event the runtime would offer for it.
+ *
+ * The two halves are related by exactly one rule — a `DialogSessionEventName`
+ * is a wire event type under a leading `@` — and nothing checks that a pair
+ * still agrees, so the first test below does. Getting it wrong is silent: an
+ * `@` name that is not a session event is refused at declaration, but a pair
+ * that has drifted here would simply drive the wrong event and pass.
+ */
+const WIRED: readonly { declared: DialogSessionEventName; event: SessionEvent }[] = [
+  {
+    declared: "@user-transcript.committed",
+    event: {
+      type: "user-transcript.committed",
+      text: "I'm on the shoulder of route nine",
+      meta: { id: "evt_1", at: 0 },
+    },
+  },
+  {
+    declared: "@session.timed-out",
+    event: { type: "session.timed-out", meta: { id: "evt_2", at: 0 } },
+  },
+];
+
+const HEARD_SOMETHING = WIRED[0]!.event;
+const CALLER_GONE = WIRED[1]!.event;
+
+const A_LOCATION = {
+  where: "eastbound route nine, just past the exit for Millfield",
+  landmark: "the boarded-up diner",
+  safeToWait: true,
+  situation: "wont_start",
+  make: "Toyota",
+  model: "Corolla",
+  color: "silver",
+} as const;
+
+/** Walk the call to `onCall.verifying`. */
+async function locate(ctx: ToolContext): Promise<void> {
+  expectDialogOk(await reportLocation.execute(A_LOCATION, ctx));
+}
+
+/** Walk it on to `onCall.disclosure`, on the plan `policyNumber` names. */
+async function verify(ctx: ToolContext, policyNumber?: string): Promise<void> {
+  await locate(ctx);
+  expectDialogOk(
+    await lookupCoverage.execute(policyNumber === undefined ? {} : { policyNumber }, ctx),
+  );
+}
+
+/** And on to `onCall.dispatching`, with the fee accepted. */
+async function accept(ctx: ToolContext, policyNumber?: string): Promise<void> {
+  await verify(ctx, policyNumber);
+  expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
+}
+
+describe("the roadside call", () => {
+  test("a fresh call is locating, and every later phase's tool refuses there", async () => {
+    const ctx = makeCtx();
+    expect(at(ctx).state).toBe("onCall.locating");
+    expect(at(ctx).instruction).toMatch(/report_location/);
+
+    for (const call of [
+      lookupCoverage.execute({ policyNumber: "RS-4417" }, ctx),
+      serviceDisclosure.execute({}, ctx),
+      acknowledgeDisclosure.execute({ accepted: true }, ctx),
+      dispatchTruck.execute({ destination: "nearest approved shop", towMiles: 4 }, ctx),
+    ]) {
+      const refusal = await call;
+      expect(isToolFailure(refusal)).toBe(true);
+      // The refusal quotes the state's own instruction, which is the model's
+      // recovery path — it names the tool to call instead.
+      expect(isToolFailure(refusal) && refusal.error).toMatch(/report_location/);
+    }
+
+    // And nothing ran: a refusal must not have touched the call.
+    expect(roadsideSlot.get(ctx).where).toBeNull();
+  });
+
+  test("reporting the location moves the call to verifying and latches the vehicle", async () => {
+    const ctx = makeCtx();
+    const result = expectDialogOk<{ vehicle: string; safeToWait: boolean }>(
+      await reportLocation.execute(A_LOCATION, ctx),
+    );
+
+    expect(result.state).toBe("onCall.verifying");
+    expect(result.result.vehicle).toBe("silver Toyota Corolla");
+    expect(roadsideSlot.get(ctx).situation).toBe("wont_start");
+  });
+
+  test("a policy number nothing matches refuses, and the call does not move", async () => {
+    const ctx = makeCtx();
+    await locate(ctx);
+
+    const refused = await lookupCoverage.execute({ policyNumber: "RS-0000" }, ctx);
+    expect(isToolFailure(refused) && refused.error).toMatch(/RS-0000/);
+    // The half that matters: a gated tool sends nothing when its body answers a
+    // failure, so a misheard digit cannot leave the caller quoted at a rate
+    // nobody looked up.
+    expect(at(ctx).state).toBe("onCall.verifying");
+    expect(roadsideSlot.get(ctx).coverage).toBeNull();
+  });
+
+  test("a policy number read out with noise in it still matches", async () => {
+    const ctx = makeCtx();
+    await locate(ctx);
+    const result = expectDialogOk<{ plan: string; holder: string | null }>(
+      await lookupCoverage.execute({ policyNumber: "rs 4417" }, ctx),
+    );
+    expect(result.result.plan).toBe(PLANS.plus.name);
+    expect(result.result.holder).toBe("Dana Whitfield");
+  });
+
+  test("no policy number at all is an ANSWER: the call moves, priced as a non-member", async () => {
+    const ctx = makeCtx();
+    await locate(ctx);
+
+    const result = expectDialogOk<{ plan: string; status: string; callOut: number }>(
+      await lookupCoverage.execute({}, ctx),
+    );
+    expect(result.state).toBe("onCall.disclosure");
+    expect(result.result.status).toBe("unverified");
+    expect(result.result.callOut).toBe(NON_MEMBER.callOut);
+  });
+
+  test("a lapsed policy is found and still priced as a non-member", async () => {
+    const ctx = makeCtx();
+    await verify(ctx, "RS-1290");
+
+    // Found — the holder's name comes back — and charged the call-out anyway.
+    expect(roadsideSlot.get(ctx).coverage?.holder).toBe("Priya Raghavan");
+    expect(rateFor(roadsideSlot.get(ctx).coverage)).toBe(NON_MEMBER);
+  });
+
+  test("declining the fee leaves the call in disclosure; accepting moves it on", async () => {
+    const ctx = makeCtx();
+    await verify(ctx, "RS-4417");
+    expect(at(ctx).state).toBe("onCall.disclosure");
+
+    // `sendFrom` returning `undefined` is "that worked and it moved nothing" —
+    // not a failure, because declining a fee is not an error.
+    const declined = expectDialogOk<{ accepted: boolean }>(
+      await acknowledgeDisclosure.execute({ accepted: false }, ctx),
+    );
+    expect(declined.result.accepted).toBe(false);
+    expect(declined.state).toBe("onCall.disclosure");
+    expect(roadsideSlot.get(ctx).disclosureAcceptedAt).toBeNull();
+
+    const agreed = expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
+    expect(agreed.state).toBe("onCall.dispatching");
+  });
+
+  test("the disclosure is handed over verbatim and priced by the plan", async () => {
+    const ctx = makeCtx();
+    await verify(ctx, "RS-8802");
+
+    const read = expectDialogOk<{ readThisVerbatim: string; wordCount: number }>(
+      await serviceDisclosure.execute({}, ctx),
+    );
+    expect(read.result.readThisVerbatim).toBe(disclosureFor(roadsideSlot.get(ctx).coverage));
+    expect(read.result.readThisVerbatim).toContain(PLANS.basic.name);
+    expect(read.result.wordCount).toBeGreaterThan(40);
+    // A read that changes nothing: it must not have moved the call off the one
+    // state whose `bargeIn: "off"` is what gets these words said in full.
+    expect(read.state).toBe("onCall.disclosure");
+  });
+
+  test("dispatch is idempotent: a second call reports the same truck", async () => {
+    const ctx = makeCtx();
+    await accept(ctx, "RS-4417");
+
+    const first = expectDialogOk<{ callsign: string; alreadyDispatched: boolean }>(
+      await dispatchTruck.execute({ destination: "Millfield Auto", towMiles: 31 }, ctx),
+    );
+    expect(first.result.alreadyDispatched).toBe(false);
+
+    // The state pins the model to this tool, so it fires again on every later
+    // step. A second truck would be a fleet; the same job is the contract.
+    const second = expectDialogOk<{ callsign: string; alreadyDispatched: boolean }>(
+      await dispatchTruck.execute({ destination: "somewhere else entirely", towMiles: 400 }, ctx),
+    );
+    expect(second.result.alreadyDispatched).toBe(true);
+    expect(second.result.callsign).toBe(first.result.callsign);
+    expect(roadsideSlot.get(ctx).job?.destination).toBe("Millfield Auto");
+  });
+
+  test("the tow is priced by the plan the lookup found, not by the one it might have", async () => {
+    const covered = makeCtx();
+    await accept(covered, "RS-4417");
+    expectDialogOk(await dispatchTruck.execute({ destination: "shop", towMiles: 31 }, covered));
+
+    const uncovered = makeCtx();
+    await accept(uncovered);
+    expectDialogOk(await dispatchTruck.execute({ destination: "shop", towMiles: 31 }, uncovered));
+
+    // Plus covers 25 miles and charges $3 for the other six; a non-member pays
+    // the call-out plus $7 for all 31. The template computes both through the
+    // one `quoteFee`, which is why the disclosure and the invoice cannot drift.
+    expect(roadsideSlot.get(covered).job?.quote.total).toBe(quoteFee(PLANS.plus, 31).total);
+    expect(roadsideSlot.get(uncovered).job?.quote.total).toBe(quoteFee(NON_MEMBER, 31).total);
+    expect(roadsideSlot.get(covered).job?.quote.total).toBeLessThan(
+      roadsideSlot.get(uncovered).job?.quote.total ?? 0,
+    );
+  });
+
+  test("an unsafe caller is moved up the queue, and no ETA is ever below the floor", async () => {
+    const ctx = makeCtx();
+    expectDialogOk(
+      await reportLocation.execute({ ...A_LOCATION, safeToWait: false, situation: "battery" }, ctx),
+    );
+    expectDialogOk(await lookupCoverage.execute({}, ctx));
+    expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
+    const job = expectDialogOk<{ etaMinutes: number }>(
+      await dispatchTruck.execute({ destination: "roadside", towMiles: 0 }, ctx),
+    );
+    expect(job.result.etaMinutes).toBe(10);
+  });
+});
+
+describe("the two deadlines", () => {
+  test("locating carries a silence deadline, and the nudge is where it lands", () => {
+    const ctx = makeCtx();
+    const deadline = deadlineAt(ctx);
+
+    expect(deadline?.afterMs).toBe(12_000);
+    expect(deadline?.event).toEqual({ type: "QUIET" });
+
+    // Firing it is what the runtime does when the window passes.
+    expect(roadsideCall.send(ctx, { type: "QUIET" }).state).toBe("onCall.quiet");
+    expect(at(ctx).instruction).toMatch(/still there/);
+  });
+
+  test("the nudge state arms nothing: the next rung is the session's own idle timeout", () => {
+    const ctx = makeCtx();
+    roadsideCall.send(ctx, { type: "QUIET" });
+    expect(deadlineAt(ctx)).toBeUndefined();
+  });
+
+  test("hearing the caller puts the ladder back on its first rung", () => {
+    const ctx = makeCtx();
+    roadsideCall.send(ctx, { type: "QUIET" });
+    expect(roadsideCall.receive(ctx, HEARD_SOMETHING).state).toBe("onCall.locating");
+    // Back on the rung that declares the window, which is what the runtime
+    // re-arms from: the clock runs from the dialog's last MOVE.
+    expect(deadlineAt(ctx)?.event).toEqual({ type: "QUIET" });
+  });
+
+  test("verifying's deadline is wall clock — nothing the caller says extends it", async () => {
+    const ctx = makeCtx();
+    await locate(ctx);
+
+    expect(deadlineAt(ctx)?.afterMs).toBe(120_000);
+    // The half that is a claim about the SPEC rather than about a number: this
+    // phase declares no transition on chatter, so a caller who talks the whole
+    // two minutes moves the dialog not at all — and a dialog that has not moved
+    // is a deadline that has not been re-armed.
+    const before = at(ctx).state;
+    expect(roadsideCall.receive(ctx, HEARD_SOMETHING).state).toBe(before);
+  });
+
+  test("the verification deadline gives up INTO the disclosure, at the non-member rate", async () => {
+    const ctx = makeCtx();
+    await locate(ctx);
+
+    expect(roadsideCall.send(ctx, { type: "UNVERIFIED" }).state).toBe("onCall.disclosure");
+    const read = expectDialogOk<{ readThisVerbatim: string }>(
+      await serviceDisclosure.execute({}, ctx),
+    );
+    // A caller we could not confirm is still stranded. What they lost is the
+    // discount, not the truck.
+    expect(read.result.readThisVerbatim).toContain("non-member");
+  });
+});
+
+describe("the session events", () => {
+  test("each `@` name is the wire type this dialog is really offered", () => {
+    for (const { declared, event } of WIRED) {
+      expect(declared).toBe(`@${event.type}`);
+    }
+  });
+
+  test("a hang-up ends the call from any phase, and every tool refuses after it", async () => {
+    for (const reach of [locate, verify, accept]) {
+      const ctx = makeCtx();
+      await reach(ctx);
+
+      const position = roadsideCall.receive(ctx, CALLER_GONE);
+      expect(position.state).toBe("abandoned");
+      expect(position.done).toBe(true);
+
+      // `abandoned` is final, so it delivers no events and no tool declares
+      // itself legal there — including the read, which is gated on the parent
+      // rather than left ungated for exactly this.
+      const refused = await jobStatus.execute({}, ctx);
+      expect(isToolFailure(refused)).toBe(true);
+      const late = await dispatchTruck.execute({ destination: "shop", towMiles: 1 }, ctx);
+      expect(isToolFailure(late)).toBe(true);
+    }
+  });
+
+  test("a session event no active state declares moves nothing", async () => {
+    const ctx = makeCtx();
+    await accept(ctx, "RS-4417");
+    // `onCall.dispatching` declares no transition on speech, and the parent's
+    // only session event is the hang-up. An unhandled event is IGNORED.
+    expect(roadsideCall.receive(ctx, HEARD_SOMETHING).state).toBe("onCall.dispatching");
+  });
+});
+
+describe("the per-phase voice knobs", () => {
+  test("the disclosure is uninterruptible, and it is the only phase that is", async () => {
+    const ctx = makeCtx();
+    expect(bargeInAt(ctx)).toEqual({ minWords: 1 });
+
+    await verify(ctx, "RS-4417");
+    expect(bargeInAt(ctx)).toBe("off");
+
+    expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
+    expect(bargeInAt(ctx)).toBeUndefined();
+  });
+
+  test("verifying pins a low temperature and nothing else", async () => {
+    const ctx = makeCtx();
+    await locate(ctx);
+    expect(knobsAt(ctx)).toEqual({ temperature: 0.2 });
+  });
+
+  test("dispatching pins the model to the tool that actually sends a truck", async () => {
+    const ctx = makeCtx();
+    await accept(ctx, "RS-4417");
+    expect(knobsAt(ctx)?.toolChoice).toEqual({ type: "tool", toolName: "dispatch_truck" });
+  });
+
+  test("no phase declares a knob the runtime cannot apply", () => {
+    const ctx = makeCtx();
+    // `voice` and `keyterms` are accepted by `DialogStateSpec` and implemented
+    // by NEITHER transport — the runtime warns at the first session and applies
+    // nothing. A template that declared one would be documenting a promise the
+    // SDK does not keep, which is worse than leaving the knob unexercised.
+    const visited: string[] = [];
+    for (const event of [
+      { type: "QUIET" },
+      { type: "LOCATED" },
+      { type: "VERIFIED" },
+      { type: "DISCLOSED" },
+    ] as const) {
+      visited.push(at(ctx).state);
+      const knobs = knobsAt(ctx);
+      expect(knobs?.voice).toBeUndefined();
+      expect(knobs?.keyterms).toBeUndefined();
+      roadsideCall.send(ctx, event);
+    }
+    visited.push(at(ctx).state);
+    expect(knobsAt(ctx)?.voice).toBeUndefined();
+    expect(knobsAt(ctx)?.keyterms).toBeUndefined();
+
+    // Non-vacuity: the walk really visited every live phase rather than
+    // stalling on one that ignored its event and asserting about it five times.
+    expect(visited).toEqual([
+      "onCall.locating",
+      "onCall.quiet",
+      "onCall.verifying",
+      "onCall.disclosure",
+      "onCall.dispatching",
+    ]);
+  });
+});
+
+describe("the agent declaration", () => {
+  test("the dialog is DECLARED on the agent, which is what wires all of the above", () => {
+    // The one line this whole template rests on. An undeclared dialog still
+    // gates its tools and still moves on `send`, so every test above would go
+    // on passing while the deadlines were never armed, the session events
+    // reached nothing, the per-phase instruction reached the model only on
+    // turns that happened to call a tool, and the three knobs were read by
+    // nobody. There is no other assertion in this file that can see that.
+    expect(agentDef.dialogs).toContain(roadsideCall);
+  });
+});

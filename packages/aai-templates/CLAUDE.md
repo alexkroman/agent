@@ -201,7 +201,8 @@ once, and the templates are now their reference use:
 | `WorkflowProgress` | `transcription-workflow` and `redline` render a run's WHOLE narration; `link-digest` and `podcast-digest` pass `lines={1}` for the newest one, deleting two hand-rolled versions. `WORKFLOW_STATUS_LABELS` replaced two byte-identical status maps the same way |
 | `useDownloadUrl` (`@alexkroman1/aai-ui`) | `spoken-summary` and `call-audit`, the two that exist BECAUSE of the audio round trip and had copied the 38-line object-URL lifecycle byte-for-byte |
 | `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
-| `dialog()` + `dialog.tool` + `dialog.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, nested, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
+| `dialog()` + `dialog.tool` + `dialog.send` | seven templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, nested, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity), `roadside-assist` (the one that describes a CALL — deadlines, session events and per-phase voice knobs) |
+| `agent({ dialogs })` + `Dialog.receive` / `.timeout` / `.voiceConfig` | `roadside-assist` ALONE, and everything below the tool gate needs it: declaring the dialog on the agent is what feeds it session events, arms its deadlines, puts the active `instruction` in front of the model on every turn, and applies `bargeIn` / `toolChoice` / `temperature`. `AnyDialog` is the type its `DIALOGS` array is written as. See "A dialog can describe a CALL" below |
 | `procedure()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
 | `subagent()` + `ctx.delegate` | `briefing-desk` ONLY, and it exists for this: four subagents with different tool surfaces, models and budgets, angles fanned out with `Promise.allSettled`, `stubDelegate` driving its spec. Argued in `packages/aai-runtime/CLAUDE.md`, "Subagents" — this guide is at its cap |
 | `agent({ subagents })` + `SubagentRoster` | `briefing-desk`, beside the call-site half — and the SPLIT is the lesson. `research_topic` fans ONE subagent over N angles and `verify_claim` reads the board to turn "the second thing you told me" into a sentence, so neither is a choice a model could make; `explainer` and `counterpoint` differ only in what the caller asked, so they go on the roster and reach the model as one `delegate` tool. **Name a subagent in code when the tool IS the choice; put it on the roster when the caller's words are** — an agent growing a fourth `tools/ask_the_<x>.ts` whose body is one `ctx.delegate` line has been hand-rolling the roster |
@@ -248,7 +249,7 @@ last can see it is owed.
 
 ## A flow is WHERE A CONVERSATION IS, and a board is not one
 
-Five templates declare a `dialog()`, and the interesting one is the template that
+Six templates declare a `dialog()`, and the interesting one is the template that
 almost could not. `dispatch-center` holds many incidents at once and a flow is
 bound to a session, so it has exactly ONE position — and the first instinct, a
 machine per incident over `Incident.status`, is not available at all.
@@ -265,7 +266,8 @@ per-entity; a `ToolFailure` from a data lookup is what that is for. Read the
 other four in this order: `travel-concierge` (two states, one gate),
 `plan-and-execute` (three, a lifecycle), `retail` (a call ending in a TERMINAL
 state, with a confirmation gate nested inside it), `solo-rpg` (nested, plus a
-`final` one).
+`final` one). The sixth, `roadside-assist`, is about what a dialog does when NO
+TOOL IS RUNNING and has its own section below.
 
 Four rules came out of converting `dispatch-center`, `retail` and `solo-rpg`,
 each a trap rather than a preference:
@@ -368,6 +370,61 @@ conversion cost two lines rather than twenty-four. Pin the POSITION as well as
 the refusal: that a tool refuses in the wrong state is half of it, and that the
 position moved (and did NOT move on a failure) is the half a dead transition
 hides in.
+
+### A dialog can describe a CALL: `roadside-assist`
+
+The other six flow templates move on tool results. `roadside-assist` is the one
+written for everything that happens when **no tool is running** — a caller who
+goes quiet, a phase that must not be interrupted, a verification step that has
+to give up on its own — and all of it arrives through one field:
+`agent({ dialogs: DIALOGS })`. Without that line the dialog still gates its
+tools and still moves on `send`, and not one of the five things below happens.
+`packages/aai-runtime/DIALOG-CLAUDE.md` owns the wiring; what is here is what
+building an example of it settled.
+
+- **A silence ladder is a self transition, and that is the whole mechanism.**
+  The deadline clock runs from the dialog's last MOVE, so
+  `on: { "@user-transcript.committed": "locating" }` on the state itself re-arms
+  the window on every committed turn and only real silence reaches it. Its
+  mirror is one state over: `onCall.verifying` declares no transition on chatter
+  at all, so its two-minute deadline is wall clock from entry — the shape a
+  caller who talks the whole time cannot extend, which is the only call it
+  exists for. The two are four lines apart on purpose.
+- **A per-state `timeout` needs somewhere to LAND.** A deadline that
+  self-transitions re-arms and changes nothing, so the ladder's rung
+  (`onCall.quiet`) is a state whose entire content is a different instruction:
+  ask one short question rather than repeat the whole one. What it costs is
+  honest and stated in place — a COMMITTED turn is what restarts the clock, not
+  a partial, so a caller in the middle of one long sentence can reach the
+  deadline while still speaking. That is why `QUIET` leads to a nudge and never
+  to anything irreversible.
+- **`bargeIn: "off"` decides where the TOOL BOUNDARY goes.** The knobs are
+  applied per STEP, so a tool that advanced the dialog would have the very
+  sentence the phase exists for spoken under the NEXT state's knobs. Hence two
+  tools rather than one: `service_disclosure` hands over the words and moves
+  nothing, and `acknowledge_disclosure` advances a turn later. Get this backwards
+  and the disclosure is interruptible after all, with every test still green.
+- **A `toolChoice` pin is only safe where the tool needs nothing the caller has
+  not already said.** It is on `onCall.dispatching`, against the failure a phone
+  agent really makes — saying "I'm getting someone out to you" and calling
+  nothing — and NOT on `onCall.verifying`, where it would force the model to
+  invent a policy number it has not been given yet. A pin also fires on every
+  later step of the call, so `dispatch_truck` answers with the job it already
+  created; a pinned tool that is not idempotent is a fleet of trucks.
+- **`voice` and `keyterms` are declared by NOTHING here, deliberately.** Both
+  are accepted by `DialogStateSpec` and implemented by neither transport (they
+  warn at the first session), so a template using one would be documenting a
+  promise the SDK does not keep. `agent.test.ts` asserts no state declares
+  either, which is the version of that sentence that fails when it stops being
+  true.
+
+Its state names are the other half of `dispatch-center`'s lesson: `locating`,
+`verifying`, `disclosure`, `dispatching` are facts about the CONVERSATION, and
+which truck, which policy and which vehicle are per-entity facts in a
+`sessionSlot` beside it. The nesting exists for one reason — the hang-up
+(`@session.timed-out` → the `final` `abandoned`) is declared ONCE, on the
+`onCall` parent, where the five phases would otherwise repeat it five times and
+the sixth would be added without it.
 
 ### A rule the model can skip is not a rule: `retail`'s confirmation gate
 
