@@ -55,109 +55,65 @@
  */
 
 import { type AnyStateMachine, createActor, type EventFromLogic } from "xstate";
+import {
+  assertDialogSessionEvents,
+  assertDialogTimeouts,
+  assertNoDelayedTransitions,
+  assertNoSpecDelays,
+  toDialogEventType,
+} from "./_dialog-events.ts";
 import { assertDialogGraph } from "./_dialog-graph.ts";
+import { toInstruction, toTimeout, toVoiceConfig } from "./_dialog-meta.ts";
 import {
   assertDialogSource,
   type FlowState,
   machineFromSpec,
   readState,
   statePaths,
-  toInstruction,
   toStatePath,
 } from "./_dialog-snapshot.ts";
+import type { Dialog, DialogOptions } from "./dialog-handle.ts";
 import type {
   DialogEvent,
   DialogPosition,
   DialogSpec,
+  DialogTimeout,
   DialogToolDef,
   DialogToolResult,
+  DialogVoiceConfig,
 } from "./dialog-types.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import type { SessionEvent } from "./protocol-events.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import { type SessionSlot, sessionSlot } from "./session-slot.ts";
 import type { SlotHolder, StateProjection } from "./session-state.ts";
 import type { ToolDef } from "./types.ts";
 import { isToolFailure, type ToolFailure, toolFailure } from "./utils.ts";
 
-// The authoring vocabulary lives in its own module (this file was at the
-// 500-line cap), and is re-exported here so that `@alexkroman1/aai` — and any
-// reader who goes looking for a dialog type where `dialog()` is — still finds
-// every name in one place. See `sdk/dialog-types.ts`.
+// The authoring vocabulary lives in its own two modules (this file was at the
+// 500-line cap, and `dialog-types.ts` reached it in turn), and every name is
+// re-exported here so that `@alexkroman1/aai` — and any reader who goes looking
+// for a dialog type where `dialog()` is — still finds them in one place. See
+// `sdk/dialog-types.ts` for what an author DECLARES and `sdk/dialog-handle.ts`
+// for what this function hands back.
 export type {
+  AnyDialog,
+  Dialog,
+  DialogOptions,
+} from "./dialog-handle.ts";
+export type {
+  DialogBargeIn,
   DialogEvent,
   DialogPosition,
+  DialogSessionEventName,
   DialogSpec,
   DialogStateSpec,
+  DialogTimeout,
+  DialogTimeoutSpec,
   DialogToolDef,
   DialogToolResult,
+  DialogVoiceConfig,
 } from "./dialog-types.ts";
-
-/**
- * A dialog statechart bound to a session, created by {@link dialog}.
- *
- * @typeParam M - The XState machine this dialog runs.
- * @typeParam E - The event union {@link Dialog.send} and a gated tool's
- *   `send`/`sendFrom` accept. Defaults to the machine's own — a dialog declared
- *   from a {@link DialogSpec} supplies it directly instead, because the machine
- *   it builds is an implementation detail and its type carries no events.
- *
- * @public
- */
-export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-  /** The store key this dialog's snapshot occupies. Two flows must not share one. */
-  readonly key: string;
-  /** The machine itself, for a caller that wants to inspect or visualize it. */
-  readonly machine: M;
-  /** Where this session's conversation currently is. */
-  position(ctx: SlotHolder): DialogPosition;
-  /** Whether the active state matches `state`, as `when` spells it. */
-  matches(ctx: SlotHolder, state: string): boolean;
-  /**
-   * Advance the dialog, and store the result.
-   *
-   * An event the active state does not handle is IGNORED — XState's own
-   * behaviour, kept rather than turned into a throw, because the alternative is
-   * an agent that crashes a live call over a transition that merely was not
-   * available. The returned position is what actually happened; compare its
-   * `state` to know whether anything moved.
-   */
-  send(ctx: SlotHolder, event: E): DialogPosition;
-  /** Discard this session's progress and start the dialog over. */
-  reset(ctx: SlotHolder): DialogPosition;
-  /**
-   * Declare a tool gated on this dialog's state. See {@link DialogToolDef}.
-   *
-   * The return type is the WRAPPED one the body actually answers with, not a
-   * bare {@link ToolDef}: `InferToolOutput<typeof myTool>` is then
-   * `DialogToolResult<R> | ToolFailure`, so a custom client renders the same
-   * shape the tool sends instead of `unknown`. Narrowing a return type is
-   * covariant, so a gated tool is still assignable wherever the agent's
-   * registry wants a `ToolDef<ToolInputSchema>`.
-   */
-  tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
-    def: DialogToolDef<P, R, E>,
-  ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
-  /**
-   * A `syncState` projection of this dialog's position, so a client can render
-   * the step the caller is on without the agent hand-rolling a sync channel.
-   *
-   * The projector is REQUIRED, exactly as {@link SessionSlot.projection}'s is,
-   * and for the same reason: an optional one cannot be typed without asserting
-   * that the un-projected {@link DialogPosition} is the caller's `V`. Project the
-   * identity — `dialog.projection((at) => at)` — to push the whole position.
-   */
-  projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
-}
-
-/** Options for {@link dialog}. */
-export interface DialogOptions {
-  /**
-   * Whether this dialog's position is stored durably. Defaults to `true` — see
-   * {@link SessionSlotOptions.durable}. A persisted snapshot is plain JSON by
-   * construction, so there is nothing here that cannot be stored.
-   */
-  durable?: boolean;
-}
 
 /**
  * The success half of a settled tool body, as a type the compiler can SUBTRACT.
@@ -182,7 +138,7 @@ type DialogEventOf = EventFromLogic<AnyStateMachine>;
  * Declare a dialog statechart for an agent's conversation.
  *
  * The machine is an ordinary XState machine, so everything XState knows how to
- * do with one applies — `@xstate/procedure` can enumerate its paths to generate
+ * do with one applies — `@xstate/graph` can enumerate its paths to generate
  * dialog test cases, and the machine is serializable for a visualizer.
  *
  * @param key - The store key to occupy, like a {@link sessionSlot}'s. Two flows
@@ -304,13 +260,26 @@ export function dialog(
   // 'transition' in undefined`, from a stack naming neither `dialog` nor the
   // missing key.
   assertDialogSource(source);
+  // BEFORE the machine is built, because `toNodes` copies the fields it knows
+  // and drops the rest: an `after` in a spec would reach no machine at all, and
+  // the state it was supposed to leave would be reported by the graph guard as
+  // wedged — a message about a missing event, for an author who wrote a delay.
+  if (!("transition" in source)) assertNoSpecDelays(key, source);
   // `in` on the union rather than a shape test for `states`: BOTH have one, and
   // only the machine has behaviour. Machine-first in the overload list for the
   // same reason — a plain object cannot satisfy `AnyStateMachine`, where a
   // machine could be read as a spec.
   const machine = "transition" in source ? source : machineFromSpec(key, source);
+  // Before the graph guard, which reads the transitions XState desugars `after`
+  // INTO and would therefore call a delay-only state perfectly healthy — the
+  // exact reason a dialog could declare a transition that can never fire.
+  assertNoDelayedTransitions(key, machine);
   const valid = statePaths(machine);
   assertDialogGraph(key, machine, valid);
+  // After the graph, because an unreachable or wedged state is the more
+  // fundamental defect and its message should be the one an author sees first.
+  assertDialogSessionEvents(key, machine);
+  assertDialogTimeouts(key, machine);
 
   /**
    * A started actor for this session's stored snapshot.
@@ -411,6 +380,31 @@ export function dialog(
     position,
     matches,
     send,
+    /**
+     * Offer a session event, and send it only if something is listening.
+     *
+     * Two actors on the moving path (one to ask, one inside `send`'s mutation
+     * window) rather than one, and the asymmetry is the point: a session emits
+     * transcript and speech frames continuously, almost none of which any dialog
+     * declares, and `slot.update` writes UNCONDITIONALLY — it stores the draft
+     * when the mutator returns, whether or not the machine moved. So sending
+     * every event would re-serialize and commit a `durable` dialog's snapshot on
+     * every frame of a call. A read materializes the slot's default once and
+     * writes nothing after that. `can()` is XState's own answer to "would this
+     * event do anything here", so a transition declared on an ancestor counts
+     * exactly as it would for `send`.
+     */
+    receive: (ctx, event: SessionEvent): DialogPosition => {
+      const type = toDialogEventType(event.type);
+      const handled = withActor(readState(slot.get(ctx)), (a) => a.getSnapshot().can({ type }));
+      return handled ? send(ctx, { type }) : position(ctx);
+    },
+    // Both are pure READS of the state the dialog is in — nothing is armed and
+    // nothing is applied here. The runtime asks per turn and does both.
+    timeout: (ctx): DialogTimeout | undefined =>
+      withActor(readState(slot.get(ctx)), (a) => toTimeout(a.getSnapshot().getMeta())),
+    voiceConfig: (ctx): DialogVoiceConfig | undefined =>
+      withActor(readState(slot.get(ctx)), (a) => toVoiceConfig(a.getSnapshot().getMeta())),
     reset: (ctx) => {
       slot.reset(ctx);
       return position(ctx);

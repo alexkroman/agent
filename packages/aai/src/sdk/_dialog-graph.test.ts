@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { createMachine, setup } from "xstate";
+import { createMachine, fromPromise, setup } from "xstate";
 import { dialog } from "./dialog.ts";
 
 describe("unreachable states", () => {
@@ -133,13 +133,23 @@ describe("wedged states", () => {
   });
 
   test("a leaf left only by an invoked actor's onDone is not wedged", () => {
-    // `onDone`/`onError`/`after` are desugared INTO `transitions` by XState, so
-    // reading that map is what makes the guard safe on a hand-written machine.
-    const machine = setup({ actors: {} }).createMachine({
+    // `onDone`/`onError` are desugared INTO `transitions` by XState, so reading
+    // that map is what makes the guard safe on a hand-written machine.
+    //
+    // This fixture used `after: { 1000: "done" }`, and asserted the OPPOSITE of
+    // the truth: a delay is desugared into the same map, so the guard passed a
+    // state a dialog can never leave — its actor is stopped inside the same
+    // synchronous window it was started in, so the timer never fires. `after` is
+    // refused at declaration now (see `_dialog-events.test.ts`), and what this
+    // case is actually about — a transition the guard would miss if it only read
+    // `on` — needs a real invoked actor to state.
+    const machine = setup({
+      actors: { check: fromPromise(async () => "ok") },
+    }).createMachine({
       id: "call",
       initial: "waiting",
       states: {
-        waiting: { after: { 1000: "done" } },
+        waiting: { invoke: { src: "check", onDone: "done" } },
         done: { type: "final" },
       },
     });

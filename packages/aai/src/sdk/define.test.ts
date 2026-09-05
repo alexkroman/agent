@@ -5,6 +5,7 @@ import { toAgentConfig } from "./agent-config.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { DEFAULT_MAX_STEPS, DEFAULT_MIN_TURN_SILENCE_MS } from "./constants.ts";
 import { agent, tool, workflowApp } from "./define.ts";
+import { dialog } from "./dialog.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropicLlm } from "./providers/llm/anthropic.ts";
 import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
@@ -359,5 +360,30 @@ describe("workflowApp()", () => {
       workflows: { digest },
     });
     expect(def.greeting).toBe("Paste a link.");
+  });
+});
+
+describe("agent({ dialogs })", () => {
+  const call = dialog("call", {
+    initial: "greeting",
+    states: {
+      greeting: { instruction: "Say hello.", on: { "@session.timed-out": "gone" } },
+      gone: { final: true },
+    },
+  });
+
+  test("a declared dialog rides on the definition untouched", () => {
+    // Declaring it is what wires the dialog's session-event transitions, its
+    // timeouts and its voice knobs to the runtime — the three things that happen
+    // when no tool is running, so a dialog cannot reach them from inside one.
+    // Host-only, so `toAgentConfig` strips it (see `stray-fields.test.ts`).
+    const def = agent({ name: "Support", dialogs: [call] });
+    expect(def.dialogs).toEqual([call]);
+  });
+
+  test("an agent that declares none is unchanged — the field is absent, not empty", () => {
+    // `exactOptionalPropertyTypes`: an agent written before this existed must
+    // not acquire a `dialogs: undefined` that a spread would then carry.
+    expect(agent({ name: "Support" })).not.toHaveProperty("dialogs");
   });
 });

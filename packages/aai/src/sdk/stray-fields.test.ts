@@ -8,6 +8,7 @@
  */
 import { describe, expect, test } from "vitest";
 import { type AgentConfig, toAgentConfig } from "./agent-config.ts";
+import { dialog } from "./dialog.ts";
 
 /**
  * ONE narrowing, at the seam, instead of a cast per assertion.
@@ -62,9 +63,21 @@ describe("stray agent fields", () => {
         tools: {},
         events: {},
         workflows: {},
+        dialogs: [],
         syncState: undefined,
       }),
     ).not.toThrow();
+  });
+
+  test("a declared dialog is STRIPPED, not serialized", () => {
+    // It holds a compiled XState machine and closures over a session slot, so
+    // there is nothing a consumer of a stored config could do with one — and the
+    // guest runs the agent's own module, where the dialog object already is.
+    const call = dialog("call", {
+      initial: "greeting",
+      states: { greeting: { on: { DONE: "done" } }, done: { final: true } },
+    });
+    expect(configOf({ name: "A", dialogs: [call] })).not.toHaveProperty("dialogs");
   });
 
   test("the author conveniences pass — normalization consumes them before the check", () => {

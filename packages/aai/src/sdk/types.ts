@@ -8,6 +8,7 @@ import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 // re-export does not bring the name into this module's scope, and
 // `AgentDef.builtinTools` needs it.
 import type { BuiltinTool } from "./builtin-tools.ts";
+import type { AnyDialog } from "./dialog-handle.ts";
 import type { McpServers } from "./mcp-config.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { ToolInputSchema } from "./schema.ts";
@@ -228,6 +229,15 @@ export interface AgentDef extends PipelineVoiceTuning {
    * `name`/`greeting` are proxied rather than read from the stored config.
    */
   workflows?: Readonly<Record<string, WorkflowDef>>;
+  /**
+   * The dialogs this agent runs — see {@link dialog}. **Declaring one here is
+   * what wires it to the SESSION**: its `@`-prefixed transitions fire (see
+   * {@link DialogSessionEventName}), its states' `timeout` deadlines are armed,
+   * and its {@link DialogVoiceConfig} is applied per state — none of which a
+   * dialog can reach from inside a tool, because all three happen when no tool
+   * is running. An UNDECLARED dialog is unchanged. Host-only, like `tools`.
+   */
+  dialogs?: readonly AnyDialog[];
   /**
    * What this agent's front door IS — and so whether it serves voice at all.
    * @defaultValue `"voice"`

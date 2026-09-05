@@ -7,9 +7,13 @@
  * seam is the one it already had: these are total functions of a snapshot, of a
  * machine, or of a {@link DialogSpec}, where `dialog()` itself is the factory
  * that owns a slot, starts actors and stops them. That makes them the half a
- * reader can check by inspection — the dotted-path spelling, the
- * deepest-instruction rule, the state set a `when` is validated against, and the
- * machine a plain state map compiles to.
+ * reader can check by inspection — the dotted-path spelling, the state set a
+ * `when` is validated against, and the machine a plain state map compiles to.
+ *
+ * What a state's `meta` CARRIES is `_dialog-meta.ts`, which took the
+ * deepest-active-state reader with it when a state grew settings beyond the
+ * instruction: this module still owns the SHAPE the machine is built in, and
+ * that one owns what goes into a node's `meta` and how it is read back.
  *
  * Internal (`_`-prefixed, per the repo's file-naming rules): nothing outside
  * this package may import it. `dialog()` is the public surface.
@@ -21,6 +25,7 @@ import {
   createMachine,
   type Snapshot,
 } from "xstate";
+import { toStateMeta } from "./_dialog-meta.ts";
 import type { DialogSpec, DialogStateSpec } from "./dialog-types.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
@@ -53,27 +58,6 @@ export function toStatePath(value: unknown): string {
       return rest === "" ? key : `${key}.${rest}`;
     })
     .join(",");
-}
-
-/**
- * The active state's declared instruction, from the DEEPEST node that has one.
- *
- * `getMeta()` is keyed `"<machineId>.<statePath>"` for every ACTIVE node, parents
- * included, so a nested state's entry and its parent's both appear. The deepest
- * key is the longest one, which is the whole rule — a merge would have a parent's
- * general instruction override the specific one the caller is actually in.
- */
-export function toInstruction(meta: Record<string, unknown>): string | undefined {
-  let deepest = "";
-  let instruction: string | undefined;
-  for (const [key, value] of Object.entries(meta)) {
-    if (!isRecord(value)) continue;
-    const declared = value.instruction;
-    if (typeof declared !== "string" || key.length < deepest.length) continue;
-    deepest = key;
-    instruction = declared;
-  }
-  return instruction;
 }
 
 /**
@@ -123,11 +107,12 @@ function toNodes(states: Record<string, DialogStateSpec>): Record<string, AnySta
     // a declaration of one (guard-invariants rule 2).
     nodes[name] = omitUndefined({
       type: state.final === true ? ("final" as const) : undefined,
-      // The whole reason the spec form exists: `meta.instruction` is the field
-      // `_dialog-snapshot.toInstruction` reads back, and XState types `meta` as
-      // `Record<string, any>`, so a misspelling of it is silent in the machine
-      // form and a compile error here. The wrapper is applied ONCE, here.
-      meta: state.instruction === undefined ? undefined : { instruction: state.instruction },
+      // The whole reason the spec form exists: every per-state setting is read
+      // back out of `meta`, and XState types `meta` as `Record<string, any>`, so
+      // a misspelling is silent in the machine form and a compile error here.
+      // `_dialog-meta.ts` owns both directions — the wrapper applied here and
+      // the readers that take it apart — so the field list cannot drift.
+      meta: toStateMeta(state),
       on: state.on,
       initial: state.initial,
       states: state.states === undefined ? undefined : toNodes(state.states),
