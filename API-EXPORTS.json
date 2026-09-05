@@ -1085,6 +1085,7 @@
     "createSessionStateStore",
     "createUploadStore",
     "executeToolCall",
+    "firstWriteWins",
     "handleWorkflowRequest",
     "isPathInside",
     "loadJournalConformance",

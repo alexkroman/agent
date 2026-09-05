@@ -8954,6 +8954,9 @@ type ExecuteToolCallOptions = {
 };
 
 // @internal
+export function firstWriteWins<T>(attempt: () => Promise<T | undefined>, vanished: () => string): Promise<T>;
+
+// @internal
 export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, options?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
     logger?: Logger | undefined;

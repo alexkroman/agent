@@ -1,59 +1,83 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The one retry the Postgres journal's FIRST-WRITE-WINS claims need.
+ * The one retry every FIRST-WRITE-WINS journal claim needs — the Postgres
+ * journal here and the platform journal in `aai-server` alike.
  *
- * Its own module for the reason the twin's is
- * (`aai-server/_journal-claim.ts`): `workflow-journal-postgres.ts` is at the
- * file-length cap, and the helper's argument is longer than the helper.
+ * **One module, for two stores.** It was two byte-identical copies, one per
+ * package, each carrying its own half of the argument below: the runtime's
+ * measurements of the dead-tuple question and the platform's of the latency
+ * one. The duplication was deliberate at the time — the two stores mirror each
+ * other's statements (see `workflow-journal-postgres.ts`'s header) and could
+ * not share a helper across the package boundary — but a copy whose doc calls
+ * the other "the twin" is the boundary reporting a cost, not a design. It lives
+ * on the package `aai-server` already depends on, and reaches it through
+ * `@alexkroman1/aai-runtime/internal`.
  *
- * @internal
- */
-
-/**
- * How many times a FIRST-WRITE-WINS claim re-runs before it gives up.
+ * It is its own module rather than a function inside either store for reasons
+ * both stores share: `workflow-journal-postgres.ts` is at the file-length cap,
+ * and on the platform side both halves of the journal use it while one imports
+ * the other (`platform-workflow-journal.ts` takes `HOOKS` from
+ * `platform-workflow-journal-hooks.ts`), so it cannot live in either without a
+ * cycle. In both cases the helper's argument is longer than the helper.
  *
- * The round trip is the backoff: a rival holding the row uncommitted is a single
- * autocommit statement, so its window is shorter than one attempt's own latency
- * to the database and nothing here needs a timer — which is also what keeps this
- * off `guard-invariants` rule 19.
- */
-const CLAIM_ATTEMPTS = 3;
-
-/**
- * Run a first-write-wins claim, re-running it while the answer is INDETERMINATE.
+ * ## Three attempts, and the round trip is the backoff
  *
- * Three operations in that store have one shape: insert the row, and if somebody
- * already wrote it, adopt theirs. Each is ONE statement — `with mine as (insert …
- * on conflict do nothing returning …) select from mine union all select from
- * <table> where …` — which works because the outer select reads the statement's
- * snapshot, taken BEFORE the CTE's insert: exactly one arm can produce a row.
+ * A rival holding the row uncommitted is a single autocommit statement, so its
+ * window is shorter than one attempt's own latency to the database; nothing
+ * here needs a timer, which is also what keeps this off `guard-invariants`
+ * rule 19.
  *
- * **The retry is what the collapse does not buy on its own.** `on conflict do
- * nothing` does not WAIT for a concurrent inserter — Postgres declines and moves
- * on — and the union's second arm reads the very snapshot the insert conflicted
- * against, so a rival's UNCOMMITTED row leaves both arms empty. As two separate
- * statements that surfaced as `workflow step … vanished`; here it surfaces as
- * nothing at all, because by the next attempt the rival has committed (adopt its
- * row) or aborted (win the insert).
+ * ## The shape it retries
  *
- * **Not `on conflict … do update`**, which would block on the rival and need no
- * retry: an update writes a new row version even when it changes nothing, and
- * `claimSleep` is called on every walk of the body past a wait — so the common
- * path, a pure read, would leave a dead tuple behind each time.
+ * `claimSleep`, `appendStep` and `claimHook` all have one shape: insert the
+ * row, and if somebody already wrote it, adopt theirs. Each is ONE statement —
+ * `with mine as (insert … on conflict do nothing returning …) select from mine
+ * union all select from <table> where …` — which works because the outer select
+ * reads the statement's snapshot, taken BEFORE the CTE's insert: exactly one
+ * arm can produce a row, so `rows[0]` is the answer either way.
  *
- * **`do nothing` really is free on that path, and it is MEASURED now, because
- * the paragraph above was challenged.** The objection: `insert … on conflict do
- * nothing` performs SPECULATIVE INSERTION — Postgres writes the heap tuple and
- * its index entries, then super-deletes them on detecting the conflict — so this
- * shape would leave the same dead tuple per walk per wait that it claims to
- * avoid, and the argument would be self-defeating. It is not. Postgres
- * PRE-CHECKS the arbiter index BEFORE writing anything
- * (`ExecCheckIndexConstraints`, ahead of the heap insert in `ExecInsert`), and a
- * `do nothing` whose pre-check finds a COMMITTED conflicting row returns having
- * written no tuple at all. Speculative insertion, and the super-deletion that
- * does leave a dead tuple, happen only where the pre-check passes and the index
- * insert then races an inserter it could not see — the rare race the retry above
- * exists for, and never the walk.
+ * It was an insert and then a separate select. On the platform arm every
+ * journal call is a POST holding one of `ADMIN_POOL_MAX` reservations for the
+ * whole request — measured in production at ~840 ms of server time — and
+ * `appendStep` fires once per settled step while `claimSleep` fires on every
+ * walk past a wait, so the pair was the last engine call paying two round trips
+ * for one answer.
+ *
+ * ## Why a retry is needed AT ALL, which is not about latency
+ *
+ * `on conflict do nothing` does not WAIT for a concurrent inserter — Postgres
+ * declines and moves on — and as two separate autocommit statements a rival's
+ * uncommitted row made the insert a no-op AND stayed invisible to the read.
+ * Both arms empty, and the store threw `workflow step … vanished`: a plain
+ * `Error`, which the platform's `withReserved` answers with a **503**, telling
+ * the guest to retry — spending the message's attempt budget on a race whose
+ * winner it could simply have read. Collapsing to one statement does not close
+ * that by itself, because the union's second arm reads the same snapshot the
+ * insert conflicted against. Re-running the whole statement does: by the next
+ * attempt the rival has committed (adopt its row) or aborted (win the insert).
+ *
+ * ## Why not `on conflict … do update`, which would need no retry
+ *
+ * It is the textbook fix — `do update` BLOCKS on the rival instead of
+ * declining, so one statement always returns one row — and it is wrong here for
+ * a reason specific to a journal: an update writes a new row version even when
+ * it changes nothing, and `claimSleep` is called on EVERY walk of the body past
+ * a wait. So the common path, a pure read, would leave a dead tuple behind each
+ * time, and a long run with overlapping walks pays that per walk per wait. This
+ * shape keeps the read a read.
+ *
+ * ## And `do nothing` really does keep it a read — MEASURED, the objection named
+ *
+ * The paragraph above was challenged on the grounds that it refutes itself:
+ * `insert … on conflict do nothing` performs SPECULATIVE INSERTION — the heap
+ * tuple and its index entries are written and then super-deleted once the
+ * conflict is detected — so this shape would leave the very dead tuple per walk
+ * per wait it claims to avoid, and `do update` would cost nothing extra.
+ *
+ * It does not, and the reason is that the speculative path is not the
+ * conflicting path. Postgres PRE-CHECKS the arbiter index before writing
+ * anything (`ExecCheckIndexConstraints`, ahead of the heap insert in
+ * `ExecInsert`).
  *
  * PostgreSQL 16.13, 1000 conflicting claims of one already-claimed row, on a
  * table with `autovacuum_enabled = false` so nothing reclaims behind the count:
@@ -64,21 +88,39 @@ const CLAIM_ATTEMPTS = 3;
  * | a leading `existing` CTE guarding the insert | 1 | 0 | **0** |
  * | the rejected `on conflict … do update` | 1 | 1000 | **24** |
  *
- * The `1` is the row the measurement seeded; the third line is the positive
- * control, and is what proves the harness can see a dead tuple at all.
- * `explain analyze` states it without arithmetic — `Tuples Inserted: 0`,
- * `Conflicting Tuples: 1`. `claimHook`'s BARE `on conflict do nothing` was
- * measured the same way and behaves identically on both of its unique indexes:
- * with no arbiter named the pre-check covers every unique index on the table.
+ * The `1` is the row the measurement seeded, and the third line is the positive
+ * control — without it a run of zeroes is indistinguishable from a harness that
+ * cannot see a dead tuple. `explain analyze` states it with no arithmetic at
+ * all: `Tuples Inserted: 0`, `Conflicting Tuples: 1`. `claimHook`'s BARE
+ * `on conflict do nothing` was measured the same way, conflicting on the primary
+ * key and on `workflow_hooks_token_idx` in turn, and answered `0` for both: with
+ * no arbiter named the pre-check covers every unique index on the table.
  *
- * So the middle line is the one to read before "optimising" this. Guarding the
- * insert with a leading read of the row saves NOTHING — there was no write to
- * remove — and costs an extra index probe on every claim.
+ * Speculative insertion — and its super-deletion — is reached only when the
+ * pre-check passes and the index insert then races an inserter it could not
+ * see, which is the same rival {@link firstWriteWins} exists for and is not the
+ * walk.
  *
- * The twin on the platform's own database is `aai-server/_journal-claim.ts`,
- * which carries the same argument with the platform's latency numbers. The two
- * stores mirror each other's statements deliberately (see
- * `workflow-journal-postgres.ts`'s header), so this mirrors its retry too.
+ * The middle line is the one to read before "fixing" this shape. Putting the
+ * existing row in a leading CTE and guarding the insert with it saves NOTHING
+ * on the read path — there was no write to remove — and adds an index probe to
+ * every claim on the busiest journal call the engine makes.
+ *
+ * Exhausting the attempts throws, which on the platform is a 503 and correct:
+ * the store genuinely cannot say what the row holds, and this call is
+ * idempotent.
+ *
+ * @internal
+ */
+const CLAIM_ATTEMPTS = 3;
+
+/**
+ * Run `attempt` until it produces a row, then hand it back.
+ *
+ * `attempt` returns `undefined` for the both-arms-empty case above — a rival's
+ * uncommitted row — and `vanished` names the error thrown once the attempts are
+ * spent. A thunk rather than a string so the caller's message can name the row
+ * without building it on the path that succeeds.
  *
  * @internal
  */

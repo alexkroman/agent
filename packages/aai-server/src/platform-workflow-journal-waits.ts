@@ -21,7 +21,7 @@
  * @internal
  */
 
-import { firstWriteWins } from "./_journal-claim.ts";
+import { firstWriteWins } from "@alexkroman1/aai-runtime/internal";
 import type { JournalSleepRow } from "./platform-workflow-journal-rows.ts";
 import { millis, text } from "./platform-workflow-journal-rows.ts";
 import type { SqlExec } from "./secret-store.ts";

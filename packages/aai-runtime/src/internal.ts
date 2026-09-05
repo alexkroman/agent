@@ -89,6 +89,17 @@ export {
 // server's reaps nothing — see `HTTP_KEEP_ALIVE_TIMEOUT_MS` there.
 export { EGRESS_KEEP_ALIVE_MS } from "./_egress-fetch.ts";
 /**
+ * The three-attempt retry every FIRST-WRITE-WINS journal claim needs.
+ *
+ * Here because `aai-server`'s platform journal makes the same claims against
+ * the same statement shape and used to carry a BYTE-IDENTICAL copy of this
+ * function, each file's doc calling the other "the twin". That is the package
+ * boundary reporting a cost rather than a design; `_journal-claim.ts` carries
+ * the merged argument, both halves of the measurement, and why the retry is
+ * not about latency.
+ */
+export { firstWriteWins } from "./_journal-claim.ts";
+/**
  * The W3C trace-context parser, so the two sides of the platform hop agree.
  *
  * The runtime MINTS a `traceparent` on every RPC and `aai-server` reads the id
