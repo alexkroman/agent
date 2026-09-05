@@ -29,7 +29,13 @@ import type { ExecuteTool } from "./tool-executor.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
-import type { SkipGreetingOption, Transport, TransportCallbacks } from "./transports/types.ts";
+import type {
+  SkipGreetingOption,
+  SystemPromptOption,
+  Transport,
+  TransportCallbacks,
+} from "./transports/types.ts";
+import { resolveSystemPrompt } from "./transports/types.ts";
 
 /**
  * Read the author-set `assemblyAIS2s({ voice, languages, keyterms })` options
@@ -81,7 +87,19 @@ export type TransportSessionOpts = {
 /** Arguments to one `buildTransport` call (one per session). */
 export type BuildTransportArgs = {
   sessionOpts: TransportSessionOpts;
-  systemPrompt: string;
+  /**
+   * The session's system prompt — a string, or the runtime's per-turn resolver.
+   * See {@link SystemPromptOption}; `runtime.ts` passes the thunk.
+   *
+   * **Only two of the three branches below can honour a thunk**, and the
+   * asymmetry is a property of the SERVICES rather than of this file. The
+   * pipeline assembles a `streamText` request per turn and OpenAI Realtime can
+   * be sent a fresh `session.update`; AssemblyAI S2S runs the tool loop
+   * service-side, so the host is never on the path between two turns and has no
+   * moment to resolve at. `buildAssemblyS2sTransport` therefore resolves ONCE,
+   * at construction, which is exactly what shipped before this seam existed.
+   */
+  systemPrompt: SystemPromptOption;
   callbacks: TransportCallbacks;
 };
 
@@ -222,7 +240,15 @@ export function createTransportFactory(
       apiKey: s2sApiKey(),
       s2sConfig,
       sessionConfig: {
-        systemPrompt,
+        // THE resolution point for this transport, and the only one it gets.
+        // `S2sSessionConfig.systemPrompt` is the SDK's own wire type and takes a
+        // string, which is honest here: the service holds the conversation and
+        // dispatches replies from the config it was handed, so there is no
+        // per-turn callback into this process to re-resolve from. A `dialog()`
+        // phase therefore reaches an S2S agent through tool results alone —
+        // the limitation this seam removes for the other two transports, stated
+        // where a reader wiring a third one will hit it.
+        systemPrompt: resolveSystemPrompt(systemPrompt),
         tools: toolSchemas,
         ...omitUndefined({ greeting: agentConfig.greeting }),
         // Forwarded on its own presence, like the pipeline branch above. Omitting

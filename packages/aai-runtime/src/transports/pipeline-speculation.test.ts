@@ -50,18 +50,25 @@ function fakeStream(prompt: string): FakeStream {
 function harness(overrides: Partial<SpeculationControllerDeps> = {}): {
   ctl: ReturnType<typeof createSpeculationController>;
   started: FakeStream[];
+  /** The prompt each `start` was handed, in order — the parity key's source. */
+  startedPrompts: string[];
   bumpHistory(): void;
+  setPrompt(next: string): void;
 } {
   const started: FakeStream[] = [];
+  const startedPrompts: string[] = [];
   let revision = 0;
+  let prompt = "base prompt";
   const deps: SpeculationControllerDeps = {
     enabled: true,
     isIdle: () => true,
     historyRevision: () => revision,
     historyIsCurrent: (n) => n === revision,
-    start: (userText) => {
+    systemPrompt: () => prompt,
+    start: (userText, systemPrompt) => {
       const s = fakeStream(userText);
       started.push(s);
+      startedPrompts.push(systemPrompt);
       return s;
     },
     log: silentLogger,
@@ -71,8 +78,12 @@ function harness(overrides: Partial<SpeculationControllerDeps> = {}): {
   return {
     ctl: createSpeculationController(deps),
     started,
+    startedPrompts,
     bumpHistory: () => {
       revision += 1;
+    },
+    setPrompt: (next: string) => {
+      prompt = next;
     },
   };
 }
@@ -198,6 +209,35 @@ describe("take", () => {
     const a = live();
     a.bumpHistory();
     expect(a.ctl.take("what is my order status")).toBeNull();
+  });
+
+  test("returns null when the SYSTEM PROMPT moved, and aborts", () => {
+    // A `dialog()` phase advanced between the interim that fired this and the
+    // final that would adopt it. The request in flight carries the old
+    // instructions and `system` cannot be amended mid-stream, so adopting it
+    // would speak a reply generated under the wrong phase's rules — silently,
+    // and only on the turns where preemption happened to fire.
+    const a = live();
+    a.setPrompt("base prompt\n\nPhase: collecting the shipping address.");
+    expect(a.ctl.take("what is my order status")).toBeNull();
+    expect(a.started[0]?.abort).toHaveBeenCalled();
+  });
+
+  test("an unchanged prompt is not a mismatch — the head start survives", () => {
+    // The default path, and the one that must not regress: every agent without
+    // a per-turn suffix resolves the same string on both reads.
+    const a = live();
+    expect(a.ctl.take("what is my order status")).toBe(a.started[0]);
+  });
+
+  test("the recorded parity key is the prompt the REQUEST was built on", () => {
+    // One resolution, two uses. Resolving again inside `start` could record a
+    // prompt the model never saw, and the check above would then pass on a lie.
+    const a = harness();
+    a.setPrompt("phase one");
+    a.ctl.onPartial("what is my order status", 1);
+    expect(a.startedPrompts).toEqual(["phase one"]);
+    expect(a.ctl.take("what is my order status")).toBe(a.started[0]);
   });
 
   test("claims exactly once — a second turn cannot adopt the same stream", () => {

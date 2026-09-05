@@ -581,3 +581,41 @@ describe("the context budget and forceFinalAnswer share the prepareStep slot", (
     expect(promptSize(llm, 1)).toBeLessThan(messages.length);
   });
 });
+
+// The seam that makes a state-addressed prompt possible: `startLlmStream` is the
+// ONE place a `streamText` request is assembled, so it is the one place the
+// prompt has to be READ rather than captured. See SystemPromptOption.
+describe("the system prompt is resolved per REQUEST", () => {
+  /** The `system` message the fake model was handed on `call`. */
+  function systemOf(model: FakeLanguageModel, call: number): string {
+    const prompt = model.calls[call]?.prompt;
+    // A throw rather than `expect.fail`: this is a HELPER, and biome's
+    // `noMisplacedAssertion` reads an assertion outside a test body as a bug.
+    if (!Array.isArray(prompt)) throw new Error(`call ${call} sent no prompt array`);
+    const system = prompt.find((m) => (m as { role?: string }).role === "system");
+    return String((system as { content?: unknown } | undefined)?.content ?? "");
+  }
+
+  test("a plain string is sent unchanged — the default path is byte-identical", async () => {
+    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+    await consume({ llm, sid: "prompt-1", systemPrompt: "Be terse." });
+    expect(systemOf(llm, 0)).toBe("Be terse.");
+  });
+
+  test("a thunk is called once per request, and its CURRENT answer is sent", async () => {
+    // Two consecutive turns on one session: the second must not carry the
+    // first's phase. Captured-at-construction, this is the bug the seam exists
+    // to remove — the model answers fluently under instructions that moved on.
+    const llm = createFakeLanguageModel({
+      steps: [[{ type: "text", text: "a" }], [{ type: "text", text: "b" }]],
+    });
+    let phase = "intake";
+    const systemPrompt = vi.fn(() => `Be terse. Phase: ${phase}.`);
+    await consume({ llm, sid: "prompt-2", systemPrompt });
+    phase = "wrap-up";
+    await consume({ llm, sid: "prompt-2", systemPrompt });
+    expect(systemPrompt).toHaveBeenCalledTimes(2);
+    expect(systemOf(llm, 0)).toBe("Be terse. Phase: intake.");
+    expect(systemOf(llm, 1)).toBe("Be terse. Phase: wrap-up.");
+  });
+});

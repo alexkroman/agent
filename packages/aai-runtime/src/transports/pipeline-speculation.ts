@@ -46,6 +46,14 @@
  * 2. an identical text at rising confidence never re-fires (the recorded
  *    terminal `0.95 → 1` re-emission);
  * 3. at most {@link MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE} per utterance.
+ *
+ * **Two things beyond the text can move under a speculation**, and both are
+ * checked again at adoption rather than at launch: the conversation
+ * (`history-moved`) and the SYSTEM PROMPT (`prompt-moved`). The second is new
+ * with the per-turn prompt seam — a `dialog()` phase can advance between the
+ * interim that fired the speculation and the final that would adopt it, and the
+ * request in flight carries instructions that cannot be amended mid-stream. See
+ * {@link SpeculationController.take}.
  */
 
 import type { ToolChoice } from "@alexkroman1/aai";
@@ -63,6 +71,7 @@ import type { PipelineHistory } from "./pipeline-history.ts";
 import type { AdoptedLlmStream } from "./pipeline-llm-stream.ts";
 import { type SpeculativeStream, startSpeculativeStream } from "./pipeline-speculative-stream.ts";
 import { normalizeUtterance } from "./pipeline-text.ts";
+import { resolveSystemPrompt, type SystemPromptOption } from "./types.ts";
 
 /**
  * Why a speculation was thrown away. Logged rather than counted, because the
@@ -75,6 +84,7 @@ export type SpeculationDiscardReason =
   | "mismatch" /* the committed final was not the speculated text */
   | "poisoned" /* the stream hit a tool call or an error */
   | "history-moved" /* the conversation changed underneath it */
+  | "prompt-moved" /* the SYSTEM PROMPT changed underneath it */
   | "utterance-idle" /* the utterance ended without ever committing */
   | "turn-started" /* some other turn took the floor */
   | "reset" /* reset / stop / cancelReply */;
@@ -122,8 +132,26 @@ export interface SpeculationControllerDeps {
   historyRevision(): number;
   /** Is `revision` still the current one? */
   historyIsCurrent(revision: number): boolean;
-  /** Launch the request. Injected so this module never imports `streamText`. */
-  start(userText: string): SpeculativeStream;
+  /**
+   * The system prompt as it stands RIGHT NOW — see `SystemPromptOption`.
+   *
+   * Asked twice per speculation: once at launch, to build the request and to
+   * record what it was built on, and once at {@link SpeculationController.take}
+   * to decide whether that is still true. It is the same shape as
+   * `historyRevision`/`historyIsCurrent` above and exists for the same reason —
+   * the two are the whole of "was the request in flight the request this turn
+   * would assemble".
+   */
+  systemPrompt(): string;
+  /**
+   * Launch the request, on the prompt the controller just resolved.
+   *
+   * Handed in rather than resolved again inside, so the string RECORDED as this
+   * speculation's prompt is by construction the one the request carries. Two
+   * resolutions with a phase transition between them would record a prompt the
+   * model never saw, and the parity check below would then pass on a lie.
+   */
+  start(userText: string, systemPrompt: string): SpeculativeStream;
   log: Logger;
   sid: string;
 }
@@ -132,8 +160,13 @@ export interface SpeculationControllerDeps {
 export function createSpeculationController(
   deps: SpeculationControllerDeps,
 ): SpeculationController {
-  /** The live speculation, its match key, and the history it was built on. */
-  let held: { stream: SpeculativeStream; key: string; revision: number } | null = null;
+  /** The live speculation, its match key, and the history + prompt it was built on. */
+  let held: {
+    stream: SpeculativeStream;
+    key: string;
+    revision: number;
+    prompt: string;
+  } | null = null;
   /** Speculations started for the CURRENT utterance; reset when one ends. */
   let spentThisUtterance = 0;
 
@@ -176,7 +209,8 @@ export function createSpeculationController(
       if (held && held.key !== key) discard("superseded");
       if (!mayFire(eotConfidence)) return;
       spentThisUtterance += 1;
-      held = { stream: deps.start(text), key, revision: deps.historyRevision() };
+      const prompt = deps.systemPrompt();
+      held = { stream: deps.start(text, prompt), key, revision: deps.historyRevision(), prompt };
       deps.log.debug("Pipeline speculation started", {
         sid: deps.sid,
         eot: eotConfidence,
@@ -225,6 +259,25 @@ export function createSpeculationController(
       // reconnect seed), so the request in flight is not the request this turn
       // would assemble.
       if (!deps.historyIsCurrent(current.revision)) return reject("history-moved");
+      // And so did the SYSTEM PROMPT, which a state-addressed prompt can do
+      // between an interim transcript and its final: the phase a `dialog()` is
+      // in moves on a tool result, and a speculation is deliberately launched
+      // while the caller is still finishing a sentence.
+      //
+      // DISCARDED rather than re-checked-and-kept, because there is nothing to
+      // re-check against: the request is already in flight carrying the OLD
+      // instructions, and a `system` cannot be amended mid-stream. Adopting it
+      // would speak a reply generated under the wrong phase's rules — the exact
+      // failure this seam exists to remove, arriving through the one path that
+      // looks like an optimisation. The cost is one lost head start on the turn
+      // right after a transition, which is the trade the whole module makes
+      // (see `history-moved` above, and the parity argument in the module doc).
+      //
+      // The comparison is sound because the turn resolves the prompt again in
+      // `startLlmStream` and there is no `await` between this claim and that
+      // assembly — `runTurn` calls `take()`, then `runReply`, whose body runs
+      // synchronously into `consumeLlmStream`.
+      if (current.prompt !== deps.systemPrompt()) return reject("prompt-moved");
       deps.log.info("Pipeline speculation adopted", {
         sid: deps.sid,
         headStartMs: current.stream.ageMs(),
@@ -258,7 +311,12 @@ export function createPipelineSpeculation(deps: {
   toolChoice: ToolChoice;
   toolSchemas: readonly ToolSchema[];
   llm: LanguageModel;
-  systemPrompt: string;
+  /**
+   * The session's prompt option — a string, or the runtime's per-turn resolver.
+   * Resolved once per speculation and once more at adoption; see
+   * `SpeculationControllerDeps.systemPrompt` for what the second read decides.
+   */
+  systemPrompt: SystemPromptOption;
   temperature: number | undefined;
   maxSteps: number;
   /**
@@ -290,11 +348,16 @@ export function createPipelineSpeculation(deps: {
     isIdle: deps.isIdle,
     historyRevision: deps.history.revision.current,
     historyIsCurrent: deps.history.revision.isCurrent,
-    start: (userText) =>
+    systemPrompt: () => resolveSystemPrompt(deps.systemPrompt),
+    start: (userText, systemPrompt) =>
       startSpeculativeStream(
         {
           llm: deps.llm,
-          systemPrompt: deps.systemPrompt,
+          // The string the controller resolved, not a second read of the
+          // option: `startLlmStream` resolves a `SystemPromptOption` to itself
+          // when it is already a string, so the request and the recorded
+          // parity key cannot differ.
+          systemPrompt,
           // `history.llm` is the LIVE array the turn runner is bound to, so
           // this snapshots it: the speculation must not see messages a turn
           // appends after it launched, and `history.revision` is what refuses

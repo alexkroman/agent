@@ -355,3 +355,69 @@ describe("preemptive generation — OFF by default", () => {
     await t.stop();
   });
 });
+
+describe("preemptive generation — the SYSTEM PROMPT is part of request parity", () => {
+  test("a prompt that moved between the partial and the final discards the speculation", async () => {
+    // The window preemption opens on a state-addressed prompt: the speculation
+    // is launched from an INTERIM, deliberately while the caller is still
+    // finishing a sentence, and a `dialog()` phase can advance in that gap. The
+    // request in flight already carries the old instructions and `system`
+    // cannot be amended mid-stream, so adopting it would speak a reply the new
+    // phase never authorised — silently, and only on the turns where a
+    // speculation happened to fire.
+    let phase = "intake";
+    const { opts, stt, tts, callbacks } = makeOpts({
+      preemptiveGeneration: true,
+      sessionConfig: { systemPrompt: () => `Phase: ${phase}.`, greeting: "" },
+      llm: createFakeLanguageModel({
+        steps: [[{ type: "text", text: "speculated" }], [{ type: "text", text: "regenerated" }]],
+      }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    phase = "wrap-up";
+    stt.last()?.fireFinal("What is my order status?");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
+    });
+
+    // A SECOND request — the head start was thrown away rather than adopted…
+    expect(llmCalls(opts).calls).toHaveLength(2);
+    // …and what the caller heard came from it, under the phase that is current.
+    const spoken = (tts.last()?.textChunks ?? []).join("");
+    expect(spoken).toContain("regenerated");
+    expect(spoken).not.toContain("speculated");
+    await t.stop();
+  });
+
+  test("an unchanged prompt still adopts — the default path keeps its head start", async () => {
+    // The other half, and the one a wrong check would break invisibly: every
+    // agent without a per-turn suffix resolves the same string twice, so
+    // nothing here may cost preemption its reason to exist.
+    const { opts, stt, tts, callbacks } = makeOpts({
+      preemptiveGeneration: true,
+      sessionConfig: { systemPrompt: () => "Phase: intake.", greeting: "" },
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "Your order shipped." }] }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    stt.last()?.fireFinal("What is my order status?");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
+    });
+
+    expect(llmCalls(opts).calls).toHaveLength(1);
+    expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");
+    await t.stop();
+  });
+});

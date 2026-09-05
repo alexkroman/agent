@@ -203,6 +203,86 @@ describe("greeting", () => {
   });
 });
 
+describe("refreshSystemPrompt", () => {
+  /** A transport whose prompt is a thunk over `phase`, already open. */
+  function withResolvedPrompt() {
+    const fake = makeFakeWs();
+    let phase = "greeting";
+    const transport = createOpenaiRealtimeTransport({
+      apiKey: "sk",
+      options: {},
+      sessionConfig: { systemPrompt: () => `Be terse. Phase: ${phase}.` },
+      toolSchemas: [],
+      toolChoice: "auto",
+      callbacks: noopCallbacks(),
+      sid: "s",
+      inputSampleRate: 16_000,
+      outputSampleRate: 24_000,
+      createWebSocket: () => fake,
+      logger: silentLogger,
+    });
+    const ready = transport.start();
+    fake.fire("open");
+    const setPhase = (next: string): void => {
+      phase = next;
+    };
+    return { fake, transport, ready, setPhase };
+  }
+
+  test("the opening session.update carries the RESOLVED prompt", async () => {
+    // A thunk that reached the wire unresolved would stringify to this module's
+    // source text, which neither the SDK nor OpenAI rejects.
+    const { fake, ready } = withResolvedPrompt();
+    await ready;
+    expect(JSON.parse(fake.sent[0] ?? "{}").session.instructions).toBe(
+      "Be terse. Phase: greeting.",
+    );
+  });
+
+  test("an unchanged prompt sends nothing, however often it is asked", async () => {
+    const { fake, transport, ready } = withResolvedPrompt();
+    await ready;
+    fake.sent.length = 0;
+    transport.refreshSystemPrompt?.();
+    transport.refreshSystemPrompt?.();
+    expect(fake.sent).toEqual([]);
+  });
+
+  test("a changed prompt sends an instructions-ONLY session.update, once", async () => {
+    const { fake, transport, ready, setPhase } = withResolvedPrompt();
+    await ready;
+    fake.sent.length = 0;
+    setPhase("collecting the shipping address");
+    transport.refreshSystemPrompt?.();
+    transport.refreshSystemPrompt?.();
+    expect(fake.sent.length).toBe(1);
+    const msg = JSON.parse(fake.sent[0] ?? "{}");
+    expect(msg.type).toBe("session.update");
+    expect(msg.session.instructions).toBe("Be terse. Phase: collecting the shipping address.");
+    // `session.update` merges, so the frame names the one field that moved:
+    // restating `audio` re-declares server VAD under a caller who may be
+    // speaking, and restating `tools` puts the whole registry back on the wire.
+    expect(msg.session.audio).toBeUndefined();
+    expect(msg.session.tools).toBeUndefined();
+  });
+
+  test("a refresh on a CLOSED socket does not latch the value it could not send", async () => {
+    // The failure with no symptom: latching a dropped frame makes the next
+    // refresh compare equal and decline, leaving the call on the old prompt for
+    // the rest of its life with nothing logged.
+    const { fake, transport, ready, setPhase } = withResolvedPrompt();
+    await ready;
+    fake.sent.length = 0;
+    setPhase("wrap-up");
+    Object.assign(fake, { readyState: 3 });
+    transport.refreshSystemPrompt?.();
+    expect(fake.sent).toEqual([]);
+    Object.assign(fake, { readyState: 1 });
+    transport.refreshSystemPrompt?.();
+    expect(JSON.parse(fake.sent[0] ?? "{}").session.instructions).toBe("Be terse. Phase: wrap-up.");
+  });
+});
+
 describe("audio in/out", () => {
   test("sendUserAudio sends input_audio_buffer.append with base64 payload", async () => {
     const { fake, transport, ready } = startedTransport();

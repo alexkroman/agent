@@ -30,7 +30,7 @@ import { createTurnChain, createTurnGate, turnCrashLogger } from "./pipeline-tur
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
-import type { SendTtsOptions, Transport } from "./types.ts";
+import { resolveSystemPrompt, type SendTtsOptions, type Transport } from "./types.ts";
 
 /**
  * `abort` listeners one session's signal may hold before Node calls it a leak.
@@ -67,7 +67,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   } = resolvePipelineOptions(opts);
 
   const { callbacks, sessionConfig } = opts;
-  const systemPrompt = sessionConfig.systemPrompt;
+  // A THUNK, not the value: this used to capture the string here, which froze
+  // the prompt for the length of the call. Every consumer below already
+  // re-assembles its request per turn (`startLlmStream` is the one place a
+  // `streamText` call is built), so the only thing that had to change is WHEN
+  // the value is read — and a `SystemPromptOption` that is a plain string
+  // resolves to itself, so a session with nothing to vary sends the same bytes
+  // this line used to hand it.
+  const systemPrompt = (): string => resolveSystemPrompt(sessionConfig.systemPrompt);
   // Omitting the third argument says the session is OVER — see pipeline-error.ts.
   const emitError = createEmitError(callbacks);
 
@@ -110,9 +117,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const history = createPipelineHistory(sessionConfig.history);
   // Bounds what each STEP sends the model, and learns the request's fixed cost
   // (system prompt + tool declarations) from the provider's own reported usage.
-  // Built once per SESSION, deliberately: neither of those changes between
-  // turns, so what one turn's last step measured is the right number for the
-  // next turn's first step — the step that would otherwise be estimated blind,
+  // Built once per SESSION, deliberately: neither of those changes MUCH between
+  // turns (a per-turn prompt suffix moves the first of them, by the length of
+  // one phase's instructions), so what one turn's last step measured is the
+  // right number for the next turn's first step — the step that would otherwise be estimated blind,
   // and the only step most turns have. `undefined` for a model whose context
   // window this repo does not know, which trims nothing and leaves the session
   // on the message cap alone. It bounds the REQUEST and never `history`, which
