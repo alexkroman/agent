@@ -21,5 +21,12 @@
   // itself — nor any workspace package, which `gates-package-boundary`
   // enforces. `_gate-support.ts`'s hand-rolled path walk and its three-line
   // `isRecord` exist for that reason and say so at the declaration.
-  "include": ["src"]
+  //
+  // `*.ts` beside `src` for the reason the paragraph above gives, applied one
+  // level up: `vitest.config.ts` sits at the package ROOT, is imported by
+  // nothing, and `src` does not reach it — so it was type-checked by no program
+  // in the repo. Every other package here globs `["src", "*.ts"]`; the two that
+  // did not (this one and `aai-studio-client`) were exactly the two with an
+  // unchecked config file. `typecheck-coverage-gate.test.ts` holds the rule now.
+  "include": ["src", "*.ts"]
 }
