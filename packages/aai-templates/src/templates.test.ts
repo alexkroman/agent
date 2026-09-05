@@ -33,7 +33,7 @@ import biomeConfig from "../../../biome.json?raw";
 import scaffoldGuide from "../scaffold/CLAUDE.md?raw";
 import scaffoldWorkspaceYaml from "../scaffold/pnpm-workspace.yaml?raw";
 import { templatePromptFiles, withTemplatePrompt, withTemplateTools } from "./_discovery.ts";
-import { byCodeUnit } from "./_gate-support.ts";
+import { byCodeUnit } from "./_template-support.ts";
 
 /** What a template's default export must satisfy — derived from the exact
  * functions the CLI bundler feeds it to. */

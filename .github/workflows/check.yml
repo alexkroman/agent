@@ -195,7 +195,7 @@ jobs:
         # in CI" asymmetry running backwards, and fully green for a PR that
         # breaks them. This is NOT the documented eval-tier exemption: that is
         # scoped to `check:eval`, which is separately and deliberately absent.
-        package: [aai, aai-ui, aai-runtime, aai-cli, aai-guest, aai-server, aai-studio-server, aai-studio-client, aai-templates, aai-evals]
+        package: [aai, aai-ui, aai-runtime, aai-cli, aai-guest, aai-server, aai-studio-server, aai-studio-client, aai-templates, aai-gates, aai-evals]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

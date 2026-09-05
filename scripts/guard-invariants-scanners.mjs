@@ -355,7 +355,7 @@ const FIXTURE_DIR_SEGMENT = /fixtures/i;
 const SELF_REFERENTIAL_READERS = new Set([
   "scripts/guard-invariants-scanners.mjs",
   "scripts/guard-invariants.mjs",
-  "packages/aai-templates/src/guard-invariants-gate.test.ts",
+  "packages/aai-gates/src/guard-invariants-gate.test.ts",
 ]);
 
 /**

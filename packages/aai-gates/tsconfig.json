@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // `DOM` for the web globals a couple of specs name in a TYPE position
+    // (`smoke-spawn-gate.test.ts` types the `fetch` it stubs), not because
+    // anything here runs in a browser. `vite/client` — referenced from
+    // `src/vite-env.d.ts` — is what types `import.meta.glob`, the transform
+    // every gate spec reads the repo through.
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "noEmit": true
+  },
+  // Deliberately generic: tsc's `include` only sets *root* files, and a test
+  // file is imported by nothing, so anything not listed here is never
+  // typechecked at all. Naming the directory means a new gate spec is covered
+  // on creation, not on the next config edit — the omission that left three of
+  // these files type-checked by nothing while they lived in `aai-templates`.
+  //
+  // No `types` and no `paths`: a gate spec reads the repo as TEXT and asserts
+  // on it. It must not import the script it guards — they reach `node:`
+  // builtins, and a spec importing one would be asserting a module against
+  // itself — nor any workspace package, which `gates-package-boundary`
+  // enforces. `_gate-support.ts`'s hand-rolled path walk and its three-line
+  // `isRecord` exist for that reason and say so at the declaration.
+  "include": ["src"]
+}

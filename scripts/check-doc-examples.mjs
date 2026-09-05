@@ -342,7 +342,7 @@ const manifest = new Map();
  * Reported rather than FLOORED, deliberately: a floor here would fire when a doc
  * legitimately drops its last directive, which is a smaller hole rather than a
  * blind scan. What holds the scan honest is
- * `packages/aai-templates/src/doc-examples-ambient-gate.test.ts`, which imports the
+ * `packages/aai-gates/src/doc-examples-ambient-gate.test.ts`, which imports the
  * stripper and re-derives this count from the corpus with its own parser.
  */
 let directivesStripped = 0;

@@ -67,7 +67,7 @@ const engine = sole(
 
 /** A real, human-written guide in this repo — prose, not code. */
 const scaffoldGuide = sole(
-  import.meta.glob("../scaffold/CLAUDE.md", {
+  import.meta.glob("../../aai-templates/scaffold/CLAUDE.md", {
     query: "?raw",
     import: "default",
     eager: true,
@@ -112,7 +112,7 @@ const proseDocs: Record<string, string> = {
     import: "default",
     eager: true,
   }),
-  ...import.meta.glob<string>("../scaffold/CLAUDE.md", {
+  ...import.meta.glob<string>("../../aai-templates/scaffold/CLAUDE.md", {
     query: "?raw",
     import: "default",
     eager: true,

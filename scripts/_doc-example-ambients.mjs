@@ -49,7 +49,7 @@
  * its file-length cap. The seam is real either way — this is what the harness
  * does TO a fence, where the gate finds fences and runs the compiler — and it
  * buys one thing a scrape cannot,
- * `packages/aai-templates/src/doc-examples-ambient-gate.test.ts` importing the real
+ * `packages/aai-gates/src/doc-examples-ambient-gate.test.ts` importing the real
  * function and feeding it samples. So this module has NO side effects and reads
  * nothing: it must stay importable.
  */

@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 3, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 23, rule 26, rule 28, rule 31, rule 32.",
+  "_description": "Per-file budgets for guard-invariants' baselined rules \u2014 see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 3, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 23, rule 26, rule 28, rule 31, rule 32.",
   "rule2_spreadTernary": {
     "packages/aai-cli/src/_utils.ts": 1,
     "packages/aai-server/src/subprocess-sandbox.ts": 1,
@@ -36,6 +36,7 @@
   },
   "rule17_openCodedRecordGuard": {
     "packages/aai-evals/src/assertions.ts": 1,
+    "packages/aai-gates/src/published-files-gate.test.ts": 1,
     "packages/aai/src/sdk/standard-schema.ts": 1,
     "scripts/_api-contracts.mjs": 1,
     "scripts/_ast-scan.mjs": 1,

@@ -2,65 +2,31 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
-    // This package's suites are the only ones that read files OUTSIDE their own
-    // package, and none of those files were hashed — so the gates that guard
-    // the gates were served from cache exactly when the thing they check
-    // changed. `claude-md-limit.test.ts` globs `../../AGENTS.md`,
-    // `../../CLAUDE.md` and `../*/CLAUDE.md` (the 120k cap, the assertion that
-    // the root still links every package guide, and the pin on the root shim); `test-assertion-gate.test.ts` and
-    // `escape-hatch-scope.test.ts` spec `scripts/check-*.mjs` and assert the
-    // script, `scripts/check.mjs`, root `package.json` and the CI check job
-    // still agree with each other; `konsistent-config.test.ts` reads
-    // `konsistent.json` the same way; `api-surface-file.test.ts` reads
-    // `../../API.md` and every `../*/etc/*.api.md`, and
-    // `api-index-file.test.ts` reads `../../API-INDEX.md` against
-    // `../../API-EXPORTS.json`; `api-contracts-gate.test.ts`
-    // reads `../../API-EXPORTS.json` and the whole of
-    // every `../*/contracts/` tree (the capability roots, the epoch metadata,
-    // and the frozen compatibility examples — `aai` and `aai-ui` both carry
-    // one). Touching any of them left
-    // `aai-templates#test` at an identical hash.
+    // Two of this package's suites read files OUTSIDE it, and an `inputs` glob
+    // resolves relative to the PACKAGE — so without these entries the suites
+    // are served from cache exactly when the thing they check changes.
+    // `templates.test.ts` reads `../../biome.json` (the `tools/` filename
+    // override every template's tools rely on) and the scaffold guide;
+    // `template-api-coverage.test.ts` reads
+    // `scripts/_api-contracts-tree.mjs`.
     //
-    // Two more joined with the 2026-08 test sweep, each because a spec here
-    // started READING it: `lefthook.yml` (`file-length-gate.test.ts` pins the
-    // pre-commit headroom line), and every workflow rather than just
-    // `check.yml` (`guard-invariants-scanner-rules.test.ts` re-derives the
-    // corpus for rule 7, whose scanner returns only `found` and so cannot tell
-    // an upheld rule from an empty scan — and `ci-gate-job.test.ts` reads the
-    // required gate job).
+    // The long list this file used to carry — `AGENTS.md`, every package
+    // guide, `API.md`, `API-EXPORTS.json`, every `etc/*.api.md`, every
+    // `contracts/` tree, `konsistent.json`, `lefthook.yml`, every workflow —
+    // moved to `packages/aai-gates/turbo.json` with the 28 repo-gate suites
+    // that read them. A package reaching four levels out to hash the repo root
+    // was the build config saying those tests did not belong here.
     //
-    // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
-    // the input here, not documentation about it. `.agents/*.md` joins it for
-    // the same reason: `claude-md-limit.test.ts` measures those on the same
-    // budget now, so a section moved there to get AGENTS.md under the cap has
-    // to be able to invalidate this hash.
-    //
-    // `packages/*/src/contracts/**` had lost its `src/` when every package's
-    // TypeScript moved under one (see "Package layout"), so it matched NOTHING
-    // and `api-contracts-gate.test.ts` — which globs `../../*/src/contracts/`
-    // — was replayed from cache exactly when a capability, an epoch or a
-    // frozen example changed. Verify a glob with `git ls-files` rather than by
-    // reading it; that is the same trap `check-file-length.mjs`'s `scripts/`
-    // pathspec fell into.
+    // Markdown is re-included (the root task drops it) because
+    // `scaffold/CLAUDE.md` IS an input here — it ships to users and
+    // `templates.test.ts` asserts on its content.
     "test": {
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "../../vitest.shared.ts",
-        "$TURBO_ROOT$/AGENTS.md",
-        "$TURBO_ROOT$/.agents/*.md",
-        "$TURBO_ROOT$/CLAUDE.md",
-        "$TURBO_ROOT$/packages/*/CLAUDE.md",
-        "$TURBO_ROOT$/API.md",
-        "$TURBO_ROOT$/API-EXPORTS.json",
-        "$TURBO_ROOT$/API-INDEX.md",
-        "$TURBO_ROOT$/packages/*/etc/*.api.md",
-        "$TURBO_ROOT$/packages/*/src/contracts/**",
-        "$TURBO_ROOT$/package.json",
-        "$TURBO_ROOT$/konsistent.json",
-        "$TURBO_ROOT$/lefthook.yml",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/.github/workflows/*.yml"
+        "$TURBO_ROOT$/biome.json",
+        "$TURBO_ROOT$/scripts/**"
       ],
       "env": ["CI", "VITEST_POOL"]
     },
@@ -69,20 +35,8 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "../../vitest.shared.ts",
-        "$TURBO_ROOT$/AGENTS.md",
-        "$TURBO_ROOT$/.agents/*.md",
-        "$TURBO_ROOT$/CLAUDE.md",
-        "$TURBO_ROOT$/packages/*/CLAUDE.md",
-        "$TURBO_ROOT$/API.md",
-        "$TURBO_ROOT$/API-EXPORTS.json",
-        "$TURBO_ROOT$/API-INDEX.md",
-        "$TURBO_ROOT$/packages/*/etc/*.api.md",
-        "$TURBO_ROOT$/packages/*/src/contracts/**",
-        "$TURBO_ROOT$/package.json",
-        "$TURBO_ROOT$/konsistent.json",
-        "$TURBO_ROOT$/lefthook.yml",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/.github/workflows/*.yml"
+        "$TURBO_ROOT$/biome.json",
+        "$TURBO_ROOT$/scripts/**"
       ],
       "outputs": ["coverage/**"],
       "env": ["CI", "VITEST_POOL"]

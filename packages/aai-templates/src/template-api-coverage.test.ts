@@ -77,7 +77,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSync } from "oxc-parser";
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, sole } from "./_gate-support.ts";
+import { byCodeUnit, sole } from "./_template-support.ts";
 
 /** The PACKAGE root: `templates/` and the allowlist sit beside `src/`. */
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

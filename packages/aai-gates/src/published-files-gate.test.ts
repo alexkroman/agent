@@ -36,7 +36,6 @@
  * pulls in no node types.
  */
 
-import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 
 /** Every package manifest in the workspace, keyed by path relative to this file. */
@@ -76,6 +75,34 @@ const filesOf = (manifest: Manifest): string[] =>
     : [];
 
 /**
+ * The child nodes of one `exports` entry — what the walk below pushes next.
+ *
+ * Its own function so `exportTargets` stays one branch per node kind: with the
+ * conditions map inlined there, the walk carried the string case, the array
+ * case, the not-an-object rejection and the `@dev/source` filter in one body,
+ * which Biome scores at 16 against a cap of 15.
+ *
+ * `@dev/source` is dropped here: it resolves to `.ts` source, deliberately
+ * absent from the tarball, and requiring `files` to cover it would put the
+ * source back. Anything that is not an object contributes no children —
+ * `null` and a stray number are malformed entries, and `Object.entries` would
+ * throw on the first.
+ *
+ * (`guard-invariants` rule 17 baselines the object test, and the rule's own
+ * remedy names this case: "any non-null object, arrays included" is written as
+ * the two comparisons inline. `isRecord` cannot be the remedy here twice over
+ * — it lives in `@alexkroman1/aai/utils`, which `gates-package-boundary`
+ * forbids this package, and it excludes arrays, which the caller has already
+ * consumed.)
+ */
+const conditionValues = (node: unknown): unknown[] => {
+  if (node === null || typeof node !== "object") return [];
+  return Object.entries(node)
+    .filter(([key]) => key !== "@dev/source")
+    .map(([, value]) => value);
+};
+
+/**
  * Every relative target in an `exports` map, minus the dev-only condition.
  *
  * Walked with an explicit stack rather than a recursive closure — a conditions
@@ -97,12 +124,7 @@ const exportTargets = (exports: unknown): string[] => {
       pending.push(...node);
       continue;
     }
-    if (!isRecord(node)) continue;
-    for (const [key, value] of Object.entries(node)) {
-      // `@dev/source` resolves to `.ts` source, deliberately absent from the
-      // tarball; requiring `files` to cover it would put the source back.
-      if (key !== "@dev/source") pending.push(value);
-    }
+    pending.push(...conditionValues(node));
   }
   return found;
 };

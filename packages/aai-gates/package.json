@@ -1,0 +1,17 @@
+{
+  "name": "aai-gates",
+  "version": "0.3.10",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "biome check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "oxc-parser": "^0.148.0",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

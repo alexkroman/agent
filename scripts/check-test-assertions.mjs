@@ -106,7 +106,7 @@ if (unparsable.length > 0) {
   console.error(
     "\nThe gate cannot vouch for a file it could not read. Fix the syntax, or —\n" +
       "if the file is valid and oxc-parser disagrees — say so in\n" +
-      "packages/aai-templates/src/test-assertion-gate.test.ts before working around it.",
+      "packages/aai-gates/src/test-assertion-gate.test.ts before working around it.",
   );
   process.exit(1);
 }
@@ -132,7 +132,7 @@ if (scanned < MIN_TESTS_SCANNED) {
       "The files were found, so this is the parser: it has stopped recognising\n" +
       "the shape a test is written in, and a gate whose success output is a\n" +
       "count reports that as a clean run. Its spec is\n" +
-      "packages/aai-templates/src/test-assertion-gate.test.ts.",
+      "packages/aai-gates/src/test-assertion-gate.test.ts.",
   );
   process.exit(1);
 }

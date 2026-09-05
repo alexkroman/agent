@@ -63,7 +63,7 @@
  * package builds, which is the opposite of true.
  *
  * Wired up as `pnpm check:package-layout`, in `scripts/check.mjs` and in
- * `.github/workflows/check.yml`. `packages/aai-templates/src/package-layout-gate.test.ts`
+ * `.github/workflows/check.yml`. `packages/aai-gates/src/package-layout-gate.test.ts`
  * is the spec: it proves the gate FAILS on a violation, because a gate that has
  * never failed is indistinguishable from one that cannot.
  */

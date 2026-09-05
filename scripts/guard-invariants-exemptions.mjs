@@ -80,7 +80,7 @@ export const SELF_REFERENTIAL_ENTRIES = [
   // The spec that proves each rule still matches. Its samples ARE the
   // anti-patterns, spelled out on purpose — it exists because a pattern
   // matching nothing prints the same checkmark as a rule being upheld.
-  ["packages/aai-templates/src/guard-invariants-gate.test.ts", "*"],
+  ["packages/aai-gates/src/guard-invariants-gate.test.ts", "*"],
   // The primitives the rules point AT — each exempt from ITS OWN rule only.
   ["packages/aai/src/sdk/omit-undefined.ts", ["rule2_spreadTernary"]], // its doc shows the banned spelling
   ["packages/aai/src/sdk/keyed-lock.ts", ["rule9_handRolledKeyedLock"]], // rule 9 IS this implementation

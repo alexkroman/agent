@@ -33,7 +33,7 @@
  * `\b`-is-not-POSIX-ERE bug that left two patterns dead for months — is not
  * answerable from here at all, because a correct pattern over a clean tree looks
  * identical. That is what the positive/negative samples in
- * `packages/aai-templates/src/guard-invariants-gate.test.ts` and
+ * `packages/aai-gates/src/guard-invariants-gate.test.ts` and
  * `escape-hatch-scope.test.ts` are for. Between the two, a blind gate has
  * nowhere left to hide.
  *

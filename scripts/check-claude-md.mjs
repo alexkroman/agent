@@ -36,7 +36,7 @@
  * push sections into). It is the one file where the answer really is to cut.
  *
  * Wired up as `pnpm check:claude-md`, and paired with
- * `packages/aai-templates/src/claude-md-limit.test.ts`, which asserts the same two
+ * `packages/aai-gates/src/claude-md-limit.test.ts`, which asserts the same two
  * lines from the ordinary test run (and that this script's cap still matches
  * the one it checks). Keep MAX_CHARS below in step with the BUDGET there.
  */
