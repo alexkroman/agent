@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { type AnyDialog, dialog, type SlotHolder } from "@alexkroman1/aai";
+import { type AnyDialog, type DialogStateSpec, dialog, type SlotHolder } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
@@ -9,14 +9,14 @@ import { mergeTurnKnobs, reportDialogKnobs } from "./runtime-dialog-knobs.ts";
 const ctx = (): SlotHolder => ({ slots: createDetachedSlotStore(), sessionId: "s-knobs" });
 
 /** A one-state dialog carrying whatever knobs a case is about. */
-function knobbed(key: string, knobs: Record<string, unknown>) {
+function knobbed(key: string, knobs: Partial<DialogStateSpec>) {
   return dialog(key, {
     initial: "here",
     states: {
       here: { ...knobs, on: { GO: "gone" } },
       gone: { final: true },
     },
-  } as never);
+  });
 }
 
 describe("the two knobs nothing applies", () => {
@@ -61,11 +61,16 @@ describe("the two knobs nothing applies", () => {
 });
 
 describe("whether any state declares a knob the pipeline CAN apply", () => {
-  test.each([
+  // `satisfies` rather than a bare literal: `test.each` widens a table's
+  // members to their union, and `bargeIn: string` is not `DialogBargeIn` — the
+  // annotation is what keeps each row checked against the spec it stands for.
+  const LIVE = [
     ["bargeIn", { bargeIn: "off" }],
     ["toolChoice", { toolChoice: "required" }],
     ["temperature", { temperature: 0.2 }],
-  ])("%s counts as live", (name, knobs) => {
+  ] satisfies readonly (readonly [string, Partial<DialogStateSpec>])[];
+
+  test.each(LIVE)("%s counts as live", (name, knobs) => {
     expect(reportDialogKnobs([knobbed(`live-${name}`, knobs)], makeLogger())).toBe(true);
   });
 

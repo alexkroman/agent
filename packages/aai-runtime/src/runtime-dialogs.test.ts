@@ -5,7 +5,7 @@ import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeLogger } from "./_test-utils.ts";
+import { makeConfig, makeLogger } from "./_test-utils.ts";
 import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import type { Transport } from "./transports/types.ts";
@@ -92,7 +92,7 @@ function setup(
   // property OF that seam — an empty suffix has to hand back the base string
   // itself — and a stub would assert it of the stub.
   const prompts = createSystemPromptResolver({
-    agentConfig: { name: "Support", systemPrompt: "Be brief." } as never,
+    agentConfig: makeConfig({ name: "Support", systemPrompt: "Be brief." }),
     hasTools: false,
     toolGuidance: undefined,
   });

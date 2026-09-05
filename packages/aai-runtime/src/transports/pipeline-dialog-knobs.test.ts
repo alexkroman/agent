@@ -1,12 +1,39 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { createDialogKnobs, type DialogTurnKnobs } from "./pipeline-dialog-knobs.ts";
+import {
+  createDialogKnobs,
+  type DialogTurnKnobs,
+  type PipelineDialogKnobs,
+} from "./pipeline-dialog-knobs.ts";
 
 const BASE = { minBargeInWords: 2, interruptionMinDurationMs: 120 };
 
-/** A step as `prepareStep` is handed one; nothing here reads more of it. */
-const STEP = { stepNumber: 0, steps: [], messages: [] } as never;
+/**
+ * A step as `prepareStep` is handed one, spelled out in FULL rather than cast.
+ *
+ * The preparer under test takes no parameters at all — it reads the dialog's
+ * knobs, never the step — so every field here is ceremony for the type checker
+ * and none of it is read. That is exactly why it is written out: a cast would
+ * make these cases compile against a shape the AI SDK is free to change
+ * underneath them, and the whole value of running the real
+ * `PrepareStepFunction` signature is that a change there fails HERE rather
+ * than at the one call site in `pipeline-llm-stream.ts`. `model` takes a
+ * string in this SDK version and the two context bags are empty records, which
+ * is what keeps the cost to one line each.
+ */
+const STEP: Parameters<NonNullable<PipelineDialogKnobs["dialogStep"]>>[0] = {
+  steps: [],
+  stepNumber: 0,
+  model: "stub-model",
+  instructions: undefined,
+  initialInstructions: undefined,
+  messages: [],
+  initialMessages: [],
+  responseMessages: [],
+  toolsContext: {},
+  runtimeContext: {},
+};
 
 describe("with no dialog declaring a knob", () => {
   test("every read is the agent's own setting, and there is no preparer", () => {
