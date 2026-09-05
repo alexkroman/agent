@@ -136,6 +136,11 @@
       "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
     }
   },
+  "tracing": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "uploads": {
     "current": 4,
     "supported": [4],

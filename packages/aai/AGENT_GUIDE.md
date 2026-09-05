@@ -190,6 +190,59 @@ proxy or auth.
 `run_code` is the one feature that does not follow — it needs the platform's
 sandbox and refuses outside one.
 
+## Tracing (OpenTelemetry)
+
+Point the runtime at any OTLP collector and it exports spans for the model
+calls your agent makes — one per generation, with a child per step, per model
+call and per tool call, carrying model id, token counts and finish reason.
+
+**It is off unless you configure a collector, and that is the whole switch:**
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 npm start
+OTEL_SERVICE_NAME=my-agent npm start          # names the spans; defaults to "aai-agent"
+OTEL_EXPORTER_OTLP_HEADERS="x-api-key=…" npm start   # if your collector wants one
+```
+
+With none of those set, nothing is built — no exporter, no provider, no timer,
+no import. That matters on a voice agent: a background flush is a timer on a
+process whose latency budget is a person waiting for an answer.
+
+**Install the exporter first.** The OpenTelemetry packages are optional peers,
+so they are not in your `node_modules` until you ask for them:
+
+```sh
+npm i @opentelemetry/api @opentelemetry/sdk-trace-base \
+      @opentelemetry/exporter-trace-otlp-proto @opentelemetry/resources \
+      @opentelemetry/context-async-hooks
+```
+
+`aai dev` and `aai start` arm it for you. Embedding the server in a process of
+your own means calling it yourself, from
+`@alexkroman1/aai-runtime/tracing`:
+
+```ts
+import { startTracing, tracingEndpoint } from "@alexkroman1/aai-runtime/tracing";
+
+// Returns undefined when no collector is configured. `RuntimeTracing` is the
+// handle: `forceFlush()` before a scheduled shutdown, `shutdown()` to release.
+const tracing = await startTracing();
+if (tracingEndpoint()) console.log("exporting spans");
+process.on("SIGTERM", () => void tracing?.shutdown());
+```
+
+`startTracingDetached()` is the same thing without the await, for a boot path
+that must not wait — constructing the exporter costs a few hundred ms.
+`OTEL_ENDPOINT_ENVS` and `OTEL_SERVICE_NAME_ENV` name the variables read, and
+`DEFAULT_SERVICE_NAME` the fallback, if you would rather read them than
+hard-code the strings.
+
+**Spans carry no conversation content.** Not a default you can change — there
+is no code path that reads a prompt, a completion, a transcript, a tool
+argument or a tool result, so none of it can reach your collector. Attributes
+are built from an allow-list of metadata names following OpenTelemetry's
+`gen_ai.*` conventions, so existing dashboards find them.
+
 ### Deploying to a host that wants its own entry file
 
 `aai build --target <host>` writes the deployment that host expects into the
