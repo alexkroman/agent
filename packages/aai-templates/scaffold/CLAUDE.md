@@ -105,24 +105,32 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
 ## CLI
 
+Install the CLI once, globally:
+
 ```sh
-npx @alexkroman1/aai-cli init             # Scaffold a new agent
-npx @alexkroman1/aai-cli templates        # List available templates
-npx @alexkroman1/aai-cli dev              # Start local dev server
-npx @alexkroman1/aai-cli test             # Run agent.test.ts via vitest
-npx @alexkroman1/aai-cli test --all       # ...or every spec in the project
-npx @alexkroman1/aai-cli eval             # Run agent.eval.test.ts against a model
-npx @alexkroman1/aai-cli build            # Bundle and validate
-npx @alexkroman1/aai-cli deploy           # Deploy to production
-npx @alexkroman1/aai-cli delete           # Remove deployed agent
-npx @alexkroman1/aai-cli secret put NAME  # Set a secret
-npx @alexkroman1/aai-cli secret delete NAME
-npx @alexkroman1/aai-cli secret list
+npm i -g @alexkroman1/aai-cli
+```
+
+Then:
+
+```sh
+aai init             # Scaffold a new agent
+aai templates        # List available templates
+aai dev              # Start local dev server
+aai test             # Run agent.test.ts via vitest
+aai test --all       # ...or every spec in the project
+aai eval             # Run agent.eval.test.ts against a model
+aai build            # Bundle and validate
+aai deploy           # Deploy to production
+aai delete           # Remove deployed agent
+aai secret put NAME  # Set a secret
+aai secret delete NAME
+aai secret list
 ```
 
 The scaffold's `package.json` exposes `dev`, `build`, `test`, `eval` and
-`deploy` as `pnpm <name>` shortcuts. Other commands (`init`, `templates`,
-`delete`, `secret`) are CLI-only.
+`deploy` as `pnpm <name>` shortcuts, which run the project's own copy of the
+CLI. Other commands (`init`, `templates`, `delete`, `secret`) are CLI-only.
 
 **`aai test` targets `agent.test.ts` and nothing else**, which `--all` widens.
 What matters is that a narrowed run does not report itself as a pass: when the
@@ -2322,12 +2330,12 @@ Never hardcode secrets in agent code.
 
 - **Local dev:** `.env` in project root. Only declared keys available via
   `ctx.env`.
-- **Production:** `npx @alexkroman1/aai-cli secret put NAME`
+- **Production:** `aai secret put NAME`
 - **Access:** `ctx.env.MY_KEY` in tool execute functions.
-- **AssemblyAI key:** `npx @alexkroman1/aai-cli login` links your account and
-  stores the key globally — the only way the CLI authenticates. No `.env`
-  entry needed. For CI, point `AAI_CONFIG_DIR` at a config dir holding a
-  logged-in key (an exported `ASSEMBLYAI_API_KEY` does not authenticate).
+- **AssemblyAI key:** `aai login` links your account and stores the key
+  globally — the only way the CLI authenticates. No `.env` entry needed. For
+  CI, point `AAI_CONFIG_DIR` at a config dir holding a logged-in key (an
+  exported `ASSEMBLYAI_API_KEY` does not authenticate).
 
 ## Voice rules for systemPrompt
 
