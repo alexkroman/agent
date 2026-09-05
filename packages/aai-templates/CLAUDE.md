@@ -1,9 +1,10 @@
 # packages/aai-templates — templates guide
 
 Agent templates + the project scaffold (private package). Note
-`scaffold/CLAUDE.md` is a PRODUCT artifact — it is scaffolded into every
-`aai init` project and embedded in the studio system prompt — not
-documentation for this repo.
+`scaffold/CLAUDE.md` is a PRODUCT artifact — the authoring guide, embedded in
+the studio prompt and shipped in the SDK tarball as `AGENT_GUIDE.md` — not repo
+documentation, and the one file in `scaffold/` a project gets no copy of (see
+`PROJECT_GUIDE_POINTER` in `packages/aai-cli/src/_templates.ts`).
 
 ## Templates
 
@@ -934,19 +935,20 @@ surface".**
 ## The authoring guide ships inside the SDK
 
 `scaffold/CLAUDE.md` is already the one source of truth for how to write an aai
-agent: `studio-prompt.ts` embeds it in the studio system prompt, and `aai init`
-copies it into every scaffolded project. What it is not is **version-matched to
-the SDK a project ends up resolving.** The copy in a project is frozen at the
-moment `aai init` ran — correct on day one, since the CLI and the SDK release
-together — and then the project runs `pnpm update @alexkroman1/aai`, the SDK
-moves, and the guide does not. An agent reads guidance for a version that is no
-longer installed, with nothing saying so.
+agent, and `studio-prompt.ts` embeds it in the studio system prompt. What it is
+not is **version-matched to the SDK a project ends up resolving.** `aai init`
+used to copy it into every project, where it froze — correct on day one, since
+the CLI and the SDK release together, and then the project ran `pnpm update
+@alexkroman1/aai`, the SDK moved and the guide did not. An agent read guidance
+for a version no longer installed, with nothing saying so.
 
 So `scripts/sync-agent-guide.mjs` materializes it as
 `packages/aai/AGENT_GUIDE.md`, which ships in the `aai` tarball and therefore
-cannot describe a different release than the `@alexkroman1/aai` beside it. The
-copy carries a generated-file banner as part of its compared content, so an edit
-that stripped the banner leaves a file that looks authored.
+cannot describe a different release than the `@alexkroman1/aai` beside it — and
+`layerScaffold` now writes a pointer at THAT path as a project's `CLAUDE.md`
+rather than a copy of this file. The materialized copy carries a generated-file
+banner as part of its compared content, so an edit stripping it leaves a file
+that looks authored.
 
 `packages/aai/skills/aai/SKILL.md` ships beside it and deliberately carries **no
 API guidance at all** — it says where the guide is and stops. A skill lives in a

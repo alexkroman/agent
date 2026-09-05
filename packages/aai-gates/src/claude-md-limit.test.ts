@@ -26,10 +26,13 @@
  * **The fix is almost never to delete rationale.** Move the section into the
  * package that owns the surface — Claude Code loads a package's `CLAUDE.md`
  * when working in that directory — and leave a pointer in the root's
- * "Package guides" table. `scaffold/CLAUDE.md` is the one exception: it
- * ships to users inside every `aai init` project and is embedded in the
- * studio system prompt, so it has no packages to push sections into and the
- * answer there really is to cut.
+ * "Package guides" table. `scaffold/CLAUDE.md` is the one exception: it is
+ * embedded in the studio system prompt and ships to users inside the
+ * `@alexkroman1/aai` tarball as `AGENT_GUIDE.md`, so it has no packages to
+ * push sections into and the answer there really is to cut. Splitting it
+ * behind a `@path` import would not buy anything either — imports are expanded
+ * at launch, which is also why `aai init` writes a POINTER at the SDK copy as
+ * a project's `CLAUDE.md` rather than copying this file into it.
  *
  * This lives in aai-templates because that package owns the documentation
  * shipped to users (the scaffold guide above), and because raw imports reach

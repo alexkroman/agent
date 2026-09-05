@@ -27,17 +27,29 @@ the CLI build's `inputs` so editing a template invalidates that build.
 | Path | What it is |
 | --- | --- |
 | `templates/<name>/` | 26 complete agent projects, each self-contained |
-| `scaffold/` | the base project files layered under any template — `package.json`, `tsconfig.json`, `vite.config.ts`, `server.mjs`, `.env.example`, `CLAUDE.md` |
+| `scaffold/` | the base project files layered under any template — `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `global.d.ts`, `pnpm-workspace.yaml`, `.gitignore`, `.env.example` — plus `CLAUDE.md`, which is the guide rather than a project file |
 | `src/` | this package's suites: the template gates, plus the gates that guard the repo's gates |
 | `template-api-allowlist.json` | the coverage ratchet's baseline — published exports no template exercises |
 
 `scaffold/CLAUDE.md` is a **product artifact**, not repo documentation: it is
-copied into every scaffolded project, embedded in the studio system prompt, and
-materialized as `packages/aai/AGENT_GUIDE.md` so it ships inside the SDK tarball
-and cannot describe a different release than the SDK beside it.
+embedded in the studio system prompt and materialized as
+`packages/aai/AGENT_GUIDE.md` so it ships inside the SDK tarball and cannot
+describe a different release than the SDK beside it.
 
-`scaffold/server.mjs` plus the `prestart`/`start` pair mean every scaffolded
-project self-hosts with `npm start` — no platform account required.
+**It is also the one file in `scaffold/` that a scaffolded project does not get
+a copy of.** `layerScaffold` filters it and writes a ~30-line pointer at
+`node_modules/@alexkroman1/aai/AGENT_GUIDE.md` instead — the version-matched
+copy the SDK's own skill has always named as authoritative. The 120KB snapshot
+went stale on the project's next `pnpm update`, and Claude Code loads a
+project-root `CLAUDE.md` in full at launch against a documented 200-line target,
+so every session in a user's agent project paid ~30k tokens for guidance its
+publisher told agents not to trust. See `PROJECT_GUIDE_POINTER` in
+`packages/aai-cli/src/_templates.ts`.
+
+The `prestart`/`start` pair (`aai build --skip-tests` then `aai start`) means
+every scaffolded project self-hosts with `npm start` — no platform account
+required. This used to be a scaffolded `server.mjs`; the CLI owns the entrypoint
+now, and only the `deno` build target still emits a file by that name.
 
 ## Anatomy of a template
 

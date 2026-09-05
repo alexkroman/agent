@@ -185,8 +185,8 @@ const UNDOCUMENTED_SUBPATHS = {
       "page. What that reader wants is the prose: the env vars, the " +
       "optional-peer install line and the no-conversation-content guarantee, " +
       "which are in the scaffold guide under 'Tracing (OpenTelemetry)' — the " +
-      "one that ships inside every `aai init` project and inside the SDK " +
-      "tarball, and which `check:authoring-guide` holds to naming this " +
+      "one that ships inside the SDK tarball as `AGENT_GUIDE.md`, and which " +
+      "`check:authoring-guide` holds to naming this " +
       "capability. Same reason as the '.' entry below, one subpath in: this " +
       "is an EMBEDDER surface. Revisit if embedders ask for a rendered page.",
     ".":

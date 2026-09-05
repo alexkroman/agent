@@ -5,7 +5,7 @@
  *
  * The gate asserts that every contracted authoring capability is named in the
  * code of `packages/aai-templates/scaffold/CLAUDE.md` — the guide that ships
- * inside every `aai init` project and inside the `@alexkroman1/aai` tarball.
+ * inside the `@alexkroman1/aai` tarball and is embedded in the studio prompt.
  * Its whole success output is a count, which is the shape this repo keeps
  * paying for: a capability scan that stopped finding anything, or a fence
  * parser that stopped matching, would compare an empty set against an empty

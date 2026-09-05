@@ -433,6 +433,19 @@ hidden `deploy` subcommand remains only because the guest's Publish
 (`aai-guest/studio-publish.ts`) executes it; a bare `aai` in a project
 offers to publish.
 
+**`layerScaffold` SUBSTITUTES one file rather than copying it: `CLAUDE.md`.**
+The scaffold's copy is the 119k-character authoring guide, and a project gets a
+~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` instead
+(`PROJECT_GUIDE_POINTER`, `_templates.ts`, which carries the argument). Two
+things made the copy indefensible: it froze at scaffold time, which is the
+staleness `sync-agent-guide.mjs` exists to remove and which the SDK's own
+shipped skill already told agents not to trust; and a project-root `CLAUDE.md`
+is loaded in FULL at launch, so every session in a user's project paid ~30k
+tokens whether or not it was writing agent code. A `@path` import would not have
+helped — imports are expanded at launch too — so the pointer names the path
+inside a FENCE. Only the SCAFFOLD's copy is filtered, matched on full path: a
+template's own `CLAUDE.md` would be that template's notes and is still copied.
+
 **`aai init` SCAFFOLDS and stops — it does not publish, and takes no
 `--server` or `--skip-deploy`.** It used to deploy to production once the
 install succeeded, which made shipping a consequence of creating a directory:

@@ -453,9 +453,13 @@ and `scripts/sync-agent-guide.mjs` materializes it as
 describe a different release than the SDK beside it. It is a REPO-LEVEL script
 rather than a build step in `aai`, because `aai` may import no sibling package
 and a build step reading from `aai-templates` would invert that;
-`check:agent-guide` keeps the copy honest. See "The authoring guide ships inside
-the SDK" in `packages/aai-templates/CLAUDE.md` for the drift it prevents and why
-the shipped SKILL carries no API guidance of its own.
+`check:agent-guide` keeps the copy honest. **The SDK copy is the only one a
+scaffolded project has**: `layerScaffold` filters `scaffold/CLAUDE.md` out of
+the copy and writes a ~30-line pointer at
+`node_modules/@alexkroman1/aai/AGENT_GUIDE.md` instead, so a project carries no
+120KB snapshot to go stale on its next `pnpm update`. See "The authoring guide
+ships inside the SDK" in `packages/aai-templates/CLAUDE.md` for the drift it
+prevents and why the shipped SKILL carries no API guidance of its own.
 
 ### API reference docs
 

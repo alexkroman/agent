@@ -6,7 +6,7 @@ import path from "node:path";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { IGNORED_WORKSPACE_DIRS, isLocalOnlyFile } from "@alexkroman1/aai/workspace-files";
 import { getMonorepoRoot } from "./_agent.ts";
-import { errorMessage, writeJson } from "./_utils.ts";
+import { errorMessage, isEexist, writeJson } from "./_utils.ts";
 
 /** The GitHub repo (owner/name) that hosts this project and its templates. */
 const REPO = "alexkroman/agent";
@@ -158,6 +158,80 @@ export function scaffoldDir(): string {
 }
 
 /**
+ * The project-root `CLAUDE.md` a scaffolded project gets — a POINTER at the
+ * guide inside the resolved SDK, not a copy of it.
+ *
+ * `scaffold/CLAUDE.md` is the authoring guide itself: 2,533 lines and 119k
+ * characters, sitting against the working cap `claude-md-limit.test.ts`
+ * enforces. It has three consumers, and only one wanted the bytes in a project:
+ * `sync-agent-guide.mjs` copies it into the `@alexkroman1/aai` tarball as
+ * `AGENT_GUIDE.md`, `studio-prompt.ts` embeds it in the studio system prompt,
+ * and — until this file — `fs.cp` wrote all 120KB into every `aai init`
+ * directory. That third copy is the one that cannot be right:
+ *
+ * - **It is stale by design.** The SDK's own shipped skill
+ *   (`packages/aai/skills/aai/SKILL.md`) already says so in as many words:
+ *   the project copy is "correct on day one, but frozen at scaffold time —
+ *   `pnpm update @alexkroman1/aai` moves the SDK and leaves it behind. Prefer
+ *   the file above whenever the two disagree." A file whose own publisher
+ *   tells agents not to trust it is not carrying its weight.
+ * - **An agent pays for it on every session, whether or not it is writing
+ *   agent code.** Claude Code loads a project-root `CLAUDE.md` in FULL at
+ *   launch and documents a 200-line target; this was 2,533. Splitting it
+ *   behind an `@import` would not have helped — imports are expanded at
+ *   launch too — which is why the pointer below names the path inside a FENCE,
+ *   the documented spelling for "mention, do not import". It is read on
+ *   demand, by the agent that needs it, out of the tarball the project
+ *   actually resolved.
+ *
+ * Nothing is lost that was not already duplicated: the guide ships in the SDK
+ * beside the `.d.ts` files it describes, which is the copy the skill has
+ * pointed at all along. What a project gets instead is the one thing the
+ * 120KB could not be — version-matched.
+ */
+const PROJECT_GUIDE_POINTER = `# Agent instructions
+
+This is an [aai](${REPO_URL}) voice-agent project. An agent is a directory
+containing \`agent.ts\`; the \`aai\` CLI bundles it and deploys it.
+
+## Read the SDK guide before writing agent code
+
+The complete authoring guide ships inside the installed package:
+
+\`\`\`text
+node_modules/@alexkroman1/aai/AGENT_GUIDE.md
+\`\`\`
+
+Read it with your file tools. It is version-matched by construction — it lives
+in the same tarball as the \`@alexkroman1/aai\` this project resolved, so it
+cannot describe a different release than the one being imported. Prefer it over
+anything remembered about the SDK, and over anything in this file.
+
+The types are the second source of truth: the shipped declarations are in
+\`node_modules/@alexkroman1/aai/dist/\`. When the guide and the types disagree,
+the types are what the compiler enforces.
+
+## Commands
+
+\`\`\`sh
+npm run dev            # Run locally on http://localhost:3000
+npm test               # This project's suite, minus the evals (vitest)
+npm run test:agent     # Just agent.test.ts, via the CLI
+npm run eval           # Drive a real session against a live model (spends money)
+npm run build          # Bundle the agent
+npm start              # Build, then self-host on http://127.0.0.1:3000
+npm run publish:agent  # Publish to the managed platform
+\`\`\`
+
+The \`aai\` CLI is a devDependency, so it is in \`node_modules/.bin\` rather than
+on \`PATH\`: reach it through these scripts or with \`npx aai <command>\`.
+
+## Project-specific notes
+
+<!-- Add conventions, gotchas and decisions for THIS agent below. -->
+`;
+
+/**
  * Layer the base scaffold (package.json, tsconfig, …) into targetDir
  * WITHOUT overwriting anything already there. Shared by `aai init`
  * (underneath a template) and `aai pull` (underneath the studio workspace
@@ -166,7 +240,9 @@ export function scaffoldDir(): string {
  * before an in-sandbox build).
  *
  * package.json is the one file merged rather than skipped — see
- * {@link layerScaffoldManifest}.
+ * {@link layerScaffoldManifest}. `CLAUDE.md` is the one file SUBSTITUTED: the
+ * scaffold's copy is the authoring guide, and a project gets
+ * {@link PROJECT_GUIDE_POINTER} instead.
  */
 export async function layerScaffold(targetDir: string): Promise<void> {
   const dir = scaffoldDir();
@@ -175,9 +251,37 @@ export async function layerScaffold(targetDir: string): Promise<void> {
     recursive: true,
     force: false,
     errorOnExist: false,
-    filter: templateCopyFilter,
+    // A closure, not the bare function: `fs.cp` passes `dest` as the second
+    // argument, which would land in `scaffold` and match nothing.
+    filter: (src) => scaffoldCopyFilter(src, dir),
   });
-  await layerScaffoldManifest(dir, targetDir);
+  await Promise.all([
+    layerScaffoldManifest(dir, targetDir),
+    // `wx` matches the `force: false` above: a project that already has a
+    // CLAUDE.md — a re-run of `aai init --force`, or a studio workspace whose
+    // coding agent wrote one — keeps its own. Only EEXIST is swallowed; a
+    // permission or disk error is the caller's to see, the same as one from
+    // the copy above.
+    fs
+      .writeFile(path.join(targetDir, "CLAUDE.md"), PROJECT_GUIDE_POINTER, { flag: "wx" })
+      .catch((err: unknown) => {
+        if (!isEexist(err)) throw err;
+      }),
+  ]);
+}
+
+/**
+ * `templateCopyFilter` plus the scaffold's own `CLAUDE.md`, which is the
+ * authoring guide rather than a file a project wants — see
+ * {@link PROJECT_GUIDE_POINTER}.
+ *
+ * Only the scaffold copy filters it. A TEMPLATE's `CLAUDE.md` would be that
+ * template's own notes and belongs in the project it seeds, so
+ * {@link downloadAndMergeTemplate} keeps using the unfiltered version. Matched
+ * on the full path rather than the basename for the same reason.
+ */
+export function scaffoldCopyFilter(src: string, scaffold: string = scaffoldDir()): boolean {
+  return templateCopyFilter(src) && path.resolve(src) !== path.join(scaffold, "CLAUDE.md");
 }
 
 /**

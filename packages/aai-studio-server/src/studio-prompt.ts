@@ -4,11 +4,13 @@
  *
  * The preamble (`studio-preamble.ts`) carries AssemblyAI Build's own rules
  * in a v0-style arc — overview, workflow, guidelines, design, capabilities,
- * refusals, alignment examples. The authoring knowledge comes from the same
- * `CLAUDE.md` the CLI scaffolds into every `aai init` project
- * (`aai-templates/scaffold/CLAUDE.md`) — one source of truth for how to
- * write `agent.ts`, whether the coding agent is Claude Code on a laptop or
- * the studio in a browser. The preamble overrides the parts that don't
+ * refusals, alignment examples. The authoring knowledge comes from
+ * `aai-templates/scaffold/CLAUDE.md` — one source of truth for how to write
+ * `agent.ts`, whether the coding agent is Claude Code on a laptop or the studio
+ * in a browser. The two reach it differently: a laptop reads it out of the SDK
+ * tarball (`AGENT_GUIDE.md`, where the scaffolded project's `CLAUDE.md`
+ * points), while the studio has no `node_modules` to read and gets it inlined
+ * here. The preamble overrides the parts that don't
  * apply here (the CLI dev loop, npm installs) and describes the studio's
  * own tools.
  *
