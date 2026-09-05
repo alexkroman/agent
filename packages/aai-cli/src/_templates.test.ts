@@ -27,6 +27,10 @@ async function useFakeRoot(dir: string): Promise<void> {
     "scaffold/tsconfig.json": '{"compilerOptions":{}}',
     "scaffold/package.json": JSON.stringify({ name: "scaffold", dependencies: {} }),
     "scaffold/.env.example": "API_KEY=",
+    // The authoring guide, stood in for by its first line. The real one is
+    // 120KB and is NOT what a scaffolded project gets — see the
+    // "authoring guide" tests below.
+    "scaffold/CLAUDE.md": "# Writing an aai agent\n\nThe whole SDK reference.\n",
     "templates/simple/agent.ts": 'export default { name: "simple" };',
     "templates/web-researcher/agent.ts": 'export default { name: "web-researcher" };',
     // Template-specific package.json that should take priority over scaffold
@@ -169,6 +173,57 @@ describe("downloadAndMergeTemplate", () => {
       expect(await fileExists(path.join(target, ".env.example"))).toBe(true);
       // Scaffold package.json should also be present (simple template has no package.json)
       expect(await fileExists(path.join(target, "package.json"))).toBe(true);
+    });
+  });
+
+  describe("the authoring guide is pointed at, not copied", () => {
+    test("the project's CLAUDE.md names the SDK copy and is not the guide", async () => {
+      await withTempDir(async (dir) => {
+        await useFakeRoot(dir);
+        const target = path.join(dir, "output");
+        await downloadAndMergeTemplate("simple", target);
+        const guide = await fs.readFile(path.join(target, "CLAUDE.md"), "utf-8");
+        // The scaffold's own CLAUDE.md is the 120KB authoring guide. Copying it
+        // put a file the SDK's shipped skill calls non-authoritative into every
+        // project, and Claude Code loads a project-root CLAUDE.md in full at
+        // launch — so what lands is a pointer at the version-matched copy.
+        expect(guide).not.toContain("The whole SDK reference.");
+        expect(guide).toContain("node_modules/@alexkroman1/aai/AGENT_GUIDE.md");
+        // In a FENCE, which is the documented spelling for "mention, do not
+        // import": an `@path` outside backticks is expanded into context at
+        // launch, which would put the 120KB straight back.
+        expect(guide).toContain("```text\nnode_modules/@alexkroman1/aai/AGENT_GUIDE.md\n```");
+        // Small enough to be worth loading every session — Claude Code's
+        // documented target is 200 lines.
+        expect.soft(guide.split("\n").length).toBeLessThan(200);
+      });
+    });
+
+    test("a project's own CLAUDE.md wins, like every other scaffold file", async () => {
+      await withTempDir(async (dir) => {
+        await useFakeRoot(dir);
+        const target = path.join(dir, "output");
+        await writeFiles(target, { "CLAUDE.md": "# my notes\n" });
+        await layerScaffold(target);
+        expect(await fs.readFile(path.join(target, "CLAUDE.md"), "utf-8")).toBe("# my notes\n");
+      });
+    });
+
+    test("a TEMPLATE's CLAUDE.md is still copied, and still wins", async () => {
+      await withTempDir(async (dir) => {
+        await useFakeRoot(dir);
+        const target = path.join(dir, "output");
+        // Only the SCAFFOLD's CLAUDE.md is the guide. A template's would be
+        // that template's own notes, so the filter is keyed on the full path.
+        await fs.writeFile(
+          path.join(process.env.AAI_TEMPLATES_DIR ?? "", "templates/simple/CLAUDE.md"),
+          "# simple's notes\n",
+        );
+        await downloadAndMergeTemplate("simple", target);
+        expect(await fs.readFile(path.join(target, "CLAUDE.md"), "utf-8")).toBe(
+          "# simple's notes\n",
+        );
+      });
     });
   });
 

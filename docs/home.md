@@ -118,4 +118,5 @@ frame:
 
 - [GitHub repository](https://github.com/alexkroman/agent)
 - [Agent-building guide](https://github.com/alexkroman/agent/blob/main/packages/aai-templates/scaffold/CLAUDE.md)
-  (ships into every scaffolded project as `CLAUDE.md`)
+  (ships inside the SDK as `node_modules/@alexkroman1/aai/AGENT_GUIDE.md`,
+  which is where a scaffolded project's `CLAUDE.md` points)

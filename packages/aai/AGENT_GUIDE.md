@@ -5,9 +5,10 @@
   Regenerate: node scripts/sync-agent-guide.mjs
 
   This copy ships inside the @alexkroman1/aai tarball so an agent working in
-  a user's project can read guidance that MATCHES the installed SDK, rather
-  than the copy `aai init` froze into the project at scaffold time. See
-  packages/aai/skills/aai/SKILL.md.
+  a user's project reads guidance that MATCHES the installed SDK. It is the
+  only copy such a project has: `aai init` writes a short pointer at this
+  path as the project's CLAUDE.md rather than a snapshot that goes stale on
+  the next `pnpm update`. See packages/aai/skills/aai/SKILL.md.
 -->
 # aai Voice Agent
 

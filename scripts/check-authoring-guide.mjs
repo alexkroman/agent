@@ -6,9 +6,9 @@
  *   pnpm check:authoring-guide
  *
  * `packages/aai-templates/scaffold/CLAUDE.md` is the one source of truth for
- * how to write an aai agent. It lands in every `aai init` project and
- * `sync-agent-guide.mjs` materializes it as `packages/aai/AGENT_GUIDE.md` so it
- * ships inside the SDK tarball as well. `check:agent-guide` already asserts
+ * how to write an aai agent. `sync-agent-guide.mjs` materializes it as
+ * `packages/aai/AGENT_GUIDE.md` so it ships inside the SDK tarball, which is
+ * where a scaffolded project's `CLAUDE.md` points and where an agent reads it. `check:agent-guide` already asserts
  * those two copies agree — that the guide is CURRENT. Nothing asserted it was
  * COMPLETE, and it was not: eleven of `aai`'s twenty-six capabilities and two
  * of `aai-ui`'s nine appeared in it nowhere, including `/step-errors` (twelve

@@ -7,7 +7,7 @@ description: Build voice agents with the aai SDK. Use when creating, editing, or
 
 aai is a voice-agent development kit. An agent is a directory containing
 `agent.ts`; the `aai` CLI bundles it and deploys it to the managed platform, or
-`node server.mjs` runs it standalone.
+`npm start` (`aai build` then `aai start`) runs it standalone.
 
 ## Source of truth
 
@@ -22,14 +22,15 @@ That file is version-matched by construction: it lives in the same tarball as
 the `@alexkroman1/aai` the project resolved, so it cannot describe a different
 release than the one being imported. Read it before writing any aai code.
 
-Two other copies exist and are **not** authoritative for an installed project:
+That path is also what the project's own `CLAUDE.md` points at: `aai init`
+writes a short pointer there rather than a copy of the guide, precisely because
+a copy is frozen at scaffold time and `pnpm update @alexkroman1/aai` would leave
+it behind.
 
-- `CLAUDE.md` in the project root. Written by `aai init` and correct on day one,
-  but frozen at scaffold time — `pnpm update @alexkroman1/aai` moves the SDK and
-  leaves it behind. Prefer the file above whenever the two disagree.
-- Anything this skill might say about the API. A skill is installed in a user's
-  home directory and has no version at all, which is exactly why the guidance is
-  not repeated here.
+So there is one other place API guidance could come from, and it is **not**
+authoritative: anything this skill might say. A skill is installed in a user's
+home directory and has no version at all, which is exactly why the guidance is
+not repeated here.
 
 ## Types are the second source of truth
 

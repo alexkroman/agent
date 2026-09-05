@@ -30,10 +30,15 @@
  * problem.
  *
  * `packages/aai-templates/scaffold/CLAUDE.md` is INCLUDED deliberately. It is
- * a product artifact — scaffolded into every `aai init` project and embedded
- * in the studio system prompt — so it is read by an agent in exactly the same
- * way, and it cannot be split at all (a scaffolded project has no packages to
- * push sections into). It is the one file where the answer really is to cut.
+ * a product artifact — embedded in the studio system prompt and shipped inside
+ * the `@alexkroman1/aai` tarball as `AGENT_GUIDE.md` — so it is read by an
+ * agent in exactly the same way, and it cannot be split at all (it has no
+ * packages to push sections into, and a `@path` import would not help: an
+ * import is expanded into context at launch too). It is the one file where the
+ * answer really is to cut. Note the cap is NOT about a scaffolded project's own
+ * context any more — `layerScaffold` writes a pointer at the SDK copy instead
+ * of copying this file — it is about the studio prompt and about an agent that
+ * follows that pointer and reads the whole thing.
  *
  * Wired up as `pnpm check:claude-md`, and paired with
  * `packages/aai-gates/src/claude-md-limit.test.ts`, which asserts the same two
@@ -146,7 +151,8 @@ const REMEDY =
   "Move a section into the owning package's CLAUDE.md and leave a pointer;\n" +
   'see the root AGENTS.md\'s "Package guides" table and "Updating AGENTS.md".\n' +
   "The scaffold guide is the one that has to be CUT instead — it ships to\n" +
-  "users inside every `aai init` project and has no packages to push into.\n";
+  "users inside the SDK tarball, is embedded in the studio prompt, and has no\n" +
+  "packages to push into.\n";
 
 if (violations.length > 0) {
   console.error(
