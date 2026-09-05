@@ -745,6 +745,32 @@ deployment and what a revival owes, the `alwaysBundle` specifier bug, the
 itself a signal), retirement vs. termination and the shutdown ordering are all
 there.
 
+**Why they stay two packages, asked and answered.** A structural audit put the
+merge case plainly and it is a real one: there is ONE Modal app
+(`aai-server-web`), ONE entry (`aai-studio-server/src/index.ts`), this package
+declares no root export at all, and `aai-studio-server` is its only consumer —
+71 of that package's 100 files import from here. A boundary no build, deploy or
+release step observes is bookkeeping, and the cost of it was once high: the
+`exports` map was `"./*": "./*.ts"`, the studio reached into 31 modules, and
+no import could be called a violation because there was no boundary.
+
+That cost is what changed, not the argument. The map is SEVEN barrels now —
+`./stores`, `./sandbox`, `./platform`, `./http`, `./config`, `./logger`,
+`./test-utils` — and `platform-surface.test.ts` holds it in both directions: an
+entry nobody imports fails, and so does a module the studio reaches that no
+entry names. Widening the surface is a deliberate edit to `package.json`
+instead of a side effect of typing an import path. Seven guarded entries buy
+the same discipline a `src/platform/` + `src/studio/` split under a konsistent
+path rule would, at a fraction of the churn — and the merge would cost ~405
+file moves, 142 import rewrites, one vitest config where two disagree on pool
+(this package uses **forks** for process isolation, the studio uses threads),
+and one coverage floor over a union whose halves sit at different numbers.
+
+So: not merging, deliberately, and the thing to defend is the SEVEN. If that
+map starts growing again — a name added because an import was convenient rather
+than because the studio needs the concept — the bookkeeping argument comes
+back, and the merge is the answer rather than an eighth barrel.
+
 Two rules from it that a reader of THIS package needs in front of them:
 
 - **A resolved public origin may be used WITHIN the request that asked for it
