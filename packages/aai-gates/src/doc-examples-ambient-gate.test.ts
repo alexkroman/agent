@@ -167,10 +167,13 @@ function checkedFences(source: string): string[] {
   return bodies;
 }
 
+/** The declared documents this suite can actually READ. Asserted TOTAL below. */
+const readable = declaredMarkdown().filter((file) => markdown[file] !== undefined);
+
 /** The checked fences of every document this suite can both READ and prove the gate reads. */
-const corpus = declaredMarkdown()
-  .filter((file) => markdown[file] !== undefined)
-  .flatMap((file) => checkedFences(markdown[file] ?? "").map((code) => ({ file, code })));
+const corpus = readable.flatMap((file) =>
+  checkedFences(markdown[file] ?? "").map((code) => ({ file, code })),
+);
 
 /** A leading-trivia reference directive, re-derived — the property under test. */
 function leadingDirectives(code: string): string[] {
@@ -259,6 +262,11 @@ describe("the harness owns the ambients, not a sibling fence", () => {
     // of an empty corpus.
     expect(declaredMarkdown().length, "MARKDOWN_FILES parsed to nothing").toBeGreaterThanOrEqual(8);
     expect(corpus.length, "no checked ts/tsx fence was readable").toBeGreaterThan(30);
+    // The intersection is TOTAL, and asserting so is the half the floor above
+    // cannot cover: a document the gate declares and this file's five literal
+    // globs cannot reach used to drop out silently, leaving the fence floor
+    // satisfied by the other documents and that one's directives unchecked.
+    expect(readable).toEqual(declaredMarkdown());
   });
 
   test("the stripper still has work to do", () => {

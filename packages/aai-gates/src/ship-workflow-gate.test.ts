@@ -27,7 +27,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { sole } from "./_gate-support.ts";
+import { sole, withoutYamlComments, workflowJobs } from "./_gate-support.ts";
 
 const workflow = sole(
   import.meta.glob<string>("../../../.github/workflows/ship.yml", {
@@ -51,28 +51,32 @@ const check = sole(
 );
 
 /**
- * The `needs:` list declared by one job.
+ * The workflow source, read once.
+ *
+ * Every reader and nearly every test below used to open with its own
+ * `const source = workflow ?? "";` — 21 sites in this file, which also forced
+ * the two job readers to take a `source` parameter that only ever received
+ * this one value. `file-length-gate.test.ts` and `package-layout-gate.test.ts`
+ * already pay for and document the same fix. Readability stays asserted, in
+ * its own case.
+ */
+const source: string = workflow ?? "";
+
+/**
+ * The jobs, read structurally — bounded by the next job KEY, not by the name of
+ * whatever job follows, and THROWING on a job the file does not declare.
  *
  * Deliberately not a YAML parser — this package carries none, for the reason
- * `ci-gate-job.test.ts` gives. Four facts are read out of the file, and a
- * malformed one fails the shape assertions below anyway.
+ * `ci-gate-job.test.ts` gives. The slice-by-next-job-name and the fail-open
+ * `[]` this replaced are argued at {@link workflowJobs}.
  */
-function needsOf(source: string, job: string): string[] {
-  const block = source.slice(source.indexOf(`\n  ${job}:\n`));
-  const match = /\n {4}needs: (.+)\n/.exec(block.slice(0, block.indexOf("\n    steps:")));
-  const declared = match?.[1];
-  if (declared === undefined) return [];
-  return declared
-    .replace(/[[\]]/g, "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
+const jobs = workflowJobs(source, "ship.yml");
+const needsOf = (job: string): string[] => jobs.needs(job);
 
 describe("the ordering is declared, not polled", () => {
   test("deploy waits on the guest image, the release and the migration", () => {
     expect(workflow).toBeTypeOf("string");
-    const needs = needsOf(workflow ?? "", "deploy");
+    const needs = needsOf("deploy");
     // guest-image is the edge whose absence let four green deploys ride over a
     // red image build; the other three are the stages a rollout stands on.
     expect(needs).toContain("guest-image");
@@ -82,7 +86,7 @@ describe("the ordering is declared, not polled", () => {
   });
 
   test("the guest image waits on the release that packs its SDK", () => {
-    expect(needsOf(workflow ?? "", "guest-image")).toContain("release");
+    expect(needsOf("guest-image")).toContain("release");
   });
 
   test("deploy's condition never accepts a skipped or failed dependency", () => {
@@ -94,16 +98,20 @@ describe("the ordering is declared, not polled", () => {
   });
 
   test("the Version Packages PR blocks nothing", () => {
-    const source = workflow ?? "";
     // Opening a PR for humans and shipping the code have different failure
     // modes, and this step has wedged the whole line before (#1131: an empty
     // `changeset-release/main` and "No commits between main and
     // changeset-release/main"). Nothing may depend on it, so a broken PR step
     // costs a PR and not a release.
-    for (const job of ["release", "guest-image", "deploy", "changed", "migrate"]) {
-      expect(needsOf(source, job), `${job} must not depend on version-pr`).not.toContain(
-        "version-pr",
-      );
+    // DERIVED over every job in the file. This stood as a hardcoded roster of
+    // five names, over a `needsOf` that answered `[]` for a job it could not
+    // find — so a renamed or newly-added job satisfied the `not.toContain` by
+    // being invisible, and the one edge protecting the release line from the
+    // #1131 wedge was asserted about by nothing.
+    const names = jobs.names().filter((job) => job !== "version-pr");
+    expect(names.length, "ship.yml parsed to no jobs").toBeGreaterThanOrEqual(5);
+    for (const job of names) {
+      expect(needsOf(job), `${job} must not depend on version-pr`).not.toContain("version-pr");
     }
     // And the action must live there rather than in the shipping line.
     const action = source.slice(source.indexOf("changesets/action@"));
@@ -123,11 +131,7 @@ describe("the ordering is declared, not polled", () => {
  * The `if:` one job declares, read the same way and for the same reason as
  * `needsOf` — the whole gate below is one such line.
  */
-function ifOf(source: string, job: string): string {
-  const block = source.slice(source.indexOf(`\n  ${job}:\n`));
-  const match = /\n {4}if: (.+)\n/.exec(block.slice(0, block.indexOf("\n    steps:")));
-  return match?.[1] ?? "";
-}
+const ifOf = (job: string): string => jobs.field(job, "if") ?? "";
 
 /**
  * The `changed` job's `diff` step, which is the whole decision.
@@ -139,7 +143,6 @@ function ifOf(source: string, job: string): string {
  * PRESENT as well, since an empty slice satisfies a `not.toContain` for free.
  */
 function diffStep(): string {
-  const source = workflow ?? "";
   const diff = source.slice(source.indexOf("      - id: diff"));
   return diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
 }
@@ -157,9 +160,8 @@ describe("a merge to main ships nothing", () => {
    * `deploy` needs both.
    */
   test("the npm release runs only when a version moved", () => {
-    const source = workflow ?? "";
-    expect(needsOf(source, "release")).toContain("changed");
-    expect(ifOf(source, "release")).toBe("needs.changed.outputs.release == 'true'");
+    expect(needsOf("release")).toContain("changed");
+    expect(ifOf("release")).toBe("needs.changed.outputs.release == 'true'");
   });
 
   /**
@@ -174,7 +176,7 @@ describe("a merge to main ships nothing", () => {
     // A regex, not a `toContain`: a `${{ … }}` inside a plain string reads to
     // Biome as a template placeholder — the same reason the image spec below
     // asserts on the expression body.
-    expect(workflow ?? "").toMatch(/\n {6}release: \$\{\{ steps\.diff\.outputs\.release \}\}\n/);
+    expect(source).toMatch(/\n {6}release: \$\{\{ steps\.diff\.outputs\.release \}\}\n/);
     expect(step).toContain("release=false");
     // The bump is read off the workspace manifests with a SHELL glob: a git
     // pathspec `*` crosses `/`, so it would also answer for the scaffold and
@@ -279,7 +281,6 @@ describe("what arms a deploy", () => {
 
 describe("the packed release reaches the image", () => {
   test("pack, publish and the image build all name the same directory", () => {
-    const source = workflow ?? "";
     // One directory, three consumers: `changeset pack` writes it, `changeset
     // publish` uploads from it, and the image installs from it. Two of the
     // three agreeing is a release whose image holds different bytes than npm.
@@ -289,7 +290,6 @@ describe("the packed release reaches the image", () => {
   });
 
   test("the pack directory is uploaded despite being hidden", () => {
-    const source = workflow ?? "";
     // The directory those three consumers agree on is DOT-PREFIXED, and since
     // upload-artifact v4.4 that makes it hidden and excluded by default. The
     // hand-off then fails in the one way this file exists to catch: the pack
@@ -305,7 +305,6 @@ describe("the packed release reaches the image", () => {
   });
 
   test("pack and publish sit outside the changesets action", () => {
-    const source = workflow ?? "";
     // `changesets/action` only invokes its own `publish:` when there are NO
     // pending changesets, so a version bump landing while changesets are queued
     // is never published — the 6.1.0 failure. The action must therefore carry
@@ -317,7 +316,6 @@ describe("the packed release reaches the image", () => {
   });
 
   test("the release tags are pushed, not merely created", () => {
-    const source = workflow ?? "";
     // `changeset publish` calls `git tag` and stops there — pushing them was the
     // changesets action's job, and the action no longer runs the publish. Drop
     // this step and the versions still reach npm while every release tag names
@@ -332,7 +330,6 @@ describe("the packed release reaches the image", () => {
   });
 
   test("the image build is told whether a release was packed", () => {
-    const source = workflow ?? "";
     // Passing `--sdk-pack-dir` unconditionally would fail every ordinary push,
     // because `stageSdkPackDir` refuses an absent or stale directory by design.
     // The expression body only: an assertion carrying the whole `${{ … }}`
@@ -358,12 +355,11 @@ describe("the packed release reaches the image", () => {
  * empty slice satisfies a `not.toContain` for free.
  */
 function releaseSteps(): string {
-  const source = workflow ?? "";
-  const job = source.slice(source.indexOf("\n  release:\n"), source.indexOf("\n  guest-image:"));
-  return job
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("#"))
-    .join("\n");
+  // Bounded by the next job KEY, not by `indexOf("\n  guest-image:")` — a job
+  // inserted between the two silently widened this slice to cover it, and a
+  // renamed `guest-image` made `indexOf` answer -1, so `slice(start, -1)` ran to
+  // the end of the file. See {@link workflowJobs}.
+  return withoutYamlComments(jobs.body("release"));
 }
 
 /** One named step of that job, up to the next one. */
@@ -474,7 +470,6 @@ describe("a released version names its commit", () => {
 
 describe("a rollback can name its commit", () => {
   test("every checkout honours the ref input", () => {
-    const source = workflow ?? "";
     const checkouts = source.match(/uses: actions\/checkout@/g) ?? [];
     const refs = source.match(/ref: \$\{\{ inputs\.ref \|\| github\.sha \}\}/g) ?? [];
     // A checkout that ignored the input would ship main's head under a rollback
@@ -511,21 +506,19 @@ describe("a rollback can name its commit", () => {
    * directly.
    */
   test("a dispatch does not re-plan the next release", () => {
-    const source = workflow ?? "";
     expect(
-      ifOf(source, "version-pr"),
+      ifOf("version-pr"),
       "a rollback dispatch recomputes and force-pushes changeset-release/main from " +
         "the ref it is rolling back to",
     ).toBe("github.event_name == 'push'");
     // And the shipping line still runs on a dispatch, or this spec could pass
     // by the whole workflow quietly becoming push-only — which would make the
     // rollback path a no-op instead.
-    expect(ifOf(source, "release")).toBe("needs.changed.outputs.release == 'true'");
+    expect(ifOf("release")).toBe("needs.changed.outputs.release == 'true'");
     expect(diffStep()).toContain('github.event_name }}" = "workflow_dispatch"');
   });
 
   test("no checkout resolves a mutable branch ref", () => {
-    const source = workflow ?? "";
     // Anchored on `ref:` — `github.ref` is legitimate in the concurrency GROUP,
     // where one group per branch is exactly what is wanted, and asserting on the
     // bare expression would forbid that too.
@@ -550,7 +543,6 @@ describe("the rollout is observed, not only predicted", () => {
    * the traffic moved is a report and not a gate.
    */
   test("deploy preflights the guest image before it moves any traffic", () => {
-    const source = workflow ?? "";
     expect(source).toContain("name: Preflight the guest image");
     expect(source).toMatch(/GUEST_IMAGE_REF: \$\{\{ needs\.guest-image\.outputs\.ref \}\}/);
     // The publisher has to expose it, or the expression above is an empty
@@ -562,7 +554,6 @@ describe("the rollout is observed, not only predicted", () => {
   });
 
   test("deploy verifies the rollout and then spawns a real sandbox", () => {
-    const source = workflow ?? "";
     expect(source).toContain("verify_modal_deploy.py");
     expect(source).toContain("scripts/smoke-spawn.mjs");
     // Ordered: the spawn is meaningless against a rollout that never started,
@@ -585,7 +576,6 @@ describe("the migration step enforces its own rules", () => {
    * a prose rule insufficient here.
    */
   test("a transaction-pooler URL is rejected before anything is applied", () => {
-    const source = workflow ?? "";
     const step = source.slice(source.indexOf("name: Apply Supabase migrations"));
     const body = step.slice(0, step.indexOf("\n  # ─"));
     expect(body, "the migrate step no longer slices out").toContain("supabase db push");
@@ -602,7 +592,6 @@ describe("the migration step enforces its own rules", () => {
     // local migrations directory", which reads as a missing FILE. Printing both
     // histories first is what makes the log say which it is, mid-release, on a
     // database nobody can reach from here.
-    const source = workflow ?? "";
     expect(source).toContain("supabase migration list --db-url");
     expect(source.indexOf("supabase migration list --db-url")).toBeLessThan(
       source.indexOf("supabase db push --db-url"),
@@ -617,7 +606,7 @@ describe("the migration step enforces its own rules", () => {
    * wrong way: CI validated with one CLI and production applied with another.
    */
   test("both workflows install the same Supabase CLI version", () => {
-    const ship = workflow ?? "";
+    const ship = source;
     expect(check, "check.yml not found").toBeTypeOf("string");
     const versionsIn = (source: string) =>
       [
@@ -647,7 +636,6 @@ describe("the deploy names the commit it shipped", () => {
    * back").
    */
   test("modal deploy is tagged with the resolved ref", () => {
-    const source = workflow ?? "";
     expect(source).toMatch(/modal deploy --tag "\$DEPLOY_TAG"/);
     // The SAME expression every checkout in this file resolves, so the tag
     // names the tree that was built rather than a branch pointer — the

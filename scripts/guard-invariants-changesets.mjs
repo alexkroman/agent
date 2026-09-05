@@ -284,7 +284,7 @@ export function checkChangesetConsumable(file, source, versionable) {
  * there is no delivery to strand. `docs` has its own path (`docs.yml` publishes
  * on a push to main, keyed to no version at all).
  */
-const SHIPS_VIA = [
+export const SHIPS_VIA = [
   {
     // The studio front-end's `dist/` is baked into the one Modal app's image,
     // and the deploy fires on a version bump to the server or the studio

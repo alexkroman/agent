@@ -154,6 +154,95 @@ export const byCodeUnit = (a: string, b: string): number => {
   return a < b ? -1 : 1;
 };
 
+/** A two-space-indented job key — the only nesting level a workflow's jobs sit at. */
+const JOB_KEY = /^ {2}([A-Za-z0-9_-]+):\s*$/;
+
+/**
+ * A workflow's jobs, read structurally.
+ *
+ * Three specs each invented their own slice over the same two files, and two of
+ * them were bounded by the NAME of whatever job happened to come next:
+ * `source.slice(source.indexOf("\n  release:\n"), source.indexOf("\n  guest-image:"))`.
+ * Insert a job between the two and the slice silently widens to cover it;
+ * rename the second and `indexOf` answers -1, so `slice(start, -1)` runs to the
+ * end of the file. Both were loud only by luck of which assertions sat there.
+ * The real boundary is "the next job key", which needs no name at all.
+ *
+ * {@link WorkflowJobs.body} THROWS on a job that is not in the file, which is
+ * the half worth having: `ship-workflow-gate.test.ts`'s `needsOf` used to fail
+ * open — a missing job collapsed the slice, the regex missed, and it answered
+ * `[]`, which satisfies every `not.toContain` the callers make of it. A
+ * hardcoded job roster asserting nothing is how the one edge guarding the
+ * release line from a `needs: version-pr` came to be checked over five names
+ * while the workflow grew others.
+ *
+ * Reading, not asserting: each spec still makes its own claims over the result.
+ */
+export interface WorkflowJobs {
+  /** Every job key, in declaration order. */
+  names: () => string[];
+  /** Everything above `jobs:` — the triggers and the concurrency block. */
+  header: () => string;
+  /** One job's body, from its key to the next job key (or end of file). */
+  body: (name: string) => string;
+  /** One four-space-indented scalar field of a job, if it declares one. */
+  field: (name: string, key: string) => string | undefined;
+  /** A job's `needs:`, bracketed or bare; `[]` when it declares none. */
+  needs: (name: string) => string[];
+}
+
+export const workflowJobs = (source: string, file: string): WorkflowJobs => {
+  const lines = source.split("\n");
+  const jobsAt = lines.indexOf("jobs:");
+  const requireJobs = (): number => {
+    if (jobsAt === -1) throw new Error(`${file} has no top-level \`jobs:\` block`);
+    return jobsAt;
+  };
+  const body = (name: string): string => {
+    const at = lines.indexOf(`  ${name}:`);
+    if (at === -1) throw new Error(`${file} has no job named ${name}`);
+    const rest = lines.slice(at + 1);
+    const next = rest.findIndex((line) => JOB_KEY.test(line));
+    return (next === -1 ? rest : rest.slice(0, next)).join("\n");
+  };
+  const field = (name: string, key: string): string | undefined =>
+    new RegExp(`^ {4}${key}:[ \\t]*(.+)$`, "m").exec(body(name))?.[1]?.trim();
+  return {
+    names: () =>
+      lines
+        .slice(requireJobs() + 1)
+        .map((line) => JOB_KEY.exec(line)?.[1])
+        .filter((name): name is string => name !== undefined),
+    header: () => lines.slice(0, requireJobs()).join("\n"),
+    body,
+    field,
+    needs: (name) => bracketList(field(name, "needs")),
+  };
+};
+
+/**
+ * A YAML source with its whole-line `#` comments removed.
+ *
+ * A scan of the raw file reads PROSE as an invocation: these workflows argue at
+ * length in comments about the very steps the specs assert over, so a
+ * `toContain` finds the explanation and passes over a step that is gone. It
+ * stood three times in three shapes — two using `trimStart()` and one `trim()`,
+ * which is the drift a copied helper produces even when every copy is correct.
+ */
+export const withoutYamlComments = (source: string): string =>
+  source
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+
+/** A `[a, b]` list — or a bare scalar — as its trimmed entries. */
+export const bracketList = (declared: string | undefined): string[] =>
+  (declared ?? "")
+    .replace(/[[\]]/g, "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
 /**
  * A numeric constant read out of a gate script's SOURCE, rather than restated.
  *

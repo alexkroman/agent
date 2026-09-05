@@ -416,19 +416,39 @@ describe("guard-invariants gate", () => {
     }
   });
 
-  test("rule 16's hand-kept path list names files that exist", () => {
-    // Rule 16 is the one rule scoped to an explicit file list rather than to a
-    // directory pathspec, because "declares the SESSION's callback surface" is
-    // not derivable from a path — `transports/types.ts` does and its neighbour
-    // `transports/pipeline-llm-stream.ts` does not. The price of that is a list
-    // that a rename empties silently: a `git grep` pathspec matching nothing
-    // reports `now=0 ✓`, which reads exactly like the rule being upheld.
-    const rule16 = shippedLineRules.find((r) => r.id === 16);
-    expect(rule16, "rule 16 is not in LINE_RULES").toBeTypeOf("object");
-    expect(rule16?.paths.length, "rule 16 scans nothing").toBeGreaterThanOrEqual(10);
+  test("every hand-kept path list names files that exist", () => {
+    // Some rules are scoped to an explicit file list rather than to a directory
+    // pathspec, because what they scan is not derivable from a path — rule 16's
+    // "declares the SESSION's callback surface" holds for `transports/types.ts`
+    // and not for its neighbour `transports/pipeline-llm-stream.ts`. The price
+    // of that is a list a rename empties silently: a `git grep` pathspec
+    // matching nothing reports `now=0 ✓`, which reads exactly like the rule
+    // being upheld.
+    //
+    // DERIVED over every rule rather than looked up by id. This stood as
+    // `shippedLineRules.find((r) => r.id === 16)` while rules 24 and 25 grew
+    // literal lists of their own (`TOOL_CONTEXT_PATHS`, `CHANNEL_MESSAGE_PATHS`)
+    // that nothing checked — the two BUDGET rules on `ToolContext` and
+    // `ChannelMessage`, whose whole job is to make growth cost something, and
+    // either would have gone to `0 ✓` forever on a rename.
+    // `guard-invariants-scopes.mjs` asserts as fact at both declarations that
+    // this spec covers them; for rule 24 that sentence was false.
+    const literal = shippedRules.flatMap((rule) =>
+      rule.paths
+        .filter((path) => !path.includes("*") && !path.startsWith(":!") && path.endsWith(".ts"))
+        .map((path) => ({ id: rule.id, path })),
+    );
+    // The floor is over the DERIVATION, not over one rule: a filter that stopped
+    // recognising literal paths would otherwise assert nothing over an empty
+    // list, which is the failure this whole test is about.
+    expect(literal.length, "no literal rule paths discovered").toBeGreaterThanOrEqual(14);
+    expect(
+      new Set(literal.map(({ id }) => id)).size,
+      "fewer rules carry a literal path list than when this floor was written",
+    ).toBeGreaterThanOrEqual(3);
     expect(repoFiles.size, "no package sources discovered").toBeGreaterThan(100);
-    for (const path of rule16?.paths ?? []) {
-      expect(repoFiles, `rule 16 scans "${path}", which does not exist`).toContain(path);
+    for (const { id, path } of literal) {
+      expect(repoFiles, `rule ${id} scans "${path}", which does not exist`).toContain(path);
     }
   });
 

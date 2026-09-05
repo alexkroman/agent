@@ -265,6 +265,13 @@ describe("the baseline against an independent parse", () => {
     // file exceeds its budget" is vacuously true of no files.
     expect(declaredMarkdown().length, "MARKDOWN_FILES parsed to nothing").toBeGreaterThanOrEqual(8);
     expect(corpus.length, "no declared markdown document was readable").toBeGreaterThanOrEqual(8);
+    // The intersection is TOTAL, and asserting so is the half the floor above
+    // cannot cover. `corpus` is `MARKDOWN_FILES` filtered by what this file's
+    // five literal globs happen to reach, so a document the gate declares and
+    // this spec cannot read used to drop out silently — leaving the floor
+    // satisfied by the others and that document's budget checked by nothing.
+    // Naming it fails by NAME instead, which is what the header promises.
+    expect(corpus.map(({ file }) => file)).toEqual(declaredMarkdown());
   });
 
   test("the parser recognises no-check fences, and only those", () => {

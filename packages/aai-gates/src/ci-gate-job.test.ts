@@ -34,7 +34,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, repoPathOf, sole } from "./_gate-support.ts";
+import { bracketList, byCodeUnit, repoPathOf, sole, workflowJobs } from "./_gate-support.ts";
 
 const workflow = sole(
   import.meta.glob("../../../.github/workflows/check.yml", {
@@ -56,36 +56,18 @@ const manifests: Record<string, string> = import.meta.glob("../../*/package.json
   eager: true,
 });
 
-/** Split once — a dozen readers below walk the same file. */
-const lines: string[] = (workflow ?? "").split("\n");
-
-/** Where the `jobs:` block starts; everything above it is the trigger header. */
-const jobsAt = lines.indexOf("jobs:");
-
-/** A job KEY: a two-space-indented name with nothing after the colon. */
-const JOB_KEY = /^ {2}([A-Za-z0-9_-]+):\s*$/;
-
-/** A `[a, b, c]` flow sequence as its entries — `needs:` and `branches:` both. */
-const bracketList = (inside: string | undefined): string[] =>
-  (inside ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-/** Every job key. */
-function jobNames(): string[] {
-  if (jobsAt === -1) throw new Error("check.yml has no top-level `jobs:` block");
-  return lines
-    .slice(jobsAt + 1)
-    .map((line) => JOB_KEY.exec(line)?.[1])
-    .filter((name): name is string => name !== undefined);
-}
-
-/** Everything above `jobs:` — the triggers and the concurrency block. */
-function header(): string {
-  if (jobsAt === -1) throw new Error("check.yml has no top-level `jobs:` block");
-  return lines.slice(0, jobsAt).join("\n");
-}
+/**
+ * The jobs, read structurally and SHARED.
+ *
+ * This file's readers were the sound ones — bounded by the next job key,
+ * throwing on a job the workflow does not declare — while the two `ship.yml`
+ * specs each sliced by the name of whatever job came next. They are one reader
+ * now, in `_gate-support.ts`, which is where a shared SOURCE reading belongs;
+ * the assertions below are still this spec's own.
+ */
+const jobs = workflowJobs(workflow ?? "", "check.yml");
+const { header, names: jobNames } = jobs;
+const jobBody = jobs.body;
 
 /** The `branches: [...]` list belonging to the `push:` trigger. */
 function pushBranches(): string[] {
@@ -95,20 +77,17 @@ function pushBranches(): string[] {
   return bracketList(found[1]);
 }
 
-/** The body of one job, from its key to the next job key (or end of file). */
-function jobBody(name: string): string {
-  const at = lines.indexOf(`  ${name}:`);
-  if (at === -1) throw new Error(`check.yml has no job named ${name}`);
-  const rest = lines.slice(at + 1);
-  const next = rest.findIndex((line) => JOB_KEY.test(line));
-  return (next === -1 ? rest : rest.slice(0, next)).join("\n");
-}
-
-/** The `needs: [...]` list of a job, in declaration order. */
+/**
+ * The `needs:` list of a job, in declaration order.
+ *
+ * Still THROWS on a job that declares none — this spec only ever asks it of
+ * jobs whose whole point is an ordering edge, so an empty answer there would be
+ * the vacuous pass rather than a fact about the file.
+ */
 function needsOf(name: string): string[] {
-  const found = /^\s*needs:\s*\[([^\]]*)\]/m.exec(jobBody(name));
-  if (found === null) throw new Error(`the ${name} job declares no bracketed \`needs:\``);
-  return bracketList(found[1]);
+  const declared = jobs.needs(name);
+  if (declared.length === 0) throw new Error(`the ${name} job declares no \`needs:\``);
+  return declared;
 }
 
 describe("the ci gate job", () => {
@@ -268,8 +247,7 @@ describe("the Postgres image pull", () => {
   });
 
   test("it retries more than once, with a growing delay", () => {
-    const body = pgStep;
-    const loop = /for attempt in ([^\n]+); do/.exec(body);
+    const loop = /for attempt in ([^\n]+); do/.exec(pgStep);
     expect(loop, "the pull is not wrapped in an attempt loop").not.toBeNull();
     const attempts = (loop?.[1] ?? "").trim().split(/\s+/).filter(Boolean);
     expect(
@@ -278,18 +256,17 @@ describe("the Postgres image pull", () => {
     ).toBeGreaterThan(1);
     // Backoff, not a fixed delay: the quota is per unit TIME, so equal short
     // waits spend the same exhausted budget again.
-    expect(body, "the delay no longer grows between attempts").toMatch(
+    expect(pgStep, "the delay no longer grows between attempts").toMatch(
       /delay=\$\(\(delay \* \d+\)\)/,
     );
   });
 
   test("a non-transient failure is NOT retried", () => {
-    const body = pgStep;
     // A wrong tag must stay fast and loud. Blanket retries would spend the whole
     // backoff in front of an error nobody reads — the same argument as the
     // extension check in that step.
-    expect(body, "the retry no longer classifies the failure text").toContain("toomanyrequests");
-    expect(body, "a non-transient pull failure is retried instead of failing fast").toMatch(
+    expect(pgStep, "the retry no longer classifies the failure text").toContain("toomanyrequests");
+    expect(pgStep, "a non-transient pull failure is retried instead of failing fast").toMatch(
       /NON-transient|not retrying/,
     );
   });
