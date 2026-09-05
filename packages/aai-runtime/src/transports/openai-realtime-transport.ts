@@ -2,8 +2,8 @@
 // OpenAI Realtime API transport — implements Transport.
 
 import type { ToolChoice } from "@alexkroman1/aai";
-import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "@alexkroman1/aai/host-internal";
-import { toArgsRecord } from "@alexkroman1/aai/internal";
+import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE } from "@alexkroman1/aai/host-internal";
+import { toArgsRecord, WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 import type { OpenAIS2sOptions } from "@alexkroman1/aai/s2s";

@@ -11,7 +11,8 @@
  * whose whole job is a socket that must never outlive its owner.
  */
 
-import { DEFAULT_SESSION_START_TIMEOUT_MS, WS_OPEN } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type WebSocket from "ws";
 import { connectOrThrow, waitForOpen } from "./_utils.ts";

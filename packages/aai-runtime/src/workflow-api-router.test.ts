@@ -23,7 +23,7 @@
  */
 
 import type http from "node:http";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import { createWorkflowApi } from "./workflow-api.ts";

@@ -402,12 +402,6 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public
-export const APP_DB_POOL_MAX = 3;
-
-// @public
-export const APP_DB_PRESENCE_LOCK = 1;
-
 // @internal
 export function asDispatcher(agent: Agent): FetchDispatcher;
 
@@ -723,9 +717,6 @@ export function buildSystemPrompt(config: AgentConfig, options: {
     toolGuidance?: readonly string[] | undefined;
 }): string;
 
-// @internal
-export function builtinFetch(env?: NodeJS.ProcessEnv): typeof globalThis.fetch;
-
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
@@ -748,28 +739,11 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
-// @internal
-export const CLIENT_AUDIO_LEAD_MS = 1500;
-
-// @internal
-interface CoalescingRunner<T> {
-    trigger(): Promise<T>;
-}
-
 // @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
 // @internal
-export function createCoalescingRunner<T>(run: () => Promise<T> | T): CoalescingRunner<T>;
-
-// @internal
 export function createDetachedSlotStore(): SlotStore;
-
-// @internal
-export function createEpoch(): Epoch;
-
-// @internal
-export function createOwnedMap<K, V>(): OwnedMap<K, V>;
 
 // @public
 export function createSttError(code: SttError["code"], message: string): SttError;
@@ -805,14 +779,8 @@ export const DEFAULT_DEAD_AIR_COVER_MS = 5000;
 // @internal
 export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
 
-// @public
-export const DEFAULT_FFMPEG_TIMEOUT_MS: number;
-
 // @internal
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
-
-// @public
-export const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES: number;
 
 // @internal
 export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
@@ -862,11 +830,6 @@ interface DelegateResult {
     toolCalls: readonly SubagentToolCall[];
 }
 
-// @internal
-type DnsLookup = (hostname: string) => Promise<{
-    address: string;
-}>;
-
 // @public
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
 
@@ -885,13 +848,6 @@ interface ElevenLabsSttOptions extends ProviderCredentialOptions {
 // @public (undocumented)
 export const EMPTY_PARAMS: z.ZodObject<{}, z.core.$strip>;
 
-// @internal (undocumented)
-export interface Epoch {
-    bump(): void;
-    current(): number;
-    isCurrent(epoch: number): boolean;
-}
-
 // @public
 export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], options?: ExecuteToolOptions) => Promise<string>;
 
@@ -909,34 +865,9 @@ type FetchDispatcher = RequestInit extends {
 } ? NonNullable<D> : never;
 
 // @public
-export const FFMPEG_PATH_ENV = "AAI_FFMPEG_PATH";
-
-// @public
-export const FFMPEG_STDERR_TAIL_CHARS = 4000;
-
-// @public (undocumented)
-type FfmpegRunOptions = {
-    binary?: string;
-    cwd?: string;
-    stdin?: Uint8Array;
-    signal?: AbortSignal;
-    timeoutMs?: number;
-    maxOutputBytes?: number;
-};
-
-// @public
-export function ffmpegVersion(options?: FfmpegRunOptions): Promise<string | undefined>;
-
-// @public
-export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
-
-// @public
 type FindOptions = {
     limit?: number;
 };
-
-// @public
-export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
 
 // @internal
 export function freezeStorable<T>(value: T, path: string): T;
@@ -1003,9 +934,6 @@ export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
 // @public (undocumented)
 export const GROQ_KIND: "groq";
 
-// @internal
-export const HEARD_AUDIO_LAG_MS = 150;
-
 // @public
 export type HostCredentialEnv = Record<string, string> & {
     readonly [hostCredentialsMarker]: true;
@@ -1019,9 +947,6 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 
 // @public
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
-
-// @internal (undocumented)
-export function isPrivateIp(ip: string): boolean;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -1054,9 +979,6 @@ export const MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE = 2;
 
 // @internal
 export const MAX_PROVIDER_WS_BUFFERED_BYTES: number;
-
-// @internal
-export const MAX_SESSION_EVENTS = 10000;
 
 // @internal
 export const MAX_SESSION_STATE_BYTES = 1048576;
@@ -1109,34 +1031,6 @@ export type OpenUpload = {
     read(start: number, end: number): Promise<Uint8Array>;
 };
 
-// @internal (undocumented)
-export interface OwnedMap<K, V> {
-    claim(key: K, value: V): () => boolean;
-    // (undocumented)
-    clear(): void;
-    delete(key: K): boolean;
-    // (undocumented)
-    get(key: K): V | undefined;
-    // (undocumented)
-    has(key: K): boolean;
-    // (undocumented)
-    keys(): IterableIterator<K>;
-    owns(key: K, value: V): boolean;
-    // (undocumented)
-    readonly size: number;
-    // (undocumented)
-    values(): IterableIterator<V>;
-}
-
-// @internal
-export const PACER_BURST_MS = 100;
-
-// @internal
-export function parseWsUpgradeParams(rawUrl: string): {
-    resumeFrom?: string;
-    skipGreeting: boolean;
-};
-
 // @internal
 export const pinnedFetch: typeof globalThis.fetch;
 
@@ -1147,12 +1041,6 @@ export type PinnedRequestInit = RequestInit & {
 
 // @internal
 export const PIPELINE_FLUSH_TIMEOUT_MS = 10000;
-
-// @internal
-export const PIPELINE_PLAYBACK_GRACE_MS = 750;
-
-// @internal
-export const PLAYBACK_FILL_MS = 200;
 
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
@@ -1208,20 +1096,8 @@ export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void
 // @internal
 export function publishUploadReader(reader: UploadAccess | undefined): void;
 
-// @internal
-export function rejectingWorkflows(message: string): WorkflowClient;
-
-// @internal
-export function requestPath(rawUrl: string | undefined): string;
-
-// @internal
-export function requestQuery(rawUrl: string | undefined): URLSearchParams;
-
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
-
-// @internal
-export function resolveAndAssertPublic(url: string, lookupFn?: DnsLookup): Promise<string | null>;
 
 // @public
 export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
@@ -1245,11 +1121,6 @@ export function resolveAssemblyAITtsSettings(options: AssemblyAITtsOptions): {
     voice: string;
     language?: string;
 };
-
-// @internal
-export function resolveBuiltin(name: string, options?: BuiltinToolOptions): (ToolDef & {
-    guidance?: string;
-}) | undefined;
 
 // @public
 export function resolveCartesiaTtsSettings(options: CartesiaTtsOptions): {
@@ -1331,12 +1202,6 @@ export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string>;
 export function serializeToolFailure(message: string): string;
 
 // @internal
-export const SESSION_EVENT_FLUSH_THRESHOLD = 32;
-
-// @internal
-export const SESSION_EVENT_READ_LIMIT = 500;
-
-// @internal
 export const SESSION_KEEPALIVE_INTERVAL_MS = 15000;
 
 // @internal
@@ -1345,18 +1210,9 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
 
-// @internal
-export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
-
 // @public
 type SleepOptions = {
     correlationId?: string;
-};
-
-// @internal
-type SleepTimerOptions = {
-    signal?: AbortSignal;
-    unref?: boolean;
 };
 
 // @public
@@ -1376,9 +1232,6 @@ interface SonioxSttOptions extends ProviderCredentialOptions {
     languages?: readonly string[];
     model?: string;
 }
-
-// @internal
-export const SPEECH_UNAVAILABLE_MESSAGE: string;
 
 // @internal
 export type SpeechSynthesizer = (request: {
@@ -1701,9 +1554,6 @@ export const UPLOAD_PART_BYTES: number;
 export const UPLOAD_TOKEN_RE: RegExp;
 
 // @internal
-export const UPLOAD_WRITES_UNAVAILABLE_MESSAGE: string;
-
-// @internal
 export type UploadAccess = UploadReader & Partial<UploadWriter>;
 
 // @public
@@ -1835,9 +1685,6 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
     status: "cancelled";
 });
 
-// @internal
-export const WORKFLOWS_UNAVAILABLE_MESSAGE: string;
-
 // @public
 type WorkflowSummary = {
     name: string;
@@ -1849,9 +1696,6 @@ type WorkflowSummary = {
 
 // @internal
 export const WS_NORMAL_CLOSURE = 1000;
-
-// @internal (undocumented)
-export const WS_OPEN = 1;
 
 // @public
 export const XAI_API_KEY_ENV = "XAI_API_KEY";
@@ -2949,12 +2793,6 @@ type AnyWorkflowDef<R = unknown> = {
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
-
-// @public
-export const APP_DB_POOL_MAX = 3;
-
-// @public
-export const APP_DB_PRESENCE_LOCK = 1;
 
 // @internal
 export function capToolResult(result: string): string;
@@ -7422,7 +7260,7 @@ import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
+import type { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import { StepFetch } from '@alexkroman1/aai/host-internal';
 import type { SttOpener } from '@alexkroman1/aai/host-internal';
@@ -8969,7 +8807,7 @@ import type { GenerateResult } from '@alexkroman1/aai';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import type { OwnedMap } from '@alexkroman1/aai/host-internal';
+import { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
@@ -9073,27 +8911,7 @@ export function createUploadStore(options: {
 }): UploadStore;
 
 // @internal
-export function decodeStorageJson(text: string): unknown;
-
-// @internal
 export const EGRESS_KEEP_ALIVE_MS = 30000;
-
-// @internal
-export function encodeStorageJson(value: unknown): string;
-
-// @public
-type EnqueueBody = {
-    queueName: string;
-    runId: string;
-    data: string;
-    deploymentId?: string | undefined;
-    idempotencyKey?: string | undefined;
-    headers?: Record<string, string> | undefined;
-    delaySeconds?: number | undefined;
-};
-
-// @internal
-export function enqueueToPlatform(options: PlatformQueueOptions, body: EnqueueBody): Promise<string>;
 
 // @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
@@ -9232,9 +9050,6 @@ export function parsePlatformFrame<T>(schema: z.ZodType<T>, text: string): T | u
 export function parseTraceparent(header: string | null | undefined): TraceParent | undefined;
 
 // @internal
-export function payloadRunId(message: unknown): string | undefined;
-
-// @internal
 export const PLATFORM_ROUTES: {
     readonly sessionState: "/session-state";
     readonly uploadRecords: "/upload-records";
@@ -9308,9 +9123,6 @@ export function platformSocketUrl(base: string): string;
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
 
-// @internal
-export function platformUrl(base: string, route: PlatformRoute, segment?: string): string;
-
 export { publishStepEnv }
 
 // @internal
@@ -9326,9 +9138,6 @@ type ResumableRun = {
     runId: string;
     wakeAt?: number | undefined;
 };
-
-// @internal
-export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
 
 // @public
 type RunRecord = {

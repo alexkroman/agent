@@ -17,11 +17,11 @@
 import type { GenerateOptions, GenerateResult } from "@alexkroman1/aai";
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import {
-  formatSchemaIssues,
   isConvertibleSchema,
   normalizeLlm,
   toToolJsonSchema,
 } from "@alexkroman1/aai/host-internal";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { generateText, jsonSchema, type LanguageModel, Output } from "ai";

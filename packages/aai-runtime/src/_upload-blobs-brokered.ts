@@ -47,8 +47,8 @@
  * {@link isTransient} for what is an answer rather than a hiccup.
  */
 
-import { RETRYABLE_STATUS, sleep } from "@alexkroman1/aai/host-internal";
-import { jitteredBackoff } from "@alexkroman1/aai/internal";
+import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
+import { jitteredBackoff, sleep } from "@alexkroman1/aai/internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { blobFetch } from "./_egress-fetch.ts";

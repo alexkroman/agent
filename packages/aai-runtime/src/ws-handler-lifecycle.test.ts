@@ -4,7 +4,8 @@
 // paths, and session-ID resumption. Startup/CONFIG/frame-routing specs live
 // in ws-handler.test.ts.
 
-import { createOwnedMap, DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";

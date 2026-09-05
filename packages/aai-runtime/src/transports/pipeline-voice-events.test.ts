@@ -6,11 +6,8 @@
 // pipeline-transport-barge-in.test.ts; shared helpers in
 // _pipeline-transport-harness.ts.
 
-import {
-  DEAD_AIR_OPENING_PHRASE,
-  DEFAULT_DEAD_AIR_COVER_MS,
-  sleep,
-} from "@alexkroman1/aai/host-internal";
+import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
+import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
 import {

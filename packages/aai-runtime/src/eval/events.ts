@@ -37,7 +37,8 @@
  * @module
  */
 
-import { formatSchemaIssues, type StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 

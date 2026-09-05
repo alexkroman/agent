@@ -5,15 +5,14 @@
  * Audio validation is handled at the host transport layer (see server.ts).
  */
 
-import type { OwnedMap } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_SESSION_START_TIMEOUT_MS,
   LOG_PREVIEW_CHARS,
   MAX_MESSAGE_BUFFER_SIZE,
   MAX_WS_PAYLOAD_BYTES,
   SESSION_KEEPALIVE_INTERVAL_MS,
-  WS_OPEN,
 } from "@alexkroman1/aai/host-internal";
+import { type OwnedMap, WS_OPEN } from "@alexkroman1/aai/internal";
 import {
   type ClientSink,
   lenientParse,

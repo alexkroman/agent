@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { requestPath } from "@alexkroman1/aai/host-internal";
+import { requestPath } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";

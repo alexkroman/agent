@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentDef, ToolContext, ToolDef } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { createDetachedSlotStore, rejectingWorkflows } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
+import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
+import { type Db, rejectingWorkflows } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
@@ -51,7 +51,7 @@ export function tick(): Promise<void> {
  * one `sleep`, and being spelled here is what let `vi.useFakeTimers()` drive it
  * — a property the shared one now owns and asserts. See `sdk/sleep.ts`.
  */
-export { sleep } from "@alexkroman1/aai/host-internal";
+export { sleep } from "@alexkroman1/aai/internal";
 
 /**
  * Settle `promise`, or fail with a sentence naming what never happened.

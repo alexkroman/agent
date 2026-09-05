@@ -13,8 +13,7 @@
  */
 
 import type http from "node:http";
-import { requestQuery } from "@alexkroman1/aai/host-internal";
-import { clampWorkflowWait } from "@alexkroman1/aai/internal";
+import { clampWorkflowWait, requestQuery } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import { isWorkflowRequestError } from "./_workflow-request-error.ts";

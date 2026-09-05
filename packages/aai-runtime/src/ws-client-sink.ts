@@ -4,7 +4,8 @@
 // each goes out. Split out of `ws-handler.ts`, which owns the socket
 // lifecycle (handshake, keepalive, resume, teardown).
 
-import { MAX_CLIENT_WS_BUFFERED_BYTES, WS_OPEN } from "@alexkroman1/aai/host-internal";
+import { MAX_CLIENT_WS_BUFFERED_BYTES } from "@alexkroman1/aai/host-internal";
+import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { createAudioPacer } from "./audio-pacer.ts";

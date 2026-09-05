@@ -1,10 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { SESSION_EVENT_READ_LIMIT } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeMockCore } from "./_test-utils.ts";
 import { attachSessionStream, readAllEvents } from "./runtime-session-stream.ts";
-import { createSessionEventStream } from "./session-event-stream.ts";
+import { createSessionEventStream, SESSION_EVENT_READ_LIMIT } from "./session-event-stream.ts";
 import { createMemoryStateBackend } from "./session-state-store.ts";
 
 const SID = "s-1";

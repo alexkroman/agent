@@ -12,7 +12,8 @@
 
 import type { ToolContext } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { createDetachedSlotStore, rejectingWorkflows } from "@alexkroman1/aai/host-internal";
+import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
+import { rejectingWorkflows } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { vi } from "vitest";
 

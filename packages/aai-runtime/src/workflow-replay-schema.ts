@@ -81,7 +81,8 @@
  * @module
  */
 
-import { formatSchemaIssues, type StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { CodeChange } from "./workflow-code-version.ts";

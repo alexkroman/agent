@@ -8,12 +8,13 @@
  */
 
 import type { AgentDef, StateProjection, ToolDef } from "@alexkroman1/aai";
-import type { AgentEnv, OwnedMap, ProviderEnv } from "@alexkroman1/aai/host-internal";
+import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
   clientEventDropMessage,
   DEFAULT_BUILTIN_TOOLS,
   decideClientEvent,
+  type OwnedMap,
 } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";

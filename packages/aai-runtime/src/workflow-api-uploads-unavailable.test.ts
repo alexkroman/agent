@@ -18,7 +18,8 @@
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { RETRYABLE_STATUS, rejectingWorkflows, requestPath } from "@alexkroman1/aai/host-internal";
+import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
+import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
 import { createWorkflowApi } from "./workflow-api.ts";

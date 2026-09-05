@@ -134,7 +134,6 @@ export {
   PLATFORM_SOCKET_PATH,
   type PlatformEndpoint,
   type PlatformRoute,
-  platformUrl,
 } from "./platform-endpoint.ts";
 // The guest's own socket CLIENT. Its importer is `aai-server`'s
 // `platform-socket.scenario.test.ts`, which drives the real client against the
@@ -169,7 +168,6 @@ export { agentServerEnv } from "./server-env.ts";
 // `WORKFLOW_FLOW_PATH` below was already exported for exactly that purpose. See
 // `server-routes.ts` for why there are two tables and not one.
 export {
-  routeMatches,
   SERVER_ROUTES,
   type ServerRoute,
   type ServerRouteMatch,
@@ -260,14 +258,8 @@ export {
   workflowJournalDdl,
 } from "./workflow-journal-schema.ts";
 // Asking the PLATFORM to queue a message for one of this guest's own runs.
-// `aai-server`'s enqueue handler is the other end, and `payloadRunId` is what it
-// reads a run id out of a body with.
-export {
-  createPlatformQueueSend,
-  enqueueToPlatform,
-  type PlatformQueueOptions,
-  payloadRunId,
-} from "./workflow-platform-queue.ts";
+// `aai-server`'s enqueue handler is the other end.
+export { createPlatformQueueSend, type PlatformQueueOptions } from "./workflow-platform-queue.ts";
 // The CLASSIFIER over the queue-name grammar. It began as the DevKit's
 // (`parseQueueName` in `@workflow/world`) and is ours now. It is a declared
 // dependency of THIS package and not of `aai-server`, so a second spelling on
@@ -295,7 +287,6 @@ export { queueNameKind, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts
 // in order to publish a minter over it. What it fills is the step slot a workflow
 // BODY reads through `stepWebhookUrl`.
 export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow-serve.ts";
-export { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 // Standing an upload store up. The store TYPE, the two blob implementations and
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.

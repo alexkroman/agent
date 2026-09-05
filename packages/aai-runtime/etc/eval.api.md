@@ -14,7 +14,7 @@ import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
+import type { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import { StepFetch } from '@alexkroman1/aai/host-internal';
 import type { SttOpener } from '@alexkroman1/aai/host-internal';

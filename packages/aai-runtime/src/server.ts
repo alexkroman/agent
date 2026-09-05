@@ -14,13 +14,8 @@ import type { AgentServer, RuntimeServerOptions } from "./server-types.ts";
  */
 
 import http from "node:http";
-import {
-  AGENT_CSP,
-  MAX_WS_PAYLOAD_BYTES,
-  parseWsUpgradeParams,
-  requestPath,
-  requestQuery,
-} from "@alexkroman1/aai/host-internal";
+import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "@alexkroman1/aai/host-internal";
+import { parseWsUpgradeParams, requestPath, requestQuery } from "@alexkroman1/aai/internal";
 import { buildClientConfig } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import escapeHtml from "escape-html";

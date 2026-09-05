@@ -16,12 +16,6 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public
-export const APP_DB_POOL_MAX = 3;
-
-// @public
-export const APP_DB_PRESENCE_LOCK = 1;
-
 // @internal
 export function capToolResult(result: string): string;
 

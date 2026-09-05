@@ -23,12 +23,14 @@ import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-inte
 import {
   createDetachedSlotStore,
   EMPTY_PARAMS,
+  serializeToolFailure,
+} from "@alexkroman1/aai/host-internal";
+import {
   formatSchemaIssues,
   rejectingWorkflows,
-  serializeToolFailure,
+  TOOL_EXECUTION_TIMEOUT_MS,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
-} from "@alexkroman1/aai/host-internal";
-import { TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
+} from "@alexkroman1/aai/internal";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import pTimeout from "p-timeout";

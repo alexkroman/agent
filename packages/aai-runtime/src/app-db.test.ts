@@ -8,9 +8,8 @@
  * pools rather than of callers.
  */
 
-import { APP_DB_POOL_MAX } from "@alexkroman1/aai/host-internal";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { openAppDb } from "./app-db.ts";
+import { APP_DB_POOL_MAX, openAppDb } from "./app-db.ts";
 
 const close = vi.fn(() => Promise.resolve());
 const query = vi.fn(() => Promise.resolve([]));

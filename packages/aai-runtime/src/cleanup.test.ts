@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/host-internal";
+import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";

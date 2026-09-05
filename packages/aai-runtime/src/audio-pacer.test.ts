@@ -14,7 +14,7 @@ import {
   PACER_BURST_MS,
   PIPELINE_PLAYBACK_GRACE_MS,
   PLAYBACK_FILL_MS,
-} from "@alexkroman1/aai/host-internal";
+} from "@alexkroman1/aai/internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAudioPacer, UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 

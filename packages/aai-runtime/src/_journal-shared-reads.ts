@@ -44,7 +44,7 @@
  * @internal
  */
 
-import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/host-internal";
+import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/internal";
 
 /** One key's shared read, and the callers still holding it. */
 type Entry<T> = {

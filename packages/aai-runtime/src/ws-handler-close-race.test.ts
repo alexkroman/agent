@@ -2,7 +2,7 @@
 // Races between the WebSocket closing and session.start() settling.
 // (Lives outside ws-handler.test.ts, which is at its file-length ceiling.)
 
-import { createOwnedMap } from "@alexkroman1/aai/host-internal";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeMockCore, silentLogger, tick } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";

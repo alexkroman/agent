@@ -40,7 +40,8 @@
  * — see `resolve`.
  */
 
-import { formatSchemaIssues, toToolJsonSchema } from "@alexkroman1/aai/host-internal";
+import { toToolJsonSchema } from "@alexkroman1/aai/host-internal";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type {

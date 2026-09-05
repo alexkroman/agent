@@ -1,10 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { MAX_SESSION_EVENTS, SESSION_EVENT_FLUSH_THRESHOLD } from "@alexkroman1/aai/host-internal";
 import { EVENT_ID_PREFIX, SessionEventSchema } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
-import { createSessionEventStream, stampSessionEvent } from "./session-event-stream.ts";
+import {
+  createSessionEventStream,
+  MAX_SESSION_EVENTS,
+  SESSION_EVENT_FLUSH_THRESHOLD,
+  stampSessionEvent,
+} from "./session-event-stream.ts";
 import {
   createMemoryStateBackend,
   type SessionStateBackend,

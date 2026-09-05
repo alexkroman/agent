@@ -23,8 +23,8 @@ import {
   type TtsOpener,
   type TtsOpenOptions,
   type TtsSession,
-  WS_OPEN,
 } from "@alexkroman1/aai/host-internal";
+import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { RimeTtsOptions } from "@alexkroman1/aai/tts";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";

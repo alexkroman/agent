@@ -55,11 +55,6 @@
  * `fatal: false` already encodes for turn-level errors.
  */
 
-import {
-  MAX_SESSION_EVENTS,
-  SESSION_EVENT_FLUSH_THRESHOLD,
-  SESSION_EVENT_READ_LIMIT,
-} from "@alexkroman1/aai/host-internal";
 import { invariant } from "@alexkroman1/aai/internal";
 import {
   EVENT_ID_PREFIX,
@@ -72,6 +67,36 @@ import { monotonicFactory } from "ulid";
 import { getOrCreate } from "./_get-or-create.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
+
+/**
+ * Cap on how many events one session RETAINS.
+ *
+ * Sized off the shape of a real call rather than picked: a tool-heavy turn emits
+ * on the order of ten control events, so 10,000 covers a session of ~1,000 turns
+ * — far past any voice call — while still bounding a runaway emitter in the
+ * tenant's own schema, which `appDatabaseUsage` shows an author as their own
+ * usage.
+ *
+ * Exceeding it costs RETENTION, not correctness: the live session keeps emitting
+ * to its client, and what stops is the durable append (reported once). The same
+ * posture as the SDK's `MAX_SESSION_STATE_BYTES`.
+ */
+export const MAX_SESSION_EVENTS = 10_000;
+
+/**
+ * How many pending events force a flush before a turn boundary does.
+ *
+ * The batch exists because a per-event round trip is unaffordable inside a turn
+ * with a ~1.0s time-to-first-token budget; this bounds how much a crash can cost
+ * when a turn runs long (a 10-step tool chain emits well past this).
+ */
+export const SESSION_EVENT_FLUSH_THRESHOLD = 32;
+
+/**
+ * Events per read of the session event stream — the page size a reader gets, and
+ * what bounds one response's memory.
+ */
+export const SESSION_EVENT_READ_LIMIT = 500;
 
 /**
  * `monotonicFactory` rather than `ulid()`: events fire in bursts well inside one

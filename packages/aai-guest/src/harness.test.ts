@@ -6,7 +6,7 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { WS_OPEN } from "@alexkroman1/aai/host-internal";
+import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionWebSocket } from "@alexkroman1/aai-runtime";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { type FakeHostChannel, installFakeHostChannel } from "./_test-utils.ts";

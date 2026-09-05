@@ -38,7 +38,7 @@
  * from this file that nothing survives a restart.
  */
 
-import { sleep } from "@alexkroman1/aai/host-internal";
+import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
 import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";

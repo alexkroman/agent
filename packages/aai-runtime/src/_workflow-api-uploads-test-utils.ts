@@ -14,7 +14,7 @@
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/host-internal";
+import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { silentLogger } from "./_test-utils.ts";

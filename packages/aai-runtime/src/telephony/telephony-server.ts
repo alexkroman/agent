@@ -28,8 +28,7 @@
 import type http from "node:http";
 import type { Duplex } from "node:stream";
 import type { TelephonyAccess } from "@alexkroman1/aai";
-import { requestPath, requestQuery } from "@alexkroman1/aai/host-internal";
-import { TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
+import { requestPath, requestQuery, TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
 import type { WebSocketServer } from "ws";
 import type { Logger } from "../runtime-config.ts";
 import type { SessionRuntime } from "../server.ts";

@@ -50,7 +50,7 @@
  */
 
 import { sessionSlot, tool } from "@alexkroman1/aai";
-import { sleep } from "@alexkroman1/aai/host-internal";
+import { sleep } from "@alexkroman1/aai/internal";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";

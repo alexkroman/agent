@@ -34,7 +34,7 @@
  *   `reply_done` arriving after it would contradict the event the client
  *   already acted on.
  */
-import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS } from "@alexkroman1/aai/host-internal";
+import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS } from "@alexkroman1/aai/internal";
 
 /** PCM16 — the wire format for client audio in both directions. */
 const BYTES_PER_SAMPLE = 2;

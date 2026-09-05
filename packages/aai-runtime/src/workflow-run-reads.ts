@@ -72,7 +72,7 @@
  * takes the same remedy: a `Symbol.for` slot on `globalThis`.
  */
 
-import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/host-internal";
+import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { getOrCreate } from "./_get-or-create.ts";

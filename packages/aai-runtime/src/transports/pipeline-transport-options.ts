@@ -12,7 +12,6 @@ import {
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
-  HEARD_AUDIO_LAG_MS,
 } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_ERROR_PHRASE,
@@ -21,6 +20,7 @@ import {
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_START_FAILURE_PHRASE,
   DEFAULT_TOOL_CHOICE,
+  HEARD_AUDIO_LAG_MS,
 } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { LanguageModel } from "ai";
