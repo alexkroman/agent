@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import { styleText } from "node:util";
+import { startTracing } from "@alexkroman1/aai-runtime/tracing";
 import { type CommandResult, ok } from "./_output.ts";
 import { fmtUrl, log, notify, parsePort } from "./_ui.ts";
 import { errorDetail } from "./_utils.ts";
@@ -46,7 +47,18 @@ export async function executeDev(opts: {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
-  cleanup = await startDevServer({ cwd: opts.cwd, port, watch: opts.watch });
+  // Armed here rather than inside the dev server, which is REBUILT on every
+  // save: starting a tracer per rebuild would register a provider per save.
+  // Returns undefined unless a collector is configured, so the ordinary dev
+  // loop pays one string read — see `@alexkroman1/aai-runtime/tracing`.
+  const tracing = await startTracing();
+  const serve = await startDevServer({ cwd: opts.cwd, port, watch: opts.watch });
+  cleanup = async () => {
+    await serve();
+    // After the server, so spans from a request still in flight are in the
+    // batch this drains. Never rejects.
+    await tracing?.shutdown();
+  };
 
   const url = `http://localhost:${port}`;
   log.success(`${styleText("bold", agentName)} running at ${fmtUrl(url)}`);
