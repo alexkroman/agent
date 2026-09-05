@@ -34,14 +34,23 @@ import { MAX_ANGLES } from "./shared.ts";
 
 /**
  * Every tool the desk declares — the two that reach the outside world through a
- * subagent, and the recap that reaches nothing.
+ * named subagent, the recap that reaches nothing, and the roster's `delegate`.
  *
  * Named here because the isolation claim is stated as a NEGATIVE — no
  * `web_search`, no `visit_webpage` — and a negative over a hand-typed list is
  * the assertion that goes quietly true when a tool is renamed. Every call the
- * desk makes must be one of these three names.
+ * desk makes must be one of these four names.
+ *
+ * `delegate` is on the list rather than derived from `agent({ subagents })`,
+ * for the same reason the other three are typed out: the point of the list is
+ * to be a second, independent statement of what this agent may call.
  */
-const DESK_TOOLS: readonly string[] = ["research_topic", "verify_claim", "briefing_so_far"];
+const DESK_TOOLS: readonly string[] = [
+  "research_topic",
+  "verify_claim",
+  "briefing_so_far",
+  "delegate",
+];
 
 /**
  * What `research_topic` answers with, as a schema rather than a cast.

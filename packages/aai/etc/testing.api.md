@@ -23,6 +23,7 @@ interface AgentDef extends PipelineVoiceTuning {
     silenceTimeoutMs?: number;
     stt?: SttProvider;
     sttPrompt?: string;
+    subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     telephony?: TelephonyAccess;
@@ -72,10 +73,10 @@ interface DelegateOptions {
 }
 
 // @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
 }
 
 // @public
@@ -133,6 +134,9 @@ type GenerateResult = {
     text: string;
     object?: unknown;
 };
+
+// @public
+type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -538,6 +542,8 @@ export type StubDelegateReply = string | {
     text: string;
     steps?: number;
     toolCalls?: readonly SubagentToolCall[];
+    revisions?: number;
+    complaint?: string;
 };
 
 // @public
@@ -744,16 +750,33 @@ export type StubUploadWrite = {
 };
 
 // @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
+    maxRetries?: number;
     maxSteps?: number;
     name: string;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+type SubagentRoster = readonly SubagentDef[];
 
 // @public
 interface SubagentToolCall {

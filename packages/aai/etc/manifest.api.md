@@ -115,6 +115,7 @@ interface AgentDef extends PipelineVoiceTuning {
     silenceTimeoutMs?: number;
     stt?: SttProvider;
     sttPrompt?: string;
+    subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     telephony?: TelephonyAccess;
@@ -158,10 +159,10 @@ interface DelegateOptions {
 }
 
 // @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
 }
 
 // @public
@@ -200,7 +201,10 @@ type GenerateResult = {
 };
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "events"];
+type GuardrailVerdict = true | string;
+
+// @public
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "events"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -551,16 +555,33 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
+    maxRetries?: number;
     maxSteps?: number;
     name: string;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+type SubagentRoster = readonly SubagentDef[];
 
 // @public
 interface SubagentToolCall {
@@ -659,6 +680,7 @@ export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
 export function withTools<D extends {
     readonly tools: ToolRegistry;
     readonly builtinTools?: readonly string[] | undefined;
+    readonly subagents?: readonly unknown[] | undefined;
 }>(def: D, registry: ToolRegistry): D;
 
 // @public

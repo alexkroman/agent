@@ -378,11 +378,11 @@ event(event:
   code:   | "stt"
      | "llm"
      | "tts"
-     | "tool"
      | "audio"
      | "connection"
      | "internal"
-     | "protocol";
+     | "protocol"
+     | "tool";
   fatal: boolean;
   message: string;
   meta: {
@@ -557,11 +557,11 @@ event the stream had already recorded under another.
   `code`:   \| `"stt"`
      \| `"llm"`
      \| `"tts"`
-     \| `"tool"`
      \| `"audio"`
      \| `"connection"`
      \| `"internal"`
-     \| `"protocol"`;
+     \| `"protocol"`
+     \| `"tool"`;
   `fatal`: `boolean`;
   `message`: `string`;
   `meta`: \{

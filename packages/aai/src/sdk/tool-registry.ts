@@ -218,11 +218,23 @@ export function withTools<
   D extends {
     readonly tools: ToolRegistry;
     readonly builtinTools?: readonly string[] | undefined;
+    readonly subagents?: readonly unknown[] | undefined;
   },
 >(def: D, registry: ToolRegistry): D {
   const builtins: readonly string[] = def.builtinTools ?? [];
   for (const name of Object.keys(registry)) {
     if (def.tools[name] !== undefined) {
+      // A ROSTER is the one thing that puts a tool on a def an author WROTE —
+      // `agent({ subagents })` mints one — so the message below sends that
+      // author looking for a `tools` key `agent()` refuses to take. Keyed on the
+      // roster's presence rather than on the minted NAME, so a second minted
+      // tool would be covered without editing this branch; the text therefore
+      // names the file rather than claiming which tool it hit.
+      if (def.subagents && def.subagents.length > 0) {
+        throw new Error(
+          `tools/${name}.ts collides with a tool this agent's definition already declares — \`subagents\` is what puts one there. Rename the file, or drop the roster and delegate from the file's own body with \`ctx.delegate\`.`,
+        );
+      }
       throw new Error(
         `The tool "${name}" is declared twice: once by tools/${name}.ts and once on the agent definition. Remove one — a tool is declared by its file.`,
       );

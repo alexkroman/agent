@@ -24,6 +24,14 @@
  * in-process under `aai dev`, inside the guest sandbox on the platform — so
  * dev and prod cannot drift on what a delegated run may reach.
  *
+ * **A guardrail is a fourth thing the runtime owns.** `SubagentDef.guardrail`
+ * judges an attempt and may send it back with a complaint, which is a loop an
+ * author could write around `ctx.delegate` — and could not write CORRECTLY,
+ * because the only version available outside this function starts a fresh run.
+ * Here the retry continues the conversation it is correcting, so the rejected
+ * attempt's tool results are still in the window when the model is told what
+ * was wrong with them. See {@link reviseRequest}.
+ *
  * **A subagent's context is the parent's, minus the conversation.** Its tools
  * see the same `env`, the same slots, the same `db`, the same `sessionId` — it
  * is the same session, and a subagent that could not read the cart would be a
@@ -34,14 +42,21 @@
  * is why the contract insists it be written as a complete one.
  */
 
-import type { SubagentDef, SubagentToolCall, ToolDef } from "@alexkroman1/aai";
+import type {
+  DelegateResult,
+  SubagentAnswer,
+  SubagentDef,
+  SubagentToolCall,
+  ToolDef,
+} from "@alexkroman1/aai";
+import { DEFAULT_GUARDRAIL_MAX_RETRIES } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { normalizeLlm, resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { type LanguageModel, stepCountIs, ToolLoopAgent } from "ai";
+import { type LanguageModel, type ModelMessage, stepCountIs, ToolLoopAgent } from "ai";
 import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
 import { forceFinalAnswer } from "./_prepare-step.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
@@ -113,6 +128,7 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
 
   return async (sub, delegateOptions, parent) => {
     const model = resolveModel(sub);
+    const maxRetries = sub.maxRetries ?? DEFAULT_GUARDRAIL_MAX_RETRIES;
     const maxSteps = delegateOptions.maxSteps ?? sub.maxSteps ?? DEFAULT_MAX_STEPS;
     const sessionId = parent.sessionId ?? "";
 
@@ -143,9 +159,7 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       id: sub.name,
       model,
       // `instructions` is the agent library's own key; `systemPrompt` is ours.
-      instructions: delegateOptions.context
-        ? `${sub.systemPrompt}\n\n${delegateOptions.context}`
-        : sub.systemPrompt,
+      instructions: buildInstructions(sub, delegateOptions.context),
       tools: toVercelTools(schemas, {
         executeTool,
         sessionId,
@@ -163,17 +177,120 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       ...omitUndefined({ maxOutputTokens: sub.maxOutputTokens }),
     });
 
-    const result = await agent.generate({
-      prompt: delegateOptions.task,
-      ...omitUndefined({ abortSignal: parent.signal }),
+    return runUntilAccepted({
+      agent,
+      sub,
+      maxRetries,
+      logger,
+      ...omitUndefined({ signal: parent.signal }),
+      task: delegateOptions.task,
     });
+  };
+}
 
-    return {
+/** What {@link runUntilAccepted} needs, which is the run and nothing about how it was built. */
+type GuardedRun = {
+  agent: ToolLoopAgent;
+  sub: SubagentDef;
+  task: string;
+  maxRetries: number;
+  logger: Logger;
+  signal?: AbortSignal | undefined;
+};
+
+/**
+ * Run the subagent, and keep running it while its guardrail sends the answer
+ * back.
+ *
+ * Split from the runner above rather than inlined, and the reason is the seam
+ * rather than the line count: everything up there is about BUILDING one
+ * `ToolLoopAgent` from a definition, and this is about how many times to run the
+ * thing that was built. A subagent with no guardrail settles on the first pass,
+ * so the loop costs it one comparison.
+ */
+async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
+  const { agent, sub, maxRetries, logger } = run;
+  // The conversation this delegation is, GROWN across revisions rather than
+  // restarted: a rejected attempt keeps its own tool results, so the retry does
+  // not pay again for the four pages it already read. See `reviseRequest` for
+  // why a fresh run was the wrong shape.
+  const messages: ModelMessage[] = [{ role: "user", content: run.task }];
+  let revisions = 0;
+
+  for (;;) {
+    const result = await agent.generate({
+      messages,
+      ...omitUndefined({ abortSignal: run.signal }),
+    });
+    const answer: SubagentAnswer = {
       text: result.text,
       steps: result.steps.length,
       toolCalls: collectToolCalls(result.steps),
     };
-  };
+    if (!sub.guardrail) return { ...answer, revisions, accepted: true };
+
+    const verdict = await sub.guardrail(answer);
+    if (verdict === true) return { ...answer, revisions, accepted: true };
+    if (revisions >= maxRetries) {
+      logger.info?.(
+        `subagent "${sub.name}": guardrail still rejecting after ${revisions} ${revisions === 1 ? "revision" : "revisions"} — returning the last answer unaccepted (${verdict})`,
+      );
+      return { ...answer, revisions, accepted: false, complaint: verdict };
+    }
+
+    messages.push(...result.responseMessages, { role: "user", content: reviseRequest(verdict) });
+    revisions += 1;
+  }
+}
+
+/**
+ * The subagent's instructions: its own prompt, what a good answer looks like,
+ * then whatever this CALL added.
+ *
+ * The order is the one an author would write by hand and the reason
+ * {@link SubagentDef.expectedOutput} is a field at all — a standing rule about
+ * the shape of the answer, then the per-call brief that may refine it. Reversed,
+ * a `context` saying "one sentence is enough this time" would be overruled by a
+ * definition it has no way to see.
+ *
+ * `## EXPECTED OUTPUT` matches the heading style of the framework's own system
+ * prompt (`PROMPT_SPEAKING`, `PROMPT_TOOLS`, …), so a subagent's instructions
+ * read like every other prompt this SDK assembles rather than like a second
+ * convention.
+ */
+function buildInstructions(sub: SubagentDef, context: string | undefined): string {
+  const sections = [sub.systemPrompt];
+  if (sub.expectedOutput) sections.push(`## EXPECTED OUTPUT\n${sub.expectedOutput}`);
+  if (context) sections.push(context);
+  return sections.join("\n\n");
+}
+
+/**
+ * What a rejected subagent is told, as its next user turn.
+ *
+ * **The retry CONTINUES the run rather than restarting it**, which is the whole
+ * design and the thing to preserve. A fresh run given "your last answer was
+ * wrong, here is why" has to re-derive everything: a researcher would search and
+ * read the same four pages a second time, at the same cost and latency, to fix a
+ * missing citation it was holding the source for. Continuing means the model is
+ * looking at its own tool results and its own rejected answer when it is told
+ * what is wrong with them, which is both cheaper and a better prompt.
+ *
+ * The last sentence is not decoration. The parent reads
+ * {@link DelegateResult.text} — the FINAL message — so a model that answers a
+ * complaint conversationally ("Good catch, I'll add the source") has replaced
+ * the answer with a reply about the answer, and the delegation returns that.
+ * It is the same failure {@link SubagentDef.expectedOutput} exists for, reached
+ * one turn later.
+ */
+function reviseRequest(complaint: string): string {
+  return [
+    `That answer was not accepted: ${complaint}`,
+    "",
+    "Fix it and give the corrected answer IN FULL. Your final message is the " +
+      "whole of what the caller receives — they never see this exchange, so do " +
+      "not describe the correction or acknowledge it, just answer again properly.",
+  ].join("\n");
 }
 
 /**

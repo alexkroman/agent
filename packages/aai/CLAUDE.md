@@ -724,6 +724,10 @@ tools and CONTEXT WINDOW, and hands back only what it concluded. `subagent()`
 `executeToolCall` for a subagent's own tools, the one-level rule and the
 isolated `ctx.messages` are in `packages/aai-runtime/CLAUDE.md`, "Subagents".
 
+It also owns `expectedOutput`, `guardrail`/`maxRetries` and
+`agent({ subagents })` — the ROSTER a MODEL routes over, where
+`ctx.delegate(x, …)` is the author choosing in code.
+
 ## Concurrency primitives (use these, don't hand-roll)
 
 `sdk/invariant.ts` (`/internal`) is the sibling seam for STATE rather than

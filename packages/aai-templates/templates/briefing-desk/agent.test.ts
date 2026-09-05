@@ -1,3 +1,4 @@
+import { DELEGATE_TOOL_NAME, type GuardrailVerdict, type SubagentAnswer } from "@alexkroman1/aai";
 import {
   createToolContext,
   type StubDelegateCall,
@@ -10,7 +11,9 @@ import type { AngleWork, Finding } from "./shared.ts";
 import {
   angleBrief,
   briefingSlot,
+  counterpoint,
   countWork,
+  explainer,
   factChecker,
   findByAngle,
   MAX_ANGLES,
@@ -18,6 +21,7 @@ import {
   MAX_RESEARCH_STEPS,
   recordFinding,
   researcher,
+  VERDICT_PREFIXES,
 } from "./shared.ts";
 
 /** A finding whose cost is irrelevant to the case at hand. */
@@ -27,6 +31,22 @@ const NO_WORK: AngleWork = { searches: 0, reads: 0 };
 import agentDef from "virtual:aai/agent";
 
 const run = toolRunner(agentDef);
+const deployed = agentDef;
+
+/**
+ * The fact-checker's guardrail, called the way the runtime calls it.
+ *
+ * The cost report is what a guardrail is HANDED and this one does not read it,
+ * so the zeros are honest rather than a stand-in — the check is entirely about
+ * the text.
+ */
+function check(text: string): GuardrailVerdict {
+  const answer: SubagentAnswer = { text, steps: 1, toolCalls: [] };
+  const verdict = factChecker.guardrail?.(answer);
+  if (verdict === undefined) throw new Error("the fact-checker declares no guardrail");
+  if (typeof verdict === "object") throw new Error("this guardrail is synchronous by design");
+  return verdict;
+}
 
 /**
  * The desk's two subagents, faked.
@@ -77,8 +97,52 @@ describe("the desk itself", () => {
     expect(factChecker.maxSteps).toBeLessThan(MAX_RESEARCH_STEPS);
   });
 
-  test("tells each subagent that its final message is all the desk sees", () => {
-    expect(researcher.systemPrompt).toMatch(/FINAL message/);
+  test("declares what every subagent's final message has to be", () => {
+    // The rule that decides whether delegation works at all, and it is a FIELD
+    // rather than a paragraph somebody remembered to write: the desk reads the
+    // final message and nothing else. A subagent added here without one is the
+    // regression this catches.
+    for (const specialist of [researcher, factChecker, explainer, counterpoint]) {
+      expect(specialist.expectedOutput, specialist.name).toBeTruthy();
+    }
+    expect(researcher.expectedOutput).toMatch(/only this/);
+  });
+
+  test("puts on the roster exactly the specialists chosen by what the caller ASKED", () => {
+    // The two tools name their own subagent, so those two must NOT be on the
+    // roster: a specialist reachable both ways gives the model a second, worse
+    // route to a tool that does real work around the delegation.
+    expect(authoredAgent.subagents?.map((one) => one.name)).toEqual(["explainer", "counterpoint"]);
+    for (const specialist of authoredAgent.subagents ?? []) {
+      // The only thing the router reads. `agent()` refuses a roster without it;
+      // asserted here too because the template is what an author copies.
+      expect(specialist.description, specialist.name).toBeTruthy();
+    }
+  });
+
+  test("publishes the roster as one delegate tool listing both specialists", () => {
+    const delegate = deployed.tools[DELEGATE_TOOL_NAME];
+    expect(delegate).toBeDefined();
+    expect(delegate?.description).toContain("explainer:");
+    expect(delegate?.description).toContain("counterpoint:");
+  });
+});
+
+describe("the fact-checker's guardrail", () => {
+  test("accepts a verdict that opens with one of the three words", () => {
+    for (const prefix of VERDICT_PREFIXES) {
+      expect(check(`${prefix} the figure holds up.`)).toBe(true);
+    }
+    // Leading whitespace is the model's, not a different answer.
+    expect(check("  Unclear: nobody publishes it.")).toBe(true);
+  });
+
+  test("sends back a verdict the desk could not act on, saying what to do", () => {
+    // The failure this exists for: a hedge the desk cannot tell from a
+    // confirmation, which `tools/verify_claim.ts` would then read out as one.
+    const complaint = check("It seems that prices did fall last year.");
+    expect(complaint).not.toBe(true);
+    expect(String(complaint)).toContain("Confirmed:");
   });
 });
 
@@ -236,6 +300,38 @@ describe("verify_claim", () => {
 
     expect(model.calls[0]?.options.context).toContain("Installers quote eight weeks.");
     expect(result.checkedAgainst).toBe("install lead times");
+  });
+
+  test("tells the desk not to act on a verdict the guardrail never accepted", async () => {
+    const model = stubDelegate({
+      "fact-checker": { text: "It seems prices fell.", complaint: "no verdict word" },
+    });
+
+    const result = (await run(
+      "verify_claim",
+      { claim: "Prices fell." },
+      createToolContext({ delegate: model.delegate }),
+    )) as { verdict: string; unusable?: string; message: string };
+
+    // Not a tool failure: there IS an answer, and the desk is on a live call.
+    // What changes is the instruction — the desk must not round a hedge up to a
+    // confirmation, which is exactly what it would have done before.
+    expect(result.verdict).toBe("It seems prices fell.");
+    expect(result.unusable).toBe("no verdict word");
+    expect(result.message).toContain("unresolved");
+  });
+
+  test("carries no `unusable` when the verdict was accepted", async () => {
+    const model = desk({ check: "Confirmed: two sources say so." });
+
+    const result = (await run(
+      "verify_claim",
+      { claim: "Prices fell." },
+      createToolContext({ delegate: model.delegate }),
+    )) as { unusable?: string; message: string };
+
+    expect(result.unusable).toBeUndefined();
+    expect(result.message).toContain("correct what you told them earlier");
   });
 
   test("reports a failed check as a tool failure the model can recover from", async () => {

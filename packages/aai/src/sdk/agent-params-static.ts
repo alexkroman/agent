@@ -50,6 +50,12 @@ export type WorkflowAppOnlyField =
   // `tools?: InlineToolsMisuse` from `SharedAgentParams`, which is true of
   // every arm (a tool is a FILE) and leads with the remedy.
   | "builtinTools"
+  // A roster's whole effect is a tool the MODEL chooses a specialist with, and
+  // a workflow app runs no model — so it is the same silent no-op the rest of
+  // this list is, with the extra cost that `agent()` would mint a tool nothing
+  // could ever call. A workflow app that wants a subagent delegates from a
+  // step's own code, where the choice is the author's anyway.
+  | "subagents"
   | "minTurnSilenceMs"
   | "maxTurnSilenceMs"
   | "syncState"

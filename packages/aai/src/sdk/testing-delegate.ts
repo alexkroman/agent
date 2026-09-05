@@ -17,6 +17,7 @@
  * RETURNS.
  */
 
+import { omitUndefined } from "./omit-undefined.ts";
 import type {
   DelegateFn,
   DelegateOptions,
@@ -47,7 +48,24 @@ export interface StubDelegateCall {
  */
 export type StubDelegateReply =
   | string
-  | { text: string; steps?: number; toolCalls?: readonly SubagentToolCall[] };
+  | {
+      text: string;
+      steps?: number;
+      toolCalls?: readonly SubagentToolCall[];
+      /** How many times a guardrail sent an answer back. Defaults to `0`. */
+      revisions?: number;
+      /**
+       * Stage a run the subagent's GUARDRAIL never accepted: the complaint the
+       * real runtime returns beside the last rejected attempt.
+       *
+       * Its presence is what makes the result's `accepted` false — the
+       * two cannot be staged apart, because in the runtime they cannot occur
+       * apart. A spec cannot describe an unaccepted answer with no reason, and
+       * a caller reading `complaint` on an accepted one would be reading a
+       * field that is never set.
+       */
+      complaint?: string;
+    };
 
 /**
  * How a route answers: a fixed reply, or a function of the call — the function
@@ -132,10 +150,22 @@ function isRouteTable(
 
 /** The full {@link DelegateResult} a route's shorthand stands for. */
 function envelope(reply: StubDelegateReply): DelegateResult {
-  if (typeof reply === "string") return { text: reply, steps: 1, toolCalls: [] };
+  if (typeof reply === "string") {
+    return { text: reply, steps: 1, toolCalls: [], revisions: 0, accepted: true };
+  }
   const toolCalls = reply.toolCalls ?? [];
-  // `steps` defaults to one MORE than the tool calls, not to zero: a run that
-  // called two tools took at least three steps, and a spec reading `steps` off
-  // a fake that said `0` would assert a run that never happened.
-  return { text: reply.text, steps: reply.steps ?? toolCalls.length + 1, toolCalls };
+  return {
+    text: reply.text,
+    // `steps` defaults to one MORE than the tool calls, not to zero: a run that
+    // called two tools took at least three steps, and a spec reading `steps` off
+    // a fake that said `0` would assert a run that never happened.
+    steps: reply.steps ?? toolCalls.length + 1,
+    toolCalls,
+    revisions: reply.revisions ?? 0,
+    // A staged complaint IS the rejection — see `StubDelegateReply.complaint`.
+    // The `accepted` flag reads the same field the spread omits, which is why
+    // the two lines look like they duplicate a guard and do not.
+    accepted: reply.complaint === undefined,
+    ...omitUndefined({ complaint: reply.complaint }),
+  };
 }
