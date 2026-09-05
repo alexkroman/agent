@@ -9,12 +9,34 @@ Shared dependency versions are declared once, in `pnpm-workspace.yaml`'s
 `catalog:` block, and packages reference them as `"zod": "catalog:"`. Thirty-two
 dependencies are in it. Two things stay OUT, and both are load-bearing:
 
-- **peerDependencies.** `react`, `react-dom`, `tailwindcss` and `vitest` are
-  declared as peers with wider floors (`^19.0.0`, `^4.0.0`) than the
-  devDependency the repo builds against. Those are statements about what a
+- **peerDependencies.** `react`, `react-dom`, `tailwindcss`, `vitest` and
+  **`zod`** are declared as peers with wider floors (`^19.0.0`, `^4.0.0`) than
+  the devDependency the repo builds against. Those are statements about what a
   CONSUMER may bring, not versions we pick; `catalog:` would narrow them to our
   own pin and break installs for anyone a minor behind. `.syncpackrc.json`
   ignores peer ranges for the same reason.
+
+  **The test for which side a dependency belongs on is whether it appears in
+  the PUBLISHED type surface, and zod is the worked case.** A `dependencies`
+  entry says "I own my copy, you cannot see it"; a peer says "we must share
+  one". zod is imported by eight entry-point `.d.ts` files and named by ~646
+  signature references across `aai`'s reports, so a consumer's `z.object(…)`
+  has to BE the type `tool()` accepts — which the first spelling cannot
+  promise. Declared as a plain dependency, a version mismatch surfaced as a
+  structural error deep inside zod's internals at the user's call site; as a
+  peer it surfaces as an unmet peer naming the range.
+
+  The ecosystem draws the same line, and this repo's own tree is the evidence:
+  `ai` and `@hono/zod-validator` expose zod types and declare it a peer
+  (`^3.25.76 || ^4.1.8`), while `knip`, `konsistent` and
+  `mutation-server-protocol` keep it internal and declare it a dependency. So
+  `aai` and `aai-runtime` are peers and **`aai-cli` is deliberately NOT** — it
+  is an executable, like knip, and its one zod-typed subpath
+  (`/project-config`) has a single workspace-internal consumer.
+
+  Each peer stays in `devDependencies` on `catalog:` so this repo's own build
+  and tests resolve it; `exports-no-dev-deps.test.ts` sanctions exactly that
+  pairing and only fails a specifier that is devDependencies-ONLY.
 - **`docs`'s TypeScript**, pinned to the 6.x line because TypeDoc needs the JS
   compiler API TS 7 does not ship. It uses the named `typedoc` catalog so the
   split is a declaration rather than a stray literal.

@@ -84,8 +84,7 @@
     "ulid": "catalog:",
     "undici": "^8.10.1",
     "ws": "catalog:",
-    "xstate": "catalog:",
-    "zod": "catalog:"
+    "xstate": "catalog:"
   },
   "devDependencies": {
     "@ai-sdk/mcp": "catalog:",
@@ -101,7 +100,8 @@
     "fast-check": "catalog:",
     "tokenx": "catalog:",
     "tsdown": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "zod": "catalog:"
   },
   "peerDependencies": {
     "@ai-sdk/mcp": "^2.0.43",
@@ -110,7 +110,8 @@
     "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",
     "@opentelemetry/resources": "^2.11.0",
     "@opentelemetry/sdk-trace-base": "^2.11.0",
-    "vitest": ">=3"
+    "vitest": ">=3",
+    "zod": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "@ai-sdk/mcp": {

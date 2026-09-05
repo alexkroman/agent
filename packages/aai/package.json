@@ -154,8 +154,7 @@
     "htmlparser2": "^12.0.0",
     "p-timeout": "catalog:",
     "undici": "^8.10.1",
-    "xstate": "catalog:",
-    "zod": "catalog:"
+    "xstate": "catalog:"
   },
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",
@@ -163,10 +162,12 @@
     "@types/node": "catalog:",
     "fast-check": "catalog:",
     "tsdown": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "zod": "catalog:"
   },
   "peerDependencies": {
-    "vitest": ">=3"
+    "vitest": ">=3",
+    "zod": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "vitest": {
