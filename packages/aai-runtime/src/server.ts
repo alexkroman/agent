@@ -33,6 +33,7 @@ import { serveStatic } from "./server-static.ts";
 import { declineSocket } from "./session-decline.ts";
 import { createSessionEventsApi, SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
 import { enabledCarriers, handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
+import { adoptRequestTrace } from "./tracing.ts";
 import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
 import { answerHandlerFailure, sendJson } from "./workflow-api-http.ts";
 import { serveFetch } from "./workflow-http-adapter.ts";
@@ -234,6 +235,11 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
   }
 
   const httpServer = http.createServer((req, res) => {
+    // Adopt an inbound `traceparent` before anything else runs, so a model call
+    // this request causes lands in the CALLER's trace rather than rooting its
+    // own. One undefined check when tracing is off, which is every front door
+    // that has not configured a collector — see `tracing.ts`.
+    adoptRequestTrace(req.headers);
     const url = requestPath(req.url);
     const method = req.method ?? "GET";
 

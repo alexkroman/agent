@@ -27,14 +27,14 @@ import { generateText, stepCountIs, tool } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { z } from "zod";
-import { buildIntegration, startGuestTracingOtel } from "./_guest-tracing-otel.ts";
+import { buildIntegration, startTracingOtel } from "./_tracing-otel.ts";
 import {
-  GUEST_DEFAULT_SERVICE_NAME,
-  GUEST_OTEL_ENDPOINT_ENVS,
-  guestTracingEndpoint,
-  startGuestTracing,
-  startGuestTracingDetached,
-} from "./guest-tracing.ts";
+  DEFAULT_SERVICE_NAME,
+  OTEL_ENDPOINT_ENVS,
+  startTracing,
+  startTracingDetached,
+  tracingEndpoint,
+} from "./tracing.ts";
 
 /** Yield long enough for a settled dynamic import's continuations to run. */
 const flushMicrotasks = (): Promise<void> => Promise.resolve();
@@ -60,17 +60,14 @@ function registeredIntegrations(): unknown[] | undefined {
 }
 
 /** Start the bridge against an in-memory exporter, registered for teardown. */
-function withGuestTracing(env: Record<string, string> = CONFIGURED): {
+function withRuntimeTracing(env: Record<string, string> = CONFIGURED): {
   exporter: InMemorySpanExporter;
   /** Flush THIS provider — the global proxy exposes no `forceFlush`. */
   flush: () => Promise<void>;
 } {
   clearTelemetryRegistry();
   const exporter = new InMemorySpanExporter();
-  const tracing = startGuestTracingOtel(
-    env.OTEL_SERVICE_NAME ?? GUEST_DEFAULT_SERVICE_NAME,
-    () => exporter,
-  );
+  const tracing = startTracingOtel(env.OTEL_SERVICE_NAME ?? DEFAULT_SERVICE_NAME, () => exporter);
   onTestFinished(async () => {
     await tracing.shutdown();
     trace.disable();
@@ -148,21 +145,21 @@ function serialize(spans: ReadableSpan[]): string {
 
 describe("the env gate", () => {
   test("is closed with no collector configured", () => {
-    expect(guestTracingEndpoint({})).toBeUndefined();
+    expect(tracingEndpoint({})).toBeUndefined();
   });
 
-  test.each(GUEST_OTEL_ENDPOINT_ENVS)("opens on the standard variable %s", (name) => {
-    expect(guestTracingEndpoint({ [name]: "http://c:4318" })).toBe("http://c:4318");
+  test.each(OTEL_ENDPOINT_ENVS)("opens on the standard variable %s", (name) => {
+    expect(tracingEndpoint({ [name]: "http://c:4318" })).toBe("http://c:4318");
   });
 
   test("treats a blank variable as unset", () => {
-    expect(guestTracingEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "  " })).toBeUndefined();
+    expect(tracingEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "  " })).toBeUndefined();
   });
 
   test("unconfigured registers NOTHING — no integration, no provider", async () => {
     clearTelemetryRegistry();
     onTestFinished(clearTelemetryRegistry);
-    await expect(startGuestTracing({})).resolves.toBeUndefined();
+    await expect(startTracing({})).resolves.toBeUndefined();
     // The SDK's own cost is zero while this is empty: it reads the registry per
     // call and runs straight through when there is nothing in it.
     expect(registeredIntegrations()).toBeUndefined();
@@ -177,9 +174,7 @@ describe("the env gate", () => {
     // An unhandled rejection here would reach `installCrashGuards` and exit the
     // guest at boot — telemetry taking the agent down with it. The failure has
     // to be a log line, so this drives the path that produces one.
-    expect(startGuestTracingDetached({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318" })).toBe(
-      undefined,
-    );
+    expect(startTracingDetached({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318" })).toBe(undefined);
     // Let the dynamic import and the provider construction settle, then tear
     // the globals down — this really did start an exporter.
     await vi.waitFor(() => expect(registeredIntegrations()).toHaveLength(1));
@@ -190,20 +185,20 @@ describe("the env gate", () => {
   test("the detached start does nothing at all when unconfigured", async () => {
     clearTelemetryRegistry();
     onTestFinished(clearTelemetryRegistry);
-    expect(startGuestTracingDetached({})).toBe(undefined);
+    expect(startTracingDetached({})).toBe(undefined);
     await flushMicrotasks();
     expect(registeredIntegrations()).toBeUndefined();
   });
 
   test("configured registers exactly one integration", () => {
-    withGuestTracing();
+    withRuntimeTracing();
     expect(registeredIntegrations()).toHaveLength(1);
   });
 });
 
 describe("exported spans", () => {
   test("records no conversation content", async () => {
-    const { exporter, flush } = withGuestTracing();
+    const { exporter, flush } = withRuntimeTracing();
     await runConversation();
     await flush();
 
@@ -219,7 +214,7 @@ describe("exported spans", () => {
   });
 
   test("records the METADATA, so the redaction spec is not vacuous", async () => {
-    const { exporter, flush } = withGuestTracing();
+    const { exporter, flush } = withRuntimeTracing();
     await runConversation();
     await flush();
 
@@ -245,22 +240,25 @@ describe("exported spans", () => {
   });
 
   test("names the service, defaulting when the operator did not", async () => {
-    const { exporter, flush } = withGuestTracing();
+    const { exporter, flush } = withRuntimeTracing();
     await runConversation();
     await flush();
     const span = exporter.getFinishedSpans()[0];
-    expect(span?.resource.attributes["service.name"]).toBe(GUEST_DEFAULT_SERVICE_NAME);
+    expect(span?.resource.attributes["service.name"]).toBe(DEFAULT_SERVICE_NAME);
   });
 
   test("honours OTEL_SERVICE_NAME", async () => {
-    const { exporter, flush } = withGuestTracing({ ...CONFIGURED, OTEL_SERVICE_NAME: "agent-eu" });
+    const { exporter, flush } = withRuntimeTracing({
+      ...CONFIGURED,
+      OTEL_SERVICE_NAME: "agent-eu",
+    });
     await runConversation();
     await flush();
     expect(exporter.getFinishedSpans()[0]?.resource.attributes["service.name"]).toBe("agent-eu");
   });
 
   test("emits a span per model call and one for the generation", async () => {
-    const { exporter, flush } = withGuestTracing();
+    const { exporter, flush } = withRuntimeTracing();
     await runConversation();
     await flush();
     const names = exporter.getFinishedSpans().map((s) => s.name);
@@ -272,7 +270,7 @@ describe("exported spans", () => {
   });
 
   test("the inner spans hang off the generation, in ONE trace", async () => {
-    const { exporter, flush } = withGuestTracing();
+    const { exporter, flush } = withRuntimeTracing();
     await runConversation();
     await flush();
     const spans = exporter.getFinishedSpans();
@@ -425,7 +423,7 @@ describe("the allow-list", () => {
 describe("a broken collector", () => {
   test("cannot break the model call", async () => {
     clearTelemetryRegistry();
-    const tracing = startGuestTracingOtel(GUEST_DEFAULT_SERVICE_NAME, () => ({
+    const tracing = startTracingOtel(DEFAULT_SERVICE_NAME, () => ({
       export() {
         throw new Error("ECONNREFUSED 127.0.0.1:4318");
       },

@@ -156,7 +156,7 @@ export function agentBootEnv(
 
 /**
  * The collector configuration a guest needs to export spans, from the
- * PLATFORM's environment — see `aai-guest/guest-tracing.ts`.
+ * PLATFORM's environment — see `aai-runtime/tracing.ts`.
  *
  * Forwarded explicitly, exactly the `AAI_DEBUG` and `AAI_GUEST_IDLE_EXIT_MS`
  * precedent, so the minimal-env property is untouched: the guest still inherits

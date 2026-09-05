@@ -3,7 +3,7 @@
  * The OTel half of the guest's span export: the provider, and the AI SDK
  * telemetry bridge.
  *
- * Reached ONLY through `guest-tracing.ts`'s dynamic `import()`, so nothing here
+ * Reached ONLY through `tracing.ts`'s dynamic `import()`, so nothing here
  * is evaluated on a guest with no collector configured. That module carries the
  * env gate, the credential note and the argument for the split; this one
  * carries what the spans contain.
@@ -28,7 +28,7 @@
  * behind an explicit opt-in; the safer answer was available, which is that
  * there is no code path here that can emit a prompt, a completion, a transcript,
  * a tool argument or a tool result. So the safe setting is not the default —
- * it is the only setting, and `guest-tracing.test.ts` asserts it against a real
+ * it is the only setting, and `tracing.test.ts` asserts it against a real
  * `generateText` whose prompt, completion, tool argument and tool result are
  * distinctive strings. Adding the opt-in later means adding the code that reads
  * those fields, which is exactly the review that should be hard to skip.
@@ -53,8 +53,8 @@
  * @module
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { isRecord } from "@alexkroman1/aai/utils";
-import { parseTraceparent } from "@alexkroman1/aai-runtime/internal";
 import {
   type Context,
   context as otelContext,
@@ -69,6 +69,7 @@ import {
   type Tracer,
   trace,
 } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
 import {
@@ -78,20 +79,27 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { registerTelemetry, type Telemetry } from "ai";
 import pTimeout from "p-timeout";
+import { parseTraceparent } from "./_trace-context.ts";
 
 /**
  * A started tracer.
  *
- * Declared here rather than imported from `guest-tracing.ts`, and the SERVICE
+ * Declared here rather than imported from `tracing.ts`, and the SERVICE
  * NAME arrives resolved for the same reason: that module reaches this one
  * through a dynamic `import()`, so anything this module imported back would be
  * a cycle — which Biome refuses, and which would also give a bundler an excuse
  * to hoist this graph out of the lazy chunk the whole design rests on. Nothing
  * here imports the gate; the gate passes down what it has already read.
  */
-export type GuestTracingHandle = {
+export type TracingHandle = {
   forceFlush: () => Promise<void>;
   shutdown: () => Promise<void>;
+  /**
+   * Make an inbound request's `traceparent` the ambient context for the rest of
+   * that request. Handed BACK to `tracing.ts`, which owns the seam the
+   * harness calls — see that module's `setRequestTraceAdopter`.
+   */
+  adoptRequestTrace: (headers: Record<string, string | string[] | undefined>) => void;
 };
 
 /**
@@ -127,7 +135,7 @@ const TRACEPARENT_HEADER = "traceparent";
  * spans root their own traces. Installing the propagator is what makes a parent
  * be honoured the day one arrives.
  */
-export const guestTraceparentPropagator: TextMapPropagator = {
+export const traceparentPropagator: TextMapPropagator = {
   fields: () => [TRACEPARENT_HEADER],
   inject(ctx: Context, carrier: unknown, setter: TextMapSetter): void {
     const sc = trace.getSpanContext(ctx);
@@ -216,6 +224,41 @@ function toolMetadataOf(event: unknown): Record<string, string | number> {
   return out;
 }
 
+/**
+ * The trace context an inbound request adopted, for the rest of that request.
+ *
+ * ## Why this exists ALONGSIDE the registered context manager
+ *
+ * `AsyncLocalStorageContextManager` is registered above and is what makes
+ * `otelContext.active()` work generally — but its interface is
+ * `active`/`with`/`bind`/`enable`/`disable` and exposes no `enterWith`, and the
+ * seam this has to serve has nothing to wrap: the harness's `request` hook
+ * returns a BOOLEAN and `/workflows/*` falls through it to the runtime's own
+ * router, so by the time the model call happens the hook has long returned.
+ * `with(ctx, fn)` needs that `fn` and there is none.
+ *
+ * So the adoption is stored here and consulted as the FIRST parent candidate,
+ * with `otelContext.active()` behind it — one precedence rule, stated once, in
+ * `onStart`. Nitro's integration is the same shape from the other end: it
+ * registers a real context manager AND still hangs the span on its event
+ * object, shipping a `defineTracedEventHandler` to stop the ambient context
+ * being lost. An explicit carrier is where this road ends either way.
+ */
+const requestTrace = new AsyncLocalStorage<Context>();
+
+/**
+ * Read a header off Node's `IncomingHttpHeaders`.
+ *
+ * Node lower-cases inbound header names and gives a repeated one as an array;
+ * `traceparent` may legally appear once, so a duplicate is a malformed request
+ * rather than a merge — take the first and let the grammar reject it if it is
+ * not one.
+ */
+const incomingHeaderGetter: TextMapGetter<Record<string, string | string[] | undefined>> = {
+  keys: (carrier) => Object.keys(carrier),
+  get: (carrier, key) => carrier[key.toLowerCase()],
+};
+
 /** One live operation span, keyed by the `callId` that brackets it. */
 type LiveOperation = { span: Span; ctx: Context };
 
@@ -229,21 +272,28 @@ type LiveOperation = { span: Span; ctx: Context };
  */
 const MAX_LIVE_OPERATIONS = 64;
 
-export function startGuestTracingOtel(
-  /** Already resolved by the gate — see {@link GuestTracingHandle}. */
+export function startTracingOtel(
+  /** Already resolved by the gate — see {@link TracingHandle}. */
   serviceName: string,
   /** Test seam: the real exporter dials the collector named in `process.env`. */
   createExporter: () => SpanExporter = () => new OTLPTraceExporter(),
-): GuestTracingHandle {
+): TracingHandle {
   const provider = new BasicTracerProvider({
     resource: defaultResource().merge(resourceFromAttributes({ "service.name": serviceName })),
     spanProcessors: [new BatchSpanProcessor(createExporter())],
   });
   trace.setGlobalTracerProvider(provider);
-  // The `Telemetry` contract is checked HERE: `GuestIntegration`'s handlers all
+  // The library's own context manager, registered so `otelContext.active()`
+  // means something process-wide: any OTel-aware code an agent brings — an
+  // instrumented database driver, a user's own tracer — then joins the trace
+  // instead of rooting beside it. It is an OPTIONAL PEER like the rest of the
+  // graph, so a deployment that never enables tracing installs no
+  // AsyncLocalStorage and pays nothing; only this branch constructs one.
+  otelContext.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
+  // The `Telemetry` contract is checked HERE: `TelemetryIntegration`'s handlers all
   // take `unknown`, and this call is what proves that satisfies the SDK's own
   // per-event signatures.
-  const integration: Telemetry = buildIntegration(provider.getTracer("aai-guest"));
+  const integration: Telemetry = buildIntegration(provider.getTracer("aai-runtime"));
   registerTelemetry(integration);
 
   const guard = (run: () => Promise<void>) => async () => {
@@ -258,6 +308,15 @@ export function startGuestTracingOtel(
   return {
     forceFlush: guard(() => provider.forceFlush()),
     shutdown: guard(() => provider.shutdown()),
+    adoptRequestTrace: (headers) => {
+      const ctx = traceparentPropagator.extract(ROOT_CONTEXT, headers, incomingHeaderGetter);
+      // Only when a PARENT really arrived: no header, or one the grammar
+      // rejects, leaves `extract` returning the context it was given, and
+      // pinning THAT for a request's whole subtree is a no-op that costs an
+      // AsyncLocalStorage frame to express.
+      if (trace.getSpanContext(ctx) === undefined) return;
+      requestTrace.enterWith(ctx);
+    },
   };
 }
 
@@ -271,7 +330,7 @@ export function startGuestTracingOtel(
  * dozen event shapes arrived (see {@link field}), and typing them to one member
  * of that union would be a claim the bodies do not make.
  */
-export type GuestIntegration = {
+export type TelemetryIntegration = {
   onStart: (event: unknown) => void;
   onLanguageModelCallEnd: (event: unknown) => void;
   onStepEnd: (event: unknown) => void;
@@ -280,7 +339,7 @@ export type GuestIntegration = {
 };
 
 /** The integration: the operation pair, plus the four inner callbacks. */
-export function buildIntegration(tracer: Tracer): GuestIntegration {
+export function buildIntegration(tracer: Tracer): TelemetryIntegration {
   const live = new Map<string, LiveOperation>();
 
   /** The parent for an inner span, or the root when the operation was missed. */
@@ -313,10 +372,16 @@ export function buildIntegration(tracer: Tracer): GuestIntegration {
         const oldest = live.keys().next();
         if (!oldest.done) live.delete(oldest.value);
       }
+      // The request's parent, NOT `ROOT_CONTEXT`: this is the one span in the
+      // bridge that can have a parent outside the AI SDK, and hard-rooting it
+      // was what kept a model call and the platform request that caused it in
+      // two traces even after the header started arriving. With no request
+      // context — a voice turn, a timer-driven walk — this is `ROOT_CONTEXT`
+      // and the span roots exactly as it did before.
       const span = tracer.startSpan(
         `ai.generate ${str(field(event, "modelId")) ?? "unknown"}`,
         { kind: SpanKind.CLIENT, attributes: metadataOf(event) },
-        ROOT_CONTEXT,
+        requestTrace.getStore() ?? otelContext.active(),
       );
       live.set(id, { span, ctx: trace.setSpan(otelContext.active(), span) });
     },
