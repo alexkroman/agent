@@ -203,7 +203,7 @@ describe("the markdown config", () => {
     const denied: Record<string, readonly string[]> = {
       aai: ["./host-internal", "./internal", "./slugify", "./testing/vite", "./workspace-files"],
       "aai-ui": ["./internal"],
-      "aai-runtime": [".", "./internal"],
+      "aai-runtime": [".", "./internal", "./tracing"],
     };
     const inspected = Object.entries(siteConfig).flatMap(([globKey, config]) => {
       const pkg = repoPathOf(globKey).split("/")[1];
