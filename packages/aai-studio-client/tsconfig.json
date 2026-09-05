@@ -6,5 +6,13 @@
     "types": [],
     "noEmit": true
   },
-  "include": ["src", "vite.config.ts"]
+  // Generic, like every other package here: tsc's `include` only sets ROOT
+  // files, and a config file is imported by nothing, so anything not matched is
+  // checked by nothing at all. This named `vite.config.ts` ONE BY ONE and had
+  // already fallen behind — `vitest.config.ts` sat beside it type-checked by
+  // no program in the repo (verified with `tsc --listFiles`, and by putting
+  // `const x: number = "s"` in it and watching `pnpm typecheck` report 17/17
+  // successful). That is the failure `tsconfig.tools.json`'s header was
+  // written about, one directory in.
+  "include": ["src", "*.ts"]
 }

@@ -90,6 +90,7 @@
     "test:scenario": "node scripts/with-worker-budget.mjs turbo run check:scenario",
     "test:templates": "pnpm --filter aai-templates test",
     "typecheck": "turbo run typecheck",
+    "typecheck:browser": "tsc -p tsconfig.browser.json",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "typecheck:tools": "tsc -p tsconfig.tools.json",
     "version": "changeset version && node scripts/sync-scaffold-versions.mjs"
@@ -99,6 +100,7 @@
     "@biomejs/biome": "^2.5.12",
     "@changesets/cli": "^3.0.1",
     "@microsoft/api-extractor": "^7.59.0",
+    "@stryker-mutator/api": "^10.0.0",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "catalog:",

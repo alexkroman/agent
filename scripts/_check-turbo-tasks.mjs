@@ -23,9 +23,9 @@
  * what it gates on. Running plain `test` here made a coverage-floor failure
  * STRUCTURALLY invisible until CI: a new module can be green in every suite and
  * still take its package under a floor. Measured on aai-ui, 17.0s -> 17.9s.
- * `TYPECHECK` is the three typecheck PROGRAMS, named once so the modes cannot drift.
+ * `TYPECHECK` is the four typecheck PROGRAMS, named once so the modes cannot drift.
  */
-export const TYPECHECK = ["typecheck", "typecheck:tools", "typecheck:scripts"];
+export const TYPECHECK = ["typecheck", "typecheck:tools", "typecheck:scripts", "typecheck:browser"];
 export const TURBO_TASKS = {
   local: [
     "build",

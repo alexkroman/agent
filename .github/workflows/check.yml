@@ -119,15 +119,20 @@ jobs:
       # invalidates a tsc program — with the run's SHA appended so each run
       # saves a fresh entry; a key that already exists is skipped on save, so a
       # SHA-less key would freeze the first run's buildinfo forever.
+      #
+      # `tsconfig*.json` rather than the two names it used to list. Four programs
+      # write into `.tsbuildinfo/` now, and the key hashed `tsconfig.tools.json`
+      # only — so editing `tsconfig.scripts.json` did not invalidate the cache
+      # for the program it configures. A glob covers the next one on creation.
       - name: Cache TypeScript incremental build info
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tsbuildinfo/
-          key: tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json', 'tsconfig.tools.json', 'pnpm-lock.yaml') }}-${{ github.sha }}
+          key: tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig*.json', 'pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
-            tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json', 'tsconfig.tools.json', 'pnpm-lock.yaml') }}-
+            tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig*.json', 'pnpm-lock.yaml') }}-
             tsbuildinfo-typecheck-${{ runner.os }}-
-      - run: pnpm exec turbo run lint typecheck typecheck:tools typecheck:scripts
+      - run: pnpm exec turbo run lint typecheck typecheck:tools typecheck:scripts typecheck:browser
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main

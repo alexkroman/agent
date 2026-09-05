@@ -93,5 +93,14 @@
   // Generic on purpose, same as `tsconfig.tools.json`: tsc's `include` only
   // sets ROOT files, and a script is imported by nothing, so anything not
   // matched here is checked by nothing at all.
-  "include": ["scripts/**/*.mjs", "examples/**/*.mjs"]
+  //
+  // `*.mjs` is the ROOT level, and it was the hole this pair left between them:
+  // `tsconfig.tools.json` takes root `*.ts`, this one took `scripts/**` and
+  // `examples/**`, and neither claimed a `.mjs` sitting at the root. That is
+  // `stryker.base.config.mjs` and `stryker.sdk.config.mjs` — checked by no
+  // program in the repo, confirmed by giving one a `/** @type {number} */ const
+  // x = "s"` and watching all four type gates stay green. Same argument as the
+  // `.ts` half one file over: a root config is imported by nothing, so a glob
+  // is the only thing that ever sees it.
+  "include": ["*.mjs", "scripts/**/*.mjs", "examples/**/*.mjs"]
 }

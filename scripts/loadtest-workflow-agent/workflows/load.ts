@@ -34,7 +34,18 @@ async function tick(index: number, spin: number) {
  * concurrency, no I/O and no suspension in it. Everything else is read against
  * this.
  */
-export async function chainFlow(input: { steps: number; spin?: number }, ctx: WorkflowContext) {
+// The optional properties carry `| undefined` explicitly, here and in
+// `fanoutFlow`. `z.number().optional()` infers `spin?: number | undefined`, and
+// under the repo's `exactOptionalPropertyTypes` that is NOT assignable to
+// `spin?: number` — `WorkflowBody` is contravariant in its input, so the
+// mismatch lands as a TS2769 overload failure on `workflow({ run })` over in
+// `agent.ts` rather than here. A scaffolded project does not set that flag, so
+// this compiles either way; spelling it out keeps the body honest about the
+// schema it is the body FOR.
+export async function chainFlow(
+  input: { steps: number; spin?: number | undefined },
+  ctx: WorkflowContext,
+) {
   const spin = input.spin ?? 1000;
   let last = 0;
   for (let i = 0; i < input.steps; i++) {
@@ -84,8 +95,8 @@ export async function fanoutFlow(
   input: {
     url: string;
     items: number;
-    width?: number;
-    classify?: boolean;
+    width?: number | undefined;
+    classify?: boolean | undefined;
   },
   ctx: WorkflowContext,
 ) {

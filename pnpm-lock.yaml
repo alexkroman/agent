@@ -155,6 +155,9 @@ importers:
       '@microsoft/api-extractor':
         specifier: ^7.59.0
         version: 7.59.0(@types/node@24.13.3)
+      '@stryker-mutator/api':
+        specifier: ^10.0.0
+        version: 10.0.0
       '@stryker-mutator/core':
         specifier: ^10.0.0
         version: 10.0.0(@types/node@24.13.3)
@@ -823,9 +826,15 @@ importers:
       '@alexkroman1/aai-ui':
         specifier: workspace:*
         version: link:../aai-ui
+      '@tailwindcss/vite':
+        specifier: 'catalog:'
+        version: 4.3.3(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.18
+      '@vitejs/plugin-react':
+        specifier: 'catalog:'
+        version: 6.1.1(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
       oxc-parser:
         specifier: ^0.148.0
         version: 0.148.0

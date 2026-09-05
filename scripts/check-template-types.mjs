@@ -58,6 +58,24 @@ const result = runScaffoldTsc({
     // the scaffold holds exactly one, and a glob would silently start checking
     // whatever else lands beside it under a config chosen for this file.
     path.join(SCAFFOLD_DIR, "server.mjs"),
+    // The scaffold's two shipped CONFIGS, for the reason `server.mjs` is here:
+    // a user gets them from `aai init` and every `aai test` / `aai dev` loads
+    // them, and they were checked by NOTHING — `packages/aai-templates/tsconfig.json`
+    // deliberately stops at `src` so the scaffold is checked here instead, and
+    // here only named `global.d.ts` and `server.mjs`. Confirmed by putting
+    // `const x: number = "s"` in each and watching all four type gates stay green.
+    //
+    // `vitest.config.ts` is the one that can actually rot: it imports
+    // `@alexkroman1/aai/testing/vite` for `aaiAgentPlugin`, so a rename on OUR
+    // side of that subpath breaks every scaffolded project's test run, and this
+    // is the only place that would say so. `vite.config.ts` names
+    // `@tailwindcss/vite` and `@vitejs/plugin-react`, which is why this package
+    // now carries both — the alternative was leaving the file unchecked.
+    //
+    // Named as FILES, not a `*.config.ts` glob, for the same reason as
+    // `server.mjs`: the scaffold holds exactly these two.
+    path.join(SCAFFOLD_DIR, "vite.config.ts"),
+    path.join(SCAFFOLD_DIR, "vitest.config.ts"),
   ],
 });
 

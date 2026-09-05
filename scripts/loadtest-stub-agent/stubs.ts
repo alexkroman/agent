@@ -51,7 +51,13 @@ function emitter<E extends Record<string, (...args: never[]) => void>>() {
       };
     },
     emit<K extends keyof E>(event: K, ...args: Parameters<E[K]>) {
-      for (const fn of handlers[event] ?? []) (fn as (...a: unknown[]) => void)(...args);
+      // `Reflect.apply` rather than a cast. `fn` is `E[K]`, whose constraint
+      // declares `(...args: never[]) => void`, so asserting it to
+      // `(...a: unknown[]) => void` is contravariantly UNSOUND and TS2352 says
+      // so — `unknown` is not assignable to `never`. Widening through `unknown`
+      // silences it and keeps the unsoundness; `Reflect.apply` takes a
+      // `Function` and an `ArrayLike`, which `fn` and `args` genuinely are.
+      for (const fn of handlers[event] ?? []) Reflect.apply(fn, undefined, args);
     },
   };
 }
