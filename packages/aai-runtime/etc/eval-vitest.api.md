@@ -179,7 +179,7 @@ export type EvalWorkflowTestContext = {
     readonly mode: EvalMode;
 };
 
-// @internal
+// @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;

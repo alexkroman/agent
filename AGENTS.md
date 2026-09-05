@@ -284,9 +284,10 @@ changed since the default branch (also `test:coverage`, same reason);
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run
-twelve **gates** (all also runnable standalone) that hold the line on technical
-debt. Two compare against a COMMITTED PER-FILE BASELINE
-(`check:hatches`, `check:invariants`); the rest are absolute. They must stay
+thirteen **gates** (all also runnable standalone) that hold the line on technical
+debt. Three compare against a COMMITTED PER-FILE BASELINE
+(`check:hatches`, `check:invariants`, `check:api-nameable`); the rest are
+absolute. They must stay
 wired into BOTH: for a long time they lived only in `check.mjs`, which CI never
 invokes, so the only thing enforcing them was the pre-push hook — and
 `git push --no-verify` skipped them entirely.
@@ -486,6 +487,17 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   (over budget = refactor before adding more; over 150k = a guide is being
   truncated right now), that the root still links every package guide, and
   that the script and CI wiring still agree with it.
+- **`pnpm check:api-nameable`** (`scripts/check-api-nameable.mjs`) — a type a
+  published signature references and NO subpath of its package exports. The
+  value passes, and the consumer cannot write the type down. Three things
+  already touched this and none FAILED — `includeForgottenExports` RECORDS such
+  a type, TypeDoc only covers what it renders, and `check:api-contracts` hashes
+  a declaration without asking whether it is importable — so the surface a
+  consumer must satisfy and the one it can NAME had drifted apart unmeasured. It
+  cost `@alexkroman1/aai-runtime`'s eval and workflow-test surface, which could
+  not be rendered at all until four types were exported. Scored per PACKAGE and
+  baselined rather than absolute (some must stay unnameable: the `*Misuse`
+  compile-error types); its own doc argues both, and the two floors.
 - **`pnpm check:coverage-per-file`** (`scripts/check-coverage-per-file.mjs`) — a
   50% per-file statement floor over what `test:coverage` wrote, because the
   `vitest.config.ts` thresholds are PACKAGE-wide and cannot see one new module

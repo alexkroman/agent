@@ -19,6 +19,7 @@
     "check:affected": "node scripts/with-worker-budget.mjs turbo run build typecheck lint test:coverage --affected --continue",
     "check:agent-guide": "node scripts/sync-agent-guide.mjs --check",
     "check:api-contracts": "node scripts/api-contracts.mjs",
+    "check:api-nameable": "node scripts/check-api-nameable.mjs",
     "check:api-report": "node scripts/api-report.mjs --check",
     "check:authoring-guide": "node scripts/check-authoring-guide.mjs",
     "check:claude-md": "node scripts/check-claude-md.mjs",

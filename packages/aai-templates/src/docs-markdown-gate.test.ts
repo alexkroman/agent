@@ -187,24 +187,31 @@ describe("the markdown config", () => {
     //
     // It also re-states the deny-list rather than reading it: an entry is a
     // decision with a paragraph attached, and the failure worth catching is
-    // somebody adding a fifth to make a red gate green. `./testing/vite` is the
-    // one that is not an internals subpath — it is BUILD tooling, a Vite plugin
-    // a `vitest.config.ts` registers, so a reference page under the authoring
-    // API would describe wiring rather than anything an author writes.
-    const denied = [
-      "./host-internal",
-      "./internal",
-      "./slugify",
-      "./testing/vite",
-      "./workspace-files",
-    ];
+    // somebody adding one more to make a red gate green. `./testing/vite` is
+    // the one that is not an internals subpath — it is BUILD tooling, a Vite
+    // plugin a `vitest.config.ts` registers, so a reference page under the
+    // authoring API would describe wiring rather than anything an author
+    // writes.
+    //
+    // PER PACKAGE, because one package excuses its ROOT and the others must
+    // not. `aai-runtime` is in the reference for `/eval`, `/eval/vitest` and
+    // `/testing` — the surface whoever writes the `agent.ts` imports — and its
+    // root barrel is the ~220-export embedder surface that stays out. A flat
+    // list could not say that: a bare `"."` entry would excuse `@alexkroman1/aai`
+    // itself going undocumented, which is the whole reference disappearing with
+    // this gate still green.
+    const denied: Record<string, readonly string[]> = {
+      aai: ["./host-internal", "./internal", "./slugify", "./testing/vite", "./workspace-files"],
+      "aai-ui": ["./internal"],
+      "aai-runtime": [".", "./internal"],
+    };
     const inspected = Object.entries(siteConfig).flatMap(([globKey, config]) => {
       const pkg = repoPathOf(globKey).split("/")[1];
       if (pkg === undefined) throw new Error(`unparsable glob key ${globKey}`);
       return typedSubpathsOf(pkg).map(({ subpath, types }) => {
         if (config.includes(`"${types.replace(/^\.\//, "")}"`)) return subpath;
         expect(
-          denied,
+          denied[pkg] ?? [],
           `${pkg} publishes ${subpath} and documents it nowhere. Add the entry point, or ` +
             "deny-list it in scripts/docs-markdown.mjs with the reason.",
         ).toContain(subpath);
@@ -217,8 +224,8 @@ describe("the markdown config", () => {
     }).length;
     // Floor, for the reason every count-only assertion here carries one: a
     // manifest glob that stopped resolving iterates zero subpaths and passes.
-    // Measured actual: 21.
-    expect(inspected).toBeGreaterThanOrEqual(15);
+    // Measured actual: 27.
+    expect(inspected).toBeGreaterThanOrEqual(20);
   });
 });
 

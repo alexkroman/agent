@@ -96,3 +96,34 @@ export {
   type ScriptedToolCall,
   scriptedTextModel,
 } from "./testing/scripted-text-model.ts";
+// `RunTextAgentOptions` extends the per-turn options with them, and this
+// subpath published neither the extension nor the thing extended. Same
+// declaration `@alexkroman1/aai-runtime` exports, re-exported so a spec that
+// builds turn options up in a helper can name what it is building.
+export type { TextAgentOptions, TextTurnOptions } from "./text-agent.ts";
+// The six records a journal holds. `JournalStore` is a dozen methods over
+// exactly these, so publishing the store and not the records published a shape
+// nobody could read: `getRun` answered a `RunRecord` no `import type` named.
+// They are also what a spec asserting on a real run inspects directly.
+export type {
+  HookRecord,
+  ResumableRun,
+  RunRecord,
+  SleepEntry,
+  SleepRecord,
+  StepEntry,
+} from "./workflow-journal-records.ts";
+// The two types those name and this subpath did not publish. `journal` is the
+// documented seam for running a spec against a real store rather than the
+// memory one, which is unusable if the store's shape has no name here; and
+// `WorkflowTestRead.kind` is what a determinism assertion switches on.
+// `JournalConflictError` is a VALUE, and it is on this subpath for the same
+// reason `JournalStore` is: `runWorkflow`'s `journal` option invites a store of
+// your own, and `claimHook` documents throwing this to signal a duplicate wait
+// token. A contract a caller must satisfy and cannot name is not a contract.
+export {
+  JournalConflictError,
+  type JournalStore,
+  type RunStatus,
+} from "./workflow-journal-types.ts";
+export type { DeterminismKind } from "./workflow-replay-determinism.ts";

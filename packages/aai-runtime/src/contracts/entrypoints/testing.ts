@@ -47,8 +47,31 @@
  * See `scripts/api-contracts.mjs`.
  */
 
+// ## The JOURNAL shapes, because `journal` is a documented seam
+//
+// `RunWorkflowOptions.journal` invites a store of your own — the point being
+// that a deployment which already owns a database can drive a spec against it —
+// and `JournalStore` is a dozen methods over exactly these six records plus
+// `RunStatus`. Publishing the store without them published a shape nobody could
+// read: `getRun` answered a `RunRecord` no `import type` named, and `claimHook`
+// documented throwing a `JournalConflictError` a caller could not catch. Same
+// argument as `TextAgentOptions` above — a contract a caller must satisfy and
+// cannot name is not a contract, so the names a spec needs move this epoch
+// rather than none.
+export type {
+  HookRecord,
+  JournalStore,
+  ResumableRun,
+  RunRecord,
+  RunStatus,
+  SleepEntry,
+  SleepRecord,
+  StepEntry,
+} from "../../testing-barrel.ts";
 export {
   DEFAULT_MAX_DELIVERIES,
+  type DeterminismKind,
+  JournalConflictError,
   type RunTextAgentOptions,
   type RunWorkflowOptions,
   runTextAgent,

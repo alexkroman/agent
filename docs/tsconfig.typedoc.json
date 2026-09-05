@@ -15,5 +15,9 @@
   // every workspace happened to be built — while turbo's `docs` task
   // declares only the two builds documented here. Listing them keeps the
   // tsconfig, typedoc.json and that dependsOn in agreement.
-  "include": ["../packages/aai/dist/**/*.d.ts", "../packages/aai-ui/dist/**/*.d.ts"]
+  "include": [
+    "../packages/aai/dist/**/*.d.ts",
+    "../packages/aai-ui/dist/**/*.d.ts",
+    "../packages/aai-runtime/dist/**/*.d.ts"
+  ]
 }

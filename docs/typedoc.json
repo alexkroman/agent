@@ -2,7 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "name": "AAI SDK",
   "entryPointStrategy": "packages",
-  "entryPoints": ["../packages/aai", "../packages/aai-ui"],
+  "entryPoints": ["../packages/aai", "../packages/aai-ui", "../packages/aai-runtime"],
   "out": "dist",
   "readme": "./home.md",
   "includeVersion": true,

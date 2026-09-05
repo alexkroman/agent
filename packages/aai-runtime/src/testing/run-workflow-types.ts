@@ -173,7 +173,7 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    *
    * A bare call reaches SLEEPS only. A hook's deadline is a different kind of
    * wait and is ended by naming its correlation id, or by answering it with
-   * {@link WorkflowTestHandle.signal} — see `SleepRecord.kind` for the approval
+   * `signal` — see `SleepRecord.kind` for the approval
    * window a bare wake used to close.
    *
    * Resolves this handle. Read `wakeAt` before calling it to assert what the
@@ -183,13 +183,13 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
   /**
    * Answer a `ctx.waitFor` token, and deliver.
    *
-   * Resolves this handle. {@link WorkflowTestHandle.signalled} says whether
+   * Resolves this handle. `signalled` says whether
    * anything was holding the token — `false` for a token nobody waits on, one
    * already answered, or one whose window has closed, which are the same refusal
    * a deployed `ctx.workflows.signal` gives.
    */
   signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
-  /** What the last {@link WorkflowTestHandle.signal} answered. */
+  /** What the last `signal` answered. */
   readonly signalled: boolean;
   /**
    * Close every `ctx.waitFor` WINDOW the run is parked on, and deliver.
@@ -211,7 +211,7 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    * landed first still wins and the body still takes the ANSWERED branch.
    *
    * Resolves this handle. A run parked on a `ctx.sleep` is unaffected;
-   * {@link WorkflowTestHandle.advanceSleep} is that one.
+   * `advanceSleep` is that one.
    */
   expireWaits(): Promise<WorkflowTestHandle<R>>;
   /**
@@ -274,7 +274,7 @@ export type RunWorkflowOptions = {
    *
    * A worker that died mid-run, which is the one durable-execution failure a
    * body cannot be written against without being able to produce it. It fires
-   * ONCE and then disarms, so {@link WorkflowTestHandle.restart} resumes rather
+   * ONCE and then disarms, so `restart` resumes rather
    * than crashing again.
    *
    * The kill lands after the step's attempt has been CHARGED and before its body

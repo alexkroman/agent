@@ -52,6 +52,9 @@ export function customEventsIn(events: readonly SessionEvent[], name?: string): 
 }[];
 
 // @public
+export const DEFAULT_RUN_TIMEOUT_MS = 300000;
+
+// @public
 export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 
 // @public
@@ -156,7 +159,7 @@ export type EvalTurn = {
 export function evalWorkflowCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
 
 // @public
-type EvalWorkflowEngineOptions = {
+export type EvalWorkflowEngineOptions = {
     readonly workflows: Readonly<Record<string, WorkflowDef>>;
     readonly env: Readonly<Record<string, string>>;
     readonly stepFetch?: StepFetch | undefined;
@@ -207,8 +210,8 @@ export type EvalWorkflowsOptions = {
     readonly logger?: Logger | undefined;
 };
 
-// @internal
-type HostGenerateFn = (options: GenerateOptions, callOptions?: {
+// @public
+export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
 
@@ -225,16 +228,16 @@ export function lastStateIn<T>(events: readonly SessionEvent[], schema: Standard
 export function lastStateIn(events: readonly SessionEvent[]): unknown;
 
 // @public
-type LogContext = Record<string, unknown>;
+export type LogContext = Record<string, unknown>;
 
 // @public
-type LogFn = (message: string, ctx?: LogContext) => void;
+export type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
-type Logger = Record<LogLevel, LogFn>;
+export type Logger = Record<LogLevel, LogFn>;
 
 // @public
-type LogLevel = "info" | "warn" | "error" | "debug";
+export type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
 export function openEvalSession(options: EvalSessionOptions): Promise<EvalSession>;

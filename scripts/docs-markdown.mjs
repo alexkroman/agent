@@ -104,7 +104,7 @@ const OUT_DIR = "docs/api";
 const RENDER_SCRIPT = ["--filter", "aai-docs", "run", "docs:md"];
 
 /**
- * Floors, from a measured actual — 18 files, ~728 KB at the time of writing.
+ * Floors, from a measured actual — 27 files, ~1.08 MB at the time of writing.
  *
  * Set well under, because these move whenever a subpath is added or a doc
  * comment is rewritten and a floor that tracks the actual is a floor that has
@@ -181,7 +181,11 @@ const UNDOCUMENTED_SUBPATHS = {
       "authors. Its README and packages/aai-runtime/CLAUDE.md carry the " +
       "orientation, and the signatures are in etc/*.api.md like every other " +
       "published package. Revisit if embedders ask for a rendered page — " +
-      "then it gets its own, not a share of the SDK's.",
+      "then it gets its own, not a share of the SDK's. Note this reason is " +
+      "about the EMBEDDER surface and reaches no further: /eval, " +
+      "/eval/vitest and /testing are read by whoever writes the agent.ts, " +
+      "so they are documented, and the package is in docs/typedoc.json for " +
+      "them alone.",
     "./internal":
       "Cross-package infrastructure, in two halves: the SDK names " +
       "re-exported from @alexkroman1/aai/host-internal, undocumented for the " +
@@ -200,8 +204,8 @@ const UNDOCUMENTED_SUBPATHS = {
  *
  * Its success output is a count, so a manifest read that stopped finding
  * `exports`, or a package list that emptied, would report "every published
- * subpath is documented ✓" over nothing. Measured actual: 22 (19 on `aai`,
- * 3 on `aai-ui`).
+ * subpath is documented ✓" over nothing. Measured actual: 27 (19 on `aai`,
+ * 3 on `aai-ui`, 5 on `aai-runtime`).
  */
 const MIN_SUBPATHS = 15;
 

@@ -25,13 +25,18 @@
 // capability's — it is on the root barrel, and a name belongs to exactly one
 // contract or a change to it bumps two epochs. Claiming it here would also read
 // as MOVING it, which on the runtime's export list is a removal.
-export type { StepFetch } from "../../eval-barrel.ts";
+// The two types the options above NAME and this capability did not carry, so a
+// signature change to either moved no epoch. `HostGenerateFn` is
+// `EvalSessionOptions.generate`; `EvalWorkflowEngineOptions` is what
+// `EvalWorkflowsOptions` indexes for `speech` and `stepFetch`.
+export type { EvalWorkflowEngineOptions, HostGenerateFn, StepFetch } from "../../eval-barrel.ts";
 export {
   completedOutput,
   createStubSttOpener,
   createStubTtsOpener,
   createVmRunCode,
   customEventsIn,
+  DEFAULT_RUN_TIMEOUT_MS,
   describeToolCalls,
   describeTurn,
   type EvalCredentials,

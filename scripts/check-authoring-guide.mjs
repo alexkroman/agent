@@ -83,6 +83,14 @@ const PACKAGES_ROOT = join(ROOT, "packages");
  * is a hard failure below.
  */
 const UNDOCUMENTED_CAPABILITIES = {
+  "aai-runtime:logging":
+    "the HOST logging surface — the buffer/page/line constants a deployment tunes and " +
+    "`consoleLogger`. It reaches the example-facing set the same way `aai-runtime:runtime` " +
+    "below does and through the same subpath: `@alexkroman1/aai-runtime/eval` re-publishes " +
+    "`Logger` and its three companions because `EvalSessionOptions.logger` takes one, so a " +
+    "case can collect lines and assert on them. Nothing else in it is written from an " +
+    "`agent.ts` — an agent author never sizes a log buffer — and its own documentation is " +
+    "`packages/aai-runtime/CLAUDE.md`.",
   "aai-runtime:runtime":
     "the host embedding surface — `createRuntime`, `Runtime`, `SessionRuntime`. It reaches " +
     "the example-facing set through exactly one name, `RunCodeExecutor`, which " +

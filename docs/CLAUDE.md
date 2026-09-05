@@ -31,33 +31,58 @@ how the mechanism works.
 | `pnpm docs:api` | `docs/dist/**` (HTML) | humans, published to GitHub Pages |
 | `pnpm docs:md` | `docs/api/**` (markdown, **committed**) | agents and anything reading the repo as files |
 
-Both cover the published surface of `aai` and `aai-ui` from the built
-`dist/*.d.ts`. **Two of the four publishable packages reach no reference page**,
-for different reasons: the `aai-cli` subpaths are internal build hooks, and
-`@alexkroman1/aai-runtime` is aimed at somebody EMBEDDING an agent rather than
-writing one, so rendering it beside the SDK would rebuild the
-two-thirds-of-a-combined-reference the runtime split undid. Both reasons are
-written out in `UNDOCUMENTED_SUBPATHS` (`scripts/docs-markdown.mjs`), and
-`aai-runtime`'s names what would change the answer: "Revisit if embedders ask
-for a rendered page — then it gets its own, not a share of the SDK's."
+Both cover the same surface from the built `dist/*.d.ts`: all of `aai` and
+`aai-ui`, and **three of `aai-runtime`'s five subpaths** — `/eval`,
+`/eval/vitest` and `/testing`. **The line is the READER, not the package.**
+Everything rendered is what somebody writing an `agent.ts` imports, its evals
+and its workflow specs included; what is left out is what somebody EMBEDDING an
+agent imports (`aai-runtime`'s root barrel, ~220 exports, whose rendering beside
+the SDK would rebuild the two-thirds-of-a-combined-reference the runtime split
+undid), plus the two `/internal` escape hatches and `aai-cli`'s build hooks.
+Every exclusion is written out in `UNDOCUMENTED_SUBPATHS`
+(`scripts/docs-markdown.mjs`), and the `aai-runtime` root entry says what would
+change the answer: "Revisit if embedders ask for a rendered page — then it gets
+its own, not a share of the SDK's."
 
-**Documenting `aai-runtime` is a THREE-file change, and two of them are already
-in the tree.** `packages/aai-runtime/typedoc.json` exists and names
-`dist/runtime-barrel.d.ts`; the package has its `@module` tags. What is missing
-is the pair that has to move together: `../packages/aai-runtime` in
-`docs/typedoc.json`'s `entryPoints`, and the DELETION of
-`UNDOCUMENTED_SUBPATHS["aai-runtime"]["."]`. Do one without the other and
-`check:docs-md` fails — verified: adding only the entry point prints
-`packages/aai-runtime documents . AND lists it in UNDOCUMENTED_SUBPATHS`, since
-the coverage check reads the deny-list for every package `docs/typedoc.json`
-names. That coupling is the deny-list working as designed: a written reason has
-to be retracted in the same change that stops honouring it, so the argument
-against gets read once more before it is dropped. Until both land, the package
-typedoc.json is inert — the package list is derived from `docs/typedoc.json`,
-so nothing reads it. Expect the render to surface `{@link}` warnings in
-`aai-runtime` doc comments on its first pass; `treatWarningsAsErrors` makes
-those failures, and they are the tag finding latent broken links, not causing
-them.
+**A partial opt-in is what that deny-list is FOR**, and it was not obvious until
+it was needed. The coverage check runs per SUBPATH — a package in
+`docs/typedoc.json`'s `entryPoints` has every one of its published subpaths
+either in its own `typedoc.json` or excused by name — so "document this package"
+was never the unit. The three that came in are the three the `aai` README
+teaches, which is what made their absence a defect rather than a preference: that
+README's "Behavioral evals" section shows `describeEval` and then links "Full API
+reference", which had no page for it.
+
+**Opting a package in is a FOUR-file change and they move together.**
+`../packages/aai-runtime` in `docs/typedoc.json`'s `entryPoints`, the package's
+own `typedoc.json` naming the entry points, the `include` in
+`docs/tsconfig.typedoc.json`, and the `dependsOn` + `inputs` of turbo's `docs`
+task. Get the deny-list wrong in either direction and `check:docs-md` fails by
+name: a subpath both documented and excused prints `packages/aai-runtime
+documents X AND lists it in UNDOCUMENTED_SUBPATHS`, and one that is neither
+prints the `entryPoints` line to add. That coupling is the deny-list working as
+designed — a written reason has to be retracted in the same change that stops
+honouring it.
+
+**Expect the first render of a newly-opted-in package to be RED, and expect the
+failures to be real.** `treatWarningsAsErrors` turns every unresolved reference
+into one, and `aai-runtime`'s first pass produced two classes, neither caused by
+the render:
+
+- **Six types referenced by a published signature and exported by no subpath**,
+  so a consumer could pass the field and not name its type — the defect class
+  `pnpm check:api-nameable` now holds to a baseline (see "Quality ratchets" in
+  `AGENTS.md`). Four of them (`HostGenerateFn`, `EvalWorkflowEngineOptions`,
+  `JournalStore`, `DeterminismKind`) were on the eval and workflow-test surface
+  the README teaches.
+- **Five dead `{@link}`s**, all naming a member of an inline intersection
+  (`WorkflowTestHandle.signal` and friends), which has no anchor TypeDoc can
+  resolve. Latent for as long as nothing rendered these subpaths.
+
+A link into a subpath that is deliberately NOT rendered is the third case and is
+NOT a defect: `externalSymbolLinkMappings` in the package's `typedoc.json` is
+where those go, pointing at whatever the deny-list says carries that surface's
+orientation. Do not close one by deleting the link.
 
 **Entry points live in each package's `typedoc.json`, and a new subpath export
 needs an entry there too — `scripts/docs-markdown.mjs` fails the render if it

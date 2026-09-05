@@ -89,7 +89,13 @@ export type EvalBody = (
   ctx: WorkflowContext,
 ) => Promise<unknown> | unknown;
 
-/** What {@link createEvalWorkflowEngine} takes. */
+/**
+ * How the in-process engine behind `openEvalWorkflows` is configured.
+ *
+ * Public because {@link EvalWorkflowsOptions} indexes into it for its `speech`
+ * and `stepFetch` fields — the engine factory itself stays internal, so this
+ * describes the shape rather than naming it.
+ */
 export type EvalWorkflowEngineOptions = {
   /** The agent's declared workflows, keyed as `agent({ workflows })` keys them. */
   readonly workflows: Readonly<Record<string, WorkflowDef>>;
