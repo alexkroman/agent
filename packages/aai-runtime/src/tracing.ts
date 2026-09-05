@@ -182,12 +182,14 @@ export async function startTracing(
  * misuse, and the misuse is calling it somewhere that is not a request
  * boundary — which is why this is exported as one named thing with one caller
  * per surface rather than as the context manager itself.
+ *
+ * @internal
  */
 export function adoptRequestTrace(headers: Record<string, string | string[] | undefined>): void {
   adopter?.(headers);
 }
 
-/** What {@link startTracingOtel} installs. Undefined until it runs. */
+/** What {@link startTracingOtel} installs. Undefined until it runs. @internal */
 type RequestTraceAdopter = (headers: Record<string, string | string[] | undefined>) => void;
 
 let adopter: RequestTraceAdopter | undefined;
@@ -203,6 +205,8 @@ let adopter: RequestTraceAdopter | undefined;
  * whole design rests on. So the OTel module hands its adopter back on the
  * handle and this module installs it, exactly as the service name travels the
  * other way.
+ *
+ * @internal
  */
 export function setRequestTraceAdopter(next: RequestTraceAdopter | undefined): void {
   adopter = next;

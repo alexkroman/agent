@@ -1,5 +1,5 @@
 {
-  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 337 left. The value is always 1 — see scripts/check-module-tests.mjs.",
+  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 336 left. The value is always 1 — see scripts/check-module-tests.mjs.",
   "modules-without-tests": {
     "packages/aai-cli/src/_deploy.ts": 1,
     "packages/aai-cli/src/_mock-api.ts": 1,
@@ -12,7 +12,6 @@
     "packages/aai-cli/src/project-config.ts": 1,
     "packages/aai-evals/src/_gate.ts": 1,
     "packages/aai-evals/src/_register.ts": 1,
-    "packages/aai-guest/src/_guest-tracing-otel.ts": 1,
     "packages/aai-guest/src/harness-auth.ts": 1,
     "packages/aai-guest/src/harness-bundle-source.ts": 1,
     "packages/aai-guest/src/harness-bundle.ts": 1,

@@ -48,6 +48,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-runtime` — `packages/aai-runtime/etc/index.api.md`
 - `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
 - `@alexkroman1/aai-runtime/testing` — `packages/aai-runtime/etc/testing.api.md`
+- `@alexkroman1/aai-runtime/tracing` — `packages/aai-runtime/etc/tracing.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
 - `@alexkroman1/aai-ui` — `packages/aai-ui/etc/index.api.md`
 - `@alexkroman1/aai-ui/internal` — `packages/aai-ui/etc/internal.api.md`
@@ -9908,6 +9909,43 @@ export type WorkflowTestStep = {
     readonly error?: string | undefined;
     readonly attempts: number;
 };
+```
+
+## `@alexkroman1/aai-runtime/tracing`
+
+```ts
+// @internal
+export function adoptRequestTrace(headers: Record<string, string | string[] | undefined>): void;
+
+// @public
+export const DEFAULT_SERVICE_NAME = "aai-agent";
+
+// @public
+export const OTEL_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
+
+// @public
+export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
+
+// @internal
+type RequestTraceAdopter = (headers: Record<string, string | string[] | undefined>) => void;
+
+// @public
+export type RuntimeTracing = {
+    forceFlush: () => Promise<void>;
+    shutdown: () => Promise<void>;
+};
+
+// @internal
+export function setRequestTraceAdopter(next: RequestTraceAdopter | undefined): void;
+
+// @public
+export function startTracing(env?: NodeJS.ProcessEnv): Promise<RuntimeTracing | undefined>;
+
+// @public
+export function startTracingDetached(env?: NodeJS.ProcessEnv): void;
+
+// @public
+export function tracingEndpoint(env?: NodeJS.ProcessEnv): string | undefined;
 ```
 
 ## `@alexkroman1/aai-ui/client-dir`
