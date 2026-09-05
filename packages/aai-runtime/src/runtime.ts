@@ -16,6 +16,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
 import { openAppDb } from "./app-db.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
+import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
 import { logResolvedRuntime, resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
@@ -270,10 +271,22 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     const commit = commitSessionState
       ? (): void => void commitSessionState(sessionOpts.id)
       : undefined;
+    // This session's prompt and the dialogs that address it: every session event
+    // is offered to each declared dialog, its per-state deadline is armed, and
+    // the active instructions become the prompt's per-turn suffix. Inert for an
+    // agent that declares none — see `runtime-dialogs.ts`.
+    const dialogs = openSessionDialogs(agent.dialogs, sessionOpts.id, {
+      prompt: systemPrompts.forSession(),
+      slots: sessionState.store.viewFor(sessionOpts.id),
+      transport: () => transport,
+      logger,
+      ...omitUndefined({ commit }),
+    });
     const emitter = createSessionEmitter({
       sessionId: sessionOpts.id,
       client: sessionOpts.client,
       stream: sessionState.stream,
+      observe: dialogs.observe,
       logger,
       ...omitUndefined({ hooks, commit }),
     });
@@ -287,13 +300,6 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     // Relay (host) mode: the relay `executeTool` emits the client-facing
     // `tool.called` itself (mirrors the `relayed` flag session-core passes on).
     const isRelay = Boolean(options.onToolResult);
-    // Per SESSION, resolved per TURN. `sessionPrompt.setSuffix` is the
-    // extension point the `dialog()` integration installs into (see
-    // `runtime-system-prompt.ts`); until something does, `resolve()` returns
-    // exactly the string this line used to freeze, which is what makes the
-    // seam invisible to every agent that ships today.
-    const sessionPrompt = systemPrompts.forSession();
-
     // Late-bound reference: callbacks are constructed before ServerSession exists,
     // so we capture a reference and fill it in below.
     let core: ServerSession | null = null;
@@ -321,8 +327,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       },
       // The THUNK, not its value: a transport that can resolve per turn does,
       // and one that cannot resolves it once (see `runtime-transport.ts`).
-      systemPrompt: () => sessionPrompt.resolve(),
+      systemPrompt: () => dialogs.prompt.resolve(),
       callbacks,
+      ...omitUndefined({ dialogTurn: dialogs.turnKnobs }),
     });
 
     core = createSessionCore({
@@ -348,6 +355,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       // releasing only the sink would leave a `ctx.send` from a straggling tool
       // call resolving an emitter whose socket is gone.
       release: () => {
+        // The dialog deadlines come off here too: a pending timer keeps the
+        // event loop alive and would fire into a session already swept.
+        dialogs.stop();
         const owned = releaseSink();
         releaseEmitter();
         return owned;

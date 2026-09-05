@@ -27,6 +27,7 @@ import type { Logger, S2sConfig } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
+import type { DialogTurnSource } from "./transports/pipeline-dialog-knobs.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type {
@@ -101,6 +102,20 @@ export type BuildTransportArgs = {
    */
   systemPrompt: SystemPromptOption;
   callbacks: TransportCallbacks;
+  /**
+   * The per-state voice knobs of this session's declared dialogs, or absent when
+   * no declared state carries one — see `runtime-dialog-knobs.ts`.
+   *
+   * **Only the pipeline branch takes it**, and the asymmetry is the same one the
+   * prompt thunk has for the same reason: two of the three knobs are `streamText`
+   * request settings, and the two S2S services assemble their own requests
+   * service-side. A dialog's `bargeIn` is likewise a decision the host makes only
+   * in pipeline mode — both S2S services own turn-taking. `reportDialogKnobs`
+   * warns for a knob nothing applies; it does not know the transport, so an
+   * agent that declares one and runs on S2S is warned by `buildTransport` below
+   * instead — this file is the one that knows which branch a session took.
+   */
+  dialogTurn?: DialogTurnSource | undefined;
 };
 
 /**
@@ -198,8 +213,27 @@ export function createTransportFactory(
       resumeFalseInterruption: agentConfig.resumeFalseInterruption,
       preemptiveGeneration: agentConfig.preemptiveGeneration,
       skipGreeting: sessionOpts.skipGreeting ?? false,
+      ...omitUndefined({ dialogTurn: args.dialogTurn }),
       logger,
     });
+  }
+
+  /**
+   * Say so when a dialog declares a per-state knob this session's transport
+   * cannot apply.
+   *
+   * The knob-by-knob check in `runtime-dialog-knobs.ts` runs before a transport
+   * exists, so it can only rule out the two that no transport could apply. This
+   * is the other half: on either S2S branch the SERVICE assembles the request
+   * and owns turn-taking, so none of the three the pipeline honours has a moment
+   * here to take effect. Once per session and at warn level, for the reason that
+   * module gives — the alternative is throwing on a caller already on the line.
+   */
+  function warnDialogKnobsUnavailable(args: BuildTransportArgs, kind: string): void {
+    if (args.dialogTurn === undefined) return;
+    logger.warn(
+      `This agent's dialogs declare per-state bargeIn/toolChoice/temperature, and the ${kind} transport applies none of them: that service assembles each request and owns turn-taking, so there is no per-turn moment in this process to apply one at. The dialog's states, instructions, deadlines and tool gates all still work — only these three knobs are inert.`,
+    );
   }
 
   /**
@@ -284,8 +318,10 @@ export function createTransportFactory(
       }
       switch (kind) {
         case OPENAI_S2S_KIND:
+          warnDialogKnobsUnavailable(args, "OpenAI Realtime");
           return buildOpenaiRealtimeTransport(args);
         case ASSEMBLYAI_S2S_KIND:
+          warnDialogKnobsUnavailable(args, "AssemblyAI S2S");
           return buildAssemblyS2sTransport(args);
         default: {
           // `kind` is `never` here, which is the point: adding a member to

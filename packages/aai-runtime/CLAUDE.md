@@ -1586,8 +1586,22 @@ from what the request carried.
 that cache exists at all — and a session appends to it rather than rebuilding
 it. An empty suffix returns the base string ITSELF, with no separator
 appended, so a phase machine with nothing to say moves the prompt by not one
-byte. Nothing calls
-it yet; the `dialog()` integration is what will.
+byte. `openSessionDialogs` is what calls it — see the section below.
+
+## Dialogs are wired to a SESSION here
+
+`agent({ dialogs })` is what makes a `dialog()` more than a tool gate: session
+events reach it, its per-state deadlines are armed, its active instruction
+becomes the prompt suffix above, and three of its five per-state voice knobs are
+applied — the other two are refused, with a warning naming the state. The bridge
+is `runtime-dialogs.ts`; `runtime-dialog-knobs.ts` decides which knobs this
+runtime can honour, and `transports/pipeline-dialog-knobs.ts` applies them.
+
+**[`DIALOG-CLAUDE.md`](DIALOG-CLAUDE.md) beside this file carries all of it** —
+the four decisions (why the bridge runs before the agent's `events` hooks, how
+two dialogs compose, what the deadline clock runs from, and which knobs are live
+against which are impossible), the mechanics not worth rediscovering, and the two
+things deliberately not done. This guide is at its cap.
 
 ## A step's REQUEST is bounded in tokens; the message cap only guards growth
 

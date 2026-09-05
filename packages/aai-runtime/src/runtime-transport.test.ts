@@ -16,7 +16,7 @@ import {
   FAKE_STT_API_KEY_ENV,
   FAKE_TTS_API_KEY_ENV,
 } from "./_pipeline-test-fakes.ts";
-import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
+import { makeAgent, makeClientSink, makeLogger, silentLogger } from "./_test-utils.ts";
 import { DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { createTransportFactory, type TransportFactoryDeps } from "./runtime-transport.ts";
 import * as pipelineTransport from "./transports/pipeline-transport.ts";
@@ -102,6 +102,45 @@ describe("createTransportFactory (S2S)", () => {
     expect(handle.updateSession).toHaveBeenCalledWith(
       expect.objectContaining({ sttPrompt: "Expect spelled names." }),
     );
+  });
+
+  test("warns when a dialog declares knobs this transport cannot apply", async () => {
+    // The knob-by-knob check in `runtime-dialog-knobs.ts` runs before a transport
+    // exists, so this is the only place that can say the other half: on S2S the
+    // service assembles each request, and none of the three the pipeline honours
+    // has a moment here to take effect.
+    const logger = makeLogger();
+    vi.spyOn(_internals, "connectS2s").mockResolvedValue({
+      sendAudio: vi.fn(),
+      sendToolResult: vi.fn(() => true),
+      updateSession: vi.fn(),
+      resumeSession: vi.fn(),
+      close: vi.fn(),
+    });
+    const agent = makeAgent({ s2s: assemblyAIS2s() });
+    const build = createTransportFactory(transportDeps({ agent, logger }));
+
+    build({ ...buildArgs(), dialogTurn: () => ({ temperature: 0.3 }) });
+
+    expect(logger.warn.mock.calls[0]?.[0]).toContain("AssemblyAI S2S transport applies none");
+  });
+
+  test("says nothing when no dialog declares one", async () => {
+    const logger = makeLogger();
+    vi.spyOn(_internals, "connectS2s").mockResolvedValue({
+      sendAudio: vi.fn(),
+      sendToolResult: vi.fn(() => true),
+      updateSession: vi.fn(),
+      resumeSession: vi.fn(),
+      close: vi.fn(),
+    });
+    const build = createTransportFactory(
+      transportDeps({ agent: makeAgent({ s2s: assemblyAIS2s() }), logger }),
+    );
+
+    build(buildArgs());
+
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   test("omits sttPrompt entirely when the agent sets none", async () => {
@@ -228,6 +267,37 @@ describe("createTransportFactory (pipeline)", () => {
       }),
     );
     expect(() => factory(buildArgs())).toThrow(/missing API key/);
+  });
+
+  test("forwards a session's dialogTurn source, and omits it when there is none", () => {
+    const build = vi
+      .spyOn(pipelineTransport, "createPipelineTransport")
+      .mockReturnValue(fakeTransport());
+    const factory = createTransportFactory(
+      transportDeps({
+        agent: makeAgent({ stt: assemblyAIStt(), llm: assemblyAILlm(), tts: assemblyAITts() }),
+        env: {
+          ASSEMBLYAI_API_KEY: "k",
+          [FAKE_STT_API_KEY_ENV]: "stt-key",
+          [FAKE_TTS_API_KEY_ENV]: "tts-key",
+        },
+        pipelineProviders: () => ({
+          stt: { opener: createFakeSttProvider(), envVar: FAKE_STT_API_KEY_ENV },
+          tts: { opener: createFakeTtsProvider(), envVar: FAKE_TTS_API_KEY_ENV },
+          llm: createFakeLanguageModel({ script: [] }),
+        }),
+      }),
+    );
+    const dialogTurn = () => ({ temperature: 0.3 });
+
+    factory({ ...buildArgs(), dialogTurn });
+    expect(build).toHaveBeenCalledWith(expect.objectContaining({ dialogTurn }));
+
+    // ABSENT rather than `undefined`: the transport tests `=== undefined` to
+    // decide whether to keep preemptive generation, and `exactOptionalPropertyTypes`
+    // is what makes "absent" a thing this seam can say.
+    factory(buildArgs());
+    expect(build.mock.calls[1]?.[0]).not.toHaveProperty("dialogTurn");
   });
 
   test("is not called at construction — only when a transport is built", () => {

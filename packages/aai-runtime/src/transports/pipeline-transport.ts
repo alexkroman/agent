@@ -13,6 +13,7 @@ import { normalizeSpeechText } from "@alexkroman1/aai/internal";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createContextBudget } from "./pipeline-context-budget.ts";
+import { createDialogKnobs } from "./pipeline-dialog-knobs.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
@@ -67,6 +68,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   } = resolvePipelineOptions(opts);
 
   const { callbacks, sessionConfig } = opts;
+  // The three per-STATE knobs a `dialog()` can move mid-call, over the agent's
+  // own settings above. Constant thunks when no dialog declares one, so a
+  // session without dialogs behaves exactly as it did — and see
+  // `pipeline-dialog-knobs.ts` for why the other two a state may declare cannot
+  // reach here at all.
+  const knobs = createDialogKnobs(opts.dialogTurn, { minBargeInWords, interruptionMinDurationMs });
   // A THUNK, not the value: this used to capture the string here, which froze
   // the prompt for the length of the call. Every consumer below already
   // re-assembles its request per turn (`startLlmStream` is the one place a
@@ -144,7 +151,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // below behaves exactly as it does with the flag off. See
   // pipeline-speculation.ts.
   const speculation = createPipelineSpeculation({
-    enabled: preemptiveGeneration,
+    // Off whenever a dialog varies the LLM knobs: this constructor decides once,
+    // from the SESSION's `toolChoice`, whether speculating is free at all — a
+    // state that pins a tool would make every speculation end at the tool
+    // boundary and be discarded, with the gate still believing it is free.
+    enabled: preemptiveGeneration && knobs.dialogStep === undefined,
     toolChoice,
     toolSchemas,
     llm: opts.llm,
@@ -172,8 +183,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     resumeFalseInterruption,
     speculation,
     speechIdleTimeoutMs,
-    minBargeInWords,
-    interruptionMinDurationMs,
+    minBargeInWords: knobs.minBargeInWords,
+    interruptionMinDurationMs: knobs.interruptionMinDurationMs,
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),
@@ -297,6 +308,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     tools,
     toolChoice,
     temperature: opts.temperature,
+    dialogStep: knobs.dialogStep,
     maxSteps,
     contextBudget,
     deadAirCoverMs,

@@ -19,6 +19,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import {
   type LanguageModel,
   type ModelMessage,
+  type PrepareStepFunction,
   stepCountIs,
   streamText,
   type Tool,
@@ -63,6 +64,8 @@ export interface ConsumeLlmStreamParams {
   toolChoice: ToolChoice;
   /** LLM sampling temperature; omitted entirely from streamText when unset. */
   temperature: number | undefined;
+  /** The active dialog state's `toolChoice`/`temperature`, per STEP — see `pipeline-dialog-knobs.ts`. */
+  dialogStep?: PrepareStepFunction<ToolSet> | undefined;
   /** Repairs malformed tool-call arguments by re-asking the model. */
   repairToolCall: ToolCallRepairFunction<ToolSet>;
   /** Max LLM tool-call steps for this turn. */
@@ -201,6 +204,7 @@ export type LlmRequest = Pick<
   | "tools"
   | "toolChoice"
   | "temperature"
+  | "dialogStep"
   | "repairToolCall"
   | "maxSteps"
   | "contextBudget"
@@ -246,6 +250,7 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // straight into the slot deletes the other, silently.
     prepareStep: composePrepareStep(
       req.contextBudget,
+      req.dialogStep,
       forceFinalAnswer(req.maxSteps, req.log, req.sid),
     ),
     abortSignal: req.signal,
