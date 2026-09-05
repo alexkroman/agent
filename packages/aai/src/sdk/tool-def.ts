@@ -113,3 +113,19 @@ export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<Return
  * @public
  */
 export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };
+
+/**
+ * Default type of a tool result observed on the client (`useToolResult`) —
+ * `any`, so untyped reads compile. Pass the shape —
+ * `useToolResult<Quote>("get_quote", …)` — for real checking.
+ *
+ * @remarks
+ * `any` because a tool result is the author's own return value
+ * round-tripped through JSON — the client already knows its shape, and the
+ * framework cannot. The strict default (`unknown`) made reading one field a
+ * compile error in a client that runs correctly, which blocked publishing
+ * once `aai build` type-checked.
+ *
+ * @public
+ */
+export type DefaultToolResult = any;

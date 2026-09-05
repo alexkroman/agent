@@ -346,7 +346,7 @@
       }
     },
     {
-      "includes": ["packages/aai/src/sdk/types.ts"],
+      "includes": ["packages/aai/src/sdk/tool-def.ts"],
       "linter": {
         "rules": {
           "suspicious": {

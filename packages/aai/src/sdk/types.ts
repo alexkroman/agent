@@ -66,27 +66,20 @@ export type { TelephonyAccess, TelephonyCarrier } from "./telephony-config.ts";
  */
 export type { ToolContext } from "./tool-context.ts";
 /**
- * Default type of a tool result observed on the client (`useToolResult`) —
- * `any`, so untyped reads compile. Pass the shape —
- * `useToolResult<Quote>("get_quote", …)` — for real checking.
- *
- * @remarks
- * `any` because a tool result is the author's own return value
- * round-tripped through JSON — the client already knows its shape, and the
- * framework cannot. The strict default (`unknown`) made reading one field a
- * compile error in a client that runs correctly, which blocked publishing
- * once `aai build` type-checked.
- *
- * @public
- */
-export type DefaultToolResult = any;
-
-/**
  * The tool-authoring types, re-exported from `./tool-def.ts` — this module is
  * the import path everything already uses, and a tool author reads
- * `ToolContext`, `ToolDef` and the two inference helpers together.
+ * `ToolContext`, `ToolDef`, `DefaultToolResult` and the two inference helpers
+ * together. `DefaultToolResult` moved there when this file hit the 500-line
+ * cap: it is a tool-authoring type declared in a barrel, and the group it
+ * belongs to was already one re-export line below it.
  */
-export type { InferToolInput, InferToolOutput, ToolChoice, ToolDef } from "./tool-def.ts";
+export type {
+  DefaultToolResult,
+  InferToolInput,
+  InferToolOutput,
+  ToolChoice,
+  ToolDef,
+} from "./tool-def.ts";
 
 /**
  * Fully resolved agent definition.
