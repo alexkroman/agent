@@ -487,7 +487,21 @@ jobs:
       # integration tier is in-memory only and the scenario tier is what needs the
       # Postgres started above — but they share this job's checkout and build, and
       # splitting them into two jobs would pay for that twice for ~20s of work.
-      - run: pnpm exec turbo run check:integration check:scenario
+      #
+      # Through `with-worker-budget.mjs`, like `pnpm test:integration` and
+      # `pnpm test:scenario`, and NOT a bare `turbo run` — running the two tiers
+      # together is exactly the case that wrapper exists for. Unbounded, turbo
+      # starts both fan-outs at once and each task sizes its own vitest pool from
+      # a core count nobody is dividing, so the scenario tier's harness spawns,
+      # bundlers and servers land on top of the integration tier's CPU-bound
+      # property tests. That is not a slow test, it is oversubscription: measured
+      # on 3 cores over this exact command, `pipeline-history-rollback`'s one
+      # property took 5,896 ms unbounded against 2,994 ms bounded (2,740 ms run
+      # alone), and the tier 30.5s against 22.5s. On the smaller macOS runner the
+      # unbounded copy crossed the integration tier's 30s ceiling and failed the
+      # job — on this branch and on main alike. A longer timeout is not the fix;
+      # the budget is.
+      - run: pnpm exec node scripts/with-worker-budget.mjs turbo run check:integration check:scenario
       # The TEMPLATE evals, against a SCRIPTED model — and this is not the eval
       # tier arriving in CI by the back door.
       #
