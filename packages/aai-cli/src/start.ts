@@ -53,6 +53,7 @@ import {
   ensureWorkflowJournalSchema,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
+import { startTracing } from "@alexkroman1/aai-runtime/tracing";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
@@ -206,6 +207,13 @@ export interface StartResult {
  * trace on Ctrl-C, instead of the non-zero exit a failed shutdown should be.
  */
 export async function executeStart(options: StartOptions): Promise<StartResult> {
+  // Before the server, so the first model call a request causes is already
+  // reported. Awaited rather than detached (the guest harness's trade): this
+  // boot has no sandbox cold-start budget to protect, and awaiting is what
+  // makes the first span deterministic instead of racing the dynamic import.
+  // Returns undefined unless a collector is configured — see
+  // `@alexkroman1/aai-runtime/tracing`.
+  const tracing = await startTracing();
   const agent = await loadBuiltAgent(options.cwd);
   const server = await createProjectServer(options);
   const port = options.port ?? Number(process.env.PORT ?? DEFAULT_START_PORT);
@@ -217,13 +225,18 @@ export async function executeStart(options: StartOptions): Promise<StartResult> 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
       // close() shuts the runtime down too — no separate runtime.shutdown().
-      server.close().then(
-        () => process.exit(0),
-        (error: unknown) => {
-          log.error(`shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
-          process.exit(1);
-        },
-      );
+      // Spans the batch processor is holding are flushed with it; `shutdown`
+      // never rejects, so telemetry cannot turn a clean stop into a failed one.
+      server
+        .close()
+        .finally(() => tracing?.shutdown())
+        .then(
+          () => process.exit(0),
+          (error: unknown) => {
+            log.error(`shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+            process.exit(1);
+          },
+        );
     });
   }
 

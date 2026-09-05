@@ -174,6 +174,21 @@ const UNDOCUMENTED_SUBPATHS = {
       "under 'Other subpaths'.",
   },
   "aai-runtime": {
+    "./tracing":
+      "OTLP span export, configured through the ENVIRONMENT rather than in " +
+      "code: `OTEL_EXPORTER_OTLP_ENDPOINT` is the whole switch, and the three " +
+      "front doors (`aai start`, `aai dev`, the guest harness) call " +
+      "`startTracingDetached` on the operator's behalf. So a rendered " +
+      "signature page answers a question almost nobody has — the seven " +
+      "exports exist for a self-hoster embedding `createRuntimeServer` in a " +
+      "process of their own, who needs the handle rather than a reference " +
+      "page. What that reader wants is the prose: the env vars, the " +
+      "optional-peer install line and the no-conversation-content guarantee, " +
+      "which are in the scaffold guide under 'Tracing (OpenTelemetry)' — the " +
+      "one that ships inside every `aai init` project and inside the SDK " +
+      "tarball, and which `check:authoring-guide` holds to naming this " +
+      "capability. Same reason as the '.' entry below, one subpath in: this " +
+      "is an EMBEDDER surface. Revisit if embedders ask for a rendered page.",
     ".":
       "The host runtime, ~220 exports aimed at somebody EMBEDDING an agent " +
       "rather than writing one. Rendering it is what this split undid: it " +

@@ -26,15 +26,22 @@ predicate, never re-parsed.
 | `@hono/otel` | one SERVER span per platform HTTP request | `aai-server` |
 | AI SDK telemetry | `ai.generate`, `ai.step`, `ai.languageModelCall`, `ai.toolCall <name>` | `aai-guest` |
 
-**Guest spans currently root their own traces.** `guest-forward.ts` is an
-allow-list and does not carry `traceparent`, so no request arriving at a guest
-has a parent to adopt. The propagator IS installed on both sides, so a parent
-is honoured the day one arrives — but until `guest-forward.ts` forwards the
-header, a model call and the HTTP request that caused it are two traces. Do not
-describe this as end-to-end tracing; it is not, yet.
+**Guest spans now adopt the platform's span as parent**, so a model call and
+the platform HTTP request that caused it are ONE trace. Three things had to be
+true together, and any one of them missing puts it silently back to two:
 
-The platform RPC hop, the workflow journal and the STT/TTS sockets emit no
-spans of their own — only the HTTP span that contains them.
+- `guest-forward.ts` injects the platform's ACTIVE span context on the hop
+  (`withTraceparent`). The header is minted, never relayed — this hop's callers
+  are the open internet and third-party webhook senders, so forwarding an
+  inbound `traceparent` would let any of them choose the trace id a tenant's
+  spans are filed under.
+- `createRuntimeServer` calls `adoptRequestTrace(req.headers)` at the top of
+  every request (`aai-runtime/_request-trace.ts`).
+- the telemetry bridge's operation span parents to that context rather than
+  hard-rooting at `ROOT_CONTEXT`, which is what it used to do.
+
+The platform RPC hop, the workflow journal and the STT/TTS sockets still emit
+no spans of their own — only the HTTP span that contains them.
 
 ## Spans carry NO conversation content, and the SDK will not do this for you
 
@@ -85,8 +92,21 @@ gzip (+85.5 KB, +4.5%). Under the 10% budget threshold, and no PUBLISHED
 package gained a runtime dependency — all five OTel deps are `aai-server`'s and
 the guest bridge's.
 
-## Not verified
+## Verified against a live collector
 
-No live collector has ever been exercised. The OTLP wire path — protobuf
-encoding, real HTTP — is the library's, not something a test here covers. Point
-it at a real collector before treating this as working.
+`aai-runtime/src/tracing-collector.scenario.test.ts` stands one up — a real
+socket answering `POST /v1/traces` — drives a real `generateText`, and asserts
+the delivery: one request, `application/x-protobuf`, at the `/v1/traces` path
+the exporter appends, carrying the service name and the `gen_ai.*` attribute
+names. It also re-asserts the redaction claim **of the bytes on the wire**,
+which is the only place a serialization bug could put content back.
+
+That replaces a "Not verified" heading which said no live collector had ever
+been exercised, and finding one thing was the point of doing it:
+**`startTracing(env)`'s argument is only the PREDICATE.** The exporter resolves
+its own URL, headers and timeout from the REAL `process.env` — deliberately, so
+this repo never re-parses a grammar the library owns — so a test that passes a
+custom endpoint in the argument arms the gate and then exports to OTel's
+DEFAULT endpoint (`localhost:4318`). It looks like it works. The scenario test
+therefore stubs `process.env`, and a caller pointing this at a collector must
+set the real environment rather than the parameter.

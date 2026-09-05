@@ -25,6 +25,7 @@ import { buildClientConfig } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import escapeHtml from "escape-html";
 import { WebSocketServer } from "ws";
+import { adoptRequestTrace } from "./_request-trace.ts";
 import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { agentGateToken } from "./server-env.ts";
@@ -234,6 +235,11 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
   }
 
   const httpServer = http.createServer((req, res) => {
+    // Adopt an inbound `traceparent` before anything else runs, so a model call
+    // this request causes lands in the CALLER's trace rather than rooting its
+    // own. One undefined check when tracing is off, which is every front door
+    // that has not configured a collector — see `tracing.ts`.
+    adoptRequestTrace(req.headers);
     const url = requestPath(req.url);
     const method = req.method ?? "GET";
 

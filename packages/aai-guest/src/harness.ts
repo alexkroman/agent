@@ -71,9 +71,9 @@ import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { createRuntimeServer } from "@alexkroman1/aai-runtime";
+import { startTracingDetached } from "@alexkroman1/aai-runtime/tracing";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
-import { startGuestTracingDetached } from "./guest-tracing.ts";
 import { mainAgent } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
 import { emptyHarnessState, type HarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
@@ -232,9 +232,9 @@ export function main(): void {
   }
   // Span export, if an operator configured a collector — a no-op that imports
   // NOTHING otherwise. Detached rather than awaited, and the whole reason it is
-  // ONE call is in `guest-tracing.ts`: boot latency is what this file is most
+  // ONE call is in `aai-runtime/tracing.ts`: boot latency is what this file is most
   // careful about, and `main` is synchronous.
-  startGuestTracingDetached();
+  startTracingDetached();
   const token = process.env.AAI_GUEST_TOKEN;
   if (!token) {
     console.error("AAI_GUEST_TOKEN is required");

@@ -1,4 +1,6 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { context as otelContext, propagation } from "@opentelemetry/api";
+import { TRACEPARENT_HEADER } from "./tracing-propagator.ts";
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The one platform→guest forward, and the one header policy it applies.
@@ -215,6 +217,46 @@ export function passThroughHeaders(from: Headers): Headers {
   return headers;
 }
 
+/**
+ * The outgoing headers for a guest hop, carrying THIS platform span as parent.
+ *
+ * ## Why the header is minted rather than forwarded
+ *
+ * `traceparent` is absent from {@link GUEST_API_REQUEST_HEADERS} and present in
+ * {@link NEVER_FORWARDED}'s spirit rather than its letter, and neither is an
+ * oversight: the inbound header is a CALLER'S claim, and this hop's callers are
+ * the open internet and a third party's webhook sender. Relaying one would let
+ * anybody choose the trace id a tenant's spans are filed under — a collector
+ * where one caller can merge their requests into another tenant's trace, or mint
+ * unbounded ids, is worse than one with no guest spans in it.
+ *
+ * So what crosses is what `propagation.inject` writes for the context ACTIVE
+ * here, which is the server span `@hono/otel` opened for this request. The
+ * platform edge decides whether that span itself adopted an inbound parent —
+ * that is `aaiTraceparentPropagator`'s call and `startTracing`'s policy, made
+ * once, at the boundary — and this hop then carries the platform's own answer
+ * rather than re-deciding it three routes later.
+ *
+ * ## It writes nothing when tracing is off
+ *
+ * With no collector configured `startTracing` registers no global propagator, so
+ * `propagation.inject` runs the API's no-op and sets no key — which is why this
+ * returns the caller's own `Headers` untouched in that case, allocating nothing
+ * and leaving the two spellings of "no headers" (`undefined` and empty) exactly
+ * as they were. `guest-forward-tracing.test.ts` pins both halves.
+ */
+export function withTraceparent(headers: Headers | undefined): Headers | undefined {
+  const carrier: Record<string, string> = {};
+  propagation.inject(otelContext.active(), carrier);
+  const traceparent = carrier[TRACEPARENT_HEADER];
+  if (traceparent === undefined) return headers;
+  // A fresh copy: `opts.headers` belongs to the caller, and two of the three
+  // routes build theirs once and forward on a retry.
+  const out = new Headers(headers);
+  out.set(TRACEPARENT_HEADER, traceparent);
+  return out;
+}
+
 export type GuestForwardOptions = {
   /** Injectable so a spec can assert what crossed without standing a guest up. */
   fetchFn: typeof globalThis.fetch;
@@ -332,7 +374,7 @@ export async function forwardToGuest(opts: GuestForwardOptions): Promise<Respons
   try {
     return await opts.fetchFn(opts.url, {
       method: opts.method ?? "GET",
-      ...omitUndefined({ headers: opts.headers }),
+      ...omitUndefined({ headers: withTraceparent(opts.headers) }),
       // `duplex: "half"` is REQUIRED whenever the body is a stream — undici
       // rejects the request outright rather than buffering it, which is the
       // trade we want but not one it may assume.

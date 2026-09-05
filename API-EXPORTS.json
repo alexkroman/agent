@@ -1172,6 +1172,15 @@
     "runWorkflow",
     "scriptedTextModel"
   ],
+  "@alexkroman1/aai-runtime/tracing": [
+    "DEFAULT_SERVICE_NAME",
+    "OTEL_ENDPOINT_ENVS",
+    "OTEL_SERVICE_NAME_ENV",
+    "RuntimeTracing",
+    "startTracing",
+    "startTracingDetached",
+    "tracingEndpoint"
+  ],
   "@alexkroman1/aai-ui/client-dir": [
     "defaultClientDir"
   ],
