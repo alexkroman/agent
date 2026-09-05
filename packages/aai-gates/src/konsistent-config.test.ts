@@ -103,6 +103,14 @@ const repoPaths = (() => {
   return paths;
 })();
 
+/**
+ * The same corpus as an array, materialized ONCE.
+ *
+ * Both scans below spread the ~2,600-entry `Set` afresh for every convention ×
+ * every pattern. The `Set` stays for the membership check that wants it.
+ */
+const allPaths: readonly string[] = [...repoPaths];
+
 const config = JSON.parse(raw ?? "{}") as KonsistentConfig;
 
 /**
@@ -356,7 +364,7 @@ describe("konsistent.json", () => {
         const prefix = literalPrefix(pattern);
         if (prefix === "") continue; // Pattern is magic from the first segment.
         expect(
-          [...repoPaths].some((path) => path.startsWith(prefix)),
+          allPaths.some((path) => path.startsWith(prefix)),
           `${convention.name}: no file in the repo lives under "${prefix}" (from "${pattern}")`,
         ).toBe(true);
       }
@@ -391,12 +399,11 @@ describe("konsistent.json", () => {
           continue;
         }
         const matcher = patternToRegExp(pattern);
-        const matched = [...repoPaths].filter((path) => matcher.test(path));
         expect(
-          matched.length,
+          allPaths.some((path) => matcher.test(path)),
           `${convention.name}: "${pattern}" selects NOTHING — konsistent would check zero ` +
             'files and print "No violations found"',
-        ).toBeGreaterThan(0);
+        ).toBe(true);
       }
     }
   });

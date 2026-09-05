@@ -137,6 +137,19 @@ export const repoPathOf = (key: string): string => {
 };
 
 /**
+ * The workspace package a Vite glob key belongs to — `aai-cli` for
+ * `packages/aai-cli/src/x.ts`.
+ *
+ * Through {@link repoPathOf} rather than a prefix test on the raw key, because
+ * Vite collapses a key to its shortest relative form and the segment that lands
+ * at index 1 therefore depends on which glob found the file. It stood SIX times
+ * — three named (`dirOf` twice, `packageOf` once) and three inlined — two of
+ * them carrying the same paragraph of that argument, which is one rationale
+ * maintained in two places.
+ */
+export const packageDirOf = (key: string): string => repoPathOf(key).split("/")[1] ?? "";
+
+/**
  * Code-unit ordering, spelled out.
  *
  * A bare `.sort()` coerces and compares by UTF-16 code unit anyway, but saying

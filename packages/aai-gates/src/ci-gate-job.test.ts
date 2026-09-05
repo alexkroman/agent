@@ -33,7 +33,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { bracketList, byCodeUnit, repoPathOf, sole, workflowJobs } from "./_gate-support.ts";
+import { bracketList, byCodeUnit, packageDirOf, sole, workflowJobs } from "./_gate-support.ts";
 
 const workflow = sole(
   import.meta.glob("../../../.github/workflows/check.yml", {
@@ -304,13 +304,12 @@ describe("the coverage test matrix", () => {
    */
   // Through `repoPathOf` rather than a prefix test: the two glob key shapes it
   // enumerated by hand both moved a level when source went under `src/`.
-  const dirOf = (key: string): string => repoPathOf(key).split("/")[1] ?? "";
 
   /** Package directory names that declare a `test:coverage` script. */
   function packagesWithCoverage(): string[] {
     return Object.entries(manifests)
       .filter(([, source]) => /"test:coverage"\s*:/.test(source))
-      .map(([key]) => dirOf(key))
+      .map(([key]) => packageDirOf(key))
       .filter((dir) => dir !== "")
       .sort(byCodeUnit);
   }

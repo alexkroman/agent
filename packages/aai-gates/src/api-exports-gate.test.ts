@@ -14,9 +14,11 @@
  * Split from `api-contracts-gate.test.ts`, which had reached the 700-line test
  * cap. The seam is the artifact: that file asserts the EPOCH metadata really
  * describes the capability roots, this one asserts the export MAP, and the two
- * shared exactly two symbols — `byCodeUnit` and the raw source below. It lives
- * in aai-templates for the same reason its sibling does: raw imports reach the
- * repo root, and this package's tsconfig pulls in no node types.
+ * shared exactly two symbols — `byCodeUnit` and the raw source below.
+ *
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";

@@ -35,7 +35,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, GATE_WIRING, sole } from "./_gate-support.ts";
+import { GATE_WIRING, sole } from "./_gate-support.ts";
 
 const checkScript: string = GATE_WIRING["scripts/check.mjs"] ?? "";
 const manifest: string = GATE_WIRING["package.json"] ?? "";
@@ -115,16 +115,24 @@ function selections(): Record<string, string[]> {
   return table;
 }
 
+/**
+ * The root manifest's `scripts`, parsed ONCE.
+ *
+ * Both readers below re-parsed the 6 KB manifest on every call, and
+ * `rootCommand` is called once per row of the GATES table — 18 parses of the
+ * same unchanging text per run.
+ */
+const rootManifestScripts: Record<string, string> =
+  (JSON.parse(manifest) as { scripts?: Record<string, string> }).scripts ?? {};
+
 /** The root manifest's script names. */
 function rootScripts(): string[] {
-  const parsed = JSON.parse(manifest) as { scripts?: Record<string, string> };
-  return Object.keys(parsed.scripts ?? {});
+  return Object.keys(rootManifestScripts);
 }
 
 /** What a root script actually runs, so a gate invoked by COMMAND is visible. */
 function rootCommand(script: string): string {
-  const parsed = JSON.parse(manifest) as { scripts?: Record<string, string> };
-  return parsed.scripts?.[script] ?? "";
+  return rootManifestScripts[script] ?? "";
 }
 
 /**
@@ -137,7 +145,7 @@ function rootCommand(script: string): string {
 function pnpmInvocations(): string[] {
   const run = [...commands.matchAll(/pnpm run ([A-Za-z][\w:-]*)/g)];
   const bare = [...commands.matchAll(/pnpm ([a-z][\w-]*:[\w:-]+)/g)];
-  return [...run, ...bare].map((hit) => hit[1] ?? "").sort(byCodeUnit);
+  return [...run, ...bare].map((hit) => hit[1] ?? "");
 }
 
 /** Every `--gates <selection>` the workflow passes to the script. */

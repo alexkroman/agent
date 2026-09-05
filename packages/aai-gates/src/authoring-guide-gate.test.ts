@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, GATE_WIRING, numericConstant, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, numericConstant, packageDirOf, sole } from "./_gate-support.ts";
 
 const gateSource: string =
   sole(
@@ -73,7 +73,7 @@ function guideCode(markdown: string): string[] {
 function committedCapabilities(): string[] {
   const found = new Set<string>();
   for (const [path, raw] of Object.entries(tables)) {
-    const pkg = repoPathOf(path).split("/")[1] ?? "";
+    const pkg = packageDirOf(path);
     for (const capability of Object.keys(JSON.parse(raw) as Record<string, unknown>)) {
       found.add(`${pkg}:${capability}`);
     }

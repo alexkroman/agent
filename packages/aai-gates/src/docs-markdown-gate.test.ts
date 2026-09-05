@@ -32,7 +32,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, packageDirOf, repoPathOf, sole } from "./_gate-support.ts";
 
 /**
  * Floors for the COMMITTED tree, deliberately looser than the script's floors
@@ -218,7 +218,7 @@ describe("the markdown config", () => {
       "aai-runtime": [".", "./internal", "./tracing"],
     };
     const inspected = Object.entries(siteConfig).flatMap(([globKey, config]) => {
-      const pkg = repoPathOf(globKey).split("/")[1];
+      const pkg = packageDirOf(globKey);
       if (pkg === undefined) throw new Error(`unparsable glob key ${globKey}`);
       return typedSubpathsOf(pkg).map(({ subpath, types }) => {
         if (config.includes(`"${types.replace(/^\.\//, "")}"`)) return subpath;

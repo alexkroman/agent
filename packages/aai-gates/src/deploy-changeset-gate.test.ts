@@ -23,7 +23,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, numericConstant, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, numericConstant, packageDirOf, sole } from "./_gate-support.ts";
 
 const script = sole(
   import.meta.glob("../../../scripts/check-deploy-changeset.mjs", {
@@ -66,9 +66,7 @@ const migrationFiles = Object.keys(
  * same trick the sibling specs use to enumerate the tree without loading it.
  */
 const workspaceDirs = new Set(
-  Object.keys(import.meta.glob("../../*/package.json")).map(
-    (path) => repoPathOf(path).split("/")[1] ?? "",
-  ),
+  Object.keys(import.meta.glob("../../*/package.json")).map((path) => packageDirOf(path)),
 );
 
 describe("the gate is wired where it is enforced", () => {
@@ -150,11 +148,16 @@ describe("the scope decides what a deploy carries", () => {
     // waves through, and one it invents is a changeset that ships nothing.
     const source = workflow ?? "";
     expect(source).toBeTypeOf("string");
-    const named = [...source.matchAll(/^ +if bumped (\S+) \|\| bumped (\S+); then$/gm)].flatMap(
-      (match) => [match[1], match[2]],
-    );
+    const named = [...source.matchAll(/^ +if bumped (\S+) \|\| bumped (\S+); then$/gm)]
+      .flatMap((match) => [match[1], match[2]])
+      // Both groups are non-optional in the pattern, so a match has both;
+      // `noUncheckedIndexedAccess` types them as possibly absent regardless. The
+      // length assertion below is what makes a half-parse fail.
+      .filter((name): name is string => name !== undefined);
     expect(named, "ship.yml's `bumped` condition no longer parses").toHaveLength(2);
-    expect([...(scope?.DEPLOY_CARRIERS ?? [])].sort()).toEqual([...named].sort());
+    expect([...(scope?.DEPLOY_CARRIERS ?? [])].sort(byCodeUnit)).toEqual(
+      [...named].sort(byCodeUnit),
+    );
   });
 
   test("a shipped file triggers and a test file does not", () => {
@@ -197,7 +200,7 @@ describe("the scope decides what a deploy carries", () => {
       "AGENTS.md",
       ".github/workflows/ship.yml",
     ]);
-    expect([...(grouped?.keys() ?? [])].sort()).toEqual(["aai-guest", "aai-server"]);
+    expect([...(grouped?.keys() ?? [])].sort(byCodeUnit)).toEqual(["aai-guest", "aai-server"]);
     expect(grouped?.get("aai-server")).toEqual(["packages/aai-server/src/sandbox.ts"]);
   });
 

@@ -19,9 +19,9 @@
  * `guard-invariants-gate.test.ts` records what the scraping version cost. That
  * module exists to be importable, with no side effects, for exactly this reason.
  *
- * Lives in aai-templates on the same rule as `test-assertion-gate.test.ts`: it
- * is the package that owns repo-level meta checks, and `?raw` imports reach
- * sibling files without node types.
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";

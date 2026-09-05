@@ -13,10 +13,11 @@
  * a gate whose entire success output is a count, agreeing with itself.
  *
  * So this suite reads the per-entry-point reports and `API.md` INDEPENDENTLY of
- * the script and asserts the second contains the first. It lives in
- * aai-templates for the same reason `claude-md-limit.test.ts` does: raw imports
- * reach the sibling packages and the repo root, and this package's tsconfig
- * pulls in no node types.
+ * the script and asserts the second contains the first.
+ *
+ * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
+ * package's tsconfig pulls in no node types, and a spec that imported the
+ * script it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
@@ -217,7 +218,7 @@ describe("release tags", () => {
     }
     const split = [...tagsByName]
       .filter(([, tags]) => tags.size > 1)
-      .map(([name, tags]) => `${name} (${[...tags].sort().join(" + ")})`);
+      .map(([name, tags]) => `${name} (${[...tags].sort(byCodeUnit).join(" + ")})`);
     expect(
       split,
       `${path} tags ${split.length} symbol(s) two ways: ${split.join(", ")}. ` +

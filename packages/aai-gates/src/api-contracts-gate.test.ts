@@ -28,7 +28,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, packageDirOf, sole } from "./_gate-support.ts";
 
 // `import.meta.glob` is compiled away by Vite, so its options must be a literal
 // at every call site — a shared `const raw = {…}` fails the transform.
@@ -103,7 +103,6 @@ const fixtures: Record<string, string> = { ...tsFixtures, ...tsxFixtures };
 // Through `repoPathOf` rather than a fixed segment index: the index was 1
 // while every glob here started `../`, and the `src/` move made them start
 // `../../` — which silently reported every capability as `..:<name>`.
-const packageOf = (key: string): string => repoPathOf(key).split("/")[1] ?? "";
 /** `../aai/contracts/entrypoints/tool.ts` -> `tool`. */
 const basename = (key: string): string =>
   (key.split("/").at(-1) ?? "").replace(/\.(tsx|ts|json)$/, "");
@@ -169,14 +168,14 @@ const importedFromSurface = (source: string): string[] =>
 /** One contract-carrying package, assembled from the globs above. */
 const packages = Object.entries(tables)
   .map(([key, source]) => {
-    const pkg = packageOf(key);
+    const pkg = packageDirOf(key);
     const table = JSON.parse(source) as Record<string, Contract>;
     return {
       pkg,
       table,
       capabilities: Object.keys(table).sort(byCodeUnit),
       roots: Object.entries(entrypoints)
-        .filter(([path]) => packageOf(path) === pkg)
+        .filter(([path]) => packageDirOf(path) === pkg)
         .map(([path, text]) => ({
           pkg,
           capability: basename(path),
@@ -185,7 +184,7 @@ const packages = Object.entries(tables)
         }))
         .sort((a, b) => byCodeUnit(a.capability, b.capability)),
       epochs: Object.entries(epochFiles)
-        .filter(([path]) => packageOf(path) === pkg)
+        .filter(([path]) => packageDirOf(path) === pkg)
         .map(([path, source_]) => ({
           capability: parentDir(path),
           version: Number(basename(path).slice(1)),

@@ -24,7 +24,7 @@
  * parser, over the markdown half of the gate's own declared corpus, and hold the
  * baseline to it. Two properties make that stable rather than brittle:
  *
- *   - the corpus is parsed out of the script's `MARKDOWN_FILES`, so a file the
+ *   - the corpus is parsed out of the docExamplesSource's `MARKDOWN_FILES`, so a file the
  *     gate stopped reading is a failure here rather than a silently smaller
  *     check;
  *   - the comparison is the ratchet's real invariant (`found <= budget`, and
@@ -34,23 +34,19 @@
  *
  * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
  * package's tsconfig pulls in no node types, and a spec that imported the
- * script it guards would be asserting a module against itself.
+ * docExamplesSource it guards would be asserting a module against itself.
  */
 
 import { describe, expect, test } from "vitest";
-import { byCodeUnit, GATE_WIRING, numericConstant, repoPathOf, sole } from "./_gate-support.ts";
+import {
+  DOC_EXAMPLE_MARKDOWN,
+  DOC_EXAMPLES_SCRIPT,
+  declaredMarkdown,
+  docExamplesSource,
+} from "./_doc-example-corpus.ts";
+import { GATE_WIRING, numericConstant, sole } from "./_gate-support.ts";
 
-const SCRIPT = "scripts/check-doc-examples.mjs";
 const RATCHET_MODULE = "scripts/_no-check-ratchet.mjs";
-
-/** The gate's ENTRY POINT: the corpus lists and the fence parser live here. */
-const script = sole(
-  import.meta.glob("../../../scripts/check-doc-examples.mjs", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }),
-);
 
 /**
  * The ratchet half, and the shared engine under it — read SEPARATELY, and the
@@ -85,53 +81,6 @@ const baseline: Record<string, unknown> =
       eager: true,
     }),
   ) ?? {};
-
-/**
- * Every markdown source the gate might read, by repo-relative path.
- *
- * Globbed wider than the gate's own list and then INTERSECTED with it below: a
- * literal pattern is what `import.meta.glob` requires, and reading the list off
- * the script is what makes "the gate stopped reading a document" visible here.
- */
-const markdown: Record<string, string> = Object.fromEntries(
-  Object.entries({
-    ...import.meta.glob<string>("../../../README.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-    ...import.meta.glob<string>("../../../docs/home.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-    ...import.meta.glob<string>("../../*/README.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-    ...import.meta.glob<string>("../../../examples/*/README.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-    ...import.meta.glob<string>("../../aai-templates/scaffold/CLAUDE.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-  }).map(([key, source]) => [repoPathOf(key), source]),
-);
-
-/** The gate's own `MARKDOWN_FILES`, read as data rather than restated. */
-function declaredMarkdown(): string[] {
-  const block = /const MARKDOWN_FILES = \[([\s\S]*?)\];/.exec(script ?? "");
-  if (block?.[1] === undefined) throw new Error(`${SCRIPT} no longer declares MARKDOWN_FILES`);
-  return [...block[1].matchAll(/"([^"]+)"/g)]
-    .map((found) => found[1])
-    .filter((file): file is string => file !== undefined)
-    .sort(byCodeUnit);
-}
 
 /** The per-file budgets, as a plain record. */
 const budgets = (baseline["no-check"] ?? {}) as Record<string, number>;
@@ -169,12 +118,12 @@ function countFences(source: string): { checked: number; skipped: number } {
 
 /** The documents this suite can both READ and prove the gate reads. */
 const corpus = declaredMarkdown()
-  .filter((file) => markdown[file] !== undefined)
-  .map((file) => ({ file, ...countFences(markdown[file] ?? "") }));
+  .filter((file) => DOC_EXAMPLE_MARKDOWN[file] !== undefined)
+  .map((file) => ({ file, ...countFences(DOC_EXAMPLE_MARKDOWN[file] ?? "") }));
 
 describe("the no-check ratchet's wiring", () => {
   test("all three sources are readable", () => {
-    expect(script, `${SCRIPT} not found`).toBeTypeOf("string");
+    expect(docExamplesSource, `${DOC_EXAMPLES_SCRIPT} not found`).toBeTypeOf("string");
     expect(ratchet, `${RATCHET_MODULE} not found`).toBeTypeOf("string");
     expect(engine, "scripts/_ratchet.mjs not found").toBeTypeOf("string");
   });
@@ -183,17 +132,20 @@ describe("the no-check ratchet's wiring", () => {
     // The split is for file size; the wiring is what makes it a gate. A module
     // nothing calls is the same silent absence the ratchet itself exists to
     // catch, one level up.
-    expect(script, `${SCRIPT} no longer imports ${RATCHET_MODULE}`).toContain(
-      "_no-check-ratchet.mjs",
+    expect(
+      docExamplesSource,
+      `${DOC_EXAMPLES_SCRIPT} no longer imports ${RATCHET_MODULE}`,
+    ).toContain("_no-check-ratchet.mjs");
+    expect(docExamplesSource, `${DOC_EXAMPLES_SCRIPT} no longer calls the ratchet`).toContain(
+      "enforceNoCheckBudget(",
     );
-    expect(script, `${SCRIPT} no longer calls the ratchet`).toContain("enforceNoCheckBudget(");
     expect(ratchet, `${RATCHET_MODULE} no longer exports it`).toContain(
       "export function enforceNoCheckBudget",
     );
   });
 
   test("the gate that carries it is enforced by both runners", () => {
-    // A gate in package.json but in neither runner is a script nobody runs; one
+    // A gate in package.json but in neither runner is a docExamplesSource nobody runs; one
     // in check.mjs alone is enforced by the pre-push hook, which `--no-verify`
     // skips. The ratchet deliberately rides the EXISTING `check:doc-examples`
     // row rather than adding a name to keep in step across files — which is also
@@ -290,7 +242,7 @@ describe("the baseline against an independent parse", () => {
   test("tsx fences are counted too", () => {
     // `packages/aai-ui/README.md` opts out in ```tsx, so a matcher narrowed to
     // ```ts would silently stop counting a whole language tag.
-    const tsx = Object.values(markdown).some((source) =>
+    const tsx = Object.values(DOC_EXAMPLE_MARKDOWN).some((source) =>
       source.split("\n").some((line) => /^\s*```tsx\s+.*no-check/.test(line)),
     );
     expect(tsx, "no ```tsx no-check fence in the corpus — has one been removed?").toBe(true);
