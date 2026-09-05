@@ -171,7 +171,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   There is deliberately **no allowlist**: an entry would assert that some test
   rightly checks nothing, which is never true. It carries FLOORS (200 files,
   2,000 tests), and its parser is specced in
-  `packages/aai-templates/src/test-assertion-gate.test.ts` — both for the same
+  `packages/aai-gates/src/test-assertion-gate.test.ts` — both for the same
   reason the corpus floor above exists: its whole success output is a count, so
   a glob or a parser that stopped recognising `test(` would print "all 0 test(s)
   assert something ✓" and pass, the same shape as the bug it exists to catch.
@@ -201,7 +201,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   pattern invites — Claude Code would read it and every other agent tool would
   read `AGENTS.md`, with no symptom until the two halves disagreed.
   **The same cap is also a TEST**
-  (`packages/aai-templates/src/claude-md-limit.test.ts`), so it fails in the
+  (`packages/aai-gates/src/claude-md-limit.test.ts`), so it fails in the
   ordinary test run and not only in `pnpm check` — an agent editing a guide
   sees it without knowing this gate exists. It asserts both lines separately
   (over budget = refactor before adding more; over 150k = a guide is being
@@ -273,7 +273,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   Two things to know before editing `konsistent.json`. **A convention that
   matches nothing passes** — a typo'd `paths` glob checks zero files and prints
   the same "No violations found" as a healthy run, with no error anywhere, so
-  `packages/aai-templates/src/konsistent-config.test.ts` asserts every pattern's
+  `packages/aai-gates/src/konsistent-config.test.ts` asserts every pattern's
   literal prefix exists (plus that each convention is named, described, and
   declares at least one predicate). **A deny list also goes stale by SILENCE**,
   there being no allow-list form, so that test derives the package set from the

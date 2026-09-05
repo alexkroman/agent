@@ -188,7 +188,7 @@ authoring half, for the reason every deny-list here exists. It carries a floor
 (`MIN_INDEXED_SYMBOLS`, 600 against a measured 823) because `--check` reports a
 collapsed extraction as "out of date", which invites regenerating and
 committing the empty file; and
-`packages/aai-templates/src/api-index-file.test.ts` is the guard under the
+`packages/aai-gates/src/api-index-file.test.ts` is the guard under the
 gate, asserting the index really is `API-EXPORTS.json` turned inside out rather
 than two derivations of one broken scan agreeing with each other. Fifty-one
 names list more than one subpath — that is the case worth seeing, not an error.
@@ -205,7 +205,7 @@ per package — the repo would still have four — and every symbol trades its
 of lines. So `API.md` is a plain concatenation, generated in the same pass and
 gated by the same `--check`: derived, not a second source of truth.
 
-`packages/aai-templates/src/api-surface-file.test.ts` is the guard under that gate:
+`packages/aai-gates/src/api-surface-file.test.ts` is the guard under that gate:
 `--check` would print its checkmark for an empty file agreeing with an empty
 file, which is what an assembly loop that stopped finding entry points, or a
 fence parser that stopped matching, would produce. The test parses the reports
@@ -314,7 +314,7 @@ Six properties are load-bearing:
   cannot refuse an honest new one. Adding an exemption is a hand edit in a
   reviewable diff — the same contract as the two `--update` baselines — so
   keeping this file empty is a review question, not a settled one.
-  `packages/aai-templates/src/api-contracts-gate.test.ts` owns all four, because
+  `packages/aai-gates/src/api-contracts-gate.test.ts` owns all four, because
   `--bump --retain` cannot check a scaffold it has just written empty.
 
   **A retained epoch that promised a name the current surface has since REMOVED
@@ -395,7 +395,7 @@ reports rather than re-derived, so this and the thing a reviewer looks at cannot
 disagree — which is why the ordering in `check.mjs` and CI is fixed and asserted:
 a stale report would be believed.
 
-`packages/aai-templates/src/api-contracts-gate.test.ts` is the guard under the gate,
+`packages/aai-gates/src/api-contracts-gate.test.ts` is the guard under the gate,
 and it has the same shape as `api-surface-file.test.ts` for the same reason: the
 gate compares two things the script derives, so an extraction that stopped
 finding anything would hash nothing, agree with a committed nothing, and print
@@ -542,7 +542,7 @@ left behind to read as current.
 **It carries floors (12 files, 300 KB) because a diff-based gate passes when
 an empty render agrees with an empty tree** — and its whole success output is a
 count, the same shape as the five gates the root guide records having caught
-printing a checkmark over nothing. `packages/aai-templates/src/docs-markdown-gate.test.ts`
+printing a checkmark over nothing. `packages/aai-gates/src/docs-markdown-gate.test.ts`
 is the guard on the other side, over the COMMITTED tree and the config that
 produced it, which the script's floor cannot see.
 
@@ -605,7 +605,7 @@ There is no `typedoc.json` in `packages/aai-runtime`, and its absence is now a
 measured decision rather than an oversight. Two things make it one.
 
 **A package-local config alone turns the suite red.**
-`packages/aai-templates/src/docs-markdown-gate.test.ts` globs `packages/*/typedoc.json`
+`packages/aai-gates/src/docs-markdown-gate.test.ts` globs `packages/*/typedoc.json`
 and asserts that every package holding one has committed markdown under
 `docs/api/` — so the file cannot land before the render that produces its page.
 The coupling is deliberate and it is wider than that one test: flipping this on

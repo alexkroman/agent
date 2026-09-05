@@ -224,6 +224,9 @@ importers:
       '@sindresorhus/slugify':
         specifier: ^3.0.1
         version: 3.0.1
+      '@types/json-schema':
+        specifier: 'catalog:'
+        version: 7.0.15
       bogon:
         specifier: ^1.3.0
         version: 1.3.0
@@ -252,9 +255,6 @@ importers:
       '@types/html-to-text':
         specifier: ^9.0.4
         version: 9.0.4
-      '@types/json-schema':
-        specifier: 'catalog:'
-        version: 7.0.15
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -363,6 +363,18 @@ importers:
         specifier: 'catalog:'
         version: 4.5.4
 
+  packages/aai-gates:
+    devDependencies:
+      oxc-parser:
+        specifier: ^0.148.0
+        version: 0.148.0
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.2(@types/node@26.4.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@4.1.11)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+
   packages/aai-guest:
     dependencies:
       '@alexkroman1/aai':
@@ -380,15 +392,6 @@ importers:
       '@opentelemetry/api':
         specifier: 'catalog:'
         version: 1.9.1
-      '@opentelemetry/exporter-trace-otlp-proto':
-        specifier: 'catalog:'
-        version: 0.222.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources':
-        specifier: 'catalog:'
-        version: 2.11.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-trace-base':
-        specifier: 'catalog:'
-        version: 2.11.0(@opentelemetry/api@1.9.1)
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.3.3(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
@@ -486,6 +489,9 @@ importers:
       '@elevenlabs/elevenlabs-js':
         specifier: ^2.65.0
         version: 2.66.0
+      '@types/json-schema':
+        specifier: 'catalog:'
+        version: 7.0.15
       ai:
         specifier: 'catalog:'
         version: 7.0.90(zod@4.5.4)
@@ -547,9 +553,6 @@ importers:
       '@types/escape-html':
         specifier: ^1.0.4
         version: 1.0.4
-      '@types/json-schema':
-        specifier: 'catalog:'
-        version: 7.0.15
       '@types/mime-types':
         specifier: 'catalog:'
         version: 3.0.1
@@ -643,15 +646,6 @@ importers:
       p-timeout:
         specifier: 'catalog:'
         version: 7.0.1
-      react:
-        specifier: 'catalog:'
-        version: 19.2.8
-      react-dom:
-        specifier: 'catalog:'
-        version: 19.2.8(react@19.2.8)
-      tailwindcss:
-        specifier: 'catalog:'
-        version: 4.3.3
       ws:
         specifier: 'catalog:'
         version: 8.21.3
@@ -659,9 +653,6 @@ importers:
         specifier: 'catalog:'
         version: 4.5.4
     devDependencies:
-      '@types/json-schema':
-        specifier: 'catalog:'
-        version: 7.0.15
       '@types/mime-types':
         specifier: 'catalog:'
         version: 3.0.1
@@ -771,9 +762,6 @@ importers:
       '@alexkroman1/aai-runtime':
         specifier: workspace:*
         version: link:../aai-runtime
-      '@alexkroman1/aai-ui':
-        specifier: workspace:*
-        version: link:../aai-ui
       '@hono/zod-validator':
         specifier: 'catalog:'
         version: 0.9.1(hono@4.13.5)(zod@4.5.4)
@@ -798,15 +786,6 @@ importers:
       p-timeout:
         specifier: 'catalog:'
         version: 7.0.1
-      react:
-        specifier: 'catalog:'
-        version: 19.2.8
-      react-dom:
-        specifier: 'catalog:'
-        version: 19.2.8(react@19.2.8)
-      tailwindcss:
-        specifier: 'catalog:'
-        version: 4.3.3
       zod:
         specifier: 'catalog:'
         version: 4.5.4

@@ -49,14 +49,10 @@
     "modal": "^0.10.0",
     "p-retry": "^8.0.1",
     "p-timeout": "catalog:",
-    "react": "catalog:",
-    "react-dom": "catalog:",
-    "tailwindcss": "catalog:",
     "ws": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/json-schema": "catalog:",
     "@types/mime-types": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",

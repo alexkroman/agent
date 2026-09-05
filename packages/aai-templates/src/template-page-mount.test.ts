@@ -30,7 +30,7 @@
  */
 
 import { beforeAll, describe, expect, test } from "vitest";
-import { byCodeUnit } from "./_gate-support.ts";
+import { byCodeUnit } from "./_template-support.ts";
 
 /** Every template's client source, as text. */
 const clientSources = import.meta.glob("../templates/*/client.tsx", {

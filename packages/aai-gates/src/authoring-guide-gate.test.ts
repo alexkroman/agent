@@ -33,7 +33,11 @@ const gateSource: string =
 
 const guide: string =
   sole(
-    import.meta.glob("../scaffold/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
+    import.meta.glob("../../aai-templates/scaffold/CLAUDE.md", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
   ) ?? "";
 
 const epochFiles: Record<string, string> = import.meta.glob(

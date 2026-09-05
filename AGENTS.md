@@ -7,7 +7,7 @@ carries no content of its own — `AGENTS.md` is the name every other agent tool
 looks for, so keeping the guide here means one canonical copy rather than a
 per-tool set that drifts. Edit THIS file; never paste content into
 `CLAUDE.md` (`check-claude-md.mjs` and
-`packages/aai-templates/src/claude-md-limit.test.ts` both fail if you do — this
+`packages/aai-gates/src/claude-md-limit.test.ts` both fail if you do — this
 line used to cite an `agents-md-shim.test.ts` that has never existed in the
 tree, which mattered because the parenthetical is the whole reason an author
 believes the rule is checked). Package guides stay
@@ -160,7 +160,7 @@ pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 
 ## Architecture
 
-Ten workspace packages under `packages/`:
+Eleven workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
@@ -173,6 +173,7 @@ Ten workspace packages under `packages/`:
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
+| `packages/aai-gates/` | `aai-gates` | The repo's meta-gate suite (private): the specs holding `scripts/check-*.mjs`, `konsistent.json`, `turbo.json`, `lefthook.yml` and the workflows to their contracts. Imports no workspace package |
 | `packages/aai-evals/` | `aai-evals` | Behaviour eval tier (private): the runner, its assertion vocabulary over the session event stream, and its targets |
 
 **Dependency flow:** every other package depends on `@alexkroman1/aai` (via
@@ -222,6 +223,7 @@ rather than here:
 | `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals, the two-package/one-deployment composition |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
+| `packages/aai-gates/CLAUDE.md` | The meta-gate suite: what a gate spec may share, adding a `guard-invariants` rule, `check.yml`'s push list and concurrency group |
 | `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
 
 One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the

@@ -82,7 +82,7 @@ const stripReferenceDirectives = sole(
 
 /** The ambients themselves, so "the file still carries them" is checkable. */
 const globalDts = sole(
-  import.meta.glob("../scaffold/global.d.ts", {
+  import.meta.glob("../../aai-templates/scaffold/global.d.ts", {
     query: "?raw",
     import: "default",
     eager: true,
@@ -122,7 +122,7 @@ const markdown: Record<string, string> = Object.fromEntries(
       import: "default",
       eager: true,
     }),
-    ...import.meta.glob<string>("../scaffold/CLAUDE.md", {
+    ...import.meta.glob<string>("../../aai-templates/scaffold/CLAUDE.md", {
       query: "?raw",
       import: "default",
       eager: true,

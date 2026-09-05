@@ -157,15 +157,18 @@
       // note above describes. Restore it with a reason if a fixture ever needs
       // the dependency back.
     },
-    // `templates/**` stays ignored so a template's unused EXPORTS never reach
-    // the report — they are examples, not a surface anything imports. The
-    // `@alexkroman1/aai-ui` entry that used to sit beside it is gone:
-    // `template-page-mount.test.ts` globs every `client.tsx` as text to
-    // correlate its mount with its agent's `page` field, so knip now sees the
-    // import that was always there and the exemption became a lie.
+    // `templates/**` used to be ignored here so a template's unused EXPORTS
+    // never reached the report. It went the way of the `@alexkroman1/aai-ui`
+    // entry beside it: every template module is now REACHED — each `agent.ts`,
+    // `client.tsx` and `tools/*.ts` is an entry via the template's own
+    // `agent.test.ts`, and `templates.test.ts` / `template-page-mount.test.ts`
+    // glob the rest as text — so ignoring them suppressed nothing and knip
+    // reported the pattern as redundant. Verified by removing it: the report
+    // stays empty. `scaffold/**` is genuinely different and stays: it ships to
+    // users and is compiled from here by `check:template-types`, so nothing in
+    // this package imports it.
     "packages/aai-templates": {
       "ignore": [
-        "templates/**",
         "scaffold/**"
       ],
       // NO `ignoreDependencies` for `@alexkroman1/aai-runtime` any more, and the
@@ -212,11 +215,23 @@
         "**/*.test.ts"
       ],
       "includeEntryExports": true,
-      "ignoreDependencies": [
-        "@types/json-schema"
-      ],
       "ignoreBinaries": [
         "modal"
+      ]
+    },
+    "packages/aai-gates": {
+      // Every file here is a test that nothing imports — the whole package is
+      // entry points. `_gate-support.ts` is reached through them.
+      "entry": [
+        "**/*.test.ts"
+      ],
+      "includeEntryExports": true,
+      // `oxc-parser` is imported by the gate specs that need a real parse
+      // (`test-assertion-gate`, `guard-invariants-scanner-rules`) — knip reads
+      // those as entry points and so does not follow the import back to the
+      // manifest.
+      "ignoreDependencies": [
+        "oxc-parser"
       ]
     },
     "packages/aai-evals": {
@@ -251,13 +266,7 @@
       "entry": [
         "**/*.test.ts"
       ],
-      "includeEntryExports": true,
-      "ignoreDependencies": [
-        "@alexkroman1/aai-ui",
-        "react",
-        "react-dom",
-        "tailwindcss"
-      ]
+      "includeEntryExports": true
     }
   }
 }

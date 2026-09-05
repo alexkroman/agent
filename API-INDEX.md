@@ -1090,6 +1090,7 @@ trace or a type error can be traced back to something.
 | `decideClientEvent` | `@alexkroman1/aai/internal` |
 | `defaultProviders` | `@alexkroman1/aai/host-internal` |
 | `executeToolCall` | `@alexkroman1/aai-runtime/internal` |
+| `firstWriteWins` | `@alexkroman1/aai-runtime/internal` |
 | `formatSchemaIssues` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai/internal` |
 | `freezeStorable` | `@alexkroman1/aai/host-internal` |
 | `gatewayModelIds` | `@alexkroman1/aai/host-internal` |

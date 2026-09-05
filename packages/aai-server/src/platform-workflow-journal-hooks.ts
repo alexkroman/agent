@@ -15,7 +15,7 @@
  * @internal
  */
 
-import { firstWriteWins } from "./_journal-claim.ts";
+import { firstWriteWins } from "@alexkroman1/aai-runtime/internal";
 import { text } from "./platform-workflow-journal-rows.ts";
 import type { SqlExec } from "./secret-store.ts";
 

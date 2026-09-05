@@ -11,7 +11,7 @@ for a build recipe rather than behaviour on a request path.
 `konsistent.json`'s `workspace-package-layout` requires a `CLAUDE.md` per
 package and forbids no other file, so a sibling is permitted; the root guide's
 "points at every package guide" assertion
-(`packages/aai-templates/src/claude-md-limit.test.ts`) globs `packages/*/CLAUDE.md`
+(`packages/aai-gates/src/claude-md-limit.test.ts`) globs `packages/*/CLAUDE.md`
 exactly and does not reach this name.
 
 Everything else about the platform — the sandbox lifecycle, the three backends'

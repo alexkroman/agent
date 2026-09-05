@@ -6,7 +6,7 @@
  * 500-line cap, and split HERE rather than anywhere else because these three
  * constants are the only part of it nothing reads back: the `GATES` table and
  * `GATE_SELECTIONS` are PARSED out of `scripts/check.mjs`'s own source by
- * `packages/aai-templates/src/gate-wiring.test.ts`, and a gate name is asserted
+ * `packages/aai-gates/src/gate-wiring.test.ts`, and a gate name is asserted
  * to appear in that file, so neither may move. Every doc comment travelled with
  * its constant unchanged.
  */

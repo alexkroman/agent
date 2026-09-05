@@ -39,7 +39,7 @@
  *
  * `--json` prints the same measurements as data, for anything that wants to
  * plan against them (a split list, a report) rather than read the table.
- * `packages/aai-templates/src/file-length-gate.test.ts` is the spec for the parts
+ * `packages/aai-gates/src/file-length-gate.test.ts` is the spec for the parts
  * that fail quietly: an advisory report goes nothing-red when it stops
  * selecting files, and a deleted hook line is invisible.
  *

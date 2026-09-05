@@ -293,7 +293,7 @@
       }
     },
     {
-      "includes": ["packages/aai-templates/src/*.ts"],
+      "includes": ["packages/aai-templates/src/*.ts", "packages/aai-gates/src/*.ts"],
       "linter": {
         "rules": {
           "correctness": {

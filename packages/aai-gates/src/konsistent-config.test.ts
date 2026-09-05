@@ -195,6 +195,9 @@ const BOUNDARY_OWNERS: Record<
     allows: ["@alexkroman1/aai-runtime", "@alexkroman1/aai-ui", "aai-server"],
   },
   "evals-package-boundary": { pkg: "aai-evals", allows: ["@alexkroman1/aai-runtime"] },
+  // The only owner with an EMPTY allow list: this package may import no
+  // workspace package at all. See the convention's description.
+  "gates-package-boundary": { pkg: "aai-gates", allows: [] },
 };
 
 /**
@@ -203,9 +206,10 @@ const BOUNDARY_OWNERS: Record<
  * aai-templates holds no importable source: `templates/` is shipped product a
  * user scaffolds and `template-authoring-boundary` guards it from the other
  * direction (what a template may import), while the package's own `src/` is
- * four meta-check specs. An entry here is a CLAIM, which is why the test
+ * four template specs. An entry here is a CLAIM, which is why the test
  * asserts this set and the owners above together account for every package —
- * package #11 fails until somebody classifies it.
+ * package #12 fails until somebody classifies it. (Package #11, `aai-gates`,
+ * did: it is guarded, by the strictest boundary in the file.)
  */
 const UNGUARDED_PACKAGES: readonly string[] = ["aai-templates"];
 

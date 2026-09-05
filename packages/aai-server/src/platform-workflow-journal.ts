@@ -65,7 +65,7 @@
  * @internal
  */
 
-import { firstWriteWins } from "./_journal-claim.ts";
+import { firstWriteWins } from "@alexkroman1/aai-runtime/internal";
 import { HOOKS } from "./platform-workflow-journal-hooks.ts";
 import type { JournalRunRow, JournalStepRow } from "./platform-workflow-journal-rows.ts";
 import { toRun, toStep } from "./platform-workflow-journal-rows.ts";

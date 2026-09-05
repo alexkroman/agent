@@ -3,7 +3,7 @@
  * What `check-deploy-changeset.mjs` DECIDES, with no I/O in it.
  *
  * Its own module for the reason `guard-invariants-rules.mjs` is:
- * `packages/aai-templates/src/deploy-changeset-gate.test.ts` value-imports these,
+ * `packages/aai-gates/src/deploy-changeset-gate.test.ts` value-imports these,
  * so a positive and a negative sample are fed to the real predicate rather than
  * to a regex scraped out of the gate's source. That spec's own third draft is
  * the argument — it scraped `re: "…"` out of a gate, the rules moved into a

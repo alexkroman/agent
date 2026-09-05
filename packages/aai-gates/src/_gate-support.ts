@@ -124,7 +124,7 @@ export const ERE_UNSUPPORTED: readonly (readonly [construct: string, why: string
  * Hand-rolled rather than `node:path`, because this package's tsconfig declares
  * no node types on purpose — see the header of `konsistent-config.test.ts`.
  */
-const HERE = "packages/aai-templates/src";
+const HERE = "packages/aai-gates/src";
 
 export const repoPathOf = (key: string): string => {
   const segments = HERE.split("/");

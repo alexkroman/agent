@@ -12,7 +12,10 @@ import type { Db } from "@alexkroman1/aai/internal";
 import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import postgres from "postgres";
+// TYPE-ONLY: the driver is loaded by `loadPostgres()` on first use. The named
+// types below (`postgres.Sql`, `postgres.ReservedSql`, …) erase at compile
+// time, so this import costs nothing at runtime.
+import type postgres from "postgres";
 import { consoleLogger } from "./runtime-config.ts";
 
 /**
@@ -296,14 +299,27 @@ async function reserveWithin(
 }
 
 /**
- * Create a {@link Db} backed by a Postgres connection pool.
+ * The driver, imported on first use and memoized.
  *
- * Connections open lazily on first query, so constructing the handle is
- * cheap and never touches the network.
- *
- * @public
+ * `postgres-db.ts` is re-exported from `runtime-barrel.ts`, so a static import
+ * put the driver on the import path of every consumer of
+ * `@alexkroman1/aai-runtime` — including `aai init` and `aai login`, which
+ * never open a database. The promise is cached rather than the module, so two
+ * concurrent first calls import once.
  */
-export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb {
+let driver: Promise<typeof postgres> | undefined;
+function loadPostgres(): Promise<typeof postgres> {
+  driver ??= import("postgres").then((m) => m.default);
+  return driver;
+}
+
+/**
+ * Build the real handle. Split from {@link createPostgresDb} so that function
+ * can stay SYNCHRONOUS — it is published, and every caller would otherwise
+ * have to become async to buy a module load.
+ */
+async function buildPostgresDb(options: CreatePostgresDbOptions): Promise<CloseableDb> {
+  const postgres = await loadPostgres();
   const sql = postgres(options.url, {
     max: options.max ?? 4,
     prepare: false,
@@ -369,6 +385,41 @@ export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb 
     },
     async close(): Promise<void> {
       await sql.end();
+    },
+  };
+}
+
+/**
+ * Create a {@link Db} backed by a Postgres connection pool.
+ *
+ * Connections open lazily on first query, so constructing the handle is
+ * cheap and never touches the network — and now neither does it load the
+ * driver, which is the same promise one level up (see {@link loadPostgres}).
+ *
+ * `close()` on a handle that was never used resolves without loading anything:
+ * a caller tearing down a pool it never queried must not pay for the import.
+ *
+ * @public
+ */
+export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb {
+  let pending: Promise<CloseableDb> | undefined;
+  const db = (): Promise<CloseableDb> => {
+    pending ??= buildPostgresDb(options);
+    return pending;
+  };
+  return {
+    async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
+      return (await db()).query<T>(sql, params);
+    },
+    async reserve(): Promise<ReservedDb> {
+      return (await db()).reserve();
+    },
+    async listen(channel: string, onNotify: () => void): Promise<() => void> {
+      return (await db()).listen(channel, onNotify);
+    },
+    async close(): Promise<void> {
+      if (pending === undefined) return;
+      await (await pending).close();
     },
   };
 }

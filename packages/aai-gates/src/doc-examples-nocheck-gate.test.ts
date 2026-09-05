@@ -115,7 +115,7 @@ const markdown: Record<string, string> = Object.fromEntries(
       import: "default",
       eager: true,
     }),
-    ...import.meta.glob<string>("../scaffold/CLAUDE.md", {
+    ...import.meta.glob<string>("../../aai-templates/scaffold/CLAUDE.md", {
       query: "?raw",
       import: "default",
       eager: true,

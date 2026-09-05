@@ -38,6 +38,25 @@ function clientOptions(): {
 
 vi.mock("postgres", () => ({ default: (...args: unknown[]) => postgresMock(...args) }));
 
+/**
+ * Construct a handle AND force the deferred driver load.
+ *
+ * `createPostgresDb` imports `postgres` and builds the client on first USE, not
+ * at construction (see its doc), so a test asserting on `clientOptions()` has
+ * to make one call first. Without this the assertions do not fail — they pass
+ * VACUOUSLY: `clientOptions()` reads `mock.calls[0]` and returns `{}` when the
+ * client was never built, so `connect_timeout` is `undefined` and `onnotice` is
+ * an optional call that never happens. Four of these tests went green that way
+ * before the helper existed, which is why every `clientOptions()` reader goes
+ * through it.
+ */
+async function opened(options: Parameters<typeof createPostgresDb>[0]) {
+  unsafeMock.mockResolvedValueOnce([]);
+  const db = createPostgresDb(options);
+  await db.query("select 1");
+  return db;
+}
+
 /** A query the driver never answers — the shape a silent partition produces. */
 const pending = (): Promise<never> => new Promise<never>(() => undefined);
 
@@ -46,8 +65,8 @@ beforeEach(() => {
 });
 
 describe("createPostgresDb", () => {
-  test("builds the client with the url, a bounded pool, and prepare disabled", () => {
-    createPostgresDb({ url: "postgres://db.example/app" });
+  test("builds the client with the url, a bounded pool, and prepare disabled", async () => {
+    await opened({ url: "postgres://db.example/app" });
     // `onnotice` is asserted as PRESENT rather than by identity: postgres.js has
     // no silent default, so leaving it unset is what dumped a whole `42P07`
     // notice object into every guest's stdout on every boot.
@@ -64,7 +83,7 @@ describe("createPostgresDb", () => {
     expect(clientOptions().idle_timeout).toBeGreaterThan(0);
   });
 
-  test("a NOTICE prints nothing by default, and does not throw", () => {
+  test("a NOTICE prints nothing by default, and does not throw", async () => {
     // The fix, stated as the thing an operator sees: postgres.js's own default
     // dumps the whole notice OBJECT, and ours routes it to `consoleLogger.debug`,
     // which is a no-op unless `AAI_DEBUG=1`. So the channel is quiet by default
@@ -87,40 +106,40 @@ describe("createPostgresDb", () => {
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
   });
 
-  test("a malformed notice cannot take a session down", () => {
+  test("a malformed notice cannot take a session down", async () => {
     // It is a callback the DRIVER invokes, so a throw here escapes into the
     // driver's own event handling rather than to any caller.
-    createPostgresDb({ url: "postgres://db.example/app" });
+    await opened({ url: "postgres://db.example/app" });
     const { onnotice } = clientOptions();
     for (const bad of [undefined, null, "a string", 42]) {
       expect(() => onnotice?.(bad)).not.toThrow();
     }
   });
 
-  test("an explicit onNotice wins, so an embedder can route notices itself", () => {
+  test("an explicit onNotice wins, so an embedder can route notices itself", async () => {
     const onNotice = vi.fn();
-    createPostgresDb({ url: "postgres://db.example/app", onNotice });
+    await opened({ url: "postgres://db.example/app", onNotice });
     const { onnotice: wired } = clientOptions();
     wired?.({ code: "42P07" });
     expect(onNotice).toHaveBeenCalledOnce();
   });
 
-  test("honors an explicit max", () => {
-    createPostgresDb({ url: "postgres://db.example/app", max: 1 });
+  test("honors an explicit max", async () => {
+    await opened({ url: "postgres://db.example/app", max: 1 });
     expect(clientOptions().max).toBe(1);
   });
 
-  test("honors an explicit idle timeout, zero included", () => {
+  test("honors an explicit idle timeout, zero included", async () => {
     // Zero is the meaningful value, not a fallback to the default: postgres.js
     // treats a falsy `idle_timeout` as "never close", which is what a pool whose
     // one connection is reserved for the process's life wants (the workflow lock
     // sweep's presence lock). `?? DEFAULT` would have silently overridden it.
-    createPostgresDb({ url: "postgres://db.example/app", idleTimeoutSeconds: 0 });
+    await opened({ url: "postgres://db.example/app", idleTimeoutSeconds: 0 });
     expect(clientOptions().idle_timeout).toBe(0);
   });
 
-  test("honors a non-zero idle timeout", () => {
-    createPostgresDb({ url: "postgres://db.example/app", idleTimeoutSeconds: 5 });
+  test("honors a non-zero idle timeout", async () => {
+    await opened({ url: "postgres://db.example/app", idleTimeoutSeconds: 5 });
     expect(clientOptions().idle_timeout).toBe(5);
   });
 
@@ -162,18 +181,35 @@ describe("createPostgresDb", () => {
   });
 
   test("close ends the pool", async () => {
-    const db = createPostgresDb({ url: "postgres://db.example/app" });
+    const db = await opened({ url: "postgres://db.example/app" });
     await db.close();
     expect(endMock).toHaveBeenCalledOnce();
   });
 
-  test("passes connectTimeoutSeconds through as connect_timeout", () => {
-    createPostgresDb({ url: "postgres://db.example/app", connectTimeoutSeconds: 10 });
+  test("close on a handle that was never used loads no driver and ends nothing", async () => {
+    // The deferral's other half: a caller tearing down a pool it never queried
+    // must not pay for the import just to close it.
+    const db = createPostgresDb({ url: "postgres://db.example/app" });
+    await expect(db.close()).resolves.toBeUndefined();
+    expect(postgresMock).not.toHaveBeenCalled();
+    expect(endMock).not.toHaveBeenCalled();
+  });
+
+  test("the driver is built once no matter how many calls follow", async () => {
+    const db = await opened({ url: "postgres://db.example/app" });
+    unsafeMock.mockResolvedValueOnce([]);
+    unsafeMock.mockResolvedValueOnce([]);
+    await Promise.all([db.query("select 1"), db.query("select 2")]);
+    expect(postgresMock).toHaveBeenCalledOnce();
+  });
+
+  test("passes connectTimeoutSeconds through as connect_timeout", async () => {
+    await opened({ url: "postgres://db.example/app", connectTimeoutSeconds: 10 });
     expect(clientOptions().connect_timeout).toBe(10);
   });
 
-  test("omits connect_timeout when unset (keeps the driver default)", () => {
-    createPostgresDb({ url: "postgres://db.example/app" });
+  test("omits connect_timeout when unset (keeps the driver default)", async () => {
+    await opened({ url: "postgres://db.example/app" });
     expect(clientOptions().connect_timeout).toBeUndefined();
   });
 });

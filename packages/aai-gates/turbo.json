@@ -1,0 +1,88 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // These suites read the REPO, not this package — an `inputs` glob resolves
+    // relative to the package, so without these entries the gates that guard
+    // the gates are served from cache exactly when the file they check changes.
+    //
+    // `claude-md-limit.test.ts` globs `../../AGENTS.md`, `../../CLAUDE.md` and
+    // `../*/CLAUDE.md` (the 120k cap, the assertion that the root still links
+    // every package guide, and the pin on the root shim);
+    // `test-assertion-gate.test.ts` and `escape-hatch-scope.test.ts` spec
+    // `scripts/check-*.mjs` and assert the script, `scripts/check.mjs`, root
+    // `package.json` and the CI check job still agree with each other;
+    // `konsistent-config.test.ts` reads `konsistent.json` the same way;
+    // `api-surface-file.test.ts` reads `../../API.md` and every
+    // `../*/etc/*.api.md`, and `api-index-file.test.ts` reads
+    // `../../API-INDEX.md` against `../../API-EXPORTS.json`;
+    // `api-contracts-gate.test.ts` reads
+    // `../../API-EXPORTS.json` and the whole of every `../*/contracts/` tree
+    // (the capability roots, the epoch metadata, and the frozen compatibility
+    // examples — `aai` and `aai-ui` both carry one); `file-length-gate.test.ts`
+    // pins `lefthook.yml`'s pre-commit headroom line;
+    // `guard-invariants-scanner-rules.test.ts` re-derives the corpus for rule
+    // 7 across EVERY workflow, whose scanner returns only `found` and so cannot
+    // tell an upheld rule from an empty scan; and `ci-gate-job.test.ts` reads
+    // the required gate job.
+    //
+    // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
+    // the input here, not documentation about it. `.agents/*.md` joins it for
+    // the same reason: `claude-md-limit.test.ts` measures those on the same
+    // budget now, so a section moved there to get AGENTS.md under the cap has
+    // to be able to invalidate this hash.
+    //
+    // `packages/*/src/contracts/**` had lost its `src/` when every package's
+    // TypeScript moved under one (see "Package layout"), so it matched NOTHING
+    // and `api-contracts-gate.test.ts` — which globs `../../*/src/contracts/`
+    // — was replayed from cache exactly when a capability, an epoch or a
+    // frozen example changed. Verify a glob with `git ls-files` rather than by
+    // reading it; that is the same trap `check-file-length.mjs`'s `scripts/`
+    // pathspec fell into.
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../vitest.shared.ts",
+        "$TURBO_ROOT$/AGENTS.md",
+        "$TURBO_ROOT$/.agents/*.md",
+        "$TURBO_ROOT$/CLAUDE.md",
+        "$TURBO_ROOT$/packages/*/CLAUDE.md",
+        "$TURBO_ROOT$/API.md",
+        "$TURBO_ROOT$/API-EXPORTS.json",
+        "$TURBO_ROOT$/API-INDEX.md",
+        "$TURBO_ROOT$/packages/*/etc/*.api.md",
+        "$TURBO_ROOT$/packages/*/src/contracts/**",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/konsistent.json",
+        "$TURBO_ROOT$/lefthook.yml",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/workflows/*.yml"
+      ],
+      "env": ["CI", "VITEST_POOL"]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../vitest.shared.ts",
+        "$TURBO_ROOT$/AGENTS.md",
+        "$TURBO_ROOT$/.agents/*.md",
+        "$TURBO_ROOT$/CLAUDE.md",
+        "$TURBO_ROOT$/packages/*/CLAUDE.md",
+        "$TURBO_ROOT$/API.md",
+        "$TURBO_ROOT$/API-EXPORTS.json",
+        "$TURBO_ROOT$/API-INDEX.md",
+        "$TURBO_ROOT$/packages/*/etc/*.api.md",
+        "$TURBO_ROOT$/packages/*/src/contracts/**",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/konsistent.json",
+        "$TURBO_ROOT$/lefthook.yml",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/workflows/*.yml"
+      ],
+      "outputs": ["coverage/**"],
+      "env": ["CI", "VITEST_POOL"]
+    }
+  }
+}
