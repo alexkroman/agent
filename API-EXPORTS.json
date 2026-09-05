@@ -190,6 +190,7 @@
     "createSttError",
     "createTtsError",
     "defaultProviders",
+    "formatSchemaIssues",
     "freezeStorable",
     "gatewayModelIds",
     "isConvertibleSchema",

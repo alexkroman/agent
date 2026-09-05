@@ -23,10 +23,10 @@ import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-inte
 import {
   createDetachedSlotStore,
   EMPTY_PARAMS,
+  formatSchemaIssues,
   serializeToolFailure,
 } from "@alexkroman1/aai/host-internal";
 import {
-  formatSchemaIssues,
   rejectingWorkflows,
   TOOL_EXECUTION_TIMEOUT_MS,
   WORKFLOWS_UNAVAILABLE_MESSAGE,

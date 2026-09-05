@@ -46,7 +46,7 @@
  * already checked once at the only moment it could have changed.
  */
 
-import { formatSchemaIssues } from "@alexkroman1/aai/internal";
+import { formatSchemaIssues } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";

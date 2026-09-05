@@ -55,7 +55,7 @@ function toAgentConfig(source: AgentConfigSource): {
      url: string;
   }>;
   minBargeInWords?: number;
-  mode?: "text" | "s2s" | "pipeline";
+  mode?: "s2s" | "text" | "pipeline";
   name: string;
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
@@ -132,7 +132,7 @@ the runtime.
      url: string;
   }>;
   minBargeInWords?: number;
-  mode?: "text" | "s2s" | "pipeline";
+  mode?: "s2s" | "text" | "pipeline";
   name: string;
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
@@ -247,7 +247,7 @@ optional minBargeInWords?: number;
 ##### mode?
 
 ```ts
-optional mode?: "text" | "s2s" | "pipeline";
+optional mode?: "s2s" | "text" | "pipeline";
 ```
 
 ##### name

@@ -32,4 +32,4 @@ export {
   type ParsedFeed,
   pageMetadata,
   parseFeed,
-} from "../../host/html.ts";
+} from "../../host/html-barrel.ts";

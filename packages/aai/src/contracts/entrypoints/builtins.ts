@@ -16,4 +16,4 @@ export {
   type UntypedJsonBody,
   visitWebpage,
   webSearch,
-} from "../../host/agent-tools.ts";
+} from "../../host/tools-barrel.ts";

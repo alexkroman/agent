@@ -24,9 +24,9 @@
       "import": "./dist/index.js"
     },
     "./utils": {
-      "@dev/source": "./src/sdk/utils.ts",
-      "types": "./dist/sdk/utils.d.ts",
-      "import": "./dist/sdk/utils.js"
+      "@dev/source": "./src/sdk/utils-barrel.ts",
+      "types": "./dist/sdk/utils-barrel.d.ts",
+      "import": "./dist/sdk/utils-barrel.js"
     },
     "./step": {
       "@dev/source": "./src/sdk/step-barrel.ts",
@@ -34,19 +34,19 @@
       "import": "./dist/sdk/step-barrel.js"
     },
     "./testing": {
-      "@dev/source": "./src/sdk/testing.ts",
-      "types": "./dist/sdk/testing.d.ts",
-      "import": "./dist/sdk/testing.js"
+      "@dev/source": "./src/sdk/testing-barrel.ts",
+      "types": "./dist/sdk/testing-barrel.d.ts",
+      "import": "./dist/sdk/testing-barrel.js"
     },
     "./testing/vitest": {
-      "@dev/source": "./src/sdk/testing-vitest.ts",
-      "types": "./dist/sdk/testing-vitest.d.ts",
-      "import": "./dist/sdk/testing-vitest.js"
+      "@dev/source": "./src/sdk/testing-vitest-barrel.ts",
+      "types": "./dist/sdk/testing-vitest-barrel.d.ts",
+      "import": "./dist/sdk/testing-vitest-barrel.js"
     },
     "./testing/vite": {
-      "@dev/source": "./src/host/testing-vite.ts",
-      "types": "./dist/host/testing-vite.d.ts",
-      "import": "./dist/host/testing-vite.js"
+      "@dev/source": "./src/host/testing-vite-barrel.ts",
+      "types": "./dist/host/testing-vite-barrel.d.ts",
+      "import": "./dist/host/testing-vite-barrel.js"
     },
     "./channels": {
       "@dev/source": "./src/sdk/channels-barrel.ts",
@@ -54,9 +54,9 @@
       "import": "./dist/sdk/channels-barrel.js"
     },
     "./step-errors": {
-      "@dev/source": "./src/sdk/step-errors.ts",
-      "types": "./dist/sdk/step-errors.d.ts",
-      "import": "./dist/sdk/step-errors.js"
+      "@dev/source": "./src/sdk/step-errors-barrel.ts",
+      "types": "./dist/sdk/step-errors-barrel.d.ts",
+      "import": "./dist/sdk/step-errors-barrel.js"
     },
     "./workflow-api": {
       "@dev/source": "./src/sdk/workflow-api-barrel.ts",
@@ -64,19 +64,19 @@
       "import": "./dist/sdk/workflow-api-barrel.js"
     },
     "./protocol": {
-      "@dev/source": "./src/sdk/protocol.ts",
-      "types": "./dist/sdk/protocol.d.ts",
-      "import": "./dist/sdk/protocol.js"
+      "@dev/source": "./src/sdk/protocol-barrel.ts",
+      "types": "./dist/sdk/protocol-barrel.d.ts",
+      "import": "./dist/sdk/protocol-barrel.js"
     },
     "./workspace-files": {
-      "@dev/source": "./src/host/workspace-files.ts",
-      "types": "./dist/host/workspace-files.d.ts",
-      "import": "./dist/host/workspace-files.js"
+      "@dev/source": "./src/host/workspace-files-barrel.ts",
+      "types": "./dist/host/workspace-files-barrel.d.ts",
+      "import": "./dist/host/workspace-files-barrel.js"
     },
     "./slugify": {
-      "@dev/source": "./src/host/slugify.ts",
-      "types": "./dist/host/slugify.d.ts",
-      "import": "./dist/host/slugify.js"
+      "@dev/source": "./src/host/slugify-barrel.ts",
+      "types": "./dist/host/slugify-barrel.d.ts",
+      "import": "./dist/host/slugify-barrel.js"
     },
     "./manifest": {
       "@dev/source": "./src/sdk/manifest-barrel.ts",
@@ -104,24 +104,24 @@
       "import": "./dist/sdk/providers/s2s-barrel.js"
     },
     "./ffmpeg": {
-      "@dev/source": "./src/host/ffmpeg.ts",
-      "types": "./dist/host/ffmpeg.d.ts",
-      "import": "./dist/host/ffmpeg.js"
+      "@dev/source": "./src/host/ffmpeg-barrel.ts",
+      "types": "./dist/host/ffmpeg-barrel.d.ts",
+      "import": "./dist/host/ffmpeg-barrel.js"
     },
     "./html": {
-      "@dev/source": "./src/host/html.ts",
-      "types": "./dist/host/html.d.ts",
-      "import": "./dist/host/html.js"
+      "@dev/source": "./src/host/html-barrel.ts",
+      "types": "./dist/host/html-barrel.d.ts",
+      "import": "./dist/host/html-barrel.js"
     },
     "./step-files": {
-      "@dev/source": "./src/host/step-files.ts",
-      "types": "./dist/host/step-files.d.ts",
-      "import": "./dist/host/step-files.js"
+      "@dev/source": "./src/host/step-files-barrel.ts",
+      "types": "./dist/host/step-files-barrel.d.ts",
+      "import": "./dist/host/step-files-barrel.js"
     },
     "./tools": {
-      "@dev/source": "./src/host/agent-tools.ts",
-      "types": "./dist/host/agent-tools.d.ts",
-      "import": "./dist/host/agent-tools.js"
+      "@dev/source": "./src/host/tools-barrel.ts",
+      "types": "./dist/host/tools-barrel.d.ts",
+      "import": "./dist/host/tools-barrel.js"
     },
     "./internal": {
       "@dev/source": "./src/internal.ts",

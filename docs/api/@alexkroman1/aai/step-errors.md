@@ -1,75 +1,17 @@
 # step-errors
 
-The failure a step should throw (the
-`@alexkroman1/aai/step-errors` subpath).
+`@alexkroman1/aai/step-errors` — the failure a step should throw, and the helpers that throw it.
 
-The engine retries a step that throws, gives up on a `FatalError`,
-and honours the delay on a `RetryableError` — so every step body that calls
-an HTTP API owns the same three-way decision, and `@alexkroman1/aai/step`
-already carries the two halves it can answer with no verdict vocabulary at all
-(`isTransientStatus` and `retryAfter`). What it could not do is
-CONSTRUCT the error. So the mapping was left as a snippet in a module doc — and
-both templates that needed it copied the snippet out, verbatim and
-character-identical. That is what this module is: the last function of an
-extraction that stopped one function short.
+A FACADE. The subpath resolves here rather than at `step-errors.ts`, which buys two
+things the direct form could not. That module can be SPLIT as it grows without
+moving the published entry point — the path an implementation file happens to
+have is not a thing to promise anyone — and a name it gains next reaches the
+public surface only when a line is added below, rather than the moment it is
+written.
 
-## Why this is not simply part of `@alexkroman1/aai/step`
-
-`@alexkroman1/aai/step` is the sibling, and the question a reader arriving
-here actually has is why [throwStepError](#throwsteperror) is not next to
-`stepFetch`.
-
-The answer is that IMPORTING FROM HERE IS THE OPT-IN, and `/step` is not
-written only for a step. Its vocabulary is reached from a tool body and from a
-spec as well — `mapConcurrent` bounds a rate-limited API call anywhere,
-`stepFetch` is an ordinary HTTP client, and an exported step is driven
-directly by every workflow template's tests. None of those callers has a
-retry budget to burn, so none of them should meet a vocabulary whose whole
-subject is one.
-
-The split used to be a DEPENDENCY boundary — this was the one authoring module
-allowed to import the Workflow DevKit's `workflow` package, which owned
-`FatalError` and `RetryableError`. That package is gone and the two classes are
-ours (`step-error-classes.ts` says why), so nothing here costs a caller
-anything at install time. What survives is the audience boundary above, which
-is the half that was ever load-bearing for a reader.
-
-It is in `sdk/` rather than `host/`, and that is the rule rather than an
-exception to it: the split is about
-`node:` builtins, which this has none of (it compiles under
-`sdk/tsconfig.json`, which sets `types: []`), and `host/` is the half that
-never runs inside a guest sandbox — where every step in fact runs.
-
-## Three outcomes, and the third is the one worth having
-
-A `FatalError` stops the engine retrying something that will answer the same
-way. A bare `RetryableError` retries in ONE SECOND, which is that class's own
-default and not a considered number. A `RetryableError` carrying `retryAfter`
-waits exactly as long as the far side asked — which matters most where this
-SDK encourages a fan-out, because N segments hit a rate limit together, and a
-second later all N ask again.
-
-`StepGenerateError` already carries both the verdict (`retryable`) and
-that delay, and until this module existed **no caller read the delay**: both
-templates re-threw the error unchanged, so a rate-limited model call fell back
-to the default backoff with the gateway's own number sitting unread on the
-error. [toStepError](#tosteperror) reads it.
-
-## The callers that come pre-classified
-
-`.catch(throwStepError)` is not an interesting line, and it was on **17 call
-sites across eight templates** — every LLM and transcription call any of them
-makes. Two had already wrapped it in a local `ask()` whose only content was
-that `.catch`, each paying a doc block to say why, and the second one records
-that two OTHER templates wrote the same mapping before it was extracted. So it
-is hoisted one level further: [stepGenerateOrFail](#stepgenerateorfail) and its
-siblings are the `/step` call and [throwStepError](#throwsteperror), nothing else.
-
-They live here rather than in `/step` because IMPORTING THEM IS THE OPT-IN.
-`/step` names no verdict vocabulary at all, and whether a terminal failure should
-burn a step's remaining attempts is the caller's decision — a `404` meaning
-"already deleted" wants the raw call. The `OrFail` suffix keeps the `/step`
-name intact, so a wrapper reads as the call it wraps.
+Named re-exports rather than `export *` for the second half of that: the
+wildcard form re-exports whatever arrives, and needs a `noReExportAll`
+suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 

@@ -132,9 +132,19 @@ describe("step-files.ts itself", () => {
       exports: Record<string, Record<string, string>>;
     };
     expect(pkg.exports["./step-files"]).toEqual({
-      "@dev/source": "./src/host/step-files.ts",
-      types: "./dist/host/step-files.d.ts",
-      import: "./dist/host/step-files.js",
+      "@dev/source": "./src/host/step-files-barrel.ts",
+      types: "./dist/host/step-files-barrel.d.ts",
+      import: "./dist/host/step-files-barrel.js",
     });
+  });
+
+  // The other half of the claim above, now that the subpath resolves to a
+  // FACADE: the published entry has to actually be this module's, or the
+  // assertion above would pass over a barrel that had come to re-export
+  // something else. Following the one hop is what keeps the test about
+  // `step-files.ts` rather than about a filename.
+  test("the published facade re-exports this module and nothing else", () => {
+    const direct = specifiers(join(SRC, "host/step-files-barrel.ts"));
+    expect(direct).toEqual(["./step-files.ts"]);
   });
 });

@@ -394,6 +394,81 @@ switch — see `machineFromSpec`.
 
 ***
 
+### errorDetail()
+
+```ts
+function errorDetail(err: unknown): string;
+```
+
+Extract a detailed error string (message + stack) for diagnostic logging.
+
+#### Parameters
+
+##### err
+
+`unknown`
+
+#### Returns
+
+`string`
+
+***
+
+### errorMessage()
+
+```ts
+function errorMessage(err: unknown): string;
+```
+
+Extract an error message from an unknown thrown value.
+
+**It never answers with an empty string.** That is the contract, and it is
+worth stating as one: `SessionError.message` is rendered directly by a
+browser client, so `""` paints a banner that says an error occurred and
+refuses to say what — strictly worse than a generic sentence, because an
+absent message reads as absence rather than as a problem.
+
+The shape that produced one is not exotic, it is the FIRST failure a new
+project hits. The AI SDK builds an `APICallError` whose `message` is
+`response.statusText` whenever the provider's error body does not match the
+schema it expected (`createJsonErrorResponseHandler`), and a reason phrase is
+optional in HTTP/1.1 and does not exist at all in HTTP/2 — so a rejected API
+key arrived as `{"code":"llm","message":"","fatal":false}` with the status,
+the URL, and the provider's own explanation all sitting unread on the error
+object.
+
+So a value that says nothing on its own is read one level down, in this
+order: the HTTP fields an `APICallError`-shaped failure carries (the status,
+the host that answered, the sentence in the response body), then `cause`,
+then an `AggregateError`'s members. Detection is STRUCTURAL for the same
+reason the schema-issue reading below it is — this module is published,
+zod-free, and may not import `ai` to ask `APICallError.isInstance` — and it
+costs nothing: a numeric `statusCode` beside a `responseBody` is the shape,
+whoever built it.
+
+An error that DOES state something keeps its own words — an HTTP failure has
+the status appended to them, since `Unauthorized` alone answers neither "which
+provider" nor "refused or fell over", and everything else is returned
+verbatim. One message is replaced outright, and it has precedent:
+`fetch failed` (and the browser's `failed to fetch`) is
+Node's own placeholder, with the reason — `ECONNREFUSED`, a DNS failure, a
+certificate rejection — one level down in `cause`. The AI SDK makes exactly
+this substitution for its own calls (`handleFetchError`, which rewrites the
+pair as "Cannot connect to API: …"); this extends the same reading to every
+direct `fetch` in the SDK.
+
+#### Parameters
+
+##### err
+
+`unknown`
+
+#### Returns
+
+`string`
+
+***
+
 ### isRecord()
 
 ```ts
@@ -434,6 +509,49 @@ function readStatus(body: string): string | undefined {
   const parsed = safeJsonParse(body);
   if (!isRecord(parsed)) return undefined;
   return typeof parsed.status === "string" ? parsed.status : undefined;
+}
+```
+
+***
+
+### isToolFailure()
+
+```ts
+function isToolFailure(value: unknown): value is ToolFailure;
+```
+
+Whether a value is a [ToolFailure](#toolfailure).
+
+The guard exists because failures PROPAGATE: a helper resolving an order
+returns `Order | ToolFailure`, and its caller forwards the failure
+unchanged rather than re-wording it. `if ("error" in value)` works only
+once the value is known to be an object, which is the check this bundles.
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`value is ToolFailure`
+
+#### Example
+
+```ts
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+
+type Order = { id: string; total: number };
+
+function findOrder(id: string): Order | ToolFailure {
+  return { error: `Order ${id} not found.` };
+}
+
+function orderTotal(id: string): number | ToolFailure {
+  const order = findOrder(id);
+  if (isToolFailure(order)) return order;
+  return order.total;
 }
 ```
 
@@ -596,6 +714,65 @@ DURABLY, outliving the session.
 
 ***
 
+### pushCapped()
+
+```ts
+function pushCapped<T>(
+   list: T[], 
+   item: T, 
+   max: number
+): T[];
+```
+
+Append to a list, dropping the oldest entries so it never exceeds `max`.
+Mutates `list` in place and returns it.
+
+For the append-only lists an agent keeps in a `sessionSlot` — a timeline, an
+activity feed, a session log. Every one of them feeds an LLM summary or a
+`syncState` payload, so an uncapped list grows what the model reads and
+what crosses the wire for the length of the call, unboundedly. In place
+rather than returning a new array because the list is usually a property of
+the state object (`incident.timeline`), and reassigning that is a second
+thing to remember.
+
+`max` below 1 keeps nothing — including the entry just appended — which is
+what "a cap of zero" has to mean.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### list
+
+`T`[]
+
+##### item
+
+`T`
+
+##### max
+
+`number`
+
+#### Returns
+
+`T`[]
+
+#### Example
+
+```ts
+import { pushCapped } from "@alexkroman1/aai";
+
+const log: string[] = ["a", "b", "c"];
+pushCapped(log, "d", 3); // ["b", "c", "d"]
+```
+
+***
+
 ### requireEnv()
 
 ```ts
@@ -693,7 +870,7 @@ readonly `T`[]
 
 #### Returns
 
-[`ToolFailure`](utils.md#toolfailure) \| `T`
+[`ToolFailure`](#toolfailure) \| `T`
 
 #### Example
 
@@ -712,6 +889,63 @@ const picked = resolveOne(jackets, "the blue one", {
   score: (jacket, text) => (text.includes(jacket.color) ? 1 : 0),
 });
 // → { id: "1", color: "blue" }
+```
+
+***
+
+### responseErrorMessage()
+
+```ts
+function responseErrorMessage(response: Response, label?: string): Promise<string>;
+```
+
+Read a failed `Response`'s error sentence — the one every route this SDK
+serves answers with.
+
+Each `4xx`/`5xx` an agent produces carries `{ "error": "<sentence>" }`, and
+that sentence is the whole diagnostic: an unknown workflow names the ones
+that are declared, a rejected input names the schema issues, a 404 from an
+agent that declares no workflows names both of its causes. Anything ELSE in
+the path — a proxy, a CDN, a platform broker answering while a sandbox boots
+— replies with a body that shape does not fit, so the status is reported
+instead, with a short preview of whatever did come back.
+
+`label` names the surface that answered and appears ONLY in that fallback:
+when the agent gave its own sentence, prefixing it would put our words in
+front of the ones worth reading.
+
+It never throws and never rejects — a body that cannot be read at all
+degrades to the bare status, because this runs on a path that is already
+reporting a failure and a second one there has nowhere to go.
+
+It deliberately does NOT reuse [isToolFailure](#istoolfailure), whose object shape is
+identical today: that guard answers for a TOOL's result union, and the two
+contracts are free to move apart.
+
+#### Parameters
+
+##### response
+
+`Response`
+
+##### label?
+
+`string`
+
+#### Returns
+
+`Promise`\<`string`\>
+
+#### Example
+
+```ts
+import { responseErrorMessage } from "@alexkroman1/aai/utils";
+
+async function startRun(url: string): Promise<string> {
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) throw new Error(await responseErrorMessage(res, "Workflow API"));
+  return ((await res.json()) as { runId: string }).runId;
+}
 ```
 
 ***
@@ -999,6 +1233,53 @@ It takes no state type parameter, and neither does [ToolContext](#toolcontext). 
 tool reaches session state through a [sessionSlot](#sessionslot-1), which types the
 value in the module that declares it — so a tool in its own file needs
 neither an annotated context nor a cast.
+
+***
+
+### toolFailure()
+
+```ts
+function toolFailure(message: string): ToolFailure;
+```
+
+Build a [ToolFailure](#toolfailure) — the failure a tool `execute` RETURNS when the
+model should see it and recover.
+
+The pair to [isToolFailure](#istoolfailure), and named to say so. The object literal
+`{ error: message }` means exactly the same thing and stays perfectly good
+TypeScript; this exists so that a tool reaching for "how do I report a
+failure?" finds the constructor next to the guard rather than the framework's
+own internal wire form, which is a pre-serialized string this guard does not
+narrow.
+
+#### Parameters
+
+##### message
+
+`string`
+
+#### Returns
+
+[`ToolFailure`](#toolfailure)
+
+#### Example
+
+```ts
+import { tool, toolFailure } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const orders = new Map<string, { id: string; total: number }>();
+
+export const orderTotal = tool({
+  description: "Look up an order's total",
+  inputSchema: z.object({ id: z.string() }),
+  execute: ({ id }) => {
+    const order = orders.get(id);
+    if (!order) return toolFailure(`Order ${id} not found.`);
+    return { total: order.total };
+  },
+});
+```
 
 ***
 
@@ -2455,7 +2736,7 @@ registry wants a `ToolDef<ToolInputSchema>`.
 ###### Returns
 
 [`ToolDef`](#tooldef)\<`P`, `Promise`\<
-  \| [`ToolFailure`](utils.md#toolfailure)
+  \| [`ToolFailure`](#toolfailure)
   \| [`DialogToolResult`](#dialogtoolresult)\<`R`\>\>\>
 
 #### Properties
@@ -2699,9 +2980,9 @@ narrow a value it is never handed: the failure check returns before it runs.
 
 ###### Returns
 
-  \| [`ToolFailure`](utils.md#toolfailure)
+  \| [`ToolFailure`](#toolfailure)
   \| `R`
-  \| `Promise`\<[`ToolFailure`](utils.md#toolfailure) \| `R`\>
+  \| `Promise`\<[`ToolFailure`](#toolfailure) \| `R`\>
 
 #### Properties
 
@@ -2730,7 +3011,7 @@ optional send?: E;
 The event to send once `execute` has succeeded — how the conversation moves
 on. Omit both this and `sendFrom` for a tool that reads without advancing.
 
-**Nothing is sent when `execute` returns a [ToolFailure](utils.md#toolfailure).** A tool
+**Nothing is sent when `execute` returns a [ToolFailure](#toolfailure).** A tool
 that failed did not do the thing, so a dialog that advanced anyway would
 leave the conversation a step ahead of reality — the single most expensive
 bug this primitive can have, since every later gate is then wrong too.
@@ -2771,7 +3052,7 @@ re-checking a case that cannot arrive.
 
 ###### result
 
-`Exclude`\<`NoInfer`\<`R`\>, [`ToolFailure`](utils.md#toolfailure)\>
+`Exclude`\<`NoInfer`\<`R`\>, [`ToolFailure`](#toolfailure)\>
 
 ###### Returns
 
@@ -5872,6 +6153,36 @@ call's arguments before `execute` runs. Named after the Vercel AI SDK's
 
 ***
 
+### ToolFailure
+
+```ts
+type ToolFailure = {
+  error: string;
+};
+```
+
+A tool result that reports a recoverable failure to the LLM.
+
+Return one from `execute` (instead of throwing) when the failure is
+something the model should see and act on — "no order matches that
+description, ask which one" — rather than an internal fault. The runtime
+serializes it like any other result, so it reaches the model as
+`{"error":"…"}` and reaches a test as an inspectable object.
+
+A tool that returns failures declares them in its own result union
+(`Order | ToolFailure`), which is what makes [isToolFailure](#istoolfailure) a
+narrowing guard at every call site that forwards one.
+
+#### Properties
+
+##### error
+
+```ts
+error: string;
+```
+
+***
+
 ### ToolInputSchema
 
 ```ts
@@ -7488,45 +7799,3 @@ Run `fn` while holding a keyed lock, releasing it in every outcome.
 #### Returns
 
 `Promise`\<`T`\>
-
-## References
-
-### errorDetail
-
-Re-exports [errorDetail](utils.md#errordetail)
-
-***
-
-### errorMessage
-
-Re-exports [errorMessage](utils.md#errormessage)
-
-***
-
-### isToolFailure
-
-Re-exports [isToolFailure](utils.md#istoolfailure)
-
-***
-
-### pushCapped
-
-Re-exports [pushCapped](utils.md#pushcapped)
-
-***
-
-### responseErrorMessage
-
-Re-exports [responseErrorMessage](utils.md#responseerrormessage)
-
-***
-
-### toolFailure
-
-Re-exports [toolFailure](utils.md#toolfailure-1)
-
-***
-
-### ToolFailure
-
-Re-exports [ToolFailure](utils.md#toolfailure)

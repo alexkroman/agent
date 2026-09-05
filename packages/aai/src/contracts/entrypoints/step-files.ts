@@ -42,4 +42,4 @@ export {
   type WriteUploadFromFileOptions,
   withTempDir,
   writeUploadFromFile,
-} from "../../host/step-files.ts";
+} from "../../host/step-files-barrel.ts";

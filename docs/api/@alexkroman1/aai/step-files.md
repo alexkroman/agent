@@ -1,69 +1,17 @@
 # step-files
 
-Moving bytes between the upload store and a local FILE — the plumbing an
-ffmpeg step spends most of its lines on.
+`@alexkroman1/aai/step-files` — moving bytes between the upload store and a local FILE.
 
-`@alexkroman1/aai/ffmpeg` takes bytes as happily as a path, and for a short
-clip bytes are the better call. Everything larger goes file → file, for two
-reasons that are properties of real recordings rather than preferences:
+A FACADE. The subpath resolves here rather than at `step-files.ts`, which buys two
+things the direct form could not. That module can be SPLIT as it grows without
+moving the published entry point — the path an implementation file happens to
+have is not a thing to promise anyone — and a name it gains next reaches the
+public surface only when a line is added below, rather than the moment it is
+written.
 
-- **A pipe cannot seek.** An `.m4a` off a phone usually carries its `moov`
-  index at the END of the file, so ffmpeg reading it from `pipe:0` fails with
-  `moov atom not found`. That is the flagship input of every media pipeline
-  anyone actually builds.
-- **Piped output is capped**, at `DEFAULT_MAX_FFMPEG_OUTPUT_BYTES` (64 MiB),
-  which is about half an hour of 16 kHz mono PCM. The pipelines that need
-  ffmpeg at all exist for the two-hour call.
-
-So a step materializes the upload to a temp file, runs ffmpeg file → file,
-and streams the result back into the store. Three functions, in that order:
-
-```ts
-import { join } from "node:path";
-import { runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
-import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
-
-export async function toWav(uploadId: string): Promise<string> {
-  return await withTempDir(async (dir) => {
-    const source = join(dir, "source");
-    const converted = join(dir, "converted.wav");
-    await readUploadToFile(uploadId, source);
-    await runFfmpeg(["-nostdin", "-y", "-i", source, ...wavEncodeArgs({ channels: 1 }), converted]);
-    const stored = await writeUploadFromFile(converted, { name: "audio.wav", type: "audio/wav" });
-    return stored.id;
-  });
-}
-```
-
-Nothing here holds a whole recording in memory at any point, which is the
-property that makes a step written on it work on the input it was written for.
-What the read direction DOES hold is [STEP\_FILE\_READ\_CONCURRENCY](#step_file_read_concurrency)
-windows — 32 MiB, a constant — because it reads them at once; see
-[readUploadToFile](#readuploadtofile) for why the remote read is what that buys.
-
-## Why this is a subpath of its own, and not three more names on `/step`
-
-Same rule as `@alexkroman1/aai/ffmpeg`: this module imports
-`node:fs/promises`, `node:os` and `node:path`, and `@alexkroman1/aai/step` is
-an `sdk/` barrel, which is the half of this package that must stay runnable in
-a browser and in Deno. `sdk/tsconfig.json` compiles with `types: []` so the
-boundary is a compile error rather than a convention, and
-`step-files.import-graph.test.ts` holds the `/step` barrel's whole transitive
-graph free of `node:` — a `node:` import three modules below a name somebody
-added to that barrel is how this regresses.
-
-These three names live in `host/` for the same reason and are reached by their
-own subpath, so a `client.tsx` cannot pull them in by importing the step
-vocabulary.
-
-## A temp file may not outlive its step
-
-A step is journaled by its RETURN VALUE and may be dispatched into a different
-process than its neighbours, so a path in a return value is a path that is
-replayed after the file behind it is gone — and the failure mode is a resumed
-run reading a directory another run is using. [withTempDir](#withtempdir) makes the
-lifetime a lexical scope: the directory is created on entry, removed on exit,
-and what crosses the step boundary is an upload id.
+Named re-exports rather than `export *` for the second half of that: the
+wildcard form re-exports whatever arrives, and needs a `noReExportAll`
+suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 

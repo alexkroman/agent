@@ -32,4 +32,4 @@ export {
   transcodeToWav,
   type WavEncodeOptions,
   wavEncodeArgs,
-} from "../../host/ffmpeg.ts";
+} from "../../host/ffmpeg-barrel.ts";

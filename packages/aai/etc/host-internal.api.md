@@ -576,6 +576,9 @@ type FindOptions = {
     limit?: number;
 };
 
+// @public
+export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
+
 // @internal
 export function freezeStorable<T>(value: T, path: string): T;
 

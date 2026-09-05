@@ -125,7 +125,7 @@ export {
   WORKFLOW_CONTEXT_NOW,
   type WorkflowContextOptions,
   type WorkflowContextRecorder,
-} from "../../sdk/testing.ts";
+} from "../../sdk/testing-barrel.ts";
 export {
   installStubGateway,
   installStubReporter,
@@ -135,4 +135,4 @@ export {
   installStubUploads,
   installStubWorkflows,
   type StubWorkflowsOptions,
-} from "../../sdk/testing-vitest.ts";
+} from "../../sdk/testing-vitest-barrel.ts";

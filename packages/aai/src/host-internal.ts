@@ -192,7 +192,18 @@ export { createDetachedSlotStore, freezeStorable } from "./sdk/session-state.ts"
 // caller's schema rather than casting the value — had no way to name their own
 // parameter. Not authoring API: an author writes `z.object(…)` and never spells
 // the spec's interface.
-export type { StandardSchemaIssue, StandardSchemaV1 } from "./sdk/standard-schema.ts";
+// `formatSchemaIssues` is deliberately NOT deduped onto `./internal`, though it
+// is on both. The host is a real reader of it — the runtime's generate path, its
+// tool executor and both workflow schema readers validate a caller's schema and
+// render what failed — so it belongs beside the two types that describe its
+// input, and the `/internal` copy is the BROWSER's. Moving it would also leave
+// this clause type-only, which re-renders every dependent report's import line
+// and bumps the `aai-runtime:eval` epoch over a change no consumer can observe.
+export {
+  formatSchemaIssues,
+  type StandardSchemaIssue,
+  type StandardSchemaV1,
+} from "./sdk/standard-schema.ts";
 export { publishStepInfoReader, type StepInfoReader } from "./sdk/step-attempt.ts";
 export { publishStepEnv } from "./sdk/step-env.ts";
 export { publishStepFetch, type StepFetch } from "./sdk/step-fetch.ts";

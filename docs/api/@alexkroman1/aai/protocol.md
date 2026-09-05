@@ -1,10 +1,17 @@
 # protocol
 
-WebSocket wire-format types shared by server and client.
+`@alexkroman1/aai/protocol` — the WebSocket wire contract both ends of a session derive.
 
-This is the published wire contract (`@alexkroman1/aai/protocol`) for
-building custom clients or servers that speak the session protocol —
-aai-ui's browser session is built on it.
+A FACADE. The subpath resolves here rather than at `protocol.ts`, which buys two
+things the direct form could not. That module can be SPLIT as it grows without
+moving the published entry point — the path an implementation file happens to
+have is not a thing to promise anyone — and a name it gains next reaches the
+public surface only when a line is added below, rather than the moment it is
+written.
+
+Named re-exports rather than `export *` for the second half of that: the
+wildcard form re-exports whatever arrives, and needs a `noReExportAll`
+suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 
@@ -368,14 +375,14 @@ event(event:
   type: "session.timed-out";
 }
   | {
-  code:   | "audio"
+  code:   | "stt"
+     | "llm"
+     | "tts"
+     | "tool"
+     | "audio"
      | "connection"
      | "internal"
-     | "llm"
-     | "protocol"
-     | "stt"
-     | "tool"
-     | "tts";
+     | "protocol";
   fatal: boolean;
   message: string;
   meta: {
@@ -404,7 +411,7 @@ event(event:
   | {
   messages: {
      content: string;
-     role: "assistant" | "user";
+     role: "user" | "assistant";
   }[];
   meta: {
      at: number;
@@ -416,7 +423,7 @@ event(event:
      callId: string;
      name: string;
      result?: string;
-     status: "done" | "pending";
+     status: "pending" | "done";
   }[];
   type: "history.restored";
 }): void;
@@ -547,14 +554,14 @@ event the stream had already recorded under another.
   `type`: `"session.timed-out"`;
 \}
   \| \{
-  `code`:   \| `"audio"`
+  `code`:   \| `"stt"`
+     \| `"llm"`
+     \| `"tts"`
+     \| `"tool"`
+     \| `"audio"`
      \| `"connection"`
      \| `"internal"`
-     \| `"llm"`
-     \| `"protocol"`
-     \| `"stt"`
-     \| `"tool"`
-     \| `"tts"`;
+     \| `"protocol"`;
   `fatal`: `boolean`;
   `message`: `string`;
   `meta`: \{
@@ -583,7 +590,7 @@ event the stream had already recorded under another.
   \| \{
   `messages`: \{
      `content`: `string`;
-     `role`: `"assistant"` \| `"user"`;
+     `role`: `"user"` \| `"assistant"`;
   \}[];
   `meta`: \{
      `at`: `number`;
@@ -595,7 +602,7 @@ event the stream had already recorded under another.
      `callId`: `string`;
      `name`: `string`;
      `result?`: `string`;
-     `status`: `"done"` \| `"pending"`;
+     `status`: `"pending"` \| `"done"`;
   \}[];
   `type`: `"history.restored"`;
 \}

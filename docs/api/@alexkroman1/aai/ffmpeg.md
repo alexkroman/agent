@@ -1,83 +1,17 @@
 # ffmpeg
 
-ffmpeg, callable from a step.
+`@alexkroman1/aai/ffmpeg` — ffmpeg, callable from a step.
 
-A pipeline that touches audio hits the same wall on its first real file: the
-recording is an `.m4a` off someone's phone, and every byte offset the
-workflow does — cutting, planning a fan-out, reading a header — assumes
-linear PCM. The transcription template's `parseWav` says so out loud, and its
-remedy was a sentence telling the CALLER to run
-`ffmpeg -i in.m4a -c:a pcm_s16le out.wav` on their own machine first. That is
-the work the platform should be doing.
+A FACADE. The subpath resolves here rather than at `ffmpeg.ts`, which buys two
+things the direct form could not. That module can be SPLIT as it grows without
+moving the published entry point — the path an implementation file happens to
+have is not a thing to promise anyone — and a name it gains next reaches the
+public surface only when a line is added below, rather than the moment it is
+written.
 
-So the guest image installs ffmpeg (`GUEST_SYSTEM_PACKAGES` in
-aai-server/modal-harness-image.ts) and this module is how a step reaches it.
-Three things, in the order a pipeline needs them:
-
-- [probeMedia](#probemedia) — what IS this file (duration, codec, sample rate).
-- [transcodeToWav](#transcodetowav) — make it the one format the arithmetic works on.
-- [runFfmpeg](#runffmpeg) — everything else, as an argv you build yourself.
-
-```ts
-import { stepReadUpload } from "@alexkroman1/aai/step";
-import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
-
-export async function toPcm(uploadId: string) {
-  const { bytes } = await stepReadUpload(uploadId);
-  const info = await probeMedia(bytes);
-  if (info.audio?.codec === "pcm_s16le") return bytes;
-  return await transcodeToWav(bytes, { sampleRate: 16_000, channels: 1 });
-}
-```
-
-## Why the runner is ours
-
-Every ffmpeg wrapper on npm ships one of these, and none of them survives
-this repo's rules: unbounded `stdout`/`stderr` buffers (a 100 MB
-`execFileSync` cap is a documented default in one of them), no
-`AbortSignal`, no timeout, and a killed child reported as an ordinary
-failure. What a guest step needs instead is exactly four properties, and they
-are the whole content of `spawnFfmpeg`, this module's internal runner:
-
-1. **Bounded output.** stderr is kept as a TAIL
-   (4000 chars) because ffmpeg's log is progress lines
-   and the diagnosis is the last one; stdout is capped
-   (64 MiB) and exceeding it kills the child
-   rather than the container — a guest is sized in hundreds of MiB, and an
-   hour of 16 kHz mono PCM is ~115 MB, so "buffer whatever comes" is a
-   decision to fall over on a long recording.
-2. **Abortable, on a deadline.** One `AbortSignal.any` of the caller's signal
-   and `AbortSignal.timeout` — no `Promise.race` against a timer
-   (`guard-invariants` rule 3), and no timer that outlives the child
-   (`AbortSignal.timeout` is unref'd, verified).
-3. **A failure that says which kind it is.** [FfmpegError.kind](#kind)
-   separates the four outcomes a caller treats differently, which matters
-   most inside a workflow: a `timeout` is worth retrying and an `exit` on a
-   corrupt file never is, so the step classifies with
-   `throwStepError`/`throwFatalStepError` instead of retrying a file that
-   will fail identically forever.
-4. **A missing binary that names its remedy.** ENOENT here means `aai dev` on
-   a laptop without ffmpeg — the deployed guest always has it — so the error
-   says how to install one instead of reporting `spawn ffmpeg ENOENT`.
-
-## The argv is yours
-
-[runFfmpeg](#runffmpeg) passes `args` through VERBATIM. It adds no `-y`, no
-`-hide_banner`, no `-loglevel`: the argv in [FfmpegError.argv](#argv) is then
-the command that ran, which is the thing you paste into a shell to reproduce
-a failure. The standing flags live in the two convenience functions, which
-are where a policy belongs.
-
-## Bytes or a path
-
-Both take a [FfmpegSource](#ffmpegsource): a path string, or bytes piped in on `pipe:0`.
-Bytes are what a step HAS (`stepReadUpload` answers with them), so they are the
-default shape here — but piping is not free of caveats, and they are the
-caller's to know: a format whose index lives at the END of the file (a
-non-faststart MP4) cannot be read from a pipe, and ffmpeg says so. Write those
-to a temp file and pass the path. Large media should go file → file anyway:
-nothing is buffered then, and `output` in an argv you build yourself is the
-whole difference.
+Named re-exports rather than `export *` for the second half of that: the
+wildcard form re-exports whatever arrives, and needs a `noReExportAll`
+suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 
