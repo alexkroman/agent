@@ -24,7 +24,6 @@
     "GenerateObjectResult",
     "GenerateResult",
     "GuardrailVerdict",
-    "InferSchemaOutput",
     "InferToolInput",
     "KeyedLock",
     "KeyedLockOptions",

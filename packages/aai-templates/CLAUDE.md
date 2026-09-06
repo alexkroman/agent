@@ -1109,6 +1109,36 @@ desk ASKED about rather than the id the model echoed, which is how their
 `combine_candidates_with_scores` join could write one verdict against another
 name. The full account is in [`PORTS-CLAUDE.md`](PORTS-CLAUDE.md).
 
+## Two templates are ports of the other voice frameworks' largest samples
+
+Same idea as the LangChain and CrewAI ports, from the two frameworks an author
+arriving at a voice SDK has most likely already read: LiveKit Agents and
+Pipecat. Each is the biggest sample its repository ships, and each carries its
+attribution and its their-name → our-name table in `shared.ts`.
+
+| Source | Template | What the port had to change |
+| --- | --- | --- |
+| LiveKit Agents `examples/hotel_receptionist` (19 files, a SQLite `HotelDB`, five `AgentTask` sub-agents) | `hotel-desk` | the sub-agents' narrowed tool sets become `when` gates on ONE `booking` dialog; their `_Owed` counter (speech owed before a tool may run) becomes two states left on `@user-transcript.committed`; the database becomes a seeded `sessionSlot` |
+| Pipecat `word-wrangler-gemini-live` (a `ParallelPipeline` running two Gemini Live sessions) | `word-wrangler` | the second model becomes `ctx.generate` inside one tool, on its own prompt with only the current word's context; the `GameTimer` becomes `playing`'s `timeout`; the host's "NO"/"IGNORE" filter and the score regex become a referee FUNCTION |
+
+**Both are about the same thing from opposite ends: what a second model, or a
+sub-agent, IS once the framework is gone.** LiveKit's `AgentTask` is a model with
+narrower instructions and a narrower tool set that completes with a value; a
+dialog state carries the instructions and the gate carries the tool set, and the
+value is what the flow's last tool wrote to the slot. Pipecat's second pipeline
+branch is a model that must not hear the first; a tool boundary is a room the
+host cannot see into. Neither needs a second session.
+
+**The one property `word-wrangler`'s clock depends on is worth stating:
+`playing` declares no transition on anything but the two ways out.** The
+deadline clock runs from a dialog's last MOVE, so a state that moved on every
+guess would re-arm the two minutes on every sentence and the round would never
+end. Its three in-round tools send nothing — the mirror of `roadside-assist`'s
+silence ladder, and the same rule read the other way.
+
+**The per-template accounts are in [`PORTS-CLAUDE.md`](PORTS-CLAUDE.md)**,
+beside the LangChain and CrewAI ones.
+
 ## `recap-workflow` is where the Temporal patterns were ported
 
 The same idea as the LangChain ports above, from the other tradition — and the
