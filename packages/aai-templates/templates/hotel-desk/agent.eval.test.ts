@@ -14,14 +14,11 @@ import agentDef from "virtual:aai/agent";
 // resolves `tools/`, still applies the dialog gate and still executes the tool
 // a script names — so a stub run proves the wiring and proves nothing about
 // what the agent chose.
+import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import { lastStateIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
-
-/** What a GATED tool answers with: the SDK's envelope around the tool's own result. */
-const gated = <T extends z.ZodType>(result: T) =>
-  z.object({ result, state: z.string(), done: z.boolean() });
 
 /** What `syncState` pushes — the fields these cases read off the receptionist's screen. */
 const ProjectedDesk = z.object({
@@ -50,7 +47,7 @@ describeEval(agentDef, (test) => {
       const stay = toolResultIn(
         turn.toolCalls,
         "set_stay",
-        gated(z.object({ options: z.string() })),
+        dialogResultSchema(z.object({ options: z.string() })),
       );
       expect(stay.state).toBe("booking.room");
       expect(stay.result.options).toContain("garden view");

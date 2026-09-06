@@ -665,11 +665,13 @@ each is for.
 | `defaultClientDir` | `@alexkroman1/aai-ui/client-dir` |
 | `deployedAgent` | `@alexkroman1/aai/testing` |
 | `describeEval` | `@alexkroman1/aai-runtime/eval/vitest` |
+| `describeMedia` | `@alexkroman1/aai/ffmpeg` |
 | `describeToolCalls` | `@alexkroman1/aai-runtime/eval` |
 | `describeTurn` | `@alexkroman1/aai-runtime/eval` |
 | `describeWorkflowEval` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `dialog` | `@alexkroman1/aai` |
 | `dialogRefusalPattern` | `@alexkroman1/aai/testing` |
+| `dialogResultSchema` | `@alexkroman1/aai/testing` |
 | `elevenLabsStt` | `@alexkroman1/aai/stt` |
 | `encodeWav` | `@alexkroman1/aai/step` |
 | `ensureSessionStateSchema` | `@alexkroman1/aai-runtime` |

@@ -15,8 +15,9 @@
  * exported.
  */
 
-import { agent, tool } from "@alexkroman1/aai";
+import { agent, tool, workflow } from "@alexkroman1/aai";
 import { withTools } from "@alexkroman1/aai/manifest";
+import { requireStepEnv } from "@alexkroman1/aai/step";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
@@ -333,3 +334,50 @@ describeEval(withTools(agent({ name: "Stub Suite" }), { judge }), (test) => {
     { stubReply: "still here." },
   );
 });
+
+/**
+ * A body that reads a declared key the way a real step does — `requireStepEnv`,
+ * which THROWS by name for a key the agent env does not carry.
+ */
+const keyReader = workflow({
+  input: z.object({}),
+  run: async () => ({ key: requireStepEnv("A_KEY_NOBODY_HAS") }),
+});
+
+/** The handoff shape: a tool starts the run and answers the turn. */
+const go = tool({
+  description: "Start the key reader.",
+  execute: async (_args, ctx) => {
+    const runId = await ctx.workflows.start(keyReader, {});
+    return { runId };
+  },
+});
+
+// A voice agent that HANDS OFF to a run, with no `env` of its own: the engine
+// `describeEval` opens beside the session used to get exactly what the suite
+// passed, which for a keyless CI run is nothing — so every such template carried
+// a `{ ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "eval-scripted-key" }`
+// to keep its steps from failing on the credential before reaching the script.
+// `describeWorkflowEval` had already settled the question for a workflow app;
+// this is the same placeholder reaching the same engine by the other door.
+describeEval(
+  withTools(
+    agent({ name: "Handoff Suite", workflows: { keyReader }, requiredEnv: ["A_KEY_NOBODY_HAS"] }),
+    { go },
+  ),
+  (test) => {
+    test(
+      "fills a declared key nobody has with a placeholder for the run a tool starts",
+      async ({ session, workflows }) => {
+        const turn = await session.say("go");
+        expect(turn.toolCalls.map((call) => call.name)).toEqual(["go"]);
+        const [run] = (await workflows?.settleAll()) ?? [];
+        expect(run?.status).toBe("completed");
+        // Read from inside the body through the PUBLISHED slot, so this is the
+        // value `requireStepEnv` would have thrown over.
+        expect(run?.output).toEqual({ key: "aai-eval-stub-credential" });
+      },
+      { stubReply: [{ tool: "go", args: {} }, "started it"] },
+    );
+  },
+);

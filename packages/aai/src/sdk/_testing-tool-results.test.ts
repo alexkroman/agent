@@ -1,6 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { expectDialogOk, expectDialogRefused, expectToolOk } from "./testing.ts";
+import { z } from "zod";
+import {
+  dialogResultSchema,
+  expectDialogOk,
+  expectDialogRefused,
+  expectToolOk,
+} from "./testing.ts";
 import { toolFailure } from "./utils.ts";
 
 /** What a `dialog()` tool answers on success: the value, wrapped in the position. */
@@ -105,5 +111,37 @@ describe("expectDialogRefused", () => {
     expect(() => expectDialogRefused(toolFailure("Order not found."))).toThrow(
       "Expected a dialog refusal and got: Order not found.",
     );
+  });
+});
+
+describe("dialogResultSchema", () => {
+  const Quote = dialogResultSchema(z.object({ quoted: z.number() }));
+
+  test("parses the envelope a `dialog.tool` writes, the author's result inside it", () => {
+    expect(Quote.parse(answered)).toEqual(answered);
+  });
+
+  test("the instruction is optional, since a state declares one or does not", () => {
+    const { instruction: _omitted, ...bare } = answered;
+    expect(Quote.parse(bare)).toEqual(bare);
+  });
+
+  test("names the envelope field that stopped matching", () => {
+    // The whole reason to parse rather than cast: a template that stopped
+    // carrying its position fails HERE, on `state`, not two assertions later on
+    // a property of `undefined`.
+    const noPosition = Quote.safeParse({ result: { quoted: 42 }, done: false });
+    expect(noPosition.success).toBe(false);
+    expect(noPosition.error?.issues.map((issue) => issue.path)).toEqual([["state"]]);
+  });
+
+  test("checks the author's own result through the schema it was handed", () => {
+    const wrongShape = Quote.safeParse({ ...answered, result: { quoted: "forty-two" } });
+    expect(wrongShape.success).toBe(false);
+    expect(wrongShape.error?.issues.map((issue) => issue.path)).toEqual([["result", "quoted"]]);
+  });
+
+  test("a refusal is not an envelope, so it does not parse as one", () => {
+    expect(Quote.safeParse(toolFailure("Verify the caller first.")).success).toBe(false);
   });
 });

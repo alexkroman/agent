@@ -143,6 +143,7 @@ describe("API-EXPORTS.json", () => {
       "createWorkflowContext",
       "deployedAgent",
       "dialogRefusalPattern",
+      "dialogResultSchema",
       "expectDeployable",
       "expectDialogOk",
       "expectDialogRefused",

@@ -19,7 +19,15 @@ import {
 } from "./_ffmpeg-spawn.ts";
 import { ffmpegVersion } from "./_ffmpeg-version.ts";
 import { tick } from "./_test-utils.ts";
-import { ffmpegBaseArgs, probeMedia, runFfmpeg, transcodeToWav, wavEncodeArgs } from "./ffmpeg.ts";
+import {
+  describeMedia,
+  ffmpegBaseArgs,
+  type MediaInfo,
+  probeMedia,
+  runFfmpeg,
+  transcodeToWav,
+  wavEncodeArgs,
+} from "./ffmpeg.ts";
 
 const spawnMock = vi.fn();
 vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(...args) }));
@@ -557,5 +565,38 @@ describe("ffmpegBaseArgs", () => {
     // The regression this closes: `transcodeToWav` shipped without `-nostats`,
     // so the SDK's own transcode was the case whose diagnosis got evicted.
     expect(argv).toEqual(expect.arrayContaining(ffmpegBaseArgs()));
+  });
+});
+
+describe("describeMedia", () => {
+  /** A probe with only what the phrase reads — `raw` and `streams` are `parseProbeJson`'s. */
+  const probed = (fields: Partial<MediaInfo>): MediaInfo => ({ streams: [], raw: {}, ...fields });
+  const aac = { index: 0, kind: "audio", codec: "aac" };
+
+  test("reads `41:20 of aac` off a probe that measured both", () => {
+    expect(describeMedia(probed({ durationSec: 2480, audio: aac }))).toBe("41:20 of aac");
+  });
+
+  test("rounds the duration to the second, and grows an hours field when it needs one", () => {
+    expect(describeMedia(probed({ durationSec: 12.5, audio: aac }))).toBe("0:13 of aac");
+    expect(describeMedia(probed({ durationSec: 3849, audio: aac }))).toBe("1:04:09 of aac");
+  });
+
+  test("drops a field ffprobe did not report rather than printing `undefined`", () => {
+    // A raw PCM file has a length and no codec name; a non-faststart MP4 probed
+    // over a pipe has a codec and no duration. Either way the sentence around
+    // the phrase still reads.
+    expect(describeMedia(probed({ durationSec: 2480 }))).toBe("41:20");
+    expect(describeMedia(probed({ audio: aac }))).toBe("aac");
+  });
+
+  test("names the first AUDIO stream's codec, not the container's or a video's", () => {
+    const h264 = { index: 0, kind: "video", codec: "h264" };
+    expect(describeMedia(probed({ format: "mov,mp4,m4a", video: h264, audio: aac }))).toBe("aac");
+    expect(describeMedia(probed({ format: "mov,mp4,m4a", video: h264 }))).toBe("the recording");
+  });
+
+  test("has something to say about a probe that reported neither", () => {
+    expect(describeMedia(probed({}))).toBe("the recording");
   });
 });

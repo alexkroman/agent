@@ -17,6 +17,7 @@
  */
 
 export {
+  describeMedia,
   FfmpegError,
   type FfmpegFailureKind,
   type FfmpegRunOptions,

@@ -62,7 +62,7 @@
 
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+import { describeMedia, probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
 import { pcmDurationMs, stepReport, stepRequireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFatalStepError, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
@@ -163,7 +163,7 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
       );
       const codec = probed.audio?.codec ?? "unknown";
       await stepReport(
-        `Levelling ${describeSource(codec, probed.durationSec)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
+        `Levelling ${describeMedia(probed)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
       );
 
       // Pass one: measure. `-f null -` decodes every frame and writes no audio, so
@@ -244,13 +244,6 @@ export function analyse<T>(read: () => T): T {
     if (err instanceof MediaAnalysisError) return throwFatalStepError(err);
     throw err;
   }
-}
-
-/** `41:20 of aac`, or as much of that as ffprobe would say. */
-function describeSource(codec: string, durationSec: number | undefined): string {
-  const length =
-    durationSec === undefined ? undefined : formatDuration(Math.round(durationSec * 1000));
-  return length === undefined ? codec : `${length} of ${codec}`;
 }
 
 /** A filename without its extension, so a new one can be put on. */
