@@ -1,6 +1,5 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   parseToolInput,
@@ -20,11 +19,6 @@ import {
 } from "./shared.ts";
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
-
-/** Each context owns its OWN slot store, so two contexts are two carts. Its
- *  default `db` rejects every query, which is right here: this template keeps
- *  its cart in a session slot and must never touch storage. */
-const makeCtx = (): ToolContext => createToolContext();
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup,
  *  its "no such tool" message and the args-or-context shape are all
@@ -98,7 +92,7 @@ describe("pricing (shared.ts)", () => {
 
 describe("tool flow (add → update → remove → place_order)", () => {
   test("full ordering round-trip keeps state, totals, and IDs consistent", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
 
     // Empty order guards
     expect(await run("view_order", ctx)).toEqual({ message: "The order is empty." });
@@ -165,8 +159,8 @@ describe("tool flow (add → update → remove → place_order)", () => {
     // call its own detached slot store, so passing two distinct session ids
     // would prove nothing extra — the isolation is per store, and the store is
     // per context. A template that cached its order in a module would fail here.
-    const firstCall = makeCtx();
-    const secondCall = makeCtx();
+    const firstCall = createToolContext();
+    const secondCall = createToolContext();
 
     await run(
       "add_pizza",
@@ -200,7 +194,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
 
 describe("orderView projection", () => {
   test("reflects the live cart", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run(
       "add_pizza",
       { size: "large", crust: "stuffed", toppings: ["pepperoni", "extra_cheese"], quantity: 2 },
@@ -225,7 +219,7 @@ describe("orderView projection", () => {
   test("survives checkout, which clears the cart but keeps the confirmation", async () => {
     // The reason `placed` lives in state at all: the cart is emptied on
     // checkout, and the UI still has to show the order that was just placed.
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
     await run("place_order", ctx);
 

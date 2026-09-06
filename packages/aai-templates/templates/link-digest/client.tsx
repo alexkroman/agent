@@ -86,7 +86,9 @@ import {
   useCopy,
   useFlash,
   useWorkflowSubmit,
+  WorkflowPendingNote,
   WorkflowProgress,
+  WorkflowRunError,
 } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
@@ -94,24 +96,6 @@ import "@alexkroman1/aai-ui/styles.css";
 // digest.ts` already declares.
 import { useState } from "react";
 import type { digest } from "./agent.ts";
-
-/**
- * What the page says while something is in flight — three situations, one line
- * each, and none of them the sentence this page used to print.
- *
- * That one was "You can close this tab — the run continues without it": true
- * about the run and false about the page, which is the worst shape a reassurance
- * can have. The run did continue and the tab could never find it again. Now it
- * can, so the promise gets stronger and the reload case gets its own words —
- * somebody who did not press the button is owed an explanation for the work
- * appearing in front of them.
- */
-function pendingNote(startedHere: boolean, found: boolean): string {
-  if (startedHere)
-    return "You can close this tab or reload it — this page will find the run again.";
-  if (!found) return "Looking for a digest this tab started earlier…";
-  return "Still working on the digest this tab started earlier. Reloading is safe.";
-}
 
 /** The digest as one pasteable block — a headline and its bullets. */
 function asText(headline: string, points: readonly string[]): string {
@@ -137,8 +121,8 @@ export function App() {
   // No `key` and no `recover`: this tab's handle on its own runs is minted and
   // remembered by the hook, and read back as it mounts. See the module doc for
   // what a page says when it wants a different one.
-  const { submit, run, pending, error, wake, startedHere } =
-    useWorkflowSubmit<typeof digest>("digest");
+  const submission = useWorkflowSubmit<typeof digest>("digest");
+  const { submit, run, pending, error, wake } = submission;
 
   // `submit()` resolves as soon as the run exists — deliberately not when it
   // finishes. That is the whole mechanism: the digest sleeps for a while, and
@@ -188,8 +172,10 @@ export function App() {
       {/* A run that has not settled says so. `pending` is not derivable from the
           snapshot alone — an id the agent never knew leaves `run` undefined,
           which would otherwise read as "still waiting" forever, and on a reload
-          it is also true while the run is being looked up by key. */}
-      {pending && <p>{pendingNote(startedHere, run !== undefined)}</p>}
+          it is also true while the run is being looked up by key. The three
+          sentences — pressed here, still looking, found from earlier — are the
+          component's; this page only names what the run produces. */}
+      <WorkflowPendingNote submission={submission} subject="digest" />
 
       {/* The run's own narration, newest line only. `lines={1}` is the window;
           everything else — the replay, and the "serves no stream" case that is
@@ -216,14 +202,9 @@ export function App() {
         </button>
       )}
 
-      {/* `role="alert"`, like the submit error above: this is the outcome the
-          reader has been waiting for, and it can arrive long after they looked
-          away. */}
-      {run?.status === "failed" && (
-        <p role="alert" className="text-red-600">
-          That one failed: {run.error}
-        </p>
-      )}
+      {/* Announced, like the submit error above: this is the outcome the reader
+          has been waiting for, and it can arrive long after they looked away. */}
+      <WorkflowRunError run={run} />
 
       {run?.status === "completed" && (
         <article className="flex flex-col gap-3">

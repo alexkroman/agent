@@ -76,7 +76,7 @@ import type { SubagentDef, SubagentToolCall, ToolDef, WorkflowContext } from "@a
 import { subagent, tool } from "@alexkroman1/aai";
 import { mapConcurrent, stepDelegate, stepReport } from "@alexkroman1/aai/step";
 import { stepGenerateJsonOrFail, stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
-import { plural } from "@alexkroman1/aai/utils";
+import { isRecord, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import {
   BRIEF_SUMMARY_SYSTEM,
@@ -404,10 +404,7 @@ function countWork(toolCalls: readonly SubagentToolCall[]): {
 /** The URL a `visit_webpage` call named, when it named one. */
 function readUrl(input: unknown): string | undefined {
   if (typeof input === "string") return input;
-  if (input && typeof input === "object" && "url" in input) {
-    const url = (input as { url?: unknown }).url;
-    if (typeof url === "string" && url) return url;
-  }
+  if (isRecord(input) && typeof input.url === "string" && input.url) return input.url;
   return undefined;
 }
 

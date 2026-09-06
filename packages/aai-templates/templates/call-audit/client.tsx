@@ -86,7 +86,9 @@ import {
   useDownloadUrl,
   useWorkflowSubmit,
   WorkflowFields,
+  WorkflowPendingNote,
   WorkflowProgress,
+  WorkflowRunError,
 } from "@alexkroman1/aai-ui";
 import type { audit } from "./agent.ts";
 
@@ -107,20 +109,6 @@ const WORKFLOW = "audit";
  */
 const api = createWorkflowApi();
 
-/**
- * What the desk says while a run is in flight — three situations, one line
- * each.
- *
- * The reload case gets its own words deliberately: somebody who did not press
- * the button is owed an explanation for an audit appearing in front of them,
- * and it is the line that keeps them from uploading the call again.
- */
-function pendingNote(startedHere: boolean, found: boolean): string {
-  if (startedHere) return "Reloading is safe — this page will find the audit again.";
-  if (!found) return "Looking for an audit this tab started earlier…";
-  return "Still auditing a call this tab uploaded earlier — no need to send it again.";
-}
-
 /** One labelled number in the pipeline panel. */
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -136,8 +124,8 @@ export function App() {
   // `run.output` instead of `unknown`. The reload — both halves of it — is the
   // hook's own doing; see the module doc for why the key it mints is the one
   // this desk wants.
-  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error, startedHere } =
-    useWorkflowSubmit<typeof audit>(WORKFLOW, { api });
+  const submission = useWorkflowSubmit<typeof audit>(WORKFLOW, { api });
+  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = submission;
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the
@@ -165,9 +153,7 @@ export function App() {
       {/* `pending` covers the RUN rather than the request, and on a reload it is
           also true while the run is being looked up by key — the stretch where
           an empty form would invite a second 700 MB upload of the same call. */}
-      {pending && (
-        <p className="text-sm opacity-70">{pendingNote(startedHere, run !== undefined)}</p>
-      )}
+      <WorkflowPendingNote submission={submission} subject="audit" />
 
       {/* The upload is its own wait, and the one nothing else can describe: the run
           does not EXIST until the bytes are in, so there is no run id and nothing
@@ -179,13 +165,9 @@ export function App() {
           measured, how many pauses were found. */}
       <WorkflowProgress runId={run?.runId} api={api} />
 
-      {/* `role="alert"`, the same contract `<Form>` gives the submit error: this
-          is the outcome the reader waited minutes for. */}
-      {run?.status === "failed" && (
-        <p role="alert" className="text-red-600">
-          That one failed: {run.error}
-        </p>
-      )}
+      {/* Announced, the same contract `<Form>` gives the submit error: this is
+          the outcome the reader waited minutes for. */}
+      <WorkflowRunError run={run} />
 
       {output !== undefined && (
         <article className="flex flex-col gap-6">

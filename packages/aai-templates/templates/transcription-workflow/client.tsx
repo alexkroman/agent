@@ -3,9 +3,9 @@
  * The transcription desk's page: a form, a progress log, and a transcript.
  *
  * `link-digest` is the smaller example and the one to read first — it shows the
- * primitives raw: `createWorkflowApi()` to start a run, `useWorkflowRun()` to
- * watch it, and a hand-written `<form>` with its own `useState`. This page is
- * the same thing with the two pieces that hand-rolling gets tedious:
+ * layer under `<Form>` raw: a hand-written `<form>` with its own `useState`,
+ * handing an object to `submit()`. This page is the same thing with the two
+ * pieces that hand-rolling gets tedious:
  *
  * - **`useWorkflowSubmit`** is `api.start` plus `useWorkflowRun` plus the four
  *   pieces of state between them (the run id, the in-flight submit, whether the
@@ -414,7 +414,7 @@ function TranscriptionDesk() {
 }
 
 /**
- * Which flow submits, as two radios.
+ * Which flow submits, as three radios.
  *
  * Radios rather than a toggle or a select, because the choice has a REASON per
  * option and a radio group is the one control with room to show it — the note

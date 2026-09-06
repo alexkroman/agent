@@ -55,16 +55,11 @@ const SHIPPED_PUBLIC_TOOLS = [
   "transfer_to_human_agents",
 ];
 
-// `createToolContext()` rather than a cast: it carries a real slot store (the
-// same storability check and freeze the deployed one applies), and each call is a
-// distinct session, which is what these per-tool cases assume.
-const makeCtx = (): ToolContext => createToolContext();
-
 /** A context whose call flow is in `serving.helping`, so a `when: "serving"`
  *  tool can reach its body. Moved through the FLOW rather than by writing
  *  `authenticatedUserId`, because the gate reads the machine. */
 function servingCtx(): ToolContext {
-  const ctx = makeCtx();
+  const ctx = createToolContext();
   callFlow.send(ctx, { type: "IDENTIFIED" });
   return ctx;
 }
@@ -88,7 +83,7 @@ function toolNamed(name: string) {
  */
 async function bodyReachableCtx(name: string): Promise<ToolContext> {
   if (!SETTLING_TOOLS.has(name)) return servingCtx();
-  const ctx = makeCtx();
+  const ctx = createToolContext();
   await toolNamed("find_user_id_by_email").execute(
     { email: "aarav.anderson9752@example.com" },
     ctx,
@@ -261,7 +256,7 @@ describe("the blocked-call hook", () => {
   test.each(gatedTools.filter(([name]) => !isPublic(name)))(
     "%s records a blocked line when the model tries it too early",
     (name) => {
-      const ctx = makeCtx();
+      const ctx = createToolContext();
       called(name, ctx);
 
       // The regression this closes: the gate moved out of `retailTool` and the
@@ -277,7 +272,7 @@ describe("the blocked-call hook", () => {
   test.each(gatedTools.filter(([name]) => isPublic(name)))(
     "%s is left to the wrapper, because it is going to run",
     (name) => {
-      const ctx = makeCtx();
+      const ctx = createToolContext();
       called(name, ctx);
       // The double-count this avoids: a tool that reaches its body records its
       // own line from inside it, with a real summary.
@@ -286,7 +281,7 @@ describe("the blocked-call hook", () => {
   );
 
   test("a tool this template did not declare is ignored", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     called("web_search", ctx);
     // `gateFor` answers `undefined` for anything not built through `retailTool`
     // — a builtin, or a tool a future author adds outside the wrapper. Recording
@@ -295,7 +290,7 @@ describe("the blocked-call hook", () => {
   });
 
   test("the same tool stops being blocked once the caller is identified", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     called("get_user_details", ctx);
     expect(retailSlot.get(ctx).activity).toHaveLength(1);
 
@@ -324,7 +319,7 @@ describe("the authentication gate", () => {
   test.each(gatedTools.filter(([name]) => !isPublic(name)))(
     "%s refuses before the caller is identified",
     async (name, def) => {
-      const result = await def.execute(SAMPLE_ARGS[name] ?? {}, makeCtx());
+      const result = await def.execute(SAMPLE_ARGS[name] ?? {}, createToolContext());
       expect(isToolFailure(result), `${name} did not refuse`).toBe(true);
       if (!isToolFailure(result)) return;
       // The refusal is `callFlow`'s: it names the position, and quotes the
@@ -341,7 +336,7 @@ describe("the authentication gate", () => {
   test.each(sweepable.filter(([name]) => isPublic(name)))(
     "%s does not require authentication",
     async (name, def) => {
-      const result = await def.execute(SAMPLE_ARGS[name] ?? {}, makeCtx());
+      const result = await def.execute(SAMPLE_ARGS[name] ?? {}, createToolContext());
       // A public tool may still fail on its own (deliberately bogus) arguments;
       // it must not fail on the GATE. Written as one unconditional assertion —
       // an `if (isToolFailure(result))` wrapper would pass vacuously for the tools

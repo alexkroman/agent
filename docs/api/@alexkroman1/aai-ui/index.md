@@ -3065,6 +3065,64 @@ function StartRun() {
 
 ***
 
+### WorkflowPendingNote()
+
+```ts
+function WorkflowPendingNote(props: WorkflowPendingNoteProps): ReactNode;
+```
+
+The one sentence a page says while a run is in flight — three situations,
+one line each — as a muted line under the form, and nothing otherwise.
+
+Six template pages had each written the function under this, byte-identical
+in control flow and different only in the noun, under a doc arguing the same
+two things. Both survive here, once:
+
+- **The reload case gets its own words.** `!startedHere && run` is a run in
+  front of somebody who did not press anything — a reload, or another tab on
+  the same key — and they are owed an explanation for work appearing, plus
+  the line that stops them starting it again. The sentence a page reaches for
+  instead ("you can close this tab") was true about the RUN and false about
+  the page for as long as a reload could not find its run.
+- **The lookup is a state, not an absence.** `!startedHere && !run` is the
+  stretch on a reload where the key is being resolved and an empty form would
+  read as "nothing is happening". It is the same length as the request.
+
+The render site had drifted too — three pages muted the line and two did not
+— so the typography is the component's, in the same `text-sm opacity-70`
+every other muted line on these pages uses.
+
+`startedHere`, `run` and `pending` are what [WorkflowSubmission](#workflowsubmission)
+reports, which is why the prop is the submission itself rather than three
+booleans a page would re-derive. A page with a FOURTH situation — a run that a
+reload does not recover but ENDS, as `transcription-workflow`'s streaming
+flow has — writes its own sentence, and that template is the one doing so.
+
+#### Parameters
+
+##### props
+
+[`WorkflowPendingNoteProps`](#workflowpendingnoteprops)
+
+See [WorkflowPendingNoteProps](#workflowpendingnoteprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+```tsx
+import { useWorkflowSubmit, WorkflowPendingNote } from "@alexkroman1/aai-ui";
+
+function App() {
+  const submission = useWorkflowSubmit("redline");
+  return <WorkflowPendingNote submission={submission} subject="draft" />;
+}
+```
+
+***
+
 ### WorkflowProgress()
 
 ```ts
@@ -3167,6 +3225,52 @@ import { WorkflowProgress } from "@alexkroman1/aai-ui";
 
 function RunPanel({ runId }: { runId: string }) {
   return <WorkflowProgress runId={runId} />;
+}
+```
+
+***
+
+### WorkflowRunError()
+
+```ts
+function WorkflowRunError(props: WorkflowRunErrorProps): ReactNode;
+```
+
+The announced line for a run that failed: its error, or nothing at all while
+the run is anything else.
+
+Six workflow pages had written this paragraph by hand, and the one thing that
+mattered about it was the part a reviewer cannot see is missing:
+`role="alert"`. A run fails minutes after the reader looked away — days, for
+a scheduled one — and `<Form>` announces only the SUBMIT error, so without
+the role a screen reader is never told the outcome it waited for arrived.
+Three of the six also disagreed on the sentence ("That one failed", "That run
+failed", the bare message), which is the drift a component ends.
+
+Discriminated on `status`, so `error` is reachable without a cast — the
+reason [WorkflowRun](#workflowrun) is a union rather than a flat object with optional
+fields.
+
+#### Parameters
+
+##### props
+
+[`WorkflowRunErrorProps`](#workflowrunerrorprops)
+
+See [WorkflowRunErrorProps](#workflowrunerrorprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+```tsx
+import { useWorkflowSubmit, WorkflowRunError } from "@alexkroman1/aai-ui";
+
+function App() {
+  const { run } = useWorkflowSubmit("digest");
+  return <WorkflowRunError run={run} />;
 }
 ```
 
@@ -6683,6 +6787,90 @@ composes this in already.
 
 ***
 
+### WorkflowPendingNoteProps
+
+```ts
+type WorkflowPendingNoteProps = {
+  className?: string;
+  scope?: "tab" | "browser";
+  subject?: string;
+  submission: {
+     pending: boolean;
+     run: WorkflowRun | undefined;
+     startedHere: boolean;
+  };
+};
+```
+
+Props for [WorkflowPendingNote](#workflowpendingnote).
+
+#### Properties
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+ADDED to the note's own `text-sm opacity-70` rather than replacing it.
+There is no `tailwind-merge` in this package, so a class that CONFLICTS with
+a base one is not reliably the winner.
+
+##### scope?
+
+```ts
+optional scope?: "tab" | "browser";
+```
+
+Where the key that finds the run again lives. `"tab"` (the default) is
+`useWorkflowSubmit`'s own `sessionStorage` key; `"browser"` is a page that
+passed `useRunKey({ storage: "local" })`, whose runs any tab on this browser
+can find — so the sentence says "this browser" and stops promising that
+closing the tab loses anything.
+
+##### subject?
+
+```ts
+optional subject?: string;
+```
+
+What the run produces, as the noun the sentences name: `"draft"`,
+`"summary"`, `"transcript"`. Default `"run"`.
+
+##### submission
+
+```ts
+submission: {
+  pending: boolean;
+  run: WorkflowRun | undefined;
+  startedHere: boolean;
+};
+```
+
+The submission the page is rendering — `useWorkflowSubmit`'s or
+`useWorkflowStream`'s result, or any object carrying these three fields.
+Nothing renders while `pending` is false.
+
+###### pending
+
+```ts
+readonly pending: boolean;
+```
+
+###### run
+
+```ts
+readonly run: WorkflowRun | undefined;
+```
+
+###### startedHere
+
+```ts
+readonly startedHere: boolean;
+```
+
+***
+
 ### WorkflowRun
 
 ```ts
@@ -6710,6 +6898,39 @@ server graph into the bundle.
 ##### R
 
 `R` = `unknown`
+
+***
+
+### WorkflowRunErrorProps
+
+```ts
+type WorkflowRunErrorProps = {
+  className?: string;
+  run: WorkflowRun | undefined;
+};
+```
+
+Props for [WorkflowRunError](#workflowrunerror).
+
+#### Properties
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+ADDED to the alert's own `text-red-600` rather than replacing it. There is
+no `tailwind-merge` in this package, so a class that CONFLICTS with a base
+one is not reliably the winner.
+
+##### run
+
+```ts
+run: WorkflowRun | undefined;
+```
+
+The run the page is following. Nothing renders unless it has FAILED.
 
 ***
 

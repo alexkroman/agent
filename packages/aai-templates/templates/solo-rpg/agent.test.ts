@@ -24,13 +24,6 @@ import updateState from "./tools/update_state.ts";
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
 
-/** Each call gets its own slot store, which is what makes two contexts two
- *  games. `send` is the recorder `createToolContext` installs — no test here
- *  asserts on it, and overriding it would only throw the recording away. */
-function makeCtx(): ToolContext {
-  return createToolContext();
-}
-
 const SETUP_ARGS = {
   genre: "dark_fantasy",
   tone: "dark_gritty",
@@ -103,7 +96,7 @@ function callNoArgs<R>(def: ToolDef<ToolInputSchema, R>, ctx: ToolContext): Prom
 
 describe("setup_character", () => {
   test("running setup twice starts fresh: no duplicate ids, no stale resources, truthful return", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
 
     await setupCharacter.execute(SETUP_ARGS, ctx);
 
@@ -140,7 +133,7 @@ describe("setup_character", () => {
   });
 
   test("stats are a permutation of [3,2,2,1,1] with the archetype's stat at 3", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await setupCharacter.execute(SETUP_ARGS, ctx);
     const state = gameSlot.get(ctx);
     const stats = [state.edge, state.heart, state.iron, state.shadow, state.wits];
@@ -155,8 +148,8 @@ describe("setup_character", () => {
     // detached slot store, so the isolation is per CONTEXT — two distinct
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
-    await setupCharacter.execute(SETUP_ARGS, makeCtx());
-    const other = await callNoArgs(checkState, makeCtx());
+    await setupCharacter.execute(SETUP_ARGS, createToolContext());
+    const other = await callNoArgs(checkState, createToolContext());
     expect(other.initialized).toBe(false);
   });
 });
@@ -285,7 +278,7 @@ describe("burn_momentum", () => {
   }
 
   test("a legal burn reverts the miss's consequences, upgrades, and resets momentum", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     seedRolledState(8, ctx); // 8 beats both dice (3, 5)
 
     const result = expectToolOk<Record<string, unknown>>(await callNoArgs(burnMomentum, ctx));
@@ -300,14 +293,14 @@ describe("burn_momentum", () => {
   });
 
   test("momentum beating only one die upgrades a MISS to WEAK_HIT", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     seedRolledState(4, ctx); // beats 3, not 5
     const result = expectToolOk<{ newResultCode: string }>(await callNoArgs(burnMomentum, ctx));
     expect(result.newResultCode).toBe("WEAK_HIT");
   });
 
   test("burn is refused with no roll standing, insufficient momentum, or a strong hit", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
 
     // No roll yet — and this refusal is now the FLOW's rather than a null check
     // inside the body: nothing has rolled, so the game is in
@@ -336,7 +329,7 @@ describe("burn_momentum", () => {
   });
 
   test("action_roll persists the roll so burn needs no dice arguments", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     seedPlaying(ctx);
     await actionRoll.execute(
       { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "attack" },
@@ -407,7 +400,7 @@ describe("oracle", () => {
   }
 
   test("a chaos interrupt that LANDS lowers the stored chaos factor", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const state = playingState();
     state.chaosFactor = 9; // threshold 6 — a roll of 1 lands
     seedPlaying(ctx, state);
@@ -427,7 +420,7 @@ describe("oracle", () => {
   });
 
   test("the chaos factor floors at 3, where no roll is taken at all", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const state = playingState();
     state.chaosFactor = 3; // threshold 0 — `checkChaosInterrupt` returns early
     seedPlaying(ctx, state);
@@ -441,7 +434,7 @@ describe("oracle", () => {
   });
 
   test("a chaos check that MISSES changes nothing", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const state = playingState();
     state.chaosFactor = 5; // threshold 2
     seedPlaying(ctx, state);
@@ -457,7 +450,7 @@ describe("oracle", () => {
   });
 
   test("a chaos check on an untouched session starts from the default factor", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     mockRoll(1, 10); // DEFAULT_STATE.chaosFactor is 5, so threshold 2 — lands
     const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as { chaosFactor: number };
     expect(result.chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
@@ -465,7 +458,7 @@ describe("oracle", () => {
   });
 
   test("yes_no maps the d6 onto its three answers", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     for (const [roll, answer] of [
       [1, "No"],
       [2, "No"],
@@ -484,7 +477,7 @@ describe("oracle", () => {
   });
 
   test("the four inspiration branches answer without touching the game", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     seedPlaying(ctx);
     const before = structuredClone(gameSlot.get(ctx));
 
@@ -509,7 +502,7 @@ describe("oracle", () => {
 
 describe("update_state", () => {
   test("clock ids never collide after a removal (max-scan, not length+1)", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     seedPlaying(ctx); // has clock_1
 
     await updateState.execute({ addClockName: "Second" }, ctx); // clock_2
@@ -523,7 +516,7 @@ describe("update_state", () => {
   });
 
   test("advancing a clock to full reports its trigger event", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const state = playingState();
     state.clocks[0]!.filled = 3; // 3 of 4
     seedPlaying(ctx, state);
@@ -535,7 +528,7 @@ describe("update_state", () => {
   });
 
   test("NPC count is capped at MAX_NPCS with a warning", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const state = playingState();
     while (state.npcs.length < MAX_NPCS) {
       state.npcs.push(makeNpc({ id: `npc_${state.npcs.length + 1}`, name: "Extra" }));
@@ -573,7 +566,7 @@ describe("update_state", () => {
 
 describe("the story flow", () => {
   test("a fresh session is awaiting setup, and the play tools refuse there", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     expect(storyFlow.position(ctx).state).toBe("awaitingSetup");
 
     // All of these used to RUN before a character existed: `action_roll` rolled
@@ -600,7 +593,7 @@ describe("the story flow", () => {
   });
 
   test("setup opens play, a roll leaves one standing, and settling closes the window", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     // `state`/`instruction`, not `at`/`next`: the ungated tools spread the
     // `DialogPosition` verbatim now, so they report their position under the
     // same keys every gated tool's result carries — which is what the system
@@ -624,7 +617,7 @@ describe("the story flow", () => {
   });
 
   test("check_state reports the position and is legal before setup", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const before = await callNoArgs(checkState, ctx);
     expect(before.state).toBe("awaitingSetup");
     expect(before.instruction).toMatch(/setup_character/);
@@ -633,7 +626,7 @@ describe("the story flow", () => {
   });
 
   test("a game over is terminal: nothing rolls, and setup starts a new story", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const dead = playingState();
     dead.health = 0;
     dead.spirit = 0;

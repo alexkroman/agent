@@ -20,9 +20,6 @@ import lookupCoverage from "./tools/lookup_coverage.ts";
 import reportLocation from "./tools/report_location.ts";
 import serviceDisclosure from "./tools/service_disclosure.ts";
 
-/** One call per context: `createToolContext` gives each its own slot store. */
-const makeCtx = (): ToolContext => createToolContext();
-
 /** Where the call is, without going through a tool. */
 const at = (ctx: ToolContext): DialogPosition => roadsideCall.position(ctx);
 
@@ -100,7 +97,7 @@ async function accept(ctx: ToolContext, policyNumber?: string): Promise<void> {
 
 describe("the roadside call", () => {
   test("a fresh call is locating, and every later phase's tool refuses there", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     expect(at(ctx).state).toBe("onCall.locating");
     expect(at(ctx).instruction).toMatch(/report_location/);
 
@@ -122,7 +119,7 @@ describe("the roadside call", () => {
   });
 
   test("reporting the location moves the call to verifying and latches the vehicle", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const result = expectDialogOk<{ vehicle: string; safeToWait: boolean }>(
       await reportLocation.execute(A_LOCATION, ctx),
     );
@@ -133,7 +130,7 @@ describe("the roadside call", () => {
   });
 
   test("a policy number nothing matches refuses, and the call does not move", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await locate(ctx);
 
     const refused = await lookupCoverage.execute({ policyNumber: "RS-0000" }, ctx);
@@ -146,7 +143,7 @@ describe("the roadside call", () => {
   });
 
   test("a policy number read out with noise in it still matches", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await locate(ctx);
     const result = expectDialogOk<{ plan: string; holder: string | null }>(
       await lookupCoverage.execute({ policyNumber: "rs 4417" }, ctx),
@@ -156,7 +153,7 @@ describe("the roadside call", () => {
   });
 
   test("no policy number at all is an ANSWER: the call moves, priced as a non-member", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await locate(ctx);
 
     const result = expectDialogOk<{ plan: string; status: string; callOut: number }>(
@@ -168,7 +165,7 @@ describe("the roadside call", () => {
   });
 
   test("a lapsed policy is found and still priced as a non-member", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await verify(ctx, "RS-1290");
 
     // Found — the holder's name comes back — and charged the call-out anyway.
@@ -177,7 +174,7 @@ describe("the roadside call", () => {
   });
 
   test("declining the fee leaves the call in disclosure; accepting moves it on", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await verify(ctx, "RS-4417");
     expect(at(ctx).state).toBe("onCall.disclosure");
 
@@ -195,7 +192,7 @@ describe("the roadside call", () => {
   });
 
   test("the disclosure is handed over verbatim and priced by the plan", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await verify(ctx, "RS-8802");
 
     const read = expectDialogOk<{ readThisVerbatim: string; wordCount: number }>(
@@ -210,7 +207,7 @@ describe("the roadside call", () => {
   });
 
   test("dispatch is idempotent: a second call reports the same truck", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await accept(ctx, "RS-4417");
 
     const first = expectDialogOk<{ callsign: string; alreadyDispatched: boolean }>(
@@ -229,11 +226,11 @@ describe("the roadside call", () => {
   });
 
   test("the tow is priced by the plan the lookup found, not by the one it might have", async () => {
-    const covered = makeCtx();
+    const covered = createToolContext();
     await accept(covered, "RS-4417");
     expectDialogOk(await dispatchTruck.execute({ destination: "shop", towMiles: 31 }, covered));
 
-    const uncovered = makeCtx();
+    const uncovered = createToolContext();
     await accept(uncovered);
     expectDialogOk(await dispatchTruck.execute({ destination: "shop", towMiles: 31 }, uncovered));
 
@@ -248,7 +245,7 @@ describe("the roadside call", () => {
   });
 
   test("an unsafe caller is moved up the queue, and no ETA is ever below the floor", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     expectDialogOk(
       await reportLocation.execute({ ...A_LOCATION, safeToWait: false, situation: "battery" }, ctx),
     );
@@ -263,7 +260,7 @@ describe("the roadside call", () => {
 
 describe("the two deadlines", () => {
   test("locating carries a silence deadline, and the nudge is where it lands", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const deadline = deadlineAt(ctx);
 
     expect(deadline?.afterMs).toBe(12_000);
@@ -275,13 +272,13 @@ describe("the two deadlines", () => {
   });
 
   test("the nudge state arms nothing: the next rung is the session's own idle timeout", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     roadsideCall.send(ctx, { type: "QUIET" });
     expect(deadlineAt(ctx)).toBeUndefined();
   });
 
   test("hearing the caller puts the ladder back on its first rung", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     roadsideCall.send(ctx, { type: "QUIET" });
     expect(roadsideCall.receive(ctx, HEARD_SOMETHING).state).toBe("onCall.locating");
     // Back on the rung that declares the window, which is what the runtime
@@ -290,7 +287,7 @@ describe("the two deadlines", () => {
   });
 
   test("verifying's deadline is wall clock — nothing the caller says extends it", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await locate(ctx);
 
     expect(deadlineAt(ctx)?.afterMs).toBe(120_000);
@@ -303,7 +300,7 @@ describe("the two deadlines", () => {
   });
 
   test("the verification deadline gives up INTO the disclosure, at the non-member rate", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await locate(ctx);
 
     expect(roadsideCall.send(ctx, { type: "UNVERIFIED" }).state).toBe("onCall.disclosure");
@@ -325,7 +322,7 @@ describe("the session events", () => {
 
   test("a hang-up ends the call from any phase, and every tool refuses after it", async () => {
     for (const reach of [locate, verify, accept]) {
-      const ctx = makeCtx();
+      const ctx = createToolContext();
       await reach(ctx);
 
       const position = roadsideCall.receive(ctx, CALLER_GONE);
@@ -343,7 +340,7 @@ describe("the session events", () => {
   });
 
   test("a session event no active state declares moves nothing", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await accept(ctx, "RS-4417");
     // `onCall.dispatching` declares no transition on speech, and the parent's
     // only session event is the hang-up. An unhandled event is IGNORED.
@@ -353,7 +350,7 @@ describe("the session events", () => {
 
 describe("the per-phase voice knobs", () => {
   test("the disclosure is uninterruptible, and it is the only phase that is", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     expect(bargeInAt(ctx)).toEqual({ minWords: 1 });
 
     await verify(ctx, "RS-4417");
@@ -364,19 +361,19 @@ describe("the per-phase voice knobs", () => {
   });
 
   test("verifying pins a low temperature and nothing else", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await locate(ctx);
     expect(knobsAt(ctx)).toEqual({ temperature: 0.2 });
   });
 
   test("dispatching pins the model to the tool that actually sends a truck", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await accept(ctx, "RS-4417");
     expect(knobsAt(ctx)?.toolChoice).toEqual({ type: "tool", toolName: "dispatch_truck" });
   });
 
   test("no phase declares a knob the runtime cannot apply", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     // `voice` and `keyterms` are accepted by `DialogStateSpec` and implemented
     // by NEITHER transport — the runtime warns at the first session and applies
     // nothing. A template that declared one would be documenting a promise the

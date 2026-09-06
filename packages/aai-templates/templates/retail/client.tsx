@@ -2,6 +2,7 @@ import { formatMoney, plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
 import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
 import {
+  AGENT_STATE_LABELS,
   AutoScroll,
   mountClient,
   SessionErrorBanner,
@@ -396,8 +397,10 @@ function StatusReadout() {
         }}
         title={state}
       />
+      {/* The package's word for the state, not the enum member: a caller of this
+          desk used to read a lowercase `disconnected` in the header. */}
       <span className="text-[11px] font-normal" style={{ color: "#a1a1aa" }}>
-        {state}
+        {AGENT_STATE_LABELS[state]}
       </span>
     </>
   );

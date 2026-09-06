@@ -23,15 +23,9 @@ import modifyUserAddress from "./tools/modify_user_address.ts";
 import returnDeliveredOrderItems from "./tools/return_delivered_order_items.ts";
 import transferToHumanAgents from "./tools/transfer_to_human_agents.ts";
 
-/** Each call is its own session, so two contexts are two independent stores —
- *  which is what the isolation tests below rest on. */
-function makeCtx(): ToolContext {
-  return createToolContext();
-}
-
 /** A context already authenticated as `userId`, via the real tool. */
 async function authedCtx(email: string): Promise<ToolContext> {
-  const ctx = makeCtx();
+  const ctx = createToolContext();
   expectToolOk<AuthResult>(await findUserIdByEmail.execute({ email }, ctx));
   return ctx;
 }
@@ -58,7 +52,7 @@ async function confirmed<R = unknown>(staged: unknown, ctx: ToolContext): Promis
 
 describe("authentication", () => {
   test("find_user_id_by_email is case-insensitive and authenticates the session", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const result = expectToolOk<AuthResult>(
       await findUserIdByEmail.execute({ email: "OLIVIA.ITO5204@EXAMPLE.COM" }, ctx),
     );
@@ -70,7 +64,7 @@ describe("authentication", () => {
   });
 
   test("an unknown email is refused and leaves the session unauthenticated", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const result = await findUserIdByEmail.execute({ email: "nobody@example.com" }, ctx);
     expect(isToolFailure(result)).toBe(true);
     expect(retailSlot.get(ctx).authenticatedUserId).toBeNull();
@@ -80,7 +74,7 @@ describe("authentication", () => {
   });
 
   test("find_user_id_by_name_zip is case-insensitive on names and exact on zip", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const found = expectToolOk<AuthResult>(
       await findUserIdByNameZip.execute(
         { first_name: "aarav", last_name: "ANDERSON", zip: "19031" },
@@ -91,7 +85,7 @@ describe("authentication", () => {
 
     const wrongZip = await findUserIdByNameZip.execute(
       { first_name: "Aarav", last_name: "Anderson", zip: "78268" },
-      makeCtx(),
+      createToolContext(),
     );
     expect(isToolFailure(wrongZip)).toBe(true);
   });
@@ -100,13 +94,13 @@ describe("authentication", () => {
     const a = expectToolOk<AuthResult>(
       await findUserIdByNameZip.execute(
         { first_name: "Aarav", last_name: "Anderson", zip: "19031" },
-        makeCtx(),
+        createToolContext(),
       ),
     );
     const b = expectToolOk<AuthResult>(
       await findUserIdByNameZip.execute(
         { first_name: "Aarav", last_name: "Gonzalez", zip: "78268" },
-        makeCtx(),
+        createToolContext(),
       ),
     );
     expect(a.user_id).toBe("aarav_anderson_8794");
@@ -204,7 +198,7 @@ describe("read tools", () => {
 
   test("get_product_details lists variants and needs no authentication", async () => {
     const result = expectToolOk<ProductDetailsResult>(
-      await getProductDetails.execute({ product_id: "9832717871" }, makeCtx()),
+      await getProductDetails.execute({ product_id: "9832717871" }, createToolContext()),
     );
     expect(result.name).toBe("Tea Kettle");
     expect(result.variants.length).toBeGreaterThan(1);
@@ -212,13 +206,16 @@ describe("read tools", () => {
   });
 
   test("get_product_details rejects an item id passed as a product id, and says so", async () => {
-    const result = await getProductDetails.execute({ product_id: "3909406921" }, makeCtx());
+    const result = await getProductDetails.execute(
+      { product_id: "3909406921" },
+      createToolContext(),
+    );
     expect(isToolFailure(result) && result.error).toContain("item id");
   });
 
   test("get_item_details resolves an item without knowing its product", async () => {
     const result = expectToolOk<ItemDetailsResult>(
-      await getItemDetails.execute({ item_id: "3909406921" }, makeCtx()),
+      await getItemDetails.execute({ item_id: "3909406921" }, createToolContext()),
     );
     expect(result.price).toBe(98.25);
     expect(result.product_name).toBe("Tea Kettle");
@@ -226,7 +223,7 @@ describe("read tools", () => {
 
   test("list_all_product_types returns all 50, sorted by name", async () => {
     const result = expectToolOk<ProductTypesResult>(
-      await listAllProductTypes.execute({}, makeCtx()),
+      await listAllProductTypes.execute({}, createToolContext()),
     );
     expect(Object.keys(result.products)).toHaveLength(50);
     const names = Object.keys(result.products);
@@ -468,7 +465,7 @@ describe("modify_user_address", () => {
   test("requires authentication", async () => {
     const result = await modifyUserAddress.execute(
       { user_id: "emma_smith_8564", ...NEW_ADDRESS },
-      makeCtx(),
+      createToolContext(),
     );
     expect(isToolFailure(result) && result.error).toContain("find_user_id_by_email");
   });
@@ -1153,7 +1150,7 @@ describe("transfer_to_human_agents", () => {
     const result = expectToolOk<TransferResult>(
       await transferToHumanAgents.execute(
         { summary: "Caller wants to dispute a charge from 2019." },
-        makeCtx(),
+        createToolContext(),
       ),
     );
     expect(isToolFailure(result)).toBe(false);
@@ -1190,7 +1187,7 @@ describe("a caller who hangs up", () => {
   const CALLER_GONE = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } } as const;
 
   test("ends the call from `identifying`, before anyone is on it", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const at = callFlow.receive(ctx, CALLER_GONE);
     expect(at.state).toBe("abandoned");
     expect(at.done).toBe(true);
@@ -1219,7 +1216,7 @@ describe("a caller who hangs up", () => {
   });
 
   test("an event no state declares still writes nothing", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const before = callFlow.position(ctx).state;
     // `receive` asks the machine first, so the overwhelming majority of session
     // frames — which no state here watches — cost no store write at all.

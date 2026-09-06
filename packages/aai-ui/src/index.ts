@@ -131,9 +131,22 @@ export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 export { UploadProgressBar } from "./components/upload-progress.tsx";
 // A form generated from a workflow's own declared input schema.
 export { WorkflowFields } from "./components/workflow-fields.tsx";
+// The one sentence a page says while a run is pending — three situations, and
+// the reload case gets its own words. Six pages had written the function.
+export {
+  WorkflowPendingNote,
+  type WorkflowPendingNoteProps,
+} from "./components/workflow-pending-note.tsx";
 // The rendered half of `useWorkflowProgress` — what a run has SAID, as against
 // where it has got to.
 export { WorkflowProgress } from "./components/workflow-progress.tsx";
+// The announced line for a run that FAILED. Published for its `role="alert"`:
+// the outcome lands minutes after the reader looked away, and `<Form>` announces
+// only the submit error.
+export {
+  WorkflowRunError,
+  type WorkflowRunErrorProps,
+} from "./components/workflow-run-error.tsx";
 export type { Session, SessionActions } from "./context.ts";
 // Context & hooks. The two PROVIDERS `mountClient()` mounts around the tree
 // (`SessionProvider`, `ThemeProvider`) are on `@alexkroman1/aai-ui/internal`.

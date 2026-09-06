@@ -79,7 +79,9 @@ import {
   useDownloadUrl,
   useWorkflowSubmit,
   WorkflowFields,
+  WorkflowPendingNote,
   WorkflowProgress,
+  WorkflowRunError,
 } from "@alexkroman1/aai-ui";
 import type { spokenSummary } from "./agent.ts";
 
@@ -101,20 +103,6 @@ const WORKFLOW = "spokenSummary";
 const api = createWorkflowApi();
 
 /**
- * What the page says while a run is in flight — three situations, one line
- * each.
- *
- * The reload case gets its own words deliberately: somebody who did not press
- * the button is owed an explanation for a summary appearing in front of them,
- * and it is the line that keeps them from uploading the recording again.
- */
-function pendingNote(startedHere: boolean, found: boolean): string {
-  if (startedHere) return "Reloading is safe — this page will find the summary again.";
-  if (!found) return "Looking for a summary this tab started earlier…";
-  return "Still working on a recording this tab uploaded earlier — no need to send it again.";
-}
-
-/**
  * The spoken text as a one-cue WebVTT track, inline.
  *
  * A data URL rather than another stored file: the words are already on the page
@@ -132,8 +120,8 @@ export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. The reload is the hook's own doing — see
   // the module doc for why the key it mints is the right one for this page.
-  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error, startedHere } =
-    useWorkflowSubmit<typeof spokenSummary>(WORKFLOW, { api });
+  const submission = useWorkflowSubmit<typeof spokenSummary>(WORKFLOW, { api });
+  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = submission;
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the
@@ -160,9 +148,7 @@ export function App() {
       {/* `pending` covers the RUN rather than the request, and on a reload it is
           also true while the run is being looked up by key — the stretch where
           an empty form would invite a second upload of the same recording. */}
-      {pending && (
-        <p className="text-sm opacity-70">{pendingNote(startedHere, run !== undefined)}</p>
-      )}
+      <WorkflowPendingNote submission={submission} subject="summary" />
 
       {/* The upload is its own wait, and the one nothing else can describe: the
           run does not EXIST until the bytes are in, so there is no run id and
@@ -172,13 +158,9 @@ export function App() {
       {/* What the run itself says, from `stepReport()` in the workflow's steps. */}
       <WorkflowProgress runId={run?.runId} api={api} />
 
-      {/* `role="alert"`, the same contract `<Form>` gives the submit error: this
-          is the outcome the reader waited minutes for. */}
-      {run?.status === "failed" && (
-        <p role="alert" className="text-red-600">
-          That one failed: {run.error}
-        </p>
-      )}
+      {/* Announced, the same contract `<Form>` gives the submit error: this is
+          the outcome the reader waited minutes for. */}
+      <WorkflowRunError run={run} />
 
       {output !== undefined && (
         <article className="flex flex-col gap-5">

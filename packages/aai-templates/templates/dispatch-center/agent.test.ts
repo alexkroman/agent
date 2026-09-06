@@ -18,11 +18,6 @@ import opsRunScenario from "./tools/ops_run_scenario.ts";
 import resourcesDispatch from "./tools/resources_dispatch.ts";
 import resourcesUpdateStatus from "./tools/resources_update_status.ts";
 
-/** The dispatch board lives in a session slot, and `createToolContext` gives
- *  each call its own slot store — so two contexts are two boards by
- *  construction. */
-const makeCtx = (): ToolContext => createToolContext();
-
 /**
  * What a gated tool's own `execute` returned, read off the tool itself.
  *
@@ -53,7 +48,7 @@ async function createIncidentFor(
 
 describe("dispatch-center template", () => {
   test("resolving an incident does not yank a reassigned unit off its new incident", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
 
     const inc1 = await createIncidentFor(ctx);
     await resourcesDispatch.execute({ incidentId: inc1, callsigns: ["Medic-1"] }, ctx);
@@ -75,7 +70,7 @@ describe("dispatch-center template", () => {
   });
 
   test("callsigns: ['auto'] triggers auto-dispatch as the description promises", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const incidentId = await createIncidentFor(ctx, "cardiac arrest, patient not breathing");
 
     const result = expectToolOk<Result<typeof resourcesDispatch>>(
@@ -87,7 +82,7 @@ describe("dispatch-center template", () => {
   });
 
   test("concurrent tool calls are serialized — no lost updates", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
 
     // Parallel tool calls in one LLM turn run concurrently. The per-session
     // mutex in updateState makes each one run against the previous one's
@@ -125,7 +120,7 @@ describe("dispatch-center template", () => {
   });
 
   test("mutual-aid units get unique ids and callsigns across escalations", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const incidentId = await createIncidentFor(ctx);
 
     await incidentEscalate.execute(
@@ -145,7 +140,7 @@ describe("dispatch-center template", () => {
   });
 
   test("resolved is terminal: no escalation, re-resolution, or dispatch", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const incidentId = await createIncidentFor(ctx);
     await incidentUpdateStatus.execute({ incidentId, status: "resolved" }, ctx);
 
@@ -169,7 +164,7 @@ describe("dispatch-center template", () => {
 
 describe("the call flow", () => {
   test("a fresh shift is in standby, and every incident tool refuses there", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     expect(at(ctx).state).toBe("standby");
 
     // Each of these used to run and answer `Incident INC-0001 not found` — a
@@ -193,7 +188,7 @@ describe("the call flow", () => {
   });
 
   test("logging, triaging and dispatching walk the call through its three steps", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
 
     const created = await incidentCreate.execute(
       { location: "400 Oak Street", description: "structure fire with heavy smoke" },
@@ -219,7 +214,7 @@ describe("the call flow", () => {
   });
 
   test("a dispatch that rolled nothing leaves the call where it was", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const incidentId = await createIncidentFor(ctx);
     await incidentTriage.execute({ incidentId }, ctx);
     expect(at(ctx).state).toBe("working.dispatching");
@@ -234,7 +229,7 @@ describe("the call flow", () => {
   });
 
   test("a new call is legal mid-incident and puts the flow back on triage", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const first = await createIncidentFor(ctx);
     await incidentTriage.execute({ incidentId: first }, ctx);
     await resourcesDispatch.execute({ incidentId: first, autoDispatch: true }, ctx);
@@ -249,7 +244,7 @@ describe("the call flow", () => {
   });
 
   test("a failed tool does not advance the flow", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const incidentId = await createIncidentFor(ctx);
     await incidentUpdateStatus.execute({ incidentId, status: "resolved" }, ctx);
     const before = at(ctx).state;
@@ -260,7 +255,7 @@ describe("the call flow", () => {
   });
 
   test("a training scenario logs incidents like a real call does", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const result = await opsRunScenario.execute({ scenario: "mass_casualty" }, ctx);
     expect(result.incidentsCreated.length).toBeGreaterThan(1);
     expect(result.state).toBe("working.triaging");
