@@ -17,13 +17,16 @@
  */
 
 export {
+  commandedBuiltins,
   createProgressStream,
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
   createWorkflowContext,
   deployedAgent,
+  expectDeployable,
   expectDialogOk,
+  expectPromptBuiltinsDeclared,
   expectToolOk,
   type ProjectFiles,
   parseSchemaInput,

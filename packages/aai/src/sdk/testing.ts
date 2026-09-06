@@ -82,6 +82,13 @@ export {
   stubDelegate,
   stubStepDelegate,
 } from "./testing-delegate.ts";
+// The starter-spec invariants and the prompt↔builtin scan — six shipped specs
+// each wrote the same three tests, and three the same 32-line scan.
+export {
+  commandedBuiltins,
+  expectDeployable,
+  expectPromptBuiltinsDeclared,
+} from "./testing-deployable.ts";
 export {
   deployedAgent,
   type ProjectFiles,

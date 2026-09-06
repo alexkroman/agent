@@ -138,6 +138,49 @@ greeting turn (`createTextAgent` drops the definition's `greeting`, which
 line; and a text turn commits its reply ONCE, joined across steps, where a voice
 session commits per utterance.
 
+### The `run_code` readers import the REFUSAL, and never re-type it
+
+`runCodeIn(calls)` and `runCodeOutput(calls)` (`eval/run-code.ts`) are the two
+halves of the one builtin whose answer an eval could not otherwise read: the
+code the agent wrote (through `toolArgsIn` with the builtin's own schema, so a
+`code` argument the model renamed fails naming the field rather than reading as
+`""`) and what it printed, verbatim. Four template evals had each declared the
+same schema and the same `codeIn`, and each guarded the output with
+`not.toMatch(/only available in the sandboxed runtime/)` — a regex over a
+sentence `@alexkroman1/aai`'s `createRunCode` owns, so a rewording there would
+have passed all four against a refusal, which is the state the assertion exists
+to catch. The sentence is `RUN_CODE_REFUSAL` on `/host-internal` now, written
+by the executor and imported by `runCodeOutput`, which THROWS on it naming the
+fix (`runCode: createVmRunCode()`). Nothing re-spells it.
+
+Two things this deliberately did NOT add. **No `runCode: "vm"` option on
+`describeEval`**: a string alias for one exported factory is a second spelling
+of the same thing, `vm-run-code.ts` argues that an executor is a capability
+grant that should be visible at the call site, and keeping
+`DescribeEvalOptions` structurally equal to `EvalSessionOptions` minus `agent`
+is what lets a case move between the two doors without its options changing
+type. And **no `expectBuiltinAnswered(turn, name, result)`**: the wiring claim
+three tutor templates wrote in twenty lines — the refusal string satisfied
+`toBeDefined()` — is `expect(toolNames(turn.toolCalls)).toEqual(["run_code"])`
+plus `expect(runCodeOutput(turn.toolCalls)).toBe("2")`, which already throws
+on the refusal. A new name for a claim two existing readers make is surface
+with no reader. (A `callsNamed(calls, name)` was skipped on the same ground:
+`toolArgsIn`'s doc records the `.filter((c) => c.name === …)` idiom as the
+thing it exists to replace.)
+
+**`EvalTurn.errors` and `errorsIn(events)`** are the runtime's own report of a
+turn, typed as the narrowed `SessionEvent` member rather than under a new name.
+Three evals wrote `events.some((e) => e.type === "error.reported")` and asserted
+it `false`, which fails as "expected true to be false"; the list prints the
+code and the message. A turn's list can only hold `code: "tool"` — the pipeline
+faults are refused before a case sees the turn (`_turn-faults.ts`).
+
+**`expectToolBeforeSpeech(turn)`** is the one per-turn CLAIM on the barrel, and
+`eval-barrel.ts`'s doc carries why it is a throw rather than a reader: an
+ordering has no value to hand back, and the two `findIndex`-and-`toBeLessThan`
+copies it replaced failed as "expected 4 to be less than 2", naming neither the
+sentence spoken too early nor the tool.
+
 ### A template eval imports from `/eval` and `/eval/vitest`, and NOWHERE else
 
 **That is konsistent's `template-eval-runtime-subpaths`** — the root barrel and

@@ -77,6 +77,31 @@ export function saidIn(events: readonly SessionEvent[]): readonly string[] {
 }
 
 /**
+ * Every `error.reported` in `events`, in order — what the RUNTIME reported, as
+ * opposed to what the agent said or called. Typed as the narrowed member of
+ * `SessionEvent` rather than under a name of its own, so a case names nothing
+ * this subpath does not already publish.
+ *
+ * Three template evals wrote `events.some((e) => e.type === "error.reported")`
+ * and asserted it `false`, which on failure prints "expected true to be false"
+ * and nothing about WHICH error. This hands back the events themselves, so
+ * `expect(errorsIn(events)).toEqual([])` prints the code and the message.
+ *
+ * `EvalTurn.errors` is this over one turn. Note what a turn's list can hold:
+ * `openEvalSession` REFUSES a turn the pipeline failed (`_turn-faults.ts`), so a
+ * turn a case gets to read carries only `code: "tool"` errors — a tool that
+ * threw, whose failure went back to the model. Over `session.events()` the list
+ * is unfiltered.
+ */
+export function errorsIn(
+  events: readonly SessionEvent[],
+): readonly Extract<SessionEvent, { type: "error.reported" }>[] {
+  return events.filter(
+    (e): e is Extract<SessionEvent, { type: "error.reported" }> => e.type === "error.reported",
+  );
+}
+
+/**
  * The tool calls in `events`, each paired with the result event that answered
  * it. A call with no result is a call that never completed — reported as such
  * rather than dropped, because "it called the tool and the tool never returned"
@@ -386,8 +411,12 @@ function callsTo(calls: readonly EvalToolCall[], name: string): readonly EvalToo
   return calls.filter((call) => call.name === name);
 }
 
-/** `0` -> `"1st"`, for a message that has to say WHICH call. */
-function ordinal(index: number): string {
+/**
+ * `0` -> `"1st"`, for a message that has to say WHICH call. Shared with the
+ * `run_code` readers next door, so two messages about the same list spell a
+ * position the same way; not on the barrel.
+ */
+export function ordinal(index: number): string {
   const n = index + 1;
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
   return `${n}${suffix}`;

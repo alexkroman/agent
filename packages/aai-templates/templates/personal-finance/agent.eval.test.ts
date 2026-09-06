@@ -18,43 +18,33 @@
 import agentDef from "virtual:aai/agent";
 import {
   createVmRunCode,
+  describeTurn,
   type EvalTurn,
+  runCodeIn,
+  runCodeOutput,
   toolArgsIn,
-  toolResultsIn,
+  toolNames,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
 /**
- * The arguments Penny's two builtins carry, as the wire has them.
+ * The arguments Penny's `fetch_json` calls carry, as the wire has them.
  *
- * Schemas rather than `String(args.code ?? "")`, which is what `toolArgsIn`
+ * A schema rather than `String(args.url ?? "")`, which is what `toolArgsIn`
  * takes one for: `args` is `Record<string, unknown>` — the model wrote it and
- * nothing validated it — so an argument Penny renamed, or never sent, used to
- * read as `""`, and the claims below about the code she submitted and the URL
- * she asked for would have been claims about an empty string. An argument that
- * stops arriving FAILS here, naming the field.
+ * nothing validated it — so a URL Penny renamed, or never sent, used to read as
+ * `""`, and the claim below about the endpoint she asked for would have been a
+ * claim about an empty string. An argument that stops arriving FAILS here,
+ * naming the field. (`run_code`'s arguments go through `runCodeIn`, which is
+ * this same reader with the builtin's own schema already supplied.)
  */
-const RunCodeArgs = z.object({ code: z.string() });
 const FetchJsonArgs = z.object({ url: z.string() });
-
-/** The code every `run_code` call in this turn carried, joined. */
-const codeIn = (turn: EvalTurn) =>
-  toolArgsIn(turn.toolCalls, "run_code", RunCodeArgs)
-    .map((args) => args.code)
-    .join("\n");
 
 /** Every URL this turn's `fetch_json` calls asked for. */
 const fetchedUrls = (turn: EvalTurn) =>
   toolArgsIn(turn.toolCalls, "fetch_json", FetchJsonArgs).map((args) => args.url);
-
-/**
- * A `run_code` executor, so the arithmetic cases can assert the ANSWER and not
- * merely the call — `createVmRunCode`'s own doc carries why the builtin refuses
- * without one. `fetch_json` needs nothing of the sort: it makes a real request.
- */
-const runCode = createVmRunCode();
 
 describeEval(
   agentDef,
@@ -69,8 +59,8 @@ describeEval(
         // Three numbers, two operations and a rounding rule: the exact shape of
         // question a model answers plausibly and wrongly. All three inputs have
         // to reach the code, or something was worked out in the model's head.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
-        const code = codeIn(turn);
+        expect(toolNames(turn.toolCalls), describeTurn(turn)).toContain("run_code");
+        const code = runCodeIn(turn.toolCalls);
         expect(code).toContain("120");
         expect(code).toMatch(/\b4\b/);
         expect(code).toMatch(/20|0\.2/);
@@ -79,7 +69,8 @@ describeEval(
         // Without an executor `run_code` answers with a refusal, so every claim
         // above is satisfied by an agent that then divides in its head — which is
         // the failure this template's whole run_code rule exists to prevent.
-        const output = toolResultsIn(turn.toolCalls, "run_code").join("\n");
+        // `runCodeOutput` throws on that refusal rather than handing it back.
+        const output = runCodeOutput(turn.toolCalls);
         expect(output, `run_code printed: ${output}`).toMatch(/\b36(\.0+)?\b/);
       },
       { live: true },
@@ -95,7 +86,7 @@ describeEval(
         // regression this catches is Penny answering confidently with no request
         // at all.
         const urls = fetchedUrls(turn);
-        expect(urls.length).toBeGreaterThan(0);
+        expect(urls.length, describeTurn(turn)).toBeGreaterThan(0);
         expect(urls.join(" ")).toMatch(/^https:\/\//);
         expect(urls.join(" ")).toMatch(/er-api|exchangerate|currency|rates/i);
       },
@@ -132,11 +123,11 @@ describeEval(
         // result, so the paired result is what says `builtinTools` still resolves
         // to something executable. Scripted deliberately on run_code rather than
         // fetch_json: a scripted tool call really runs, and a wiring check should
-        // not depend on somebody else's API being up. The ANSWER rather than
-        // `toBeDefined()`, which the refusal string satisfied too.
-        const [call] = turn.toolCalls;
-        expect(call?.name).toBe("run_code");
-        expect(call?.result).toBe("24");
+        // not depend on somebody else's API being up. `runCodeOutput` THROWS on
+        // the refusal, which a `toBeDefined()` used to be satisfied by, and the
+        // ANSWER is what is compared.
+        expect(toolNames(turn.toolCalls)).toEqual(["run_code"]);
+        expect(runCodeOutput(turn.toolCalls)).toBe("24");
         expect(turn.completed).toBe(true);
       },
       {
@@ -144,6 +135,8 @@ describeEval(
       },
     );
   },
-  // `runCode` is what makes these cases about the ANSWER and not just the call.
-  { runCode },
+  // The executor is what makes the arithmetic cases about the ANSWER and not
+  // merely the call — `createVmRunCode`'s own doc carries why the builtin
+  // refuses without one. `fetch_json` needs nothing of the sort.
+  { runCode: createVmRunCode() },
 );

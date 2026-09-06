@@ -33,7 +33,8 @@ import {
   customEventsIn,
   describeTurn,
   lastStateIn,
-  toolArgsIn,
+  runCodeIn,
+  runCodeOutput,
   toolNames,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/eval";
@@ -69,24 +70,6 @@ const pushedRecs = (events: readonly SessionEvent[]) =>
 
 /** The `wind_down` nudges in `events` — `customEventsIn` filters by name. */
 const nudges = (events: readonly SessionEvent[]) => customEventsIn(events, "wind_down");
-
-/**
- * A `run_code` executor, so the sleep-cycle case can assert the bedtime NUMBER
- * and not merely the call — this template's headline feature is the arithmetic.
- * `createVmRunCode`'s own doc carries why the builtin refuses without one.
- */
-const runCode = createVmRunCode();
-
-/**
- * The `code` argument a `run_code` call carries.
- *
- * The schema is what `toolArgsIn` takes one for: `args` is
- * `Record<string, unknown>` on the wire — the model wrote it and nothing
- * validated it — so the `String(c.args.code ?? "")` this replaced turned an
- * argument the companion renamed, or never sent, into `""`, and the two
- * constants asserted below would have been looked for in nothing at all.
- */
-const RunCodeArgs = z.object({ code: z.string() });
 
 /** Two-digit, for the clock arithmetic below. */
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -208,30 +191,27 @@ describeEval(
           "I need to be up at 7 in the morning. When should I fall asleep?",
         );
 
-        // The CALLS, not their arguments: what this asserts is that the companion
-        // reached for code at all, and the results are read off the same list
-        // below. `toolArgsIn` answers the other half, the code it submitted.
-        const ran = turn.toolCalls.filter((c) => c.name === "run_code");
-        // `describeTurn` is the message: "expected [] not to equal []" says
-        // nothing about a companion that talked its way through the sum
-        // instead, and it names a cancelled reply, which is the usual reason a
-        // turn reached for nothing at all.
-        expect(ran, describeTurn(turn)).not.toEqual([]);
+        // That the companion reached for code AT ALL, first: `describeTurn` is
+        // the message, because "expected [] to contain 'run_code'" says nothing
+        // about a companion that talked its way through the sum instead, and it
+        // names a cancelled reply, which is the usual reason a turn reached for
+        // nothing.
+        expect(toolNames(turn.toolCalls), describeTurn(turn)).toContain("run_code");
         // The recipe is the prompt's, and it is two constants: a 90-minute cycle
         // plus the 15 minutes it takes to fall asleep. Arithmetic done in the
-        // model's head has neither of them anywhere in the code.
-        const code = toolArgsIn(turn.toolCalls, "run_code", RunCodeArgs)
-          .map((args) => args.code)
-          .join("\n");
+        // model's head has neither of them anywhere in the code. `runCodeIn`
+        // reads the code through a schema, so a `code` argument the companion
+        // renamed fails naming the field rather than reading as `""`.
+        const code = runCodeIn(turn.toolCalls);
         expect(code).toContain("90");
         expect(code).toContain("15");
 
-        const output = ran.map((c) => c.result ?? "").join("\n");
-        // The builtin really EXECUTED. With no `runCode` executor this string is
-        // "run_code is only available in the sandboxed runtime", which every
-        // assertion about a CALL sails past — so this template's headline
-        // feature could be checked as a call and never as an answer.
-        expect(output).not.toMatch(/only available in the sandboxed runtime/);
+        // The builtin really EXECUTED: with no `runCode` executor the result is
+        // the builtin's refusal, which every assertion about a CALL sails past —
+        // so this template's headline feature could be checked as a call and
+        // never as an answer. `runCodeOutput` THROWS on that refusal, naming the
+        // fix, rather than handing the sentence back as output.
+        const output = runCodeOutput(turn.toolCalls);
         // And the answer is a whole number of cycles back from 07:00 with the
         // quarter hour added. A tutor that dropped the 15 lands on :00 and a
         // tutor that guessed lands anywhere; both fail here.
@@ -255,6 +235,8 @@ describeEval(
       },
     );
   },
-  // `runCode` is what makes the case above about an ANSWER rather than a call.
-  { runCode },
+  // The executor is what makes the sleep-cycle case about the bedtime NUMBER
+  // rather than a call — this template's headline feature is the arithmetic.
+  // `createVmRunCode`'s own doc carries why the builtin refuses without one.
+  { runCode: createVmRunCode() },
 );

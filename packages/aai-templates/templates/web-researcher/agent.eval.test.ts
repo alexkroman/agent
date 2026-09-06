@@ -14,6 +14,7 @@
 // `../code-interpreter/agent.eval.test.ts`.
 
 import agentDef from "virtual:aai/agent";
+import { expectToolBeforeSpeech } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 
@@ -56,12 +57,8 @@ describeEval(agentDef, (test) => {
       expect(String(searches[0]?.args.query ?? "")).not.toBe("");
 
       // And the search comes before the answer, not after a sentence
-      // announcing one.
-      const firstTool = turn.events.findIndex((e) => e.type === "tool.called");
-      const firstSaid = turn.events.findIndex((e) => e.type === "agent-transcript.committed");
-      expect(firstSaid).toBeGreaterThan(-1);
-      expect(firstTool).toBeGreaterThan(-1);
-      expect(firstTool).toBeLessThan(firstSaid);
+      // announcing one — a failure names the sentence Scout spoke too early.
+      expectToolBeforeSpeech(turn);
     },
     { live: true },
   );

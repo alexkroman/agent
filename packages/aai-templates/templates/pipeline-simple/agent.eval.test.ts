@@ -33,7 +33,9 @@ describeEval(agentDef, (test) => {
       // This agent declares no tools and no builtins, so a tool call here
       // would mean something got added by accident.
       expect(turn.toolCalls).toEqual([]);
-      expect(turn.events.some((e) => e.type === "error.reported")).toBe(false);
+      // `turn.errors` is what the RUNTIME reported on this turn; a failure prints
+      // the events themselves rather than "expected true to be false".
+      expect(turn.errors).toEqual([]);
     },
     { stubReply: "Paris is the capital of France." },
   );
@@ -45,7 +47,7 @@ describeEval(agentDef, (test) => {
       const turn = await session.say("Which city did I say I work in?");
 
       expect(turn.text).toMatch(/berlin/i);
-      expect(turn.events.some((e) => e.type === "error.reported")).toBe(false);
+      expect(turn.errors).toEqual([]);
     },
     // One scripted reply per turn: the second is the one under test, and a
     // script that answered only the first would fail the case it is meant to

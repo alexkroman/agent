@@ -2,24 +2,22 @@ import { agent } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s, openAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt, deepgramStt, elevenLabsStt, sonioxStt } from "@alexkroman1/aai/stt";
+import { expectDeployable } from "@alexkroman1/aai/testing";
 import { ASSEMBLYAI_TTS_VOICES, assemblyAITts, cartesiaTts, rimeTts } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 
 describe("pipeline-simple template", () => {
-  test("config passes manifest validation", () => {
-    // Same conversion `aai build`/`aai deploy` run — catches an invalid
-    // provider combination or tuning, not just descriptor presence.
-    expect(() => toAgentConfig(agentDef)).not.toThrow();
-  });
-
-  test("exports an agent the platform can name", () => {
-    // Not the literal. `aai init <project>` scaffolds this file verbatim, so a
-    // pinned name is a test about the TEMPLATE inside somebody else's project —
-    // and renaming the agent is the first thing they will do. What has to hold
-    // is that there is a name and the conversion carries it through.
-    expect(agentDef.name).toBeTruthy();
-    expect(toAgentConfig(agentDef).name).toBe(agentDef.name);
+  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
+    // The three invariants every starter owes, thrown by name — the same
+    // conversion `aai build`/`aai deploy` run, so an invalid provider
+    // combination or tuning fails here rather than at the first live session.
+    // The name is deliberately NOT the literal: `aai init <project>` scaffolds
+    // this file verbatim, so a pinned name would be a test about the TEMPLATE
+    // inside somebody else's project — and renaming the agent is the first
+    // thing they will do. `not.toThrow()` because the helper's throw IS the
+    // finding: vitest quotes the message, which names the invariant that went.
+    expect(() => expectDeployable(agentDef)).not.toThrow();
   });
 
   test("declares at least one stage itself, which is what makes it a pipeline", () => {
@@ -32,18 +30,18 @@ describe("pipeline-simple template", () => {
     expect(declared.length).toBeGreaterThan(0);
   });
 
-  test("a stage you declare survives, and every stage you leave unset defaults", () => {
+  test("a stage you declare survives, and every stage you leave unset defaults to AssemblyAI", () => {
     // The template's whole subject, stated so it survives a swap: the config a
     // deploy carries agrees with the def wherever the def has an opinion, and
-    // fills the AssemblyAI default wherever it does not.
-    const config = toAgentConfig(agentDef);
+    // fills the AssemblyAI default wherever it does not. `expectDeployable`
+    // already checks the first half (a declared stage survives as declared);
+    // WHICH default fills the rest is this template's claim, so it is here.
+    const config = expectDeployable(agentDef);
     if (config.mode !== "pipeline") {
       // Switched the def to `s2s`? Then there is no cascade to fill — S2S
-      // REPLACES the pipeline rather than joining it, which the last describe
-      // below is the worked example for.
+      // REPLACES the pipeline rather than joining it, which `expectDeployable`
+      // asserted and the last describe below is the worked example for.
       expect(config.mode).toBe("s2s");
-      expect(config.stt).toBeUndefined();
-      expect(config.tts).toBeUndefined();
       return;
     }
     for (const stage of ["stt", "llm", "tts"] as const) {
