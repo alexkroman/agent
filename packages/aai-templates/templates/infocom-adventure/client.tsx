@@ -1,12 +1,14 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { AgentState } from "@alexkroman1/aai-ui";
 import {
+  AGENT_STATE_LABELS,
   AutoScroll,
   mountClient,
+  SessionErrorBanner,
   useConversation,
   useSessionActions,
-  useSessionError,
   useSessionSelector,
+  useSessionStatus,
   useTheme,
 } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
@@ -179,22 +181,23 @@ function TurnCount() {
   return <span>Turns: {turns}</span>;
 }
 
-/** The live state dot and its label. */
+/*
+ * The narrator's one word for each state, spread over the package's record
+ * rather than written as a ternary chain. Only `speaking` gets a CRT word; the
+ * rest come from `AGENT_STATE_LABELS`, so a state added upstream reads as
+ * something rather than falling through to whichever arm the chain ended on —
+ * which is what the chain this replaced did, answering every unlisted state
+ * with "Idle".
+ */
+const STATE_LABELS: Record<AgentState, string> = {
+  ...AGENT_STATE_LABELS,
+  speaking: "Narrating",
+};
+
+/** The live state dot and its label, on its own subscription. */
 function StatusDot() {
-  const state = useSessionSelector((snapshot) => snapshot.state);
+  const state = useSessionStatus();
   const dotColor = STATE_COLORS[state];
-  const stateLabel =
-    state === "listening"
-      ? "Listening"
-      : state === "speaking"
-        ? "Narrating"
-        : state === "thinking"
-          ? "Thinking"
-          : state === "connecting"
-            ? "Connecting"
-            : state === "ready"
-              ? "Ready"
-              : "Idle";
 
   return (
     <div
@@ -208,29 +211,7 @@ function StatusDot() {
           boxShadow: dotColor !== GREEN_DARK ? `0 0 6px ${dotColor}` : "none",
         }}
       />
-      <span>{stateLabel}</span>
-    </div>
-  );
-}
-
-/**
- * The fault line.
- *
- * `role="alert"` for the reason `ConsoleShell` gives: once `session-core`
- * latches a fatal error the state eyebrow goes back to reading like a live
- * session, so this banner is the only remaining signal — and a screen reader is
- * never told an unannounced one appeared.
- */
-function ErrorBanner() {
-  const error = useSessionError();
-  if (!error) return null;
-  return (
-    <div
-      role="alert"
-      className="px-5 py-2 text-xs"
-      style={{ background: "#3a0000", color: "#ff4141" }}
-    >
-      ERROR: {error.message} ({error.code})
+      <span>{STATE_LABELS[state]}</span>
     </div>
   );
 }
@@ -377,7 +358,13 @@ function InfocomAdventure() {
           <span>Voice Adventure</span>
         </div>
 
-        <ErrorBanner />
+        {/* The SDK's announced banner, not a CRT-coloured copy: once `session-core`
+            latches a fatal error the state eyebrow goes back to reading like a
+            live session, so this is the only remaining signal — and the two
+            sibling chromes had already drifted on whether to print the code.
+            The frame's own square corners, the way `dispatch-center` and
+            `retail` take it. */}
+        <SessionErrorBanner className="rounded-none border-x-0 border-b-0 font-mono" />
         <Transcript />
         <Footer />
       </div>

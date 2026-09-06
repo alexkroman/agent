@@ -22,10 +22,6 @@ import {
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
 
-/** Each context owns its OWN slot store, which is what the isolation test
- *  below rests on. */
-const makeCtx = (): ToolContext => createToolContext();
-
 /** A tool by the name the model calls it by, bound to this agent. The lookup,
  *  its "no such tool" message and the args-or-context shape are all
  *  `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which
@@ -55,7 +51,7 @@ const atDesk = async (id: SpecialistId, ctx: ToolContext): Promise<void> => {
 
 describe("dialog stack (routing.ts)", () => {
   test("delegating pushes a desk and hands back its brief", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     expect(activeAssistant(stateOf(ctx))).toBe("primary");
 
     const handoff = (await run(
@@ -74,14 +70,14 @@ describe("dialog stack (routing.ts)", () => {
   });
 
   test("re-delegating to the desk already holding the call does not grow the stack", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("to_flight_assistant", { request: "move my flight" }, ctx);
     await run("to_flight_assistant", { request: "actually a later one" }, ctx);
     expect(stateOf(ctx).dialogState).toEqual(["primary", "flight"]);
   });
 
   test("complete_or_escalate pops, and never past the concierge", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("to_excursion_assistant", { request: "something to do" }, ctx);
 
     const back = (await run("complete_or_escalate", { reason: "booked it" }, ctx)) as {
@@ -121,7 +117,7 @@ describe("the desk gate (requireDesk)", () => {
   ] as const;
 
   test.each(DESK_TOOLS)("%s refuses at the concierge desk", async (name, args, desk) => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const refused = (await run(name, args, ctx)) as { error?: string };
     // The refusal NAMES the way in, which is what the model recovers from
     // inside the same turn — a bare "not allowed" would leave it guessing.
@@ -133,7 +129,7 @@ describe("the desk gate (requireDesk)", () => {
   });
 
   test.each(DESK_TOOLS)("%s refuses from ANOTHER desk", async (name, args, desk) => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     // The excursions desk for anything that is not its own, and the flight desk
     // for the excursion tools — so every case really is a wrong desk rather
     // than a coincidence of ordering.
@@ -148,7 +144,7 @@ describe("the desk gate (requireDesk)", () => {
   test.each(DESK_TOOLS)("%s works once its own desk holds the call", async (name, args, desk) => {
     // The other half, and the one that makes the block above non-vacuous: a
     // gate that refused everywhere would pass every assertion up to here.
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk(desk, ctx);
     expect(await run(name, args, ctx)).not.toMatchObject({
       error: expect.stringContaining("belongs to the"),
@@ -158,7 +154,7 @@ describe("the desk gate (requireDesk)", () => {
   test("the concierge's own tools are NOT gated", async () => {
     // `lookup_booking` is the concierge's, and the gate must not make the desk
     // unable to answer "what am I holding?" from wherever the call is.
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("hotel", ctx);
     const booking = (await run("lookup_booking", ctx)) as { passenger: string };
     expect(booking.passenger).toBe("Nadia Rossi");
@@ -180,7 +176,7 @@ describe("sensitive tools stage rather than act", () => {
     ["book_car_rental", { carId: "C2", days: 3 }, "car_rental"],
     ["book_excursion", { excursionId: "E2" }, "excursion"],
   ] as const)("%s changes nothing on its own", async (name, args, desk) => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk(desk, ctx);
     const before = structuredClone(stateOf(ctx));
 
@@ -194,7 +190,7 @@ describe("sensitive tools stage rather than act", () => {
   });
 
   test("confirm_action applies the staged change, and only then", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("hotel", ctx);
     await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
 
@@ -228,7 +224,7 @@ describe("sensitive tools stage rather than act", () => {
   });
 
   test("cancel_action drops the staged change and leaves the booking alone", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("flight", ctx);
     await run("update_ticket", { flightId: "LX54" }, ctx);
     const dropped = expectDialogOk<{ discarded: string }>(await run("cancel_action", ctx));
@@ -246,7 +242,7 @@ describe("sensitive tools stage rather than act", () => {
   test("a staged action naming something that does not exist is refused at staging time", async () => {
     // Refused where the model can still recover — before the caller is asked to
     // confirm a flight the airline does not fly.
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("flight", ctx);
     expect(await run("update_ticket", { flightId: "ZZ99" }, ctx)).toEqual({
       error: "No flight ZZ99 in the schedule.",
@@ -255,7 +251,7 @@ describe("sensitive tools stage rather than act", () => {
   });
 
   test("cancelling the ticket makes a later ticket change impossible", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("flight", ctx);
     await run("cancel_ticket", ctx);
     await run("confirm_action", ctx);
@@ -273,7 +269,7 @@ describe("sensitive tools stage rather than act", () => {
     // the old one" and emits both. Assigning `pending` unconditionally made the
     // second win — both answered `awaitingConfirmation`, the caller said yes
     // once, and one of the two changes was silently dropped forever.
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("flight", ctx);
     const first = (await run("update_ticket", { flightId: "LX52" }, ctx)) as {
       awaitingConfirmation: boolean;
@@ -312,7 +308,7 @@ describe("sensitive tools stage rather than act", () => {
   });
 
   test("cancel_action clears the block, so a declined change does not wedge the desk", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("car_rental", ctx);
     await run("book_car_rental", { carId: "C2", days: 3 }, ctx);
     await run("cancel_action", ctx);
@@ -329,8 +325,8 @@ describe("sensitive tools stage rather than act", () => {
     // detached slot store, so the isolation is per CONTEXT — two distinct
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
-    const first = makeCtx();
-    const second = makeCtx();
+    const first = createToolContext();
+    const second = createToolContext();
 
     await run("to_hotel_assistant", { request: "a room" }, first);
     await run("book_hotel", { hotelId: "H3", nights: 1 }, first);
@@ -351,7 +347,7 @@ describe("sensitive tools stage rather than act", () => {
 
 describe("search tools", () => {
   test("an unmatched route widens to the whole schedule rather than answering nothing", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("flight", ctx);
     const hit = (await run("search_flights", { route: "Zurich to Boston" }, ctx)) as {
       widened: boolean;
@@ -369,7 +365,7 @@ describe("search tools", () => {
   });
 
   test("hotels come back cheapest first, and a ceiling filters them", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("hotel", ctx);
     const all = (await run("search_hotels", { city: "Boston" }, ctx)) as {
       hotels: { perNight: string }[];
@@ -387,7 +383,7 @@ describe("search tools", () => {
   });
 
   test("an excursion keyword that matches nothing falls back to the city", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("excursion", ctx);
     const result = (await run("search_excursions", { city: "Boston", keyword: "skiing" }, ctx)) as {
       widened: boolean;
@@ -398,7 +394,7 @@ describe("search tools", () => {
   });
 
   test("lookup_booking reports the ticket the caller is actually holding", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("flight", ctx);
     await run("update_ticket", { flightId: "LX52" }, ctx);
     await run("confirm_action", ctx);
@@ -430,7 +426,7 @@ describe("tripView projection", () => {
   });
 
   test("renders the staged action as the prose the concierge just spoke", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("to_car_rental_assistant", { request: "a car for the week" }, ctx);
     await run("book_car_rental", { carId: "C3", days: 4 }, ctx);
 
@@ -443,7 +439,7 @@ describe("tripView projection", () => {
   });
 
   test("totals every confirmed booking", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("hotel", ctx);
     await run("book_hotel", { hotelId: "H3", nights: 2 }, ctx); // 2 × 180
     await run("confirm_action", ctx);
@@ -463,7 +459,7 @@ describe("a caller who hangs up", () => {
   const CALLER_GONE = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } } as const;
 
   test("ends the call, from a gate that is holding a staged booking", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("hotel", ctx);
     await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
     expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
@@ -474,7 +470,7 @@ describe("a caller who hangs up", () => {
   });
 
   test("a sensitive tool cannot run afterwards", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("hotel", ctx);
     await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
     gateFlow.receive(ctx, CALLER_GONE);
@@ -487,7 +483,7 @@ describe("a caller who hangs up", () => {
   });
 
   test("the staged action is still THERE — the state is final so nothing reads it", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await atDesk("hotel", ctx);
     await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
     gateFlow.receive(ctx, CALLER_GONE);

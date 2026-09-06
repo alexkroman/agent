@@ -31,7 +31,7 @@
  */
 
 import type { DelegateFn, GenerateFn } from "@alexkroman1/aai";
-import { type DeepReadonly, subagent } from "@alexkroman1/aai";
+import { type DeepReadonly, isRecord, subagent } from "@alexkroman1/aai";
 import {
   actSchema,
   EXECUTOR_OUTPUT,
@@ -147,11 +147,7 @@ export async function executeStep(
 
 /** The query one recorded `search` call named. */
 function queryOf(input: unknown): string {
-  if (input && typeof input === "object" && "query" in input) {
-    const query = (input as { query?: unknown }).query;
-    if (typeof query === "string") return query;
-  }
-  return "(unnamed search)";
+  return isRecord(input) && typeof input.query === "string" ? input.query : "(unnamed search)";
 }
 
 /** Their `Act`, once it has been checked for the halves a provider can drop. */

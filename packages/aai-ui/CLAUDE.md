@@ -37,7 +37,7 @@ new one fails `pnpm check:api-contracts` until it joins one:
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from, `ConsoleShell` included. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
-| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`, `useDownloadUrl`, `WORKFLOW_STATUS_LABELS`, `WorkflowRunStatus`. At **epoch 1** — the reset collapsed its history; the change worth knowing is that the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
+| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `<WorkflowPendingNote>`, `<WorkflowRunError>`, `useWorkflowSubmit`, `useWorkflows`, `useDownloadUrl`, `WORKFLOW_STATUS_LABELS`, `WorkflowRunStatus`. At **epoch 1** — the reset collapsed its history; the change worth knowing is that the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
 | `theme` | `ClientTheme` + `useTheme`, and the five `--aai-*` CSS variables `ThemeProvider` writes — its own contract because a token is a name in somebody's CSS |
 | `client-dir` | `defaultClientDir()`, the one export a SERVER calls |
 
@@ -1512,9 +1512,11 @@ under a form that is already submitting again is the one wrong answer this can
 give, and it looks like a correct one.
 
 `transcription-workflow` in `packages/aai-templates/templates/` is the worked
-example; `link-digest` is the smaller one and shows the primitives raw
-(`createWorkflowApi`, `useWorkflowRun`, a hand-written `<form>`), which is worth
-keeping as the thing these hooks compress.
+example; `link-digest` is the smaller one and shows the layer under `<Form>` raw
+(a hand-written `<form>` with its own `useState`, handing an object to
+`submit()`), which is worth keeping as the thing the form layer compresses. It
+used to hold `createWorkflowApi` and `useWorkflowRun` too, and this paragraph
+said so for a while after it stopped.
 
 ## Surviving a platform restart (`client-config.ts`)
 

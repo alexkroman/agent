@@ -661,6 +661,21 @@ export { WorkflowInputOf }
 export { WorkflowOutputOf }
 
 // @public
+export function WorkflowPendingNote(input: WorkflowPendingNoteProps): ReactNode;
+
+// @public
+export type WorkflowPendingNoteProps = {
+    submission: {
+        readonly pending: boolean;
+        readonly startedHere: boolean;
+        readonly run: WorkflowRun | undefined;
+    };
+    subject?: string | undefined;
+    scope?: "tab" | "browser" | undefined;
+    className?: string | undefined;
+};
+
+// @public
 export function WorkflowProgress(input: {
     runId?: string | undefined;
     api?: WorkflowApi | undefined;
@@ -671,6 +686,15 @@ export function WorkflowProgress(input: {
 
 // @public
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
+
+// @public
+export function WorkflowRunError(input: WorkflowRunErrorProps): ReactNode;
+
+// @public
+export type WorkflowRunErrorProps = {
+    run: WorkflowRun | undefined;
+    className?: string | undefined;
+};
 
 export { WorkflowRunStatus }
 

@@ -93,7 +93,9 @@ import {
   useRunKey,
   useWorkflowSubmit,
   WorkflowFields,
+  WorkflowPendingNote,
   WorkflowProgress,
+  WorkflowRunError,
 } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
@@ -103,25 +105,6 @@ import type { dailyDigest } from "./agent.ts";
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "dailyDigest";
-
-/**
- * What the page says while a schedule is live — three situations, one line
- * each, and none of them the sentence this page used to print.
- *
- * That one was "You can close this tab — the run continues without it": true
- * about the run and false about the page, which is the worst shape a
- * reassurance can have. The run did continue, for up to a month, and nothing
- * could name it again. Now the promise can be stronger AND narrower — this
- * browser, not any tab anywhere — and the load that did not press the button
- * gets its own words, because a schedule appearing in front of somebody is owed
- * an explanation.
- */
-function pendingNote(startedHere: boolean, found: boolean): string {
-  if (startedHere)
-    return "You can close this tab — the digest keeps posting, and this browser will find it again.";
-  if (!found) return "Looking for a schedule this browser started earlier…";
-  return "This is a schedule this browser started earlier. It is still posting.";
-}
 
 export function App() {
   // This BROWSER's handle on its schedules — minted once and kept for as long
@@ -137,9 +120,8 @@ export function App() {
   // reason there is no `try`/`catch` here.
   // The key REPLACES the tab-scoped one the hook would mint; the lookup that
   // reads it back on the next load happens either way.
-  const { submitForm, run, pending, error, wake, cancel, startedHere } = useWorkflowSubmit<
-    typeof dailyDigest
-  >(WORKFLOW, { key });
+  const submission = useWorkflowSubmit<typeof dailyDigest>(WORKFLOW, { key });
+  const { submitForm, run, pending, error, wake, cancel } = submission;
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
@@ -157,8 +139,11 @@ export function App() {
       {/* A run that has not settled says so. `pending` is not derivable from the
           snapshot alone — an id the agent never knew leaves `run` undefined,
           which would otherwise read as "still waiting" forever, and on a later
-          load it is also true while the schedule is being looked up by key. */}
-      {pending && <p>{pendingNote(startedHere, run !== undefined)}</p>}
+          load it is also true while the schedule is being looked up by key.
+          `scope="browser"` is the one thing this page says that the others do
+          not: the key above is `local`, so the promise is this BROWSER's rather
+          than this tab's, and closing the tab loses nothing. */}
+      <WorkflowPendingNote submission={submission} subject="schedule" scope="browser" />
 
       {/* The run's own narration, newest line only. `lines={1}` is the window;
           everything else — the replay, and the "serves no stream" case that is
@@ -187,13 +172,9 @@ export function App() {
         </div>
       )}
 
-      {/* `role="alert"`, the same contract `<Form>` gives the submit error
-          above: a digest that fails does so days later, with nobody watching. */}
-      {run?.status === "failed" && (
-        <p role="alert" className="text-red-600">
-          That run failed: {run.error}
-        </p>
-      )}
+      {/* Announced, the same contract `<Form>` gives the submit error above: a
+          digest that fails does so days later, with nobody watching. */}
+      <WorkflowRunError run={run} />
       {run?.status === "cancelled" && <p>Cancelled — no further digests will be posted.</p>}
 
       {run?.status === "completed" && (

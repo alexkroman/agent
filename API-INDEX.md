@@ -569,9 +569,13 @@ each is for.
 | `WorkflowInputOf` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
 | `WorkflowKeyStore` | `@alexkroman1/aai-runtime` |
 | `WorkflowOutputOf` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
+| `WorkflowPendingNote` | `@alexkroman1/aai-ui` |
+| `WorkflowPendingNoteProps` | `@alexkroman1/aai-ui` |
 | `WorkflowProgress` | `@alexkroman1/aai-ui` |
 | `WorkflowRun` | `@alexkroman1/aai-ui` |
 | `WorkflowRunBase` | `@alexkroman1/aai/workflow-api` |
+| `WorkflowRunError` | `@alexkroman1/aai-ui` |
+| `WorkflowRunErrorProps` | `@alexkroman1/aai-ui` |
 | `WorkflowRunOf` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
 | `WorkflowRunSnapshot` | `@alexkroman1/aai/workflow-api` |
 | `WorkflowRunStatus` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |

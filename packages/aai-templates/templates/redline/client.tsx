@@ -69,8 +69,10 @@ import {
   useWorkflowSubmit,
   WORKFLOW_STATUS_LABELS,
   WorkflowFields,
+  WorkflowPendingNote,
   WorkflowProgress,
   type WorkflowRun,
+  WorkflowRunError,
 } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
 
@@ -85,21 +87,6 @@ type Redline = WorkflowOutputOf<typeof redline>;
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "redline";
-
-/**
- * What the desk says while the loop is turning — three situations, one line
- * each.
- *
- * The reload case gets its own words deliberately: somebody who did not press
- * the button is owed an explanation for a draft appearing in front of them, and
- * the sentence a page reaches for instead ("you can close this tab") is the one
- * that was true about the RUN and false about the page.
- */
-function pendingNote(startedHere: boolean, found: boolean): string {
-  if (startedHere) return "Reloading is safe — this page will find the draft again.";
-  if (!found) return "Looking for a draft this tab started earlier…";
-  return "Still working on a draft this tab started earlier.";
-}
 
 /**
  * The submitted form as the workflow's input schema wants it.
@@ -127,8 +114,8 @@ export function toInput(values: FormValues): WorkflowInputOf<typeof redline> {
 function RedlineDesk() {
   // The reload is covered by the hook's own key — see the module doc for why
   // this desk wants the tab-scoped one it mints rather than a key of its own.
-  const { submit, run, pending, error, reset, startedHere } =
-    useWorkflowSubmit<typeof redline>(WORKFLOW);
+  const submission = useWorkflowSubmit<typeof redline>(WORKFLOW);
+  const { submit, run, pending, error, reset } = submission;
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
@@ -158,9 +145,7 @@ function RedlineDesk() {
           form offering Submit would be inviting a second loop over the same
           brief, which here is several long-form model calls of somebody's
           money. */}
-      {pending && (
-        <p className="text-sm opacity-70">{pendingNote(startedHere, run !== undefined)}</p>
-      )}
+      <WorkflowPendingNote submission={submission} subject="draft" />
 
       {run && (
         <RunPanel
@@ -242,13 +227,9 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => 
           </article>
         </>
       )}
-      {/* `role="alert"`, the same contract `<Form>` gives the submit error: this
-          is the outcome the reader waited minutes for. */}
-      {run.status === "failed" && (
-        <p role="alert" className="text-red-600">
-          {run.error}
-        </p>
-      )}
+      {/* Announced, the same contract `<Form>` gives the submit error: this is
+          the outcome the reader waited minutes for. */}
+      <WorkflowRunError run={run} />
     </section>
   );
 }

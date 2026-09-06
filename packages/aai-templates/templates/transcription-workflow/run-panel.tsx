@@ -27,6 +27,7 @@ import {
   WORKFLOW_STATUS_LABELS,
   WorkflowProgress,
   type WorkflowRun,
+  WorkflowRunError,
 } from "@alexkroman1/aai-ui";
 import { useMemo } from "react";
 import type { transcribe } from "./agent.ts";
@@ -163,13 +164,9 @@ export function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onCle
           <pre className="whitespace-pre-wrap text-sm leading-relaxed">{run.output.transcript}</pre>
         </>
       )}
-      {/* `role="alert"`, the same contract `<Form>` gives the submit error in
+      {/* Announced, the same contract `<Form>` gives the submit error in
           `client.tsx`: this is the outcome the reader waited minutes for. */}
-      {run.status === "failed" && (
-        <p role="alert" className="text-red-600">
-          {run.error}
-        </p>
-      )}
+      <WorkflowRunError run={run} />
     </section>
   );
 }

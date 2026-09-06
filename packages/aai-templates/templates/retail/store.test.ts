@@ -20,13 +20,9 @@ import {
   retailTool,
 } from "./store.ts";
 
-function makeCtx(): ToolContext {
-  return createToolContext();
-}
-
 describe("session state", () => {
   test("the slot seeds lazily and returns the same object on re-entry", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const a = retailSlot.get(ctx);
     const b = retailSlot.get(ctx);
     expect(a).toBe(b);
@@ -36,7 +32,7 @@ describe("session state", () => {
   });
 
   test("each session gets its own deep copy — a mutation cannot leak across sessions", () => {
-    retailSlot.update(makeCtx(), (first) => {
+    retailSlot.update(createToolContext(), (first) => {
       const order = first.store.orders["#W9300146"];
       if (!order) throw new Error("fixture missing");
       order.status = "cancelled";
@@ -44,7 +40,7 @@ describe("session state", () => {
       if (giftCard?.source === "gift_card") giftCard.balance = 0;
     });
 
-    const second = retailSlot.get(makeCtx());
+    const second = retailSlot.get(createToolContext());
     expect(second.store.orders["#W9300146"]?.status).toBe("pending");
     const fresh = second.store.users.aarav_anderson_8794?.payment_methods.gift_card_7245904;
     expect(fresh?.source === "gift_card" && fresh.balance).toBe(17);
@@ -193,7 +189,7 @@ describe("retailTool", () => {
   const serve = (ctx: ToolContext) => callFlow.send(ctx, { type: "IDENTIFIED" });
 
   test("increments callSeq and logs activity on every call", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await echo.execute({ value: "a" }, ctx);
     await echo.execute({ value: "b" }, ctx);
     const state = retailSlot.get(ctx);
@@ -203,7 +199,7 @@ describe("retailTool", () => {
   });
 
   test("a repeated identical call still changes the projection", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await echo.execute({ value: "same" }, ctx);
     const first = retailSlot.get(ctx).callSeq;
     await echo.execute({ value: "same" }, ctx);
@@ -211,7 +207,7 @@ describe("retailTool", () => {
   });
 
   test("a tool gated on serving refuses while the caller is unidentified", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const result = await gated.execute({}, ctx);
     expect(isToolFailure(result)).toBe(true);
     // The refusal is the SDK's, so it names the position and quotes the
@@ -222,7 +218,7 @@ describe("retailTool", () => {
   });
 
   test("a refused call touches nothing, callSeq included", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await gated.execute({}, ctx);
     const state = retailSlot.get(ctx);
     // The gate short-circuits before the wrapper's body, so the EXECUTION path
@@ -235,13 +231,13 @@ describe("retailTool", () => {
   });
 
   test("runs once the flow says serving", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     serve(ctx);
     expect(expectToolOk(await gated.execute({}, ctx))).toEqual({ ok: true });
   });
 
   test("the result carries the position the call landed in", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     serve(ctx);
     // `expectDialogOk` rather than a cast to `{ instruction?: string }`: it keeps
     // the envelope this test is about, and a refusal fails here naming what the
@@ -252,13 +248,13 @@ describe("retailTool", () => {
   });
 
   test("an error result is logged as an error, not through summary()", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await failing.execute({}, ctx);
     expect(retailSlot.get(ctx).activity[0]?.summary).toBe("error: nope");
   });
 
   test("a body that failed does not move the call", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const moves = retailTool({
       name: "moves",
       description: "test tool that would identify the caller and fails instead",
@@ -273,7 +269,7 @@ describe("retailTool", () => {
   });
 
   test("activity is capped so a long call cannot grow the payload", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     for (let i = 0; i < 15; i++) await echo.execute({ value: String(i) }, ctx);
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(15);
@@ -282,7 +278,7 @@ describe("retailTool", () => {
   });
 
   test("concurrent calls serialize — no lost increments", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await Promise.all(Array.from({ length: 8 }, (_, i) => echo.execute({ value: String(i) }, ctx)));
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(8);
@@ -292,13 +288,13 @@ describe("retailTool", () => {
 
 describe("the call flow", () => {
   test("a fresh call is identifying, and nothing is latched", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     expect(callFlow.position(ctx).state).toBe("identifying");
     expect(retailSlot.get(ctx).authenticatedUserId).toBeNull();
   });
 
   test("transferred is final, so every tool refuses after the handoff", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const anywhere = retailTool({
       name: "anywhere",
       description: "legal in every state but the terminal one",

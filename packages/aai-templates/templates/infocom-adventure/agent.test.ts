@@ -1,5 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
+import type { ToolContext } from "@alexkroman1/aai";
 import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 
@@ -17,15 +18,11 @@ const run = toolRunner(agentDef);
  * something the model never calls, so nothing else in this file would notice if
  * the hook stopped running.
  */
-const say = (text: string, ctx: ReturnType<typeof makeCtx>) =>
+const say = (text: string, ctx: ToolContext) =>
   agentDef.events?.["user-transcript.committed"]?.(
     { type: "user-transcript.committed", text, meta: { id: "evt_1", at: 0 } },
     ctx,
   );
-
-/** Each context owns its OWN slot store, which is what makes two playthroughs
- *  independent by construction. */
-const makeCtx = () => createToolContext();
 
 // ─── The frozen-vs-draft contract ────────────────────────────────────────────
 //
@@ -38,7 +35,7 @@ const makeCtx = () => createToolContext();
 
 describe("the mutating tools actually mutate", () => {
   test("game_state_take adds to the inventory and does not double an item", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
 
     const first = (await run("game_state_take", { value: "lantern" }, ctx)) as {
       inventory: string[];
@@ -56,7 +53,7 @@ describe("the mutating tools actually mutate", () => {
   });
 
   test("game_state_flag records a flag, and a second flag joins the first", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
 
     await run("game_state_flag", { value: "gate_opened" }, ctx);
     const both = (await run("game_state_flag", { value: "rope_cut" }, ctx)) as {
@@ -68,7 +65,7 @@ describe("the mutating tools actually mutate", () => {
   });
 
   test("what a READ is handed is frozen, which is why the two above are updateTool", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("game_state_take", { value: "lantern" }, ctx);
 
     const game = gameSlot.get(ctx);
@@ -83,7 +80,7 @@ describe("the mutating tools actually mutate", () => {
 
 describe("the adventure's tools", () => {
   test("drop removes an item and is a no-op for one the player never took", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("game_state_take", { value: "lantern" }, ctx);
     await run("game_state_take", { value: "rope" }, ctx);
 
@@ -99,7 +96,7 @@ describe("the adventure's tools", () => {
   });
 
   test("move sets the room and reports the turn count without touching it", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     const moved = (await run("game_state_move", { value: "Echo Chamber" }, ctx)) as {
       currentRoom: string;
       moves: number;
@@ -111,14 +108,14 @@ describe("the adventure's tools", () => {
   });
 
   test("score accumulates rather than replacing", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("game_state_score", { value: 10 }, ctx);
     const total = (await run("game_state_score", { value: 5 }, ctx)) as { score: number };
     expect(total.score).toBe(15);
   });
 
   test("what the player SAYS logs the command and counts the turn", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     for (let i = 1; i <= REPORTED_HISTORY + 2; i++) say(`command ${i}`, ctx);
     say("look", ctx);
 
@@ -137,7 +134,7 @@ describe("the adventure's tools", () => {
   });
 
   test("a turn is counted once, even when the narrator also moves the player", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     say("go north", ctx);
     await run("game_state_move", { value: "Echo Chamber" }, ctx);
 
@@ -150,7 +147,7 @@ describe("the adventure's tools", () => {
   });
 
   test("the history is capped, so a long playthrough does not grow without bound", () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     for (let i = 0; i < MAX_HISTORY + 10; i++) say(`command ${i}`, ctx);
 
     const game = gameSlot.get(ctx);
@@ -161,7 +158,7 @@ describe("the adventure's tools", () => {
   });
 
   test("get reports the whole board, with the history trimmed to what a narrator reads", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("game_state_take", { value: "lantern" }, ctx);
     await run("game_state_flag", { value: "gate_opened" }, ctx);
     await run("game_state_move", { value: "Echo Chamber" }, ctx);
@@ -179,7 +176,7 @@ describe("the adventure's tools", () => {
   });
 
   test("restart replaces the whole game, and the fresh room is the one the greeting describes", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("game_state_take", { value: "lantern" }, ctx);
     await run("game_state_score", { value: 30 }, ctx);
     await run("game_state_move", { value: "Echo Chamber" }, ctx);
@@ -200,8 +197,8 @@ describe("the game is per context", () => {
     // detached slot store, so the isolation is per CONTEXT — two distinct
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
-    const one = makeCtx();
-    const two = makeCtx();
+    const one = createToolContext();
+    const two = createToolContext();
 
     await run("game_state_take", { value: "lantern" }, one);
     await run("game_state_move", { value: "Echo Chamber" }, one);
@@ -213,7 +210,7 @@ describe("the game is per context", () => {
   });
 
   test("the module-level default is cloned, so no session can edit the next one's start", async () => {
-    const ctx = makeCtx();
+    const ctx = createToolContext();
     await run("game_state_take", { value: "lantern" }, ctx);
     expect(DEFAULT_GAME_STATE.inventory).toEqual([]);
   });
