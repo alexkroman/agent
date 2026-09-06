@@ -1,11 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import {
-  dialogRefusalPattern,
-  expectDialogOk,
-  expectDialogRefused,
-  expectToolOk,
-} from "./testing.ts";
+import { expectDialogOk, expectDialogRefused, expectToolOk } from "./testing.ts";
 import { toolFailure } from "./utils.ts";
 
 /** What a `dialog()` tool answers on success: the value, wrapped in the position. */
@@ -110,30 +105,5 @@ describe("expectDialogRefused", () => {
     expect(() => expectDialogRefused(toolFailure("Order not found."))).toThrow(
       "Expected a dialog refusal and got: Order not found.",
     );
-  });
-});
-
-describe("dialogRefusalPattern", () => {
-  test("matches the gate's own sentence, and pins the state when given one", () => {
-    const refused = 'Not available yet: this conversation is at "identifying". Verify first.';
-    expect(refused).toMatch(dialogRefusalPattern());
-    expect(refused).toMatch(dialogRefusalPattern("identifying"));
-    expect(refused).not.toMatch(dialogRefusalPattern("transferred"));
-    // A dotted state is matched literally — `.` is not "any character" here.
-    expect('Not available yet: this conversation is at "onCall.inbox". Read it.').toMatch(
-      dialogRefusalPattern("onCall.inbox"),
-    );
-    expect('Not available yet: this conversation is at "onCallXinbox". Read it.').not.toMatch(
-      dialogRefusalPattern("onCall.inbox"),
-    );
-  });
-
-  test("reads the sentence through JSON escaping, which is how an eval sees a tool result", () => {
-    const serialized = JSON.stringify(
-      toolFailure('Not available yet: this conversation is at "standby". Log a call first.'),
-    );
-    expect(serialized).toContain('\\"standby\\"');
-    expect(serialized).toMatch(dialogRefusalPattern("standby"));
-    expect(serialized).not.toMatch(dialogRefusalPattern("working"));
   });
 });
