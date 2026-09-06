@@ -19,6 +19,7 @@ export {
   type DeepReadonly,
   type SessionSlot,
   type SessionSlotOptions,
+  type SlotCaps,
   type SlotHolder,
   type SlotStore,
   type SlotToolDef,

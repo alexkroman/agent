@@ -35,7 +35,7 @@
  * in the SDK guide.
  */
 
-import { type DeepReadonly, dialog, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { type DeepReadonly, dialog, sessionSlot } from "@alexkroman1/aai";
 import { DEFAULT_MEMORY, INBOX, type Memory, type SeedEmail } from "./inbox.ts";
 import type { TriageExample, TriageVerdict } from "./prompts.ts";
 
@@ -164,13 +164,9 @@ export interface AssistantState {
   triageExamples: TriageExample[];
   reflections: Reflection[];
   sent: SentItem[];
-  /** What has happened on this call, for the sidebar. Capped on append. */
+  /** What has happened on this call, for the sidebar. */
   log: string[];
 }
-
-/** Growth caps — both ride in every `syncState` frame. */
-export const MAX_LOG_ENTRIES = 40;
-export const MAX_EXCHANGE_LINES = 30;
 
 export function seedAssistant(): AssistantState {
   return {
@@ -192,6 +188,12 @@ export function seedAssistant(): AssistantState {
  * `after` holds the one invariant nothing else should have to remember: a
  * closed email is never the open one, so a tool that closed the thread cannot
  * leave `openId` pointing at it.
+ *
+ * `caps` holds the growth bounds the same way. Every one of these lists rides
+ * in a `syncState` frame or a prompt, and a `note()` wrapper around
+ * `pushCapped` used to bound two of them — `log` and `exchange` — while
+ * `reflections`, `sent` and `triageExamples` were pushed to directly and grew
+ * for the length of the call. A cap on the slot holds whatever path wrote.
  */
 export const assistantSlot = sessionSlot("assistant", seedAssistant, {
   after: (state) => {
@@ -201,6 +203,7 @@ export const assistantSlot = sessionSlot("assistant", seedAssistant, {
       state.proposal = null;
     }
   },
+  caps: { log: 40, exchange: 30, reflections: 20, sent: 40, triageExamples: 40 },
 });
 
 /**
@@ -209,15 +212,6 @@ export const assistantSlot = sessionSlot("assistant", seedAssistant, {
  * helper that WOULD have mutated stops compiling instead of throwing.
  */
 export type FrozenAssistantState = DeepReadonly<AssistantState>;
-
-export function note(state: AssistantState, line: string): void {
-  pushCapped(state.log, line, MAX_LOG_ENTRIES);
-}
-
-/** A line of the open thread's exchange — the trajectory reflection reads. */
-export function exchanged(state: AssistantState, line: string): void {
-  pushCapped(state.exchange, line, MAX_EXCHANGE_LINES);
-}
 
 export function openEmail(state: FrozenAssistantState): DeepReadonly<InboxEmail> | undefined {
   return state.openId ? findEmail(state.emails, state.openId) : undefined;

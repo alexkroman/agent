@@ -5,7 +5,6 @@ import {
   assignTruck,
   describeVehicle,
   etaMinutes,
-  note,
   quoteFee,
   rateFor,
   roadsideSlot,
@@ -76,7 +75,7 @@ export default roadsideCall.tool({
         etaMinutes: eta,
         quote,
       };
-      note(state, `Dispatched ${truck.callsign}, ETA ${eta} min, total ${quote.total}`);
+      state.log.push(`Dispatched ${truck.callsign}, ETA ${eta} min, total ${quote.total}`);
       return {
         ...state.job,
         alreadyDispatched: false,

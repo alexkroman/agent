@@ -1,4 +1,4 @@
-import { pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { sessionSlot } from "@alexkroman1/aai";
 
 export type GameState = {
   inventory: string[];
@@ -44,10 +44,12 @@ export const REPORTED_HISTORY = 5;
 // out. It is a compile error now, which is the reason to declare a tool through
 // the slot at all rather than reaching for `gameSlot.get(ctx)` inside a
 // `tool()`.
-export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_GAME_STATE));
+export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_GAME_STATE), {
+  caps: { history: MAX_HISTORY },
+});
 
 /**
- * Log a player command and count the turn, holding {@link MAX_HISTORY}.
+ * Log a player command and count the turn. The slot holds {@link MAX_HISTORY}.
  *
  * **Nothing the MODEL can call runs this** — `agent.ts` declares it as a
  * `user-transcript.committed` hook, so it runs once per thing the player says,
@@ -64,6 +66,6 @@ export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_GAME_S
  * those is a thing the game can miscount.
  */
 export function recordTurn(game: GameState, command: string): void {
-  pushCapped(game.history, command, MAX_HISTORY);
+  game.history.push(command);
   game.moves++;
 }

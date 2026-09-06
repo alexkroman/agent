@@ -1,7 +1,7 @@
 import { errorMessage, tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { planNode } from "../procedure.ts";
-import { noteRevision, planFlow, planSlot } from "../shared.ts";
+import { planFlow, planSlot } from "../shared.ts";
 
 /**
  * Their `plan_step`, as the call's opening move.
@@ -48,7 +48,7 @@ export default tool({
       plan.plan = steps;
       plan.pastSteps = [];
       plan.response = null;
-      noteRevision(plan, `Planned ${steps.length} step(s) for: ${args.objective}`);
+      plan.revisions.push(`Planned ${steps.length} step(s) for: ${args.objective}`);
 
       return {
         objective: args.objective,

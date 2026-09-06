@@ -1,6 +1,7 @@
-import { DELEGATE_TOOL_NAME, type GuardrailVerdict, type SubagentAnswer } from "@alexkroman1/aai";
+import { DELEGATE_TOOL_NAME } from "@alexkroman1/aai";
 import {
   createToolContext,
+  runGuardrail,
   type StubDelegateCall,
   stubDelegate,
   toolRunner,
@@ -19,7 +20,6 @@ import {
   MAX_ANGLES,
   MAX_FINDINGS,
   MAX_RESEARCH_STEPS,
-  recordFinding,
   researcher,
   VERDICT_PREFIXES,
 } from "./shared.ts";
@@ -33,20 +33,9 @@ import agentDef from "virtual:aai/agent";
 const run = toolRunner(agentDef);
 const deployed = agentDef;
 
-/**
- * The fact-checker's guardrail, called the way the runtime calls it.
- *
- * The cost report is what a guardrail is HANDED and this one does not read it,
- * so the zeros are honest rather than a stand-in — the check is entirely about
- * the text.
- */
-function check(text: string): GuardrailVerdict {
-  const answer: SubagentAnswer = { text, steps: 1, toolCalls: [] };
-  const verdict = factChecker.guardrail?.(answer);
-  if (verdict === undefined) throw new Error("the fact-checker declares no guardrail");
-  if (typeof verdict === "object") throw new Error("this guardrail is synchronous by design");
-  return verdict;
-}
+/** The fact-checker's guardrail, called the way the runtime calls it — the
+ *  check is entirely about the text, so the default zero cost report is honest. */
+const check = (text: string) => runGuardrail(factChecker, text);
 
 /**
  * The desk's two subagents, faked.
@@ -285,7 +274,7 @@ describe("verify_claim", () => {
     const model = desk();
     const ctx = createToolContext({ delegate: model.delegate });
     briefingSlot.update(ctx, (board) => {
-      recordFinding(board, {
+      board.findings.push({
         angle: "install lead times",
         summary: "Installers quote eight weeks.",
         work: { searches: 2, reads: 1 },
@@ -373,8 +362,8 @@ describe("briefing_so_far", () => {
     const ctx = createToolContext();
     briefingSlot.update(ctx, (board) => {
       board.topic = "t";
-      recordFinding(board, { angle: "a", summary: "A.", work: { searches: 2, reads: 1 } });
-      recordFinding(board, { angle: "b", summary: "B.", work: { searches: 3, reads: 0 } });
+      board.findings.push({ angle: "a", summary: "A.", work: { searches: 2, reads: 1 } });
+      board.findings.push({ angle: "b", summary: "B.", work: { searches: 3, reads: 0 } });
     });
 
     const result = (await run("briefing_so_far", {}, ctx)) as {
@@ -417,7 +406,7 @@ describe("the board", () => {
     const ctx = createToolContext();
     briefingSlot.update(ctx, (board) => {
       for (let index = 0; index < MAX_FINDINGS + 3; index++) {
-        recordFinding(board, { angle: `angle ${index}`, summary: "s", work: NO_WORK });
+        board.findings.push({ angle: `angle ${index}`, summary: "s", work: NO_WORK });
       }
     });
     const board = briefingSlot.get(ctx);
@@ -428,7 +417,7 @@ describe("the board", () => {
   test("finds an angle from a loose mention, and nothing from a blank one", () => {
     const ctx = createToolContext();
     briefingSlot.update(ctx, (board) => {
-      recordFinding(board, { angle: "install lead times", summary: "s", work: NO_WORK });
+      board.findings.push({ angle: "install lead times", summary: "s", work: NO_WORK });
     });
     const board = briefingSlot.get(ctx);
     expect(findByAngle(board, "lead times")?.angle).toBe("install lead times");

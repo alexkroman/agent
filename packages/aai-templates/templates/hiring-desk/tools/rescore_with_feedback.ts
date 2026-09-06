@@ -1,4 +1,5 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { partitionSettled } from "@alexkroman1/aai/step";
 import { z } from "zod";
 import { scoreRoster } from "../crews.ts";
 import {
@@ -6,7 +7,6 @@ import {
   hiringFlow,
   hiringSlot,
   MAX_FEEDBACK_ROUNDS,
-  noteFeedback,
   ranked,
   topCandidates,
 } from "../shared.ts";
@@ -67,22 +67,22 @@ export default hiringFlow.tool({
     const trail = [...before.feedback, feedback];
     const scored = await scoreRoster(ctx.generate, before.candidates, before.job, trail);
 
-    const failed = scored.filter((one) => !one.ok);
+    const { failed } = partitionSettled(scored);
     if (failed.length === scored.length) {
       return toolFailure(
         "No candidate could be re-scored, so the ranking is unchanged. The first failure " +
-          `said: ${failed[0]?.ok === false ? failed[0].error : "no reason given"}`,
+          `said: ${failed[0]?.error ?? "no reason given"}`,
       );
     }
 
     return hiringSlot.update(ctx, (state) => {
-      noteFeedback(state, feedback);
+      state.feedback.push(feedback);
       state.rounds += 1;
       state.scores = {};
       state.unscored = [];
       for (const one of scored) {
-        if (one.ok) state.scores[one.candidate.id] = one.verdict;
-        else state.unscored.push(one.candidate.id);
+        if (one.ok) state.scores[one.item.id] = one.value;
+        else state.unscored.push(one.item.id);
       }
 
       const top = topCandidates(state);

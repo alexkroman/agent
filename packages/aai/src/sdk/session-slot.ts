@@ -13,6 +13,7 @@
  * @module session-slot
  */
 
+import { compileSlotCaps } from "./_session-slot-caps.ts";
 import { claimKey, type KeyOwner, shapeOf } from "./_slot-owners.ts";
 import type { DeepReadonly } from "./deep-readonly.ts";
 import { isRecord } from "./is-record.ts";
@@ -32,10 +33,10 @@ import type { ToolDef } from "./types.ts";
 // slot machinery, which is exactly what adopting it asks every such helper to
 // do (see the type's own doc).
 export type { DeepReadonly } from "./deep-readonly.ts";
-// The two types a CALLER writes live in their own module (this file was at the
+// The types a CALLER writes live in their own module (this file was at the
 // 500-line cap) and are re-exported here, so `@alexkroman1/aai` — and a reader
 // who looks for them where `sessionSlot` is — still finds them in one place.
-export type { SessionSlotOptions, SlotToolDef } from "./session-slot-types.ts";
+export type { SessionSlotOptions, SlotCaps, SlotToolDef } from "./session-slot-types.ts";
 // The seam every method above takes. Re-exported here for the reason
 // `DeepReadonly` is: a caller writing a helper around a slot names it, and it
 // should be findable where `sessionSlot` is.
@@ -346,8 +347,14 @@ export function sessionSlot<const K extends string, T, After = void>(
    */
   const open = new Set<string>();
 
+  // Validated at declaration; see `_session-slot-caps.ts`. Applied in `store`,
+  // which every writer goes through, so the ordering `SessionSlotOptions.caps`
+  // promises — after `after`, before the freeze — falls out of the one place
+  // rather than being remembered per method.
+  const applyCaps = compileSlotCaps<T>(key, options.caps);
+
   const store = (ctx: SlotHolder, value: T): void => {
-    slots(ctx).write(key, value, durable);
+    slots(ctx).write(key, applyCaps(value), durable);
   };
 
   /** Refuse a direct write while a draft of the same slot is open. */
@@ -477,8 +484,10 @@ export function sessionSlot<const K extends string, T, After = void>(
       };
     }) as SessionSlot<K, T>["updateTool"],
     projection(project) {
+      // `applyCaps` on the default too: a stored value never exceeds its caps,
+      // and the frame rendered before the first tool call should not either.
       const projection = (value?: unknown): ReturnType<typeof project> =>
-        project((value === undefined ? create() : value) as DeepReadonly<T>);
+        project((value === undefined ? applyCaps(create()) : value) as DeepReadonly<T>);
       // The slot's own `create` rather than a captured default: the runtime
       // calls this for a session that never touched the slot, and a shared
       // default object would then be projected — and, worse, be the thing a

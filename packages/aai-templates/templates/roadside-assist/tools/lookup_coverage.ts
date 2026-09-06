@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { roadsideCall } from "../call.ts";
-import { findPolicy, note, quoteFee, rateFor, roadsideSlot } from "../shared.ts";
+import { findPolicy, quoteFee, rateFor, roadsideSlot } from "../shared.ts";
 
 /**
  * What this caller is covered for — the one thing on this call that must never
@@ -54,7 +54,7 @@ export default roadsideCall.tool({
         state.coverage = null;
       }
       const rate = rateFor(state.coverage);
-      note(state, `Coverage: ${rate.name}`);
+      state.log.push(`Coverage: ${rate.name}`);
       // The zero-mile quote, which is what the caller owes if the driver fixes
       // it at the roadside. `quoteFee` is the same function `dispatch_truck`
       // prices the tow with — there is one of it precisely so the number the

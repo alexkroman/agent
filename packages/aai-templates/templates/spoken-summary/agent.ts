@@ -76,33 +76,23 @@
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
-import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
+import { ttsVoiceIds } from "@alexkroman1/aai/tts";
 import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
 import { type SpokenSummary, spokenSummaryFlow } from "./workflows/summarize.ts";
 
 /**
- * The voices the form offers.
+ * The voices the form offers, as the tuple `z.enum` takes.
  *
  * READ from the SDK's catalog rather than listed, because a wrong voice id is a
  * SILENT failure — it is a free-form string the service rejects in band after
  * the socket is open, so the synthesis simply produces nothing. Narrowed to the
  * English ones because the summary is written in the transcript's language and
  * the prompt does not translate; every voice in the catalog speaks exactly one.
+ * `ttsVoiceIds` owns the derivation, including the fallback to the SDK's own
+ * default voice should the filter ever match nothing.
  */
-const VOICES = Object.entries(ASSEMBLYAI_TTS_VOICES)
-  .filter(([, spec]) => spec.language === "en")
-  .map(([id]) => id);
-
-/**
- * The same list as a TUPLE, which is what `z.enum` takes.
- *
- * Destructured rather than cast: a `.map` produces an array, and
- * `as [string, ...string[]]` would be a template teaching a cast. The default
- * covers the empty case honestly — a catalog with no English voice falls back
- * to the SDK's own default rather than rendering a picker with no options.
- */
-const [FIRST_VOICE = ASSEMBLYAI_TTS_DEFAULT_VOICE, ...OTHER_VOICES] = VOICES;
+const VOICES = ttsVoiceIds("en");
 
 /**
  * The run input, as its own const.
@@ -121,10 +111,7 @@ const spokenSummaryInput = z.object({
   // An enum, so the form renders a SELECT rather than a text box — which is
   // the whole reason the list is derived above rather than left free-form.
   // Optional, so the SDK's own default voice applies when nobody chooses.
-  voice: z
-    .enum([FIRST_VOICE, ...OTHER_VOICES])
-    .optional()
-    .describe("Voice to read the summary in"),
+  voice: z.enum(VOICES).optional().describe("Voice to read the summary in"),
 });
 
 /**

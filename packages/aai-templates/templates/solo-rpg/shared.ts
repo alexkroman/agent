@@ -1,7 +1,6 @@
 import { type DeepReadonly, dialog, sessionSlot } from "@alexkroman1/aai";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
-export const MAX_SESSION_LOG = 50;
 export const MOMENTUM_RESET = 2;
 export const MAX_RESOURCE = 5;
 export const MIN_MOMENTUM = -6;
@@ -340,6 +339,9 @@ export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE)
   // `gameOver`, and `gameOver` is what the story flow's `DOWNED` transition
   // reads. `dispatch-center`'s board is the same pattern one template over.
   after: updateCrisisFlags,
+  // The session log rides in every `syncState` frame and the client renders
+  // its tail; the slot holds the bound so `update_state` need not.
+  caps: { sessionLog: 50 },
 });
 
 /**

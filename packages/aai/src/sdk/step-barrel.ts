@@ -76,6 +76,10 @@ export {
   type TranscribeRequestOptions,
 } from "./_transcribe-shared.ts";
 export { mapConcurrent } from "./map-concurrent.ts";
+// The same window, settling each item rather than racing to the first
+// rejection — for a tool on a live call, where one failed item is a name to
+// apologize for rather than the end of the run.
+export { mapSettled, partitionSettled, type Settled } from "./map-settled.ts";
 export { type StepInfo, stepInfo } from "./step-attempt.ts";
 export { stepDelegate } from "./step-delegate.ts";
 export { requireStepEnv, stepEnv } from "./step-env.ts";

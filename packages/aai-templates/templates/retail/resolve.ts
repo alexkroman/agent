@@ -3,13 +3,20 @@
  *
  * The generic half — reading digits out of an utterance, reading a position out
  * of one, and the never-guess contract that turns a list of candidates into one
- * of them or into a failure that lists them — is `resolveOne`, `spokenDigits`
- * and `spokenOrdinal` (`@alexkroman1/aai`). What stays here is the STORE's
+ * of them or into a failure that lists them — is `resolveOne`, `spokenDigits`,
+ * `spokenAlphanumeric` and `spokenOrdinal` (`@alexkroman1/aai`). What stays here
+ * is the STORE's
  * vocabulary: what an order id looks like when a caller reads it aloud, which
  * words name a status, and what a variant's options are matched against.
  */
 
-import { isToolFailure, resolveOne, spokenDigits, type ToolFailure } from "@alexkroman1/aai";
+import {
+  isToolFailure,
+  resolveOne,
+  spokenAlphanumeric,
+  spokenDigits,
+  type ToolFailure,
+} from "@alexkroman1/aai";
 import { z } from "zod";
 import type { Order, OrderStatus, Product, RetailState } from "./shared.ts";
 import { authenticatedUser } from "./store.ts";
@@ -31,8 +38,7 @@ export const OrderIdField = z
 
 /** `#W5866402` from anything STT plausibly produces for it. */
 export function normalizeOrderId(spoken: string): string {
-  const compact = spoken.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return `#W${compact.replace(/^W/, "")}`;
+  return `#W${spokenAlphanumeric(spoken).replace(/^W/, "")}`;
 }
 
 /** Item ids are 10 digits; callers read them in groups. */

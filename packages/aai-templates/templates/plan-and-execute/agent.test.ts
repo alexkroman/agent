@@ -4,8 +4,8 @@ import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
+  scriptedToolContext,
   stubDelegate,
-  stubGenerate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
@@ -37,13 +37,14 @@ vi.mock("@alexkroman1/aai/tools", () => ({ webSearch: vi.fn(), visitWebpage: vi.
 
 // ─── A scripted desk ─────────────────────────────────────────────────────────
 //
-// TWO fakes now, because the desk reaches a model two ways. The planner and the
-// replanner are `ctx.generate` calls carrying their own system prompt, so
-// `stubGenerate` — whose script IS keyed by system prompt — drives them; the
-// EXECUTOR is a subagent, so `stubDelegate` drives it, routed by subagent name.
-// That split is the conversion showing through in the test file, and it is the
+// TWO fakes, because the desk reaches a model two ways. The planner and the
+// replanner are `ctx.generate` calls carrying their own system prompt, so the
+// `generate` script — keyed by system prompt — drives them; the EXECUTOR is a
+// subagent, so the `delegate` script drives it, routed by subagent name. That
+// split is the conversion showing through in the test file, and it is the
 // honest one: a spec that scripted the executor's turns was scripting a loop
-// this template no longer owns.
+// this template no longer owns. `scriptedToolContext` builds both fakes and
+// the context they are wired into, so every test below starts from one call.
 
 interface Script {
   steps?: string[];
@@ -62,18 +63,19 @@ function scriptedDesk(script: Script = {}) {
   // they share one queue — which is what the "revise then carry on" test rests on.
   const act = () => ({ object: acts.shift() ?? { kind: "respond", response: "All done." } });
 
-  const model = stubGenerate({
-    [PLANNER_SYSTEM]: { object: { steps: script.steps ?? ["Only step"] } },
-    [REPLANNER_SYSTEM]: act,
-    [REVISE_SYSTEM]: act,
+  return scriptedToolContext({
+    generate: {
+      [PLANNER_SYSTEM]: { object: { steps: script.steps ?? ["Only step"] } },
+      [REPLANNER_SYSTEM]: act,
+      [REVISE_SYSTEM]: act,
+    },
+    delegate: {
+      executor: () => ({
+        text: answers.shift() ?? "Settled it.",
+        toolCalls: (script.searches ?? []).map((query) => ({ name: "search", input: { query } })),
+      }),
+    },
   });
-  const desk = stubDelegate({
-    executor: () => ({
-      text: answers.shift() ?? "Settled it.",
-      toolCalls: (script.searches ?? []).map((query) => ({ name: "search", input: { query } })),
-    }),
-  });
-  return { generate: model.generate, calls: model.calls, delegate: desk.delegate, desk };
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup,
@@ -90,12 +92,12 @@ function stateOf(ctx: ToolContext) {
 
 describe("planNode", () => {
   test("returns the steps the planner produced", async () => {
-    const { generate, calls } = scriptedDesk({ steps: ["Check prices", "Book it"] });
-    expect(await planNode(generate, "get me to Lisbon in May")).toEqual([
+    const { model } = scriptedDesk({ steps: ["Check prices", "Book it"] });
+    expect(await planNode(model.generate, "get me to Lisbon in May")).toEqual([
       "Check prices",
       "Book it",
     ]);
-    expect(calls[0]?.prompt).toContain("get me to Lisbon in May");
+    expect(model.calls[0]?.prompt).toContain("get me to Lisbon in May");
   });
 });
 
@@ -233,10 +235,9 @@ describe("normalizeAct", () => {
 
 describe("start_plan", () => {
   test("stores the objective and the steps", async () => {
-    const { generate, delegate } = scriptedDesk({
+    const { ctx } = scriptedDesk({
       steps: ["Check prices", "Compare hotels", "Book"],
     });
-    const ctx = createToolContext({ generate, delegate });
     const result = (await run("start_plan", { objective: "a weekend in Lisbon" }, ctx)) as {
       steps: string[];
     };
@@ -261,8 +262,7 @@ describe("start_plan", () => {
 
 describe("work_next_step", () => {
   test("is refused before there is a plan, by the flow rather than by the body", async () => {
-    const { generate, delegate } = scriptedDesk();
-    const ctx = createToolContext({ generate, delegate });
+    const { ctx } = scriptedDesk();
     // The gate is `when: "working"`, so the refusal names the state the call is
     // actually in and quotes that state's instruction — which is what the model
     // needs in order to do the right thing on its own next turn.
@@ -277,12 +277,11 @@ describe("work_next_step", () => {
   });
 
   test("does the head step, records it, and takes the replanner's next plan", async () => {
-    const { generate, delegate } = scriptedDesk({
+    const { ctx } = scriptedDesk({
       steps: ["Check prices", "Compare hotels"],
       answers: ["Fares are about 180 return."],
       acts: [{ kind: "plan", steps: ["Compare hotels"] }],
     });
-    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
 
     const first = expectDialogOk<{
@@ -305,12 +304,11 @@ describe("work_next_step", () => {
   });
 
   test("a 'respond' act finishes the plan and clears what is left", async () => {
-    const { generate, delegate } = scriptedDesk({
+    const { ctx } = scriptedDesk({
       steps: ["Check prices", "Compare hotels"],
       answers: ["Fares are about 180 return."],
       acts: [{ kind: "respond", response: "Go in May — flights are about 180 return." }],
     });
-    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
     const answered = expectDialogOk<{ finished: boolean; response: string }>(
       await run("work_next_step", ctx),
@@ -339,9 +337,9 @@ describe("work_next_step", () => {
   test("the completed-step trail is capped, so the executor's prompt cannot grow forever", async () => {
     // `historyOf` renders every past step into the executor's prompt AND the
     // replanner's, so an uncapped list is a model bill that grows linearly with
-    // the plan — the reason `recordStep` holds MAX_PAST_STEPS.
+    // the plan — the reason `planSlot` caps `pastSteps` at MAX_PAST_STEPS.
     const total = MAX_PAST_STEPS + 3;
-    const { generate, delegate } = scriptedDesk({
+    const { ctx } = scriptedDesk({
       steps: Array.from({ length: total }, (_, i) => `Step ${i + 1}`),
       answers: Array.from({ length: total }, (_, i) => `Found ${i + 1}.`),
       acts: Array.from({ length: total }, (_, i) => ({
@@ -349,7 +347,6 @@ describe("work_next_step", () => {
         steps: Array.from({ length: total - i - 1 }, (_, j) => `Step ${i + j + 2}`),
       })),
     });
-    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a long one" }, ctx);
     for (let i = 0; i < total; i++) await run("work_next_step", ctx);
 
@@ -363,13 +360,12 @@ describe("work_next_step", () => {
 
   test("two independent contexts never share a plan", async () => {
     // What this really checks: the state lives in the SLOT and not in a
-    // module-level variable. `createToolContext()` hands each call its own
+    // module-level variable. `scriptedToolContext()` hands each call its own
     // detached slot store, so the isolation is per CONTEXT — two distinct
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
-    const { generate, delegate } = scriptedDesk({ steps: ["Only step"] });
-    const first = createToolContext({ generate, delegate });
-    const second = createToolContext({ generate, delegate });
+    const { ctx: first } = scriptedDesk({ steps: ["Only step"] });
+    const { ctx: second } = scriptedDesk({ steps: ["Only step"] });
 
     await run("start_plan", { objective: "mine" }, first);
     expect(stateOf(second).objective).toBeNull();
@@ -383,7 +379,7 @@ describe("work_next_step", () => {
 
 describe("revise_plan", () => {
   test("rewrites what is left, keeps what is done, and reopens a finished plan", async () => {
-    const { generate, delegate, calls } = scriptedDesk({
+    const { ctx, model } = scriptedDesk({
       steps: ["Check Lisbon prices", "Book Lisbon"],
       answers: ["Lisbon is about 180 return."],
       acts: [
@@ -391,7 +387,6 @@ describe("revise_plan", () => {
         { kind: "plan", steps: ["Check Porto prices"] },
       ],
     });
-    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
     await run("work_next_step", ctx);
     expect(stateOf(ctx).response).not.toBeNull();
@@ -413,23 +408,21 @@ describe("revise_plan", () => {
     expect(state.pastSteps).toHaveLength(1);
     expect(state.revisions.at(-1)).toContain("make it Porto instead");
     // The caller's words reach the replanner, which is the whole node.
-    expect(calls.at(-1)?.prompt).toContain("make it Porto instead");
+    expect(model.calls.at(-1)?.prompt).toContain("make it Porto instead");
   });
 
   test("is refused before there is a plan", async () => {
-    const { generate, delegate } = scriptedDesk();
-    const ctx = createToolContext({ generate, delegate });
+    const { ctx } = scriptedDesk();
     expect(await run("revise_plan", { instruction: "change it" }, ctx)).toMatchObject({
       error: expect.stringContaining('this conversation is at "idle"'),
     });
   });
 
   test("a revision that answers outright lands in `answered`", async () => {
-    const { generate, delegate } = scriptedDesk({
+    const { ctx } = scriptedDesk({
       steps: ["Check Lisbon prices"],
       acts: [{ kind: "respond", response: "Nothing to do — you already booked it." }],
     });
-    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
     const revised = expectDialogOk<{ finished: boolean }>(
       await run("revise_plan", { instruction: "never mind, it is booked" }, ctx),
@@ -441,12 +434,11 @@ describe("revise_plan", () => {
 
 describe("plan_status", () => {
   test("reports done, remaining and the answer", async () => {
-    const { generate, delegate } = scriptedDesk({
+    const { ctx } = scriptedDesk({
       steps: ["Check prices", "Book"],
       answers: ["About 180 return."],
       acts: [{ kind: "plan", steps: ["Book"] }],
     });
-    const ctx = createToolContext({ generate, delegate });
     // Legal in every state, so it READS the position rather than being gated on
     // one — and "no plan yet" is the flow's own answer, not a third derivation
     // of `!objective`.
@@ -484,12 +476,11 @@ describe("planView projection", () => {
   });
 
   test("progress is derived once, so the bar and any spoken count agree", async () => {
-    const { generate, delegate } = scriptedDesk({
+    const { ctx } = scriptedDesk({
       steps: ["One", "Two", "Three"],
       answers: ["Done one."],
       acts: [{ kind: "plan", steps: ["Two", "Three"] }],
     });
-    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "three things" }, ctx);
     expect(planView(stateOf(ctx)).progress).toBe(0);
 
