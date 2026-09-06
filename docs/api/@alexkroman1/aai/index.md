@@ -1067,6 +1067,46 @@ export default cartSlot.updateTool({
 
 ***
 
+### spokenAlphanumeric()
+
+```ts
+function spokenAlphanumeric(spoken: string): string;
+```
+
+The letters and digits of a spoken code, upper-cased, with everything else
+dropped — [spokenDigits](#spokendigits) for an id that carries letters too.
+
+An order number, a policy number, a booking reference: "r s four four one
+seven" comes through STT as anything from `RS4417` to `rs-44 17`, and none of
+them equals the stored `RS4417`. Comparing the raw string is the version
+that tells a covered member they have no plan. Two templates normalized
+this way with two regexes; the case fold is the half a hand-written one
+forgets.
+
+ASCII only, on purpose: the ids this exists for are ASCII, and a locale-aware
+fold would make the same utterance normalize differently on two machines.
+
+#### Parameters
+
+##### spoken
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { spokenAlphanumeric } from "@alexkroman1/aai";
+
+spokenAlphanumeric("rs 44-17"); // "RS4417"
+spokenAlphanumeric("#W 586 6402"); // "W5866402"
+```
+
+***
+
 ### spokenDigits()
 
 ```ts
@@ -4647,6 +4687,52 @@ you meet it in what tsc prints, never by name.
 The `After` parameter exists only to carry that check: it is inferred from
 the hook and defaults to `void`, so a caller never writes it.
 
+##### caps?
+
+```ts
+optional caps?: SlotCaps<T>;
+```
+
+Growth caps on the slot's top-level arrays, enforced by the SLOT on every
+store — `update`, `set`, `reset`, and the first `get` that installs the
+default — dropping the OLDEST entries past each cap.
+
+For the append-only lists an agent keeps: a call log, an activity feed, a
+finding board. Every one feeds a prompt or a `syncState` frame, so
+uncapped it grows what the model reads and what crosses the wire for the
+length of the call. Declared here rather than at each `push`, because a
+wrapper caps only the paths that call it: a slot with three capped arrays
+and a fourth pushed to directly is the shape this replaces.
+
+**It runs AFTER [SessionSlotOptions.after](#after-1)**, and that ordering is a
+decision rather than an accident. A hook may itself append (restoring a
+sentinel, recording what it recalculated), so a cap applied before it
+could be exceeded by the hook's own write; applied after, the cap is the
+last word and the stored value never exceeds it. The price is that the
+hook sees the UNTRIMMED draft: a derived field that reads the array's
+TAIL (`lastLine: log.at(-1)`) is unaffected, one that reads its `length`
+counts the entries about to fall off. A mutator's own result is in the
+same position, as it already is with `after`.
+
+**Top-level arrays only** — a key is accepted only when the value under it
+is an array (see [SlotCaps](#slotcaps)). A nested list (one timeline per
+incident) has no single key to declare and stays on `pushCapped`, which is
+the same bound applied by hand.
+
+A cap that is not a non-negative integer is refused at DECLARATION, naming
+the slot and the key. Zero keeps nothing, as `pushCapped(…, 0)` does.
+
+```ts
+import { sessionSlot } from "@alexkroman1/aai";
+
+type Desk = { log: string[]; findings: string[]; open: string | null };
+export const deskSlot = sessionSlot(
+  "desk",
+  (): Desk => ({ log: [], findings: [], open: null }),
+  { caps: { log: 40, findings: 12 } },
+);
+```
+
 ##### durable?
 
 ```ts
@@ -6375,6 +6461,28 @@ Not required, and the default is deliberately the broad one: a `wake` naming
 no ids ends every outstanding wait on the run. An id is what lets a run with
 two concurrent waits — a review window and a retry backoff — have one of them
 cut short without the other.
+
+***
+
+### SlotCaps
+
+```ts
+type SlotCaps<T> = T extends object ? { readonly [K in keyof T as NonNullable<T[K]> extends readonly unknown[] ? K : never]?: number } : never;
+```
+
+Growth caps for the ARRAYS at the top level of a slot's value — the type of
+[SessionSlotOptions.caps](#caps).
+
+A key is accepted only when the value under it is an array (or an array
+behind `null`/`undefined`), so declaring a cap on a counter or a nested
+object is a compile error naming the key rather than a bound that silently
+applies to nothing. Each cap is the most entries that array keeps.
+
+#### Type Parameters
+
+##### T
+
+`T`
 
 ***
 

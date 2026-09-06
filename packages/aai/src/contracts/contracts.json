@@ -110,15 +110,16 @@
     }
   },
   "spoken": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+      "1": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
+      "2": "spokenAlphanumeric joins spokenDigits, the sibling reading STT gives an alphanumeric id. Additive only — no signature moved and nothing must be set, so the previous epoch would in fact still compile. Dropped rather than retained because no frozen example exists for it and the value of one is a promise to external consumers this package does not yet have; the addition is recorded in the changeset and the new epoch is the one authors write against."
     }
   },
   "state": {
-    "current": 17,
-    "supported": [14, 17],
+    "current": 18,
+    "supported": [14, 17, 18],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -138,8 +139,8 @@
     }
   },
   "step": {
-    "current": 10,
-    "supported": [10],
+    "current": 11,
+    "supported": [11],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -149,7 +150,8 @@
       "6": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "7": "Renamed for naming consistency (API naming review): the two bare English verbs on this subpath took the module's own step prefix (emit -> stepEmit, report -> stepReport). mapConcurrent, isTransientStatus, retryAfter, encodeWav and wavHeader stay bare deliberately.",
       "8": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
-      "9": "Additive: the step vocabulary gains `stepDelegate`, the LOOP beside `stepGenerate`'s one-shot — a published slot a host fills with the same `createSubagentRunner` `ctx.delegate` runs on. No existing step signature moved and nothing must be set, so epoch 9 would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "9": "Additive: the step vocabulary gains `stepDelegate`, the LOOP beside `stepGenerate`'s one-shot — a published slot a host fills with the same `createSubagentRunner` `ctx.delegate` runs on. No existing step signature moved and nothing must be set, so epoch 9 would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "10": "mapSettled/partitionSettled and the Settled union join mapConcurrent: the same bounded fan-out with per-item failure isolated into a value, which two templates had composed by hand. Additive only — no signature moved and nothing must be set, so the previous epoch would in fact still compile. Dropped rather than retained because no frozen example exists for it and the value of one is a promise to external consumers this package does not yet have; the addition is recorded in the changeset and the new epoch is the one authors write against."
     }
   },
   "step-errors": {
@@ -199,8 +201,8 @@
     }
   },
   "testing": {
-    "current": 28,
-    "supported": [27, 28],
+    "current": 29,
+    "supported": [27, 28, 29],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -259,11 +261,12 @@
     }
   },
   "tts": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
       "1": "Doc-comment relocation only. Eight LLM factories, stubReporter and ASSEMBLYAI_TTS_VOICES each had their doc block stranded above a NEIGHBOURING symbol's block, so TypeScript attached only the last one and the report recorded them as '@public (undocumented)'. Moving each block onto the symbol it describes changes no signature, parameter or export — the previous epoch compiles unchanged — but the release-tag annotation it restores moves the report hash. Dropped rather than retained because there are no external consumers, so a frozen example would be a promise about a surface nobody holds.",
-      "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+      "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
+      "3": "ttsVoiceIds derives the z.enum tuple of catalog voice ids two templates built by hand. Additive only — no signature moved and nothing must be set, so the previous epoch would in fact still compile. Dropped rather than retained because no frozen example exists for it and the value of one is a promise to external consumers this package does not yet have; the addition is recorded in the changeset and the new epoch is the one authors write against."
     }
   },
   "uploads": {

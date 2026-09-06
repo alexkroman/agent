@@ -1,0 +1,33 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "session",
+  "epoch": 6,
+  "sha256": "52a92007cce9be15ee486f7b7d070925d30309872e4b8e059a372bdb8c09dab9",
+  "exports": [
+    "AGENT_STATE_LABELS",
+    "AgentCustomEvent",
+    "AgentState",
+    "BrowserSession",
+    "ChatMessage",
+    "ConversationItem",
+    "Session",
+    "SessionActions",
+    "SessionError",
+    "SessionErrorCode",
+    "SessionSnapshot",
+    "UseConversationResult",
+    "UseSessionControlsResult",
+    "UseUserTranscriptResult",
+    "VoiceSessionOptions",
+    "WebSocketConstructor",
+    "createBrowserSession",
+    "useConversation",
+    "useSession",
+    "useSessionActions",
+    "useSessionControls",
+    "useSessionError",
+    "useSessionSelector",
+    "useSessionStatus",
+    "useUserTranscript"
+  ]
+}

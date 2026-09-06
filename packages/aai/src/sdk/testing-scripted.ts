@@ -37,15 +37,19 @@ import { type StubGenerate, type StubGenerateRoute, stubGenerate } from "./testi
  * for rejects naming the route it lacked — which is a spec that drifted from
  * its tool, not a case to paper over.
  *
+ * An intersection ALIAS rather than an `interface extends`, because TypeDoc
+ * renders an interface's inherited members with their ORIGINAL doc comments —
+ * `ToolContext`'s, whose `{@link}`s resolve on the root entry and not on this
+ * one, which failed the docs build as three unresolved links.
+ *
  * @public
  */
-export interface ScriptedToolContextOptions
-  extends Omit<ToolContextOverrides, "generate" | "delegate"> {
+export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
   /** The script `stubGenerate` takes — routes keyed by system prompt, or one route. */
   generate?: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute | undefined;
   /** The script `stubDelegate` takes — routes keyed by subagent name, or one route. */
   delegate?: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute | undefined;
-}
+};
 
 /**
  * What {@link scriptedToolContext} answers: the context to run tools against,

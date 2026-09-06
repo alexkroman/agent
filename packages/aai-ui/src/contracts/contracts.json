@@ -14,11 +14,12 @@
     "dropped": {}
   },
   "components": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
       "1": "Pre-release: ConsoleShellProps lost its `error` field. The announced role=\"alert\" banner is `<SessionErrorBanner>` now — its own export, COMPOSED inside ConsoleShell — so a full-bleed chrome can take the announced-error decision without taking the frame. Epoch 1's `<ConsoleShell error={session.error?.message} …>` no longer compiles; the migration is to delete that prop, since the shell renders the banner itself. `BulletList`, `Facts` and `SessionErrorBanner` join the capability in the same move.",
-      "2": "Purely ADDITIVE: useFlash/useCopy and their named result types UseFlashResult/UseCopyResult join the capability, so every epoch-2 declaration compiles unchanged. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here. What moved: three hand-rolled copies of the one-live-timer, clear-on-unmount flash (the studio's editor save note, its copy buttons, and this package's own components/url-chips.tsx) became one primitive. The url-chips copy was the worst of the three — it ended `.catch(() => {})`, so on an insecure context or a denied permission the button visibly did nothing; a refusal reports \"Failed\" now. They are in components rather than hooks because that capability promises what a client reads off the AGENT, and these read nothing and render nothing — they are the same category as AutoScroll, a behaviour rule a custom chrome would otherwise re-derive."
+      "2": "Purely ADDITIVE: useFlash/useCopy and their named result types UseFlashResult/UseCopyResult join the capability, so every epoch-2 declaration compiles unchanged. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here. What moved: three hand-rolled copies of the one-live-timer, clear-on-unmount flash (the studio's editor save note, its copy buttons, and this package's own components/url-chips.tsx) became one primitive. The url-chips copy was the worst of the three — it ended `.catch(() => {})`, so on an insecure context or a denied permission the button visibly did nothing; a refusal reports \"Failed\" now. They are in components rather than hooks because that capability promises what a client reads off the AGENT, and these read nothing and render nothing — they are the same category as AutoScroll, a behaviour rule a custom chrome would otherwise re-derive.",
+      "3": "ConversationView, SessionControls and SessionStateDot publish the session chrome three custom-chrome templates each rebuilt. Purely ADDITIVE, so every declaration of the previous epoch compiles unchanged. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise nobody holds."
     }
   },
   "forms": {
@@ -45,13 +46,14 @@
     }
   },
   "session": {
-    "current": 5,
-    "supported": [5],
+    "current": 6,
+    "supported": [6],
     "dropped": {
       "1": "Pre-release: TRANSCRIBING_PLACEHOLDER moved to @alexkroman1/aai-ui/internal. It is a tuning constant referenced by no public signature and named by no file outside this package, so it sat in a client.tsx author's autocomplete beside useSession while being a framework decision with no field to set.",
       "2": "SessionError gained a required `fatal`, so anything CONSTRUCTING one stops compiling; reading one is unaffected, which is every client. The field was already on the wire and dropped one line before reaching the client, while this type's own doc described it as REQUIRED.",
       "3": "Additive: `AGENT_STATE_LABELS`, `SessionActions`, `useSessionActions`, `useSessionError` and `useSessionStatus` are new names and `Session` is unchanged structurally (its picked method set simply has a name now), so epoch 3 would in fact still compile. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds.",
-      "4": "Renamed for naming consistency (API naming review): SessionCore -> BrowserSession and createSessionCore -> createBrowserSession, resolving the one cross-package collision on the published surface, where aai-runtime exported a SessionCore meaning the server session."
+      "4": "Renamed for naming consistency (API naming review): SessionCore -> BrowserSession and createSessionCore -> createBrowserSession, resolving the one cross-package collision on the published surface, where aai-runtime exported a SessionCore meaning the server session.",
+      "5": "useSessionControls is the headless half of SessionControls. Purely ADDITIVE, so every declaration of the previous epoch compiles unchanged. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise nobody holds."
     }
   },
   "theme": {
@@ -60,8 +62,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 11,
-    "supported": [8, 11],
+    "current": 12,
+    "supported": [8, 12],
     "dropped": {
       "1": "Pre-release: DEFAULT_PROGRESS_POLL_MS, DEFAULT_WORKFLOW_POLL_MS and MAX_MISSING_READS moved to @alexkroman1/aai-ui/internal. All three are tuning numbers referenced by no public signature and named by no file outside this package; the hooks that own them take the interval as an OPTION, which is the authoring surface for the same choice and stays public.",
       "2": "The workflow hooks' type parameter is the workflow DEFINITION, not its output type. Epoch 2's `useWorkflowSubmit<Digest>(\"digest\")` no longer compiles: the parameter is constrained to `AnyWorkflowDef`, deliberately, so passing an output type is a compile error rather than a silent loss of typing. What it buys is the other half of the contract — `submit(input)` was `unknown`, so `submit({ ur1: 42 })` compiled and arrived as a 400 in the browser while the same statement already derived the OUTPUT from the def. Migration is one token per call site: `<Digest>` becomes `<typeof digest>`, and the `WorkflowOutputOf` alias above it is deleted.",
@@ -71,7 +73,8 @@
       "6": "`useRunKey` is purely additive, but `UseWorkflowStreamOptions` narrowed in the same change to `Omit<UseWorkflowSubmitOptions, \"wait\" | \"recover\">` — so epoch 6 client code that passed `recover` to a stream submit no longer compiles. No external consumer exists to keep an epoch-6 template for, and aai-ui has dropped every prior epoch on the same grounds.",
       "7": "Doc-comment relocation and release-tag annotation only: no signature, parameter or export moved, so the superseded epoch compiles unchanged, but the restored annotation moves the report hash. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here.",
       "9": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
-      "10": "Purely ADDITIVE: WorkflowPendingNote, WorkflowPendingNoteProps, WorkflowRunError and WorkflowRunErrorProps join the capability, so every epoch-10 declaration compiles unchanged. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here. What moved: six workflow-app pages had each written the same three-branch pendingNote() (reload, still-looking, found-from-earlier) and the same role=\"alert\" failed-run paragraph, drifted on the muting class and on the sentence; both are one component each now, and a page names only what its run produces."
+      "10": "Purely ADDITIVE: WorkflowPendingNote, WorkflowPendingNoteProps, WorkflowRunError and WorkflowRunErrorProps join the capability, so every epoch-10 declaration compiles unchanged. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise about a surface nobody holds, which is why contracts/compatibility/ does not exist here. What moved: six workflow-app pages had each written the same three-branch pendingNote() (reload, still-looking, found-from-earlier) and the same role=\"alert\" failed-run paragraph, drifted on the muting class and on the sentence; both are one component each now, and a page names only what its run produces.",
+      "11": "AudioResult and WorkflowRunPanel publish the two workflow-app blocks two pages each rendered by hand over useDownloadUrl and WorkflowProgress. Purely ADDITIVE, so every declaration of the previous epoch compiles unchanged. Dropped rather than retained because this package retains no superseded epoch — with no external consumers a frozen example would be a promise nobody holds."
     }
   }
 }

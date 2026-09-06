@@ -1194,6 +1194,9 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
+
+// @public
 export type RunCodeExecutor = (code: string) => Promise<string | {
     error: string;
 }>;
@@ -2509,6 +2512,7 @@ export function sessionSlot<const K extends string, T, After = void>(key: K, cre
 // @public
 export interface SessionSlotOptions<T, After = void> {
     after?: ((draft: T) => After) & RejectThenable<After>;
+    caps?: SlotCaps<T>;
     durable?: boolean;
 }
 
@@ -2538,6 +2542,11 @@ export type SleepOptions = {
 };
 
 // @public
+export type SlotCaps<T> = T extends object ? {
+    readonly [K in keyof T as NonNullable<T[K]> extends readonly unknown[] ? K : never]?: number;
+} : never;
+
+// @public
 export type SlotHolder = {
     readonly slots: SlotStore;
     readonly sessionId: string;
@@ -2555,6 +2564,9 @@ export interface SlotToolDef<P extends ToolInputSchema, V, R> {
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
     inputSchema?: P;
 }
+
+// @public
+export function spokenAlphanumeric(spoken: string): string;
 
 // @public
 export function spokenDigits(spoken: string): string;
@@ -4820,6 +4832,9 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 export function mapConcurrent<T, R>(items: readonly T[], width: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
 
 // @public
+export function mapSettled<T, R>(items: readonly T[], width: number, run: (item: T, index: number) => Promise<R> | R): Promise<Settled<T, R>[]>;
+
+// @public
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
@@ -4842,6 +4857,16 @@ export type MultipartPart = {
     bytes: Uint8Array | readonly Uint8Array[];
     filename?: string | undefined;
     type?: string | undefined;
+};
+
+// @public
+export function partitionSettled<T, R>(settled: readonly Settled<T, R>[]): {
+    ok: Extract<Settled<T, R>, {
+        ok: true;
+    }>[];
+    failed: Extract<Settled<T, R>, {
+        ok: false;
+    }>[];
 };
 
 // @public
@@ -4875,6 +4900,17 @@ export function requireStepEnv(name: string): string;
 export function retryAfter(from: {
     headers: Headers;
 } | Headers): Date | undefined;
+
+// @public
+export type Settled<T, R> = {
+    readonly item: T;
+    readonly ok: true;
+    readonly value: R;
+} | {
+    readonly item: T;
+    readonly ok: false;
+    readonly error: string;
+};
 
 // @public
 type SleepOptions = {
@@ -5696,6 +5732,89 @@ import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
+type AgentConfig = z.infer<typeof AgentConfigSchema>;
+
+// @internal
+const AgentConfigSchema: z.ZodObject<{
+    name: z.ZodString;
+    systemPrompt: z.ZodDefault<z.ZodString>;
+    greeting: z.ZodDefault<z.ZodString>;
+    sttPrompt: z.ZodOptional<z.ZodString>;
+    maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
+    toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
+        auto: "auto";
+        none: "none";
+        required: "required";
+    }>, z.ZodObject<{
+        type: z.ZodLiteral<"tool">;
+        toolName: z.ZodString;
+    }, z.core.$strip>]>>;
+    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        calculate: "calculate";
+        fetch_json: "fetch_json";
+        get_page_design: "get_page_design";
+        recall: "recall";
+        remember: "remember";
+        run_code: "run_code";
+        think: "think";
+        visit_webpage: "visit_webpage";
+        web_search: "web_search";
+    }>>>>;
+    idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
+    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
+    silencePrompt: z.ZodOptional<z.ZodString>;
+    minBargeInWords: z.ZodOptional<z.ZodNumber>;
+    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
+    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+    errorPhrase: z.ZodOptional<z.ZodString>;
+    startFailurePhrase: z.ZodOptional<z.ZodString>;
+    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
+    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    stt: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    s2s: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    text: z.ZodOptional<z.ZodLiteral<true>>;
+    mode: z.ZodOptional<z.ZodEnum<{
+        pipeline: "pipeline";
+        s2s: "s2s";
+        text: "text";
+    }>>;
+    requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodURL;
+        tokenEnv: z.ZodOptional<z.ZodString>;
+        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    }, z.core.$strict>>>;
+    page: z.ZodOptional<z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+    }>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        telnyx: "telnyx";
+        twilio: "twilio";
+    }>>>]>>;
+}, z.core.$strip>;
+
+// @public
+type AgentConfigSource = Omit<AgentConfig, "mode"> & {
+    [K in HostOnlyAgentField]?: unknown;
+};
+
+// @public
 interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
     dialogs?: readonly AnyDialog[];
@@ -5739,6 +5858,9 @@ type AnyWorkflowDef<R = unknown> = {
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
+export function commandedBuiltins(config: AgentConfig): BuiltinTool[];
 
 // @public
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
@@ -5839,10 +5961,16 @@ interface DialogVoiceConfig {
 }
 
 // @public
+export function expectDeployable(def: AgentConfigSource): AgentConfig;
+
+// @public
 export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 
 // @public
 export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
+
+// @public
+export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinTool[];
 
 // @public
 export function expectToolOk<T>(result: unknown): T;
@@ -5884,6 +6012,12 @@ type GenerateResult = {
 
 // @public
 type GuardrailVerdict = true | string;
+
+// @public
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events"];
+
+// @public
+type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -5962,6 +6096,9 @@ export function routeStepFetch(routes: readonly StepRoute[], options?: {
 }): (request: StubStepRequest) => StubStepAnswer;
 
 // @public
+export function runGuardrail(def: SubagentDef, text: string, answer?: Partial<SubagentAnswer>): GuardrailVerdict;
+
+// @public
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
     status?: "pending" | "running" | undefined;
 } | {
@@ -5984,6 +6121,22 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 
 // @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
+
+// @public
+export interface ScriptedToolContext {
+    ctx: TestToolContext;
+    desk: StubDelegate;
+    model: StubGenerate;
+}
+
+// @public
+export function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
+
+// @public
+export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
+    generate?: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute | undefined;
+    delegate?: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute | undefined;
+};
 
 // @public
 export interface SentEvent {
@@ -7399,6 +7552,9 @@ export interface RimeTtsOptions extends ProviderCredentialOptions {
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+export function ttsVoiceIds(language?: AssemblyAITtsLanguage): [AssemblyAITtsVoice, ...AssemblyAITtsVoice[]];
 ```
 
 ## `@alexkroman1/aai/utils`
@@ -8059,6 +8215,11 @@ export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 export function describeTurn(turn: EvalTurn): string;
 
 // @public
+export function errorsIn(events: readonly SessionEvent[]): readonly Extract<SessionEvent, {
+    type: "error.reported";
+}>[];
+
+// @public
 export type EvalCredentials = {
     readonly env: ProviderEnv;
     readonly missing: readonly string[];
@@ -8151,6 +8312,9 @@ export type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
+    readonly errors: readonly Extract<SessionEvent, {
+        type: "error.reported";
+    }>[];
 };
 
 // @public
@@ -8209,6 +8373,9 @@ export type EvalWorkflowsOptions = {
 };
 
 // @public
+export function expectToolBeforeSpeech(turn: EvalTurn): void;
+
+// @public
 export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
@@ -8247,6 +8414,12 @@ export function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTe
 export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
 
 export { RunCodeExecutor }
+
+// @public
+export function runCodeIn(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function runCodeOutput(calls: readonly EvalToolCall[]): string;
 
 // @public
 export function saidIn(events: readonly SessionEvent[]): readonly string[];
@@ -8448,6 +8621,9 @@ type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
+    readonly errors: readonly Extract<SessionEvent, {
+        type: "error.reported";
+    }>[];
 };
 
 // @public
@@ -10553,6 +10729,28 @@ export type AgentCustomEvent = {
 export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
 // @public
+export function AudioResult(input: AudioResultProps): ReactNode;
+
+// @public
+export type AudioResultCaptions = {
+    text: string;
+    durationMs: number;
+    label?: string | undefined;
+    srcLang?: string | undefined;
+};
+
+// @public
+export type AudioResultProps = {
+    download: UseDownloadUrlResult;
+    filename: string;
+    label: string;
+    heading?: ReactNode | undefined;
+    captions?: AudioResultCaptions | undefined;
+    className?: string | undefined;
+    children?: ReactNode;
+};
+
+// @public
 export function AutoScroll(input: {
     children: ReactNode;
     className?: string | undefined;
@@ -10689,6 +10887,26 @@ export type ConversationItem = {
 };
 
 // @public
+export function ConversationView(input: ConversationViewProps): ReactNode;
+
+// @public
+export type ConversationViewProps = {
+    renderMessage: (message: ChatMessage) => ReactNode;
+    renderTool?: ((toolCall: ToolCallInfo) => ReactNode) | undefined;
+    renderStreaming?: ((text: string) => ReactNode) | undefined;
+    renderTranscript?: ((transcript: UseUserTranscriptResult) => ReactNode) | undefined;
+    transcriptPosition?: "inline" | "below" | undefined;
+    empty?: ReactNode | undefined;
+    thinkingLabel?: string | undefined;
+    thinkingIndicator?: ReactNode | undefined;
+    thinkingClassName?: string | undefined;
+    className?: string | undefined;
+    contentClassName?: string | undefined;
+    scrollClassName?: string | undefined;
+    style?: CSSProperties | undefined;
+};
+
+// @public
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
@@ -10822,6 +11040,37 @@ export type Session = SessionSnapshot & SessionActions;
 export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
 
 // @public
+export type SessionControlAction = "start" | "toggle" | "restart" | "end";
+
+// @public
+export type SessionControlButton = {
+    action: SessionControlAction;
+    label: string;
+    onClick: () => void;
+    running: boolean;
+};
+
+// @public
+export function SessionControls(input: SessionControlsProps): ReactNode;
+
+// @public
+export type SessionControlsLabels = {
+    start: string;
+    pause: string;
+    resume: string;
+    restart: string;
+    end: string;
+};
+
+// @public
+export type SessionControlsProps = {
+    labels?: Partial<SessionControlsLabels> | undefined;
+    renderButton?: ((button: SessionControlButton) => ReactNode) | undefined;
+    className?: string | undefined;
+    children?: ReactNode;
+};
+
+// @public
 export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -10853,6 +11102,19 @@ export type SessionSnapshot = {
     readonly error: SessionError | null;
     readonly started: boolean;
     readonly running: boolean;
+};
+
+// @public
+export function SessionStateDot(input: SessionStateDotProps): ReactNode;
+
+// @public
+export type SessionStateDotProps = {
+    colors: Readonly<Record<AgentState, string>>;
+    labels?: Partial<Readonly<Record<AgentState, string>>> | undefined;
+    pulse?: boolean | undefined;
+    className?: string | undefined;
+    dotClassName?: string | undefined;
+    labelClassName?: string | undefined;
 };
 
 // @public
@@ -11010,6 +11272,19 @@ export function useSession(): Session;
 
 // @public
 export function useSessionActions(): SessionActions;
+
+// @public
+export function useSessionControls(): UseSessionControlsResult;
+
+// @public
+export type UseSessionControlsResult = {
+    started: boolean;
+    running: boolean;
+    start: () => void;
+    toggle: () => void;
+    restart: () => void;
+    end: () => void;
+};
 
 // @public
 export function useSessionError(): SessionError | null;
@@ -11202,6 +11477,20 @@ export function WorkflowRunError(input: WorkflowRunErrorProps): ReactNode;
 // @public
 export type WorkflowRunErrorProps = {
     run: WorkflowRun | undefined;
+    className?: string | undefined;
+};
+
+// @public
+export function WorkflowRunPanel<O = unknown>(input: WorkflowRunPanelProps<O>): ReactNode;
+
+// @public
+export type WorkflowRunPanelProps<O> = {
+    run: WorkflowRun<O>;
+    statusLabels?: Partial<Readonly<Record<WorkflowRunStatus, string>>> | undefined;
+    onClear?: (() => void) | undefined;
+    api?: WorkflowApi | undefined;
+    live?: ReactNode | undefined;
+    children?: ReactNode | ((output: O) => ReactNode) | undefined;
     className?: string | undefined;
 };
 

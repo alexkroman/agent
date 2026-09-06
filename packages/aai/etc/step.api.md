@@ -92,6 +92,9 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 export function mapConcurrent<T, R>(items: readonly T[], width: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
 
 // @public
+export function mapSettled<T, R>(items: readonly T[], width: number, run: (item: T, index: number) => Promise<R> | R): Promise<Settled<T, R>[]>;
+
+// @public
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
@@ -114,6 +117,16 @@ export type MultipartPart = {
     bytes: Uint8Array | readonly Uint8Array[];
     filename?: string | undefined;
     type?: string | undefined;
+};
+
+// @public
+export function partitionSettled<T, R>(settled: readonly Settled<T, R>[]): {
+    ok: Extract<Settled<T, R>, {
+        ok: true;
+    }>[];
+    failed: Extract<Settled<T, R>, {
+        ok: false;
+    }>[];
 };
 
 // @public
@@ -147,6 +160,17 @@ export function requireStepEnv(name: string): string;
 export function retryAfter(from: {
     headers: Headers;
 } | Headers): Date | undefined;
+
+// @public
+export type Settled<T, R> = {
+    readonly item: T;
+    readonly ok: true;
+    readonly value: R;
+} | {
+    readonly item: T;
+    readonly ok: false;
+    readonly error: string;
+};
 
 // @public
 type SleepOptions = {

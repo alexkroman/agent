@@ -209,6 +209,85 @@ const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
 
 ***
 
+### mapSettled()
+
+```ts
+function mapSettled<T, R>(
+   items: readonly T[], 
+   width: number, 
+   run: (item: T, index: number) => R | Promise<R>
+): Promise<Settled<T, R>[]>;
+```
+
+Map `items` through `run`, at most `width` at a time, settling each item
+rather than racing to the first rejection.
+
+Results come back in ITEM order however the calls settle. A `run` that throws
+(or rejects) for one item produces `{ ok: false, error }` for that item and
+nothing else changes: the window keeps taking items, and every sibling's
+result is kept.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+##### R
+
+`R`
+
+#### Parameters
+
+##### items
+
+readonly `T`[]
+
+What to map. An empty list runs nothing and resolves `[]`.
+
+##### width
+
+`number`
+
+Most calls in flight at once — `mapConcurrent`'s bound, with
+  one addition: **`Infinity` means every item at once**, the shape
+  `Promise.allSettled(items.map(run))` had. `mapConcurrent` alone floors a
+  non-finite width to 1, which would turn an author's "all at once" into
+  "one at a time" without a word; here the one non-finite value that has an
+  obvious meaning gets it. Any other width is passed through unchanged, floors
+  included.
+
+##### run
+
+(`item`: `T`, `index`: `number`) => `R` \| `Promise`\<`R`\>
+
+Called once per item, with the item and its index. Inside a
+  workflow body this is where the step call goes, and the rule
+  `mapConcurrent`'s doc states — one step per item, issued synchronously —
+  applies unchanged.
+
+#### Returns
+
+`Promise`\<[`Settled`](#settled)\<`T`, `R`\>[]\>
+
+#### Example
+
+```ts
+import { mapSettled, partitionSettled } from "@alexkroman1/aai/step";
+
+async function score(name: string): Promise<number> {
+  if (name === "") throw new Error("blank");
+  return name.length;
+}
+
+const settled = await mapSettled(["ann", "", "bo"], 2, score);
+// [{ item: "ann", ok: true, value: 3 }, { item: "", ok: false, error: "blank" }, …]
+const { ok, failed } = partitionSettled(settled);
+if (ok.length === 0) throw new Error(`Every name failed: ${failed[0]?.error}`);
+```
+
+***
+
 ### multipartBody()
 
 ```ts
@@ -246,6 +325,86 @@ which is what the `FormData` this replaces would have applied: `"` becomes
 #### Returns
 
 [`MultipartBody`](#multipartbody)
+
+***
+
+### partitionSettled()
+
+```ts
+function partitionSettled<T, R>(settled: readonly Settled<T, R>[]): {
+  failed: {
+     error: string;
+     item: T;
+     ok: false;
+  }[];
+  ok: {
+     item: T;
+     ok: true;
+     value: R;
+  }[];
+};
+```
+
+Split what [mapSettled](#mapsettled) answered into the successes and the failures,
+each still beside its item and each list typed as its own arm.
+
+The typing is the point: a `.filter((one) => !one.ok)` over the union keeps
+the union, so reading `failed[0].error` afterwards needs a re-narrowing
+(`failed[0]?.ok === false ? failed[0].error : …`) that three templates each
+wrote slightly differently. Both lists keep ITEM order.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+##### R
+
+`R`
+
+#### Parameters
+
+##### settled
+
+readonly [`Settled`](#settled)\<`T`, `R`\>[]
+
+#### Returns
+
+```ts
+{
+  failed: {
+     error: string;
+     item: T;
+     ok: false;
+  }[];
+  ok: {
+     item: T;
+     ok: true;
+     value: R;
+  }[];
+}
+```
+
+##### failed
+
+```ts
+failed: {
+  error: string;
+  item: T;
+  ok: false;
+}[];
+```
+
+##### ok
+
+```ts
+ok: {
+  item: T;
+  ok: true;
+  value: R;
+}[];
+```
 
 ***
 
@@ -1972,6 +2131,42 @@ optional start?: number;
 ```
 
 First byte to read. Defaults to 0.
+
+***
+
+### Settled
+
+```ts
+type Settled<T, R> = 
+  | {
+  item: T;
+  ok: true;
+  value: R;
+}
+  | {
+  error: string;
+  item: T;
+  ok: false;
+};
+```
+
+What one item of a [mapSettled](#mapsettled) came back as: its value, or the reason
+it failed, beside the item itself.
+
+`error` is a STRING (via `errorMessage`) rather than the thrown value, because
+the reason exists to be spoken or stored — a `ToolFailure` sentence, a slot's
+`unscored` list — and a template that wants the raw cause has `mapConcurrent`
+and its own `catch`.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+##### R
+
+`R`
 
 ***
 
