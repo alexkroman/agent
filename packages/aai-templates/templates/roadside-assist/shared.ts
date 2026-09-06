@@ -1,5 +1,5 @@
 import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
-import { pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { sessionSlot, spokenAlphanumeric } from "@alexkroman1/aai";
 
 /**
  * The roadside desk's world: the rate cards, the fleet, the one session slot,
@@ -231,7 +231,7 @@ export function findPolicy(policyNumber: string): Coverage | undefined {
  * that tells a covered member they have no plan.
  */
 function normalizePolicy(policyNumber: string): string {
-  return policyNumber.replaceAll(/[^a-z0-9]/gi, "").toUpperCase();
+  return spokenAlphanumeric(policyNumber);
 }
 
 // ─── The session's own state ─────────────────────────────────────────────────
@@ -274,9 +274,6 @@ export interface RoadsideState {
   log: string[];
 }
 
-/** How many lines of the call log are kept. Enough to read back a whole call. */
-export const MAX_LOG = 24;
-
 export function emptyRoadsideState(): RoadsideState {
   return {
     vehicle: null,
@@ -295,12 +292,13 @@ export function emptyRoadsideState(): RoadsideState {
  * **No `after` hook, and that is a claim rather than an omission.** Nothing
  * stored here is derived from anything else stored here: the money is
  * {@link quoteFee} of the coverage and the distance, computed where it is
- * quoted, and the log is capped on append by {@link note}. The moment a field
- * IS derived — a running total, a flag some tool reads — it belongs in an
- * `after` hook rather than in whichever tool happened to write last; see
- * `dispatch-center` for the worked version of that.
+ * quoted, and the log is bounded by `caps` — twenty-four lines is enough to
+ * read back a whole call. The moment a field IS derived — a running total, a
+ * flag some tool reads — it belongs in an `after` hook rather than in whichever
+ * tool happened to write last; see `dispatch-center` for the worked version of
+ * that.
  */
-export const roadsideSlot = sessionSlot("roadside", emptyRoadsideState);
+export const roadsideSlot = sessionSlot("roadside", emptyRoadsideState, { caps: { log: 24 } });
 
 /**
  * The slot as a READ hands it out: deep-frozen, and typed to say so.
@@ -312,11 +310,6 @@ export const roadsideSlot = sessionSlot("roadside", emptyRoadsideState);
  * passes unchanged while a helper that WOULD have mutated stops compiling.
  */
 export type FrozenRoadsideState = DeepReadonly<RoadsideState>;
-
-/** One line of the call log, capped on append. */
-export function note(state: RoadsideState, line: string): void {
-  pushCapped(state.log, line, MAX_LOG);
-}
 
 /** The vehicle as a driver would be told to look for it. */
 export function describeVehicle(vehicle: Vehicle): string {

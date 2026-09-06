@@ -1,5 +1,5 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import { dialog, isToolFailure, omitUndefined, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { dialog, isToolFailure, omitUndefined, sessionSlot } from "@alexkroman1/aai";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -66,10 +66,12 @@ export function seedStore(): Store {
  * interleave with another one.
  *
  * No `after` hook — unlike dispatch-center, this store has no derived field to
- * recalculate, and its one growth cap (`activity`) is held on append by
- * `record` below.
+ * recalculate. Its one growth cap (`activity`) is the slot's `caps`, so it holds
+ * for `record` below and for `agent.ts`'s hook alike.
  */
-export const retailSlot = sessionSlot("retail", createDefaultState);
+export const retailSlot = sessionSlot("retail", createDefaultState, {
+  caps: { activity: MAX_ACTIVITY },
+});
 
 // ─── The call, as a machine ──────────────────────────────────────────────────
 
@@ -395,11 +397,7 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
  */
 export function record(state: RetailState, name: string, summary: string): void {
   state.callSeq += 1;
-  pushCapped(
-    state.activity,
-    { seq: state.callSeq, tool: name, summary, at: Date.now() },
-    MAX_ACTIVITY,
-  );
+  state.activity.push({ seq: state.callSeq, tool: name, summary, at: Date.now() });
 }
 
 /**

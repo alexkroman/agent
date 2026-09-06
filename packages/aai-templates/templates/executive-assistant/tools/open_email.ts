@@ -10,7 +10,6 @@ import {
   assistantSlot,
   findEmail,
   nextToOpen,
-  note,
   reviewFlow,
   similarExamples,
 } from "../shared.ts";
@@ -69,7 +68,7 @@ export default reviewFlow.tool({
       email.status = "open";
       draft.openId = email.id;
       draft.exchange = [`Draft a response to this email:\n\n${threadText(email)}`];
-      note(draft, `Opened: ${email.subject} (${verdict.response})`);
+      draft.log.push(`Opened: ${email.subject} (${verdict.response})`);
       const thread = {
         id: email.id,
         from: email.from,

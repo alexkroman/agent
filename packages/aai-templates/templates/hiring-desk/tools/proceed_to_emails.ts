@@ -1,4 +1,5 @@
 import { isToolFailure, toolFailure } from "@alexkroman1/aai";
+import { partitionSettled } from "@alexkroman1/aai/step";
 import { z } from "zod";
 import { draftEmails } from "../crews.ts";
 import {
@@ -72,17 +73,17 @@ export default hiringFlow.tool({
     const shortlist = new Set(chosen.map((candidate) => candidate.id));
     const drafted = await draftEmails(ctx.delegate, state.candidates, state.job, shortlist);
 
-    const failed = drafted.filter((one) => !one.ok);
+    const { failed } = partitionSettled(drafted);
     if (failed.length === drafted.length) {
       return toolFailure(
-        `No email could be written. The first failure said: ${failed[0]?.ok === false ? failed[0].error : "no reason given"}`,
+        `No email could be written. The first failure said: ${failed[0]?.error ?? "no reason given"}`,
       );
     }
 
     return hiringSlot.update(ctx, (current) => {
       current.shortlist = [...shortlist];
       current.drafts = [];
-      for (const one of drafted) if (one.ok) current.drafts.push(one.draft);
+      for (const one of drafted) if (one.ok) current.drafts.push(one.value);
 
       const needsLook = current.drafts
         .filter((draft) => !draft.accepted)
@@ -92,7 +93,7 @@ export default hiringFlow.tool({
         invited,
         declined: current.drafts.filter((draft) => !draft.proceed).length,
         drafted: current.drafts.length,
-        failed: failed.map((one) => one.candidate.name),
+        failed: failed.map((one) => one.item.name),
         needsLook,
         message:
           `Say the invitations went to ${invited.join(", ")} and how many polite declines ` +
@@ -101,7 +102,7 @@ export default hiringFlow.tool({
             ? ` The drafts for ${needsLook.join(", ")} did not pass the coordinator's own check — say they need a look before sending.`
             : "") +
           (failed.length > 0
-            ? ` No email could be written for ${failed.map((one) => one.candidate.name).join(", ")} — say so.`
+            ? ` No email could be written for ${failed.map((one) => one.item.name).join(", ")} — say so.`
             : ""),
       };
     });

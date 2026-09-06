@@ -19,7 +19,6 @@ import {
   type DialogSpec,
   dialog,
   isToolFailure,
-  pushCapped,
   sessionSlot,
   tool,
 } from "@alexkroman1/aai";
@@ -47,11 +46,9 @@ export interface PlanState {
   revisions: string[];
 }
 
-/** Growth cap on the revision trail — it rides in every `syncState` frame. */
-export const MAX_REVISIONS = 20;
-
 /**
- * Growth cap on the completed-step trail, for the same reason one step up.
+ * Growth cap on the completed-step trail; the revision trail has one too, on
+ * the slot below, because it rides in every `syncState` frame.
  *
  * `pastSteps` is not only a render: `historyOf` writes the whole list into the
  * EXECUTOR's prompt and the REPLANNER's, so an uncapped list is a model bill
@@ -68,7 +65,9 @@ export function emptyPlan(): PlanState {
   return { objective: null, plan: [], pastSteps: [], response: null, revisions: [] };
 }
 
-export const planSlot = sessionSlot("plan", emptyPlan);
+export const planSlot = sessionSlot("plan", emptyPlan, {
+  caps: { pastSteps: MAX_PAST_STEPS, revisions: 20 },
+});
 
 /**
  * The plan's LIFECYCLE, as a declared machine rather than a guard per tool.
@@ -130,15 +129,6 @@ export const planFlow = dialog("planFlow", planSpec);
 export function stageLabel(at: DialogPosition): string {
   if (at.state === "idle") return "no plan yet";
   return at.state === "answered" ? "finished" : "in progress";
-}
-
-export function noteRevision(state: PlanState, entry: string): void {
-  pushCapped(state.revisions, entry, MAX_REVISIONS);
-}
-
-/** Record a completed step, holding {@link MAX_PAST_STEPS}. */
-export function recordStep(state: PlanState, step: PastStep): void {
-  pushCapped(state.pastSteps, step, MAX_PAST_STEPS);
 }
 
 /**

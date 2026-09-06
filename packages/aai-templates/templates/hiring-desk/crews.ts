@@ -21,7 +21,7 @@
  * | `LeadScoreCrew` → `hr_evaluation_agent` + `evaluate_candidate` | {@link scoreCandidate}, a `ctx.generate` with a schema |
  * | `CandidateScore` (`output_pydantic`) | {@link candidateScoreSchema} |
  * | `LeadResponseCrew` → `email_followup_agent` + `send_followup_email` | {@link emailWriter}, a `subagent()` |
- * | `asyncio.gather` over `kickoff_async` | `mapConcurrent`, a bounded window |
+ * | `asyncio.gather` over `kickoff_async` | `mapSettled`, a bounded window that settles per item |
  * | `email_responses/<name>.txt` | `Draft`s in the slot, read back by `tools/read_email.ts` |
  * | `JOB_DESCRIPTION` / `leads.csv` | `DEFAULT_JOB` / `leads.json` |
  *
@@ -53,12 +53,11 @@
 import {
   type DelegateFn,
   type DelegateResult,
-  errorMessage,
   type GenerateFn,
   type SubagentGuardrail,
   subagent,
 } from "@alexkroman1/aai";
-import { mapConcurrent } from "@alexkroman1/aai/step";
+import { mapSettled, type Settled } from "@alexkroman1/aai/step";
 import { z } from "zod";
 import type { Candidate, CandidateScore, Draft, JobDescription } from "./shared.ts";
 
@@ -212,24 +211,25 @@ export async function scoreCandidate(
  *
  * Their `score_leads` is `asyncio.gather` over every candidate — thirty model
  * calls issued in the same instant, which is the shape that meets a provider's
- * rate limit as thirty 429s together. `mapConcurrent` is the same fan-out
+ * rate limit as thirty 429s together. `mapSettled` is the same fan-out
  * through a window: the caller still waits for roughly the slowest few rather
  * than the sum, and a limit arrives as one refusal rather than a wall of them.
  */
 export const SCORING_CONCURRENCY = 6;
 
-/** What one evaluation came back as — settled, so a failed one is a value. */
-export type Scored =
-  | { candidate: Candidate; ok: true; verdict: CandidateScore }
-  | { candidate: Candidate; ok: false; error: string };
+/** What one evaluation came back as — settled, so a failed one is a value
+ *  beside the candidate it was for. */
+export type Scored = Settled<Candidate, CandidateScore>;
 
 /**
  * Their `score_leads`: every candidate through Crew A, concurrently.
  *
  * Settled per candidate rather than raced to the first rejection, for the
- * reason `briefing-desk` uses `allSettled`: a caller on the phone would rather
+ * reason `briefing-desk` settles its angles: a caller on the phone would rather
  * hear eleven scores and one apology than an error, and the one that failed
- * is named so the desk can offer to score them again.
+ * is named so the desk can offer to score them again. `mapSettled` is that
+ * policy — the `try` around each item, the window, and the item kept beside
+ * its outcome — written once.
  */
 export function scoreRoster(
   generate: GenerateFn,
@@ -237,14 +237,9 @@ export function scoreRoster(
   job: JobDescription,
   feedback: readonly string[],
 ): Promise<Scored[]> {
-  return mapConcurrent(candidates, SCORING_CONCURRENCY, async (candidate): Promise<Scored> => {
-    try {
-      const verdict = await scoreCandidate(generate, candidate, job, feedback);
-      return { candidate, ok: true, verdict };
-    } catch (err: unknown) {
-      return { candidate, ok: false, error: errorMessage(err) };
-    }
-  });
+  return mapSettled(candidates, SCORING_CONCURRENCY, (candidate) =>
+    scoreCandidate(generate, candidate, job, feedback),
+  );
 }
 
 // ─── Crew B: LeadResponseCrew ────────────────────────────────────────────────
@@ -387,9 +382,7 @@ export async function writeEmail(
 export const EMAIL_CONCURRENCY = 6;
 
 /** What one email came back as. */
-export type Drafted =
-  | { candidate: Candidate; ok: true; draft: Draft }
-  | { candidate: Candidate; ok: false; error: string };
+export type Drafted = Settled<Candidate, Draft>;
 
 /**
  * Their `write_and_save_emails`: EVERY candidate gets an email, and the
@@ -401,12 +394,7 @@ export function draftEmails(
   job: JobDescription,
   shortlist: ReadonlySet<string>,
 ): Promise<Drafted[]> {
-  return mapConcurrent(candidates, EMAIL_CONCURRENCY, async (candidate): Promise<Drafted> => {
-    try {
-      const draft = await writeEmail(delegate, candidate, job, shortlist.has(candidate.id));
-      return { candidate, ok: true, draft };
-    } catch (err: unknown) {
-      return { candidate, ok: false, error: errorMessage(err) };
-    }
-  });
+  return mapSettled(candidates, EMAIL_CONCURRENCY, (candidate) =>
+    writeEmail(delegate, candidate, job, shortlist.has(candidate.id)),
+  );
 }

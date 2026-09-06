@@ -42,11 +42,9 @@ import {
   closeEmail,
   DRAFTING,
   describeProposal,
-  exchanged,
   type FrozenAssistantState,
   type HumanResponse,
   type InboxEmail,
-  note,
   openEmail,
   type Proposal,
   type ProposalKind,
@@ -96,8 +94,8 @@ export function propose(state: AssistantState, proposal: Proposal) {
   }
   state.proposal = proposal;
   const { title, body } = describeProposal(proposal);
-  exchanged(state, `Assistant proposed — ${title}: ${body}`);
-  note(state, `Waiting on ${name}: ${title}`);
+  state.exchange.push(`Assistant proposed — ${title}: ${body}`);
+  state.log.push(`Waiting on ${name}: ${title}`);
   return {
     awaitingDecision: true as const,
     proposal: { kind: proposal.kind, title, body },
@@ -140,23 +138,23 @@ export function applyProposal(
         summary: `Reply to ${to}: ${email.subject}`,
       });
       closeEmail(state, email.id, "sent");
-      note(state, `Sent reply to ${to}`);
-      exchanged(state, `Sent: ${body}`);
+      state.log.push(`Sent reply to ${to}`);
+      state.exchange.push(`Sent: ${body}`);
       return `Reply sent to ${to}.`;
     }
     case "new_email": {
       const to = proposal.recipients.join(", ");
       state.sent.push({ emailId: email.id, kind: "new_email", summary: `New email to ${to}` });
       closeEmail(state, email.id, "sent");
-      note(state, `Sent new email to ${to}`);
-      exchanged(state, `Sent: ${body}`);
+      state.log.push(`Sent new email to ${to}`);
+      state.exchange.push(`Sent: ${body}`);
       return `New email sent to ${to}.`;
     }
     case "invite": {
       state.sent.push({ emailId: email.id, kind: "invite", summary: `${title} — ${body}` });
       closeEmail(state, email.id, "invited");
-      note(state, `Sent ${title}`);
-      exchanged(state, `Sent ${title}: ${body}`);
+      state.log.push(`Sent ${title}`);
+      state.exchange.push(`Sent ${title}: ${body}`);
       return `Calendar invite "${proposal.title}" sent for ${proposal.startTime}.`;
     }
     default:
@@ -317,7 +315,7 @@ export function ignoreTool(): ToolDef {
         state.proposal = null;
         closeEmail(state, email.id, closedAs);
         rememberExample(state, email, "no");
-        note(state, `Ignored: ${email.subject}`);
+        state.log.push(`Ignored: ${email.subject}`);
         return { ignored: email.subject, dropped, next: "open_email for the next one." };
       }),
   });
@@ -382,10 +380,10 @@ export function respondTool(): ToolDef {
         const now = waiting(state);
         if (isToolFailure(now)) return now;
         state.proposal = null;
-        exchanged(state, plan.line);
+        state.exchange.push(plan.line);
         rememberExample(state, now.email, "email");
         applyReflection(state, updates);
-        note(state, `${name}: ${args.feedback}`);
+        state.log.push(`${name}: ${args.feedback}`);
         return {
           feedback: plan.line,
           instructions: plan.instructions,

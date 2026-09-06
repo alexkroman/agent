@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { LOCATING, roadsideCall } from "../call.ts";
-import { note, roadsideSlot, SITUATIONS } from "../shared.ts";
+import { roadsideSlot, SITUATIONS } from "../shared.ts";
 
 /**
  * The end of the silence ladder: the caller has told us where they are, what
@@ -65,7 +65,7 @@ export default roadsideCall.tool({
         color: args.color ?? null,
       };
       state.situation = args.situation;
-      note(state, `Located: ${state.where.described} (${args.situation})`);
+      state.log.push(`Located: ${state.where.described} (${args.situation})`);
       return {
         where: state.where.described,
         landmark: state.where.landmark,

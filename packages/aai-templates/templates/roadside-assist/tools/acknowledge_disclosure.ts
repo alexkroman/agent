@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { roadsideCall } from "../call.ts";
-import { note, roadsideSlot } from "../shared.ts";
+import { roadsideSlot } from "../shared.ts";
 
 /**
  * What the caller said about the fee, and the only way out of
@@ -36,7 +36,7 @@ export default roadsideCall.tool({
   execute: (args, ctx) =>
     roadsideSlot.update(ctx, (state) => {
       state.disclosureAcceptedAt = args.accepted ? Date.now() : null;
-      note(state, args.accepted ? "Fee disclosure accepted" : "Fee disclosure declined");
+      state.log.push(args.accepted ? "Fee disclosure accepted" : "Fee disclosure declined");
       return {
         accepted: args.accepted,
         saidAt: state.disclosureAcceptedAt,
