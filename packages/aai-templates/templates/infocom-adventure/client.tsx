@@ -1,17 +1,16 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState } from "@alexkroman1/aai-ui";
+import type { AgentState, ChatMessage, SessionControlButton } from "@alexkroman1/aai-ui";
 import {
-  AGENT_STATE_LABELS,
-  AutoScroll,
+  ConversationView,
   mountClient,
+  SessionControls,
   SessionErrorBanner,
-  useConversation,
+  SessionStateDot,
   useSessionActions,
   useSessionSelector,
-  useSessionStatus,
   useTheme,
 } from "@alexkroman1/aai-ui";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 const CSS = `
 @keyframes ic-flicker {
@@ -42,9 +41,6 @@ const CSS = `
   background: rgba(0,255,65,0.08); animation: ic-scanline 8s linear infinite;
   pointer-events: none; z-index: 11;
 }
-.ic-messages::-webkit-scrollbar { width: 6px; }
-.ic-messages::-webkit-scrollbar-track { background: #001a00; }
-.ic-messages::-webkit-scrollbar-thumb { background: #00ff41; }
 .ic-user-msg::before { content: "> "; color: #00ccff; }
 .ic-transcript::before { content: "> "; color: #007a1e; }
 `;
@@ -67,11 +63,11 @@ const CYAN = "#00ccff";
 // if-chain with a grey default.
 //
 // The palette is this template's own — every client here paints the same six
-// states in its own colours, so the SDK has nothing to share but the union. What
-// the SDK does own is `AgentState`, and `satisfies Record<AgentState, string>`
-// is what borrows it: a state added there stops compiling here, where the
-// `state === "…"` chain this replaced answered a new state with a silent grey
-// badge in three separate files and no way to notice.
+// states in its own colours, so it is the one prop `<SessionStateDot>` cannot
+// default. What the SDK does own is `AgentState`, and `satisfies
+// Record<AgentState, string>` is what borrows it: a state added there stops
+// compiling here, where the `state === "…"` chain this replaced answered a new
+// state with a silent grey badge in three separate files and no way to notice.
 const STATE_COLORS = {
   disconnected: GREEN_DARK,
   connecting: GREEN_DARK,
@@ -82,13 +78,28 @@ const STATE_COLORS = {
   error: GREEN_DARK,
 } satisfies Record<AgentState, string>;
 
+/** One line of the exchange, in the CRT's two inks. */
+function Line({ role, content }: ChatMessage) {
+  return (
+    <div
+      className={`mb-4 ${role === "user" ? "ic-user-msg" : ""}`}
+      style={{
+        textShadow: role === "user" ? "0 0 5px rgba(0,204,255,0.3)" : "0 0 5px rgba(0,255,65,0.3)",
+        color: role === "user" ? CYAN : GREEN,
+      }}
+    >
+      {content}
+    </div>
+  );
+}
+
 /**
  * The exchange, in the CRT idiom.
  *
- * `useConversation()` rather than `session.messages`: the four decisions
+ * `<ConversationView>` rather than `session.messages`: the four decisions
  * `<MessageList>` makes — the message/tool-call interleave, the streaming
  * narrator line, the transcript's `null`-vs-`""` distinction and the thinking
- * rule — are the hook's now, so this renders them instead of shipping a
+ * rule — are the view's now, so this fills its slots instead of shipping a
  * conversation missing all four. The old list read `messages` alone, so the
  * eight `game_state_*` calls and every partial of the narrator's reply were
  * invisible: the screen sat still until a whole utterance finalized.
@@ -97,72 +108,47 @@ const STATE_COLORS = {
  * the status bar, the footer and the CRT overlays with it.
  */
 function Transcript() {
-  const { items, streaming, transcript, thinking } = useConversation();
   // The one theme read left in this file, and the case `useTheme()` is still
-  // for: `scrollbar-color` takes TWO values and has no utility class, so it has
-  // to be a style — and reading it off the theme beats re-pinning the two hex
-  // codes the `mountClient({ theme })` block below already declares.
+  // for: the scrollbar takes TWO colours and no utility class carries two, so
+  // they travel as the custom properties `.aai-scroll` reads — and reading them
+  // off the theme beats re-pinning the two hex codes the `mountClient({ theme })`
+  // block below already declares.
   const theme = useTheme();
+  const scrollbar = {
+    "--aai-scrollbar-thumb": theme.primary,
+    "--aai-scrollbar-track": theme.surface,
+  } as CSSProperties;
 
   return (
-    <AutoScroll
-      scrollClassName="ic-messages overflow-y-auto"
+    <ConversationView
+      scrollClassName="aai-scroll overflow-y-auto"
       contentClassName="p-5"
-      style={{ scrollbarWidth: "thin", scrollbarColor: `${theme.primary} ${theme.surface}` }}
-    >
-      {items.map((item) =>
-        item.kind === "message" ? (
-          <div
-            key={item.message.id}
-            className={`mb-4 ${item.message.role === "user" ? "ic-user-msg" : ""}`}
-            style={{
-              textShadow:
-                item.message.role === "user"
-                  ? "0 0 5px rgba(0,204,255,0.3)"
-                  : "0 0 5px rgba(0,255,65,0.3)",
-              color: item.message.role === "user" ? CYAN : GREEN,
-            }}
-          >
-            {item.message.content}
-          </div>
-        ) : (
-          // The game engine's own bookkeeping, in the idiom the machine would
-          // have printed it in. Dim, because it is beneath the narration and
-          // not instead of it.
-          <div key={item.toolCall.callId} className="mb-4 text-[13px]" style={{ color: GREEN_DIM }}>
-            {`[ ${item.toolCall.name.replace(/^game_state_/, "").replace(/_/g, " ")}${
-              item.toolCall.status === "pending" ? " …" : ""
-            } ]`}
-          </div>
-        ),
-      )}
-      {streaming !== null && (
-        <div className="mb-4" style={{ color: GREEN, textShadow: "0 0 5px rgba(0,255,65,0.3)" }}>
-          {streaming}
+      style={scrollbar}
+      renderMessage={(message) => <Line {...message} />}
+      // The game engine's own bookkeeping, in the idiom the machine would have
+      // printed it in. Dim, because it is beneath the narration and not instead
+      // of it — so not the SDK's tool row, which is a chip.
+      renderTool={(toolCall) => (
+        <div className="mb-4 text-[13px]" style={{ color: GREEN_DIM }}>
+          {`[ ${toolCall.name.replace(/^game_state_/, "").replace(/_/g, " ")}${
+            toolCall.status === "pending" ? " …" : ""
+          } ]`}
         </div>
       )}
-      {transcript.speaking && (
+      renderTranscript={({ text }) => (
         <div
           className="ic-transcript italic"
           style={{ color: "#007a1e", textShadow: "0 0 5px rgba(0,255,65,0.15)" }}
         >
-          {transcript.text}
+          {text}
         </div>
       )}
-      {/* Same contract as the shipped `MessageList`'s indicator: the blinking
-          block is the only sign the parser is working, and to a screen reader it
-          is one unpronounceable glyph. */}
-      {thinking && (
-        <div
-          role="status"
-          aria-label="The parser is thinking"
-          className="animate-pulse"
-          style={{ color: GREEN_DIM }}
-        >
-          &#9612;
-        </div>
-      )}
-    </AutoScroll>
+      // The blinking block is the only sign the parser is working, and to a
+      // screen reader it is one unpronounceable glyph — hence the label.
+      thinkingLabel="The parser is thinking"
+      thinkingClassName="animate-pulse text-[#00aa2a]"
+      thinkingIndicator={<>&#9612;</>}
+    />
   );
 }
 
@@ -182,90 +168,72 @@ function TurnCount() {
 }
 
 /*
- * The narrator's one word for each state, spread over the package's record
- * rather than written as a ternary chain. Only `speaking` gets a CRT word; the
- * rest come from `AGENT_STATE_LABELS`, so a state added upstream reads as
- * something rather than falling through to whichever arm the chain ended on —
- * which is what the chain this replaced did, answering every unlisted state
- * with "Idle".
+ * The narrator's one word for each state. Only `speaking` gets a CRT word; the
+ * rest are `<SessionStateDot>`'s defaults, so a state added upstream reads as
+ * something rather than falling through to whichever arm a ternary chain ended
+ * on — which is what the chain this replaced did, answering every unlisted
+ * state with "Idle".
  */
-const STATE_LABELS: Record<AgentState, string> = {
-  ...AGENT_STATE_LABELS,
+const STATE_LABELS: Partial<Record<AgentState, string>> = {
   speaking: "Narrating",
 };
 
-/** The live state dot and its label, on its own subscription. */
+/**
+ * The live state dot and its label, on its own subscription. A CRT dot GLOWS
+ * rather than beats, so `pulse` is off and the glow is a `currentColor` shadow
+ * — the dot writes its colour to `color` for exactly this. On the dark states
+ * the glow is the same near-black as the ground and reads as none.
+ */
 function StatusDot() {
-  const state = useSessionStatus();
-  const dotColor = STATE_COLORS[state];
-
   return (
-    <div
-      className="flex items-center gap-2.5 text-xs uppercase tracking-wider"
-      style={{ color: GREEN_DIM }}
+    <SessionStateDot
+      colors={STATE_COLORS}
+      labels={STATE_LABELS}
+      pulse={false}
+      className="gap-2.5 text-xs uppercase tracking-wider text-[#00aa2a]"
+      dotClassName="w-2 h-2 shadow-[0_0_6px_currentColor]"
+    />
+  );
+}
+
+const CRT_BUTTON =
+  "px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]";
+
+/** Every footer key looks the same on a CRT; only the word differs. */
+function crtButton({ label, onClick }: SessionControlButton) {
+  return (
+    <button
+      type="button"
+      className={CRT_BUTTON}
+      style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
+      onClick={onClick}
     >
-      <div
-        className="w-2 h-2 rounded-full"
-        style={{
-          background: dotColor,
-          boxShadow: dotColor !== GREEN_DARK ? `0 0 6px ${dotColor}` : "none",
-        }}
-      />
-      <span>{STATE_LABELS[state]}</span>
-    </div>
+      {label}
+    </button>
   );
 }
 
 /*
  * Pause/resume, new game and hang-up.
  *
- * `useSessionActions()` is the narrow way `<Controls>` reaches the methods, and
- * it is published now — so this row takes the three it presses and one
- * selector for the flag it reads, instead of a whole-snapshot `useSession()`
- * that re-rendered the footer on every partial transcript.
+ * `<SessionControls>` is the row `<Controls>` never had — Start, Pause/Resume,
+ * New Conversation, End — and here that is a new GAME: its `restart` is `end()`
+ * then `start()`, so the session-scoped game state starts over and the player
+ * is dealt straight into it, and its `end` alone flips `started` back so the
+ * title screen returns. The Start branch never renders here because this
+ * footer only exists once the title screen's own button has dialled.
  */
 function Footer() {
-  const { toggle, restart, end } = useSessionActions();
-  const running = useSessionSelector((snapshot) => snapshot.running);
   return (
     <div
       className="flex items-center justify-between px-5 py-2 shrink-0 gap-3"
       style={{ borderTop: `1px solid ${GREEN_DARK}`, background: "#001100" }}
     >
       <StatusDot />
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-          style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-          onClick={toggle}
-        >
-          {running ? "[P]ause" : "[R]esume"}
-        </button>
-        {/* The one-click new conversation the default shell's `<Controls>`
-            gives every other template — a custom `component:` renders no
-            `<Controls>`, so this screen has to say it itself. Here that is a
-            new game: end() drops the sessionId, so the session-scoped game
-            state starts over, and start() deals the player straight into it. */}
-        <button
-          type="button"
-          className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-          style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-          onClick={restart}
-        >
-          [N]ew Game
-        </button>
-        {/* The hang-up: end() alone flips `started` back, so the title screen
-            returns and nothing is dialled until the player asks for it. */}
-        <button
-          type="button"
-          className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-          style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-          onClick={() => end()}
-        >
-          [Q]uit
-        </button>
-      </div>
+      <SessionControls
+        labels={{ pause: "[P]ause", resume: "[R]esume", restart: "[N]ew Game", end: "[Q]uit" }}
+        renderButton={crtButton}
+      />
     </div>
   );
 }

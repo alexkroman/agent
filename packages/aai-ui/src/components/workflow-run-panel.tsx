@@ -67,13 +67,15 @@ export type WorkflowRunPanelProps<O> = {
  *
  * @example
  * ```tsx
- * import { useWorkflowSubmit, WorkflowRunPanel } from "@alexkroman1/aai-ui";
+ * import { useWorkflowRun, WorkflowRunPanel } from "@alexkroman1/aai-ui";
  *
- * function Desk() {
- *   const { run, reset } = useWorkflowSubmit<{ draft: string }>("redline");
+ * // `useWorkflowRun<R>` is where a page names the output's shape; a page that
+ * // started the run itself has it typed already, from `useWorkflowSubmit<D>`.
+ * function Panel({ runId, onClear }: { runId: string; onClear: () => void }) {
+ *   const { run } = useWorkflowRun<{ draft: string }>(runId);
  *   if (!run) return null;
  *   return (
- *     <WorkflowRunPanel run={run} statusLabels={{ running: "Writing…" }} onClear={reset}>
+ *     <WorkflowRunPanel run={run} statusLabels={{ running: "Writing…" }} onClear={onClear}>
  *       {(output) => <article className="whitespace-pre-wrap">{output.draft}</article>}
  *     </WorkflowRunPanel>
  *   );

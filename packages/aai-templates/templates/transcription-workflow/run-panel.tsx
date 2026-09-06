@@ -12,7 +12,7 @@
  * Three components, in the order a reader meets them:
  *
  * - **`<RunPanel>`** — the status, the narration, and the transcript once there
- *   is one.
+ *   is one: the SDK's `<WorkflowRunPanel>` with this desk's two slots filled.
  * - **`<LiveTranscript>`** — the transcript as it ARRIVES, which is what makes a
  *   sixty-segment fan-out watchable.
  * - **`<History>`** — every recent run, newest first.
@@ -22,12 +22,10 @@ import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   Facts,
-  isTerminal,
   useWorkflowProgress,
   WORKFLOW_STATUS_LABELS,
-  WorkflowProgress,
   type WorkflowRun,
-  WorkflowRunError,
+  WorkflowRunPanel,
 } from "@alexkroman1/aai-ui";
 import { useMemo } from "react";
 import type { transcribe } from "./agent.ts";
@@ -119,55 +117,42 @@ function title(run: WorkflowRun<Transcript>): string {
   return run.runId;
 }
 
-/** The run's status, its narration, and its transcript once there is one. */
+/**
+ * The run's status, its narration, and its transcript once there is one.
+ *
+ * `<WorkflowRunPanel>` owns the shell — the status line (with this desk's two
+ * words for it), Clear, the narration from `stepReport()` in
+ * `workflows/transcribe.ts` (which REPLAYS, so looking a finished run up in the
+ * history below shows how it got there), and the announced error last. What is
+ * this desk's are the two slots: `live`, the transcript so far while the
+ * fan-out runs, and the completed body. `live` is unguarded on the run's
+ * status beyond what the panel does: the component renders nothing until a
+ * segment has landed, and the panel stops mounting it the moment the run is
+ * terminal and there is an `output` to render instead.
+ */
 export function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: () => void }) {
   return (
-    <section className="flex flex-col gap-3 rounded-md border p-5">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-sm font-medium uppercase tracking-[1.2px]">
-          {STATUS_LINE[run.status]}
-        </h2>
-        {onClear && (
-          <button type="button" onClick={onClear} className="text-xs underline opacity-60">
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* The run's own narration, oldest first — the complement of `STATUS_LINE`
-          above, and the reason both exist: the status is `running` for the whole
-          fan-out, so a sixty-segment recording and a one-segment recording look
-          identical while they run. These lines come from the run itself
-          (`stepReport()` in `workflows/transcribe.ts`), and they REPLAY, so looking a
-          finished run up in the panel below shows how it got there. */}
-      <WorkflowProgress runId={run.runId} />
-
-      {/* While it runs, the transcript so far. Unguarded on the run's status
-          beyond this: the component renders nothing until a segment has landed,
-          and stops the moment there is an `output` to render instead. */}
-      {!isTerminal(run) && <LiveTranscript runId={run.runId} />}
-
-      {/* Discriminated on `status`, so `output` and `error` are reachable
-          without a cast — the reason a snapshot is a union rather than a flat
-          object with optional fields. */}
-      {run.status === "completed" && (
+    <WorkflowRunPanel
+      run={run}
+      statusLabels={STATUS_LINE}
+      onClear={onClear}
+      live={<LiveTranscript runId={run.runId} />}
+    >
+      {(output) => (
         <>
           <Facts
             size="xs"
             items={[
-              `${run.output.segments} ${plural(run.output.segments, "segment")}`,
-              `${formatDuration(run.output.durationMs)} of audio`,
-              `took ${formatDuration(run.output.elapsedMs)}`,
-              `${run.output.words} words`,
+              `${output.segments} ${plural(output.segments, "segment")}`,
+              `${formatDuration(output.durationMs)} of audio`,
+              `took ${formatDuration(output.elapsedMs)}`,
+              `${output.words} words`,
             ]}
           />
-          <pre className="whitespace-pre-wrap text-sm leading-relaxed">{run.output.transcript}</pre>
+          <pre className="whitespace-pre-wrap text-sm leading-relaxed">{output.transcript}</pre>
         </>
       )}
-      {/* Announced, the same contract `<Form>` gives the submit error in
-          `client.tsx`: this is the outcome the reader waited minutes for. */}
-      <WorkflowRunError run={run} />
-    </section>
+    </WorkflowRunPanel>
   );
 }
 
