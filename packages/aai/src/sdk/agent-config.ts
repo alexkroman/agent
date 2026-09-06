@@ -248,6 +248,10 @@ export const HOST_ONLY_AGENT_FIELDS = [
   // the deployed config is the `delegate` entry `agent()` already put in `tools`,
   // whose schema travels with every other tool's.
   "subagents",
+  // A dialog holds a compiled XState machine and closures over a session slot.
+  // Nothing downstream of the wire could act on one, and the guest runs the
+  // agent's own module — where the dialog objects already are.
+  "dialogs",
   // Handlers are functions, same as `workflows` — and unlike `page`, nothing
   // downstream of the wire has any use for knowing an agent observes itself.
   "events",

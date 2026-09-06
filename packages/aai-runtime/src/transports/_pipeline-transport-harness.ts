@@ -23,9 +23,14 @@ export type TtsFake = ReturnType<typeof createFakeTtsProvider>;
  * keep it at this one seam; the escape-hatch ratchet counts every occurrence.
  */
 export function llmCalls(opts: PipelineTransportOptions): {
-  calls: Array<{ prompt?: unknown }>;
+  calls: Record<string, unknown>[];
 } {
-  return opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+  // `Record<string, unknown>` rather than `{ prompt?: unknown }`: the recorded
+  // value is the whole `LanguageModelCallOptions`, and a spec about a per-state
+  // `toolChoice` or `temperature` reads a key that narrower type does not have —
+  // which would have meant a SECOND cast at that spec, which is exactly what
+  // this one seam exists to stop.
+  return opts.llm as unknown as { calls: Record<string, unknown>[] };
 }
 
 export function makeOpts(

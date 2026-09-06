@@ -992,23 +992,32 @@ authoring types are load-bearing enough to state here.
 
 **A dialog is declarable as a plain state map, and the reason is a SILENT
 failure.** `dialog(key, spec)` takes `{ initial, states }`, a state carrying
-`instruction`, `on`, `final`, `initial` and nested `states` — the six XState
-features every dialog in the templates used, and not a subset chosen for
-convenience: a dialog's snapshot is PERSISTED, so it must survive
-`structuredClone`, which rules out guards, context, actions and invoked actors by
-construction. The line count is not the argument. `meta` is `Record<string, any>`
-and `toInstruction` reads it back untyped, so `instructions` (plural), or the
-field one nesting level off, compiled, deployed, and produced refusals carrying
-no recovery text — the exact failure the `when` gate exists to prevent, arriving
-through the field meant to explain it. A declared `instruction?: string` makes it
-a typo the compiler catches. The machine overload STAYS (`procedure()` needs full
+`instruction`, `on`, `final`, `initial`, nested `states`, and — once a dialog
+had to describe a CALL — `timeout` plus five voice knobs. Not a subset chosen
+for convenience: a dialog's snapshot is PERSISTED, so it must survive
+`structuredClone`, which rules out guards, context, actions and invoked actors
+by construction. `meta` is `Record<string, any>`, read back untyped, so
+`instructions` (plural) compiled, deployed, and produced refusals with no
+recovery text — the failure the `when` gate exists to prevent, arriving through
+the field meant to explain it. A declared `instruction?: string` catches it.
+The machine overload STAYS (`procedure()` needs full
 XState); the spec compiles to an ordinary machine, so a `durable: true` dialog
 resumes across an author's switch between the two forms. Two type-level traps,
-both learned by getting them wrong: `keyof` a UNION of `on` maps is the
-INTERSECTION of their keys, so `DialogEvent<S>` must DISTRIBUTE over the states
-map's values first; and `DialogStateSpec.states` must stay OPTIONAL, or
-`dialog<const S extends DialogSpec>` walks the self-referential CONSTRAINT into
-`TS2589` on a declaration nobody wrote.
+both learned by getting them wrong, are argued in
+`sdk/dialog-types.ts`, where they live.
+
+**A dialog also moves on the CALL.** An `on` key starting with `@` is a SESSION
+event (`"@session.timed-out": "abandoned"`), checked at declaration and kept out
+of the union an author may `send`; `Dialog.receive` offers one. A state may also
+carry `timeout: { afterMs, send }` and the knobs
+`voice`/`bargeIn`/`keyterms`/`toolChoice`/`temperature`, both read
+deepest-active-state-first like `instruction` and riding in `meta`, so the
+stored snapshot is unchanged and a `durable` dialog predating them resumes.
+**`after` is REFUSED in both forms**: the actor is stopped inside the window it
+was started in, so a delay can never fire, and every guard here passed one — the
+graph guard's own fixture included. `agent({ dialogs })` wires the three to a
+session. **`packages/aai-runtime/DIALOG-CLAUDE.md` owns the rest**, including
+what each knob can and cannot do.
 
 **Three tool builders bind `R`; all three thread it out now.** `tool()` always
 did. `dialog.tool`, `slot.tool` and `slot.updateTool` bound `R` and answered
@@ -1036,9 +1045,10 @@ after `execute`; see "A `sendFrom` goes BELOW `execute`" in
 `Exclude` does NOT do this job inside a per-agent wrapper.
 
 The types for both primitives live one file over from their factories —
-`sdk/dialog-types.ts` beside `sdk/dialog.ts`, `sdk/session-slot-types.ts` beside
-`sdk/session-slot.ts`, each split by the 500-line cap along the seam a reader
-already uses (what a caller passes IN, versus the factory and its handle). Both
+`sdk/dialog-types.ts` and `sdk/dialog-handle.ts` beside `sdk/dialog.ts`,
+`sdk/session-slot-types.ts` beside `sdk/session-slot.ts`, each split by the
+500-line cap along the seam a reader already uses (what a caller passes IN,
+versus the handle it gets back). Both
 factories re-export their types, so every name is still importable from
 `@alexkroman1/aai` and still findable where the function is.
 

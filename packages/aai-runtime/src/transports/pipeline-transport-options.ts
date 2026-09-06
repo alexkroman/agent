@@ -25,6 +25,7 @@ import {
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { LanguageModel } from "ai";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
+import type { DialogTurnSource } from "./pipeline-dialog-knobs.ts";
 import type { SkipGreetingOption, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /**
@@ -174,6 +175,21 @@ export interface PipelineTransportOptions {
    * seconds" would otherwise have to sleep for 1.2 real seconds.
    */
   heardNow?: (() => number) | undefined;
+  /**
+   * The per-state knobs this session's `dialog()` machines ask of the turn about
+   * to run — see {@link DialogTurnSource}.
+   *
+   * Absent for every agent that declares no dialog, and for one whose states
+   * carry only instructions and deadlines: it is present exactly when some state
+   * declares a `bargeIn`, `toolChoice` or `temperature`, which is also what
+   * turns preemptive generation off (see {@link preemptiveGeneration} and the
+   * speculation's construction in `pipeline-transport.ts`).
+   *
+   * Each of the four settings it can carry OVERRIDES the agent-level option of
+   * the same name for as long as that state is active, and an absent one leaves
+   * the agent's own value alone.
+   */
+  dialogTurn?: DialogTurnSource | undefined;
   /** Take an unprompted turn after this many ms of user silence. Unset/non-positive disables. */
   silenceTimeoutMs?: number | undefined;
   /** Instruction injected on silence timeout. Defaults to DEFAULT_SILENCE_PROMPT. */

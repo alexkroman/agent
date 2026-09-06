@@ -160,11 +160,57 @@ export type SendTtsOptions = {
 export type SendTtsText = (text: string, options?: SendTtsOptions) => void;
 
 /**
+ * The system prompt a transport sends: the TEXT, or a thunk that answers it at
+ * the moment a request is assembled.
+ *
+ * The same shape as {@link SkipGreetingOption} below, and deliberately not a
+ * second `resolveSystemPrompt?: () => string` field beside the string. Two
+ * fields means every read site has to remember which one wins, and a site that
+ * forgot would send the frozen string on a session that had a resolver — which
+ * is silent, because the model answers fluently under the wrong instructions
+ * rather than failing. One field has no precedence to forget, and the type
+ * makes a bare `sessionConfig.systemPrompt` a compile error at every site that
+ * has to resolve it.
+ *
+ * **A plain string is byte-identical to what shipped**: it resolves to itself,
+ * once, at the same place the frozen value used to be read. That is what makes
+ * the seam safe to land before anything supplies a thunk.
+ *
+ * The thunk exists for a prompt that depends on WHERE THE CALL IS — the phase a
+ * `dialog()` machine is in. A session-scoped string cannot carry that: the
+ * model learns about a phase only through a tool result, so on a turn where no
+ * tool is called the dialog is invisible, and that is exactly the turn where
+ * the agent asks the question the phase had already moved past.
+ *
+ * @internal
+ */
+export type SystemPromptOption = string | (() => string);
+
+/**
+ * Resolve a {@link SystemPromptOption} at the moment a request is assembled.
+ *
+ * One spelling, for the reason {@link shouldSkipGreeting} is one: a read site
+ * that forgot the call would hand a FUNCTION to a provider that wants a string,
+ * and neither the AI SDK nor OpenAI Realtime rejects that — it stringifies, so
+ * the agent's instructions become this module's source text.
+ *
+ * @internal
+ */
+export function resolveSystemPrompt(prompt: SystemPromptOption): string {
+  return typeof prompt === "function" ? prompt() : prompt;
+}
+
+/**
  * Minimal config a transport may receive at construction time.
  * @internal
  */
 export type TransportSessionConfig = {
-  systemPrompt: string;
+  /**
+   * The system prompt, or a thunk resolved per turn — see
+   * {@link SystemPromptOption}. Read it through {@link resolveSystemPrompt},
+   * never directly.
+   */
+  systemPrompt: SystemPromptOption;
   greeting?: string;
   history?: Message[];
 };
@@ -220,6 +266,30 @@ export interface Transport {
    * `ServerSession.announce`, which reports it rather than pretending.
    */
   injectTurn?(instruction: string): void;
+  /**
+   * Re-read the session's {@link SystemPromptOption} and push it to the
+   * provider if — and only if — it has CHANGED since the last push.
+   *
+   * OPTIONAL, and the absence is the interesting half: a transport omits this
+   * when it assembles the prompt per request anyway, which is pipeline mode.
+   * There is nothing to push there, and implementing it as a no-op would invite
+   * a caller to believe the call is what makes the new prompt take effect.
+   *
+   * OpenAI Realtime implements it because its instructions are session state on
+   * the SERVICE, sent once in `session.update` at open. The changed-only rule is
+   * that transport's, not this signature's: a `session.update` per turn is a
+   * frame the service does not need and VAD state it may re-derive.
+   *
+   * **AssemblyAI S2S implements it and never will.** That service runs the tool
+   * loop itself, so the host has no per-turn moment to resolve a prompt AT — see
+   * "Only the pipeline can honour a per-turn prompt" in the package guide. The
+   * runtime resolves its prompt ONCE for that transport, which is what shipped.
+   *
+   * The caller so far is nothing: this is the seam a `dialog()` phase change
+   * will reach for, in the same change that installs the prompt suffix (see
+   * `runtime-system-prompt.ts`).
+   */
+  refreshSystemPrompt?(): void;
   /**
    * The client's unplayed agent-audio backlog, in ms — the closed-loop
    * counterpart of the pipeline's open-loop playback estimate. Pipeline mode

@@ -1767,7 +1767,7 @@ export function parseFeed(xml: string): ParsedFeed | undefined;
 
 ```ts
 import { AnyStateMachine } from 'xstate';
-import { EventFromLogic } from 'xstate';
+import type { EventFromLogic } from 'xstate';
 import { InputFrom } from 'xstate';
 import { OutputFrom } from 'xstate';
 import { z } from 'zod';
@@ -1778,6 +1778,7 @@ export function agent(def: AgentParams): AgentDef;
 // @public
 export interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
+    dialogs?: readonly AnyDialog[];
     events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
@@ -1806,6 +1807,9 @@ export interface AgentDef extends PipelineVoiceTuning {
 
 // @public
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
+
+// @public
+export type AnyDialog = Dialog<AnyStateMachine, unknown>;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -1922,9 +1926,12 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     matches(ctx: SlotHolder, state: string): boolean;
     position(ctx: SlotHolder): DialogPosition;
     projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
+    receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
+    timeout(ctx: SlotHolder): DialogTimeout | undefined;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public
@@ -1934,7 +1941,13 @@ export function dialog<M extends AnyStateMachine>(key: string, machine: M, optio
 export function dialog<const S extends DialogSpec>(key: string, spec: S, options?: DialogOptions): Dialog<AnyStateMachine, DialogEvent<S>>;
 
 // @public
-export type DialogEvent<S extends DialogSpec> = EventOf<NamesInMap<S["states"]>>;
+export type DialogBargeIn = "default" | "off" | {
+    minWords?: number;
+    minDurationMs?: number;
+};
+
+// @public
+export type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
 
 // @public
 export interface DialogOptions {
@@ -1949,6 +1962,9 @@ export interface DialogPosition {
 }
 
 // @public
+export type DialogSessionEventName = `@${SessionEventType}`;
+
+// @public
 export interface DialogSpec {
     initial: string;
     states: Record<string, DialogStateSpec>;
@@ -1956,11 +1972,31 @@ export interface DialogSpec {
 
 // @public
 export interface DialogStateSpec {
+    bargeIn?: DialogBargeIn;
     final?: true;
     initial?: string;
     instruction?: string;
+    keyterms?: readonly string[];
     on?: Record<string, string>;
     states?: Record<string, DialogStateSpec>;
+    temperature?: number;
+    timeout?: DialogTimeoutSpec;
+    toolChoice?: ToolChoice;
+    voice?: string;
+}
+
+// @public
+export interface DialogTimeout {
+    readonly afterMs: number;
+    readonly event: {
+        readonly type: string;
+    };
+}
+
+// @public
+export interface DialogTimeoutSpec {
+    afterMs: number;
+    send: string;
 }
 
 // @public
@@ -1976,6 +2012,15 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
 // @public
 export interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
+}
+
+// @public
+export interface DialogVoiceConfig {
+    readonly bargeIn?: DialogBargeIn;
+    readonly keyterms?: readonly string[];
+    readonly temperature?: number;
+    readonly toolChoice?: ToolChoice;
+    readonly voice?: string;
 }
 
 // @public
@@ -3433,6 +3478,8 @@ export interface XAILlmOptions extends ModelOptions {
 ## `@alexkroman1/aai/manifest`
 
 ```ts
+import type { AnyStateMachine } from 'xstate';
+import type { EventFromLogic } from 'xstate';
 import type { JSONSchema7 } from 'json-schema';
 import { z } from 'zod';
 
@@ -3530,6 +3577,7 @@ export function agentConfigWarnings(config: {
 // @public
 interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
+    dialogs?: readonly AnyDialog[];
     events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
@@ -3558,6 +3606,9 @@ interface AgentDef extends PipelineVoiceTuning {
 
 // @public (undocumented)
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[];
+
+// @public
+type AnyDialog = Dialog<AnyStateMachine, unknown>;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -3592,6 +3643,66 @@ interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
     revisions: number;
+}
+
+// @public
+interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
+    readonly key: string;
+    readonly machine: M;
+    matches(ctx: SlotHolder, state: string): boolean;
+    position(ctx: SlotHolder): DialogPosition;
+    projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
+    receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
+    reset(ctx: SlotHolder): DialogPosition;
+    send(ctx: SlotHolder, event: E): DialogPosition;
+    timeout(ctx: SlotHolder): DialogTimeout | undefined;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
+}
+
+// @public
+type DialogBargeIn = "default" | "off" | {
+    minWords?: number;
+    minDurationMs?: number;
+};
+
+// @public
+interface DialogPosition {
+    readonly done: boolean;
+    readonly instruction?: string;
+    readonly state: string;
+}
+
+// @public
+interface DialogTimeout {
+    readonly afterMs: number;
+    readonly event: {
+        readonly type: string;
+    };
+}
+
+// @public
+interface DialogToolDef<P extends ToolInputSchema, R, E> {
+    description: string;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
+    inputSchema?: P;
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
+interface DialogToolResult<R> extends DialogPosition {
+    readonly result: R;
+}
+
+// @public
+interface DialogVoiceConfig {
+    readonly bargeIn?: DialogBargeIn;
+    readonly keyterms?: readonly string[];
+    readonly temperature?: number;
+    readonly toolChoice?: ToolChoice;
+    readonly voice?: string;
 }
 
 // @public
@@ -3633,7 +3744,7 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "events"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -3910,6 +4021,12 @@ type SleepOptions = {
 };
 
 // @public
+type SlotHolder = {
+    readonly slots: SlotStore;
+    readonly sessionId: string;
+};
+
+// @public
 type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -4051,6 +4168,11 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+};
+
+// @public
+type ToolFailure = {
+    error: string;
 };
 
 // @public
@@ -5281,11 +5403,14 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 ## `@alexkroman1/aai/testing`
 
 ```ts
+import type { AnyStateMachine } from 'xstate';
+import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
 interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
+    dialogs?: readonly AnyDialog[];
     events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
@@ -5311,6 +5436,9 @@ interface AgentDef extends PipelineVoiceTuning {
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
+
+// @public
+type AnyDialog = Dialog<AnyStateMachine, unknown>;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -5360,6 +5488,27 @@ interface DelegateResult extends SubagentAnswer {
 export function deployedAgent<D extends AgentDef>(authored: D, project: ProjectFiles): D;
 
 // @public
+interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
+    readonly key: string;
+    readonly machine: M;
+    matches(ctx: SlotHolder, state: string): boolean;
+    position(ctx: SlotHolder): DialogPosition;
+    projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
+    receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
+    reset(ctx: SlotHolder): DialogPosition;
+    send(ctx: SlotHolder, event: E): DialogPosition;
+    timeout(ctx: SlotHolder): DialogTimeout | undefined;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
+}
+
+// @public
+type DialogBargeIn = "default" | "off" | {
+    minWords?: number;
+    minDurationMs?: number;
+};
+
+// @public
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -5367,8 +5516,35 @@ interface DialogPosition {
 }
 
 // @public
+interface DialogTimeout {
+    readonly afterMs: number;
+    readonly event: {
+        readonly type: string;
+    };
+}
+
+// @public
+interface DialogToolDef<P extends ToolInputSchema, R, E> {
+    description: string;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
+    inputSchema?: P;
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
 interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
+}
+
+// @public
+interface DialogVoiceConfig {
+    readonly bargeIn?: DialogBargeIn;
+    readonly keyterms?: readonly string[];
+    readonly temperature?: number;
+    readonly toolChoice?: ToolChoice;
+    readonly voice?: string;
 }
 
 // @public
@@ -5713,6 +5889,12 @@ type SessionEventType = SessionEvent["type"];
 // @public
 type SleepOptions = {
     correlationId?: string;
+};
+
+// @public
+type SlotHolder = {
+    readonly slots: SlotStore;
+    readonly sessionId: string;
 };
 
 // @public
@@ -6106,6 +6288,11 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+};
+
+// @public
+type ToolFailure = {
+    error: string;
 };
 
 // @public

@@ -411,7 +411,7 @@ event(event:
   | {
   messages: {
      content: string;
-     role: "user" | "assistant";
+     role: "assistant" | "user";
   }[];
   meta: {
      at: number;
@@ -423,7 +423,7 @@ event(event:
      callId: string;
      name: string;
      result?: string;
-     status: "pending" | "done";
+     status: "done" | "pending";
   }[];
   type: "history.restored";
 }): void;
@@ -590,7 +590,7 @@ event the stream had already recorded under another.
   \| \{
   `messages`: \{
      `content`: `string`;
-     `role`: `"user"` \| `"assistant"`;
+     `role`: `"assistant"` \| `"user"`;
   \}[];
   `meta`: \{
      `at`: `number`;
@@ -602,7 +602,7 @@ event the stream had already recorded under another.
      `callId`: `string`;
      `name`: `string`;
      `result?`: `string`;
-     `status`: `"pending"` \| `"done"`;
+     `status`: `"done"` \| `"pending"`;
   \}[];
   `type`: `"history.restored"`;
 \}

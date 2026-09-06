@@ -7,7 +7,7 @@
  * lifecycle hooks, and session management.
  */
 
-import { buildSystemPrompt, DEFAULT_SHUTDOWN_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 import { createOwnedMap, invariant } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
@@ -16,11 +16,13 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
 import { openAppDb } from "./app-db.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
+import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
 import { logResolvedRuntime, resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
 import { attachSessionState, createRuntimeSessionState } from "./runtime-session-state.ts";
 import { attachSessionStream } from "./runtime-session-stream.ts";
+import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
   createTransportFactory,
@@ -236,28 +238,14 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     logger,
   });
 
-  // buildSystemPrompt's inputs (agentConfig, tool presence, guidance) are all
-  // fixed for the runtime's lifetime, but it stamps today's date via
-  // Intl.DateTimeFormat — the most expensive thing on the session-start path
-  // with no reason to be there. Cached per calendar day rather than hoisted
-  // outright, so a replica that lives across midnight doesn't keep serving
-  // yesterday's date.
-  const hasToolsForPrompt = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
-  let promptCache: { day: string; text: string } | null = null;
-  function systemPromptForToday(): string {
-    const day = new Date().toDateString();
-    if (promptCache?.day !== day) {
-      promptCache = {
-        day,
-        text: buildSystemPrompt(agentConfig, {
-          hasTools: hasToolsForPrompt,
-          voice: true,
-          toolGuidance,
-        }),
-      };
-    }
-    return promptCache.text;
-  }
+  // The system prompt, in two halves — the day-cached base and a per-turn
+  // suffix. Both, and the reason the expensive half stays cached, are in
+  // `runtime-system-prompt.ts`.
+  const systemPrompts = createSystemPromptResolver({
+    agentConfig,
+    hasTools: toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0,
+    toolGuidance,
+  });
 
   function createSession(sessionOpts: TransportSessionOpts): ServerSession {
     // A resume under this id (same key, new socket) reclaims its tool state —
@@ -283,10 +271,22 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     const commit = commitSessionState
       ? (): void => void commitSessionState(sessionOpts.id)
       : undefined;
+    // This session's prompt and the dialogs that address it: every session event
+    // is offered to each declared dialog, its per-state deadline is armed, and
+    // the active instructions become the prompt's per-turn suffix. Inert for an
+    // agent that declares none — see `runtime-dialogs.ts`.
+    const dialogs = openSessionDialogs(agent.dialogs, sessionOpts.id, {
+      prompt: systemPrompts.forSession(),
+      slots: sessionState.store.viewFor(sessionOpts.id),
+      transport: () => transport,
+      logger,
+      ...omitUndefined({ commit }),
+    });
     const emitter = createSessionEmitter({
       sessionId: sessionOpts.id,
       client: sessionOpts.client,
       stream: sessionState.stream,
+      observe: dialogs.observe,
       logger,
       ...omitUndefined({ hooks, commit }),
     });
@@ -300,8 +300,6 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     // Relay (host) mode: the relay `executeTool` emits the client-facing
     // `tool.called` itself (mirrors the `relayed` flag session-core passes on).
     const isRelay = Boolean(options.onToolResult);
-    const systemPrompt = systemPromptForToday();
-
     // Late-bound reference: callbacks are constructed before ServerSession exists,
     // so we capture a reference and fill it in below.
     let core: ServerSession | null = null;
@@ -327,8 +325,11 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         ...sessionOpts,
         skipGreeting: resolveSkipGreeting(skipGreeting, resumed, findings),
       },
-      systemPrompt,
+      // The THUNK, not its value: a transport that can resolve per turn does,
+      // and one that cannot resolves it once (see `runtime-transport.ts`).
+      systemPrompt: () => dialogs.prompt.resolve(),
       callbacks,
+      ...omitUndefined({ dialogTurn: dialogs.turnKnobs }),
     });
 
     core = createSessionCore({
@@ -354,6 +355,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       // releasing only the sink would leave a `ctx.send` from a straggling tool
       // call resolving an emitter whose socket is gone.
       release: () => {
+        // The dialog deadlines come off here too: a pending timer keeps the
+        // event loop alive and would fire into a session already swept.
+        dialogs.stop();
         const owned = releaseSink();
         releaseEmitter();
         return owned;

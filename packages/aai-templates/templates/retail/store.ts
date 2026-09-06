@@ -124,11 +124,20 @@ const callSpec = {
         "You do not know who this is yet. Identify the caller with " +
         "find_user_id_by_email, or find_user_id_by_name_zip if they cannot " +
         "remember the email. Do this even if they volunteer a user id.",
-      on: { IDENTIFIED: "serving", TRANSFERRED: "transferred" },
+      on: {
+        IDENTIFIED: "serving",
+        TRANSFERRED: "transferred",
+        "@session.timed-out": "abandoned",
+      },
     },
     serving: {
       initial: "helping",
-      on: { TRANSFERRED: "transferred" },
+      // Declared on the PARENT, so it reaches `helping` and
+      // `awaitingConfirmation` alike — a caller hangs up mid-confirmation more
+      // often than anywhere else on this call. It targets a SIBLING rather than
+      // itself, so it is not the re-entering self-transition the `IDENTIFIED`
+      // note below refuses.
+      on: { TRANSFERRED: "transferred", "@session.timed-out": "abandoned" },
       states: {
         helping: {
           instruction:
@@ -138,6 +147,13 @@ const callSpec = {
           on: { STAGED: "awaitingConfirmation" },
         },
         awaitingConfirmation: {
+          // Reading an order number, an item number and a dollar amount back is
+          // TRANSCRIPTION, and the failure it has is a model smoothing
+          // `#W2378156` into something that scans better. This template already
+          // fights that on the way IN — `resolve.ts` is where a spoken order id
+          // is matched against the account — and this is the same problem on
+          // the way out, which nothing was guarding.
+          temperature: 0.2,
           instruction:
             "A change is staged and NOTHING HAS HAPPENED YET. Read the staged sentence " +
             "back — the order, the items, the amounts, where the money goes — and wait " +
@@ -146,6 +162,12 @@ const callSpec = {
           on: { SETTLED: "helping" },
         },
       },
+    },
+    abandoned: {
+      final: true,
+      instruction:
+        "The caller is gone. Do nothing further on this call — do not confirm a staged " +
+        "change, do not look anything up, and do not promise a callback.",
     },
     transferred: {
       final: true,

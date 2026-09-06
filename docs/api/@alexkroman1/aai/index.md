@@ -240,7 +240,7 @@ function dialog<M extends AnyStateMachine>(
 Declare a dialog statechart for an agent's conversation.
 
 The machine is an ordinary XState machine, so everything XState knows how to
-do with one applies — `@xstate/procedure` can enumerate its paths to generate
+do with one applies — `@xstate/graph` can enumerate its paths to generate
 dialog test cases, and the machine is serializable for a visualizer.
 
 ##### Type Parameters
@@ -830,7 +830,7 @@ function resolveOne<T>(
    candidates: readonly T[], 
    spoken: string, 
    options: ResolveOneOptions<T>
-): ToolFailure | T;
+): T | ToolFailure;
 ```
 
 Pick the one candidate an utterance names, or fail saying why.
@@ -873,7 +873,7 @@ readonly `T`[]
 
 #### Returns
 
-[`ToolFailure`](#toolfailure) \| `T`
+`T` \| [`ToolFailure`](#toolfailure)
 
 #### Example
 
@@ -1710,6 +1710,19 @@ disables. The wording is internal and must stay purely declarative — see
 ###### Inherited from
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`deadAirCoverMs`](#deadaircoverms-1)
+
+##### dialogs?
+
+```ts
+optional dialogs?: readonly AnyDialog[];
+```
+
+The dialogs this agent runs — see [dialog](#dialog-1). **Declaring one here is
+what wires it to the SESSION**: its `@`-prefixed transitions fire (see
+[DialogSessionEventName](#dialogsessioneventname)), its states' `timeout` deadlines are armed,
+and its [DialogVoiceConfig](#dialogvoiceconfig) is applied per state — none of which a
+dialog can reach from inside a tool, because all three happen when no tool
+is running. An UNDECLARED dialog is unchanged. Host-only, like `tools`.
 
 ##### errorPhrase?
 
@@ -2720,6 +2733,392 @@ identity — `dialog.projection((at) => at)` — to push the whole position.
 
 [`StateProjection`](#stateprojection)\<`V`\>
 
+##### receive()
+
+```ts
+receive(ctx: SlotHolder, event: 
+  | {
+  audioFormat: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  sampleRate: number;
+  sessionId?: string;
+  ttsSampleRate: number;
+  type: "session.configured";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "audio.completed";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "speech.started";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "speech.stopped";
+}
+  | {
+  eotConfidence?: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "user-transcript.updated";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "user-transcript.committed";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "agent-transcript.updated";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  recovery?: "session-failed" | "turn-failed";
+  text: string;
+  type: "agent-transcript.committed";
+}
+  | {
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  meta: {
+     at: number;
+     id: string;
+  };
+  toolCallId: string;
+  toolName: string;
+  type: "tool.called";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  result: string;
+  toolCallId: string;
+  type: "tool.completed";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "reply.completed";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "reply.cancelled";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "session.reset";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "session.timed-out";
+}
+  | {
+  code:   | "stt"
+     | "llm"
+     | "tts"
+     | "audio"
+     | "connection"
+     | "internal"
+     | "protocol"
+     | "tool";
+  fatal: boolean;
+  message: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "error.reported";
+}
+  | {
+  data: unknown;
+  event: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "custom.emitted";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  state: unknown;
+  type: "state.updated";
+}
+  | {
+  messages: {
+     content: string;
+     role: "assistant" | "user";
+  }[];
+  meta: {
+     at: number;
+     id: string;
+  };
+  toolCalls: {
+     afterMessageIndex: number;
+     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+     callId: string;
+     name: string;
+     result?: string;
+     status: "done" | "pending";
+  }[];
+  type: "history.restored";
+}): DialogPosition;
+```
+
+Offer a SESSION event to the dialog: the runtime's half of
+[DialogSessionEventName](#dialogsessioneventname).
+
+Sends `{ type: "@<event.type>" }` when the active state (or a state
+containing it) declares a transition on it, and does nothing at all
+otherwise — the position comes back either way, so a caller that wants to
+know whether anything moved compares `state`. XState already ignores an
+unhandled event, so the check is not what makes this safe; what it buys is
+that the overwhelming majority of session events, which no dialog is
+watching, write nothing. A send stores the snapshot whether or not the
+machine moved, so on a `durable` dialog that would be a store round-trip per
+transcript frame.
+
+The runtime calls this for a dialog listed in [AgentDef.dialogs](#dialogs). It
+takes a [SlotHolder](#slotholder), which is what a `SessionEventContext` already
+is — both carry `slots` and `sessionId` — so an author can drive a dialog
+from an `events` handler today, with no declaration at all:
+
+```ts
+import { agent, dialog } from "@alexkroman1/aai";
+
+const claim = dialog("claim", {
+  initial: "verifying",
+  states: {
+    verifying: { on: { "@session.timed-out": "abandoned" } },
+    abandoned: { final: true },
+  },
+});
+
+export default agent({
+  name: "Support",
+  events: { "session.timed-out": (event, ctx) => void claim.receive(ctx, event) },
+});
+```
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### event
+
+  \| \{
+  `audioFormat`: `string`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `sampleRate`: `number`;
+  `sessionId?`: `string`;
+  `ttsSampleRate`: `number`;
+  `type`: `"session.configured"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"audio.completed"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"speech.started"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"speech.stopped"`;
+\}
+  \| \{
+  `eotConfidence?`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `text`: `string`;
+  `type`: `"user-transcript.updated"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `text`: `string`;
+  `type`: `"user-transcript.committed"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `text`: `string`;
+  `type`: `"agent-transcript.updated"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `text`: `string`;
+  `type`: `"agent-transcript.committed"`;
+\}
+  \| \{
+  `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `toolCallId`: `string`;
+  `toolName`: `string`;
+  `type`: `"tool.called"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `result`: `string`;
+  `toolCallId`: `string`;
+  `type`: `"tool.completed"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"reply.completed"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"reply.cancelled"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"session.reset"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"session.timed-out"`;
+\}
+  \| \{
+  `code`:   \| `"stt"`
+     \| `"llm"`
+     \| `"tts"`
+     \| `"audio"`
+     \| `"connection"`
+     \| `"internal"`
+     \| `"protocol"`
+     \| `"tool"`;
+  `fatal`: `boolean`;
+  `message`: `string`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"error.reported"`;
+\}
+  \| \{
+  `data`: `unknown`;
+  `event`: `string`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"custom.emitted"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `state`: `unknown`;
+  `type`: `"state.updated"`;
+\}
+  \| \{
+  `messages`: \{
+     `content`: `string`;
+     `role`: `"assistant"` \| `"user"`;
+  \}[];
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `toolCalls`: \{
+     `afterMessageIndex`: `number`;
+     `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+     `callId`: `string`;
+     `name`: `string`;
+     `result?`: `string`;
+     `status`: `"done"` \| `"pending"`;
+  \}[];
+  `type`: `"history.restored"`;
+\}
+
+###### Returns
+
+[`DialogPosition`](#dialogposition)
+
 ##### reset()
 
 ```ts
@@ -2766,6 +3165,31 @@ available. The returned position is what actually happened; compare its
 
 [`DialogPosition`](#dialogposition)
 
+##### timeout()
+
+```ts
+timeout(ctx: SlotHolder): DialogTimeout | undefined;
+```
+
+The deadline declared where the conversation currently is, if any — read
+from the DEEPEST active state, exactly as [DialogPosition.instruction](#instruction)
+is.
+
+A READ, not a timer: nothing here is armed, and calling this has no effect
+on the dialog. The runtime asks once per turn and arms its own deadline;
+anything that fires the returned `event` back through [Dialog.send](#send)
+gets the transition the state declared.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`DialogTimeout`](#dialogtimeout) \| `undefined`
+
 ##### tool()
 
 ```ts
@@ -2804,6 +3228,26 @@ registry wants a `ToolDef<ToolInputSchema>`.
 [`ToolDef`](#tooldef)\<`P`, `Promise`\<
   \| [`ToolFailure`](#toolfailure)
   \| [`DialogToolResult`](#dialogtoolresult)\<`R`\>\>\>
+
+##### voiceConfig()
+
+```ts
+voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
+```
+
+The voice settings declared where the conversation currently is, if any —
+deepest active state wins, and a parent contributes nothing to a config a
+child declares. See [DialogVoiceConfig](#dialogvoiceconfig).
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`DialogVoiceConfig`](#dialogvoiceconfig) \| `undefined`
 
 #### Properties
 
@@ -2913,13 +3357,27 @@ The states, keyed by the name `when` and [DialogPosition.state](#state) use.
 
 One state of a [DialogSpec](#dialogspec) — the plain-object form of a dialog's shape.
 
-These are the six things every dialog in the templates actually used, and
-they are not a subset chosen for convenience: a dialog's snapshot is
+It began as the six things every dialog in the templates actually used, and
+they were not a subset chosen for convenience: a dialog's snapshot is
 PERSISTED, so it must survive `structuredClone`, which rules out guards,
 actions, context and invoked actors by construction. What was left was an
 XState `setup({ types: {} as { events: … } })` block whose event union
 restated every name already written in the `on` maps, and a
 `meta: { instruction }` wrapper around every line of guidance.
+
+The six became eleven when a dialog had to be able to describe a CALL rather
+than a form: a deadline (`timeout`) and the five per-phase voice knobs
+(`voice`, `bargeIn`, `keyterms`, `toolChoice`, `temperature`). Every one of
+them is plain JSON and rides in the same `meta` the instruction does, so the
+constraint above is untouched and a `durable: true` dialog written before any
+of this resumes byte-identically — a state declaring none of them compiles to
+a node with no `meta` at all.
+
+**What is deliberately NOT here is `after`.** XState's delayed transitions are
+timers owned by a running actor, and a dialog's actor is created, sent to,
+persisted and stopped inside one synchronous window, so a dialog can never
+fire one. Declaring it throws at declaration and the message names `timeout`,
+which is the deadline a runtime can actually arm.
 
 **The reason to type it is a SILENT failure, not the line count.** The
 instruction is read back out of `meta` untyped (`_dialog-snapshot.ts`), and
@@ -2936,6 +3394,15 @@ A dialog that needs anything beyond these six passes a machine instead — the
 where full XState lives.
 
 #### Properties
+
+##### bargeIn?
+
+```ts
+optional bargeIn?: DialogBargeIn;
+```
+
+How interruptible the agent is here. A disclosure state may need to FINISH;
+a menu state wants to be maximally interruptible. See [DialogBargeIn](#dialogbargein).
 
 ##### final?
 
@@ -2963,6 +3430,15 @@ What the agent is supposed to be doing here, in this state's own words.
 Becomes [DialogPosition.instruction](#instruction) while the state is active, which
 is what a refusal quotes and what every gated tool's result carries.
 
+##### keyterms?
+
+```ts
+optional keyterms?: readonly string[];
+```
+
+STT biasing for what the caller is about to say in this state — the policy
+number they are reading out, the product names on the menu.
+
 ##### on?
 
 ```ts
@@ -2975,6 +3451,11 @@ an XState `on` map spells it. Every key here joins the event union
 event a spec never declares is a compile error rather than an event
 silently ignored at run time.
 
+A key starting with `@` is a SESSION event instead — see
+[DialogSessionEventName](#dialogsessioneventname). Those are validated against the wire
+vocabulary at declaration and are deliberately kept OUT of the union above:
+an author does not send `@speech.started` by hand, the runtime does.
+
 ##### states?
 
 ```ts
@@ -2982,6 +3463,112 @@ optional states?: Record<string, DialogStateSpec>;
 ```
 
 Nested states, addressed as `parent.child` by `when` and by `matches`.
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+The model's sampling temperature while this state is active.
+
+##### timeout?
+
+```ts
+optional timeout?: DialogTimeoutSpec;
+```
+
+How long the dialog may stay in this state, and what to send when it has
+been that long. See [DialogTimeoutSpec](#dialogtimeoutspec).
+
+The declarative half of a deadline: nothing here starts a timer, because a
+dialog holds no live actor to run one. The runtime reads it through
+[Dialog.timeout](#timeout) for the state the conversation is actually in and
+arms it around the turn — which is why `send` has to name an event this
+state (or one containing it) already handles, checked at declaration.
+
+##### toolChoice?
+
+```ts
+optional toolChoice?: ToolChoice;
+```
+
+The model's tool-choice policy while this state is active.
+
+##### voice?
+
+```ts
+optional voice?: string;
+```
+
+The TTS voice for this phase of the call — a different voice for the
+disclosure than for the chat, say. See [DialogVoiceConfig](#dialogvoiceconfig).
+
+***
+
+### DialogTimeout
+
+A deadline as [Dialog.timeout](#timeout) reports it: how long, and the event to
+send.
+
+The event is built for the caller rather than left as a name, so a runtime
+arming this deadline hands the result straight back to [Dialog.send](#send)
+and never has to know how `timeout.send` is spelled.
+
+#### Properties
+
+##### afterMs
+
+```ts
+readonly afterMs: number;
+```
+
+[DialogTimeoutSpec.afterMs](#afterms-1), from the state in force.
+
+##### event
+
+```ts
+readonly event: {
+  type: string;
+};
+```
+
+The event to send when the deadline passes.
+
+###### type
+
+```ts
+readonly type: string;
+```
+
+***
+
+### DialogTimeoutSpec
+
+A per-state deadline: how long the dialog may stay here, and what to send
+when it has been that long. See [DialogStateSpec.timeout](#timeout-1).
+
+#### Properties
+
+##### afterMs
+
+```ts
+afterMs: number;
+```
+
+How long the dialog may remain in this state, in milliseconds.
+
+##### send
+
+```ts
+send: string;
+```
+
+The event to send when it has been. Must name an event this state's own
+`on` map declares — or one declared by a state containing it, since being
+in a state is being in all of them — and that is checked when the dialog is
+DECLARED: a deadline sending an event nothing handles fires into silence
+and leaves the conversation exactly where it was.
 
 ***
 
@@ -3205,6 +3792,59 @@ a nested one. Parallel regions are joined with `","`.
 ###### Inherited from
 
 [`DialogPosition`](#dialogposition).[`state`](#state)
+
+***
+
+### DialogVoiceConfig
+
+The per-state voice settings a dialog declares — what [Dialog.voiceConfig](#voiceconfig)
+answers with, from the deepest active state that declares any of them.
+
+Every field is plain JSON, which is a requirement rather than a coincidence:
+these ride in the state node's `meta`, and a dialog's snapshot is persisted
+through `structuredClone` for a `durable` session.
+
+#### Properties
+
+##### bargeIn?
+
+```ts
+readonly optional bargeIn?: DialogBargeIn;
+```
+
+How interruptible the agent is here. See [DialogBargeIn](#dialogbargein).
+
+##### keyterms?
+
+```ts
+readonly optional keyterms?: readonly string[];
+```
+
+STT biasing for what the caller is about to say here.
+
+##### temperature?
+
+```ts
+readonly optional temperature?: number;
+```
+
+The model's sampling temperature while this state is active.
+
+##### toolChoice?
+
+```ts
+readonly optional toolChoice?: ToolChoice;
+```
+
+The model's tool-choice policy while this state is active.
+
+##### voice?
+
+```ts
+readonly optional voice?: string;
+```
+
+The TTS voice for this phase of the call.
 
 ***
 
@@ -4521,6 +5161,28 @@ discriminant already set.
 
 ***
 
+### AnyDialog
+
+```ts
+type AnyDialog = Dialog<AnyStateMachine, unknown>;
+```
+
+Any dialog, whatever its machine and event union — what
+[AgentDef.dialogs](#dialogs) holds.
+
+The erasure is on `E` and it is what makes the array possible at all: two
+dialogs in one agent have different event unions by construction (the names
+come from their own `on` maps), so `readonly Dialog<AnyStateMachine>[]` would
+be a list nothing but a machine-form dialog with the default parameter could
+join. `unknown` rather than `any` because every member that takes an `E` is
+declared with METHOD syntax, whose parameters are compared bivariantly — so a
+`Dialog<M, { type: "VERIFIED" }>` is assignable here without spending an
+escape hatch on it, and the runtime, which only ever calls the members that
+take no event (`receive`, `timeout`, `voiceConfig`, `position`), never has an
+`any` to hand something.
+
+***
+
 ### AssemblyAITtsVoice
 
 ```ts
@@ -4681,10 +5343,67 @@ a live call can use the difference.
 
 ***
 
+### DialogBargeIn
+
+```ts
+type DialogBargeIn = 
+  | "default"
+  | "off"
+  | {
+  minDurationMs?: number;
+  minWords?: number;
+};
+```
+
+How interruptible the agent is while a dialog state is active.
+
+`"default"` leaves the agent's own `minBargeInWords` /
+`interruptionMinDurationMs` in place; `"off"` means the agent finishes what it
+is saying, which is what a disclosure or a legally-required read needs; the
+object form tightens or loosens the same two gates for this phase only — a
+menu wants `{ minWords: 1 }` so a caller can cut in on the first word.
+
+#### Union Members
+
+`"default"`
+
+***
+
+`"off"`
+
+***
+
+##### Type Literal
+
+```ts
+{
+  minDurationMs?: number;
+  minWords?: number;
+}
+```
+
+###### minDurationMs?
+
+```ts
+optional minDurationMs?: number;
+```
+
+Sustained speech before an interim-triggered barge-in counts, in ms.
+
+###### minWords?
+
+```ts
+optional minWords?: number;
+```
+
+Words in an interim transcript before a barge-in counts.
+
+***
+
 ### DialogEvent
 
 ```ts
-type DialogEvent<S extends DialogSpec> = EventOf<NamesInMap<S["states"]>>;
+type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
 ```
 
 The event union a [DialogSpec](#dialogspec) declares — synthesized from its `on`
@@ -4697,11 +5416,39 @@ with the first. `dialog.send`, `send` and `sendFrom` are typed against it, so
 a misspelled event is a compile error at the call site rather than an event
 XState quietly ignores.
 
+**The `@` names are SUBTRACTED**, which is the one thing this union does that
+the `on` maps do not say by themselves. A session-event transition is driven
+by the runtime — nobody writes `dialog.send(ctx, { type: "@speech.started" })`
+— so leaving those names in would put a dozen events an author must never
+send by hand into the autocomplete for the one they must. See
+[DialogSessionEventName](#dialogsessioneventname); [Dialog.receive](#receive) is how they arrive.
+
 #### Type Parameters
 
 ##### S
 
 `S` *extends* [`DialogSpec`](#dialogspec)
+
+***
+
+### DialogSessionEventName
+
+```ts
+type DialogSessionEventName = `@${SessionEventType}`;
+```
+
+A session event as a dialog names it: the wire type under a leading `@`.
+
+`"@session.timed-out"`, `"@speech.started"`, `"@user-transcript.committed"` —
+every [SessionEventType](#sessioneventtype) is one of these, and nothing else is. The
+prefix is a NAMESPACE rather than decoration: an author's own event names are
+unconstrained, so a dialog that declared `on: { "reply.completed": … }` for
+its own purposes would otherwise start firing on every reply the agent made.
+
+Declaring one is what lets a dialog move on something the model did not do —
+the caller went quiet, barged in, hung up, or said something that called no
+tool. The runtime sends them through [Dialog.receive](#receive), which is wired up
+by listing the dialog in [AgentDef.dialogs](#dialogs).
 
 ***
 

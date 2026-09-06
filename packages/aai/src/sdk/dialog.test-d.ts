@@ -1,20 +1,30 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Type-level spec for the three things about a dialog's authoring surface that
- * can only fail SILENTLY.
+ * Type-level spec for the things about a dialog's authoring surface that can
+ * only fail SILENTLY.
  *
- * Each of them used to compile while meaning nothing: `sendFrom`'s parameter
+ * The first three used to compile while meaning nothing: `sendFrom`'s parameter
  * inferred as `unknown` when it was written above `execute`; a gated tool's
  * result type erased to `unknown` at the interface; and a spec's event names
  * unenforced. A runtime test cannot see any of the three — every one of them
  * runs correctly and reports the right values — so this file is the only thing
  * standing under them.
+ *
+ * Two more joined them with the session-event namespace. A `@` name left in the
+ * author-facing event union is a dozen events nobody may send by hand sitting in
+ * the autocomplete for the one they must, and everything still runs. And
+ * `AnyDialog`'s erasure is load-bearing in one direction only: if a concrete
+ * dialog stopped being assignable to it, `agent({ dialogs })` would reject every
+ * dialog anyone has — which fails at a call site, but in the templates rather
+ * than here.
  */
 import { expectTypeOf, test } from "vitest";
 import { setup } from "xstate";
 import { z } from "zod";
 import { dialog } from "./dialog.ts";
+import type { AnyDialog } from "./dialog-handle.ts";
 import type { DialogEvent, DialogSpec, DialogToolResult } from "./dialog-types.ts";
+import type { SessionEvent } from "./protocol-events.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { InferToolOutput, ToolDef } from "./types.ts";
@@ -149,4 +159,37 @@ test("an event a spec never declares is not in the union a tool can send", () =>
   expectTypeOf<Parameters<typeof flow.tool>[0]["send"]>().toEqualTypeOf<
     DialogEvent<typeof spec> | undefined
   >();
+});
+
+test("a spec's `@` names stay OUT of the event union an author may send", () => {
+  // The runtime sends these; nobody writes `send(ctx, { type: "@speech.started" })`.
+  const callSpec = {
+    initial: "greeting",
+    states: {
+      greeting: { on: { HEARD: "helping", "@session.timed-out": "abandoned" } },
+      helping: { on: { DONE: "abandoned" } },
+      abandoned: { final: true },
+    },
+  } as const satisfies DialogSpec;
+  expectTypeOf<DialogEvent<typeof callSpec>["type"]>().toEqualTypeOf<"DONE" | "HEARD">();
+  expectTypeOf<{ type: "@session.timed-out" }>().not.toExtend<DialogEvent<typeof callSpec>>();
+
+  // ...and `receive` is how they arrive instead: a wire event, not a dialog one.
+  const call = dialog("call", callSpec);
+  expectTypeOf(call.receive).parameter(1).toExtend<SessionEvent>();
+});
+
+test("a dialog of any event union is assignable to `AnyDialog`", () => {
+  // What `agent({ dialogs: [claim, intake] })` rests on: two dialogs have
+  // different event unions by construction, since the names come from their own
+  // `on` maps.
+  const claim = dialog("claim", spec);
+  const other = dialog("other", {
+    initial: "start",
+    states: { start: { on: { GO: "end" } }, end: { final: true } },
+  });
+  expectTypeOf(claim).toExtend<AnyDialog>();
+  expectTypeOf(other).toExtend<AnyDialog>();
+  const dialogs: readonly AnyDialog[] = [claim, other];
+  expectTypeOf(dialogs).toExtend<readonly AnyDialog[]>();
 });

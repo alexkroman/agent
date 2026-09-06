@@ -15,9 +15,16 @@
  * 2. **Send** — to the client sink, which decides by event type whether the
  *    frame may overtake held audio. Before hooks, so a slow or throwing hook
  *    cannot delay a caption or a turn boundary on a live call.
- * 3. **Hooks** — the agent's typed handler for this event, then its `"*"`
+ * 3. **Dialogs** — the agent's declared `dialog()` machines are offered the
+ *    event. Before the hooks and not after, because a dialog is part of the
+ *    session's STATE where a hook is an observer of it: a handler that reads
+ *    `claim.position(ctx)` must see the state this event moved the dialog TO,
+ *    which is the state it declared a transition to in order to handle it. See
+ *    `runtime-dialogs.ts`, which owns that argument and the re-entry latch that
+ *    keeps a transition's own commit from coming back through here.
+ * 4. **Hooks** — the agent's typed handler for this event, then its `"*"`
  *    handler. Last, and non-fatally.
- * 4. **Commit** — only when a hook WROTE a slot: push the `syncState`
+ * 5. **Commit** — only when a hook WROTE a slot: push the `syncState`
  *    projection, then flush the store. Same pair the tool executor runs in its
  *    `finally`, for the same reason — a mutation the UI is not showing is worse
  *    than one it is, and one nothing stored is worse still.
@@ -225,9 +232,19 @@ export function createSessionEmitter(opts: {
    * commit, so nothing reaches the backend until some later tool call flushes.
    */
   commit?: (() => void) | undefined;
+  /**
+   * Offer the event to this session's declared dialogs — step three of the four
+   * above. Absent for an agent that declares none, and for the harnesses that
+   * exercise the emit path alone.
+   *
+   * It is passed IN rather than resolved here because the dialogs need the
+   * session's prompt and its transport, neither of which this module has any
+   * other business knowing about. What the emitter owns is the ORDER.
+   */
+  observe?: ((event: SessionEvent) => void) | undefined;
   logger?: Logger | undefined;
 }): SessionEmitter {
-  const { sessionId, client, stream, hooks, commit, logger } = opts;
+  const { sessionId, client, stream, hooks, commit, observe, logger } = opts;
   const handlers = hooks?.handlers;
 
   /**
@@ -278,6 +295,23 @@ export function createSessionEmitter(opts: {
       client.event(event);
     } catch (err: unknown) {
       logger?.warn?.("Session event not delivered", {
+        sessionId,
+        type: event.type,
+        error: errorMessage(err),
+      });
+    }
+    // Dialogs BEFORE hooks — see the module doc. Not gated on `announcing`: that
+    // latch says "we are inside the agent's hooks", and an event a hook emits
+    // (`ctx.send`, a slot write's commit) is a fact about the session like any
+    // other and a dialog watching for it should see it. The recursion a dialog
+    // transition can cause is latched in `runtime-dialogs.ts`, which is the only
+    // module that can tell its own commit's `state.updated` from anyone else's.
+    // Contained here for the same reason a send is: a throw would take down the
+    // transport dispatch that called us.
+    try {
+      observe?.(event);
+    } catch (err: unknown) {
+      logger?.warn?.("Session event not offered to dialogs", {
         sessionId,
         type: event.type,
         error: errorMessage(err),

@@ -13,6 +13,7 @@ import { normalizeSpeechText } from "@alexkroman1/aai/internal";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createContextBudget } from "./pipeline-context-budget.ts";
+import { createDialogKnobs } from "./pipeline-dialog-knobs.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
@@ -30,7 +31,7 @@ import { createTurnChain, createTurnGate, turnCrashLogger } from "./pipeline-tur
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
-import type { SendTtsOptions, Transport } from "./types.ts";
+import { resolveSystemPrompt, type SendTtsOptions, type Transport } from "./types.ts";
 
 /**
  * `abort` listeners one session's signal may hold before Node calls it a leak.
@@ -67,7 +68,20 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   } = resolvePipelineOptions(opts);
 
   const { callbacks, sessionConfig } = opts;
-  const systemPrompt = sessionConfig.systemPrompt;
+  // The three per-STATE knobs a `dialog()` can move mid-call, over the agent's
+  // own settings above. Constant thunks when no dialog declares one, so a
+  // session without dialogs behaves exactly as it did — and see
+  // `pipeline-dialog-knobs.ts` for why the other two a state may declare cannot
+  // reach here at all.
+  const knobs = createDialogKnobs(opts.dialogTurn, { minBargeInWords, interruptionMinDurationMs });
+  // A THUNK, not the value: this used to capture the string here, which froze
+  // the prompt for the length of the call. Every consumer below already
+  // re-assembles its request per turn (`startLlmStream` is the one place a
+  // `streamText` call is built), so the only thing that had to change is WHEN
+  // the value is read — and a `SystemPromptOption` that is a plain string
+  // resolves to itself, so a session with nothing to vary sends the same bytes
+  // this line used to hand it.
+  const systemPrompt = (): string => resolveSystemPrompt(sessionConfig.systemPrompt);
   // Omitting the third argument says the session is OVER — see pipeline-error.ts.
   const emitError = createEmitError(callbacks);
 
@@ -110,9 +124,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const history = createPipelineHistory(sessionConfig.history);
   // Bounds what each STEP sends the model, and learns the request's fixed cost
   // (system prompt + tool declarations) from the provider's own reported usage.
-  // Built once per SESSION, deliberately: neither of those changes between
-  // turns, so what one turn's last step measured is the right number for the
-  // next turn's first step — the step that would otherwise be estimated blind,
+  // Built once per SESSION, deliberately: neither of those changes MUCH between
+  // turns (a per-turn prompt suffix moves the first of them, by the length of
+  // one phase's instructions), so what one turn's last step measured is the
+  // right number for the next turn's first step — the step that would otherwise be estimated blind,
   // and the only step most turns have. `undefined` for a model whose context
   // window this repo does not know, which trims nothing and leaves the session
   // on the message cap alone. It bounds the REQUEST and never `history`, which
@@ -136,7 +151,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // below behaves exactly as it does with the flag off. See
   // pipeline-speculation.ts.
   const speculation = createPipelineSpeculation({
-    enabled: preemptiveGeneration,
+    // Off whenever a dialog varies the LLM knobs: this constructor decides once,
+    // from the SESSION's `toolChoice`, whether speculating is free at all — a
+    // state that pins a tool would make every speculation end at the tool
+    // boundary and be discarded, with the gate still believing it is free.
+    enabled: preemptiveGeneration && knobs.dialogStep === undefined,
     toolChoice,
     toolSchemas,
     llm: opts.llm,
@@ -164,8 +183,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     resumeFalseInterruption,
     speculation,
     speechIdleTimeoutMs,
-    minBargeInWords,
-    interruptionMinDurationMs,
+    minBargeInWords: knobs.minBargeInWords,
+    interruptionMinDurationMs: knobs.interruptionMinDurationMs,
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),
@@ -289,6 +308,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     tools,
     toolChoice,
     temperature: opts.temperature,
+    dialogStep: knobs.dialogStep,
     maxSteps,
     contextBudget,
     deadAirCoverMs,

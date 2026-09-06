@@ -257,8 +257,8 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     // goes idle. Short here, since a barge-in opens the edge and these specs
     // never commit the final that would close it.
     speechIdleTimeoutMs: 40,
-    minBargeInWords: 2,
-    interruptionMinDurationMs: 0,
+    minBargeInWords: () => 2,
+    interruptionMinDurationMs: () => 0,
     isTerminated: () => false,
     isSessionActive: () => true,
     isTurnInFlight: () => state.inFlight,

@@ -28,7 +28,12 @@ const SID = "s-1";
  */
 const slotsFor = () => createDetachedSlotStore();
 
-function setup(opts?: { handlers?: SessionEventHandlers; slots?: SlotStore; commit?: () => void }) {
+function setup(opts?: {
+  handlers?: SessionEventHandlers;
+  slots?: SlotStore;
+  commit?: () => void;
+  observe?: (event: SessionEvent) => void;
+}) {
   const events: SessionEvent[] = [];
   const client: ClientSink = {
     open: true,
@@ -43,7 +48,7 @@ function setup(opts?: { handlers?: SessionEventHandlers; slots?: SlotStore; comm
     client,
     stream,
     logger,
-    ...omitUndefined({ commit: opts?.commit }),
+    ...omitUndefined({ commit: opts?.commit, observe: opts?.observe }),
     ...(opts?.handlers
       ? {
           hooks: {
@@ -355,6 +360,49 @@ describe("session event hooks", () => {
     // is why `watchWrites` counts.
     await vi.waitFor(() => expect(commit).toHaveBeenCalledTimes(2));
     expect(slots.read("late")).toBe(2);
+  });
+
+  test("offers the event to the DIALOGS before announcing it to the hooks", () => {
+    // The order is the decision, not an implementation detail: a hook that reads
+    // `dialog.position(ctx)` must see the state this event moved the dialog TO.
+    // See `runtime-dialogs.ts`.
+    const order: string[] = [];
+    const { emitter } = setup({
+      observe: () => order.push("dialogs"),
+      handlers: {
+        "speech.started": () => {
+          order.push("hooks");
+        },
+      },
+    });
+
+    emitter.emit({ type: "speech.started" });
+
+    expect(order).toEqual(["dialogs", "hooks"]);
+  });
+
+  test("a throwing dialog bridge is contained, and the hooks still run", () => {
+    // This runs from transport event dispatch with nothing above it to catch a
+    // throw, so an exploding machine must not take the call down with it.
+    const seen: string[] = [];
+    const { emitter, logger } = setup({
+      observe: () => {
+        throw new Error("machine exploded");
+      },
+      handlers: {
+        "speech.started": () => {
+          seen.push("ran");
+        },
+      },
+    });
+
+    emitter.emit({ type: "speech.started" });
+
+    expect(seen).toEqual(["ran"]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Session event not offered to dialogs",
+      expect.objectContaining({ type: "speech.started" }),
+    );
   });
 
   // An "agent that declares no handlers pays nothing" test stood here, proving

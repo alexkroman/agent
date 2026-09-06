@@ -19,6 +19,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import {
   type LanguageModel,
   type ModelMessage,
+  type PrepareStepFunction,
   stepCountIs,
   streamText,
   type Tool,
@@ -40,14 +41,21 @@ import {
   type StreamPart,
   type StreamPartHandler,
 } from "./pipeline-stream-parts.ts";
-import type { EmitError, SendTtsText, TransportCallbacks } from "./types.ts";
+import type { EmitError, SendTtsText, SystemPromptOption, TransportCallbacks } from "./types.ts";
+import { resolveSystemPrompt } from "./types.ts";
 
 /** Parameters for {@link consumeLlmStream}, threading session state explicitly. */
 export interface ConsumeLlmStreamParams {
   /** LLM provider (Vercel AI SDK LanguageModel). */
   llm: LanguageModel;
-  /** System prompt for the turn. */
-  systemPrompt: string;
+  /**
+   * System prompt for the turn — a string or a thunk ({@link SystemPromptOption}),
+   * resolved in {@link startLlmStream}: the ONE place a `streamText` request is
+   * assembled, and so the one place a per-turn prompt can enter without breaking
+   * the parity preemption rests on. A caller that resolved it and passed the
+   * string would be back to a value frozen at whatever moment that caller ran.
+   */
+  systemPrompt: SystemPromptOption;
   /** Conversation history in Vercel AI SDK ModelMessage form. */
   messages: ModelMessage[];
   /** Tool set bound to the transport's executeTool. */
@@ -56,6 +64,8 @@ export interface ConsumeLlmStreamParams {
   toolChoice: ToolChoice;
   /** LLM sampling temperature; omitted entirely from streamText when unset. */
   temperature: number | undefined;
+  /** The active dialog state's `toolChoice`/`temperature`, per STEP — see `pipeline-dialog-knobs.ts`. */
+  dialogStep?: PrepareStepFunction<ToolSet> | undefined;
   /** Repairs malformed tool-call arguments by re-asking the model. */
   repairToolCall: ToolCallRepairFunction<ToolSet>;
   /** Max LLM tool-call steps for this turn. */
@@ -194,6 +204,7 @@ export type LlmRequest = Pick<
   | "tools"
   | "toolChoice"
   | "temperature"
+  | "dialogStep"
   | "repairToolCall"
   | "maxSteps"
   | "contextBudget"
@@ -217,7 +228,11 @@ export type LlmRequest = Pick<
 export function startLlmStream(req: LlmRequest): StartedLlmStream {
   const result = streamText({
     model: req.llm,
-    system: req.systemPrompt,
+    // Resolved HERE, at request-assembly time, so the request carries the phase
+    // the turn is actually in. The restart pass below (late poison) therefore
+    // re-resolves too, which is right: it is a new request, and the old one's
+    // prompt died with the run it was assembled for.
+    system: resolveSystemPrompt(req.systemPrompt),
     messages: req.messages,
     tools: req.tools,
     toolChoice: req.toolChoice,
@@ -235,6 +250,7 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // straight into the slot deletes the other, silently.
     prepareStep: composePrepareStep(
       req.contextBudget,
+      req.dialogStep,
       forceFinalAnswer(req.maxSteps, req.log, req.sid),
     ),
     abortSignal: req.signal,

@@ -55,14 +55,14 @@ now, and only the `deno` build target still emits a file by that name.
 
 | File | Role | Count |
 | --- | --- | --- |
-| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 26 |
-| `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 14 templates |
+| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 27 |
+| `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 15 templates |
 | `workflows/` | durable workflow bodies | 8 templates |
 | `client.tsx` | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app) | 15 templates |
-| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 16 templates |
+| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 17 templates |
 | `shared.ts` | the session slot, its projection, and anything both ends need | most |
-| `agent.test.ts` | unit tests, run by `pnpm test` | 22 templates |
-| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 25 templates |
+| `agent.test.ts` | unit tests, run by `pnpm test` | 27 templates |
+| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 27 templates |
 
 Tool discovery happens where the bundle is assembled — the guest sandbox is
 handed one ESM string and has no directory to scan — so `tools/` is enumerated
@@ -92,6 +92,7 @@ work off to a durable workflow.
 | `dispatch-center` | voice | an emergency dispatch board: incidents, units, and a live dashboard projection that keeps caller PII server-side |
 | `retail` | voice | the largest — fifteen tools over a seeded catalog, an auth gate, and a call's dialog ending in a terminal state |
 | `travel-concierge` | voice | LangGraph's customer-support tutorial as a phone concierge: a dialog stack and a confirmation gate |
+| `roadside-assist` | voice | a dialog that describes a CALL rather than a form: a silence ladder, an uninterruptible fee disclosure, and per-phase LLM knobs |
 | `support-line` | voice | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) |
 | `plan-and-execute` | voice | a planning desk that really searches — plan-and-execute with the caller in the loop |
 | `briefing-desk` | voice | phone a desk, it puts several subagents on a topic at once — the `ctx.delegate` example |

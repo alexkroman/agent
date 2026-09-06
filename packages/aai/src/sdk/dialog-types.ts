@@ -10,10 +10,18 @@
  * `@alexkroman1/aai` — `sdk/dialog.ts` re-exports every name here, so nothing
  * about where a dialog type comes from changed.
  *
+ * What an author DECLARES is the line this module draws. {@link Dialog} — the
+ * handle `dialog()` hands BACK — is `sdk/dialog-handle.ts`, split off when this
+ * file reached the 500-line cap in turn; every name from both is re-exported by
+ * `sdk/dialog.ts` and by `@alexkroman1/aai`, so the split is invisible to an
+ * import.
+ *
  * @module dialog-types
  */
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { SessionEventType } from "./session-events.ts";
+import type { ToolChoice } from "./tool-def.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
 
@@ -132,15 +140,127 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
 }
 
 /**
+ * A session event as a dialog names it: the wire type under a leading `@`.
+ *
+ * `"@session.timed-out"`, `"@speech.started"`, `"@user-transcript.committed"` —
+ * every {@link SessionEventType} is one of these, and nothing else is. The
+ * prefix is a NAMESPACE rather than decoration: an author's own event names are
+ * unconstrained, so a dialog that declared `on: { "reply.completed": … }` for
+ * its own purposes would otherwise start firing on every reply the agent made.
+ *
+ * Declaring one is what lets a dialog move on something the model did not do —
+ * the caller went quiet, barged in, hung up, or said something that called no
+ * tool. The runtime sends them through {@link Dialog.receive}, which is wired up
+ * by listing the dialog in {@link AgentDef.dialogs}.
+ *
+ * @public
+ */
+export type DialogSessionEventName = `@${SessionEventType}`;
+
+/**
+ * A per-state deadline: how long the dialog may stay here, and what to send
+ * when it has been that long. See {@link DialogStateSpec.timeout}.
+ *
+ * @public
+ */
+export interface DialogTimeoutSpec {
+  /** How long the dialog may remain in this state, in milliseconds. */
+  afterMs: number;
+  /**
+   * The event to send when it has been. Must name an event this state's own
+   * `on` map declares — or one declared by a state containing it, since being
+   * in a state is being in all of them — and that is checked when the dialog is
+   * DECLARED: a deadline sending an event nothing handles fires into silence
+   * and leaves the conversation exactly where it was.
+   */
+  send: string;
+}
+
+/**
+ * A deadline as {@link Dialog.timeout} reports it: how long, and the event to
+ * send.
+ *
+ * The event is built for the caller rather than left as a name, so a runtime
+ * arming this deadline hands the result straight back to {@link Dialog.send}
+ * and never has to know how `timeout.send` is spelled.
+ *
+ * @public
+ */
+export interface DialogTimeout {
+  /** {@link DialogTimeoutSpec.afterMs}, from the state in force. */
+  readonly afterMs: number;
+  /** The event to send when the deadline passes. */
+  readonly event: { readonly type: string };
+}
+
+/**
+ * How interruptible the agent is while a dialog state is active.
+ *
+ * `"default"` leaves the agent's own `minBargeInWords` /
+ * `interruptionMinDurationMs` in place; `"off"` means the agent finishes what it
+ * is saying, which is what a disclosure or a legally-required read needs; the
+ * object form tightens or loosens the same two gates for this phase only — a
+ * menu wants `{ minWords: 1 }` so a caller can cut in on the first word.
+ *
+ * @public
+ */
+export type DialogBargeIn =
+  | "default"
+  | "off"
+  | {
+      /** Words in an interim transcript before a barge-in counts. */
+      minWords?: number;
+      /** Sustained speech before an interim-triggered barge-in counts, in ms. */
+      minDurationMs?: number;
+    };
+
+/**
+ * The per-state voice settings a dialog declares — what {@link Dialog.voiceConfig}
+ * answers with, from the deepest active state that declares any of them.
+ *
+ * Every field is plain JSON, which is a requirement rather than a coincidence:
+ * these ride in the state node's `meta`, and a dialog's snapshot is persisted
+ * through `structuredClone` for a `durable` session.
+ *
+ * @public
+ */
+export interface DialogVoiceConfig {
+  /** The TTS voice for this phase of the call. */
+  readonly voice?: string;
+  /** How interruptible the agent is here. See {@link DialogBargeIn}. */
+  readonly bargeIn?: DialogBargeIn;
+  /** STT biasing for what the caller is about to say here. */
+  readonly keyterms?: readonly string[];
+  /** The model's tool-choice policy while this state is active. */
+  readonly toolChoice?: ToolChoice;
+  /** The model's sampling temperature while this state is active. */
+  readonly temperature?: number;
+}
+
+/**
  * One state of a {@link DialogSpec} — the plain-object form of a dialog's shape.
  *
- * These are the six things every dialog in the templates actually used, and
- * they are not a subset chosen for convenience: a dialog's snapshot is
+ * It began as the six things every dialog in the templates actually used, and
+ * they were not a subset chosen for convenience: a dialog's snapshot is
  * PERSISTED, so it must survive `structuredClone`, which rules out guards,
  * actions, context and invoked actors by construction. What was left was an
  * XState `setup({ types: {} as { events: … } })` block whose event union
  * restated every name already written in the `on` maps, and a
  * `meta: { instruction }` wrapper around every line of guidance.
+ *
+ * The six became eleven when a dialog had to be able to describe a CALL rather
+ * than a form: a deadline (`timeout`) and the five per-phase voice knobs
+ * (`voice`, `bargeIn`, `keyterms`, `toolChoice`, `temperature`). Every one of
+ * them is plain JSON and rides in the same `meta` the instruction does, so the
+ * constraint above is untouched and a `durable: true` dialog written before any
+ * of this resumes byte-identically — a state declaring none of them compiles to
+ * a node with no `meta` at all.
+ *
+ * **What is deliberately NOT here is `after`.** XState's delayed transitions are
+ * timers owned by a running actor, and a dialog's actor is created, sent to,
+ * persisted and stopped inside one synchronous window, so a dialog can never
+ * fire one. Declaring it throws at declaration and the message names `timeout`,
+ * which is the deadline a runtime can actually arm.
  *
  * **The reason to type it is a SILENT failure, not the line count.** The
  * instruction is read back out of `meta` untyped (`_dialog-snapshot.ts`), and
@@ -171,8 +291,43 @@ export interface DialogStateSpec {
    * {@link Dialog.send} and a gated tool's `send`/`sendFrom` accept, so an
    * event a spec never declares is a compile error rather than an event
    * silently ignored at run time.
+   *
+   * A key starting with `@` is a SESSION event instead — see
+   * {@link DialogSessionEventName}. Those are validated against the wire
+   * vocabulary at declaration and are deliberately kept OUT of the union above:
+   * an author does not send `@speech.started` by hand, the runtime does.
    */
   on?: Record<string, string>;
+  /**
+   * How long the dialog may stay in this state, and what to send when it has
+   * been that long. See {@link DialogTimeoutSpec}.
+   *
+   * The declarative half of a deadline: nothing here starts a timer, because a
+   * dialog holds no live actor to run one. The runtime reads it through
+   * {@link Dialog.timeout} for the state the conversation is actually in and
+   * arms it around the turn — which is why `send` has to name an event this
+   * state (or one containing it) already handles, checked at declaration.
+   */
+  timeout?: DialogTimeoutSpec;
+  /**
+   * The TTS voice for this phase of the call — a different voice for the
+   * disclosure than for the chat, say. See {@link DialogVoiceConfig}.
+   */
+  voice?: string;
+  /**
+   * How interruptible the agent is here. A disclosure state may need to FINISH;
+   * a menu state wants to be maximally interruptible. See {@link DialogBargeIn}.
+   */
+  bargeIn?: DialogBargeIn;
+  /**
+   * STT biasing for what the caller is about to say in this state — the policy
+   * number they are reading out, the product names on the menu.
+   */
+  keyterms?: readonly string[];
+  /** The model's tool-choice policy while this state is active. */
+  toolChoice?: ToolChoice;
+  /** The model's sampling temperature while this state is active. */
+  temperature?: number;
   /** Whether reaching this state ENDS the dialog — XState's `type: "final"`. */
   final?: true;
   /** For a state with `states`: which child it starts in. */
@@ -238,6 +393,15 @@ type EventOf<N> = N extends string ? { type: N } : never;
  * a misspelled event is a compile error at the call site rather than an event
  * XState quietly ignores.
  *
+ * **The `@` names are SUBTRACTED**, which is the one thing this union does that
+ * the `on` maps do not say by themselves. A session-event transition is driven
+ * by the runtime — nobody writes `dialog.send(ctx, { type: "@speech.started" })`
+ * — so leaving those names in would put a dozen events an author must never
+ * send by hand into the autocomplete for the one they must. See
+ * {@link DialogSessionEventName}; {@link Dialog.receive} is how they arrive.
+ *
  * @public
  */
-export type DialogEvent<S extends DialogSpec> = EventOf<NamesInMap<S["states"]>>;
+export type DialogEvent<S extends DialogSpec> = EventOf<
+  Exclude<NamesInMap<S["states"]>, `@${string}`>
+>;

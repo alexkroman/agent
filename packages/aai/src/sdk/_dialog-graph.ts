@@ -31,14 +31,28 @@
  * parent's `on` applies to every descendant. Re-deriving those rules here would
  * be a second, worse copy of them. So the walk reads
  * {@link https://stately.ai/docs/state-nodes | StateNode} objects that XState
- * has already resolved: `transitions` (which `after`, `onDone` and `onError`
- * are desugared into) plus `always`, whose `target` is an array of state nodes
+ * has already resolved: `transitions` (which `onDone` and `onError` are
+ * desugared into) plus `always`, whose `target` is an array of state nodes
  * rather than strings.
  *
  * That is also what makes the check safe on the `dialog(key, machine)` overload
  * rather than only on a {@link DialogSpec}: a machine using `always` or an
  * invoked actor's `onDone` to leave a state is read correctly, where a check
  * that only knew about `on` would report it as wedged.
+ *
+ * ## `after` lands in that map too, and that is why it is REFUSED elsewhere
+ *
+ * A delayed transition is desugared into `transitions` like the other two, so a
+ * state whose only exit is `after: { 1000: "done" }` reads here as perfectly
+ * healthy — and it is not: a dialog's actor is created, sent to, persisted and
+ * stopped inside one synchronous window, so no timer of the machine's ever
+ * runs, and that state is exactly the wedge this module exists to catch. This
+ * guard cannot tell the difference by construction — the delay is gone by the
+ * time XState hands the node over — so the rule lives one step EARLIER:
+ * `_dialog-events.ts` refuses `after` in either form before the graph is
+ * walked, naming a state's `timeout` as the deadline that does work. Until it
+ * did, this module's own test fixture used a delay-only state as a PASSING
+ * case, which is what a check that reads a desugared graph costs you.
  *
  * Internal (`_`-prefixed, per the repo's file-naming rules): nothing outside
  * this package may import it. `dialog()` is the public surface.

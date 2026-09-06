@@ -21,6 +21,7 @@ import { consoleLogger } from "../runtime-config.ts";
 import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import {
+  resolveSystemPrompt,
   type SkipGreetingOption,
   shouldSkipGreeting,
   type Transport,
@@ -82,6 +83,15 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   type ToolBuffer = { callId: string; name: string; argsBuffer: string };
   const toolBuffers = new Map<string, ToolBuffer>();
   let responseCreateQueued = false;
+  // The `instructions` the SERVICE is holding, null before the first
+  // `session.update`. Latched only when a frame really went out (`socketOpen`),
+  // because a latch on a DROPPED send has no symptom: the next refresh compares
+  // equal, declines to send, and leaves the call on the old prompt for good.
+  let sentInstructions: string | null = null;
+
+  function socketOpen(): boolean {
+    return ws !== null && ws.readyState === WS_OPEN;
+  }
 
   function send(payload: Record<string, unknown>): void {
     if (!ws || ws.readyState !== WS_OPEN) {
@@ -106,12 +116,16 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   }
 
   function sendSessionUpdate(): void {
+    const instructions = resolveSystemPrompt(opts.sessionConfig.systemPrompt);
+    // Called from the `open` handler, so the socket is open by construction and
+    // this latch cannot record a dropped frame.
+    sentInstructions = instructions;
     send({
       type: "session.update",
       session: {
         type: "realtime",
         output_modalities: ["audio"],
-        instructions: opts.sessionConfig.systemPrompt,
+        instructions,
         audio: {
           input: {
             format: { type: "audio/pcm", rate: opts.inputSampleRate },
@@ -131,6 +145,29 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
             : { type: "function", name: opts.toolChoice.toolName },
       },
     });
+  }
+
+  /**
+   * Push a changed system prompt to the service — see
+   * {@link Transport.refreshSystemPrompt}.
+   *
+   * Two properties, each answering a way this goes wrong. **Only on a CHANGE**:
+   * a `session.update` per turn is a frame the service does not need, and the
+   * full update above restates `turn_detection` — re-declaring server VAD under
+   * a caller who is already speaking is not worth a barge-in that misses. And an
+   * **`instructions`-ONLY patch**: `session.update` merges, so naming the one
+   * field that moved leaves the formats, voice, tools and tool choice alone
+   * rather than putting all of them back on the wire to change one string.
+   *
+   * A closed socket is a NO-OP, not a queued write — this transport drops frames
+   * on a dead link everywhere else (see `send`).
+   */
+  function refreshSystemPrompt(): void {
+    if (!socketOpen()) return;
+    const next = resolveSystemPrompt(opts.sessionConfig.systemPrompt);
+    if (next === sentInstructions) return;
+    sentInstructions = next;
+    send({ type: "session.update", session: { type: "realtime", instructions: next } });
   }
 
   /**
@@ -414,6 +451,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   return {
     start,
     stop,
+    refreshSystemPrompt,
     sendUserAudio(bytes) {
       if (!ws || ws.readyState !== WS_OPEN || audioGate.shouldDrop()) return;
       ws.send(`{"type":"input_audio_buffer.append","audio":"${uint8ToBase64(bytes)}"}`);

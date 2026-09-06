@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { tripProjection } from "./shared.ts";
+import { gateFlow, tripProjection } from "./shared.ts";
 
 /**
  * A phone travel concierge, adapted from LangGraph's customer-support tutorial.
@@ -33,6 +33,15 @@ export default agent({
   // One projection replaces a `ctx.send` in each of eleven tools — and is the
   // single place that decides the caller's record leaves the server trimmed.
   syncState: tripProjection,
+  /**
+   * Declared so the CALL can move the gate, not only a tool.
+   *
+   * The one thing it buys this template is `"@session.timed-out"`: a caller who
+   * hangs up while a booking change is staged leaves a confirmation gate that
+   * would otherwise stay open for the rest of the session, with every sensitive
+   * tool still legal in it.
+   */
+  dialogs: [gateFlow],
   greeting:
     "Swiss Air Travel, this is the concierge desk. I can see your booking — what can I do for you today?",
 });

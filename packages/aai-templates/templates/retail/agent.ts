@@ -19,6 +19,18 @@ export default agent({
   // authenticated one may reach the browser.
   syncState: retailSlot.projection(storeView),
 
+  /**
+   * Declaring the flow is what lets the CALL move it, not just a tool.
+   *
+   * `callFlow` gated tools without this and still would; what the declaration
+   * adds is the half no tool can reach — `"@session.timed-out"` carries a call
+   * whose caller has hung up into `abandoned`, and `awaitingConfirmation`'s
+   * `temperature` applies to the turn that reads a staged change back. Both
+   * happen when no tool is running, which is exactly why neither was
+   * expressible before.
+   */
+  dialogs: [callFlow],
+
   // Callers read order numbers and ten-digit item numbers in bursts with pauses
   // inside one utterance ("W seven six seven … eight oh seven two"). The default
   // pipeline's `max_turn_silence` already tolerates that; reach for

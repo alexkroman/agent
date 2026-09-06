@@ -405,3 +405,63 @@ describe("PipelineTransport — turn commit on STT final", () => {
     await t.stop();
   });
 });
+
+// The transport's half of the per-turn prompt seam: `sessionConfig.systemPrompt`
+// is READ at each turn rather than captured at construction. The resolution
+// itself is specced in pipeline-llm-stream.test.ts; this is the wiring.
+describe("PipelineTransport — the system prompt is read per turn", () => {
+  /** The `system` message of a recorded `doStream` call. */
+  function systemOf(call: { prompt?: unknown }): string {
+    const prompt = call.prompt;
+    if (!Array.isArray(prompt)) throw new Error("no prompt array on the recorded call");
+    const system = prompt.find((m) => (m as { role?: string }).role === "system");
+    return String((system as { content?: unknown } | undefined)?.content ?? "");
+  }
+
+  test("a thunk in sessionConfig reaches the model, and its answer can MOVE mid-call", async () => {
+    // Two turns on one session with a phase change between them — the case a
+    // captured string cannot express, and the one where the second turn calls
+    // no tool so nothing else could have told the model where the call is.
+    let phase = "intake";
+    const { opts, stt } = makeOpts({
+      sessionConfig: { systemPrompt: () => `Phase: ${phase}.`, greeting: "" },
+      llm: createFakeLanguageModel({
+        steps: [[{ type: "text", text: "one" }], [{ type: "text", text: "two" }]],
+      }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.fireFinal("first question");
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    phase = "wrap-up";
+    stt.last()?.fireFinal("second question");
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(2);
+    });
+
+    const calls = llmCalls(opts).calls;
+    expect(systemOf(calls[0] ?? {})).toBe("Phase: intake.");
+    expect(systemOf(calls[1] ?? {})).toBe("Phase: wrap-up.");
+    await t.stop();
+  });
+
+  test("a plain string still reaches the model unchanged", async () => {
+    // The default every shipped agent takes. It must send the same bytes it
+    // sent before the option grew a second member.
+    const { opts, stt } = makeOpts({
+      sessionConfig: { systemPrompt: "Be terse.", greeting: "" },
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("hello");
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    expect(systemOf(llmCalls(opts).calls[0] ?? {})).toBe("Be terse.");
+    await t.stop();
+  });
+});

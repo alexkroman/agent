@@ -1176,3 +1176,66 @@ describe("transfer_to_human_agents", () => {
     expect(isToolFailure(refused) && refused.error).toContain('"transferred"');
   });
 });
+
+/** Stage a real change on an authed context, and report where the call landed. */
+async function stageFor(ctx: ToolContext): Promise<string> {
+  expectToolOk<StagedResult>(
+    await cancelPendingOrder.execute({ order_id: "#W9300146", reason: "no longer needed" }, ctx),
+  );
+  return callFlow.position(ctx).state;
+}
+
+describe("a caller who hangs up", () => {
+  /** The frame the runtime offers a declared dialog when a session times out. */
+  const CALLER_GONE = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } } as const;
+
+  test("ends the call from `identifying`, before anyone is on it", () => {
+    const ctx = makeCtx();
+    const at = callFlow.receive(ctx, CALLER_GONE);
+    expect(at.state).toBe("abandoned");
+    expect(at.done).toBe(true);
+  });
+
+  test("ends it from a staged confirmation, which is where it matters", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const staged = await stageFor(ctx);
+    expect(staged).toBe("serving.awaitingConfirmation");
+
+    // Declared on the PARENT, so it reaches this child without `serving`
+    // re-entering and resetting to `helping`.
+    expect(callFlow.receive(ctx, CALLER_GONE).state).toBe("abandoned");
+  });
+
+  test("leaves nothing runnable — including the tool that would settle the change", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    await stageFor(ctx);
+    callFlow.receive(ctx, CALLER_GONE);
+
+    // The whole point of the state. `confirm_change` is what applies a staged
+    // change to the store, and a caller who is gone has agreed to nothing.
+    const refused = await confirmChange.execute({}, ctx);
+    expect(isToolFailure(refused)).toBe(true);
+    expect(isToolFailure(refused) && refused.error).toContain('"abandoned"');
+  });
+
+  test("an event no state declares still writes nothing", () => {
+    const ctx = makeCtx();
+    const before = callFlow.position(ctx).state;
+    // `receive` asks the machine first, so the overwhelming majority of session
+    // frames — which no state here watches — cost no store write at all.
+    const at = callFlow.receive(ctx, { type: "speech.started", meta: { id: "evt_2", at: 0 } });
+    expect(at.state).toBe(before);
+  });
+});
+
+describe("the read-back knob", () => {
+  test("awaitingConfirmation asks for a low temperature, and nothing else does", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    expect(callFlow.voiceConfig(ctx)?.temperature).toBeUndefined();
+
+    await stageFor(ctx);
+    // Reading an order number and a dollar amount back is transcription; the
+    // failure is a model smoothing an id into one that scans better.
+    expect(callFlow.voiceConfig(ctx)?.temperature).toBe(0.2);
+  });
+});

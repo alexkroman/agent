@@ -1543,6 +1543,66 @@ makes yields look instant. A correct client's yield rate against the old code
 was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
 reverting the gate.
 
+## The system prompt is resolved PER TURN, and one transport cannot
+
+`TransportSessionConfig.systemPrompt` is a `SystemPromptOption` — `string | (()
+=> string)` — with one reader, `resolveSystemPrompt` (`transports/types.ts`).
+The same shape as `SkipGreetingOption` beside it, and for the same reason: a
+second `resolveSystemPrompt?: () => string` field next to the string would give
+every read site a precedence to remember, and a site that forgot would send the
+frozen string on a session that had a resolver — silent, because the model
+answers fluently under instructions that moved on rather than failing.
+
+**A plain string is byte-identical to what shipped.** It resolves to itself, at
+the same place the frozen value used to be read, which is what made this
+landable before anything supplies a thunk.
+
+Who resolves, and when:
+
+| Transport | Resolves | Why there |
+| --- | --- | --- |
+| pipeline | at each `startLlmStream` | the ONE place a `streamText` request is assembled, so the turn about to run gets the prompt current at that instant |
+| OpenAI Realtime | at open, then on `refreshSystemPrompt()` | `instructions` is session state on the SERVICE; the method sends an `instructions`-only `session.update` and ONLY on a change |
+| AssemblyAI S2S | **once, at construction** | the service runs the tool loop itself, so the host is never on the path between two turns and has no moment to resolve at |
+
+That last row is the asymmetry to know before wiring anything to this seam: an
+S2S agent learns about a `dialog()` phase through tool results alone, exactly as
+every agent did before. `buildAssemblyS2sTransport` (`runtime-transport.ts`) is
+where the single resolution happens and says so.
+
+**A speculation records the prompt it was BUILT on, and adoption re-checks it.**
+Preemptive generation launches from an interim transcript, deliberately while
+the caller is still talking, so a phase can advance between the launch and the
+final that would adopt the stream. The request in flight already carries the old
+instructions and `system` cannot be amended mid-stream, so `take()` discards
+with `prompt-moved` — the same shape as `history-moved` beside it, and the same
+argument: request parity is the premise adoption rests on. The controller
+resolves ONCE and hands the string to `start`, so the recorded key cannot differ
+from what the request carried.
+
+**The extension point is `SessionSystemPrompt.setSuffix`**
+(`runtime-system-prompt.ts`). The base prompt stays cached per calendar day —
+`buildSystemPrompt` stamps the date through `Intl.DateTimeFormat`, which is why
+that cache exists at all — and a session appends to it rather than rebuilding
+it. An empty suffix returns the base string ITSELF, with no separator
+appended, so a phase machine with nothing to say moves the prompt by not one
+byte. `openSessionDialogs` is what calls it — see the section below.
+
+## Dialogs are wired to a SESSION here
+
+`agent({ dialogs })` is what makes a `dialog()` more than a tool gate: session
+events reach it, its per-state deadlines are armed, its active instruction
+becomes the prompt suffix above, and three of its five per-state voice knobs are
+applied — the other two are refused, with a warning naming the state. The bridge
+is `runtime-dialogs.ts`; `runtime-dialog-knobs.ts` decides which knobs this
+runtime can honour, and `transports/pipeline-dialog-knobs.ts` applies them.
+
+**[`DIALOG-CLAUDE.md`](DIALOG-CLAUDE.md) beside this file carries all of it** —
+the four decisions (why the bridge runs before the agent's `events` hooks, how
+two dialogs compose, what the deadline clock runs from, and which knobs are live
+against which are impossible), the mechanics not worth rediscovering, and the two
+things deliberately not done. This guide is at its cap.
+
 ## A step's REQUEST is bounded in tokens; the message cap only guards growth
 
 `DEFAULT_MAX_HISTORY` counts MESSAGES, which does not predict what a request

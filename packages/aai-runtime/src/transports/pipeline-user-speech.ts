@@ -118,10 +118,20 @@ function createSttEventHandlers(deps: {
   commitUserTurn: (text: string) => void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
-  /** Interim words required to barge in. */
-  minBargeInWords: number;
-  /** Sustained-speech gate for interim-triggered barge-in; 0 disables. */
-  interruptionMinDurationMs: number;
+  /**
+   * Interim words required to barge in — a THUNK, resolved at the moment a
+   * partial is classified.
+   *
+   * It was a number, captured for the length of the call, until a `dialog()`
+   * state could declare its own `bargeIn`: a disclosure state has to be able to
+   * FINISH its sentence and a menu state wants to be maximally interruptible, so
+   * the threshold belongs to the phase rather than to the session. `Infinity`
+   * is `bargeIn: "off"` and is what those two gates read as "never" — see
+   * `pipeline-dialog-knobs.ts`.
+   */
+  minBargeInWords: () => number;
+  /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
+  interruptionMinDurationMs: () => number;
   log: Logger;
   sid: string;
 }): SttEventHandlers {
@@ -158,11 +168,11 @@ function createSttEventHandlers(deps: {
   /** Should this interim transcript interrupt the agent right now? */
   function partialTriggersBargeIn(words: number): boolean {
     if (!agentIsSpeaking()) return false;
-    if (words < deps.minBargeInWords) return false;
+    if (words < deps.minBargeInWords()) return false;
     // Duration gate (interim-only): require sustained speech since the
     // utterance's first partial before cutting the agent off. A committed
     // final barging in via onSttFinal is never duration-gated.
-    const gate = deps.interruptionMinDurationMs;
+    const gate = deps.interruptionMinDurationMs();
     return !(gate > 0 && speechEdges.durationMs() < gate);
   }
 
@@ -180,7 +190,7 @@ function createSttEventHandlers(deps: {
       // gate needs >= minBargeInWords — so the scan stops at
       // max(minBargeInWords, 1) instead of walking the whole partial,
       // which grows to full-utterance length as the user keeps speaking.
-      const words = scanWords(text, Math.max(deps.minBargeInWords, 1));
+      const words = scanWords(text, Math.max(deps.minBargeInWords(), 1));
       // Live captions: forward the interim transcript as-is. The committed turn
       // still arrives via onUserTranscript once the STT final lands. Emitted
       // after any barge-in below, because the client's `cancelled` handler
@@ -265,7 +275,7 @@ function createSttEventHandlers(deps: {
       // interrupt — the turn is answered once the reply finishes (chainTurn
       // defers it), so neither short answers ("yes", a ZIP) spoken over the
       // agent nor re-prompts into a not-yet-spoken reply are lost.
-      if (agentIsSpeaking() && hasMinWords(trimmed, deps.minBargeInWords)) {
+      if (agentIsSpeaking() && hasMinWords(trimmed, deps.minBargeInWords())) {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
         deps.abortInFlightTurn();
         deps.edgeGate.release();
@@ -314,10 +324,10 @@ export function createUserActivity(deps: {
    * recovery outright. See DEFAULT_SPEECH_IDLE_TIMEOUT_MS.
    */
   speechIdleTimeoutMs: number;
-  /** Interim words required to barge in. */
-  minBargeInWords: number;
-  /** Sustained-speech gate for interim-triggered barge-in; 0 disables. */
-  interruptionMinDurationMs: number;
+  /** Interim words required to barge in — per STATE, so a thunk. */
+  minBargeInWords: () => number;
+  /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
+  interruptionMinDurationMs: () => number;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   isTerminated(): boolean;

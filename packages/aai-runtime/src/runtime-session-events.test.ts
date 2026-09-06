@@ -9,7 +9,7 @@
  * that the same events are readable back off the runtime.
  */
 
-import type { SessionEventHandlers } from "@alexkroman1/aai";
+import { dialog, type SessionEventHandlers } from "@alexkroman1/aai";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
@@ -130,6 +130,38 @@ describe("agent({ events }) through the runtime", () => {
 
     // The stream is not opt-in — a resume reads it, so it is always kept.
     await expect(runtime.sessionEvents?.read(SID, 0)).resolves.toMatchObject({ tail: 1 });
+  });
+
+  test("a declared dialog moves on a session event, and a hook sees where it moved TO", () => {
+    // The ORDER, end to end and through a real runtime. A dialog is part of the
+    // session's state and a hook is an observer of it, so by the time a handler
+    // runs the transition this event caused has already happened — see
+    // `runtime-dialogs.ts`. The other order hands the handler the state the call
+    // has just left, silently.
+    const intake = dialog("intake", {
+      initial: "greeting",
+      states: {
+        greeting: { instruction: "Say hello.", on: { "@user-transcript.committed": "greeted" } },
+        greeted: { instruction: "Find out why they called.", final: true },
+      },
+    });
+    const at: string[] = [];
+    const runtime = createRuntime({
+      agent: makeAgent({
+        dialogs: [intake],
+        // `SessionEventContext` IS a `SlotHolder`, which is what lets a handler
+        // read a dialog with no wiring of its own.
+        events: { "user-transcript.committed": (_e, ctx) => at.push(intake.position(ctx).state) },
+      }),
+      env: {},
+      logger: silentLogger,
+    });
+    const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
+    session.configure(runtime.readyConfig);
+
+    session.report({ type: "user-transcript.committed", text: "hi there" });
+
+    expect(at).toEqual(["greeted"]);
   });
 
   // Two tests about `ctx.db` on the hook context stood here — that hooks still
