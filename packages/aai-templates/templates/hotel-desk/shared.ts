@@ -51,7 +51,7 @@
  */
 
 import type { DeepReadonly } from "@alexkroman1/aai";
-import { pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { sessionSlot } from "@alexkroman1/aai";
 import {
   type Dispute,
   type GuestHistory,
@@ -160,8 +160,6 @@ export interface HotelState {
   log: string[];
 }
 
-export const MAX_LOG = 40;
-
 /** A pristine hotel per session, seeded around {@link TODAY}. */
 export function createHotelState(): HotelState {
   return {
@@ -183,15 +181,17 @@ export function createHotelState(): HotelState {
  * No `after` hook: nothing stored here is derived from anything else stored
  * here. An invoice is written beside its booking by the one function that
  * prices a stay, and a refund decrements the invoice where the dispute is filed.
+ * The call log is the one append-only list, and its bound is declared on the
+ * slot so it holds whatever path writes it.
  */
-export const hotelSlot = sessionSlot("hotel", createHotelState);
+export const hotelSlot = sessionSlot("hotel", createHotelState, { caps: { log: 40 } });
 
 /** The hotel as a READ hands it out: deep-frozen, and typed to say so. */
 export type FrozenHotelState = DeepReadonly<HotelState>;
 
-/** One line of the call log, capped on append. */
+/** One line of the call log — the slot's `caps` keep it to the newest forty. */
 export function note(state: HotelState, line: string): void {
-  pushCapped(state.log, line, MAX_LOG);
+  state.log.push(line);
 }
 
 /** Every reference this hotel has issued — what {@link mintCode} avoids. */

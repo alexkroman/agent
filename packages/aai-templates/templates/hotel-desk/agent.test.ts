@@ -6,6 +6,7 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import {
   createToolContext,
   expectDialogOk,
+  expectDialogRefused,
   toolInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -286,8 +287,8 @@ describe("the booking dialog", () => {
       run("choose_room", { roomType: "king" }, ctx),
       run("confirm_booking", ctx),
     ]) {
-      const refused = await call;
-      expect(isToolFailure(refused) && refused.error).toMatch(/start_room_booking/);
+      const refused = expectDialogRefused(await call, "desk");
+      expect(refused.error).toMatch(/start_room_booking/);
     }
     expect(hotelSlot.get(ctx).draft).toBeNull();
   });
@@ -297,7 +298,7 @@ describe("the booking dialog", () => {
     expectDialogOk(await run("start_room_booking", ctx));
     expect(at(ctx)).toBe("booking.stay");
     // The options have not been offered, so a room cannot be picked yet.
-    expect(isToolFailure(await run("choose_room", { roomType: "queen_2beds" }, ctx))).toBe(true);
+    expectDialogRefused(await run("choose_room", { roomType: "queen_2beds" }, ctx), "booking.stay");
 
     const stay = expectDialogOk<{ options: string; next: string }>(
       await run("set_stay", { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
@@ -312,7 +313,7 @@ describe("the booking dialog", () => {
     expect(room.result.extrasToOffer).toContain("breakfast: adds 75 dollars");
     // No total exists before the extras are answered.
     expect(hotelSlot.get(ctx).draft?.quotedTotal).toBeNull();
-    expect(isToolFailure(await run("confirm_booking", ctx))).toBe(true);
+    expectDialogRefused(await run("confirm_booking", ctx), "booking.extras");
 
     const extras = expectDialogOk<{ total: string }>(
       await run(
@@ -352,8 +353,8 @@ describe("the booking dialog", () => {
     const ctx = createToolContext();
     await bookUpToReadBack(ctx);
     expect(at(ctx)).toBe("booking.readBack");
-    const early = await run("confirm_booking", ctx);
-    expect(isToolFailure(early) && early.error).toMatch(/WAIT|answered/);
+    const early = expectDialogRefused(await run("confirm_booking", ctx), "booking.readBack");
+    expect(early.error).toMatch(/WAIT|answered/);
     expect(hotelSlot.get(ctx).bookings.some((b) => b.lastName === "Whitfield")).toBe(false);
 
     expect(callerAnswers(ctx)).toBe("booking.agreeing");
@@ -390,7 +391,7 @@ describe("the booking dialog", () => {
     );
     expect(redated.state).toBe("booking.readBack");
     expect(hotelSlot.get(ctx).draft?.roomType).toBe("queen_2beds");
-    expect(isToolFailure(await run("confirm_booking", ctx))).toBe(true);
+    expectDialogRefused(await run("confirm_booking", ctx), "booking.readBack");
   });
 
   test("a re-dated pick that dies re-opens the OFFER, and the caller's turn closes it", async () => {
@@ -408,7 +409,7 @@ describe("the booking dialog", () => {
     expect(moved.state).toBe("booking.offering");
     expect(hotelSlot.get(ctx).draft?.roomType).toBeNull();
     // Closed until the options have been spoken and the caller has answered.
-    expect(isToolFailure(await run("choose_room", { roomType: "king" }, ctx))).toBe(true);
+    expectDialogRefused(await run("choose_room", { roomType: "king" }, ctx), "booking.offering");
     expect(callerAnswers(ctx)).toBe("booking.room");
     expectDialogOk(await run("choose_room", { roomType: "king" }, ctx));
   });

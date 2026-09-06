@@ -1,10 +1,10 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` and the prompt add. */
 import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
-import { isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
+  expectDialogRefused,
   stubGenerate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -121,8 +121,8 @@ describe("a round", () => {
       run("repeat_word", ctx),
       run("final_score", ctx),
     ]) {
-      const refused = await call;
-      expect(isToolFailure(refused) && refused.error).toMatch(/start_game/);
+      const refused = expectDialogRefused(await call, "lobby");
+      expect(refused.error).toMatch(/start_game/);
     }
     // No clock is armed before a round.
     expect(gameFlow.timeout(ctx)).toBeUndefined();
@@ -148,7 +148,7 @@ describe("a round", () => {
       event: { type: "TIME_UP" },
     });
     // A round cannot be restarted from under the describer.
-    expect(isToolFailure(await run("start_game", ctx))).toBe(true);
+    expectDialogRefused(await run("start_game", ctx), "playing");
   });
 
   test("a wrong guess is relayed and remembered; a right one scores and moves the word on", async () => {
@@ -256,7 +256,7 @@ describe("a round", () => {
     expect(last.result).toMatchObject({ verdict: "correct", nextWord: null });
     expect(last.state).toBe("over");
     // Nothing plays after the round.
-    expect(isToolFailure(await run("relay_description", { description: "more" }, ctx))).toBe(true);
+    expectDialogRefused(await run("relay_description", { description: "more" }, ctx), "over");
 
     const final = expectDialogOk<{ score: number; best: number; solved: string[]; say: string }>(
       await run("final_score", ctx),

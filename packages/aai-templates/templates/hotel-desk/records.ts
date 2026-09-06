@@ -7,6 +7,8 @@
  * `shared.ts` carries the attribution and the their-name → our-name table.
  */
 
+import { spokenAlphanumeric } from "@alexkroman1/aai";
+
 // ─── Money, dates, codes ─────────────────────────────────────────────────────
 
 /** Their `Pricing` dataclass, in cents. */
@@ -60,10 +62,7 @@ export function speakCode(code: string): string {
  * A B one two", and a model relaying it faithfully passes the word along.
  */
 export function normalizeCode(code: string): string {
-  return code
-    .replaceAll(/\bdash\b/gi, "")
-    .replaceAll(/[^a-z0-9]/gi, "")
-    .toUpperCase();
+  return spokenAlphanumeric(code.replaceAll(/\bdash\b/gi, ""));
 }
 
 /**
