@@ -1060,6 +1060,37 @@ are in [`PORTS-CLAUDE.md`](PORTS-CLAUDE.md)**, a sibling of this guide read on
 demand rather than loaded with it: this file is at its cap, and those accounts
 are reference for someone already inside one of the six.
 
+## One template is a port of a CrewAI flow
+
+`hiring-desk` is CrewAI's `lead-score-flow` (`crewAIInc/crewAI-examples`, MIT
+— `crews.ts` carries the attribution and the their-name → our-name table), the
+most complex example that repository ships and the only one with a person in
+the loop: two single-agent crews, a `Flow` whose `@router` is a blocking
+`input()` menu between them, Pydantic state and `output_pydantic`, and two
+`asyncio.gather` fan-outs. It is a VOICE agent by the same test as the LangGraph
+ports above — every step answers inside a turn — and the router is the reason:
+"here are the top three; re-score with feedback, proceed, or quit" is already a
+conversation.
+
+**The lesson it exists for is that a crew task's OUTPUT decides which SDK
+primitive it becomes.** `evaluate_candidate` declares `output_pydantic`, so it
+is `ctx.generate({ schema })` through a `mapConcurrent` window;
+`send_followup_email` produces prose with rules no schema holds, so it is a
+`subagent()` with `expectedOutput` and a `guardrail` (the SDK's `expectedOutput`
+doc names CrewAI's `expected_output` as the split it copies). Their
+`role`/`goal`/`backstory` are rendered through CrewAI's own `role_playing`
+template so the agents read to a model as they read to theirs; the ReAct
+`Thought:`/`Final Answer:` scaffolding is dropped, since a tool-calling model
+has no free-text action format to parse.
+
+**Three things a phone changed, each argued where it lives**: the feedback loop
+is BOUNDED (their edge is not; `MAX_FEEDBACK_ROUNDS` is their
+`self_evaluation_loop_flow`'s guard applied to it), the shortlist can be spoken
+rather than fixed to the top three, and the score is stored under the id the
+desk ASKED about rather than the id the model echoed, which is how their
+`combine_candidates_with_scores` join could write one verdict against another
+name. The full account is in [`PORTS-CLAUDE.md`](PORTS-CLAUDE.md).
+
 ## `recap-workflow` is where the Temporal patterns were ported
 
 The same idea as the LangChain ports above, from the other tradition — and the
