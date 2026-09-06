@@ -1,20 +1,15 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type {
-  GenerateFn,
-  GenerateOptions,
-  GuardrailVerdict,
-  SubagentAnswer,
-  ToolContext,
-} from "@alexkroman1/aai";
+import type { GenerateFn, GenerateOptions, ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
+  expectDialogRefused,
+  runGuardrail,
   type StubDelegateCall,
   type StubGenerateCall,
-  stubDelegate,
-  stubGenerate,
+  scriptedToolContext,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
@@ -41,7 +36,6 @@ import {
   LEADS,
   MAX_FEEDBACK_ENTRIES,
   MAX_FEEDBACK_ROUNDS,
-  noteFeedback,
   ranked,
   resolveCandidate,
   SHORTLIST_SIZE,
@@ -121,24 +115,25 @@ interface Script {
  * swap the model would also swap the state.
  */
 function scriptedDesk(script: Script = {}) {
-  const model = stubGenerate({
-    [EVALUATOR_SYSTEM]: (call: StubGenerateCall) => {
-      const id = candidateIdIn(call.prompt);
-      if (script.failScoring?.includes(id)) throw new Error(`gateway said no for ${id}`);
-      const table = script.scores ?? SCORES;
-      return { object: { score: table[id] ?? 50, reason: `Scripted reasoning for ${id}.` } };
+  const scripted = scriptedToolContext({
+    generate: {
+      [EVALUATOR_SYSTEM]: (call: StubGenerateCall) => {
+        const id = candidateIdIn(call.prompt);
+        if (script.failScoring?.includes(id)) throw new Error(`gateway said no for ${id}`);
+        const table = script.scores ?? SCORES;
+        return { object: { score: table[id] ?? 50, reason: `Scripted reasoning for ${id}.` } };
+      },
+    },
+    delegate: {
+      "hr-coordinator": (call) => {
+        const name = call.task.match(/^Name: (.+)$/m)?.[1] ?? "";
+        if (script.failEmail?.includes(name)) throw new Error(`coordinator timed out on ${name}`);
+        const reply = script.email ? script.email(call) : emailFor(call);
+        return typeof reply === "string" ? { text: reply } : reply;
+      },
     },
   });
-  const desk = stubDelegate({
-    "hr-coordinator": (call) => {
-      const name = call.task.match(/^Name: (.+)$/m)?.[1] ?? "";
-      if (script.failEmail?.includes(name)) throw new Error(`coordinator timed out on ${name}`);
-      const reply = script.email ? script.email(call) : emailFor(call);
-      return typeof reply === "string" ? { text: reply } : reply;
-    },
-  });
-  const ctx = createToolContext({ generate: model.generate, delegate: desk.delegate });
-  return { ctx, model, desk, script };
+  return { ...scripted, script };
 }
 
 const at = (ctx: ToolContext) => hiringFlow.position(ctx).state;
@@ -178,16 +173,11 @@ describe("the flow", () => {
       ["rescore_with_feedback", { feedback: "more TypeScript" }],
       ["proceed_to_emails", {}],
     ] as const) {
-      const refused = await run(name, args, ctx);
       // Their router is only reachable after `score_leads`; here that is the
       // gate, and its refusal names the position and quotes the state's own
       // instruction so the model can recover on its turn.
-      expect(isToolFailure(refused), name).toBe(true);
-      if (isToolFailure(refused)) {
-        expect(refused.error).toMatch(/Not available yet/);
-        expect(refused.error).toMatch(/idle/);
-        expect(refused.error).toMatch(/screen_candidates/);
-      }
+      const refused = expectDialogRefused(await run(name, args, ctx), "idle");
+      expect(refused.error).toMatch(/screen_candidates/);
     }
     expect(model.calls).toEqual([]);
     expect(desk.calls).toEqual([]);
@@ -760,12 +750,7 @@ describe("screening_status", () => {
 // ─── The crews ───────────────────────────────────────────────────────────────
 
 /** The coordinator's guardrail, called the way the runtime calls it. */
-function check(text: string): GuardrailVerdict {
-  const answer: SubagentAnswer = { text, steps: 1, toolCalls: [] };
-  const verdict = emailGuardrail(answer);
-  if (typeof verdict === "object") throw new Error("this guardrail is synchronous by design");
-  return verdict;
-}
+const check = (text: string) => runGuardrail(emailWriter, text);
 
 describe("the crews", () => {
   test("render a CrewAI agent through CrewAI's own role_playing template", () => {
@@ -861,10 +846,16 @@ describe("the ranking", () => {
   });
 
   test("holds MAX_FEEDBACK_ENTRIES entries of feedback, dropping the oldest", () => {
-    const state = emptyHiring();
-    for (let index = 0; index < MAX_FEEDBACK_ENTRIES + 2; index++) noteFeedback(state, `f${index}`);
-    expect(state.feedback).toHaveLength(MAX_FEEDBACK_ENTRIES);
-    expect(state.feedback[0]).toBe("f2");
+    // The bound is the SLOT's (`caps`), so it holds whatever pushed — a plain
+    // `push` here is the same write `rescore_with_feedback` makes.
+    const ctx = createToolContext();
+    hiringSlot.update(ctx, (state) => {
+      for (let index = 0; index < MAX_FEEDBACK_ENTRIES + 2; index++)
+        state.feedback.push(`f${index}`);
+    });
+    const { feedback } = stateOf(ctx);
+    expect(feedback).toHaveLength(MAX_FEEDBACK_ENTRIES);
+    expect(feedback[0]).toBe("f2");
     // The cap is the round cap restated: no round can be dropped while it counts.
     expect(MAX_FEEDBACK_ENTRIES).toBeGreaterThan(MAX_FEEDBACK_ROUNDS);
   });

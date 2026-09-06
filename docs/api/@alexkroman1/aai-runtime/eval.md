@@ -53,11 +53,11 @@ honest answer without a queue. Its `client` is also what
 [openEvalSession](#openevalsession)'s `workflows` option takes, which is what makes a
 VOICE agent's run-starting tool executable in an eval.
 
-The assertion READERS ([saidIn](#saidin), [toolCallsInEvents](#toolcallsinevents), [TURN\_ENDS](#turn_ends),
-[toolArgsIn](#toolargsin), [toolResultIn](#toolresultin), [toolResultsIn](#toolresultsin),
-[lastStateIn](#laststatein), [statesIn](#statesin), [customEventsIn](#customeventsin),
-[toolNames](#toolnames), [toolCallsInTurns](#toolcallsinturns), [turnCalling](#turncalling),
-[completedOutput](#completedoutput)) are here rather than a vocabulary of matchers because
+The assertion READERS ([saidIn](#saidin), [errorsIn](#errorsin), [toolCallsInEvents](#toolcallsinevents),
+[TURN\_ENDS](#turn_ends), [toolArgsIn](#toolargsin), [toolResultIn](#toolresultin), [toolResultsIn](#toolresultsin),
+[runCodeIn](#runcodein), [runCodeOutput](#runcodeoutput), [lastStateIn](#laststatein), [statesIn](#statesin),
+[customEventsIn](#customeventsin), [toolNames](#toolnames), [toolCallsInTurns](#toolcallsinturns),
+[turnCalling](#turncalling), [completedOutput](#completedoutput)) are here rather than a vocabulary of matchers because
 an eval already has a runner: `expect` in a vitest file is the simple case, and
 a case that must PROFILE rather than bisect on the first failure wants a
 recording runner, which is a different tool. What both need is one honest
@@ -71,6 +71,17 @@ same idea for the runner's own half: a reader that throws says what happened,
 and an `expect` that fails says "expected undefined to be defined" unless the
 case hands it a message. Ten sites across five templates hand-built that
 message, four of them byte-identically, which is what says it belongs here.
+
+One per-turn CLAIM ([expectToolBeforeSpeech](#expecttoolbeforespeech)) is the exception to
+"readers, not assertions", and it is here because the hand-written form was
+WRONG in the same way at both sites: two `findIndex` calls compared by
+`toBeLessThan` fail as "expected 4 to be less than 2", naming neither the
+sentence spoken too early nor the tool. An ordering has no value to hand
+back, so a reader could not carry that message; a claim whose only correct
+spelling has a trap in it is the harness's to make once. The OTHER claim the
+templates wrote out — a declared builtin really answered — needed no new
+name: `toolNames` says it was called and [runCodeOutput](#runcodeoutput) throws on the
+refusal that `toBeDefined()` used to be satisfied by.
 
 Exports are enumerated explicitly (no `export *`) so the public surface is
 deliberate: a new symbol in one of these modules does not ship as public API
@@ -695,6 +706,404 @@ export function stagedOn(turn: EvalTurn): void {
 
 ***
 
+### errorsIn()
+
+```ts
+function errorsIn(events: readonly (
+  | {
+  audioFormat: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  sampleRate: number;
+  sessionId?: string;
+  ttsSampleRate: number;
+  type: "session.configured";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "audio.completed";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "speech.started";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "speech.stopped";
+}
+  | {
+  eotConfidence?: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "user-transcript.updated";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "user-transcript.committed";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "agent-transcript.updated";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  recovery?: "session-failed" | "turn-failed";
+  text: string;
+  type: "agent-transcript.committed";
+}
+  | {
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  meta: {
+     at: number;
+     id: string;
+  };
+  toolCallId: string;
+  toolName: string;
+  type: "tool.called";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  result: string;
+  toolCallId: string;
+  type: "tool.completed";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "reply.completed";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "reply.cancelled";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "session.reset";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "session.timed-out";
+}
+  | {
+  code:   | "audio"
+     | "connection"
+     | "internal"
+     | "llm"
+     | "protocol"
+     | "stt"
+     | "tool"
+     | "tts";
+  fatal: boolean;
+  message: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "error.reported";
+}
+  | {
+  data: unknown;
+  event: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "custom.emitted";
+}
+  | {
+  meta: {
+     at: number;
+     id: string;
+  };
+  state: unknown;
+  type: "state.updated";
+}
+  | {
+  messages: {
+     content: string;
+     role: "assistant" | "user";
+  }[];
+  meta: {
+     at: number;
+     id: string;
+  };
+  toolCalls: {
+     afterMessageIndex: number;
+     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+     callId: string;
+     name: string;
+     result?: string;
+     status: "done" | "pending";
+  }[];
+  type: "history.restored";
+})[]): readonly {
+  code:   | "audio"
+     | "connection"
+     | "internal"
+     | "llm"
+     | "protocol"
+     | "stt"
+     | "tool"
+     | "tts";
+  fatal: boolean;
+  message: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "error.reported";
+}[];
+```
+
+Every `error.reported` in `events`, in order — what the RUNTIME reported, as
+opposed to what the agent said or called. Typed as the narrowed member of
+`SessionEvent` rather than under a name of its own, so a case names nothing
+this subpath does not already publish.
+
+Three template evals wrote `events.some((e) => e.type === "error.reported")`
+and asserted it `false`, which on failure prints "expected true to be false"
+and nothing about WHICH error. This hands back the events themselves, so
+`expect(errorsIn(events)).toEqual([])` prints the code and the message.
+
+`EvalTurn.errors` is this over one turn. Note what a turn's list can hold:
+`openEvalSession` REFUSES a turn the pipeline failed (`_turn-faults.ts`), so a
+turn a case gets to read carries only `code: "tool"` errors — a tool that
+threw, whose failure went back to the model. Over `session.events()` the list
+is unfiltered.
+
+#### Parameters
+
+##### events
+
+readonly (
+  \| \{
+  `audioFormat`: `string`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `sampleRate`: `number`;
+  `sessionId?`: `string`;
+  `ttsSampleRate`: `number`;
+  `type`: `"session.configured"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"audio.completed"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"speech.started"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"speech.stopped"`;
+\}
+  \| \{
+  `eotConfidence?`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `text`: `string`;
+  `type`: `"user-transcript.updated"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `text`: `string`;
+  `type`: `"user-transcript.committed"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `text`: `string`;
+  `type`: `"agent-transcript.updated"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `text`: `string`;
+  `type`: `"agent-transcript.committed"`;
+\}
+  \| \{
+  `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `toolCallId`: `string`;
+  `toolName`: `string`;
+  `type`: `"tool.called"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `result`: `string`;
+  `toolCallId`: `string`;
+  `type`: `"tool.completed"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"reply.completed"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"reply.cancelled"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"session.reset"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"session.timed-out"`;
+\}
+  \| \{
+  `code`:   \| `"audio"`
+     \| `"connection"`
+     \| `"internal"`
+     \| `"llm"`
+     \| `"protocol"`
+     \| `"stt"`
+     \| `"tool"`
+     \| `"tts"`;
+  `fatal`: `boolean`;
+  `message`: `string`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"error.reported"`;
+\}
+  \| \{
+  `data`: `unknown`;
+  `event`: `string`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"custom.emitted"`;
+\}
+  \| \{
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `state`: `unknown`;
+  `type`: `"state.updated"`;
+\}
+  \| \{
+  `messages`: \{
+     `content`: `string`;
+     `role`: `"assistant"` \| `"user"`;
+  \}[];
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `toolCalls`: \{
+     `afterMessageIndex`: `number`;
+     `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+     `callId`: `string`;
+     `name`: `string`;
+     `result?`: `string`;
+     `status`: `"done"` \| `"pending"`;
+  \}[];
+  `type`: `"history.restored"`;
+\})[]
+
+#### Returns
+
+readonly \{
+  `code`:   \| `"audio"`
+     \| `"connection"`
+     \| `"internal"`
+     \| `"llm"`
+     \| `"protocol"`
+     \| `"stt"`
+     \| `"tool"`
+     \| `"tts"`;
+  `fatal`: `boolean`;
+  `message`: `string`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"error.reported"`;
+\}[]
+
+***
+
 ### evalCredentials()
 
 ```ts
@@ -767,6 +1176,51 @@ what the agent says it needs and no unrelated shell variable reaches it.
 #### Returns
 
 [`EvalCredentials`](#evalcredentials)
+
+***
+
+### expectToolBeforeSpeech()
+
+```ts
+function expectToolBeforeSpeech(turn: EvalTurn): void;
+```
+
+The agent ACTED before it spoke: this turn's first `tool.called` precedes its
+first committed reply.
+
+"Report RESULTS, never intentions" is a rule two shipped prompts state and a
+model routinely breaks — "Let me look that up." and then the search, so the
+caller hears a promise and then dead air while the tool runs. Two templates
+asserted it by hand-indexing the event stream (`findIndex` twice, three
+`expect`s), which on failure prints "expected 4 to be less than 2" and names
+neither the sentence nor the tool. This names both.
+
+Both halves have to be present: a turn that called nothing has nothing to
+order, and a turn that said nothing reported no result at all — each is its
+own finding and each throws saying which.
+
+A THROW rather than a predicate, which is the exception to "readers, not
+assertions" that `eval-barrel.ts` argues: the ordering has no value to hand
+back, and a `toBe(true)` over a boolean would lose the sentence.
+
+```ts
+import { type EvalTurn, expectToolBeforeSpeech } from "@alexkroman1/aai-runtime/eval";
+
+export function searchedFirst(turn: EvalTurn): void {
+  // The search comes before the answer, not after a sentence announcing one.
+  expectToolBeforeSpeech(turn);
+}
+```
+
+#### Parameters
+
+##### turn
+
+[`EvalTurn`](#evalturn)
+
+#### Returns
+
+`void`
 
 ***
 
@@ -1651,6 +2105,94 @@ if the agent declares no workflows. There is nothing to run, and the
   alternative is a client whose every call fails with the platform's
   "no workflow backend" message, which describes a deployment problem rather
   than this one.
+
+***
+
+### runCodeIn()
+
+```ts
+function runCodeIn(calls: readonly EvalToolCall[]): string;
+```
+
+The code every `run_code` call in `calls` carried, joined with newlines —
+the recipe the agent wrote.
+
+ZERO calls answers `""` rather than throwing, for the reason `toolArgsIn`
+gives: "it never reached for code" is a claim a case makes
+(`expect(runCodeIn(turn.toolCalls)).toBe("")`). Assert the CALL first when
+the claim is that code was written at all — `toolNames(turn.toolCalls)` with
+`describeTurn(turn)` as the message — or `toContain("Math.random")` fails
+against an empty string with nothing said about why.
+
+A call whose `code` argument stopped arriving as a string FAILS here naming
+the field, which is what the schema is for.
+
+```ts
+import { type EvalTurn, runCodeIn, toolNames } from "@alexkroman1/aai-runtime/eval";
+
+export function rolledForReal(turn: EvalTurn): boolean {
+  // A model asked for dice will happily make three numbers up; `Math.random`
+  // in the code is the only thing that tells a roll from an invention.
+  return toolNames(turn.toolCalls).includes("run_code") && /Math\.random/.test(runCodeIn(turn.toolCalls));
+}
+```
+
+#### Parameters
+
+##### calls
+
+readonly [`EvalToolCall`](#evaltoolcall)[]
+
+#### Returns
+
+`string`
+
+***
+
+### runCodeOutput()
+
+```ts
+function runCodeOutput(calls: readonly EvalToolCall[]): string;
+```
+
+What every `run_code` call in `calls` PRINTED, joined with newlines — the
+results as the model was handed them, verbatim.
+
+Verbatim rather than parsed, unlike `toolResultsIn`: `run_code` prints
+whatever the snippet printed, so `"Saturday"` and `"3.106855"` are ordinary
+results, and a snippet that threw comes back as `{"error":"…"}` — which reads
+as what it is in a failure message, where the parsed form printed
+`[object Object]`.
+
+**A refusal THROWS, naming the fix.** With no executor the builtin answers
+the sentence `RUN_CODE_REFUSAL` carries, and every claim about output —
+`toMatch(/8\.0/)`, `not.toBe("")` — holds vacuously against it. The four
+templates that reached for this each guarded against it with a hand-typed
+regex; the reader imports the constant instead, so a reworded refusal cannot
+slip past as output. A call that never completed throws too, naming its
+position, as `toolResultsIn` does.
+
+ZERO calls answers `""`, for the reason [runCodeIn](#runcodein) gives.
+
+```ts
+import { type EvalTurn, runCodeOutput } from "@alexkroman1/aai-runtime/eval";
+
+export function convertedFiveMiles(turn: EvalTurn): boolean {
+  // Five miles is 8.0467 km: whatever rounding the tutor chose, the answer
+  // starts 8.0 — and a refusal throws before this is ever compared.
+  return /8\.0/.test(runCodeOutput(turn.toolCalls));
+}
+```
+
+#### Parameters
+
+##### calls
+
+readonly [`EvalToolCall`](#evaltoolcall)[]
+
+#### Returns
+
+`string`
 
 ***
 
@@ -5262,6 +5804,9 @@ readonly toolCallId: string;
 ```ts
 type EvalTurn = {
   completed: boolean;
+  errors: readonly Extract<SessionEvent, {
+     type: "error.reported";
+  }>[];
   events: readonly SessionEvent[];
   text: string;
   toolCalls: readonly EvalToolCall[];
@@ -5287,6 +5832,19 @@ readonly completed: boolean;
 
 The reply ended on its own terms (`reply.completed`) rather than being
 cancelled. A cancelled reply is a finding, not a failure of the harness.
+
+##### errors
+
+```ts
+readonly errors: readonly Extract<SessionEvent, {
+  type: "error.reported";
+}>[];
+```
+
+The `error.reported` events this turn carried — what the RUNTIME said went
+wrong. Only `code: "tool"` can appear here, since a turn the pipeline failed
+is refused before a case sees it (`_turn-faults.ts`); `errorsIn` over
+`session.events()` is the unfiltered list.
 
 ##### events
 

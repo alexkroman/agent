@@ -54,6 +54,69 @@ the code runs in a page the agent serves.
 
 ## Functions
 
+### AudioResult()
+
+```ts
+function AudioResult(props: AudioResultProps): ReactNode;
+```
+
+The player for a file a RUN produced: a heading, the fetch's pending line,
+its announced error, the `<audio>` with an optional caption track, the
+download link, and whatever the page renders beneath — the spoken text.
+
+Two templates exist because of the audio round trip, and both had written
+this block over [useDownloadUrl](#usedownloadurl) identically: the same pending
+sentence, the same `role="alert"` paragraph, the same `<audio controls>` over
+the object URL, the same anchor with `download` set. The `download` attribute
+works on an object URL because the bytes are already in the tab — it was the
+`href` that could not carry the agent's bearer token, never the attribute —
+and that is the whole reason both pages hand this a hook result rather than a
+path.
+
+**A caption track is a judgement, not a default.** `spoken-summary` passes
+`captions`: the summary was written before it was spoken, so one cue
+spanning the clip is an honest transcript of it. `call-audit` deliberately
+does not: the spoken text is rendered in full immediately below the player,
+which is the same information a track would carry. Both are right, which is
+why the prop is optional in both directions.
+
+#### Parameters
+
+##### props
+
+[`AudioResultProps`](#audioresultprops)
+
+See [AudioResultProps](#audioresultprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+```tsx
+import { AudioResult, createWorkflowApi, useDownloadUrl } from "@alexkroman1/aai-ui";
+
+const api = createWorkflowApi();
+
+function Player({ id, spoken, ms }: { id: string; spoken: string; ms: number }) {
+  const audio = useDownloadUrl(id, { api });
+  return (
+    <AudioResult
+      download={audio}
+      filename="summary.wav"
+      label="Summary read aloud"
+      heading="Read aloud"
+      captions={{ text: spoken, durationMs: ms }}
+    >
+      <p className="text-sm opacity-70">{spoken}</p>
+    </AudioResult>
+  );
+}
+```
+
+***
+
 ### AutoScroll()
 
 ```ts
@@ -434,6 +497,69 @@ function Console() {
         ))}
       </ul>
     </ConsoleShell>
+  );
+}
+```
+
+***
+
+### ConversationView()
+
+```ts
+function ConversationView(props: ConversationViewProps): ReactNode;
+```
+
+The conversation's skeleton over [useConversation](#useconversation), with every row a
+render slot: a pinned scroll region holding the empty state, the interleaved
+messages and tool calls, the streaming reply and the announced thinking row,
+plus the live transcript — inside the scroll or pinned beneath it.
+
+`useConversation()` already made the DATA one thing: the interleave, the
+streaming utterance, the `null`-vs-`""` transcript distinction and the
+thinking-suppression rule. What three custom chromes then each wrote around
+it was the same fifty lines of STRUCTURE: an `AutoScroll` with a bounded
+height, an empty-state guard on `items.length === 0 && streaming === null`,
+the map with its keys, the streaming row, the thinking row with its
+`role="status"` and `aria-label` (and the same comment about screen readers
+hearing punctuation), the transcript guarded on `speaking`. The bubbles are
+the part each template exists to show, so those are slots; the order and the
+accessibility contract are this component's.
+
+[MessageList](#messagelist) is this with the stock bubbles filled in.
+
+Must be rendered inside the providers `mountClient()` installs.
+
+#### Parameters
+
+##### props
+
+[`ConversationViewProps`](#conversationviewprops)
+
+See [ConversationViewProps](#conversationviewprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+**A board's radio log: its own bubbles, the stock tool row, the transcript pinned below**
+
+```tsx
+import { ConversationView } from "@alexkroman1/aai-ui";
+
+function RadioLog() {
+  return (
+    <ConversationView
+      contentClassName="p-4 flex flex-col gap-2"
+      empty={<p className="text-center opacity-60">Standing by.</p>}
+      renderMessage={({ role, content }) => (
+        <div className={role === "assistant" ? "self-start" : "self-end"}>{content}</div>
+      )}
+      renderTranscript={({ text }) => <div className="px-4 py-2 italic">{text}</div>}
+      transcriptPosition="below"
+      thinkingLabel="Dispatch is thinking"
+    />
   );
 }
 ```
@@ -1142,6 +1268,85 @@ attributes.
 
 ***
 
+### SessionControls()
+
+```ts
+function SessionControls(props: SessionControlsProps): ReactNode;
+```
+
+The full control row of a custom chrome: **Start** before the call, then
+**Pause / Resume**, **New Conversation** and **End** once it is up.
+
+[Controls](#controls) is the stock console's footer — Stop/Resume and New
+Conversation, with the URL chips — and it has no Start branch and no End,
+because the default shell shows a start SCREEN and a session there ends by
+closing the tab. A chrome that owns its whole frame has no start screen, so
+three of them each wrote this row: the same `!started` branch, the same
+three buttons behind it, and the same twelve-line comment on why the middle
+one is `end(); start()` and not `reset()`. The buttons' look is the
+chrome's — `renderButton` — and everything else is here once.
+
+**Why `restart` is `end()` then `start()`, and never `reset()`.** `reset()`
+clears the transcript and reconnects carrying the same session id, so every
+`sessionSlot` on the agent survives: a caller who pressed "New Conversation"
+on a stateful agent got a blank transcript in front of their old cart, game
+or incident board, with nothing on screen saying so, and the next tool call
+repopulated it. `end()` drops the resume identity, so the redial is a
+brand-new session — fresh state, greeting included — and `start()` puts the
+chrome straight back on the call rather than at its Start button.
+
+**Why End is `end()`.** It hangs up and flips `started` back, so the row
+returns to its Start button and the next start is a new session. `reset()`
+would keep the call live — the buttons never toggle back.
+
+Reads the session through [useSessionControls](#usesessioncontrols): two one-field
+subscriptions, so the row re-renders when a flag flips and not on every
+transcript partial.
+
+#### Parameters
+
+##### props
+
+[`SessionControlsProps`](#sessioncontrolsprops)
+
+See [SessionControlsProps](#sessioncontrolsprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+**A board's controls in its own colours, with a trailing count**
+
+```tsx
+import { SessionControls } from "@alexkroman1/aai-ui";
+
+const BUTTON = "px-4 py-2 rounded-md text-xs font-semibold cursor-pointer";
+
+function ShiftControls({ logged }: { logged: number }) {
+  return (
+    <SessionControls
+      labels={{ start: "Start Dispatch", end: "End Shift" }}
+      renderButton={({ action, label, onClick }) => (
+        <button
+          type="button"
+          className={BUTTON}
+          style={{ background: action === "end" ? "#dc2626" : "#2563eb", color: "white" }}
+          onClick={onClick}
+        >
+          {label}
+        </button>
+      )}
+    >
+      <span className="ml-auto text-[10px]">{logged} incidents logged</span>
+    </SessionControls>
+  );
+}
+```
+
+***
+
 ### SessionErrorBanner()
 
 ```ts
@@ -1206,6 +1411,72 @@ function Board() {
       <aside>…</aside>
       <SessionErrorBanner className="col-span-2" />
     </div>
+  );
+}
+```
+
+***
+
+### SessionStateDot()
+
+```ts
+function SessionStateDot(props: SessionStateDotProps): ReactNode;
+```
+
+The live session state as a coloured dot and a word, on its own narrow
+subscription.
+
+Three custom chromes had each written this: a `satisfies Record<AgentState,
+string>` palette (kept — it is the prop), a `STATE_LABELS` spread over
+[AGENT\_STATE\_LABELS](#agent_state_labels) (kept — it is `labels`), and then the same
+fourteen lines of markup around them, including the same two-arm ternary
+deciding which states pulse and how fast. `agent-state-labels.ts` argued
+against a dot component on the grounds that it would take the shared part
+(the words) hostage to the part that is not (the palette); this takes the
+palette as a prop precisely so it does not. What is shared is the structure
+— the exhaustive colour lookup, the label fallback, the pulse rule, the
+`useSessionStatus()` subscription that keeps the rest of the header from
+re-rendering at STT-partial rate.
+
+Must be rendered inside the providers `mountClient()` installs.
+
+#### Parameters
+
+##### props
+
+[`SessionStateDotProps`](#sessionstatedotprops)
+
+See [SessionStateDotProps](#sessionstatedotprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+**A dispatch board's readout: its own colours, three of its own words**
+
+```tsx
+import type { AgentState } from "@alexkroman1/aai-ui";
+import { SessionStateDot } from "@alexkroman1/aai-ui";
+
+const STATE_COLORS = {
+  disconnected: "#6b7280",
+  connecting: "#6b7280",
+  ready: "#22c55e",
+  listening: "#22c55e",
+  thinking: "#eab308",
+  speaking: "#3b82f6",
+  error: "#6b7280",
+} satisfies Record<AgentState, string>;
+
+function StatusReadout() {
+  return (
+    <SessionStateDot
+      colors={STATE_COLORS}
+      labels={{ listening: "LISTENING", thinking: "PROCESSING", speaking: "TRANSMITTING" }}
+      labelClassName="text-[11px] uppercase"
+    />
   );
 }
 ```
@@ -1846,7 +2117,7 @@ button: the flash is shared, so clicking a second row clears the first row's
 claiming to be on the clipboard is a lie about one of them.
 
 A chip whose idle text is its own name rather than the word "Copy" passes
-that name to [UseCopyResult.label](#label-1); the two outcome words are fixed, for the
+that name to [UseCopyResult.label](#label-4); the two outcome words are fixed, for the
 reason that member's own doc gives.
 
 #### Example
@@ -2170,6 +2441,44 @@ function Footer() {
     <>
       <button onClick={toggle}>{running ? "Pause" : "Resume"}</button>
       <button onClick={end}>Hang up</button>
+    </>
+  );
+}
+```
+
+***
+
+### useSessionControls()
+
+```ts
+function useSessionControls(): UseSessionControlsResult;
+```
+
+The state and the actions a Start / Pause–Resume / New conversation / End row
+renders from, on two one-field subscriptions.
+
+Must be used inside the provider `mountClient()` installs.
+
+#### Returns
+
+[`UseSessionControlsResult`](#usesessioncontrolsresult)
+
+See [UseSessionControlsResult](#usesessioncontrolsresult).
+
+#### Example
+
+**A footer that renders its own buttons**
+
+```tsx
+import { useSessionControls } from "@alexkroman1/aai-ui";
+
+function Footer() {
+  const { started, running, start, toggle, end } = useSessionControls();
+  if (!started) return <button type="button" onClick={start}>Begin</button>;
+  return (
+    <>
+      <button type="button" onClick={toggle}>{running ? "Hold" : "Resume"}</button>
+      <button type="button" onClick={end}>Hang up</button>
     </>
   );
 }
@@ -3274,6 +3583,69 @@ function App() {
 }
 ```
 
+***
+
+### WorkflowRunPanel()
+
+```ts
+function WorkflowRunPanel<O = unknown>(props: WorkflowRunPanelProps<O>): ReactNode;
+```
+
+The bordered panel a workflow page shows one run in: a status line, a Clear
+button, the run's own narration, the live slot while it works, the completed
+body once it has, and the announced error if it failed.
+
+Two pages had written this shell — `redline` and `transcription-workflow` —
+with the same header, the same `text-xs underline` Clear, the same
+[WorkflowProgress](#workflowprogress) under it, the same `run.status === "completed"`
+discrimination above the same [WorkflowRunError](#workflowrunerror), and each spread
+[WORKFLOW\_STATUS\_LABELS](#workflow_status_labels) into a local map to change `running`. The
+ORDER is the part worth owning: the narration is the complement of the status
+line (a run is `running` for its whole life, so a one-round job and a
+ten-round one look identical without it), and the error goes last because it
+is the outcome the reader waited minutes for.
+
+`children` is discriminated on the run for the caller, so the body reads
+`run.output` typed, without a cast and without the page repeating the guard —
+the reason [WorkflowRun](#workflowrun) is a union rather than a flat object with
+optional fields.
+
+#### Type Parameters
+
+##### O
+
+`O` = `unknown`
+
+#### Parameters
+
+##### props
+
+[`WorkflowRunPanelProps`](#workflowrunpanelprops)\<`O`\>
+
+See [WorkflowRunPanelProps](#workflowrunpanelprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+```tsx
+import { useWorkflowRun, WorkflowRunPanel } from "@alexkroman1/aai-ui";
+
+// `useWorkflowRun<R>` is where a page names the output's shape; a page that
+// started the run itself has it typed already, from `useWorkflowSubmit<D>`.
+function Panel({ runId, onClear }: { runId: string; onClear: () => void }) {
+  const { run } = useWorkflowRun<{ draft: string }>(runId);
+  if (!run) return null;
+  return (
+    <WorkflowRunPanel run={run} statusLabels={{ running: "Writing…" }} onClear={onClear}>
+      {(output) => <article className="whitespace-pre-wrap">{output.draft}</article>}
+    </WorkflowRunPanel>
+  );
+}
+```
+
 ## Interfaces
 
 ### ToolCallRowProps
@@ -3458,6 +3830,135 @@ The seven members, in the order a call passes through them:
   [SessionSnapshot.error](#error) for what it was. A FATAL error latches here
   until the next completed handshake, so a later frame cannot quietly paint
   over the banner explaining a dead call.
+
+***
+
+### AudioResultCaptions
+
+```ts
+type AudioResultCaptions = {
+  durationMs: number;
+  label?: string;
+  srcLang?: string;
+  text: string;
+};
+```
+
+A one-cue caption track for [AudioResult](#audioresult): the words the clip speaks,
+spanning its whole length.
+
+#### Properties
+
+##### durationMs
+
+```ts
+durationMs: number;
+```
+
+The clip's length, which is where the cue ends.
+
+##### label?
+
+```ts
+optional label?: string;
+```
+
+The track's `label`. Defaults to the player's `label`.
+
+##### srcLang?
+
+```ts
+optional srcLang?: string;
+```
+
+The track's `srcLang`. Default `"en"`.
+
+##### text
+
+```ts
+text: string;
+```
+
+The spoken text — the one cue.
+
+***
+
+### AudioResultProps
+
+```ts
+type AudioResultProps = {
+  captions?: AudioResultCaptions;
+  children?: ReactNode;
+  className?: string;
+  download: UseDownloadUrlResult;
+  filename: string;
+  heading?: ReactNode;
+  label: string;
+};
+```
+
+Props of [AudioResult](#audioresult).
+
+#### Properties
+
+##### captions?
+
+```ts
+optional captions?: AudioResultCaptions;
+```
+
+The spoken text as a caption track. Omit it deliberately when the same
+words are rendered in full beside the player (see the component doc);
+pass it when they are not, or when a real track is what a page needs.
+
+##### children?
+
+```ts
+optional children?: ReactNode;
+```
+
+Rendered under the player — the spoken text, usually.
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+Additional CSS class names for the wrapping `<section>`, appended to its own.
+
+##### download
+
+```ts
+download: UseDownloadUrlResult;
+```
+
+What [useDownloadUrl](#usedownloadurl) returned for the run's audio upload.
+
+##### filename
+
+```ts
+filename: string;
+```
+
+The name the download link saves as — `"summary.wav"`, `"audit.mp3"`.
+
+##### heading?
+
+```ts
+optional heading?: ReactNode;
+```
+
+The heading over the player — typically the duration and size, which the
+run's output carries. Omitted, there is no heading.
+
+##### label
+
+```ts
+label: string;
+```
+
+The player's `aria-label`: what this audio IS — `"Summary read aloud"`.
 
 ***
 
@@ -4226,6 +4727,189 @@ problem. `kind` is what a `switch` in a custom renderer narrows on.
 
 ***
 
+### ConversationViewProps
+
+```ts
+type ConversationViewProps = {
+  className?: string;
+  contentClassName?: string;
+  empty?: ReactNode;
+  renderMessage: (message: ChatMessage) => ReactNode;
+  renderStreaming?: (text: string) => ReactNode;
+  renderTool?: (toolCall: ToolCallInfo) => ReactNode;
+  renderTranscript?: (transcript: UseUserTranscriptResult) => ReactNode;
+  scrollClassName?: string;
+  style?: CSSProperties;
+  thinkingClassName?: string;
+  thinkingIndicator?: ReactNode;
+  thinkingLabel?: string;
+  transcriptPosition?: "inline" | "below";
+};
+```
+
+Props of [ConversationView](#conversationview).
+
+#### Properties
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+Classes for the [AutoScroll](#autoscroll) container. It must end up with a
+bounded height (`flex-1 min-h-0`, `h-full`) or nothing pins.
+
+##### contentClassName?
+
+```ts
+optional contentClassName?: string;
+```
+
+Classes for the scroll region's content element — padding, gap, direction.
+
+##### empty?
+
+```ts
+optional empty?: ReactNode;
+```
+
+Rendered inside the scroll region while there is nothing to show at all.
+
+##### renderMessage
+
+```ts
+renderMessage: (message: ChatMessage) => ReactNode;
+```
+
+One finalized message, in this chrome's own markup.
+
+###### Parameters
+
+###### message
+
+[`ChatMessage`](#chatmessage)
+
+###### Returns
+
+`ReactNode`
+
+##### renderStreaming?
+
+```ts
+optional renderStreaming?: (text: string) => ReactNode;
+```
+
+The agent's reply as it arrives. Absent, `renderMessage` is called with a
+synthetic assistant message carrying the text so far (its `id` is `-1`,
+which no real message has) — every chrome so far rendered the two the same
+way, and this keeps them from drifting.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`ReactNode`
+
+##### renderTool?
+
+```ts
+optional renderTool?: (toolCall: ToolCallInfo) => ReactNode;
+```
+
+One tool invocation. Absent, a compact [ToolCallRow](#toolcallrow) naming the tool,
+shimmering while it is pending.
+
+###### Parameters
+
+###### toolCall
+
+[`ToolCallInfo`](#toolcallinfo)
+
+###### Returns
+
+`ReactNode`
+
+##### renderTranscript?
+
+```ts
+optional renderTranscript?: (transcript: UseUserTranscriptResult) => ReactNode;
+```
+
+The caller's in-progress turn. Rendered only while `transcript.speaking`,
+which is the `null`-vs-`""` distinction [useUserTranscript](#useusertranscript) makes
+(`""` is speech detected with no words yet — render on it, and read
+`transcript.text` for the placeholder). Absent, a muted italic line.
+
+###### Parameters
+
+###### transcript
+
+[`UseUserTranscriptResult`](#useusertranscriptresult)
+
+###### Returns
+
+`ReactNode`
+
+##### scrollClassName?
+
+```ts
+optional scrollClassName?: string;
+```
+
+Classes for the scrolling element itself. See [AutoScroll](#autoscroll).
+
+##### style?
+
+```ts
+optional style?: CSSProperties;
+```
+
+Inline styles for the scroll container.
+
+##### thinkingClassName?
+
+```ts
+optional thinkingClassName?: string;
+```
+
+CSS class names for the thinking row itself (the `role="status"` element).
+
+##### thinkingIndicator?
+
+```ts
+optional thinkingIndicator?: ReactNode;
+```
+
+What the thinking row shows. Default: three pulsing dots.
+
+##### thinkingLabel?
+
+```ts
+optional thinkingLabel?: string;
+```
+
+The `aria-label` of the thinking row. Default `"Thinking"`. Say who: the
+dots are the only sign the agent is working, and to a screen reader they
+are punctuation.
+
+##### transcriptPosition?
+
+```ts
+optional transcriptPosition?: "inline" | "below";
+```
+
+Where the transcript row goes. `"inline"` (the default) is the last row
+inside the scroll region, as `MessageList` places it; `"below"` renders it
+after the scroll region as a sibling — the strip a two-pane board pins to
+the bottom of its conversation column, outside the scroll.
+
+***
+
 ### FactsProps
 
 ```ts
@@ -4686,6 +5370,191 @@ Method signatures come from [BrowserSession](#browsersession) — one source of 
 
 ***
 
+### SessionControlAction
+
+```ts
+type SessionControlAction = "start" | "toggle" | "restart" | "end";
+```
+
+Which of the four buttons a [SessionControlButton](#sessioncontrolbutton) is.
+
+***
+
+### SessionControlButton
+
+```ts
+type SessionControlButton = {
+  action: SessionControlAction;
+  label: string;
+  onClick: () => void;
+  running: boolean;
+};
+```
+
+One button of [SessionControls](#sessioncontrols), as handed to `renderButton`.
+
+#### Properties
+
+##### action
+
+```ts
+action: SessionControlAction;
+```
+
+Which button this is. A custom renderer switches on it for its look.
+
+##### label
+
+```ts
+label: string;
+```
+
+The label to show — the caller's own word, or the default.
+
+##### onClick
+
+```ts
+onClick: () => void;
+```
+
+The handler. Already bound; wire it to `onClick` as it is.
+
+###### Returns
+
+`void`
+
+##### running
+
+```ts
+running: boolean;
+```
+
+Whether the call is live. Meaningful on `toggle`, whose label already says
+which way it will flip, and handed to every button so a renderer can dim
+the others while paused.
+
+***
+
+### SessionControlsLabels
+
+```ts
+type SessionControlsLabels = {
+  end: string;
+  pause: string;
+  restart: string;
+  resume: string;
+  start: string;
+};
+```
+
+The five words [SessionControls](#sessioncontrols) renders, every one overridable.
+
+#### Properties
+
+##### end
+
+```ts
+end: string;
+```
+
+Hang up. Default `"End"`.
+
+##### pause
+
+```ts
+pause: string;
+```
+
+The toggle's label while running. Default `"Pause"`.
+
+##### restart
+
+```ts
+restart: string;
+```
+
+Hang up and dial again. Default `"New Conversation"`.
+
+##### resume
+
+```ts
+resume: string;
+```
+
+The toggle's label while paused. Default `"Resume"`.
+
+##### start
+
+```ts
+start: string;
+```
+
+The button shown before the call starts. Default `"Start"`.
+
+***
+
+### SessionControlsProps
+
+```ts
+type SessionControlsProps = {
+  children?: ReactNode;
+  className?: string;
+  labels?: Partial<SessionControlsLabels>;
+  renderButton?: (button: SessionControlButton) => ReactNode;
+};
+```
+
+Props of [SessionControls](#sessioncontrols).
+
+#### Properties
+
+##### children?
+
+```ts
+optional children?: ReactNode;
+```
+
+Rendered after the buttons — a count, a spacer, a status line.
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+Additional CSS class names for the row, appended to its own layout classes.
+
+##### labels?
+
+```ts
+optional labels?: Partial<SessionControlsLabels>;
+```
+
+The words this chrome has its own term for; the rest keep the defaults.
+
+##### renderButton?
+
+```ts
+optional renderButton?: (button: SessionControlButton) => ReactNode;
+```
+
+Renders one button. Absent, each is a stock [Button](#button). A chrome
+with its own look renders its own `<button>` from the
+[SessionControlButton](#sessioncontrolbutton) it is handed — the component still decides
+WHICH buttons exist and what each one does.
+
+###### Parameters
+
+###### button
+
+[`SessionControlButton`](#sessioncontrolbutton)
+
+###### Returns
+
+`ReactNode`
+
+***
+
 ### SessionError
 
 ```ts
@@ -4990,6 +5859,82 @@ named things (`speaking` to render on, `text` with a placeholder) rather
 than leaving each chrome to re-derive the ternary.
 
 Cleared when the turn is committed to `messages`.
+
+***
+
+### SessionStateDotProps
+
+```ts
+type SessionStateDotProps = {
+  className?: string;
+  colors: Readonly<Record<AgentState, string>>;
+  dotClassName?: string;
+  labelClassName?: string;
+  labels?: Partial<Readonly<Record<AgentState, string>>>;
+  pulse?: boolean;
+};
+```
+
+Props of [SessionStateDot](#sessionstatedot).
+
+#### Properties
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+Additional CSS class names for the wrapping `<span>`, appended to its own.
+
+##### colors
+
+```ts
+colors: Readonly<Record<AgentState, string>>;
+```
+
+The dot's colour per [AgentState](#agentstate) — the chrome's own palette. A
+complete record, so a state added upstream is a compile error here rather
+than a silently unpainted dot; `satisfies Record<AgentState, string>` on the
+caller's literal is the shape to write it in.
+
+##### dotClassName?
+
+```ts
+optional dotClassName?: string;
+```
+
+REPLACES the dot's default size (`w-2 h-2`) rather than adding to it —
+there is no `tailwind-merge` in this package, so two conflicting width
+utilities would not have a reliable winner. The dot's shape classes stay.
+
+##### labelClassName?
+
+```ts
+optional labelClassName?: string;
+```
+
+Additional CSS class names for the label `<span>`.
+
+##### labels?
+
+```ts
+optional labels?: Partial<Readonly<Record<AgentState, string>>>;
+```
+
+The words this chrome has a better term for. Anything not named falls back
+to [AGENT\_STATE\_LABELS](#agent_state_labels), so a page overrides one member (`speaking:
+"Narrating"`) without restating the union.
+
+##### pulse?
+
+```ts
+optional pulse?: boolean;
+```
+
+Whether the dot pulses while `listening` (slowly) and `thinking` (faster).
+Defaults to `true`; a chrome whose dot glows rather than beats passes
+`false`.
 
 ***
 
@@ -5451,6 +6396,95 @@ readonly value: T | null;
 ```
 
 What is being shown right now, or `null` between flashes.
+
+***
+
+### UseSessionControlsResult
+
+```ts
+type UseSessionControlsResult = {
+  end: () => void;
+  restart: () => void;
+  running: boolean;
+  start: () => void;
+  started: boolean;
+  toggle: () => void;
+};
+```
+
+What [useSessionControls](#usesessioncontrols) returns.
+
+#### Properties
+
+##### end
+
+```ts
+end: () => void;
+```
+
+Hang up. Flips `started` back, so a chrome returns to its Start button and
+the next `start()` is a new session. `reset()` would keep the call live.
+
+###### Returns
+
+`void`
+
+##### restart
+
+```ts
+restart: () => void;
+```
+
+Hang up AND dial again — a brand-new session with fresh session-scoped
+state, a fresh greeting, and the chrome kept on the call. `end()` then
+`start()`, never `reset()`: `reset()` clears the conversation and reconnects
+carrying the same session id, so every `sessionSlot` on the agent survives
+and the next tool call repopulates the board, cart or game that was just
+abandoned. Three chromes each found this and wrote the pair by hand.
+
+###### Returns
+
+`void`
+
+##### running
+
+```ts
+running: boolean;
+```
+
+Whether the started call is live rather than paused — the Pause/Resume hinge.
+
+##### start
+
+```ts
+start: () => void;
+```
+
+Dial. What the button before `started` presses.
+
+###### Returns
+
+`void`
+
+##### started
+
+```ts
+started: boolean;
+```
+
+Whether a call has been started and not yet ended — the Start/End hinge.
+
+##### toggle
+
+```ts
+toggle: () => void;
+```
+
+Pause a running call, or resume a paused one.
+
+###### Returns
+
+`void`
 
 ***
 
@@ -6342,7 +7376,7 @@ startAndWait(
 
 Start a run and resolve the FINISHED one — the synchronous call.
 
-What a form or a shell script wants, and what [WorkflowApi.start](#start-1)
+What a form or a shell script wants, and what [WorkflowApi.start](#start-3)
 deliberately is not: one request in, one result out, with no watch to wire
 up. The agent holds the request open until the run settles or its own budget
 expires, so a run that is still going when the wait runs out resolves
@@ -6931,6 +7965,99 @@ run: WorkflowRun | undefined;
 ```
 
 The run the page is following. Nothing renders unless it has FAILED.
+
+***
+
+### WorkflowRunPanelProps
+
+```ts
+type WorkflowRunPanelProps<O> = {
+  api?: WorkflowApi;
+  children?: ReactNode | ((output: O) => ReactNode);
+  className?: string;
+  live?: ReactNode;
+  onClear?: () => void;
+  run: WorkflowRun<O>;
+  statusLabels?: Partial<Readonly<Record<WorkflowRunStatus, string>>>;
+};
+```
+
+Props of [WorkflowRunPanel](#workflowrunpanel).
+
+#### Type Parameters
+
+##### O
+
+`O`
+
+The run's output type; `run.output` narrows to it in the
+completed slot.
+
+#### Properties
+
+##### api?
+
+```ts
+optional api?: WorkflowApi;
+```
+
+The workflow API client, when the page holds its own.
+
+##### children?
+
+```ts
+optional children?: ReactNode | ((output: O) => ReactNode);
+```
+
+The completed body: what the run PRODUCED. A function receives the typed
+output; a node is rendered as it is. Either appears only while
+`run.status === "completed"`.
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+Additional CSS class names for the wrapping `<section>`, appended to its own.
+
+##### live?
+
+```ts
+optional live?: ReactNode;
+```
+
+Rendered beneath the narration while the run is NOT terminal — a live
+transcript, a partial result. Nothing once it settles.
+
+##### onClear?
+
+```ts
+optional onClear?: () => void;
+```
+
+Renders a Clear button in the header that calls this. Absent, no button.
+
+###### Returns
+
+`void`
+
+##### run
+
+```ts
+run: WorkflowRun<O>;
+```
+
+The run to show. Nothing here handles `undefined` — a page renders the panel once it has one.
+
+##### statusLabels?
+
+```ts
+optional statusLabels?: Partial<Readonly<Record<WorkflowRunStatus, string>>>;
+```
+
+The status lines this page has a better word for — `{ running:
+"Writing…" }`. The rest come from [WORKFLOW\_STATUS\_LABELS](#workflow_status_labels).
 
 ***
 

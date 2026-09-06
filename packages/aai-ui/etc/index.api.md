@@ -44,6 +44,28 @@ export type AgentCustomEvent = {
 export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
 // @public
+export function AudioResult(input: AudioResultProps): ReactNode;
+
+// @public
+export type AudioResultCaptions = {
+    text: string;
+    durationMs: number;
+    label?: string | undefined;
+    srcLang?: string | undefined;
+};
+
+// @public
+export type AudioResultProps = {
+    download: UseDownloadUrlResult;
+    filename: string;
+    label: string;
+    heading?: ReactNode | undefined;
+    captions?: AudioResultCaptions | undefined;
+    className?: string | undefined;
+    children?: ReactNode;
+};
+
+// @public
 export function AutoScroll(input: {
     children: ReactNode;
     className?: string | undefined;
@@ -180,6 +202,26 @@ export type ConversationItem = {
 };
 
 // @public
+export function ConversationView(input: ConversationViewProps): ReactNode;
+
+// @public
+export type ConversationViewProps = {
+    renderMessage: (message: ChatMessage) => ReactNode;
+    renderTool?: ((toolCall: ToolCallInfo) => ReactNode) | undefined;
+    renderStreaming?: ((text: string) => ReactNode) | undefined;
+    renderTranscript?: ((transcript: UseUserTranscriptResult) => ReactNode) | undefined;
+    transcriptPosition?: "inline" | "below" | undefined;
+    empty?: ReactNode | undefined;
+    thinkingLabel?: string | undefined;
+    thinkingIndicator?: ReactNode | undefined;
+    thinkingClassName?: string | undefined;
+    className?: string | undefined;
+    contentClassName?: string | undefined;
+    scrollClassName?: string | undefined;
+    style?: CSSProperties | undefined;
+};
+
+// @public
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
@@ -313,6 +355,37 @@ export type Session = SessionSnapshot & SessionActions;
 export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
 
 // @public
+export type SessionControlAction = "start" | "toggle" | "restart" | "end";
+
+// @public
+export type SessionControlButton = {
+    action: SessionControlAction;
+    label: string;
+    onClick: () => void;
+    running: boolean;
+};
+
+// @public
+export function SessionControls(input: SessionControlsProps): ReactNode;
+
+// @public
+export type SessionControlsLabels = {
+    start: string;
+    pause: string;
+    resume: string;
+    restart: string;
+    end: string;
+};
+
+// @public
+export type SessionControlsProps = {
+    labels?: Partial<SessionControlsLabels> | undefined;
+    renderButton?: ((button: SessionControlButton) => ReactNode) | undefined;
+    className?: string | undefined;
+    children?: ReactNode;
+};
+
+// @public
 export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -344,6 +417,19 @@ export type SessionSnapshot = {
     readonly error: SessionError | null;
     readonly started: boolean;
     readonly running: boolean;
+};
+
+// @public
+export function SessionStateDot(input: SessionStateDotProps): ReactNode;
+
+// @public
+export type SessionStateDotProps = {
+    colors: Readonly<Record<AgentState, string>>;
+    labels?: Partial<Readonly<Record<AgentState, string>>> | undefined;
+    pulse?: boolean | undefined;
+    className?: string | undefined;
+    dotClassName?: string | undefined;
+    labelClassName?: string | undefined;
 };
 
 // @public
@@ -501,6 +587,19 @@ export function useSession(): Session;
 
 // @public
 export function useSessionActions(): SessionActions;
+
+// @public
+export function useSessionControls(): UseSessionControlsResult;
+
+// @public
+export type UseSessionControlsResult = {
+    started: boolean;
+    running: boolean;
+    start: () => void;
+    toggle: () => void;
+    restart: () => void;
+    end: () => void;
+};
 
 // @public
 export function useSessionError(): SessionError | null;
@@ -693,6 +792,20 @@ export function WorkflowRunError(input: WorkflowRunErrorProps): ReactNode;
 // @public
 export type WorkflowRunErrorProps = {
     run: WorkflowRun | undefined;
+    className?: string | undefined;
+};
+
+// @public
+export function WorkflowRunPanel<O = unknown>(input: WorkflowRunPanelProps<O>): ReactNode;
+
+// @public
+export type WorkflowRunPanelProps<O> = {
+    run: WorkflowRun<O>;
+    statusLabels?: Partial<Readonly<Record<WorkflowRunStatus, string>>> | undefined;
+    onClear?: (() => void) | undefined;
+    api?: WorkflowApi | undefined;
+    live?: ReactNode | undefined;
+    children?: ReactNode | ((output: O) => ReactNode) | undefined;
     className?: string | undefined;
 };
 

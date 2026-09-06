@@ -1,4 +1,3 @@
-import { pushCapped } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   DEFAULT_CLOCK_SEGMENTS,
@@ -9,7 +8,6 @@ import {
   MAX_CLOCKS,
   MAX_NPCS,
   MAX_RESOURCE,
-  MAX_SESSION_LOG,
   MIN_CLOCK_SEGMENTS,
   MIN_MOMENTUM,
   makeNpc,
@@ -160,15 +158,11 @@ export default storyFlow.tool({
 
       // Session log
       if (args.logEntry) {
-        pushCapped(
-          state.sessionLog,
-          {
-            scene: state.sceneCount,
-            summary: args.logEntry,
-            location: state.currentLocation,
-          },
-          MAX_SESSION_LOG,
-        );
+        state.sessionLog.push({
+          scene: state.sceneCount,
+          summary: args.logEntry,
+          location: state.currentLocation,
+        });
       }
 
       return {

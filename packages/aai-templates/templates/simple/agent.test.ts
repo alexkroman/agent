@@ -1,4 +1,4 @@
-import { toAgentConfig } from "@alexkroman1/aai/manifest";
+import { expectDeployable } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 
@@ -11,41 +11,23 @@ import agentDef from "./agent.ts";
  * pins the template's own identity turns the first customization into a build
  * failure in a file the author never wrote. Every test here therefore asserts
  * a property that survives those edits, on the RESOLVED config rather than on
- * the def's empty fields.
+ * the def's empty fields — and the three every starter owes (the config passes
+ * the conversion `aai build` runs, the platform can name it, every stage its
+ * mode needs is filled) are `expectDeployable`'s, which fails naming the one
+ * that went.
  */
 describe("simple template", () => {
-  test("config passes manifest validation", () => {
-    // Same conversion `aai build`/`aai deploy` run.
-    expect(() => toAgentConfig(agentDef)).not.toThrow();
-  });
-
-  test("exports an agent the platform can name", () => {
-    // Not the literal: what has to hold is that there IS a name, and that the
-    // conversion carries it through — `AgentName` refuses a blank one, and the
-    // studio lists a deployed agent by exactly this string.
-    expect(agentDef.name).toBeTruthy();
-    expect(toAgentConfig(agentDef).name).toBe(agentDef.name);
-  });
-
-  test("every stage its mode needs is filled, declared or defaulted", () => {
+  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
     // The template's point: with no provider fields declared, the default
     // all-AssemblyAI cascaded pipeline is injected at parse time (see
     // `defaultProviders`) — so an agent that declares nothing still runs.
-    // Asserted per MODE so it stays true after a swap: declare `stt`/`llm`/`tts`
-    // and the rest still default; declare `s2s` and there is no cascade to fill,
-    // which is the one thing that must never happen by fallthrough.
-    const config = toAgentConfig(agentDef);
-    if (config.mode === "s2s") {
-      expect(config.s2s?.kind).toBeTruthy();
-      expect(config.stt).toBeUndefined();
-      expect(config.tts).toBeUndefined();
-    } else if (config.mode === "text") {
-      expect(config.llm?.kind).toBeTruthy();
-    } else {
-      expect(config.mode).toBe("pipeline");
-      expect(config.stt?.kind).toBeTruthy();
-      expect(config.llm?.kind).toBeTruthy();
-      expect(config.tts?.kind).toBeTruthy();
-    }
+    // `expectDeployable` asserts that per MODE, so it stays true after a swap:
+    // declare `stt`/`llm`/`tts` and the rest still default; declare `s2s` and
+    // there is no cascade to fill, which is the one thing that must never
+    // happen by fallthrough.
+    //
+    // `not.toThrow()` because the helper's throw IS the finding: vitest quotes
+    // the thrown message, which names the invariant that went.
+    expect(() => expectDeployable(agentDef)).not.toThrow();
   });
 });

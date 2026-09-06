@@ -12,12 +12,11 @@
 // that stage's credential. Without it `describeEval` announces SCRIPTED and the
 // live-only case below is skipped — which is a wiring check, not a measurement,
 // and the banner says so on every run.
+
+import { countWords } from "@alexkroman1/aai/utils";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import agentDef from "./agent.ts";
-
-/** Roughly how many words a reply is, for the spoken-length claim. */
-const wordCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
 
 describeEval(agentDef, (test) => {
   test(
@@ -33,7 +32,9 @@ describeEval(agentDef, (test) => {
       // This agent declares no tools and no builtins, so a tool call here
       // would mean something got added by accident.
       expect(turn.toolCalls).toEqual([]);
-      expect(turn.events.some((e) => e.type === "error.reported")).toBe(false);
+      // `turn.errors` is what the RUNTIME reported on this turn; a failure prints
+      // the events themselves rather than "expected true to be false".
+      expect(turn.errors).toEqual([]);
     },
     { stubReply: "Paris is the capital of France." },
   );
@@ -45,7 +46,7 @@ describeEval(agentDef, (test) => {
       const turn = await session.say("Which city did I say I work in?");
 
       expect(turn.text).toMatch(/berlin/i);
-      expect(turn.events.some((e) => e.type === "error.reported")).toBe(false);
+      expect(turn.errors).toEqual([]);
     },
     // One scripted reply per turn: the second is the one under test, and a
     // script that answered only the first would fail the case it is meant to
@@ -68,7 +69,7 @@ describeEval(agentDef, (test) => {
       // stage swap that quietly loses it produces an agent nobody can hold a
       // call with. The ceiling is generous against the rule's own thirty so the
       // case fails on an essay rather than on a long sentence.
-      expect(wordCount(turn.text)).toBeLessThanOrEqual(80);
+      expect(countWords(turn.text)).toBeLessThanOrEqual(80);
       expect(turn.text).not.toMatch(/[*#`]|^\s*[-•]\s/m);
     },
     // Live only: a scripted reply's length is this file's own choice, so

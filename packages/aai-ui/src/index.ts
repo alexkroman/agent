@@ -69,6 +69,15 @@ export {
   fetchClientConfig,
 } from "./client-config.ts";
 // Components
+// The player for a file a RUN produced — heading, pending line, announced
+// error, `<audio>` with an optional one-cue caption track, download link — over
+// a `useDownloadUrl` result. The two audio-round-trip templates had written it
+// byte-for-byte.
+export {
+  AudioResult,
+  type AudioResultCaptions,
+  type AudioResultProps,
+} from "./components/audio-result.tsx";
 export { AutoScroll } from "./components/auto-scroll.tsx";
 // A run's key points, findings or risks as a disc list. Published because all
 // five pages that had written it keyed by the bullet's own TEXT, and these
@@ -81,6 +90,14 @@ export { ChatView } from "./components/chat-view.tsx";
 // every custom chrome that rebuilt it lost the banner's `role="alert"`.
 export { ConsoleShell, type ConsoleShellProps } from "./components/console-shell.tsx";
 export { Controls, type ControlsProps } from "./components/controls.tsx";
+// The conversation's SKELETON over `useConversation` — the pinned scroll, the
+// empty state, the interleave with its keys, the streaming row, the announced
+// thinking row and the transcript — with every bubble a render slot.
+// `MessageList` is this with the stock bubbles filled in.
+export {
+  ConversationView,
+  type ConversationViewProps,
+} from "./components/conversation-view.tsx";
 // A muted line of run facts joined by `·`. It owns the separator — four of the
 // nine sites that wrote it by hand carried a literal `{" "}` to survive a wrap
 // — and drops the facts a page decided not to print.
@@ -105,6 +122,17 @@ export {
 } from "./components/form.tsx";
 export { Markdown, type MarkdownProps, type MarkdownVariant } from "./components/markdown.tsx";
 export { MessageList, type MessageListProps } from "./components/message-list.tsx";
+// The FULL control row of a custom chrome — Start before the call, then
+// Pause/Resume, New Conversation and End — with each button a render slot.
+// `Controls` is the stock footer and has neither Start nor End; three chromes
+// each wrote this row and the twelve-line `end(); start()` argument beside it.
+export {
+  type SessionControlAction,
+  type SessionControlButton,
+  SessionControls,
+  type SessionControlsLabels,
+  type SessionControlsProps,
+} from "./components/session-controls.tsx";
 // The announced error banner, WITHOUT the frame that used to come with it —
 // `ConsoleShell` composes this one rather than carrying a second copy. Every
 // full-bleed chrome rebuilt the banner because it could not adopt the shell,
@@ -113,6 +141,13 @@ export {
   SessionErrorBanner,
   type SessionErrorBannerProps,
 } from "./components/session-error-banner.tsx";
+// The live state as a dot and a word, coloured from the CHROME's palette. The
+// palette is the prop, which is what keeps the shared part (the exhaustive
+// lookup, the label fallback, the pulse rule) from taking it hostage.
+export {
+  SessionStateDot,
+  type SessionStateDotProps,
+} from "./components/session-state-dot.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
 // The design system's console row for one tool invocation — the shared
@@ -147,6 +182,12 @@ export {
   WorkflowRunError,
   type WorkflowRunErrorProps,
 } from "./components/workflow-run-error.tsx";
+// The bordered panel a page shows ONE run in: status line, Clear, narration, a
+// live slot, the typed completed body, the announced error — in that order.
+export {
+  WorkflowRunPanel,
+  type WorkflowRunPanelProps,
+} from "./components/workflow-run-panel.tsx";
 export type { Session, SessionActions } from "./context.ts";
 // Context & hooks. The two PROVIDERS `mountClient()` mounts around the tree
 // (`SessionProvider`, `ThemeProvider`) are on `@alexkroman1/aai-ui/internal`.
@@ -222,6 +263,10 @@ export { type UseFlashResult, useFlash } from "./use-flash.ts";
 // mints one of these for itself now, so this is for the page that wants a
 // different one — an account's id, or a key that outlives the tab.
 export { useRunKey } from "./use-run-key.ts";
+// The two flags and four methods a control row renders from, on two one-field
+// subscriptions — what `SessionControls` is built on, for the chrome whose
+// buttons are too unusual even for its render slot.
+export { type UseSessionControlsResult, useSessionControls } from "./use-session-controls.ts";
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
 export { type UseUserTranscriptResult, useUserTranscript } from "./use-user-transcript.ts";

@@ -741,6 +741,7 @@ export function sessionSlot<const K extends string, T, After = void>(key: K, cre
 // @public
 export interface SessionSlotOptions<T, After = void> {
     after?: ((draft: T) => After) & RejectThenable<After>;
+    caps?: SlotCaps<T>;
     durable?: boolean;
 }
 
@@ -770,6 +771,11 @@ export type SleepOptions = {
 };
 
 // @public
+export type SlotCaps<T> = T extends object ? {
+    readonly [K in keyof T as NonNullable<T[K]> extends readonly unknown[] ? K : never]?: number;
+} : never;
+
+// @public
 export type SlotHolder = {
     readonly slots: SlotStore;
     readonly sessionId: string;
@@ -787,6 +793,9 @@ export interface SlotToolDef<P extends ToolInputSchema, V, R> {
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
     inputSchema?: P;
 }
+
+// @public
+export function spokenAlphanumeric(spoken: string): string;
 
 // @public
 export function spokenDigits(spoken: string): string;

@@ -35,4 +35,5 @@ export {
   type RimeTtsOptions,
   rimeTts,
   type TtsProvider,
+  ttsVoiceIds,
 } from "../../sdk/providers/tts-barrel.ts";

@@ -52,6 +52,9 @@ each is for.
 | `AssemblyAITtsVoice` | `@alexkroman1/aai`, `@alexkroman1/aai/tts` |
 | `AssemblyAITtsVoiceId` | `@alexkroman1/aai/tts` |
 | `AssemblyAITtsVoiceInfo` | `@alexkroman1/aai/tts` |
+| `AudioResult` | `@alexkroman1/aai-ui` |
+| `AudioResultCaptions` | `@alexkroman1/aai-ui` |
+| `AudioResultProps` | `@alexkroman1/aai-ui` |
 | `AutoScroll` | `@alexkroman1/aai-ui` |
 | `BrowserSession` | `@alexkroman1/aai-ui` |
 | `BuildClientOptions` | `@alexkroman1/aai-cli/client-bundler` |
@@ -96,6 +99,8 @@ each is for.
 | `Controls` | `@alexkroman1/aai-ui` |
 | `ControlsProps` | `@alexkroman1/aai-ui` |
 | `ConversationItem` | `@alexkroman1/aai-ui` |
+| `ConversationView` | `@alexkroman1/aai-ui` |
+| `ConversationViewProps` | `@alexkroman1/aai-ui` |
 | `CreatePostgresDbOptions` | `@alexkroman1/aai-runtime` |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | `@alexkroman1/aai/stt` |
 | `DEFAULT_GUARDRAIL_MAX_RETRIES` | `@alexkroman1/aai` |
@@ -322,6 +327,8 @@ each is for.
 | `STUB_SPEECH_PCM_BYTES` | `@alexkroman1/aai/testing` |
 | `ScriptedTextStep` | `@alexkroman1/aai-runtime/testing` |
 | `ScriptedToolCall` | `@alexkroman1/aai-runtime/testing` |
+| `ScriptedToolContext` | `@alexkroman1/aai/testing` |
+| `ScriptedToolContextOptions` | `@alexkroman1/aai/testing` |
 | `SelectField` | `@alexkroman1/aai-ui` |
 | `SentEvent` | `@alexkroman1/aai/testing` |
 | `ServerSession` | `@alexkroman1/aai-runtime` |
@@ -329,6 +336,11 @@ each is for.
 | `SessionActions` | `@alexkroman1/aai-ui` |
 | `SessionCommand` | `@alexkroman1/aai/protocol` |
 | `SessionCommandSchema` | `@alexkroman1/aai/protocol` |
+| `SessionControlAction` | `@alexkroman1/aai-ui` |
+| `SessionControlButton` | `@alexkroman1/aai-ui` |
+| `SessionControls` | `@alexkroman1/aai-ui` |
+| `SessionControlsLabels` | `@alexkroman1/aai-ui` |
+| `SessionControlsProps` | `@alexkroman1/aai-ui` |
 | `SessionError` | `@alexkroman1/aai-ui` |
 | `SessionErrorBanner` | `@alexkroman1/aai-ui` |
 | `SessionErrorBannerProps` | `@alexkroman1/aai-ui` |
@@ -352,8 +364,11 @@ each is for.
 | `SessionSnapshot` | `@alexkroman1/aai-ui` |
 | `SessionStartOptions` | `@alexkroman1/aai-runtime` |
 | `SessionStateBackend` | `@alexkroman1/aai-runtime` |
+| `SessionStateDot` | `@alexkroman1/aai-ui` |
+| `SessionStateDotProps` | `@alexkroman1/aai-ui` |
 | `SessionStateStore` | `@alexkroman1/aai-runtime` |
 | `SessionWebSocket` | `@alexkroman1/aai-runtime` |
+| `Settled` | `@alexkroman1/aai/step` |
 | `SharedAgentParams` | `@alexkroman1/aai` |
 | `SharedServerOptions` | `@alexkroman1/aai-runtime` |
 | `SidebarLayout` | `@alexkroman1/aai-ui` |
@@ -363,6 +378,7 @@ each is for.
 | `SleepEntry` | `@alexkroman1/aai-runtime/testing` |
 | `SleepOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
 | `SleepRecord` | `@alexkroman1/aai-runtime/testing` |
+| `SlotCaps` | `@alexkroman1/aai` |
 | `SlotHolder` | `@alexkroman1/aai` |
 | `SlotStore` | `@alexkroman1/aai` |
 | `SlotToolDef` | `@alexkroman1/aai` |
@@ -529,6 +545,7 @@ each is for.
 | `UseDownloadUrlOptions` | `@alexkroman1/aai-ui` |
 | `UseDownloadUrlResult` | `@alexkroman1/aai-ui` |
 | `UseFlashResult` | `@alexkroman1/aai-ui` |
+| `UseSessionControlsResult` | `@alexkroman1/aai-ui` |
 | `UseUserTranscriptResult` | `@alexkroman1/aai-ui` |
 | `UseWorkflowProgressResult` | `@alexkroman1/aai-ui` |
 | `UseWorkflowRunResult` | `@alexkroman1/aai-ui` |
@@ -577,6 +594,8 @@ each is for.
 | `WorkflowRunError` | `@alexkroman1/aai-ui` |
 | `WorkflowRunErrorProps` | `@alexkroman1/aai-ui` |
 | `WorkflowRunOf` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
+| `WorkflowRunPanel` | `@alexkroman1/aai-ui` |
+| `WorkflowRunPanelProps` | `@alexkroman1/aai-ui` |
 | `WorkflowRunSnapshot` | `@alexkroman1/aai/workflow-api` |
 | `WorkflowRunStatus` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
 | `WorkflowStreamSubmission` | `@alexkroman1/aai-ui` |
@@ -609,6 +628,7 @@ each is for.
 | `buildWorker` | `@alexkroman1/aai-cli/worker-bundler` |
 | `carrierByName` | `@alexkroman1/aai-runtime` |
 | `cartesiaTts` | `@alexkroman1/aai/tts` |
+| `commandedBuiltins` | `@alexkroman1/aai/testing` |
 | `completedOutput` | `@alexkroman1/aai-runtime/eval` |
 | `countWords` | `@alexkroman1/aai/utils` |
 | `createAgentClient` | `@alexkroman1/aai/workflow-api` |
@@ -649,17 +669,23 @@ each is for.
 | `describeTurn` | `@alexkroman1/aai-runtime/eval` |
 | `describeWorkflowEval` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `dialog` | `@alexkroman1/aai` |
+| `dialogRefusalPattern` | `@alexkroman1/aai/testing` |
 | `elevenLabsStt` | `@alexkroman1/aai/stt` |
 | `encodeWav` | `@alexkroman1/aai/step` |
 | `ensureSessionStateSchema` | `@alexkroman1/aai-runtime` |
 | `ensureWorkflowJournalSchema` | `@alexkroman1/aai-runtime` |
 | `errorDetail` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `errorMessage` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
+| `errorsIn` | `@alexkroman1/aai-runtime/eval` |
 | `escapeSlackMrkdwn` | `@alexkroman1/aai/channels` |
 | `evalCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `evalWorkflowCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `executeStart` | `@alexkroman1/aai-cli/start` |
+| `expectDeployable` | `@alexkroman1/aai/testing` |
 | `expectDialogOk` | `@alexkroman1/aai/testing` |
+| `expectDialogRefused` | `@alexkroman1/aai/testing` |
+| `expectPromptBuiltinsDeclared` | `@alexkroman1/aai/testing` |
+| `expectToolBeforeSpeech` | `@alexkroman1/aai-runtime/eval` |
 | `expectToolOk` | `@alexkroman1/aai/testing` |
 | `explainChannelFailure` | `@alexkroman1/aai/channels` |
 | `explainSlackChannelFailure` | `@alexkroman1/aai/channels` |
@@ -697,6 +723,7 @@ each is for.
 | `lenientParse` | `@alexkroman1/aai/protocol` |
 | `loadBuiltAgent` | `@alexkroman1/aai-cli/start` |
 | `mapConcurrent` | `@alexkroman1/aai/step` |
+| `mapSettled` | `@alexkroman1/aai/step` |
 | `mcpToolName` | `@alexkroman1/aai` |
 | `mistralLlm` | `@alexkroman1/aai/llm` |
 | `mountClient` | `@alexkroman1/aai-ui` |
@@ -714,6 +741,7 @@ each is for.
 | `parseSchemaInput` | `@alexkroman1/aai/testing` |
 | `parseToolInput` | `@alexkroman1/aai/testing` |
 | `partKey` | `@alexkroman1/aai-runtime` |
+| `partitionSettled` | `@alexkroman1/aai/step` |
 | `partsOf` | `@alexkroman1/aai-runtime` |
 | `pcmDurationMs` | `@alexkroman1/aai/step` |
 | `plural` | `@alexkroman1/aai/utils` |
@@ -743,7 +771,10 @@ each is for.
 | `retryAfter` | `@alexkroman1/aai/step` |
 | `rimeTts` | `@alexkroman1/aai/tts` |
 | `routeStepFetch` | `@alexkroman1/aai/testing` |
+| `runCodeIn` | `@alexkroman1/aai-runtime/eval` |
+| `runCodeOutput` | `@alexkroman1/aai-runtime/eval` |
 | `runFfmpeg` | `@alexkroman1/aai/ffmpeg` |
+| `runGuardrail` | `@alexkroman1/aai/testing` |
 | `runTextAgent` | `@alexkroman1/aai-runtime/testing` |
 | `runTool` | `@alexkroman1/aai/testing` |
 | `runWorkflow` | `@alexkroman1/aai-runtime/testing` |
@@ -752,6 +783,7 @@ each is for.
 | `salvageJson` | `@alexkroman1/aai-runtime` |
 | `schemaInputIssues` | `@alexkroman1/aai/testing` |
 | `scriptedTextModel` | `@alexkroman1/aai-runtime/testing` |
+| `scriptedToolContext` | `@alexkroman1/aai/testing` |
 | `sendToChannel` | `@alexkroman1/aai/channels` |
 | `sendToChannelOrFail` | `@alexkroman1/aai/step-errors` |
 | `sessionSlot` | `@alexkroman1/aai` |
@@ -759,6 +791,7 @@ each is for.
 | `slugifyName` | `@alexkroman1/aai/slugify` |
 | `snapshotWorkspaceFiles` | `@alexkroman1/aai/workspace-files` |
 | `sonioxStt` | `@alexkroman1/aai/stt` |
+| `spokenAlphanumeric` | `@alexkroman1/aai` |
 | `spokenDigits` | `@alexkroman1/aai` |
 | `spokenOrdinal` | `@alexkroman1/aai` |
 | `startTelephonySession` | `@alexkroman1/aai-runtime` |
@@ -823,6 +856,7 @@ each is for.
 | `toolRunner` | `@alexkroman1/aai/testing` |
 | `tracingEndpoint` | `@alexkroman1/aai-runtime/tracing` |
 | `transcodeToWav` | `@alexkroman1/aai/ffmpeg` |
+| `ttsVoiceIds` | `@alexkroman1/aai/tts` |
 | `turnCalling` | `@alexkroman1/aai-runtime/eval` |
 | `twilioCodec` | `@alexkroman1/aai-runtime` |
 | `typecheckProject` | `@alexkroman1/aai-cli/typecheck` |
@@ -836,6 +870,7 @@ each is for.
 | `useRunKey` | `@alexkroman1/aai-ui` |
 | `useSession` | `@alexkroman1/aai-ui` |
 | `useSessionActions` | `@alexkroman1/aai-ui` |
+| `useSessionControls` | `@alexkroman1/aai-ui` |
 | `useSessionError` | `@alexkroman1/aai-ui` |
 | `useSessionSelector` | `@alexkroman1/aai-ui` |
 | `useSessionStatus` | `@alexkroman1/aai-ui` |
@@ -1012,6 +1047,7 @@ trace or a type error can be traced back to something.
 | `RIME_DEFAULT_LANGUAGE` | `@alexkroman1/aai/host-internal` |
 | `RIME_DEFAULT_MODEL` | `@alexkroman1/aai/host-internal` |
 | `RIME_KIND` | `@alexkroman1/aai/host-internal` |
+| `RUN_CODE_REFUSAL` | `@alexkroman1/aai/host-internal` |
 | `ResolvedBuiltins` | `@alexkroman1/aai/host-internal` |
 | `S2S_MAX_RESUME_ATTEMPTS` | `@alexkroman1/aai/host-internal` |
 | `SANDBOX_ONLY_BUILTINS` | `@alexkroman1/aai/host-internal` |

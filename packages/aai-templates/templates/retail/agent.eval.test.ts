@@ -31,6 +31,7 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 // What no eval here can see: anything below the audio boundary. Whether a
 // caller reading an order number in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import { describeTurn, lastStateIn, toolNames, turnCalling } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -83,16 +84,6 @@ function statusOf(events: readonly SessionEvent[], orderId: string): string | un
   return projection(events)?.orders.find((o) => o.orderId === orderId)?.status;
 }
 
-/**
- * The dialog gate's own refusal sentence, for the state it names.
- *
- * The character class absorbs the JSON escaping: a tool result reaches the
- * event stream as a serialized string, so the state name arrives inside
- * `\\"identifying\\"` rather than plain quotes.
- */
-const refusalAt = (state: string) =>
-  new RegExp(`Not available yet: this conversation is at [\\\\"]*${state}`);
-
 /** One line the caller says to identify themselves, and the scripted tool call
  *  that answers it — the first turn of three of these four cases. */
 const AUTH_TURN = [
@@ -127,7 +118,7 @@ describeEval(retailAgent, (test) => {
       // are what stop the case being vacuous overall.
       for (const call of turn.toolCalls) {
         if (PUBLIC_TOOLS.has(call.name)) continue;
-        expect(call.result).toMatch(refusalAt("identifying"));
+        expect(call.result).toMatch(dialogRefusalPattern("identifying"));
       }
       // Nothing was authenticated, so the browser has been sent no customer —
       // which is also the projection's security claim.
@@ -213,7 +204,7 @@ describeEval(retailAgent, (test) => {
       // prompt could not: a repeated yes cannot cancel an order twice.
       expect(applied).toHaveLength(1);
       for (const extra of confirms.filter((c) => c !== applied[0])) {
-        expect(extra.result).toMatch(/Not available yet/);
+        expect(extra.result).toMatch(dialogRefusalPattern());
       }
       // And it came after the stage, never instead of it.
       const names = toolNames(session.toolCalls());
@@ -259,7 +250,7 @@ describeEval(retailAgent, (test) => {
 
       const after = await session.say("Actually, before you go — just cancel my pending order.");
       for (const call of after.toolCalls) {
-        expect(call.result).toMatch(refusalAt("transferred"));
+        expect(call.result).toMatch(dialogRefusalPattern("transferred"));
       }
       // Which is the point: the order the caller asked about is untouched.
       expect(statusOf(session.events(), PENDING_ORDER)).toBe("pending");

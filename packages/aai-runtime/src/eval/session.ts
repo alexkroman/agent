@@ -66,7 +66,7 @@ import { createRuntime } from "../runtime.ts";
 import { type Logger, silentLogger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { assertTurnMeasurable } from "./_turn-faults.ts";
-import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
+import { type EvalToolCall, errorsIn, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
 import { installStubSpeechProviders, type StubSpeechProviders } from "./stub-speech.ts";
 
 /** How long one turn may take before the harness gives up on it. */
@@ -139,6 +139,13 @@ export type EvalTurn = {
    * cancelled. A cancelled reply is a finding, not a failure of the harness.
    */
   readonly completed: boolean;
+  /**
+   * The `error.reported` events this turn carried — what the RUNTIME said went
+   * wrong. Only `code: "tool"` can appear here, since a turn the pipeline failed
+   * is refused before a case sees it (`_turn-faults.ts`); `errorsIn` over
+   * `session.events()` is the unfiltered list.
+   */
+  readonly errors: readonly Extract<SessionEvent, { type: "error.reported" }>[];
 };
 
 /** One live eval session. */
@@ -459,6 +466,7 @@ async function openWithFakes(
       events: turn,
       toolCalls: toolCallsInEvents(turn),
       completed: turn.some((e) => e.type === "reply.completed"),
+      errors: errorsIn(turn),
     };
   };
 

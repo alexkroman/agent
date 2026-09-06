@@ -112,11 +112,73 @@ export interface SlotToolDef<P extends ToolInputSchema, V, R> {
 }
 
 /**
+ * Growth caps for the ARRAYS at the top level of a slot's value — the type of
+ * {@link SessionSlotOptions.caps}.
+ *
+ * A key is accepted only when the value under it is an array (or an array
+ * behind `null`/`undefined`), so declaring a cap on a counter or a nested
+ * object is a compile error naming the key rather than a bound that silently
+ * applies to nothing. Each cap is the most entries that array keeps.
+ *
+ * @public
+ */
+export type SlotCaps<T> = T extends object
+  ? {
+      readonly [K in keyof T as NonNullable<T[K]> extends readonly unknown[] ? K : never]?: number;
+    }
+  : // A homomorphic mapped type over a PRIMITIVE is the primitive (`Partial<number>`
+    // is `number`), which would let a counter slot declare `caps: 3`. A slot
+    // holding a primitive has nothing to cap.
+    never;
+
+/**
  * Options for {@link sessionSlot}.
  *
  * @public
  */
 export interface SessionSlotOptions<T, After = void> {
+  /**
+   * Growth caps on the slot's top-level arrays, enforced by the SLOT on every
+   * store — `update`, `set`, `reset`, and the first `get` that installs the
+   * default — dropping the OLDEST entries past each cap.
+   *
+   * For the append-only lists an agent keeps: a call log, an activity feed, a
+   * finding board. Every one feeds a prompt or a `syncState` frame, so
+   * uncapped it grows what the model reads and what crosses the wire for the
+   * length of the call. Declared here rather than at each `push`, because a
+   * wrapper caps only the paths that call it: a slot with three capped arrays
+   * and a fourth pushed to directly is the shape this replaces.
+   *
+   * **It runs AFTER {@link SessionSlotOptions.after}**, and that ordering is a
+   * decision rather than an accident. A hook may itself append (restoring a
+   * sentinel, recording what it recalculated), so a cap applied before it
+   * could be exceeded by the hook's own write; applied after, the cap is the
+   * last word and the stored value never exceeds it. The price is that the
+   * hook sees the UNTRIMMED draft: a derived field that reads the array's
+   * TAIL (`lastLine: log.at(-1)`) is unaffected, one that reads its `length`
+   * counts the entries about to fall off. A mutator's own result is in the
+   * same position, as it already is with `after`.
+   *
+   * **Top-level arrays only** — a key is accepted only when the value under it
+   * is an array (see {@link SlotCaps}). A nested list (one timeline per
+   * incident) has no single key to declare and stays on `pushCapped`, which is
+   * the same bound applied by hand.
+   *
+   * A cap that is not a non-negative integer is refused at DECLARATION, naming
+   * the slot and the key. Zero keeps nothing, as `pushCapped(…, 0)` does.
+   *
+   * ```ts
+   * import { sessionSlot } from "@alexkroman1/aai";
+   *
+   * type Desk = { log: string[]; findings: string[]; open: string | null };
+   * export const deskSlot = sessionSlot(
+   *   "desk",
+   *   (): Desk => ({ log: [], findings: [], open: null }),
+   *   { caps: { log: 40, findings: 12 } },
+   * );
+   * ```
+   */
+  caps?: SlotCaps<T>;
   /**
    * Invariant restoration, run on the draft at the end of every successful
    * {@link SessionSlot.update} — pruning growth, recalculating a derived field.

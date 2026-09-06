@@ -19,10 +19,15 @@
  * page overriding one member keeps that: spreading a complete record cannot
  * drop a key.
  *
- * There is deliberately no `StatusDot` component beside it. The dot markup and
- * its palette are what each chrome exists to look like — a CRT's glow, a
- * dispatch board's alert colours — and a component would take the one part
- * that is genuinely shared (the words) hostage to the part that is not.
+ * `SessionStateDot` (`components/session-state-dot.tsx`) is the dot beside it,
+ * and this paragraph used to argue against one: the dot's palette is what each
+ * chrome exists to look like — a CRT's glow, a dispatch board's alert colours —
+ * and a component would take the one part that is genuinely shared (the words)
+ * hostage to the part that is not. It takes the palette as a PROP, so it does
+ * not: what it shares is the exhaustive colour lookup, this record as the label
+ * fallback, and the pulse rule, and the three chromes that had each written
+ * those fourteen lines around their own `satisfies Record<AgentState, string>`
+ * keep the record and lose the lines.
  */
 
 import type { AgentState } from "./types.ts";

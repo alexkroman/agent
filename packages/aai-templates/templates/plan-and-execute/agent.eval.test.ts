@@ -24,6 +24,7 @@
 
 /** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
 import agentDef from "virtual:aai/agent";
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import {
   describeToolCalls,
   describeTurn,
@@ -102,8 +103,7 @@ describeEval(agentDef, (test) => {
         // Refused BEFORE the body: `when: "working"` is what replaced the two
         // hand-rolled guards, and its refusal names the position and quotes the
         // state's instruction so the model can recover on its own turn.
-        expect(attempt.result).toMatch(/Not available yet/);
-        expect(attempt.result).toMatch(/idle/);
+        expect(attempt.result).toMatch(dialogRefusalPattern("idle"));
         expect(attempt.result).toMatch(/start_plan/);
       }
       // And whatever else happened, nothing was ANSWERED: a desk that produced

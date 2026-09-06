@@ -15,6 +15,282 @@ suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 
+### commandedBuiltins()
+
+```ts
+function commandedBuiltins(config: {
+  builtinTools?: readonly (
+     | "web_search"
+     | "visit_webpage"
+     | "get_page_design"
+     | "fetch_json"
+     | "run_code"
+     | "think"
+     | "remember"
+     | "recall"
+    | "calculate")[];
+  deadAirCoverMs?: number;
+  errorPhrase?: string;
+  greeting: string;
+  idleTimeoutMs?: number;
+  interruptionMinDurationMs?: number;
+  llm?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  maxSteps?: number;
+  mcpServers?: Record<string, {
+     pinnedTools?: Record<string, string>;
+     tokenEnv?: string;
+     url: string;
+  }>;
+  minBargeInWords?: number;
+  mode?: "s2s" | "text" | "pipeline";
+  name: string;
+  page?: "voice" | "static";
+  preemptiveGeneration?: boolean;
+  requiredEnv?: readonly string[];
+  resumeFalseInterruption?: boolean;
+  s2s?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  silencePrompt?: string;
+  silenceTimeoutMs?: number;
+  startFailurePhrase?: string;
+  stt?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  sttPrompt?: string;
+  systemPrompt: string;
+  telephony?: boolean | readonly ("twilio" | "telnyx")[];
+  temperature?: number;
+  text?: true;
+  toolChoice?:   | "auto"
+     | "required"
+     | "none"
+     | {
+     toolName: string;
+     type: "tool";
+   };
+  tts?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+}): BuiltinTool[];
+```
+
+Every builtin the system prompt COMMANDS by name, in first-mention order.
+
+The prompt is scanned for snake_case tokens and each is asked of the SDK's own
+builtin schema — so `run_code` and `fetch_json` are found, and the
+`vs_currencies`, `per_person` and `annual_rate` a finance prompt names in its
+endpoints and formulas are not. Reading the CONFIG's prompt rather than a
+file: that is what a deploy carries, and it is where `system-prompt.md` lands
+only if the build applied it.
+
+A reader, not an assertion — [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) is the
+claim most specs want. This is exported for the spec that wants to say more:
+that a particular builtin is among the commanded ones, or that the prompt
+commands exactly the set the template is about.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { toAgentConfig } from "@alexkroman1/aai/manifest";
+import { commandedBuiltins } from "@alexkroman1/aai/testing";
+
+const config = toAgentConfig(
+  agent({ name: "Penny", systemPrompt: "Use fetch_json for rates; annual_rate is a number." }),
+);
+console.log(commandedBuiltins(config)); // ["fetch_json"]
+```
+
+#### Parameters
+
+##### config
+
+###### builtinTools?
+
+readonly (
+  \| `"web_search"`
+  \| `"visit_webpage"`
+  \| `"get_page_design"`
+  \| `"fetch_json"`
+  \| `"run_code"`
+  \| `"think"`
+  \| `"remember"`
+  \| `"recall"`
+  \| `"calculate"`)[]
+
+###### deadAirCoverMs?
+
+`number`
+
+###### errorPhrase?
+
+`string`
+
+###### greeting
+
+`string`
+
+###### idleTimeoutMs?
+
+`number`
+
+###### interruptionMinDurationMs?
+
+`number`
+
+###### llm?
+
+\{
+  `kind`: `string`;
+  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+\}
+
+###### llm.kind
+
+`string`
+
+###### llm.options
+
+`z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### maxSteps?
+
+`number`
+
+###### mcpServers?
+
+`Record`\<`string`, \{
+  `pinnedTools?`: `Record`\<`string`, `string`\>;
+  `tokenEnv?`: `string`;
+  `url`: `string`;
+\}\>
+
+###### minBargeInWords?
+
+`number`
+
+###### mode?
+
+`"s2s"` \| `"text"` \| `"pipeline"`
+
+###### name
+
+`string`
+
+###### page?
+
+`"voice"` \| `"static"`
+
+###### preemptiveGeneration?
+
+`boolean`
+
+###### requiredEnv?
+
+readonly `string`[]
+
+###### resumeFalseInterruption?
+
+`boolean`
+
+###### s2s?
+
+\{
+  `kind`: `string`;
+  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+\}
+
+###### s2s.kind
+
+`string`
+
+###### s2s.options
+
+`z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### silencePrompt?
+
+`string`
+
+###### silenceTimeoutMs?
+
+`number`
+
+###### startFailurePhrase?
+
+`string`
+
+###### stt?
+
+\{
+  `kind`: `string`;
+  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+\}
+
+###### stt.kind
+
+`string`
+
+###### stt.options
+
+`z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### sttPrompt?
+
+`string`
+
+###### systemPrompt
+
+`string`
+
+###### telephony?
+
+`boolean` \| readonly (`"twilio"` \| `"telnyx"`)[]
+
+###### temperature?
+
+`number`
+
+###### text?
+
+`true`
+
+###### toolChoice?
+
+  \| `"auto"`
+  \| `"required"`
+  \| `"none"`
+  \| \{
+  `toolName`: `string`;
+  `type`: `"tool"`;
+\}
+
+###### tts?
+
+\{
+  `kind`: `string`;
+  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+\}
+
+###### tts.kind
+
+`string`
+
+###### tts.options
+
+`z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+#### Returns
+
+[`BuiltinTool`](index.md#builtintool)[]
+
+***
+
 ### createProgressStream()
 
 ```ts
@@ -308,6 +584,441 @@ the "I edited the prompt and nothing changed" failure.
 
 ***
 
+### dialogRefusalPattern()
+
+```ts
+function dialogRefusalPattern(state?: string): RegExp;
+```
+
+A pattern matching the sentence a `dialog()` gate refuses with — optionally
+pinned to the state it names.
+
+For a SPEC. A gated tool called out of state answers a `ToolFailure` whose
+`error` is this sentence, and every template spec that asserts a gate held
+used to spell a regex for it by hand. Two kinds of spec read it, and the
+pattern serves both: a unit test holds the `ToolFailure` itself (prefer
+`expectDialogRefused` there, which also throws on a success), while an eval
+reads a tool result off the event stream as a SERIALIZED string, where the
+state's quotes arrive escaped (`\"identifying\"`). The pattern admits the
+escaping, so one matcher reads both.
+
+With no `state`, it matches any refusal — for a spec that pins the state a
+line later, or whose subject is that the body did not run rather than where
+the conversation was.
+
+#### Parameters
+
+##### state?
+
+`string`
+
+The state the refusal must name, as `DialogPosition.state`
+  spells it (`"identifying"`, `"onCall.inbox"`). Matched literally.
+
+#### Returns
+
+`RegExp`
+
+#### Example
+
+```ts
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
+
+const refused = 'Not available yet: this conversation is at "identifying". Verify the caller first.';
+dialogRefusalPattern("identifying").test(refused); // true
+dialogRefusalPattern("transferred").test(refused); // false
+dialogRefusalPattern().test(refused); // true
+```
+
+***
+
+### expectDeployable()
+
+```ts
+function expectDeployable(def: AgentConfigSource): {
+  builtinTools?: readonly (
+     | "web_search"
+     | "visit_webpage"
+     | "get_page_design"
+     | "fetch_json"
+     | "run_code"
+     | "think"
+     | "remember"
+     | "recall"
+    | "calculate")[];
+  deadAirCoverMs?: number;
+  errorPhrase?: string;
+  greeting: string;
+  idleTimeoutMs?: number;
+  interruptionMinDurationMs?: number;
+  llm?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  maxSteps?: number;
+  mcpServers?: Record<string, {
+     pinnedTools?: Record<string, string>;
+     tokenEnv?: string;
+     url: string;
+  }>;
+  minBargeInWords?: number;
+  mode?: "s2s" | "text" | "pipeline";
+  name: string;
+  page?: "voice" | "static";
+  preemptiveGeneration?: boolean;
+  requiredEnv?: readonly string[];
+  resumeFalseInterruption?: boolean;
+  s2s?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  silencePrompt?: string;
+  silenceTimeoutMs?: number;
+  startFailurePhrase?: string;
+  stt?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  sttPrompt?: string;
+  systemPrompt: string;
+  telephony?: boolean | readonly ("twilio" | "telnyx")[];
+  temperature?: number;
+  text?: true;
+  toolChoice?:   | "auto"
+     | "required"
+     | "none"
+     | {
+     toolName: string;
+     type: "tool";
+   };
+  tts?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+};
+```
+
+Run the invariants a deployable agent owes, and hand back the RESOLVED config
+so a spec can go on to assert its own specifics — a chosen model, a declared
+builtin — without converting twice.
+
+Three invariants, each thrown by name:
+
+- **The config passes manifest validation** — the same `toAgentConfig` that
+  `aai build` and `aai deploy` run, so an invalid provider combination or
+  tuning fails here rather than at the first live session.
+- **The platform can name it** — there IS a name, and the conversion carries
+  it through. Not the literal: renaming the agent is the first edit a starter
+  invites, and the studio lists a deployed agent by exactly this string.
+- **Every stage its mode needs is filled, declared or defaulted** — asserted
+  per MODE so it survives a swap. A pipeline agent has an `stt`, `llm` and
+  `tts` kind, each declared stage surviving as declared and each unset one
+  filled by `defaultProviders`; a text agent has no audio stage (its `llm`
+  may be absent — `createTextAgent` defaults the one stage it has); an `s2s`
+  agent has an `s2s` kind and NO cascade, since speech-to-speech replaces the
+  pipeline rather than joining it — the one thing that must never happen by
+  fallthrough.
+
+`toAgentConfig` already refuses most of the states the second and third
+invariants describe (a blank name, `s2s` beside a pipeline stage). They are
+checked here anyway, and BEFORE or AFTER the conversion as the message needs,
+because the value of this helper is the sentence: a spec that failed on
+"expected function not to throw" has to re-run the conversion by hand to
+learn which invariant went.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { expectDeployable } from "@alexkroman1/aai/testing";
+
+const config = expectDeployable(agent({ name: "Desk", builtinTools: ["run_code"] }));
+// The invariants held; now the template's own claim.
+console.log(config.builtinTools); // ["run_code"]
+```
+
+#### Parameters
+
+##### def
+
+[`AgentConfigSource`](manifest.md#agentconfigsource)
+
+The agent under test — an `agent()` definition, or the raw
+  default export of an `agent.ts`. Structural, like `toAgentConfig`.
+
+#### Returns
+
+```ts
+{
+  builtinTools?: readonly (
+     | "web_search"
+     | "visit_webpage"
+     | "get_page_design"
+     | "fetch_json"
+     | "run_code"
+     | "think"
+     | "remember"
+     | "recall"
+    | "calculate")[];
+  deadAirCoverMs?: number;
+  errorPhrase?: string;
+  greeting: string;
+  idleTimeoutMs?: number;
+  interruptionMinDurationMs?: number;
+  llm?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  maxSteps?: number;
+  mcpServers?: Record<string, {
+     pinnedTools?: Record<string, string>;
+     tokenEnv?: string;
+     url: string;
+  }>;
+  minBargeInWords?: number;
+  mode?: "s2s" | "text" | "pipeline";
+  name: string;
+  page?: "voice" | "static";
+  preemptiveGeneration?: boolean;
+  requiredEnv?: readonly string[];
+  resumeFalseInterruption?: boolean;
+  s2s?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  silencePrompt?: string;
+  silenceTimeoutMs?: number;
+  startFailurePhrase?: string;
+  stt?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  sttPrompt?: string;
+  systemPrompt: string;
+  telephony?: boolean | readonly ("twilio" | "telnyx")[];
+  temperature?: number;
+  text?: true;
+  toolChoice?:   | "auto"
+     | "required"
+     | "none"
+     | {
+     toolName: string;
+     type: "tool";
+   };
+  tts?: {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+}
+```
+
+The config a deploy carries, mode derived and defaults injected.
+
+##### builtinTools?
+
+```ts
+optional builtinTools?: readonly (
+  | "web_search"
+  | "visit_webpage"
+  | "get_page_design"
+  | "fetch_json"
+  | "run_code"
+  | "think"
+  | "remember"
+  | "recall"
+  | "calculate")[];
+```
+
+##### deadAirCoverMs?
+
+```ts
+optional deadAirCoverMs?: number;
+```
+
+##### errorPhrase?
+
+```ts
+optional errorPhrase?: string;
+```
+
+##### greeting
+
+```ts
+greeting: string;
+```
+
+##### idleTimeoutMs?
+
+```ts
+optional idleTimeoutMs?: number;
+```
+
+##### interruptionMinDurationMs?
+
+```ts
+optional interruptionMinDurationMs?: number;
+```
+
+##### llm?
+
+```ts
+{
+  kind: string;
+  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### maxSteps?
+
+```ts
+optional maxSteps?: number;
+```
+
+##### mcpServers?
+
+```ts
+optional mcpServers?: Record<string, {
+  pinnedTools?: Record<string, string>;
+  tokenEnv?: string;
+  url: string;
+}>;
+```
+
+##### minBargeInWords?
+
+```ts
+optional minBargeInWords?: number;
+```
+
+##### mode?
+
+```ts
+optional mode?: "s2s" | "text" | "pipeline";
+```
+
+##### name
+
+```ts
+name: string;
+```
+
+##### page?
+
+```ts
+optional page?: "voice" | "static";
+```
+
+##### preemptiveGeneration?
+
+```ts
+optional preemptiveGeneration?: boolean;
+```
+
+##### requiredEnv?
+
+```ts
+optional requiredEnv?: readonly string[];
+```
+
+##### resumeFalseInterruption?
+
+```ts
+optional resumeFalseInterruption?: boolean;
+```
+
+##### s2s?
+
+```ts
+{
+  kind: string;
+  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### silencePrompt?
+
+```ts
+optional silencePrompt?: string;
+```
+
+##### silenceTimeoutMs?
+
+```ts
+optional silenceTimeoutMs?: number;
+```
+
+##### startFailurePhrase?
+
+```ts
+optional startFailurePhrase?: string;
+```
+
+##### stt?
+
+```ts
+{
+  kind: string;
+  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### sttPrompt?
+
+```ts
+optional sttPrompt?: string;
+```
+
+##### systemPrompt
+
+```ts
+systemPrompt: string;
+```
+
+##### telephony?
+
+```ts
+optional telephony?: boolean | readonly ("twilio" | "telnyx")[];
+```
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+##### text?
+
+```ts
+optional text?: true;
+```
+
+##### toolChoice?
+
+```ts
+optional toolChoice?: 
+  | "auto"
+  | "required"
+  | "none"
+  | {
+  toolName: string;
+  type: "tool";
+};
+```
+
+##### tts?
+
+```ts
+{
+  kind: string;
+  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+#### Throws
+
+Naming the invariant that failed, and — for the validation one — the
+  sentence `toAgentConfig` wrote about the field.
+
+***
+
 ### expectDialogOk()
 
 ```ts
@@ -354,6 +1065,133 @@ const answered = expectDialogOk<{ quoted: number }>(
 expect(answered.state).toBe("quote.pending");
 expect(answered.result.quoted).toBe(42);
 ```
+
+***
+
+### expectDialogRefused()
+
+```ts
+function expectDialogRefused(result: unknown, state?: string): ToolFailure;
+```
+
+The refusal a gated tool answered with, or a throw saying the gate did NOT hold.
+
+The mirror of [expectDialogOk](#expectdialogok), for the spec whose subject is that a
+tool was REFUSED: called before the dialog reached its state, or after it
+left. Six template specs had written the other half by hand — an
+`isToolFailure` check, a `toBe(true)`, and a regex for the sentence the gate
+writes — and a success slipped through that shape as three assertions that
+never ran, because each sat inside the `if` the guard opened.
+
+With a `state`, the refusal must also NAME it: that the tool was refused is
+half the claim, and that the conversation was where the spec thinks it was is
+the half a gate on the wrong state hides in. Matched with
+[dialogRefusalPattern](#dialogrefusalpattern), so a spec never spells the sentence.
+
+#### Parameters
+
+##### result
+
+`unknown`
+
+What `runTool` / `toolOf(...).execute(...)` answered.
+
+##### state?
+
+`string`
+
+The position the refusal must name, as `DialogPosition.state`
+  spells it. Omit to accept a refusal at any state.
+
+#### Returns
+
+[`ToolFailure`](index.md#toolfailure)
+
+#### Throws
+
+When the tool was NOT refused — a dialog envelope is reported with the
+  state it landed in, since that is the fact the spec got wrong.
+
+#### Throws
+
+When it was refused for some other reason, or at some other state,
+  quoting the refusal.
+
+#### Example
+
+```ts
+import { expectDialogRefused } from "@alexkroman1/aai/testing";
+
+const refused = expectDialogRefused(
+  { error: 'Not available yet: this conversation is at "idle". Call start_plan first.' },
+  "idle",
+);
+refused.error.includes("start_plan"); // true — the instruction the model recovers from
+```
+
+***
+
+### expectPromptBuiltinsDeclared()
+
+```ts
+function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinTool[];
+```
+
+Every builtin the prompt commands is one `builtinTools` declares — or a throw
+naming the ones that are not.
+
+The pairing a prompt-driven template is made of: the prose holds the rules
+("you MUST use `run_code` for arithmetic", "look rates up with `fetch_json`"),
+and `agent.ts` holds the array that makes those tools exist. The failure is
+silent in both directions and shows up in a diff of neither file — a prompt
+commanding `fetch_json` at an agent that never declared it produces a model
+apologizing for a tool it cannot see, and a builtin dropped from `agent.ts`
+alone leaves an endpoint list addressed to nothing.
+
+**A prompt commanding NO builtin is a failure, not a pass.** Non-vacuity earns
+its keep twice: a loop over nothing asserts nothing, and it is also the state a
+template lands in when `system-prompt.md` was not applied — the framework
+default names no builtin, so "I edited the prompt and nothing changed" fails
+here instead of passing quietly with the template's rules nowhere in its
+context. A spec whose prompt legitimately describes its tools rather than
+naming them does not want this helper; it asserts on `builtinTools` directly.
+
+The converse is deliberately NOT asserted: declaring a builtin the prompt never
+mentions is an ordinary edit, and the model learns about it from its own tool
+schema rather than from the prose.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
+
+const commanded = expectPromptBuiltinsDeclared(
+  agent({
+    name: "Coda",
+    systemPrompt: "Answer every sum by calling run_code.",
+    builtinTools: ["run_code"],
+  }),
+);
+console.log(commanded); // ["run_code"]
+```
+
+#### Parameters
+
+##### def
+
+[`AgentConfigSource`](manifest.md#agentconfigsource)
+
+The agent under test, converted through `toAgentConfig` so the
+  scan reads the prompt a deploy carries.
+
+#### Returns
+
+[`BuiltinTool`](index.md#builtintool)[]
+
+The commanded builtins, for a spec that wants to say more about them.
+
+#### Throws
+
+When the prompt names no builtin, or names one `builtinTools` lacks.
 
 ***
 
@@ -603,6 +1441,67 @@ const handler = routeStepFetch([model.route, (req) =>
 
 ***
 
+### runGuardrail()
+
+```ts
+function runGuardrail(
+   def: SubagentDef, 
+   text: string, 
+   answer?: Partial<SubagentAnswer>
+): GuardrailVerdict;
+```
+
+Run `def`'s guardrail over one answer and return its verdict.
+
+The answer is `text` with a ZERO cost report — one step, no tool calls —
+because that is what most guardrails read; a guardrail that judges the cost
+(`toolCalls.length === 0`, say) is handed it through `answer`, which is
+spread over the defaults.
+
+**Throws when the def declares no guardrail**, rather than returning `true`:
+a spec calling this is asserting that a check exists, and a def that lost its
+guardrail should fail here, not pass by default. **Throws when the guardrail
+returns a promise**: this helper is for the SYNCHRONOUS guardrail, which is
+the ordinary one, and an async guardrail's spec awaits `def.guardrail(answer)`
+itself — the verdict is then a promise a test can `await`, and nothing here
+would add to that.
+
+#### Parameters
+
+##### def
+
+[`SubagentDef`](index.md#subagentdef)
+
+##### text
+
+`string`
+
+##### answer?
+
+`Partial`\<[`SubagentAnswer`](index.md#subagentanswer)\>
+
+#### Returns
+
+[`GuardrailVerdict`](index.md#guardrailverdict)
+
+#### Example
+
+```ts
+import { subagent } from "@alexkroman1/aai";
+import { runGuardrail } from "@alexkroman1/aai/testing";
+
+const checker = subagent({
+  name: "fact-checker",
+  systemPrompt: "Open with Confirmed:, Contradicted: or Unclear:.",
+  guardrail: ({ text }) => /^(Confirmed|Contradicted|Unclear):/.test(text) || "Open with a verdict word.",
+});
+
+runGuardrail(checker, "Confirmed: the figure is 12%."); // true
+runGuardrail(checker, "It seems prices fell."); // "Open with a verdict word."
+```
+
+***
+
 ### runTool()
 
 ```ts
@@ -735,6 +1634,47 @@ How the schema is named in that error.
 import { schemaInputIssues } from "@alexkroman1/aai/testing";
 
 expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBeDefined();
+```
+
+***
+
+### scriptedToolContext()
+
+```ts
+function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
+```
+
+Build a [TestToolContext](#testtoolcontext) whose `generate` and `delegate` are both
+scripted, and hand back the fakes beside it.
+
+Each call is a distinct session, as with `createToolContext`. A spec that
+wants two sessions sharing one script calls this twice with the same routes
+object — the routes are read at call time, so a function route with its own
+queue is shared and a fixed route is not affected either way.
+
+#### Parameters
+
+##### options?
+
+[`ScriptedToolContextOptions`](#scriptedtoolcontextoptions)
+
+#### Returns
+
+[`ScriptedToolContext`](#scriptedtoolcontext)
+
+#### Example
+
+```ts
+import { scriptedToolContext } from "@alexkroman1/aai/testing";
+
+const TRIAGE = "You triage email.";
+const { ctx, model, desk } = scriptedToolContext({
+  generate: { [TRIAGE]: { object: { response: "email" } } },
+  delegate: { "meeting-assistant": "Free Wednesday 1pm." },
+});
+// … run the tool against `ctx`, then:
+// expect(model.calls.map((call) => call.system)).toEqual([TRIAGE]);
+// expect(desk.calls[0]?.subagent.name).toBe("meeting-assistant");
 ```
 
 ***
@@ -1470,6 +2410,39 @@ expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
 
 ## Interfaces
 
+### ScriptedToolContext
+
+What [scriptedToolContext](#scriptedtoolcontext-1) answers: the context to run tools against,
+and the two fakes it was built from, for asserting what each was asked.
+
+#### Properties
+
+##### ctx
+
+```ts
+ctx: TestToolContext;
+```
+
+Pass to `runTool`/`toolRunner`, or straight to a tool's `execute`.
+
+##### desk
+
+```ts
+desk: StubDelegate;
+```
+
+The `ctx.delegate` fake — `desk.calls` is every subagent run the tools asked for.
+
+##### model
+
+```ts
+model: StubGenerate;
+```
+
+The `ctx.generate` fake — `model.calls` is every prompt the tools sent.
+
+***
+
 ### SentEvent
 
 One `ctx.send(event, data)` call that would REACH the client, as recorded by
@@ -1938,6 +2911,55 @@ than a fixture that lies.
 `R` = `unknown`
 
 The workflow's return type, when the caller names it.
+
+***
+
+### ScriptedToolContextOptions
+
+```ts
+type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
+  delegate?:   | Readonly<Record<string, StubDelegateRoute>>
+     | StubDelegateRoute;
+  generate?:   | Readonly<Record<string, StubGenerateRoute>>
+     | StubGenerateRoute;
+};
+```
+
+What [scriptedToolContext](#scriptedtoolcontext-1) takes: `stubGenerate`'s script as
+`generate`, `stubDelegate`'s as `delegate`, and any other field of the
+context — `sessionId`, `env`, `workflows` — as `createToolContext` takes it.
+
+Either script may be omitted: the fake is still built, so `model.calls` and
+`desk.calls` are always there to assert on, and a call it was not scripted
+for rejects naming the route it lacked — which is a spec that drifted from
+its tool, not a case to paper over.
+
+An intersection ALIAS rather than an `interface extends`, because TypeDoc
+renders an interface's inherited members with their ORIGINAL doc comments —
+`ToolContext`'s, whose `{@link}`s resolve on the root entry and not on this
+one, which failed the docs build as three unresolved links.
+
+#### Type Declaration
+
+##### delegate?
+
+```ts
+optional delegate?: 
+  | Readonly<Record<string, StubDelegateRoute>>
+  | StubDelegateRoute;
+```
+
+The script `stubDelegate` takes — routes keyed by subagent name, or one route.
+
+##### generate?
+
+```ts
+optional generate?: 
+  | Readonly<Record<string, StubGenerateRoute>>
+  | StubGenerateRoute;
+```
+
+The script `stubGenerate` takes — routes keyed by system prompt, or one route.
 
 ***
 

@@ -901,6 +901,9 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
+
+// @public
 export type RunCodeExecutor = (code: string) => Promise<string | {
     error: string;
 }>;

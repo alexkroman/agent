@@ -29,6 +29,7 @@
  * tools and read as a model that refuses to act.
  */
 import agentDef from "virtual:aai/agent";
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import {
   describeTurn,
   type EvalSession,
@@ -131,7 +132,9 @@ describeEval(agentDef, (test) => {
       // That refusal is a legal step and it is asserted rather than tolerated —
       // its own message is what pointed the model at the way in.
       for (const attempt of attempts.filter((call) => call !== staged)) {
-        expect(attempt.result).toMatch(/to_flight_assistant|Not available yet/);
+        expect(attempt.result).toMatch(
+          new RegExp(`to_flight_assistant|${dialogRefusalPattern().source}`),
+        );
       }
       // The desk asks; it does not decide. A `confirm_action` AFTER the staging
       // in the same turn is the agent confirming on its own initiative, which
@@ -178,8 +181,7 @@ describeEval(agentDef, (test) => {
         // The refusal names the position and quotes the state's instruction —
         // that is what the model recovers from, and a gate that ran the body
         // and then apologized would not carry it.
-        expect(attempt.result).toMatch(/Not available yet/);
-        expect(attempt.result).toMatch(/browsing/);
+        expect(attempt.result).toMatch(dialogRefusalPattern("browsing"));
       }
       expect(tripState(session)?.pending ?? null).toBeNull();
       expect(tripState(session)?.bookings ?? []).toHaveLength(0);
@@ -222,7 +224,7 @@ describeEval(agentDef, (test) => {
       // neither moved the ticket, and neither is what this case is about.
       for (const call of gated.filter((c) => !effective.includes(c))) {
         expect(call.result, `${call.name} neither acted nor was refused`).toMatch(
-          /Not available yet|belongs to the/,
+          new RegExp(`${dialogRefusalPattern().source}|belongs to the`),
         );
       }
 

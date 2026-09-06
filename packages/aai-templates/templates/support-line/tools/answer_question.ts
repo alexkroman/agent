@@ -1,7 +1,7 @@
 import { errorMessage, ProcedureNotFinishedError, tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { runCorrectiveRag } from "../procedure.ts";
-import { recordQuestion, supportSlot } from "../shared.ts";
+import { supportSlot } from "../shared.ts";
 
 /**
  * How long the whole corrective loop may run before it gives up.
@@ -101,7 +101,7 @@ export default tool({
     // though the window could span a turn.
     supportSlot.update(ctx, (state) => {
       state.trace = trace;
-      recordQuestion(state, args.question);
+      state.asked.push(args.question);
     });
 
     const sources = trace.docs.filter((doc) => doc.relevant).map((doc) => doc.title);

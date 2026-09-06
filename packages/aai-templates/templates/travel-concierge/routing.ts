@@ -28,7 +28,6 @@ import {
   applyPending,
   describeAction,
   gateFlow,
-  note,
   SPECIALISTS,
   type SpecialistId,
   tripSlot,
@@ -62,7 +61,7 @@ export function delegationTool(id: SpecialistId): ToolDef {
       // Re-entering a desk the call is already on would grow the stack without
       // bound over a long call; the brief is still worth re-reading.
       if (activeAssistant(trip) !== id) trip.dialogState.push(id);
-      note(trip, `→ ${specialist.title}: ${args.request}`);
+      trip.log.push(`→ ${specialist.title}: ${args.request}`);
       return {
         desk: specialist.title,
         instructions: specialist.instructions,
@@ -97,7 +96,7 @@ export function completeOrEscalateTool(): ToolDef {
       // `primary` stays at the bottom — the slot's `after` hook restores it if a
       // pop ever empties the stack.
       if (trip.dialogState.length > 1) trip.dialogState.pop();
-      note(trip, `← back to concierge: ${args.reason}`);
+      trip.log.push(`← back to concierge: ${args.reason}`);
       return {
         returnedFrom: left === "primary" ? "concierge" : SPECIALISTS[left].title,
         nowHandling: "concierge",
@@ -159,7 +158,7 @@ export function cancelActionTool(): ToolDef {
         trip.pending = null;
         const described = describeAction(action);
         const summary = typeof described === "string" ? described : action.kind;
-        note(trip, `Declined: ${summary}`);
+        trip.log.push(`Declined: ${summary}`);
         return { discarded: summary, message: "Nothing was changed." };
       }),
   });

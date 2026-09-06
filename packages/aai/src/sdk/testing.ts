@@ -42,6 +42,7 @@ import { publishStepInfoReader } from "./step-attempt.ts";
 import { publishStepReporter } from "./step-report.ts";
 import { DEFAULT_STEP_MAX_ATTEMPTS } from "./workflow-ctx-options.ts";
 
+export { dialogRefusalPattern } from "./_dialog-refusal.ts";
 export {
   createStubWorkflows,
   createToolContext,
@@ -64,7 +65,7 @@ export {
   type StubStepRequest,
   stubStepFetch,
 } from "./_testing-step-fetch.ts";
-export { expectDialogOk, expectToolOk } from "./_testing-tool-results.ts";
+export { expectDialogOk, expectDialogRefused, expectToolOk } from "./_testing-tool-results.ts";
 export {
   type StubTranscribe,
   type StubTranscribeCall,
@@ -82,6 +83,13 @@ export {
   stubDelegate,
   stubStepDelegate,
 } from "./testing-delegate.ts";
+// The starter-spec invariants and the prompt↔builtin scan — six shipped specs
+// each wrote the same three tests, and three the same 32-line scan.
+export {
+  commandedBuiltins,
+  expectDeployable,
+  expectPromptBuiltinsDeclared,
+} from "./testing-deployable.ts";
 export {
   deployedAgent,
   type ProjectFiles,
@@ -101,6 +109,15 @@ export {
   type StubGenerateRoute,
   stubGenerate,
 } from "./testing-generate.ts";
+// A subagent's guardrail, called as the runtime calls it — the one piece of a
+// subagent a spec can test without a model.
+export { runGuardrail } from "./testing-guardrail.ts";
+// Both model seams scripted in one call, for a tool that reasons.
+export {
+  type ScriptedToolContext,
+  type ScriptedToolContextOptions,
+  scriptedToolContext,
+} from "./testing-scripted.ts";
 export {
   STUB_SPEECH_PCM_BYTES,
   type StubSpeech,

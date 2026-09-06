@@ -9,6 +9,89 @@ import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
+type AgentConfig = z.infer<typeof AgentConfigSchema>;
+
+// @internal
+const AgentConfigSchema: z.ZodObject<{
+    name: z.ZodString;
+    systemPrompt: z.ZodDefault<z.ZodString>;
+    greeting: z.ZodDefault<z.ZodString>;
+    sttPrompt: z.ZodOptional<z.ZodString>;
+    maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
+    toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
+        auto: "auto";
+        none: "none";
+        required: "required";
+    }>, z.ZodObject<{
+        type: z.ZodLiteral<"tool">;
+        toolName: z.ZodString;
+    }, z.core.$strip>]>>;
+    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        calculate: "calculate";
+        fetch_json: "fetch_json";
+        get_page_design: "get_page_design";
+        recall: "recall";
+        remember: "remember";
+        run_code: "run_code";
+        think: "think";
+        visit_webpage: "visit_webpage";
+        web_search: "web_search";
+    }>>>>;
+    idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
+    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
+    silencePrompt: z.ZodOptional<z.ZodString>;
+    minBargeInWords: z.ZodOptional<z.ZodNumber>;
+    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
+    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+    errorPhrase: z.ZodOptional<z.ZodString>;
+    startFailurePhrase: z.ZodOptional<z.ZodString>;
+    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
+    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    stt: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    s2s: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    text: z.ZodOptional<z.ZodLiteral<true>>;
+    mode: z.ZodOptional<z.ZodEnum<{
+        pipeline: "pipeline";
+        s2s: "s2s";
+        text: "text";
+    }>>;
+    requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodURL;
+        tokenEnv: z.ZodOptional<z.ZodString>;
+        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    }, z.core.$strict>>>;
+    page: z.ZodOptional<z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+    }>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        telnyx: "telnyx";
+        twilio: "twilio";
+    }>>>]>>;
+}, z.core.$strip>;
+
+// @public
+type AgentConfigSource = Omit<AgentConfig, "mode"> & {
+    [K in HostOnlyAgentField]?: unknown;
+};
+
+// @public
 interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
     dialogs?: readonly AnyDialog[];
@@ -52,6 +135,9 @@ type AnyWorkflowDef<R = unknown> = {
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
+export function commandedBuiltins(config: AgentConfig): BuiltinTool[];
 
 // @public
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
@@ -117,6 +203,9 @@ interface DialogPosition {
 }
 
 // @public
+export function dialogRefusalPattern(state?: string): RegExp;
+
+// @public
 interface DialogTimeout {
     readonly afterMs: number;
     readonly event: {
@@ -149,7 +238,16 @@ interface DialogVoiceConfig {
 }
 
 // @public
+export function expectDeployable(def: AgentConfigSource): AgentConfig;
+
+// @public
 export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+
+// @public
+export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
+
+// @public
+export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinTool[];
 
 // @public
 export function expectToolOk<T>(result: unknown): T;
@@ -191,6 +289,12 @@ type GenerateResult = {
 
 // @public
 type GuardrailVerdict = true | string;
+
+// @public
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events"];
+
+// @public
+type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -269,6 +373,9 @@ export function routeStepFetch(routes: readonly StepRoute[], options?: {
 }): (request: StubStepRequest) => StubStepAnswer;
 
 // @public
+export function runGuardrail(def: SubagentDef, text: string, answer?: Partial<SubagentAnswer>): GuardrailVerdict;
+
+// @public
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
     status?: "pending" | "running" | undefined;
 } | {
@@ -291,6 +398,22 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 
 // @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
+
+// @public
+export interface ScriptedToolContext {
+    ctx: TestToolContext;
+    desk: StubDelegate;
+    model: StubGenerate;
+}
+
+// @public
+export function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
+
+// @public
+export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
+    generate?: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute | undefined;
+    delegate?: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute | undefined;
+};
 
 // @public
 export interface SentEvent {

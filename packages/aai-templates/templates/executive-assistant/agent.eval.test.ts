@@ -21,6 +21,7 @@
 // discipline.
 
 import agentDef from "virtual:aai/agent";
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import {
   describeTurn,
   type EvalSession,
@@ -134,8 +135,7 @@ describeEval(agentDef, (test) => {
       // earlier, which is why the count is asserted only where it is determined.
       if (mode === "stub") expect(attempts).toHaveLength(1);
       for (const attempt of attempts) {
-        expect(attempt.result).toMatch(/Not available yet/);
-        expect(attempt.result).toMatch(/onCall\.inbox/);
+        expect(attempt.result).toMatch(dialogRefusalPattern("onCall.inbox"));
       }
       expect(latest(session)?.sent ?? []).toEqual([]);
     },

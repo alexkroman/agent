@@ -89,6 +89,9 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
     readonly __stage?: "tts";
 };
 
+// @public
+export function ttsVoiceIds(language?: AssemblyAITtsLanguage): [AssemblyAITtsVoice, ...AssemblyAITtsVoice[]];
+
 // (No @packageDocumentation comment for this package)
 
 ```

@@ -64,6 +64,7 @@ import {
 } from "./_dialog-events.ts";
 import { assertDialogGraph } from "./_dialog-graph.ts";
 import { toInstruction, toTimeout, toVoiceConfig } from "./_dialog-meta.ts";
+import { dialogRefusalMessage } from "./_dialog-refusal.ts";
 import {
   assertDialogSource,
   type FlowState,
@@ -457,9 +458,7 @@ export function dialog(
             // conversation IS and what the dialog expects there — not merely that
             // this was not allowed.
             const expectation = at.instruction ?? `reach ${allowed.join(" or ")} first`;
-            return toolFailure(
-              `Not available yet: this conversation is at "${at.state}". ${expectation}`,
-            );
+            return toolFailure(dialogRefusalMessage(at.state, expectation));
           }
           // ANNOTATED rather than inferred: `await` on `R | ToolFailure |
           // Promise<R | ToolFailure>` yields `Awaited<R> | ToolFailure`, and

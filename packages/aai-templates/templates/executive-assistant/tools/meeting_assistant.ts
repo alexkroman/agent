@@ -3,7 +3,7 @@ import { z } from "zod";
 import { EXECUTIVE } from "../inbox.ts";
 import { findMeetingTime } from "../meeting.ts";
 import { threadText } from "../prompts.ts";
-import { assistantSlot, DRAFTING, exchanged, note, openEmail, reviewFlow } from "../shared.ts";
+import { assistantSlot, DRAFTING, openEmail, reviewFlow } from "../shared.ts";
 
 /**
  * Their `MeetingAssistant` → `find_meeting_time`: a specialist reads the
@@ -33,8 +33,8 @@ export default reviewFlow.tool({
     if (!email) return toolFailure("No email is open — call open_email first.");
     const found = await findMeetingTime(ctx.delegate, threadText(email), args.request);
     return assistantSlot.update(ctx, (state) => {
-      exchanged(state, `Meeting assistant: ${found.availability}`);
-      note(state, `Checked the calendar (${found.lookups} lookups)`);
+      state.exchange.push(`Meeting assistant: ${found.availability}`);
+      state.log.push(`Checked the calendar (${found.lookups} lookups)`);
       return {
         ...found,
         next:

@@ -8,13 +8,13 @@ import {
   type MemoExoticComponent,
   memo,
   type ReactNode,
-  useMemo,
+  useCallback,
 } from "react";
 import { useTheme } from "../context.ts";
-import type { ChatMessage } from "../types.ts";
-import { useConversation } from "../use-conversation.ts";
+import type { ChatMessage, ToolCallInfo } from "../types.ts";
+import type { UseUserTranscriptResult } from "../use-user-transcript.ts";
 import { INK_FAINT_PCT, INK_MUTED_PCT, inkTint, primaryTint } from "./_colors.ts";
-import { AutoScroll } from "./auto-scroll.tsx";
+import { ConversationView } from "./conversation-view.tsx";
 import { Markdown } from "./markdown.tsx";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 
@@ -22,6 +22,23 @@ const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
   animation: "aai-bounce 1.4s infinite ease-in-out both",
   animationDelay: `${delay}s`,
 }));
+
+/** The three bouncing dots alone, with no row around them. */
+function Dots(): ReactNode {
+  const theme = useTheme();
+  const muted = inkTint(theme.text, theme.surface, INK_MUTED_PCT);
+  return DOT_STYLES.map((style, i) => (
+    <div
+      // biome-ignore lint/suspicious/noArrayIndexKey: static array, index as key is safe
+      key={i}
+      className="w-1.5 h-1.5 rounded-full"
+      style={{ ...style, background: muted }}
+    />
+  ));
+}
+
+/** The row the thinking indicator sits in — `ConversationView` renders this exact element around `Dots`. */
+const THINKING_ROW = "flex items-center gap-2 text-sm font-medium min-h-5";
 
 /**
  * Animated three-dot "thinking" indicator.
@@ -34,26 +51,16 @@ const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
  * (correct behaviour, red test) and again when any sibling row gains a round
  * badge (wrong behaviour, green test).
  *
+ * The trailing thinking row is `ConversationView`'s own `role="status"`
+ * element, so this is only rendered INSIDE the live transcript bubble, where
+ * speech has been detected and no words have come back yet.
+ *
  * @internal
  */
 function ThinkingDots(): ReactNode {
-  const theme = useTheme();
-  const muted = inkTint(theme.text, theme.surface, INK_MUTED_PCT);
   return (
-    <div
-      role="status"
-      aria-label="Thinking"
-      className="flex items-center gap-2 text-sm font-medium min-h-5"
-      style={{ color: muted }}
-    >
-      {DOT_STYLES.map((style, i) => (
-        <div
-          // biome-ignore lint/suspicious/noArrayIndexKey: static array, index as key is safe
-          key={i}
-          className="w-1.5 h-1.5 rounded-full"
-          style={{ ...style, background: muted }}
-        />
-      ))}
+    <div role="status" aria-label="Thinking" className={THINKING_ROW}>
+      <Dots />
     </div>
   );
 }
@@ -175,56 +182,52 @@ export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps
   function MessageList({ className }: MessageListProps) {
     // Every rule this list renders by — the interleave, the streaming row, the
     // `null`-vs-`""` transcript distinction, the thinking suppression — is
-    // `useConversation`'s, and this component is the proof that the hook is
-    // complete: a custom chrome that reaches for it gets the same conversation
-    // rather than a worse one it re-derived. The hook subscribes per field, so
-    // this list is no more reactive than it was when it did that itself.
-    const { items, streaming, transcript, thinking } = useConversation();
+    // `useConversation`'s, and the ORDER of the rows, the empty-state guard and
+    // the announced thinking row are `ConversationView`'s. This component is
+    // the proof that both are complete: a custom chrome that reaches for them
+    // gets the same conversation rather than a worse one it re-derived, and
+    // this list is nothing but the stock bubbles filled into the slots.
     const theme = useTheme();
 
-    // Stable object for the streaming bubble: an inline literal would defeat
-    // MessageBubble's memo, re-rendering the streaming row on every unrelated
-    // list update (state flips, STT partials, tool-call updates).
-    const streamingMessage = useMemo(
-      () => (streaming ? { role: "assistant" as const, content: streaming } : null),
-      [streaming],
+    // `useCallback` on the theme, so `ConversationView`'s per-row memo holds:
+    // `MessageBubble` and `ToolCallBlock` are memo()-wrapped and their inputs
+    // are referentially stable across snapshots, so appending one message
+    // re-renders one row, not the whole capped list.
+    const renderMessage = useCallback(
+      (message: ChatMessage) => <MessageBubble message={message} theme={theme} />,
+      [theme],
+    );
+    const renderTool = useCallback(
+      (toolCall: ToolCallInfo) => <ToolCallBlock toolCall={toolCall} />,
+      [],
+    );
+    const renderTranscript = useCallback(
+      (transcript: UseUserTranscriptResult) => (
+        <UserBubble theme={theme} color={inkTint(theme.text, theme.surface, INK_FAINT_PCT)}>
+          {transcript.partial ? transcript.partial : <ThinkingDots />}
+        </UserBubble>
+      ),
+      [theme],
     );
 
-    // Memoized rows: `MessageBubble` and `ToolCallBlock` are memo()-wrapped and
-    // their inputs are referentially stable across snapshots, so appending one
-    // message re-renders one row, not the whole capped list.
-    const rows = useMemo(
-      () =>
-        items.map((item) =>
-          item.kind === "message" ? (
-            <MessageBubble key={item.message.id} message={item.message} theme={theme} />
-          ) : (
-            <ToolCallBlock key={item.toolCall.callId} toolCall={item.toolCall} />
-          ),
-        ),
-      [items, theme],
-    );
-
-    // `AutoScroll` follows streamed output (its ResizeObserver tracks content
-    // height, so a ToolCallBlock expanding or markdown reflowing keeps the pin)
-    // but releases when the user scrolls up to read, re-engaging once they
-    // return to the bottom. Shared with custom-chrome clients, which is why it
-    // is a component rather than the wiring inlined here.
+    // The streaming row is the default — `renderMessage` over a synthetic
+    // assistant message the view memoizes per delta, which is exactly the
+    // stable object `MessageBubble`'s memo needs.
+    //
+    // `AutoScroll` (inside the view) follows streamed output: its ResizeObserver
+    // tracks content height, so a ToolCallBlock expanding or markdown reflowing
+    // keeps the pin, and it releases when the reader scrolls up to read.
     return (
-      <AutoScroll
+      <ConversationView
         className={className}
         style={{ background: theme.surface }}
         contentClassName="flex flex-col gap-4 p-7"
-      >
-        {rows}
-        {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
-        {transcript.speaking && (
-          <UserBubble theme={theme} color={inkTint(theme.text, theme.surface, INK_FAINT_PCT)}>
-            {transcript.partial ? transcript.partial : <ThinkingDots />}
-          </UserBubble>
-        )}
-        {thinking && <ThinkingDots />}
-      </AutoScroll>
+        renderMessage={renderMessage}
+        renderTool={renderTool}
+        renderTranscript={renderTranscript}
+        thinkingClassName={THINKING_ROW}
+        thinkingIndicator={<Dots />}
+      />
     );
   },
 );

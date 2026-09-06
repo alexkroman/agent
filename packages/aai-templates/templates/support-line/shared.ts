@@ -17,7 +17,7 @@
  * "evening slowdown congestion peak time" and finds D10.
  */
 
-import { type DeepReadonly, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { type DeepReadonly, sessionSlot } from "@alexkroman1/aai";
 import knowledge from "./knowledge.json" with { type: "json" };
 
 export interface Doc {
@@ -192,13 +192,14 @@ export interface SupportState {
   ticketCounter: number;
 }
 
-export const MAX_ASKED = 20;
-
 export function emptySupportState(): SupportState {
   return { trace: null, asked: [], ticket: null, ticketCounter: 0 };
 }
 
-export const supportSlot = sessionSlot("support", emptySupportState);
+export const supportSlot = sessionSlot("support", emptySupportState, {
+  // `asked` rides in every `syncState` frame; the slot holds the bound.
+  caps: { asked: 20 },
+});
 
 /**
  * The call as a READ hands it out: deep-frozen, and typed to say so.
@@ -210,10 +211,6 @@ export const supportSlot = sessionSlot("support", emptySupportState);
  * instead of throwing at its first call.
  */
 export type FrozenSupportState = DeepReadonly<SupportState>;
-
-export function recordQuestion(state: SupportState, question: string): void {
-  pushCapped(state.asked, question, MAX_ASKED);
-}
 
 // ─── The projection ──────────────────────────────────────────────────────────
 

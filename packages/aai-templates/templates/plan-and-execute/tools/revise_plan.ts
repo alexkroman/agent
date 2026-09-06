@@ -2,7 +2,7 @@ import { errorMessage, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { replanNode } from "../procedure.ts";
 import { REVISE_SYSTEM } from "../prompts.ts";
-import { noteRevision, planFlow, planSlot } from "../shared.ts";
+import { planFlow, planSlot } from "../shared.ts";
 
 /**
  * The replanner, driven by the caller instead of by a step result.
@@ -41,7 +41,7 @@ export default planFlow.tool({
         instruction: args.instruction,
       });
       return planSlot.update(ctx, (plan) => {
-        noteRevision(plan, `Caller: ${args.instruction}`);
+        plan.revisions.push(`Caller: ${args.instruction}`);
 
         if (act.kind === "respond") {
           plan.plan = [];

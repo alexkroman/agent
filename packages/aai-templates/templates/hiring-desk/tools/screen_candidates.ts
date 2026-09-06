@@ -1,4 +1,5 @@
 import { omitUndefined, tool, toolFailure } from "@alexkroman1/aai";
+import { partitionSettled } from "@alexkroman1/aai/step";
 import { z } from "zod";
 import { scoreRoster } from "../crews.ts";
 import {
@@ -57,10 +58,10 @@ export default tool({
     // this may be a different role.
     const scored = await scoreRoster(ctx.generate, LEADS, job, []);
 
-    const failed = scored.filter((one) => !one.ok);
+    const { failed } = partitionSettled(scored);
     if (failed.length === scored.length) {
       return toolFailure(
-        `No candidate could be scored. The first failure said: ${failed[0]?.ok === false ? failed[0].error : "no reason given"}`,
+        `No candidate could be scored. The first failure said: ${failed[0]?.error ?? "no reason given"}`,
       );
     }
 
@@ -79,8 +80,8 @@ export default tool({
       state.shortlist = [];
       state.drafts = [];
       for (const one of scored) {
-        if (one.ok) state.scores[one.candidate.id] = one.verdict;
-        else state.unscored.push(one.candidate.id);
+        if (one.ok) state.scores[one.item.id] = one.value;
+        else state.unscored.push(one.item.id);
       }
 
       const top = topCandidates(state);
@@ -94,8 +95,7 @@ export default tool({
           reason: candidate.reason,
         })),
         ...omitUndefined({
-          unscored:
-            failed.length > 0 ? failed.map((one) => one.candidate.name).join(", ") : undefined,
+          unscored: failed.length > 0 ? failed.map((one) => one.item.name).join(", ") : undefined,
         }),
         message:
           `Read the top three back — ${top.map(describeRanked).join("; ")} — with one sentence ` +

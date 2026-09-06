@@ -19,6 +19,9 @@
  */
 
 export {
+  AudioResult,
+  type AudioResultCaptions,
+  type AudioResultProps,
   createWorkflowApi,
   isTerminal,
   type SubmitInputOf,
@@ -53,6 +56,8 @@ export {
   type WorkflowRun,
   WorkflowRunError,
   type WorkflowRunErrorProps,
+  WorkflowRunPanel,
+  type WorkflowRunPanelProps,
   type WorkflowRunStatus,
   type WorkflowStreamSubmission,
   type WorkflowSubmission,

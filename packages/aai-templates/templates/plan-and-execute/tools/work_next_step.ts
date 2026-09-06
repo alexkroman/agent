@@ -1,6 +1,6 @@
 import { errorMessage, type ToolFailure, toolFailure } from "@alexkroman1/aai";
 import { executeStep, replanNode } from "../procedure.ts";
-import { noteRevision, type PastStep, planFlow, planSlot, recordStep } from "../shared.ts";
+import { type PastStep, planFlow, planSlot } from "../shared.ts";
 
 /**
  * What the claim window decided, as a DISCRIMINATED union.
@@ -90,7 +90,7 @@ export default planFlow.tool({
       planSlot.update(ctx, (plan) => {
         // Capped: `historyOf` renders this whole list into two prompts, so an
         // append with no bound is a model bill that grows with the plan.
-        recordStep(plan, { step, result: outcome.result, searches: outcome.searches });
+        plan.pastSteps.push({ step, result: outcome.result, searches: outcome.searches });
       });
 
       // Their `replan_step`: the plan after a step is whatever still needs
@@ -101,7 +101,7 @@ export default planFlow.tool({
         if (act.kind === "respond") {
           plan.response = act.response;
           plan.plan = [];
-          noteRevision(plan, `Finished after ${plan.pastSteps.length} step(s)`);
+          plan.revisions.push(`Finished after ${plan.pastSteps.length} step(s)`);
           return {
             finished: true,
             step,
@@ -114,7 +114,7 @@ export default planFlow.tool({
 
         const changed = act.steps.join("|") !== plan.plan.join("|");
         plan.plan = act.steps;
-        if (changed) noteRevision(plan, `Replanned to ${act.steps.length} step(s) after: ${step}`);
+        if (changed) plan.revisions.push(`Replanned to ${act.steps.length} step(s) after: ${step}`);
         return {
           finished: false,
           step,

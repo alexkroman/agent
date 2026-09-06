@@ -67,12 +67,9 @@ import {
   SubmitButton,
   TextAreaField,
   useWorkflowSubmit,
-  WORKFLOW_STATUS_LABELS,
   WorkflowFields,
   WorkflowPendingNote,
-  WorkflowProgress,
-  type WorkflowRun,
-  WorkflowRunError,
+  WorkflowRunPanel,
 } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
 
@@ -147,16 +144,44 @@ function RedlineDesk() {
           money. */}
       <WorkflowPendingNote submission={submission} subject="draft" />
 
+      {/* The SDK's run panel: the status line, Clear, the run's own narration
+          (the complement of the status line — `running` for a run's whole life,
+          so a one-round redline and a three-round one look identical without
+          the `stepReport()` lines from `workflows/redline.ts`, which REPLAY on a
+          reload), the piece once there is one, and the announced error. The
+          one word this desk wants differently is `running`: "Writing…" is what
+          the run is doing, and the SDK does not know that. */}
       {run && (
-        <RunPanel
+        <WorkflowRunPanel
           run={run}
+          statusLabels={{ running: "Writing…" }}
           onClear={() => {
             // The recovered run is dismissed as deliberately as one this load
             // started: `reset()` is not undone by a second lookup (the lookup
             // is a mount-time act), so Clear really does clear.
             reset();
           }}
-        />
+        >
+          {(output) => (
+            <>
+              {/* Which of the two stop conditions ended the loop is the one thing
+                  a reader cannot infer from the round count alone, so it is a
+                  fact of its own rather than something left to the round count. */}
+              <Facts
+                size="xs"
+                items={[
+                  `${output.words} words`,
+                  `${output.roundsRun} ${plural(output.roundsRun, "round")}`,
+                  output.shipped ? "the critic stopped it" : "the round budget stopped it",
+                ]}
+              />
+              <Rounds rounds={output.rounds} />
+              <article className="whitespace-pre-wrap text-sm leading-relaxed">
+                {output.draft}
+              </article>
+            </>
+          )}
+        </WorkflowRunPanel>
       )}
     </main>
   );
@@ -184,66 +209,5 @@ function Rounds({ rounds }: { rounds: Redline["rounds"] }) {
     </ol>
   );
 }
-
-/** The run's status, its narration, its critique trail, and the piece. */
-function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => void }) {
-  return (
-    <section className="flex flex-col gap-4 rounded-md border p-5">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-sm font-medium uppercase tracking-[1.2px]">
-          {STATUS_LINE[run.status]}
-        </h2>
-        <button type="button" onClick={onClear} className="text-xs underline opacity-60">
-          Clear
-        </button>
-      </div>
-
-      {/* The run's own narration — the complement of the status line, which is
-          `running` for a run's whole life, so a one-round redline and a
-          three-round one look identical while they happen. These lines come from
-          the run itself (`stepReport()` in `workflows/redline.ts`), and they REPLAY,
-          so a reload mid-run catches up rather than starting from whatever
-          arrives next. */}
-      <WorkflowProgress runId={run.runId} />
-
-      {/* Discriminated on `status`, so `output` and `error` are reachable
-          without a cast. */}
-      {run.status === "completed" && (
-        <>
-          {/* Which of the two stop conditions ended the loop is the one thing a
-              reader cannot infer from the round count alone, so it is a fact of
-              its own rather than something left to the round count. */}
-          <Facts
-            size="xs"
-            items={[
-              `${run.output.words} words`,
-              `${run.output.roundsRun} ${plural(run.output.roundsRun, "round")}`,
-              run.output.shipped ? "the critic stopped it" : "the round budget stopped it",
-            ]}
-          />
-          <Rounds rounds={run.output.rounds} />
-          <article className="whitespace-pre-wrap text-sm leading-relaxed">
-            {run.output.draft}
-          </article>
-        </>
-      )}
-      {/* Announced, the same contract `<Form>` gives the submit error: this is
-          the outcome the reader waited minutes for. */}
-      <WorkflowRunError run={run} />
-    </section>
-  );
-}
-
-/**
- * One line describing where a run has got to.
- *
- * The SDK's map with the one label this desk wants differently: `running` is
- * "Writing…" here because that is what the run is doing. Spreading a COMPLETE
- * `Record<WorkflowRunStatus, string>` cannot drop a key, so the exhaustiveness
- * the hand-written copy was written for survives — and now lives at the SDK
- * boundary, where a status added upstream is one compile error rather than one
- * per page.
- */
-const STATUS_LINE = { ...WORKFLOW_STATUS_LABELS, running: "Writing…" };
 
 mountPage({ name: "Redline", component: RedlineDesk });

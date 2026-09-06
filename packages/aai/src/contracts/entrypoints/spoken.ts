@@ -18,4 +18,10 @@
  * `scripts/api-contracts.mjs`.
  */
 
-export { type ResolveOneOptions, resolveOne, spokenDigits, spokenOrdinal } from "../../index.ts";
+export {
+  type ResolveOneOptions,
+  resolveOne,
+  spokenAlphanumeric,
+  spokenDigits,
+  spokenOrdinal,
+} from "../../index.ts";

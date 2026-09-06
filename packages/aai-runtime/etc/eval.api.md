@@ -61,6 +61,11 @@ export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 export function describeTurn(turn: EvalTurn): string;
 
 // @public
+export function errorsIn(events: readonly SessionEvent[]): readonly Extract<SessionEvent, {
+    type: "error.reported";
+}>[];
+
+// @public
 export type EvalCredentials = {
     readonly env: ProviderEnv;
     readonly missing: readonly string[];
@@ -153,6 +158,9 @@ export type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
+    readonly errors: readonly Extract<SessionEvent, {
+        type: "error.reported";
+    }>[];
 };
 
 // @public
@@ -211,6 +219,9 @@ export type EvalWorkflowsOptions = {
 };
 
 // @public
+export function expectToolBeforeSpeech(turn: EvalTurn): void;
+
+// @public
 export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
 }) => Promise<GenerateResult>;
@@ -249,6 +260,12 @@ export function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTe
 export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
 
 export { RunCodeExecutor }
+
+// @public
+export function runCodeIn(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function runCodeOutput(calls: readonly EvalToolCall[]): string;
 
 // @public
 export function saidIn(events: readonly SessionEvent[]): readonly string[];

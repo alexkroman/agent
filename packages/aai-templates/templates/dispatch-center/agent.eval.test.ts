@@ -34,6 +34,7 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 // What no eval here can see: anything below the audio boundary. Whether a
 // dispatcher reading a callsign in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import {
   type EvalSession,
   lastStateIn,
@@ -95,16 +96,6 @@ const dashboard = (events: readonly SessionEvent[]) => lastStateIn(events, Proje
 const boardEntry = (events: readonly SessionEvent[], id: string) =>
   dashboard(events)?.incidents.find((i) => i.id === id);
 
-/**
- * The dialog gate's own refusal sentence, for the state it names.
- *
- * The character class absorbs the JSON escaping: a tool result reaches the
- * event stream as a serialized string, so the state name arrives inside
- * `\\"standby\\"` rather than plain quotes.
- */
-const refusalAt = (state: string) =>
-  new RegExp(`Not available yet: this conversation is at [\\\\"]*${state}`);
-
 /** Every call to `tool` across the whole shift. */
 const callsTo = (session: EvalSession, tool: string) =>
   session.toolCalls().filter((c) => c.name === tool);
@@ -148,7 +139,7 @@ describeEval(dispatchAgent, (test) => {
       for (const [index, call] of turn.toolCalls.entries()) {
         if (!GATED_TOOLS.has(call.name)) continue;
         if (logged !== -1 && index > logged) continue;
-        expect(call.result).toMatch(refusalAt("standby"));
+        expect(call.result).toMatch(dialogRefusalPattern("standby"));
       }
       // Nothing was logged, so the board the browser holds is still empty.
       expect(dashboard(session.events())?.incidents ?? []).toEqual([]);

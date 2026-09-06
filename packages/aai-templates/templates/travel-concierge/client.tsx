@@ -1,4 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import type { TripView } from "./shared.ts";
 import { SPECIALIST_IDS, SPECIALISTS, tripProjection } from "./shared.ts";
@@ -84,13 +85,13 @@ function ItinerarySidebar() {
                 <p className="text-xs opacity-60">{booking.reference}</p>
               </div>
               <span className="text-sm font-bold text-aai-primary">
-                ${booking.price.toLocaleString("en-US")}
+                {formatMoney(booking.price)}
               </span>
             </div>
           ))}
           <div className="flex justify-between border-t border-aai-border pt-2 text-sm font-bold">
             <span>Total</span>
-            <span className="text-aai-primary">${trip.total.toLocaleString("en-US")}</span>
+            <span className="text-aai-primary">{formatMoney(trip.total)}</span>
           </div>
         </div>
       )}

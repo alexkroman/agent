@@ -6,7 +6,7 @@ import {
   createToolContext,
   expectDialogOk,
   expectToolOk,
-  stubDelegate,
+  scriptedToolContext,
   stubGenerate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -75,28 +75,28 @@ function scriptedDesk(
     update?: { logic: string; updatePrompt: boolean; newPrompt: string };
   } = {},
 ) {
-  const model = stubGenerate({
-    [TRIAGE_SYSTEM]: (call) => ({ object: verdictFor(call.prompt) }),
-    [REWRITE_SYSTEM]: (call) => ({
-      object: {
-        toneLogic: "casual and direct",
-        rewrittenContent: `(in Maya's voice) ${draftIn(call.prompt)}`,
+  return scriptedToolContext({
+    generate: {
+      [TRIAGE_SYSTEM]: (call) => ({ object: verdictFor(call.prompt) }),
+      [REWRITE_SYSTEM]: (call) => ({
+        object: {
+          toneLogic: "casual and direct",
+          rewrittenContent: `(in Maya's voice) ${draftIn(call.prompt)}`,
+        },
+      }),
+      [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: opts.chooser ?? [] } },
+      [UPDATE_MEMORY_SYSTEM]: {
+        object: opts.update ?? { logic: "", updatePrompt: false, newPrompt: "" },
       },
-    }),
-    [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: opts.chooser ?? [] } },
-    [UPDATE_MEMORY_SYSTEM]: {
-      object: opts.update ?? { logic: "", updatePrompt: false, newPrompt: "" },
+    },
+    delegate: {
+      "meeting-assistant": {
+        text: "Maya is free Wednesday 1pm-3pm.",
+        steps: 3,
+        toolCalls: [{ name: "get_events_for_days", input: { days: ["2026-03-17", "2026-03-18"] } }],
+      },
     },
   });
-  const desk = stubDelegate({
-    "meeting-assistant": {
-      text: "Maya is free Wednesday 1pm-3pm.",
-      steps: 3,
-      toolCalls: [{ name: "get_events_for_days", input: { days: ["2026-03-17", "2026-03-18"] } }],
-    },
-  });
-  const ctx = createToolContext({ generate: model.generate, delegate: desk.delegate });
-  return { ctx, model, desk };
 }
 
 const stateOf = (ctx: ToolContext) => assistantSlot.get(ctx);

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { expectDialogOk, expectToolOk } from "./testing.ts";
+import { expectDialogOk, expectDialogRefused, expectToolOk } from "./testing.ts";
 import { toolFailure } from "./utils.ts";
 
 /** What a `dialog()` tool answers on success: the value, wrapped in the position. */
@@ -69,6 +69,41 @@ describe("expectDialogOk", () => {
     expect(() => expectDialogOk(toolFailure("No."))).toThrow("tool refused: No.");
     expect(() => expectDialogOk({ state: "start", done: true })).toThrow(
       /Expected a dialog tool result/,
+    );
+  });
+});
+
+describe("expectDialogRefused", () => {
+  const refusal = toolFailure(
+    'Not available yet: this conversation is at "identifying". Verify the caller first.',
+  );
+
+  test("hands back the refusal, so the spec can read the instruction off it", () => {
+    expect(expectDialogRefused(refusal)).toBe(refusal);
+    expect(expectDialogRefused(refusal, "identifying").error).toMatch(/Verify the caller/);
+  });
+
+  test("throws when the gate did NOT hold, naming where the dialog landed", () => {
+    // The hand-rolled shape — `expect(isToolFailure(x)).toBe(true)` followed by
+    // assertions inside `if (isToolFailure(x))` — passed a SUCCESS through with
+    // every assertion after the guard skipped.
+    expect(() => expectDialogRefused(answered)).toThrow(
+      /Expected the dialog to refuse this call and it answered an object .* — the dialog is at "quote.pending"/,
+    );
+    expect(() => expectDialogRefused({ quoted: 42 })).toThrow(
+      /it answered an object with keys: quoted\./,
+    );
+  });
+
+  test("throws on a refusal at some OTHER state, quoting it", () => {
+    expect(() => expectDialogRefused(refusal, "transferred")).toThrow(
+      'Expected a dialog refusal at "transferred" and got: Not available yet',
+    );
+  });
+
+  test("a failure that is not the gate's sentence is not a dialog refusal", () => {
+    expect(() => expectDialogRefused(toolFailure("Order not found."))).toThrow(
+      "Expected a dialog refusal and got: Order not found.",
     );
   });
 });

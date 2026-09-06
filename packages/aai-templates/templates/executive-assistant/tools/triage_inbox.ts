@@ -1,13 +1,6 @@
 import { EXECUTIVE } from "../inbox.ts";
 import { triageEmail } from "../nodes.ts";
-import {
-  assistantSlot,
-  closeEmail,
-  findEmail,
-  note,
-  reviewFlow,
-  similarExamples,
-} from "../shared.ts";
+import { assistantSlot, closeEmail, findEmail, reviewFlow, similarExamples } from "../shared.ts";
 
 /**
  * Their `triage_input`, over every email that has not been triaged yet.
@@ -56,8 +49,7 @@ export default reviewFlow.tool({
         }
       }
       if (verdicts.length > 0) {
-        note(
-          draft,
+        draft.log.push(
           `Triaged ${verdicts.length}: ${verdicts.length - filed.length} queued, ${filed.length} filed`,
         );
       }

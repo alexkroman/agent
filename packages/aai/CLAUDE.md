@@ -101,10 +101,10 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/src/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, and `assemblyAIPipeline()`/`assemblyAIS2s()`. One constant, `DEFAULT_SYSTEM_PROMPT`, because an author READS it. See "The root barrel is CURATED" above |
-| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createStubWorkflows()` is the rejecting `ctx.workflows` it defaults to (the rejecting `db` is internal now — see the `aai:testing` bump below). Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`deployedAgent(def, { tools, systemPrompt })`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs, system prompt included. It takes the glob's RESULT rather than a directory (`import.meta.glob` expands against the file containing it and cannot take a variable), and a `readdir` + `import()` is refused: that resolves the tools through Node rather than the test runner and hands them a second copy of this SDK. Generic over `ToolBearingAgent`, which keeps `AgentDef` and the sixteen declarations behind it off this subpath's contract. Four more shipped for the templates, a spec being unable to import from a sibling: **`expectToolOk`/`expectDialogOk`** unwrap a dialog tool's envelope and FAIL at the call quoting the refusal, where the cast they replace reads `undefined` off a `ToolFailure` and dies several assertions later; **`parseToolInput`/`toolInputIssues`** (plus `parseSchemaInput`/`schemaInputIssues` under them — 16 of the 18 converted sites validate a WORKFLOW's input) replace reaching through `["~standard"].validate`, which may be sync or async, so a missing `await` leaves `.issues` undefined and the negative test passes for the wrong reason; and **`stubTranscribe`**, staging a refusal as an HTTP STATUS so the SDK's own `transcribeFailure` sets `retryable`/`retryAfter` — a fake minting that error would assert the classification the spec is testing. `createToolContext` takes `ToolContextOverrides` (each field also accepting `undefined`, run through `omitUndefined`), because `Partial<ToolContext>` under `exactOptionalPropertyTypes` forced specs into the conditional spread rule 22 counts as debt; `runTool`'s args and ctx are optional, told apart by SHAPE (66 sites passed `{}`), an omitted context being a DISTINCT session. `stubUploads` answers `{ restore, writes, read }` like its three siblings rather than a bare thunk — the breaking change that dropped the `aai:testing` epoch. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createStubWorkflows()` is the rejecting `ctx.workflows` it defaults to (the rejecting `db` is internal now — see the `aai:testing` bump below). Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`deployedAgent(def, { tools, systemPrompt })`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs, system prompt included. It takes the glob's RESULT (`import.meta.glob` cannot take a variable), and a `readdir` + `import()` is refused: that resolves the tools through Node and hands them a second copy of this SDK. Generic over `ToolBearingAgent`, which keeps `AgentDef` and the sixteen declarations behind it off this subpath's contract. Four more shipped for the templates, a spec being unable to import from a sibling: **`expectToolOk`/`expectDialogOk`** unwrap a dialog tool's envelope and FAIL at the call quoting the refusal, where the cast they replace reads `undefined` off a `ToolFailure` and dies several assertions later; **`parseToolInput`/`toolInputIssues`** (plus `parseSchemaInput`/`schemaInputIssues` under them, for a WORKFLOW's input) replace reaching through `["~standard"].validate`, which may be sync or async, so a missing `await` leaves `.issues` undefined and the negative test passes for the wrong reason; and **`stubTranscribe`**, staging a refusal as an HTTP STATUS so the SDK's own `transcribeFailure` sets `retryable`/`retryAfter` — a fake minting that error would assert the classification the spec is testing. **`expectDialogRefused`/`dialogRefusalPattern`** are the unwrap's mirror; `_dialog-refusal.ts` owns the sentence both read. `createToolContext` takes `ToolContextOverrides` (each field also accepting `undefined`, run through `omitUndefined`), because `Partial<ToolContext>` under `exactOptionalPropertyTypes` forced specs into the conditional spread rule 22 counts as debt; `runTool`'s args and ctx are optional, told apart by SHAPE, an omitted context being a DISTINCT session. `stubUploads` answers `{ restore, writes, read }` like its three siblings rather than a bare thunk — the breaking change that dropped the `aai:testing` epoch. **`scriptedToolContext({ generate?, delegate?, …overrides })`** builds a context with BOTH model seams scripted and answers `{ ctx, model, desk }` — three template specs had that function; the routes table stays in the spec. **`runGuardrail(def, text, answer?)`** calls a subagent's guardrail the way the runtime does and THROWS on a def with none or a verdict that is a promise, so a spec asserts on `true \| string` rather than a union with `Promise`. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` (direct) | `installStubGateway(replies, opts?)` — the fake above, installed as the global `fetch`, returning its call log. A helper belongs here only when its remaining content is the installation — the fake itself stays framework-agnostic next door |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, and the four narration formatters `formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`), plus `decodeHtmlEntities`. Twenty exports. The fifteen helpers are on the ROOT too, so this is the path for a tool body that wants one without naming the root; **the four formatters and `decodeHtmlEntities` are reachable only here**, and deliberately — their reader is BOTH a `workflows/*.ts` step and a `client.tsx` (a run narrates itself, a page renders the same run), and `/utils` is the path a browser bundle takes without pulling zod's graph. Non-localized permanently, each output pinned to the character in `format.test.ts`: `Intl` answers to the host's ICU default, so one run would render differently on a laptop and in a sandbox. The duplication they replace was a live bug — `call-audit` printed one 64-minute recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, two copies of one formatter in one template disagreeing about one run, because the `m:ss` shape is four lines and looks finished. `plural(n, one, many?)` returns the WORD, not the count. **It was 79**: the membership rule was a BUILD property (zod-free, so the CLI pays no startup cost), which is a fact about its graph rather than an audience, and three unrelated readers piled onto one import line. The STEP vocabulary is `/step` now, the platform contracts and wire helpers `/internal`. `createKeyedLock`'s `p-timeout` is the one exception to zero-dependency; its module doc owns it |
-| `@alexkroman1/aai/step` | `sdk/step-barrel.ts` | The vocabulary a step is written against, from one import path — the half of `/utils` that has an AUDIENCE rather than a build property. `mapConcurrent` (a WINDOW over a cursor), `stepEnv`/`requireStepEnv` (a step body has no `ToolContext`), **`stepDelegate`** (a whole tool LOOP — `ctx.delegate` for a body, on a published slot), **`stepFetch`** + `multipartBody` (HTTP/1.1-pinned), `stepReport`/`stepEmit` (what a page's progress stream renders), `stepGenerate` (one `fetch` to the LLM gateway on the agent's own key) and `stepGenerateJson`/`stripJsonFence`, and the audio round trip both ways — **`stepWriteUpload`**/`stepReadUpload`/`stepUploadInfo`/`stepRequireCompleteUpload`, **`stepSpeak`** + `encodeWav`, and `stepTranscribe`{`Upload`,`Submit`,`Poll`} for the async job API or `stepTranscribeSync` for the one-request one. Plus `isTransientStatus`/`retryAfter`. **The module doc owns the rest** |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, and the four narration formatters `formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`), plus `decodeHtmlEntities`. Twenty exports. The fifteen helpers are on the ROOT too, so this is the path for a tool body that wants one without naming the root; **the four formatters and `decodeHtmlEntities` are reachable only here**, and deliberately — their reader is BOTH a `workflows/*.ts` step and a `client.tsx` (a run narrates itself, a page renders the same run), and `/utils` is the path a browser bundle takes without pulling zod's graph. Non-localized permanently, each output pinned to the character in `format.test.ts`: `Intl` answers to the host's ICU default, so one run would render differently on a laptop and in a sandbox. The duplication they replace was a live bug — `call-audit` printed one recording as `1:04:09` from a step and `64:09` from `client.tsx`. `plural(n, one, many?)` returns the WORD, not the count. **It was 79**: the membership rule was a BUILD property (zod-free), a fact about its graph rather than an audience. The STEP vocabulary is `/step` now, the platform contracts and wire helpers `/internal`. `createKeyedLock`'s `p-timeout` is the one exception to zero-dependency; its module doc owns it |
+| `@alexkroman1/aai/step` | `sdk/step-barrel.ts` | The vocabulary a step is written against, from one import path — the half of `/utils` that has an AUDIENCE rather than a build property. `mapConcurrent` (a WINDOW over a cursor) and `mapSettled`/`partitionSettled` (the same window settling each item into a `Settled<T, R>` beside it, for a tool on a live call; `Infinity` is the `allSettled` width), `stepEnv`/`requireStepEnv` (a step body has no `ToolContext`), **`stepDelegate`** (a whole tool LOOP — `ctx.delegate` for a body, on a published slot), **`stepFetch`** + `multipartBody` (HTTP/1.1-pinned), `stepReport`/`stepEmit` (what a page's progress stream renders), `stepGenerate` (one `fetch` to the LLM gateway on the agent's own key) and `stepGenerateJson`/`stripJsonFence`, and the audio round trip both ways — **`stepWriteUpload`**/`stepReadUpload`/`stepUploadInfo`/`stepRequireCompleteUpload`, **`stepSpeak`** + `encodeWav`, and `stepTranscribe`{`Upload`,`Submit`,`Poll`} for the async job API or `stepTranscribeSync` for the one-request one. Plus `isTransientStatus`/`retryAfter`. **The module doc owns the rest** |
 | `@alexkroman1/aai/step-errors` | `sdk/step-errors.ts` (direct) | `toStepError`/`throwStepError`/`throwFatalStepError`/`stepFetchOrFail` — the failure a step throws, classified into this repo's own `FatalError`/`RetryableError` (`sdk/step-error-classes.ts`, published here too); **`throwFfmpegStepError`**, the one arm whose default is INVERTED (anything it does not recognise as `timeout`/`aborted` is fatal, where `toStepError`'s default for an unclassified cause is retryable pass-through — a separate name is what keeps that polarity visible); and the seven **`*OrFail`** callers (`stepGenerate`/`stepGenerateJson`, the four transcription entry points, and `sendToChannel`), each being the underlying call and `throwStepError` and nothing else. The raw calls stay: importing from HERE is the opt-in, because whether a terminal failure burns a step's remaining attempts is the caller's call. Its own subpath because it is the one authoring module that OWNS the retry vocabulary — the two error classes the engine reads — which `/utils` may not carry. **The ffmpeg guard is STRUCTURAL, not `instanceof`, and `sdk/tsconfig.json` is why**: that second program compiles with `types: []`, so a module reachable from `sdk/` may not import a `node:` builtin *and may not name a Node TYPE either* — `FfmpegError.signal` is `NodeJS.Signals \| null`, and a node-free split reports `TS2503: Cannot find namespace 'NodeJS'` against the HOST file rather than the sdk file that pulled it in. |
 | `@alexkroman1/aai/channels` | `sdk/channels-barrel.ts` | Where a run's output GOES: `slackChannel({ webhookUrl })` names a destination, `sendToChannel` posts a `ChannelMessage` to it. A descriptor is serializable `{ kind, options }`, like a provider's. Slack's two webhook URLs take DIFFERENT bodies, so `text` is required; `isSlackWebhookUrl` is a SECURITY boundary. The barrel's doc owns the rest |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
@@ -114,13 +114,13 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + options (`assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt`) |
 | `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `gatewayLlm`, `assemblyAILlm`); eight of the nine take one shared `ModelOptions` rather than eight byte-identical `{ model: string }` interfaces |
-| `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesiaTts`, `rimeTts`, `assemblyAITts`), and the voice catalog |
+| `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesiaTts`, `rimeTts`, `assemblyAITts`), the voice catalog, and `ttsVoiceIds(language?)` — the catalog as the non-empty tuple `z.enum` takes, falling back to the default voice on an empty filter |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openAIS2s`; the root re-exports `assemblyAIS2s`) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
 | `@alexkroman1/aai/ffmpeg` | `host/ffmpeg.ts` (direct) | ffmpeg from a step — `runFfmpeg`/`probeMedia`/`transcodeToWav`; why, in `aai-guest/CLAUDE.md`. **Node-only** — see the note below the table |
 | `@alexkroman1/aai/html` | `host/html.ts` (direct) | Somebody else's markup, from a step: `htmlToText`, `parseFeed` (RSS/Atom/RDF), `pageMetadata`. Delegates to `htmlparser2`/`html-to-text`, already carried here for `page-design.ts`/`web-search.ts`/`builtin-tools.ts` and exposed by no subpath — so both scraping templates had written ~65 lines of parser. **Node-only** — see below. Three functions, not a toolkit: a step wanting the DOM adds `htmlparser2` itself. `decodeHtmlEntities` stays on `/utils`, unsuperseded — six entities, no dependency, for a `client.tsx` |
 | `@alexkroman1/aai/step-files` | `host/step-files.ts` (direct) | The upload ↔ local-FILE plumbing an ffmpeg step spends most of its lines on (ffmpeg needs a real path: a pipe cannot seek an m4a's trailing `moov` atom, and piped output is capped at 64 MiB). `withTempDir` (a temp directory whose lifetime is a lexical scope), `readUploadToFile` (windowed `stepReadUpload` → a path; with no `size` the file must be COMPLETE — see `stepRequireCompleteUpload`), `writeUploadFromFile` (a path → `stepWriteUpload`, streamed) and `STEP_FILE_WINDOW_BYTES`. **A subpath of its own, not `/step`**: `/step` is an `sdk/` barrel — 28 modules, zero `node:` builtins — and `sdk/` must stay runnable in a browser and in Deno, which `sdk/tsconfig.json`'s `types: []` makes a compile error rather than a convention. This module lives in `host/` and reaches exactly three builtins; `host/step-files.import-graph.test.ts` pins both halves. `writeUploadFromFile` absorbs the COMPOSITION rather than exporting a `fileChunks` generator, so the reused-read-buffer aliasing trap two templates each warned about in prose has one home and one spec (A/B-verified: deleting the `.slice()` fails the round trip). `readUploadToFile` advances by what was actually READ and stops short, where both templates strode by the window size and would leave a hole mid-file on a streamed upload |
-| `@alexkroman1/aai/internal` | `internal.ts` | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`, `sleep`) plus every framework BUDGET and DOCUMENTED DEFAULT (the client-audio constants, `AGENT_CSP`, `WS_OPEN`, and the 21 `DEFAULT_*`/`MAX_*` names that were on the root), the workflow API's server half, the two platform contracts BOTH ends must derive identically (the slug shape — `VALID_SLUG_RE`, `RESERVED_SLUGS`, `MAX_SLUG_LENGTH`, `PREVIEW_SLUG_SUFFIX` — and the `aai login` confirmation code), and the framework's own wire helpers (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`; `sdk/_wire-helpers.ts`). Not public API, not semver-covered, excluded from the docs. **It is ZOD-FREE, and that is now a rule** — it used to reach `formatSchemaIssues` through `sdk/schema.ts`, which imports zod, so importing anything here pulled zod's graph: exactly the startup cost `/utils` exists to keep off the CLI's path, and what kept the slug contract and the wire helpers on a PUBLISHED subpath. The function itself lives in the zod-free `sdk/standard-schema.ts`; importing it from there is the whole fix. The env brands live on `./runtime` instead — they appear in its public signatures (`RuntimeOptions`, `withHostCredentialFallback`) |
+| `@alexkroman1/aai/internal` | `internal.ts` | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`, `sleep`) plus every framework BUDGET and DOCUMENTED DEFAULT (the client-audio constants, `AGENT_CSP`, `WS_OPEN`, and the 21 `DEFAULT_*`/`MAX_*` names that were on the root), the workflow API's server half, the two platform contracts BOTH ends must derive identically (the slug shape — `VALID_SLUG_RE`, `RESERVED_SLUGS`, `MAX_SLUG_LENGTH`, `PREVIEW_SLUG_SUFFIX` — and the `aai login` confirmation code), and the framework's own wire helpers (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`; `sdk/_wire-helpers.ts`). Not public API, not semver-covered, excluded from the docs. **It is ZOD-FREE, and that is a rule** — it used to reach `formatSchemaIssues` through `sdk/schema.ts`, which imports zod, so importing anything here pulled zod's graph onto the CLI's path; the function lives in the zod-free `sdk/standard-schema.ts`. The env brands live on `./runtime` instead — they appear in its public signatures (`RuntimeOptions`, `withHostCredentialFallback`) |
 
 **Three subpaths are NODE-ONLY — `/ffmpeg`, `/step-files` and `/html`** —
 because each pulls something `sdk/` may not (`node:` builtins for the first two,
@@ -129,12 +129,10 @@ subpaths of their own rather than joining `@alexkroman1/aai/step`. They are
 nonetheless CONTRACTED rather than deny-listed — `NON_AUTHORING_SUBPATHS` is for
 surfaces whose reader is the framework, and a step is an author writing code.
 
-**They used to be BODY-USE ONLY, and that rule is retired.** It came from the
-Workflow DevKit's builder, which rewrote `"use step"` bodies out of a
-`workflows/*.ts` module and compiled what was left as a `node:vm` Script with no
-`require` — so a `node:` import a surviving module-scope function still named
-killed every run at replay. The replay engine compiles no separate workflow
-bundle, so a `workflows/*.ts` module may name either subpath at module scope.
+**They used to be BODY-USE ONLY, and that rule is retired** with the Workflow
+DevKit builder that compiled a `workflows/*.ts` module's remainder as a
+`node:vm` Script. The replay engine compiles no separate workflow bundle, so a
+`workflows/*.ts` module may name either subpath at module scope.
 `packages/aai-templates/CLAUDE.md` carries the two templates that paid for
 getting the old rule wrong.
 
@@ -674,11 +672,12 @@ primitive (pipeline only) — see `packages/aai-runtime/CLAUDE.md`.
 **`ASSEMBLYAI_TTS_VOICES` in `sdk/providers/tts/assemblyai.ts` is the list.**
 Read it there; do not restate it, and do not trust a voice name absent from it.
 
-That instruction is the whole point of the constant: this section and the
-provider's doc comment used to hold two DIFFERENT hand-maintained tables, both
-fiction. The failure is invisible at authoring time — a wrong id is rejected
-in-band after the TTS socket opens, so the agent connects, reports ready and is
-permanently silent.
+That instruction is the whole point of the constant: two hand-maintained tables
+here and in the provider's doc were both fiction, and the failure is invisible
+at authoring time — a wrong id is rejected in-band after the TTS socket opens,
+so the agent connects, reports ready and is permanently silent. A form that
+offers the caller a voice reads `ttsVoiceIds(language?)` (`/tts`), the catalog
+as the non-empty tuple `z.enum` takes.
 
 **`AssemblyAITtsVoice` is AUTOCOMPLETE over that constant, not a guard**, and
 no assert pairs with it — `assertAssemblyAITtsLanguage`, which also refuses a
@@ -786,16 +785,20 @@ replaced; what follows is the index plus the rule and the adopters.**
 - **`mapConcurrent(items, width, run)`** (`sdk/map-concurrent.ts`, `/step` — the
   other PUBLIC one) — bounded fan-out inside a durable workflow body: a WINDOW
   over a cursor, so a slow item costs only itself. It was `mapInBatches`
-  (sequential `Promise.all` batches, since deleted) on the belief
-  that a pool broke replay, and it does not: the replay engine needs the
-  SEQUENCE OF ITEMS whose calls are issued to be a pure function of the list,
-  and a cursor that only ever hands out the next index satisfies that at any
-  width and under any settle order. What the barrier cost was its slowest
-  member once per round,
-  which `transcription-workflow` measured at 6.7x p50 on a wide fan-out. **The
-  rule that IS load-bearing** — `run` must issue the same sequence of step calls
-  for every item, in practice one, synchronously — is unchanged by the shape and
-  was never rescued by batching either; the module doc carries both halves.
+  (sequential `Promise.all` batches) on the belief that a pool broke replay; it
+  does not — the engine needs the SEQUENCE OF ITEMS issued to be a pure function
+  of the list, which a monotonic cursor satisfies at any width — and the barrier
+  cost 6.7x p50 on `transcription-workflow`'s fan-out. **The rule that IS
+  load-bearing** — `run` issues one step call per item, synchronously — is
+  unchanged by the shape; the module doc carries both halves.
+- **`mapSettled(items, width, run)`** / **`partitionSettled(settled)`**
+  (`sdk/map-settled.ts`, `/step`) — `mapConcurrent` with the per-item
+  `try`/`catch` written once: one `Settled<T, R>` per item, in item order, so a
+  TOOL on a live call keeps every sibling's result and NAMES the one that
+  failed; `partitionSettled` answers two typed lists, so `failed[0]?.error`
+  needs no re-narrowing (three templates had drifted on it). `Infinity` means
+  every item at once (`mapConcurrent` alone floors it to 1). The issue order is
+  `mapConcurrent`'s, so its replay rule holds.
 - **`mapStream(source, width, run)`** (`sdk/_map-stream.ts`, internal) — the same
   bound over an ITERATOR rather than a list, for a body that does not exist yet
   and is expensive to pull: the next item is read only as a slot frees, so the
@@ -809,11 +812,10 @@ replaced; what follows is the index plus the rule and the adopters.**
   when the items are already in hand.
 - **`sleep(ms, { signal?, unref? })`** (`sdk/sleep.ts`, `/internal`) — the ONE
   wait; `guard-invariants` rule 19 keeps the seventh spelling out. It replaced
-  **six** spellings across five packages at 22 call sites, and the argument is
-  not the line count: they split into two families differing in whether
-  `vi.useFakeTimers()` can drive them, which no call site shows. **Read the
-  module doc** for that measurement, why `unref` is opt-in (it is a claim, and
-  the shared default it replaced made a shutdown grace skip its own drains), and
+  **six** spellings at 22 call sites, which split into two families differing in
+  whether `vi.useFakeTimers()` can drive them. **Read the module doc** for
+  that measurement, why `unref` is opt-in (it is a claim, and the shared
+  default it replaced made a shutdown grace skip its own drains), and
   why an abort resolves with the listener detached. Not a timeout (`p-timeout`,
   rule 3), not a yield (`flush()`/`tick()`, rule 4).
 - **`ToolFailure` / `isToolFailure()` / `toolFailure(message)`**
@@ -827,25 +829,22 @@ replaced; what follows is the index plus the rule and the adopters.**
   lands next to `isToolFailure` rather than on `serializeToolFailure()`, which
   returns the pre-serialized wire STRING the host emits for a tool that THREW —
   so `isToolFailure(serializeToolFailure(m))` is `false`. Under its old name
-  (`toolError`) that was a trap rather than a distinction, and ZERO templates
-  used it. It is `@internal` on `/utils` now; `utils.test.ts` pins both halves.
+  (`toolError`) that was a trap; it is `@internal` on `/utils` now, and
+  `utils.test.ts` pins both halves.
 - **`pushCapped(list, item, max)`** (`sdk/utils.ts`, root and `/utils`) — append
-  to a list holding a cap, mutating IN PLACE (the list is usually a property of
-  a slot's value, so returning a new array is a reassignment the caller can
-  forget). For the append-only lists an agent keeps: a timeline, an activity
-  feed, a session log. Every one feeds an LLM summary or a `syncState` payload,
-  so uncapped it grows what the model reads and what crosses the wire for the
-  length of the call. Three templates hand-rolled `push` + `slice(-MAX)`; the
-  fourth, `infocom-adventure`, had NOT — its command history sliced only for
-  display and grew without bound, which is the bug a shared primitive turns
-  into a decision.
+  to a list holding a cap, mutating IN PLACE. **For a NESTED list only** now
+  (`incident.timeline`, one per incident): a TOP-LEVEL array of a slot's value
+  declares its bound on the slot — `sessionSlot(key, create, { caps: { log: 40
+  } })` — which holds whatever path wrote, where a wrapper caps only the paths
+  that call it — `executive-assistant` capped two arrays that way and pushed to
+  three more directly. See the `caps` rule under "A slot OWNS its session state".
 - **`omitUndefined()`** (`sdk/omit-undefined.ts`, `/utils`) — the one way to
   build the optional half of an object under `exactOptionalPropertyTypes`, which
   makes `{ name: maybeName }` an error whenever the value can be `undefined`.
   The only spelling that compiled was `...(name !== undefined ? { name } : {})`,
-  hand-written 44 times across five packages and naming its key twice, which is
-  what makes a mismatched pair (`x !== undefined ? { y: x }`) read as noise
-  rather than as the bug it is. Write `...omitUndefined({ name, greeting })`.
+  hand-written 44 times and naming its key twice, so a mismatched pair
+  (`x !== undefined ? { y: x }`) reads as noise rather than as the bug it is.
+  Write `...omitUndefined({ name, greeting })`.
   `guard-invariants` rule 2 sees all three spellings, and its remedy names the
   three sites that deliberately keep the long form — where the GUARD IS NOT THE
   VALUE. Check that before converting a fourth. On `/utils` rather than
@@ -906,7 +905,7 @@ the fleet-wide peer route a cold broker takes all handed a reconnecting caller a
 agent that remembered the whole conversation (the client replays history) and had
 forgotten its cart. Nothing on the client can replay state back.
 
-Five rules follow, and each is enforced rather than documented. **`session-slot.ts`
+Six rules follow, and each is enforced rather than documented. **`session-slot.ts`
 carries each one on the member it governs** — read it before changing any of them:
 
 - **`update` is SYNCHRONOUS and hands the body a mutable DRAFT.** Whatever the
@@ -942,6 +941,13 @@ carries each one on the member it governs** — read it before changing any of t
   slot's key and default. That is what lets the runtime render a session that has
   run no tool, and so what let `AgentDef.state` be deleted rather than remembered
   — four of five slot-backed templates used to forget to declare it.
+- **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`.**
+  `{ caps: { log: 40 } }` drops the oldest past the cap on every writer and the
+  projection's empty frame; `SlotCaps<T>` admits only array-valued keys, and a
+  bad cap is refused at DECLARATION (`_session-slot-caps.ts`). After the hook,
+  so a hook that appends cannot overshoot and the stored value never exceeds
+  the cap; the price is that the hook sees the untrimmed draft (a tail read is
+  unaffected, a `length` is not). A nested list stays on `pushCapped`.
 
 **Which backend an agent gets is a property of the DEPLOYMENT**, never of a slot:
 Postgres when `DATABASE_URL` is present, memory otherwise, reported in the
@@ -978,13 +984,10 @@ migration on the platform's own, or the operator of a self-hosted deployment.
 The platform used to apply it while provisioning an app's database, the tables
 being part of what "this app has a database" meant.
 
-The backend used to `create table if not exists` on its own read and write
-paths, behind two memos — and that argument (the shape belongs to the BUNDLE's
-SDK version) does not survive inspection: `if not exists` is a no-op once the
-table exists, so a newer SDK expecting an added column was broken either way.
-What it cost was two round trips and a `42P07` NOTICE per guest boot, in the log
-an operator reads to diagnose a session. A missing table surfaces as the honest
-error it is.
+The backend used to `create table if not exists` on its own paths; `if not
+exists` is a no-op once the table exists, so a newer SDK expecting an added
+column was broken either way, and it cost a `42P07` NOTICE per guest boot. A
+missing table surfaces as the honest error it is.
 
 **`dialog()` is the other primitive built on a slot** — what an agent may do NEXT,
 gated at EXECUTION. `sdk/dialog.ts`'s module doc owns it. Three things about its
@@ -1086,7 +1089,10 @@ interesting part is what it does when the utterance picks NONE or MORE THAN ONE
 — a {@link ToolFailure} that LISTS the candidates, which is the one shape that
 lets the model recover on its own turn instead of acting and apologizing.
 `spokenDigits` and `spokenOrdinal` are the two readings it consults, exported
-because an agent narrowing by its own vocabulary needs them before the pick.
+because an agent narrowing by its own vocabulary needs them before the pick;
+`spokenAlphanumeric` is `spokenDigits` for an id that carries letters (a policy
+number, a `#W…` order id — upper-cased ASCII), which two templates had each
+normalized with a regex of their own.
 
 Three things the API is load-bearing about:
 
@@ -1343,22 +1349,15 @@ hand-rolled. Read it there; do not restate it here.
 
 **A spec that observes a TIMER runs on virtual time, never the wall clock.**
 The pipeline-transport specs used to wait out real milliseconds
-(`await sleep(60)`) to see whether a window had elapsed, which cost ~2.3s of
-the unit run and, far worse, made them races: they were the specs that failed
-first on a contended runner, and the flake named a timing spec rather than a
-bug. It also capped what a spec could describe — every window had to shrink
-to tens of milliseconds, so the dead-air cover was exercised at
-`deadAirCoverMs: 1` and the SHIPPED 5s default was tested by nothing.
+(`await sleep(60)`), which made them the first specs to fail on a contended
+runner, and capped what they could describe: the dead-air cover was exercised
+at `deadAirCoverMs: 1` and the SHIPPED 5s default was tested by nothing.
 `useVirtualTime()` (`transports/_pipeline-transport-harness.ts`) installs
 fake timers per file; drive them with `vi.advanceTimersByTimeAsync(ms)`.
 
-**No scheduler had to be threaded through `PipelineTransportOptions` for
-this, and the note that said otherwise was wrong.** The claim was that fake
-timers could not compose with the fake providers because `_fake-llm.ts`
-schedules its own `setTimeout` for `delayMs` — but that is the GLOBAL
-`setTimeout`, which is exactly what `vi.useFakeTimers()` replaces, so it is
-driven along with everything else. `vi.waitFor` composes too. Check the
-cheap mechanism before building the seam.
+**No scheduler had to be threaded through `PipelineTransportOptions`**:
+`_fake-llm.ts`'s `delayMs` is the GLOBAL `setTimeout`, which is exactly what
+`vi.useFakeTimers()` replaces, and `vi.waitFor` composes too.
 
 Two things virtual time does break, both mechanical: `tick()` is a
 `setTimeout(0)` and hangs until something advances the clock (use
@@ -1375,8 +1374,7 @@ them, and rewriting them would be churn.
 The fast-check property test over the S2S stack lives with the transports it
 drives — `aai-runtime/integration/s2s-fuzz.integration.test.ts` and its four
 helpers — so its design is in `packages/aai-runtime/CLAUDE.md` under the section
-of this name. (This guide carried it, and named a `host/integration/` path those
-files have not had since the runtime split.)
+of this name.
 
 ## Fixture replay testing (`host/`)
 

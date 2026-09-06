@@ -43,7 +43,6 @@ import {
   type DelegateFn,
   type DelegateOptions,
   type DelegateResult,
-  pushCapped,
   type SubagentRoster,
   type SubagentToolCall,
   sessionSlot,
@@ -280,12 +279,11 @@ export function emptyBriefing(): BriefingState {
   return { topic: null, findings: [] };
 }
 
-export const briefingSlot = sessionSlot("briefing", emptyBriefing);
-
-/** Record a finding, holding {@link MAX_FINDINGS}. */
-export function recordFinding(state: BriefingState, finding: Finding): void {
-  pushCapped(state.findings, finding, MAX_FINDINGS);
-}
+export const briefingSlot = sessionSlot("briefing", emptyBriefing, {
+  // Held by the slot rather than by a `recordFinding` wrapper, so a tool that
+  // pushes to the board directly is bounded too.
+  caps: { findings: MAX_FINDINGS },
+});
 
 /**
  * The board as a READ hands it out — deep-frozen, and typed to say so, which is

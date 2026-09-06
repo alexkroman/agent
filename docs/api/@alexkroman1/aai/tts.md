@@ -171,6 +171,53 @@ export default agent({
 });
 ```
 
+***
+
+### ttsVoiceIds()
+
+```ts
+function ttsVoiceIds(language?: "en" | "fr" | "de" | "it" | "pt" | "es"): [AssemblyAITtsVoice, ...AssemblyAITtsVoice[]];
+```
+
+The catalog's voice ids, optionally only those speaking `language`, as the
+non-empty tuple a `z.enum` takes.
+
+Read from [ASSEMBLYAI\_TTS\_VOICES](index.md#assemblyai_tts_voices) rather than listed, because a wrong
+voice id is a SILENT failure — a free-form string the service rejects in band
+after the socket is open, so the synthesis simply produces nothing. Every
+voice speaks exactly one language, so a run whose text is in one language
+offers only the voices that speak it.
+
+**An empty filter falls back to the default voice** rather than throwing or
+returning `[]`: the tuple has to have a head for `z.enum`, and a form that
+cannot render a picker is worse than one offering the SDK's own default. The
+fallback is reachable only when the catalog carries no voice for a language
+the SDK translates, which is a catalog refresh away from impossible; it is
+documented because the type promises a head.
+
+Catalog order — the order an author reads on the docs page.
+
+#### Parameters
+
+##### language?
+
+`"en"` \| `"fr"` \| `"de"` \| `"it"` \| `"pt"` \| `"es"`
+
+#### Returns
+
+\[[`AssemblyAITtsVoice`](index.md#assemblyaittsvoice), `...AssemblyAITtsVoice[]`\]
+
+#### Example
+
+```ts
+import { ttsVoiceIds } from "@alexkroman1/aai/tts";
+import { z } from "zod";
+
+const input = z.object({
+  voice: z.enum(ttsVoiceIds("en")).optional().describe("Voice to read it in"),
+});
+```
+
 ## Interfaces
 
 ### AssemblyAITtsOptions

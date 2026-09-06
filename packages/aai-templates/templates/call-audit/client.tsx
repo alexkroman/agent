@@ -76,6 +76,7 @@ import "@alexkroman1/aai-ui/styles.css";
 // already declares.
 import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
 import {
+  AudioResult,
   BulletList,
   createWorkflowApi,
   Facts,
@@ -199,36 +200,23 @@ export function App() {
           <BulletList title="Risks" items={output.risks} />
           <BulletList title="Actions" items={output.actions} />
 
-          <section className="flex flex-col gap-2">
-            <h3 className="text-sm font-medium opacity-70">
-              Read aloud · {formatDuration(output.audioDurationMs)} ·{" "}
-              {formatBytes(output.audioBytes)}
-            </h3>
-            {audio.pending && <p className="text-sm opacity-70">Fetching the audio…</p>}
-            {audio.error !== undefined && (
-              <p role="alert" className="text-red-600">
-                Could not load the audio: {audio.error}
-              </p>
-            )}
-            {audio.url !== undefined && (
-              <>
-                {/* No `<track>`, and that is a judgement rather than an
-                    oversight: the spoken text is rendered in full immediately
-                    below this player, which is the same information a caption
-                    track would carry. `spoken-summary` serves a one-cue WebVTT
-                    data URL instead — worth reading for how, if a real track is
-                    what a page needs. */}
-                <audio aria-label="Audit read aloud" controls src={audio.url} className="w-full" />
-                {/* `download` works on an object URL because the bytes are already in
-                    the tab; it is the href that could not carry the agent's bearer,
-                    not the attribute. */}
-                <a href={audio.url} download="audit.mp3" className="text-sm underline">
-                  Download audit.mp3
-                </a>
-              </>
-            )}
+          {/* The SDK's player over the hook's result: the pending line, the
+              announced error, the `<audio>` and the download link (which works on
+              an object URL because the bytes are already in the tab; it was the
+              href that could not carry the agent's bearer, not the attribute).
+              No `captions`, and that is a judgement rather than an oversight:
+              the spoken text is rendered in full immediately below the player,
+              which is the same information a caption track would carry.
+              `spoken-summary` passes one instead — worth reading, if a real
+              track is what a page needs. */}
+          <AudioResult
+            download={audio}
+            filename="audit.mp3"
+            label="Audit read aloud"
+            heading={`Read aloud · ${formatDuration(output.audioDurationMs)} · ${formatBytes(output.audioBytes)}`}
+          >
             <p className="text-sm opacity-70">{output.spoken}</p>
-          </section>
+          </AudioResult>
 
           <details className="text-sm">
             <summary className="cursor-pointer opacity-70">Transcript</summary>

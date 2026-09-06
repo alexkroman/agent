@@ -50,7 +50,6 @@ import {
   type DeepReadonly,
   type DialogSpec,
   dialog,
-  pushCapped,
   sessionSlot,
   type ToolContext,
   type ToolFailure,
@@ -357,13 +356,10 @@ export interface TripState {
    *  here. A concurrent step emitting two sensitive tools is ordinary. */
   pending: PendingAction | null;
   bookings: BookingRecord[];
-  /** What has happened on this call, for the sidebar. Capped on append. */
+  /** What has happened on this call, for the sidebar. Capped by the slot. */
   log: string[];
   bookingCounter: number;
 }
-
-/** Growth cap on the call log — it rides in every `syncState` frame. */
-export const MAX_LOG_ENTRIES = 40;
 
 /** The caller as the airline already knows them — their
  *  `fetch_user_flight_information`, minus the sqlite. */
@@ -390,6 +386,8 @@ export const tripSlot = sessionSlot("trip", seedTrip, {
   after: (state) => {
     if (state.dialogState.length === 0) state.dialogState.push("primary");
   },
+  // The call log rides in every `syncState` frame.
+  caps: { log: 40 },
 });
 
 /**
@@ -405,10 +403,6 @@ export type FrozenTripState = DeepReadonly<TripState>;
 
 export function activeAssistant(state: FrozenTripState): DialogState {
   return state.dialogState.at(-1) ?? "primary";
-}
-
-export function note(state: TripState, entry: string): void {
-  pushCapped(state.log, entry, MAX_LOG_ENTRIES);
 }
 
 // ─── The desk gate ───────────────────────────────────────────────────────────
@@ -599,7 +593,7 @@ export function stageAction(
   // a different slot from `tripSlot`, so this is not a nested write to the draft
   // being held — the open-draft guard is per slot.
   gateFlow.send(ctx, { type: "STAGED" });
-  note(state, `Awaiting confirmation: ${described}`);
+  state.log.push(`Awaiting confirmation: ${described}`);
   return {
     awaitingConfirmation: true,
     readBack: `Ask the caller to confirm, out loud, that they want to ${described}. Nothing has changed yet.`,
@@ -636,14 +630,14 @@ export function applyPending(
       if (flight.seatsLeft <= 0) return { error: `${flight.id} has no seats left.` };
       if (!state.ticket) return { error: "There is no ticket to move — it was cancelled." };
       state.ticket = { reference: state.ticket.reference, flightId: flight.id };
-      note(state, `Ticket ${state.ticket.reference} moved to ${flight.id}`);
+      state.log.push(`Ticket ${state.ticket.reference} moved to ${flight.id}`);
       return { applied: `Ticket moved to ${flight.id}, ${flight.departs}.` };
     }
     case "cancel_ticket": {
       if (!state.ticket) return { error: "There is no ticket to cancel." };
       const cancelled = state.ticket.reference;
       state.ticket = null;
-      note(state, `Ticket ${cancelled} cancelled`);
+      state.log.push(`Ticket ${cancelled} cancelled`);
       return { applied: `Ticket ${cancelled} cancelled.` };
     }
     case "book_hotel": {
@@ -656,7 +650,7 @@ export function applyPending(
         summary: `${hotel.name} (${hotel.area}), ${action.nights} ${plural(action.nights, "night")}`,
         price,
       });
-      note(state, `Hotel booked: ${hotel.name} — ${reference}`);
+      state.log.push(`Hotel booked: ${hotel.name} — ${reference}`);
       return { applied: `${hotel.name} booked, ${formatMoney(price)}.`, reference };
     }
     case "book_car": {
@@ -669,7 +663,7 @@ export function applyPending(
         summary: `${car.vendor} ${car.tier}, ${action.days} ${plural(action.days, "day")}`,
         price,
       });
-      note(state, `Car reserved: ${car.vendor} ${car.tier} — ${reference}`);
+      state.log.push(`Car reserved: ${car.vendor} ${car.tier} — ${reference}`);
       return {
         applied: `${car.tier} from ${car.vendor} reserved, ${formatMoney(price)}.`,
         reference,
@@ -684,7 +678,7 @@ export function applyPending(
         summary: `${excursion.name} (${excursion.city})`,
         price: excursion.price,
       });
-      note(state, `Excursion booked: ${excursion.name} — ${reference}`);
+      state.log.push(`Excursion booked: ${excursion.name} — ${reference}`);
       return { applied: `${excursion.name} booked, ${formatMoney(excursion.price)}.`, reference };
     }
     // Same as `describeAction`: unreachable today, and a refusal rather than a

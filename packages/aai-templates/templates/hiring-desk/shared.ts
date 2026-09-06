@@ -28,7 +28,6 @@ import {
   type DialogPosition,
   type DialogSpec,
   dialog,
-  pushCapped,
   resolveOne,
   sessionSlot,
   type ToolFailure,
@@ -154,14 +153,6 @@ export function emptyHiring(): HiringState {
   };
 }
 
-export const hiringSlot = sessionSlot("hiring", emptyHiring);
-
-/**
- * How many candidates the caller is read back, and how many are invited by
- * default — their `sorted_candidates[:3]`.
- */
-export const SHORTLIST_SIZE = 3;
-
 /**
  * Rounds of "score them again, with this feedback" one call may take.
  *
@@ -176,12 +167,19 @@ export const SHORTLIST_SIZE = 3;
 export const MAX_FEEDBACK_ROUNDS = 3;
 
 /** Feedback entries the state holds. One per round, so this is the round cap
- *  restated as a growth bound on something that rides in every prompt. */
+ *  restated as a growth bound on something that rides in every prompt — held
+ *  by the slot's `caps`, so no writer has to remember it. */
 export const MAX_FEEDBACK_ENTRIES = MAX_FEEDBACK_ROUNDS + 1;
 
-export function noteFeedback(state: HiringState, feedback: string): void {
-  pushCapped(state.feedback, feedback, MAX_FEEDBACK_ENTRIES);
-}
+export const hiringSlot = sessionSlot("hiring", emptyHiring, {
+  caps: { feedback: MAX_FEEDBACK_ENTRIES },
+});
+
+/**
+ * How many candidates the caller is read back, and how many are invited by
+ * default — their `sorted_candidates[:3]`.
+ */
+export const SHORTLIST_SIZE = 3;
 
 // ─── The shape of the call ───────────────────────────────────────────────────
 
