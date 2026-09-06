@@ -14,7 +14,7 @@
  * Its own module rather than a line in `assemblyai.ts`, which is 400 lines of
  * catalog and connect-time checks; this is the one AUTHORING read over it.
  *
- * @module assemblyai-voice-ids
+ * @module tts-voice-ids
  */
 
 import {
@@ -22,7 +22,7 @@ import {
   ASSEMBLYAI_TTS_VOICES,
   type AssemblyAITtsLanguage,
   type AssemblyAITtsVoice,
-} from "./assemblyai.ts";
+} from "./tts/assemblyai.ts";
 
 /**
  * The catalog's voice ids, optionally only those speaking `language`, as the

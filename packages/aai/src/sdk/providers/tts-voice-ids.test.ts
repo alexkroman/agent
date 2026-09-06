@@ -7,8 +7,8 @@ import {
   ASSEMBLYAI_TTS_LANGUAGES,
   ASSEMBLYAI_TTS_VOICES,
   type AssemblyAITtsLanguage,
-} from "./assemblyai.ts";
-import { ttsVoiceIds } from "./assemblyai-voice-ids.ts";
+} from "./tts/assemblyai.ts";
+import { ttsVoiceIds } from "./tts-voice-ids.ts";
 
 describe("ttsVoiceIds", () => {
   test("with no language, every voice in the catalog, in catalog order", () => {
