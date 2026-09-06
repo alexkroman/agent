@@ -101,6 +101,15 @@ export {
   type StubGenerateRoute,
   stubGenerate,
 } from "./testing-generate.ts";
+// A subagent's guardrail, called as the runtime calls it — the one piece of a
+// subagent a spec can test without a model.
+export { runGuardrail } from "./testing-guardrail.ts";
+// Both model seams scripted in one call, for a tool that reasons.
+export {
+  type ScriptedToolContext,
+  type ScriptedToolContextOptions,
+  scriptedToolContext,
+} from "./testing-scripted.ts";
 export {
   STUB_SPEECH_PCM_BYTES,
   type StubSpeech,

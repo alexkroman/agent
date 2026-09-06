@@ -44,6 +44,34 @@ export function spokenDigits(spoken: string): string {
 }
 
 /**
+ * The letters and digits of a spoken code, upper-cased, with everything else
+ * dropped — {@link spokenDigits} for an id that carries letters too.
+ *
+ * An order number, a policy number, a booking reference: "r s four four one
+ * seven" comes through STT as anything from `RS4417` to `rs-44 17`, and none of
+ * them equals the stored `RS4417`. Comparing the raw string is the version
+ * that tells a covered member they have no plan. Two templates normalized
+ * this way with two regexes; the case fold is the half a hand-written one
+ * forgets.
+ *
+ * ASCII only, on purpose: the ids this exists for are ASCII, and a locale-aware
+ * fold would make the same utterance normalize differently on two machines.
+ *
+ * @example
+ * ```ts
+ * import { spokenAlphanumeric } from "@alexkroman1/aai";
+ *
+ * spokenAlphanumeric("rs 44-17"); // "RS4417"
+ * spokenAlphanumeric("#W 586 6402"); // "W5866402"
+ * ```
+ *
+ * @public
+ */
+export function spokenAlphanumeric(spoken: string): string {
+  return spoken.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/**
  * Position words, as an index into the candidate list. `-1` is "the last one".
  *
  * Both spellings of each, because STT writes whichever the caller's cadence

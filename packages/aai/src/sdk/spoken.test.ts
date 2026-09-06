@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { resolveOne, spokenDigits, spokenOrdinal } from "./spoken.ts";
+import { resolveOne, spokenAlphanumeric, spokenDigits, spokenOrdinal } from "./spoken.ts";
 import { isToolFailure } from "./utils.ts";
 
 type Jacket = { id: string; color: string; size: string };
@@ -24,6 +24,23 @@ describe("spokenDigits", () => {
 
   test("an utterance with no digits yields none, rather than throwing", () => {
     expect(spokenDigits("the blue one")).toBe("");
+  });
+});
+
+describe("spokenAlphanumeric", () => {
+  test("keeps letters and digits, upper-cased, however STT spaced or punctuated them", () => {
+    expect(spokenAlphanumeric("rs 44-17")).toBe("RS4417");
+    expect(spokenAlphanumeric("RS4417")).toBe("RS4417");
+    expect(spokenAlphanumeric("#W 586 6402")).toBe("W5866402");
+    expect(spokenAlphanumeric("q z seven f, two k")).toBe("QZSEVENFTWOK");
+  });
+
+  test("an utterance with nothing alphanumeric yields the empty string", () => {
+    expect(spokenAlphanumeric("—, !")).toBe("");
+  });
+
+  test("is ASCII-only, so a non-Latin letter is dropped rather than folded", () => {
+    expect(spokenAlphanumeric("é9ñ")).toBe("9");
   });
 });
 

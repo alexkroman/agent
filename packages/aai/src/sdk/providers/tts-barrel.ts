@@ -73,5 +73,8 @@ export {
   type AssemblyAITtsVoiceInfo,
   assemblyAITts,
 } from "./tts/assemblyai.ts";
+// The catalog as the non-empty tuple `z.enum` takes — the one authoring READ
+// over `ASSEMBLYAI_TTS_VOICES`, for a form that offers the caller a voice.
+export { ttsVoiceIds } from "./tts/assemblyai-voice-ids.ts";
 export { CARTESIA_DEFAULT_VOICE, type CartesiaTtsOptions, cartesiaTts } from "./tts/cartesia.ts";
 export { RIME_DEFAULT_VOICE, type RimeTtsOptions, rimeTts } from "./tts/rime.ts";
