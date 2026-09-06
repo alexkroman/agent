@@ -167,11 +167,9 @@ describe("sessionSlot({ caps })", () => {
     );
   });
 
-  test("a cap on a key that is not an array is a compile error", () => {
-    // @ts-expect-error — `count` is a number and `open` a string: neither can be capped.
-    sessionSlot("typed", emptyDesk, { caps: { count: 3 } });
-    // @ts-expect-error — the same for a non-array `open`.
-    sessionSlot("typed2", emptyDesk, { caps: { open: 3 } });
+  test("an array behind `null` is still cappable; a non-array key is a compile error", () => {
+    // The compile-error half is `_session-slot-caps.test-d.ts` — a type claim
+    // belongs in a type test, not behind a suppression the hatch ratchet counts.
     // An array behind `null` IS accepted, so a nullable list can still be bound.
     const nullable = sessionSlot("nullable", (): { log: string[] | null } => ({ log: null }), {
       caps: { log: 3 },

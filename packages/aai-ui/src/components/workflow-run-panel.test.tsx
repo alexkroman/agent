@@ -9,8 +9,8 @@
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
-import type { WorkflowApi, WorkflowRun } from "../workflow-client.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type { WorkflowRun } from "../workflow-client.ts";
 import { WORKFLOW_STATUS_LABELS } from "../workflow-status-labels.ts";
 import { WorkflowRunPanel } from "./workflow-run-panel.tsx";
 
@@ -26,25 +26,32 @@ const DONE: WorkflowRun<Output> = {
 const FAILED: WorkflowRun<Output> = { ...BASE, status: "failed", error: "critic refused" };
 
 /**
- * A client whose progress read answers the given lines and then reports the
- * stream complete — enough for `<WorkflowProgress>` to render, so the
- * composition is observable rather than assumed. The framing is the progress
- * route's own (`event: chunk` / `event: done`), as `workflow-progress.test.tsx`
- * spells it.
+ * Stub the progress route the panel's `<WorkflowProgress>` reads through the
+ * component's own default client: the given lines, then the stream complete —
+ * enough for the composition to be observable rather than assumed. The framing
+ * is the route's own (`event: chunk` / `event: done`), as
+ * `workflow-progress.test.tsx` spells it, and the fetch is stubbed globally the
+ * same way that spec does it, which is what keeps this free of a cast to
+ * `WorkflowApi`.
  */
-function apiWithProgress(
-  lines: readonly string[],
-): WorkflowApi & { streamOutput: ReturnType<typeof vi.fn> } {
+function stubProgress(lines: readonly string[]): ReturnType<typeof vi.fn> {
   const body = lines.map((line) => `event: chunk\ndata: ${JSON.stringify(line)}\n\n`).join("");
-  const frames = new TextEncoder().encode(
+  // `Uint8Array<ArrayBuffer>` rather than the default `ArrayBufferLike`: only the
+  // former is a `BodyInit`.
+  const frames: Uint8Array<ArrayBuffer> = new TextEncoder().encode(
     `${body}event: done\ndata: {"runId":"run_1","complete":true}\n\n`,
   );
-  const streamOutput = vi.fn(
+  const fetchMock = vi.fn(
     async () =>
       new Response(frames, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
   );
-  return { streamOutput } as unknown as WorkflowApi & { streamOutput: typeof streamOutput };
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("WorkflowRunPanel", () => {
   test("heads the panel with the SDK's status line by default", () => {
@@ -113,17 +120,17 @@ describe("WorkflowRunPanel", () => {
   });
 
   test("composes the run's narration through the api it is given", async () => {
-    const api = apiWithProgress(["Drafting…", "Grading…"]);
-    render(<WorkflowRunPanel run={DONE} api={api} />);
+    const fetchMock = stubProgress(["Drafting…", "Grading…"]);
+    render(<WorkflowRunPanel run={DONE} />);
     const log = await screen.findByRole("log");
     expect(log.textContent).toBe("Drafting…\nGrading…");
-    expect(api.streamOutput).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
   });
 
   test("orders header, narration, completed body, then error", async () => {
-    const api = apiWithProgress(["Drafting…"]);
+    stubProgress(["Drafting…"]);
     render(
-      <WorkflowRunPanel run={{ ...DONE }} api={api}>
+      <WorkflowRunPanel run={{ ...DONE }}>
         {(output) => <article data-testid="body">{output.draft}</article>}
       </WorkflowRunPanel>,
     );
