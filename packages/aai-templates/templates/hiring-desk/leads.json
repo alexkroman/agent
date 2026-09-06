@@ -1,0 +1,86 @@
+[
+  {
+    "id": "c01",
+    "name": "Priya Raman",
+    "email": "priya.raman@example.com",
+    "bio": "Front-end developer with two years at a Bengaluru edtech startup, where she rebuilt the student dashboard in Next.js and shipped a streaming tutor chat on the Vercel AI SDK. Writes TypeScript by default and has opened a handful of small PRs to open-source React component libraries.",
+    "skills": "React, Next.js, TypeScript, Vercel AI SDK, Tailwind CSS, Git, REST APIs"
+  },
+  {
+    "id": "c02",
+    "name": "Marcus Oyelaran",
+    "email": "marcus.oyelaran@example.com",
+    "bio": "Bootcamp graduate who spent the last eighteen months as a junior developer at a Lagos fintech, maintaining a React admin console and its Node/Express API. Keen to move into AI-assisted product work and has followed the Vercel AI SDK tutorials on his own time.",
+    "skills": "React, JavaScript, Node.js, Express, CSS, HTML, Git"
+  },
+  {
+    "id": "c03",
+    "name": "Elena Vasquez",
+    "email": "elena.vasquez@example.com",
+    "bio": "Senior backend engineer with nine years in Java and Spring at a Madrid bank, currently leading a payments team. Wants a change of direction and has been learning React in the evenings; has not shipped a production front-end yet.",
+    "skills": "Java, Spring, PostgreSQL, Kafka, Docker, some React"
+  },
+  {
+    "id": "c04",
+    "name": "Tom Whitfield",
+    "email": "tom.whitfield@example.com",
+    "bio": "Recent computer science graduate from Leeds whose final-year project was a Next.js recipe planner with a GPT-backed meal suggester, deployed on Vercel. Interned one summer at a small agency building marketing sites in React.",
+    "skills": "React, Next.js, JavaScript, TypeScript, HTML, CSS, Git"
+  },
+  {
+    "id": "c05",
+    "name": "Aisha Bello",
+    "email": "aisha.bello@example.com",
+    "bio": "Three years as a front-end developer at a Nairobi logistics company, owning a React and TypeScript dispatch UI used by four hundred drivers. Has integrated several third-party REST APIs and mentors two apprentices; has not used Next.js or an AI SDK in production.",
+    "skills": "React, TypeScript, Redux, REST APIs, Jest, Git"
+  },
+  {
+    "id": "c06",
+    "name": "Daniel Kowalski",
+    "email": "daniel.kowalski@example.com",
+    "bio": "Data analyst in Warsaw who writes Python and SQL all day and built an internal Streamlit dashboard. Interested in web development and has completed an online React course, but has no professional front-end experience.",
+    "skills": "Python, SQL, Pandas, Streamlit, some JavaScript"
+  },
+  {
+    "id": "c07",
+    "name": "Sofia Lindqvist",
+    "email": "sofia.lindqvist@example.com",
+    "bio": "Junior full-stack developer at a Stockholm design agency for the past year, building client sites in Next.js with a headless CMS and deploying them on Vercel. Has shipped one small AI feature, a product-copy generator, using the Vercel AI SDK and an OpenAI model.",
+    "skills": "Next.js, React, TypeScript, Vercel AI SDK, Sanity, Tailwind CSS, Git"
+  },
+  {
+    "id": "c08",
+    "name": "Rahul Mehta",
+    "email": "rahul.mehta@example.com",
+    "bio": "Mobile developer with four years of React Native experience at a Mumbai delivery app. Comfortable with the React mental model and TypeScript, but has done little browser-side work and has never used Next.js.",
+    "skills": "React Native, TypeScript, Redux, REST APIs, Git"
+  },
+  {
+    "id": "c09",
+    "name": "Grace Okafor",
+    "email": "grace.okafor@example.com",
+    "bio": "Self-taught developer in Manchester who left a career in retail management two years ago. Has built and deployed several Next.js side projects, including a chat assistant on the Vercel AI SDK, and contributes documentation fixes to open-source projects. No professional software role yet.",
+    "skills": "Next.js, React, JavaScript, Vercel AI SDK, HTML, CSS, Git"
+  },
+  {
+    "id": "c10",
+    "name": "Liam O'Connor",
+    "email": "liam.oconnor@example.com",
+    "bio": "WordPress and PHP developer for six years at a Dublin agency, responsible for theme development and client support. Has started using React for a few interactive widgets and is keen to move fully into modern front-end work.",
+    "skills": "PHP, WordPress, JavaScript, jQuery, CSS, HTML, some React"
+  },
+  {
+    "id": "c11",
+    "name": "Mei Tanaka",
+    "email": "mei.tanaka@example.com",
+    "bio": "Junior front-end engineer at a Tokyo SaaS company for eighteen months, working in React and TypeScript on a design system consumed by three product teams. Strong on accessibility and testing; has experimented with Next.js and the Vercel AI SDK in a hackathon.",
+    "skills": "React, TypeScript, Storybook, Testing Library, CSS, Git, some Next.js"
+  },
+  {
+    "id": "c12",
+    "name": "Carlos Mendes",
+    "email": "carlos.mendes@example.com",
+    "bio": "QA engineer with five years of experience writing Cypress and Playwright suites for React applications at a São Paulo e-commerce company. Reads React code fluently and has fixed small UI bugs, but has not held a development role.",
+    "skills": "Cypress, Playwright, JavaScript, TypeScript, some React, Git"
+  }
+]

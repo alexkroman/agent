@@ -155,3 +155,63 @@ reasons about "next week" against a frozen calendar. And every `open_email`
 result — thread plus brief plus memory — is asserted under the 4000-character
 tool-result cap per seeded email, since the brief is the one place a growing
 memory would overflow silently.
+
+## The CrewAI port — `hiring-desk`
+
+The one port from a third tradition, and it is worth reading beside the
+LangGraph ones for what a CREW is once the framework is gone: a system prompt
+rendered from three YAML fields, a task description with placeholders, and an
+`expected_output`. `crews.ts` carries the attribution and the table.
+
+**`hiring-desk` — the router is the call, and the two crews are two
+primitives.** Their `Flow` is `load_leads → score_leads → human_in_the_loop`,
+where the last is a `@router` that prints the top three and blocks on
+`input()` with three numbered options: quit, re-score with feedback (which
+returns `"scored_leads_feedback"`, an event `score_leads` also `@listen`s to —
+the cycle), or proceed to `write_and_save_emails`. That menu is the whole
+conversation: `screen_candidates` is their first two steps as one tool, and
+the `reviewing` state of `hiringFlow` is their router, with option 2 as the
+gated `rescore_with_feedback`, option 3 as the gated `proceed_to_emails`, and
+option 1 as hanging up. Their fourth arm — an invalid choice loops back — has
+no equivalent, because a conversation has no invalid input; the state's
+`instruction` does the asking again. Four things are decisions:
+
+- **`evaluate_candidate` is `ctx.generate({ schema })`, and `send_followup_email`
+  is a `subagent()`.** The first declares `output_pydantic=CandidateScore`, a
+  SHAPE, and a schema call is what `output_pydantic` is: validated on the way
+  back, no loop to run, twelve of them through a `mapConcurrent` window where
+  theirs issued thirty in one `asyncio.gather` and met a rate limit as thirty
+  429s. The second produces an email with two rules no schema can carry — a
+  `Subject:` line the desk reads out, a signature from the coordinator their
+  backstory names — so it is `expectedOutput` plus a `guardrail`, which is
+  CrewAI's own `expected_output` and task `guardrail` pair. The runtime's
+  retry budget is one rather than their three, argued on `maxRetries`.
+- **The feedback loop gained a bound.** Their edge is unbounded and each pass is
+  a model call per candidate; `MAX_FEEDBACK_ROUNDS` is the `retry_count > 3`
+  guard from their `self_evaluation_loop_flow`, and past it the refusal names
+  the two remaining choices rather than routing to an exit — the caller can
+  still proceed or ask about a candidate, they cannot spend a fourth round.
+  Feedback also ACCUMULATES where their `input()` overwrote: a caller who says
+  two things means both.
+- **The score is stored under the id the desk ASKED about.** Their evaluator
+  echoes the candidate's id in its own output and
+  `combine_candidates_with_scores` joins on it, so a model that repeats the
+  wrong id writes one candidate's verdict against another's name with nothing
+  to notice. The schema here has no `id`, and the ranking is a JOIN computed
+  on read (`ranked`) rather than a third stored list that could disagree with
+  the two it was built from.
+- **The shortlist can be spoken, and the drafts are read back.** Their top
+  three is `sorted_candidates[:3]` and their emails are thirty files in
+  `email_responses/`; a hiring manager who has just heard the ranking says
+  "swap Marcus for Aisha", so `proceed_to_emails` resolves names against the
+  RANKING with `resolveOne`'s never-guess rule (the consequence of guessing is
+  inviting the wrong person), and the drafts live in the slot for `read_email`
+  to read down the phone, with an unaccepted one flagged rather than hidden.
+
+It is tested by scripting BOTH seams the desk reaches a model through —
+`stubGenerate` keyed on the evaluator's system prompt (the route reads the
+candidate id back out of the brief, so the stub really scores the applicant it
+was handed) and `stubDelegate` routed to `hr-coordinator` — over one MUTABLE
+script, because a test that screens and then re-scores changes the score table
+between the two calls and the slot is keyed by the context, so swapping the
+context to swap the model would also swap the state.

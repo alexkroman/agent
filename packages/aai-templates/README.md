@@ -97,6 +97,7 @@ work off to a durable workflow.
 | `support-line` | voice | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) |
 | `plan-and-execute` | voice | a planning desk that really searches — plan-and-execute with the caller in the loop |
 | `briefing-desk` | voice | phone a desk, it puts several subagents on a topic at once — the `ctx.delegate` example |
+| `hiring-desk` | voice | CrewAI's `lead-score-flow` as a call about a stack of applicants: one crew scores them through `ctx.generate`, a human-in-the-loop router becomes a dialog with a bounded feedback loop, and the other crew writes every email as a guarded subagent |
 | `research-workflow` | voice + workflow | the **handoff**: a tool starts a durable run, answers the turn, and the finished run speaks back |
 | `recap-workflow` | voice + workflow | transcribe and write up a recording — the Temporal patterns (cancel, signal, compensate) over a phone call |
 | `link-digest` | workflow app | the smallest one: a URL in, a digest out. Read this before the other five |
