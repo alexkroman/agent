@@ -792,6 +792,9 @@ export const PUBLIC_URL_UNCONFIGURED_MESSAGE: string;
 export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefined): void;
 
 // @internal
+export function publishStepDelegate(runner: StepDelegateFn | undefined): void;
+
+// @internal
 export function publishStepEnv(env: Readonly<Record<string, string | undefined>> | undefined): void;
 
 // @internal
@@ -1012,6 +1015,9 @@ export const STEP_FETCH_PIPELINING = 1;
 
 // @internal
 export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string;
+
+// @internal
+export type StepDelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;

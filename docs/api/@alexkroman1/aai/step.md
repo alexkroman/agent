@@ -30,7 +30,11 @@ it:
   `ctx.workflows.publicWebhookUrl`, which a body and its steps cannot reach.
 - **The model** — [stepGenerate](#stepgenerate) (one `fetch` to the LLM gateway on the
   agent's own key, because the AI SDK would be megabytes in a ~7 KB artifact)
-  and [stepGenerateJson](#stepgeneratejson) / [stripJsonFence](#stripjsonfence).
+  and [stepGenerateJson](#stepgeneratejson) / [stripJsonFence](#stripjsonfence). For a whole tool
+  LOOP rather than one prompt, [stepDelegate](#stepdelegate) — a published slot for the
+  same reason `stepGenerate` is a raw `fetch`: the host owns `ToolLoopAgent`,
+  and this barrel's whole budget is that nothing here drags it into the agent
+  bundle.
 - **Audio, both directions** — [stepWriteUpload](#stepwriteupload) / [stepReadUpload](#stepreadupload) /
   [stepUploadInfo](#stepuploadinfo), [stepSpeak](#stepspeak) and [encodeWav](#encodewav) out, and
   [stepTranscribeUpload](#steptranscribeupload) / [stepTranscribeSubmit](#steptranscribesubmit) /
@@ -360,6 +364,38 @@ A `Response`, or its headers. Both spellings are accepted
 #### Returns
 
 `Date` \| `undefined`
+
+***
+
+### stepDelegate()
+
+```ts
+function stepDelegate(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+```
+
+Hand a bounded task to a SUBAGENT from inside a step.
+
+The step-side `ctx.delegate`: its own instructions, model, tools and context
+window, and what comes back is [DelegateResult](index.md#delegateresult) — the final message plus
+what the run cost, never the tool results that stayed inside it.
+
+Rejects when nothing has published a runner (see the module doc), and for
+everything `ctx.delegate` rejects on: no LLM named, an unknown builtin, a
+cancelled parent.
+
+#### Parameters
+
+##### subagent
+
+[`SubagentDef`](index.md#subagentdef)
+
+##### options
+
+[`DelegateOptions`](index.md#delegateoptions)
+
+#### Returns
+
+`Promise`\<[`DelegateResult`](index.md#delegateresult)\>
 
 ***
 

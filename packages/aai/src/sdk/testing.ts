@@ -78,7 +78,9 @@ export {
   type StubDelegateCall,
   type StubDelegateReply,
   type StubDelegateRoute,
+  type StubStepDelegate,
   stubDelegate,
+  stubStepDelegate,
 } from "./testing-delegate.ts";
 export {
   deployedAgent,

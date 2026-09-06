@@ -15,27 +15,33 @@
  * speak into. The nodes below are the same nodes; the driver is the
  * conversation.
  *
- * **Search is injected** (see `shared.ts`): the executor's search is really the
- * web, so the spec passes its own.
+ * **The executor is a SUBAGENT** — `subagent()` plus `ctx.delegate`, rather
+ * than the bounded search/answer loop this file used to hand-roll around
+ * `ctx.generate`. Theirs is a ReAct agent, so this is the more faithful port as
+ * well as the shorter one: a tool call is a validated action, `maxSteps` is the
+ * budget, the last step is spent with tools withheld so a capped run answers,
+ * and a tool that throws comes back as a result the model can recover from.
+ * Fifty lines of turn counter, action schema and budget prose went with it.
+ *
+ * The two seams that existed for TESTABILITY went with it too — the executor
+ * took a `generate` and a `search` so a spec could drive it offline. There is
+ * one seam now and it is the SDK's: `stubDelegate` routes by subagent name.
+ * `planNode` and `replanNode` still take a `GenerateFn`, being one-shot calls
+ * rather than loops.
  */
 
-import type { GenerateFn } from "@alexkroman1/aai";
-import { type DeepReadonly, errorMessage } from "@alexkroman1/aai";
+import type { DelegateFn, GenerateFn } from "@alexkroman1/aai";
+import { type DeepReadonly, subagent } from "@alexkroman1/aai";
 import {
   actSchema,
+  EXECUTOR_OUTPUT,
   EXECUTOR_SYSTEM,
   PLANNER_SYSTEM,
   planSchema,
   REPLANNER_SYSTEM,
-  stepActionSchema,
 } from "./prompts.ts";
-import type { FrozenPlanState, PastStep, SearchFn } from "./shared.ts";
-
-/** Model turns one step may take, including its final answer. */
-export const MAX_STEP_TURNS = 3;
-/** Searches one step may run. The budget is the mechanism: a step told to
- *  "search until sure" is a step whose cost nobody can quote. */
-export const MAX_STEP_SEARCHES = 2;
+import type { FrozenPlanState, PastStep } from "./shared.ts";
+import { readTool, searchTool } from "./shared.ts";
 
 /** Their `plan_step`. */
 export async function planNode(generate: GenerateFn, objective: string): Promise<string[]> {
@@ -47,14 +53,55 @@ export async function planNode(generate: GenerateFn, objective: string): Promise
   return object.steps;
 }
 
+/**
+ * Tool-calling steps the executor may take before it must answer.
+ *
+ * The budget is the mechanism, not the prompt: a step told to "search until
+ * sure" is a step whose cost nobody can quote. Past it the executor is asked for
+ * its answer with its tools WITHHELD, so a capped run still answers the step
+ * rather than stopping mid-chain — which the hand-rolled loop had to request in
+ * the prompt ("you have used your search budget") and could not enforce.
+ *
+ * There used to be a second cap on SEARCHES inside these turns. It is gone
+ * because it stopped meaning anything: a turn is a tool call now, so the two
+ * budgets counted the same thing.
+ */
+export const MAX_STEP_TURNS = 3;
+
+/**
+ * Their `execute_step` — a ReAct agent with a search tool.
+ *
+ * **It IS one now, rather than a loop that stands in for one.** This was fifty
+ * lines of turn counter, action schema, "you have used your search budget"
+ * sentence, a branch for the turn where the model named an action and filled in
+ * no field, and a failed search pushed back as an observation. Every one of
+ * those is what a subagent already is — a tool call is a validated action, the
+ * step budget is the loop's, the last step is forced to answer, and a tool that
+ * throws comes back to the model as a result it can recover from.
+ *
+ * This file is 13 code lines lighter and the TEMPLATE is larger, which is worth
+ * being honest about: `shared.ts` gained `search` and `read` as real tools, and
+ * `read` is a capability the loop never had at all.
+ *
+ * Its TOOLS are this template's own rather than the `web_search` /
+ * `visit_webpage` builtins, and that is deliberate: they are the worked example
+ * of calling `@alexkroman1/aai/tools` from an agent's own code, and a subagent
+ * takes an ordinary `ToolDef` — so the example survives the loop it used to live
+ * in, one layer down. `read` is NEW, and it closes a gap the loop had left open:
+ * the prompt said "search once, read what comes back" while the only actions
+ * were search and answer, so the executor answered from lists of titles.
+ */
+export const executor = subagent({
+  name: "executor",
+  systemPrompt: EXECUTOR_SYSTEM,
+  expectedOutput: EXECUTOR_OUTPUT,
+  tools: { search: searchTool, read: readTool },
+  maxSteps: MAX_STEP_TURNS,
+});
+
 export interface StepOutcome {
   result: string;
   searches: string[];
-}
-
-function describeHits(hits: { title: string; url: string }[]): string {
-  if (hits.length === 0) return "No results.";
-  return hits.map((hit) => `- ${hit.title} (${hit.url})`).join("\n");
 }
 
 /** Completed steps as the executor and the replanner both read them. */
@@ -66,59 +113,45 @@ function historyOf(pastSteps: readonly DeepReadonly<PastStep>[]): string {
 }
 
 /**
- * Their `execute_step` — a ReAct agent with a search tool, distilled to a
- * bounded search/answer loop.
+ * Do one step of the plan, on the executor.
+ *
+ * Takes the DELEGATE rather than a `generate` and a `search`: the two seams the
+ * old body needed for testability are one seam now, and it is the SDK's —
+ * `stubDelegate` routes by subagent name.
  */
 export async function executeStep(
-  generate: GenerateFn,
-  search: SearchFn,
+  delegate: DelegateFn,
   objective: string,
   step: string,
   pastSteps: readonly DeepReadonly<PastStep>[],
 ): Promise<StepOutcome> {
-  const searches: string[] = [];
-  const notes: string[] = [];
-
-  for (let turn = 0; turn < MAX_STEP_TURNS; turn++) {
-    const exhausted = searches.length >= MAX_STEP_SEARCHES;
-    const { object } = await generate({
-      system: EXECUTOR_SYSTEM,
-      prompt: [
-        `Objective: ${objective}`,
-        `Steps already done:\n${historyOf(pastSteps)}`,
-        `The step you are doing now: ${step}`,
-        notes.length > 0 ? `What your searches returned:\n${notes.join("\n\n")}` : "",
-        exhausted ? "You have used your search budget — answer with what you have." : "",
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-      schema: stepActionSchema,
-    });
-
-    if (object.action === "search" && object.query && !exhausted) {
-      searches.push(object.query);
-      try {
-        const hits = await search(object.query);
-        notes.push(`Search "${object.query}":\n${describeHits(hits)}`);
-      } catch (err: unknown) {
-        // A failed search goes back to the model, not only to a log: told
-        // nothing, it reads silence as "no such pages exist" and burns the rest
-        // of the budget re-asking the same question.
-        notes.push(`Search "${object.query}" failed: ${errorMessage(err)}`);
-      }
-      continue;
-    }
-
-    if (object.answer) return { result: object.answer, searches };
-    // An `answer` action with no answer is a malformed turn, not a verdict —
-    // let the loop try again rather than recording an empty step result.
-    notes.push("Your last reply carried no answer. Answer the step.");
-  }
-
+  const result = await delegate(executor, {
+    task: step,
+    // The executor has not heard the call and cannot see the plan, so what it
+    // needs to do this step in context rides here — the objective it serves and
+    // what the earlier steps already established.
+    context: [`Objective: ${objective}`, `Steps already done:\n${historyOf(pastSteps)}`].join(
+      "\n\n",
+    ),
+  });
   return {
-    result: "This step could not be settled within its budget.",
-    searches,
+    result: result.text,
+    // What the wait bought, read off the calls the run made — the desk renders
+    // these, and `toolCalls` is the only honest source for them: a search's
+    // RESULTS stayed inside the executor's context, which is the point.
+    searches: result.toolCalls.flatMap((call) =>
+      call.name === "search" ? [queryOf(call.input)] : [],
+    ),
   };
+}
+
+/** The query one recorded `search` call named. */
+function queryOf(input: unknown): string {
+  if (input && typeof input === "object" && "query" in input) {
+    const query = (input as { query?: unknown }).query;
+    if (typeof query === "string") return query;
+  }
+  return "(unnamed search)";
 }
 
 /** Their `Act`, once it has been checked for the halves a provider can drop. */

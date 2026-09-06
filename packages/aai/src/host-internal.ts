@@ -205,6 +205,7 @@ export {
   type StandardSchemaV1,
 } from "./sdk/standard-schema.ts";
 export { publishStepInfoReader, type StepInfoReader } from "./sdk/step-attempt.ts";
+export { publishStepDelegate, type StepDelegateFn } from "./sdk/step-delegate.ts";
 export { publishStepEnv } from "./sdk/step-env.ts";
 export { publishStepFetch, type StepFetch } from "./sdk/step-fetch.ts";
 export {

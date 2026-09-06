@@ -14,9 +14,62 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
+type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
+}
+
+// @public
 type FindOptions = {
     limit?: number;
 };
+
+// @public
+type GenerateFn = {
+    <S extends StandardSchemaV1>(options: GenerateOptions & {
+        schema: S;
+    }): Promise<GenerateObjectResult<InferSchemaOutput<S>>>;
+    (options: GenerateOptions): Promise<GenerateResult>;
+};
+
+// @public
+type GenerateObjectResult<T> = {
+    text: string;
+    object: T;
+};
+
+// @public
+type GenerateOptions = {
+    prompt: string;
+    system?: string;
+    llm?: LlmProvider | string;
+    schema?: StandardSchemaV1 | Record<string, unknown>;
+    temperature?: number;
+    maxOutputTokens?: number;
+};
+
+// @public
+type GenerateResult = {
+    text: string;
+    object?: unknown;
+};
+
+// @public
+type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -29,6 +82,9 @@ export function installStubReporter(): StubReporter;
 
 // @public
 export function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
+
+// @public
+export function installStubStepDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubStepDelegate;
 
 // @public
 export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
@@ -46,8 +102,33 @@ export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowCl
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
+type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "llm";
+};
+
+// @public
+type Message = {
+    role: "user" | "assistant" | "tool";
+    content: string;
+};
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
+};
+
+// @public
+type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
 };
 
 // @public
@@ -107,6 +188,25 @@ type StreamOptions = {
 };
 
 // @public
+interface StubDelegateCall {
+    options: DelegateOptions;
+    subagent: SubagentDef;
+    task: string;
+}
+
+// @public
+type StubDelegateReply = string | {
+    text: string;
+    steps?: number;
+    toolCalls?: readonly SubagentToolCall[];
+    revisions?: number;
+    complaint?: string;
+};
+
+// @public
+type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
+
+// @public
 type StubEmitted = {
     namespace: string;
     chunk: unknown;
@@ -161,6 +261,12 @@ type StubStepAnswer = Response | {
     body?: unknown;
     headers?: Record<string, string>;
 };
+
+// @public
+interface StubStepDelegate {
+    calls: StubDelegateCall[];
+    restore(): void;
+}
 
 // @public
 type StubStepFetch = {
@@ -245,6 +351,58 @@ export type StubWorkflowsOptions = {
     names?: readonly string[];
     runId?: string;
     lastLine?: unknown;
+};
+
+// @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
+interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    maxSteps?: number;
+    name: string;
+    systemPrompt: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
+type ToolContext = {
+    env: Readonly<Partial<Record<string, string>>>;
+    slots: SlotStore;
+    generate: GenerateFn;
+    delegate: DelegateFn;
+    messages: readonly Message[];
+    sessionId: string;
+    send(event: string, data: unknown): void;
+    signal: AbortSignal;
+    workflows: WorkflowClient;
+};
+
+// @public
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description: string;
+    inputSchema?: P;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 };
 
 // @public

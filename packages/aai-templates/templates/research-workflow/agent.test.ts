@@ -33,15 +33,17 @@ import {
   createToolContext,
   createWorkflowContext,
   parseSchemaInput,
+  type StubDelegateCall,
   type StubGatewayCall,
   schemaInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import {
+  installStubReporter,
+  installStubStepDelegate,
   installStubWorkflows,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
-import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -387,58 +389,93 @@ describe("the steps that research", () => {
     expect(await planAngles(brief)).toEqual([brief.brief]);
   });
 
-  test("investigate stops when the model says so, without inventing findings", async () => {
-    const calls = stubGateway([JSON.stringify({ action: "stop", why: "nothing to add" })]);
-    expect(await investigate(brief, "Tool use")).toEqual({
-      angle: "Tool use",
-      findings: "Nothing was found on this angle.",
-      sources: [],
-    });
-    // One call: it stopped, so there was nothing to compress.
-    expect(calls).toHaveLength(1);
-  });
-
-  test("investigate searches, reads, and compresses what it saw", async () => {
-    const calls = stubGateway([
-      JSON.stringify({ action: "search", query: "otter tool use" }),
-      JSON.stringify({ action: "read", url: "https://otters.example/tools" }),
-      JSON.stringify({ action: "stop", why: "enough" }),
-      JSON.stringify({
-        findings: "Sea otters crack shellfish with stones [1].",
-        sources: [{ title: "Otters", url: "https://otters.example/tools" }],
-      }),
-    ]);
+  test("investigate hands the angle to a subagent, with the brief as its context", async () => {
+    const desk = installStubStepDelegate({ researcher: "Sea otters crack shellfish [1]." });
 
     const note = await investigate(brief, "Tool use");
 
-    expect(webSearch).toHaveBeenCalledWith({ query: "otter tool use", maxResults: 5 });
-    expect(visitWebpage).toHaveBeenCalledWith("https://otters.example/tools");
-    expect(note.findings).toContain("crack shellfish");
-    expect(note.sources).toEqual([{ title: "Otters", url: "https://otters.example/tools" }]);
-    // Everything the researcher saw reaches the compression stage, which is what
-    // keeps the journaled result small without summarizing the findings away.
-    expect(promptOf(calls, 3)).toContain("The page body.");
+    expect(note.findings).toBe("Sea otters crack shellfish [1].");
+    expect(desk.calls).toHaveLength(1);
+    // The angle is the TASK and the brief rides in `context`: a subagent has not
+    // heard the call and cannot see its siblings, so an angle handed over on its
+    // own gets a confident answer about the wrong question.
+    expect(desk.calls[0]?.task).toBe("Tool use");
+    expect(desk.calls[0]?.options.context).toContain("How otters use tools");
   });
 
-  test("investigate stops at its BUDGET, whatever the model asks for", async () => {
-    // The budget is the mechanism, not the prompt: a run whose cost is decided
-    // by a model is a run nobody can price.
-    const calls = stubGateway([JSON.stringify({ action: "search", query: "again" })]);
+  test("the researcher is given the web builtins, the budget, and what to answer with", async () => {
+    // What this template still OWNS, now that the loop is the runtime's: which
+    // capabilities the angle is worth, and what a finding has to be.
+    const desk = installStubStepDelegate({ researcher: "found things" });
     await investigate(brief, "Tool use");
-    // Six actions, then one compression call.
-    expect(calls).toHaveLength(7);
+
+    const researcher = desk.calls[0]?.subagent;
+    expect(researcher?.builtinTools).toEqual(["web_search", "visit_webpage"]);
+    expect(researcher?.maxSteps).toBe(6);
+    expect(researcher?.expectedOutput).toContain("repeat");
+    expect(Object.keys(researcher?.tools ?? {})).toEqual(["cite"]);
   });
 
-  test("a failed search costs an action rather than the whole angle", async () => {
-    vi.mocked(webSearch).mockRejectedValueOnce(new Error("search is down"));
-    const calls = stubGateway([
-      JSON.stringify({ action: "search", query: "otters" }),
-      JSON.stringify({ action: "stop", why: "give up" }),
-      JSON.stringify({ findings: "Nothing usable.", sources: [] }),
-    ]);
+  test("sources are what the researcher CITED", async () => {
+    const desk = installStubStepDelegate({
+      // The runtime runs a subagent's tools; the stub does not, so the route
+      // calls `cite` the way a real run would. It is an ordinary `ToolDef`, which
+      // is what makes that possible at all.
+      researcher: (call: StubDelegateCall) => {
+        void call.subagent.tools?.cite?.execute(
+          { title: "Otters", url: "https://otters.example/tools" },
+          createToolContext(),
+        );
+        return "Sea otters crack shellfish [1].";
+      },
+    });
+
     const note = await investigate(brief, "Tool use");
-    expect(note.findings).toBe("Nothing usable.");
-    expect(promptOf(calls, 2)).toContain("search is down");
+
+    expect(note.sources).toEqual([{ title: "Otters", url: "https://otters.example/tools" }]);
+    expect(desk.calls).toHaveLength(1);
+  });
+
+  test("a researcher that never cited falls back to the pages it OPENED", async () => {
+    // The worse of the two failures is a note full of findings reporting no
+    // sources at all — the report stage cites from this list.
+    installStubStepDelegate({
+      researcher: {
+        text: "Sea otters crack shellfish.",
+        toolCalls: [
+          { name: "web_search", input: { query: "otter tool use" } },
+          { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
+          { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
+        ],
+      },
+    });
+
+    const note = await investigate(brief, "Tool use");
+
+    expect(note.sources).toEqual([
+      { title: "https://otters.example/tools", url: "https://otters.example/tools" },
+    ]);
+  });
+
+  test("investigate reports what the angle cost, since the searches are not visible here", async () => {
+    const reported = installStubReporter();
+    installStubStepDelegate({
+      researcher: {
+        text: "found things",
+        toolCalls: [
+          { name: "web_search", input: { query: "a" } },
+          { name: "web_search", input: { query: "b" } },
+          { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
+        ],
+      },
+    });
+
+    await investigate(brief, "Tool use");
+
+    // Coarser than the per-search line it replaces, and deliberately — see
+    // `investigate`. What a listener needs is that an angle is moving.
+    expect(reported.lines.join("\n")).toContain("Looking into: Tool use");
+    expect(reported.lines.join("\n")).toContain("2 searches, 1 page read");
   });
 
   test("both investigate waves are called with more attempts than the default", async () => {
@@ -469,18 +506,21 @@ describe("the steps that research", () => {
     for (const step of investigations) expect(step.maxAttempts).toBeGreaterThan(3);
   });
 
+  // Driven through `writeBrief` rather than `investigate`: the classification is
+  // `stepGenerateJsonOrFail`'s and every JSON stage shares it, and `investigate`
+  // stopped being one of them when its loop became a subagent's.
   test("a rate limit is RETRYABLE, so the engine tries again", async () => {
     // The message alone cannot say this — a 429 and a 401 read alike — so what
     // is asserted is the class the engine actually branches on.
     stubGateway([""], { status: 429 });
-    const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
+    const err = await writeBrief("otters").catch((thrown: unknown) => thrown);
     expect(RetryableError.is(err)).toBe(true);
     expect((err as Error).message).toMatch(/HTTP 429/);
   });
 
   test("a rejected request is FATAL rather than retried five times", async () => {
     stubGateway([""], { status: 401 });
-    const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
+    const err = await writeBrief("otters").catch((thrown: unknown) => thrown);
     expect(FatalError.is(err)).toBe(true);
     expect((err as Error).message).toMatch(/HTTP 401/);
   });
@@ -488,26 +528,9 @@ describe("the steps that research", () => {
   test("a missing key is FATAL, naming the key", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     stubGateway(["anything"]);
-    const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
+    const err = await writeBrief("otters").catch((thrown: unknown) => thrown);
     expect(FatalError.is(err)).toBe(true);
     expect((err as Error).message).toMatch(/ASSEMBLYAI_API_KEY/);
-  });
-
-  test("a malformed `sources` falls back to what the researcher was shown", async () => {
-    // `.catch(undefined)` on that field rather than a bare `.optional()`: the
-    // findings are already compressed by this point, and throwing them away to
-    // research the angle again is the expensive way to handle one bad field.
-    const calls = stubGateway([
-      JSON.stringify({ action: "search", query: "otters" }),
-      JSON.stringify({ action: "stop" }),
-      JSON.stringify({ findings: "Otters use stones.", sources: "not a list" }),
-    ]);
-    const note = await investigate(brief, "Tool use");
-
-    expect(note.findings).toBe("Otters use stones.");
-    expect(note.sources).toEqual([{ title: "Otters", url: "https://otters.example/tools" }]);
-    // Three calls, not four: the reply was USED, not retried.
-    expect(calls).toHaveLength(3);
   });
 
   test("a reply that is not JSON throws plainly, because a retry may well obey", async () => {
@@ -584,9 +607,9 @@ describe("the run is DURABLE", () => {
     JSON.stringify({ brief: "How otters use tools", criteria: ["Which species"] }),
     // planAngles — ONE, so the fan-out is sequential and the script positional.
     JSON.stringify({ angles: ["Tool use"] }),
-    // investigate#0's first action: stop, which also skips `compress` (nothing
-    // was seen, so there is nothing to compress).
-    JSON.stringify({ action: "stop", why: "nothing to add" }),
+    // `investigate` is NOT in this script any more: it delegates, so its model
+    // calls are the subagent's and are answered by `installStubStepDelegate`
+    // below rather than by the gateway.
     // findGaps — none, so there is no second wave.
     JSON.stringify({ angles: [] }),
     // writeReport, then its summary.
@@ -597,6 +620,11 @@ describe("the run is DURABLE", () => {
 
   beforeEach(() => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    // The researcher's own loop, faked at the seam a step reaches it through.
+    // A run cannot be driven without it: the slot THROWS unpublished rather
+    // than answering emptily, which is what stops a durable test from passing
+    // over a research pass that never happened.
+    installStubStepDelegate({ researcher: "Nothing was found on this angle." });
   });
 
   test("suspends on the review wait with the whole report already journaled", async () => {
@@ -616,7 +644,10 @@ describe("the run is DURABLE", () => {
       "writeBrief#0",
       "writeReport#0",
     ]);
-    expect(model).toHaveLength(6);
+    // FIVE gateway calls for six steps, and the missing one is `investigate`:
+    // its model turns belong to the subagent now and go through the delegate
+    // slot instead. The STEP is still journaled — it is in the list above.
+    expect(model).toHaveLength(5);
   });
 
   test("resumes past the review wait and files, without researching again", async () => {
@@ -638,7 +669,7 @@ describe("the run is DURABLE", () => {
     expect(run.deliveries).toBe(2);
     // The second walk re-entered the body from the top and paid the model
     // NOTHING: every step above the wait came back out of the journal.
-    expect(model).toHaveLength(6);
+    expect(model).toHaveLength(5);
   });
 
   test("a worker that dies at the report replays the research rather than repeating it", async () => {
@@ -657,15 +688,17 @@ describe("the run is DURABLE", () => {
       "planAngles#0",
       "writeBrief#0",
     ]);
+    // THREE, not four: `investigate` is one of the four steps above and paid
+    // the gateway nothing — its turns went to the subagent.
     const spentBeforeTheCrash = model.length;
-    expect(spentBeforeTheCrash).toBe(4);
+    expect(spentBeforeTheCrash).toBe(3);
 
     await run.restart();
     await run.advanceSleep();
     expect(run.status).toBe("completed");
-    // Six in total: the four the crash already paid for came back out of the
+    // Five in total: the three the crash already paid for came back out of the
     // journal, and only the report and its summary were re-issued.
-    expect(model).toHaveLength(6);
+    expect(model).toHaveLength(5);
     expect(run.output?.report).toBe("The report about otters.");
   });
 });

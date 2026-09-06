@@ -1,16 +1,21 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The four slots a process must publish before a step can do its job: somewhere
- * to read uploads from, somewhere to report to, something to speak with, and the
- * HTTP/1.1-pinned fetch a step's outbound call goes through.
+ * The slots a process must publish before a step can do its job: somewhere to
+ * read uploads from, somewhere to report to, which attempt this is, something to
+ * speak with, the HTTP/1.1-pinned fetch a step's outbound call goes through, and
+ * the subagent runner behind `stepDelegate`.
  *
- * All four are `Symbol.for` slots rather than imports, for the reason
- * `sdk/step-env.ts` states — the step artifact bundles its own copy of the SDK,
+ * (This said "the four" for as long as there were five, and adding the sixth is
+ * what made the count worth not writing down: the LIST below is the inventory,
+ * and each `publish*` call carries its own reason.)
+ *
+ * Every one is a `Symbol.for` slot rather than an import, for the reason
+ * `sdk/step-env.ts` states — the agent bundle carries its own copy of the SDK,
  * so the publisher and the reader are two module instances in one realm — and
- * all four are published HERE, in one call, because they have one correct wiring
- * point: `createRuntimeServer`. That is the front door `aai dev`, a self-hosted server
- * and every deployed guest all go through, which is what makes a step behave
- * identically in all three.
+ * all of them are published HERE, in one call, because they have one correct
+ * wiring point: `createRuntimeServer`. That is the front door `aai dev`, a
+ * self-hosted server and every deployed guest all go through, which is what
+ * makes a step behave identically in all three.
  *
  * Publishing at the SERVER rather than at the runtime is deliberate. A guest
  * builds its runtime lazily, on the first request that needs one, while the
@@ -23,6 +28,7 @@
 import {
   MAX_UPLOAD_BYTES_ENV,
   publishSpeechSynthesizer,
+  publishStepDelegate,
   publishStepFetch,
   publishStepInfoReader,
   publishStepReporter,
@@ -34,6 +40,7 @@ import { openAppDb } from "./app-db.ts";
 import { closePlatformSockets, ensurePlatformSocket } from "./platform-socket-registry.ts";
 import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
+import { createStepDelegate } from "./step-delegate.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
 import { isPerProcessDataDir, localWorkflowDataDir } from "./workflow-data-dir.ts";
@@ -82,7 +89,7 @@ type WorkflowSupport = {
 };
 
 /**
- * Build the upload store for one server and publish all three step slots.
+ * Build the upload store for one server and publish every step slot.
  *
  * **The store's home follows the RUNS', off the same input.** `selectJournal`
  * (`workflow-runtime.ts`) reads `DATABASE_URL` to choose between a Postgres
@@ -218,6 +225,13 @@ export function installWorkflowSupport(options: {
   // error naming the gap. See `sdk/step-fetch.ts`.
   const stepFetch = createStepFetch();
   publishStepFetch(stepFetch.fetch);
+  // The subagent runner behind `stepDelegate` — the LOOP beside `stepGenerate`'s
+  // one-shot. Published here rather than from `setupTools` because a WORKFLOW APP
+  // has no runtime and no session at all, and a step in one still delegates; the
+  // parent bag it binds is the sessionless one `step-delegate.ts` argues for.
+  publishStepDelegate(
+    createStepDelegate({ ...omitUndefined({ env: options.env }), logger: options.logger }),
+  );
   return {
     uploads: store,
     // The BROKER is still required — a self-hosted agent with its own bucket holds

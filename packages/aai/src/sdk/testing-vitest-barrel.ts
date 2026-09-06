@@ -20,6 +20,7 @@ export {
   installStubGateway,
   installStubReporter,
   installStubSpeech,
+  installStubStepDelegate,
   installStubStepFetch,
   installStubTranscribe,
   installStubUploads,

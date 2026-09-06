@@ -66,6 +66,7 @@ export {
   type StepGenerateOptions,
   type StepInfo,
   StepTransportError,
+  stepDelegate,
   stepEmit,
   stepEnv,
   stepFetch,

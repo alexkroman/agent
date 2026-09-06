@@ -529,6 +529,10 @@ the "tell it to summarize" rule of the contract above, made structural — the
 single most common way a subagent disappoints, previously carried by a sentence
 every author had to remember.
 
+**A STEP delegates too**: `sdk/step-delegate.ts` holds a `Symbol.for` slot
+that `step-delegate.ts` here fills with this same runner, SESSIONLESS.
+Both module docs own the rest.
+
 **A ROSTER is lowered before this package sees it.** `agent({ subagents })`
 mints one `delegate` tool in `agent()` (`sdk/subagent-roster.ts`), so what
 arrives here is an ordinary tool whose body calls `ctx.delegate` — no branch in

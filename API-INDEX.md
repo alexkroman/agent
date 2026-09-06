@@ -418,6 +418,7 @@ each is for.
 | `StubSpeechProviders` | `@alexkroman1/aai-runtime/eval` |
 | `StubStep` | `@alexkroman1/aai-runtime/eval` |
 | `StubStepAnswer` | `@alexkroman1/aai/testing` |
+| `StubStepDelegate` | `@alexkroman1/aai/testing` |
 | `StubStepFetch` | `@alexkroman1/aai/testing` |
 | `StubStepRequest` | `@alexkroman1/aai/testing` |
 | `StubSttSession` | `@alexkroman1/aai-runtime/eval` |
@@ -674,6 +675,7 @@ each is for.
 | `installStubReporter` | `@alexkroman1/aai/testing/vitest` |
 | `installStubSpeech` | `@alexkroman1/aai/testing/vitest` |
 | `installStubSpeechProviders` | `@alexkroman1/aai-runtime/eval` |
+| `installStubStepDelegate` | `@alexkroman1/aai/testing/vitest` |
 | `installStubStepFetch` | `@alexkroman1/aai/testing/vitest` |
 | `installStubTranscribe` | `@alexkroman1/aai/testing/vitest` |
 | `installStubUploads` | `@alexkroman1/aai/testing/vitest` |
@@ -759,6 +761,7 @@ each is for.
 | `startTracing` | `@alexkroman1/aai-runtime/tracing` |
 | `startTracingDetached` | `@alexkroman1/aai-runtime/tracing` |
 | `statesIn` | `@alexkroman1/aai-runtime/eval` |
+| `stepDelegate` | `@alexkroman1/aai/step` |
 | `stepEmit` | `@alexkroman1/aai/step` |
 | `stepEnv` | `@alexkroman1/aai/step` |
 | `stepFetch` | `@alexkroman1/aai/step` |
@@ -790,6 +793,7 @@ each is for.
 | `stubGenerate` | `@alexkroman1/aai/testing` |
 | `stubReporter` | `@alexkroman1/aai/testing` |
 | `stubSpeech` | `@alexkroman1/aai/testing` |
+| `stubStepDelegate` | `@alexkroman1/aai/testing` |
 | `stubStepFetch` | `@alexkroman1/aai/testing` |
 | `stubStepInfo` | `@alexkroman1/aai/testing` |
 | `stubTranscribe` | `@alexkroman1/aai/testing` |
@@ -1034,6 +1038,7 @@ trace or a type error can be traced back to something.
 | `SpeechSynthesizer` | `@alexkroman1/aai/host-internal` |
 | `StandardSchemaIssue` | `@alexkroman1/aai/host-internal` |
 | `StandardSchemaV1` | `@alexkroman1/aai/host-internal` |
+| `StepDelegateFn` | `@alexkroman1/aai/host-internal` |
 | `StepInfoReader` | `@alexkroman1/aai/host-internal` |
 | `StepReporter` | `@alexkroman1/aai/host-internal` |
 | `StepWebhookMinter` | `@alexkroman1/aai/host-internal` |
@@ -1127,6 +1132,7 @@ trace or a type error can be traced back to something.
 | `pinnedFetch` | `@alexkroman1/aai/host-internal` |
 | `platformSocketUrl` | `@alexkroman1/aai-runtime/internal` |
 | `publishSpeechSynthesizer` | `@alexkroman1/aai/host-internal` |
+| `publishStepDelegate` | `@alexkroman1/aai/host-internal` |
 | `publishStepEnv` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
 | `publishStepFetch` | `@alexkroman1/aai/host-internal` |
 | `publishStepInfoReader` | `@alexkroman1/aai/host-internal` |

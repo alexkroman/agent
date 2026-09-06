@@ -1011,6 +1011,52 @@ went. Generating audible audio would only make the fixtures bigger.
 
 ***
 
+### stubStepDelegate()
+
+```ts
+function stubStepDelegate(script: 
+  | StubDelegateRoute
+  | Readonly<Record<string, StubDelegateRoute>>): StubStepDelegate;
+```
+
+PUBLISH a fake runner, so an exported step that calls `stepDelegate` can be
+driven without a host.
+
+`stubDelegate` with the slot filled in, and deliberately nothing more: the
+step-side and tool-side capabilities have the same signature because they are
+the same runner bound differently, so a spec routes them the same way and a
+template that moves a subagent from a tool into a step rewrites no fake.
+
+An unpublished slot THROWS rather than degrading (see `sdk/step-delegate.ts`),
+which is what makes this the ONE way to test such a step — and why the failure
+an author meets first names this function.
+
+#### Parameters
+
+##### script
+
+  \| [`StubDelegateRoute`](#stubdelegateroute)
+  \| `Readonly`\<`Record`\<`string`, [`StubDelegateRoute`](#stubdelegateroute)\>\>
+
+#### Returns
+
+[`StubStepDelegate`](#stubstepdelegate)
+
+#### Example
+
+```ts
+import { stubStepDelegate } from "@alexkroman1/aai/testing";
+
+const desk = stubStepDelegate({ researcher: "Prices fell 12% in 2025." });
+try {
+  // … call the exported step, then assert on `desk.calls`
+} finally {
+  desk.restore();
+}
+```
+
+***
+
 ### stubStepFetch()
 
 ```ts
@@ -1707,6 +1753,40 @@ system: string | undefined;
 ```
 
 The system instruction, or `undefined` when the call carried none.
+
+***
+
+### StubStepDelegate
+
+A fake `stepDelegate`: the calls it recorded, and the slot to give back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the runner.
+
+Calling it in an `afterEach` is not optional — a stub left published makes
+the next file's steps delegate into this one's log, which is the kind of
+cross-file leak that presents as a passing test somewhere else.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubDelegateCall[];
+```
+
+Every call, in order — the same log [stubDelegate](#stubdelegate-1) keeps.
 
 ## Type Aliases
 
