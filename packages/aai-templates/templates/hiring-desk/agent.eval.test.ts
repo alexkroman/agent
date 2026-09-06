@@ -23,6 +23,7 @@
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus its PROMPT. */
 import agentDef from "virtual:aai/agent";
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import {
   describeTurn,
   type EvalSession,
@@ -124,8 +125,7 @@ describeEval(agentDef, (test) => {
       const attempts = turn.toolCalls.filter((call) => call.name === "rescore_with_feedback");
       expect(attempts, describeTurn(turn)).toHaveLength(1);
       for (const attempt of attempts) {
-        expect(attempt.result).toMatch(/Not available yet/);
-        expect(attempt.result).toMatch(/idle/);
+        expect(attempt.result).toMatch(dialogRefusalPattern("idle"));
         expect(attempt.result).toMatch(/screen_candidates/);
       }
       expect(hiringState(session)?.rounds ?? 0).toBe(0);

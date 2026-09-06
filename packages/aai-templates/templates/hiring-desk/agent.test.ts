@@ -11,6 +11,7 @@ import { isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
+  expectDialogRefused,
   type StubDelegateCall,
   type StubGenerateCall,
   stubDelegate,
@@ -178,16 +179,11 @@ describe("the flow", () => {
       ["rescore_with_feedback", { feedback: "more TypeScript" }],
       ["proceed_to_emails", {}],
     ] as const) {
-      const refused = await run(name, args, ctx);
       // Their router is only reachable after `score_leads`; here that is the
       // gate, and its refusal names the position and quotes the state's own
       // instruction so the model can recover on its turn.
-      expect(isToolFailure(refused), name).toBe(true);
-      if (isToolFailure(refused)) {
-        expect(refused.error).toMatch(/Not available yet/);
-        expect(refused.error).toMatch(/idle/);
-        expect(refused.error).toMatch(/screen_candidates/);
-      }
+      const refused = expectDialogRefused(await run(name, args, ctx), "idle");
+      expect(refused.error).toMatch(/screen_candidates/);
     }
     expect(model.calls).toEqual([]);
     expect(desk.calls).toEqual([]);

@@ -1,3 +1,4 @@
+import { spokenDigits } from "@alexkroman1/aai";
 import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
 import { BEFORE_TRANSFER, retailTool } from "../store.ts";
@@ -17,7 +18,7 @@ export default retailTool({
   execute: (args, state) => {
     const first = args.first_name.trim().toLowerCase();
     const last = args.last_name.trim().toLowerCase();
-    const zip = args.zip.replace(/\D/g, "");
+    const zip = spokenDigits(args.zip);
     const match = Object.values(state.store.users).find(
       (user) =>
         user.name.first_name.toLowerCase() === first &&

@@ -649,6 +649,7 @@ each is for.
 | `describeTurn` | `@alexkroman1/aai-runtime/eval` |
 | `describeWorkflowEval` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `dialog` | `@alexkroman1/aai` |
+| `dialogRefusalPattern` | `@alexkroman1/aai/testing` |
 | `elevenLabsStt` | `@alexkroman1/aai/stt` |
 | `encodeWav` | `@alexkroman1/aai/step` |
 | `ensureSessionStateSchema` | `@alexkroman1/aai-runtime` |
@@ -660,6 +661,7 @@ each is for.
 | `evalWorkflowCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `executeStart` | `@alexkroman1/aai-cli/start` |
 | `expectDialogOk` | `@alexkroman1/aai/testing` |
+| `expectDialogRefused` | `@alexkroman1/aai/testing` |
 | `expectToolOk` | `@alexkroman1/aai/testing` |
 | `explainChannelFailure` | `@alexkroman1/aai/channels` |
 | `explainSlackChannelFailure` | `@alexkroman1/aai/channels` |

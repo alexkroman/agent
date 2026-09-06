@@ -1,4 +1,5 @@
 import { isToolFailure } from "@alexkroman1/aai";
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import {
   assertNotResolved,
@@ -89,7 +90,7 @@ export default callFlow.tool({
           callsign: r.callsign,
           type: r.type,
         })),
-        message: `ESCALATION CONFIRMED — ${args.incidentId} now Level ${inc.escalationLevel}. ${additionalResources.length} additional resource(s) available for dispatch.`,
+        message: `ESCALATION CONFIRMED — ${args.incidentId} now Level ${inc.escalationLevel}. ${additionalResources.length} additional ${plural(additionalResources.length, "resource")} available for dispatch.`,
       };
     }),
 });

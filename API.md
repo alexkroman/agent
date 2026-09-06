@@ -5804,6 +5804,9 @@ interface DialogPosition {
 }
 
 // @public
+export function dialogRefusalPattern(state?: string): RegExp;
+
+// @public
 interface DialogTimeout {
     readonly afterMs: number;
     readonly event: {
@@ -5837,6 +5840,9 @@ interface DialogVoiceConfig {
 
 // @public
 export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+
+// @public
+export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
 
 // @public
 export function expectToolOk<T>(result: unknown): T;

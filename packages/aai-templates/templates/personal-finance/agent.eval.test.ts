@@ -20,6 +20,7 @@ import {
   createVmRunCode,
   type EvalTurn,
   toolArgsIn,
+  toolNames,
   toolResultsIn,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -69,7 +70,7 @@ describeEval(
         // Three numbers, two operations and a rounding rule: the exact shape of
         // question a model answers plausibly and wrongly. All three inputs have
         // to reach the code, or something was worked out in the model's head.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         const code = codeIn(turn);
         expect(code).toContain("120");
         expect(code).toMatch(/\b4\b/);

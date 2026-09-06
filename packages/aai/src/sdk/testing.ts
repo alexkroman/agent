@@ -42,6 +42,7 @@ import { publishStepInfoReader } from "./step-attempt.ts";
 import { publishStepReporter } from "./step-report.ts";
 import { DEFAULT_STEP_MAX_ATTEMPTS } from "./workflow-ctx-options.ts";
 
+export { dialogRefusalPattern } from "./_dialog-refusal.ts";
 export {
   createStubWorkflows,
   createToolContext,
@@ -64,7 +65,7 @@ export {
   type StubStepRequest,
   stubStepFetch,
 } from "./_testing-step-fetch.ts";
-export { expectDialogOk, expectToolOk } from "./_testing-tool-results.ts";
+export { expectDialogOk, expectDialogRefused, expectToolOk } from "./_testing-tool-results.ts";
 export {
   type StubTranscribe,
   type StubTranscribeCall,

@@ -1,3 +1,4 @@
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import {
   calculateTriageScore,
@@ -87,8 +88,8 @@ export default dispatchSlot.updateTool({
       recommendedResources: recommended.map(resourceBrief),
       message:
         recSeverity === "critical"
-          ? `PRIORITY ONE — ${id} created. Immediate dispatch recommended. ${protocols.length} protocol(s) applicable.`
-          : `${id} created. Triage score ${triageScore}. ${recommended.length} resource(s) recommended.`,
+          ? `PRIORITY ONE — ${id} created. Immediate dispatch recommended. ${protocols.length} ${plural(protocols.length, "protocol")} applicable.`
+          : `${id} created. Triage score ${triageScore}. ${recommended.length} ${plural(recommended.length, "resource")} recommended.`,
     };
   },
 });

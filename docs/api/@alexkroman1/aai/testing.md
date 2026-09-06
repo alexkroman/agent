@@ -308,6 +308,54 @@ the "I edited the prompt and nothing changed" failure.
 
 ***
 
+### dialogRefusalPattern()
+
+```ts
+function dialogRefusalPattern(state?: string): RegExp;
+```
+
+A pattern matching the sentence a `dialog()` gate refuses with — optionally
+pinned to the state it names.
+
+For a SPEC. A gated tool called out of state answers a `ToolFailure` whose
+`error` is this sentence, and every template spec that asserts a gate held
+used to spell a regex for it by hand. Two kinds of spec read it, and the
+pattern serves both: a unit test holds the `ToolFailure` itself (prefer
+`expectDialogRefused` there, which also throws on a success), while an eval
+reads a tool result off the event stream as a SERIALIZED string, where the
+state's quotes arrive escaped (`\"identifying\"`). The pattern admits the
+escaping, so one matcher reads both.
+
+With no `state`, it matches any refusal — for a spec that pins the state a
+line later, or whose subject is that the body did not run rather than where
+the conversation was.
+
+#### Parameters
+
+##### state?
+
+`string`
+
+The state the refusal must name, as `DialogPosition.state`
+  spells it (`"identifying"`, `"onCall.inbox"`). Matched literally.
+
+#### Returns
+
+`RegExp`
+
+#### Example
+
+```ts
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
+
+const refused = 'Not available yet: this conversation is at "identifying". Verify the caller first.';
+dialogRefusalPattern("identifying").test(refused); // true
+dialogRefusalPattern("transferred").test(refused); // false
+dialogRefusalPattern().test(refused); // true
+```
+
+***
+
 ### expectDialogOk()
 
 ```ts
@@ -353,6 +401,69 @@ const answered = expectDialogOk<{ quoted: number }>(
 );
 expect(answered.state).toBe("quote.pending");
 expect(answered.result.quoted).toBe(42);
+```
+
+***
+
+### expectDialogRefused()
+
+```ts
+function expectDialogRefused(result: unknown, state?: string): ToolFailure;
+```
+
+The refusal a gated tool answered with, or a throw saying the gate did NOT hold.
+
+The mirror of [expectDialogOk](#expectdialogok), for the spec whose subject is that a
+tool was REFUSED: called before the dialog reached its state, or after it
+left. Six template specs had written the other half by hand — an
+`isToolFailure` check, a `toBe(true)`, and a regex for the sentence the gate
+writes — and a success slipped through that shape as three assertions that
+never ran, because each sat inside the `if` the guard opened.
+
+With a `state`, the refusal must also NAME it: that the tool was refused is
+half the claim, and that the conversation was where the spec thinks it was is
+the half a gate on the wrong state hides in. Matched with
+[dialogRefusalPattern](#dialogrefusalpattern), so a spec never spells the sentence.
+
+#### Parameters
+
+##### result
+
+`unknown`
+
+What `runTool` / `toolOf(...).execute(...)` answered.
+
+##### state?
+
+`string`
+
+The position the refusal must name, as `DialogPosition.state`
+  spells it. Omit to accept a refusal at any state.
+
+#### Returns
+
+[`ToolFailure`](index.md#toolfailure)
+
+#### Throws
+
+When the tool was NOT refused — a dialog envelope is reported with the
+  state it landed in, since that is the fact the spec got wrong.
+
+#### Throws
+
+When it was refused for some other reason, or at some other state,
+  quoting the refusal.
+
+#### Example
+
+```ts
+import { expectDialogRefused } from "@alexkroman1/aai/testing";
+
+const refused = expectDialogRefused(
+  { error: 'Not available yet: this conversation is at "idle". Call start_plan first.' },
+  "idle",
+);
+refused.error.includes("start_plan"); // true — the instruction the model recovers from
 ```
 
 ***

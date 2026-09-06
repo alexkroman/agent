@@ -26,10 +26,11 @@
  * @module _testing-tool-results
  */
 
+import { dialogRefusalPattern } from "./_dialog-refusal.ts";
 import type { DialogToolResult } from "./dialog.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import { isToolFailure } from "./utils.ts";
+import { isToolFailure, type ToolFailure } from "./utils.ts";
 
 /**
  * The value a gated tool's own `execute` returned, or a throw naming the refusal.
@@ -114,6 +115,58 @@ export function expectDialogOk<T>(result: unknown): DialogToolResult<T> {
     done: done === true,
     ...omitUndefined({ instruction: typeof instruction === "string" ? instruction : undefined }),
   };
+}
+
+/**
+ * The refusal a gated tool answered with, or a throw saying the gate did NOT hold.
+ *
+ * The mirror of {@link expectDialogOk}, for the spec whose subject is that a
+ * tool was REFUSED: called before the dialog reached its state, or after it
+ * left. Six template specs had written the other half by hand — an
+ * `isToolFailure` check, a `toBe(true)`, and a regex for the sentence the gate
+ * writes — and a success slipped through that shape as three assertions that
+ * never ran, because each sat inside the `if` the guard opened.
+ *
+ * With a `state`, the refusal must also NAME it: that the tool was refused is
+ * half the claim, and that the conversation was where the spec thinks it was is
+ * the half a gate on the wrong state hides in. Matched with
+ * {@link dialogRefusalPattern}, so a spec never spells the sentence.
+ *
+ * @param result - What `runTool` / `toolOf(...).execute(...)` answered.
+ * @param state - The position the refusal must name, as `DialogPosition.state`
+ *   spells it. Omit to accept a refusal at any state.
+ *
+ * @throws When the tool was NOT refused — a dialog envelope is reported with the
+ *   state it landed in, since that is the fact the spec got wrong.
+ * @throws When it was refused for some other reason, or at some other state,
+ *   quoting the refusal.
+ *
+ * @example
+ * ```ts
+ * import { expectDialogRefused } from "@alexkroman1/aai/testing";
+ *
+ * const refused = expectDialogRefused(
+ *   { error: 'Not available yet: this conversation is at "idle". Call start_plan first.' },
+ *   "idle",
+ * );
+ * refused.error.includes("start_plan"); // true — the instruction the model recovers from
+ * ```
+ *
+ * @public
+ */
+export function expectDialogRefused(result: unknown, state?: string): ToolFailure {
+  if (!isToolFailure(result)) {
+    const landed =
+      isRecord(result) && "state" in result ? ` — the dialog is at "${String(result.state)}"` : "";
+    throw new Error(
+      `Expected the dialog to refuse this call and it answered ${describeValue(result)}${landed}.`,
+    );
+  }
+  if (!dialogRefusalPattern(state).test(result.error)) {
+    const where = state === undefined ? "" : ` at "${state}"`;
+    throw new Error(`Expected a dialog refusal${where} and got: ${result.error}`);
+  }
+  return result;
 }
 
 /** What was there instead, short enough for a message and never a whole object dump. */

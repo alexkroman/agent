@@ -12,12 +12,11 @@
 // that stage's credential. Without it `describeEval` announces SCRIPTED and the
 // live-only case below is skipped — which is a wiring check, not a measurement,
 // and the banner says so on every run.
+
+import { countWords } from "@alexkroman1/aai/utils";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import agentDef from "./agent.ts";
-
-/** Roughly how many words a reply is, for the spoken-length claim. */
-const wordCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
 
 describeEval(agentDef, (test) => {
   test(
@@ -68,7 +67,7 @@ describeEval(agentDef, (test) => {
       // stage swap that quietly loses it produces an agent nobody can hold a
       // call with. The ceiling is generous against the rule's own thirty so the
       // case fails on an essay rather than on a long sentence.
-      expect(wordCount(turn.text)).toBeLessThanOrEqual(80);
+      expect(countWords(turn.text)).toBeLessThanOrEqual(80);
       expect(turn.text).not.toMatch(/[*#`]|^\s*[-•]\s/m);
     },
     // Live only: a scripted reply's length is this file's own choice, so

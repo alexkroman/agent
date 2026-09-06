@@ -199,8 +199,8 @@
     }
   },
   "testing": {
-    "current": 27,
-    "supported": [27],
+    "current": 28,
+    "supported": [27, 28],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
