@@ -460,7 +460,10 @@ function StoryArc({ story }: { story: DeepReadonly<StoryBlueprint> }) {
 function Sidebar() {
   const game = useAgentState(gameProjection);
   return (
+    // `.aai-scroll` is the SDK's thin scrollbar; the sheet's own `.et-scroll`
+    // rules were declared here for years and applied to no element at all.
     <div
+      className="et-sidebar aai-scroll"
       style={{
         height: "100%",
         overflowY: "auto",
@@ -476,9 +479,7 @@ function Sidebar() {
         .et-gold { color: ${C.accent}; text-shadow: 0 0 8px ${C.accentGlow}; }
         .et-crisis-pulse { animation: crisisPulse 2s ease-in-out infinite; }
         @keyframes crisisPulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-        .et-scroll::-webkit-scrollbar { width: 3px; }
-        .et-scroll::-webkit-scrollbar-thumb { background: ${C.borderLight}; border-radius: 3px; }
-        .et-scroll::-webkit-scrollbar-track { background: transparent; }
+        .et-sidebar { --aai-scrollbar-thumb: ${C.borderLight}; }
       `}</style>
 
       {/* Header */}

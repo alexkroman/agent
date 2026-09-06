@@ -10,6 +10,7 @@ import { ERROR_COLOR, INK_FAINT_PCT, inkTint, THINKING_COLOR } from "./_colors.t
 import { AaiLogo } from "./aai-logo.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
 import { SessionErrorBanner } from "./session-error-banner.tsx";
+import { StateDot } from "./session-state-dot.tsx";
 
 /**
  * Indicator dot color per state.
@@ -150,16 +151,13 @@ export function ConsoleShell({
           )}
         </div>
         <Eyebrow className="shrink-0" data-state={state}>
-          <span
-            className="w-[7px] h-[7px] rounded-full"
-            style={{
-              background: stateColor(
-                state,
-                theme.primary,
-                inkTint(theme.text, theme.bg, INK_FAINT_PCT),
-              ),
-              animation: pulsing ? "aai-pulse 1.6s ease-in-out infinite" : "none",
-            }}
+          {/* The dot is `SessionStateDot`'s, coloured from the theme here rather
+              than from a palette prop: this shell has one look, and `pulsing` is
+              the caller's call. */}
+          <StateDot
+            color={stateColor(state, theme.primary, inkTint(theme.text, theme.bg, INK_FAINT_PCT))}
+            pulseMs={pulsing ? 1600 : null}
+            className="w-[7px] h-[7px]"
           />
           {state}
         </Eyebrow>

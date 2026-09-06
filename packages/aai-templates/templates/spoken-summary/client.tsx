@@ -69,6 +69,7 @@ import "@alexkroman1/aai-ui/styles.css";
 // `workflows/summarize.ts` already declares.
 import { formatDuration } from "@alexkroman1/aai/utils";
 import {
+  AudioResult,
   BulletList,
   createWorkflowApi,
   Facts,
@@ -101,20 +102,6 @@ const WORKFLOW = "spokenSummary";
  * closure every time and reads as though it were free.
  */
 const api = createWorkflowApi();
-
-/**
- * The spoken text as a one-cue WebVTT track, inline.
- *
- * A data URL rather than another stored file: the words are already on the page
- * and the whole track is a few hundred bytes, so a second upload — and a second
- * `download` round trip to read it — would buy nothing.
- */
-function captionsUrl(text: string, durationMs: number): string {
-  // `hh:mm:ss.mmm`, which is the only timestamp shape WebVTT accepts.
-  const end = new Date(durationMs).toISOString().slice(11, 23);
-  const vtt = `WEBVTT\n\n00:00:00.000 --> ${end}\n${text}\n`;
-  return `data:text/vtt;charset=utf-8,${encodeURIComponent(vtt)}`;
-}
 
 export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
@@ -173,41 +160,22 @@ export function App() {
 
           <BulletList items={output.points} />
 
-          <section className="flex flex-col gap-2">
-            <h3 className="text-sm font-medium opacity-70">
-              Read aloud · {formatDuration(output.audioDurationMs)}
-            </h3>
-            {audio.pending && <p className="text-sm opacity-70">Fetching the audio…</p>}
-            {audio.error !== undefined && (
-              <p role="alert" className="text-red-600">
-                Could not load the audio: {audio.error}
-              </p>
-            )}
-            {audio.url !== undefined && (
-              <>
-                <audio aria-label="Summary read aloud" controls src={audio.url} className="w-full">
-                  {/* A real caption track, not a suppression: the summary was
-                      written before it was spoken, so the words are already
-                      here and one cue spanning the clip is an honest
-                      transcript of it. */}
-                  <track
-                    kind="captions"
-                    srcLang="en"
-                    label="Summary"
-                    default
-                    src={captionsUrl(output.spoken, output.audioDurationMs)}
-                  />
-                </audio>
-                {/* `download` works on an object URL because the bytes are
-                    already in the tab; it is the href that could not carry the
-                    agent's bearer, not the attribute. */}
-                <a href={audio.url} download="summary.wav" className="text-sm underline">
-                  Download summary.wav
-                </a>
-              </>
-            )}
+          {/* The SDK's player over the hook's result — the pending line, the
+              announced error, the `<audio>`, the download link. A real caption
+              track, not a suppression: the summary was written before it was
+              spoken, so the words are already here and one cue spanning the clip
+              is an honest transcript of it. `captions` is that cue; the
+              component serves it as a WebVTT data URL rather than a second
+              stored file. */}
+          <AudioResult
+            download={audio}
+            filename="summary.wav"
+            label="Summary read aloud"
+            heading={`Read aloud · ${formatDuration(output.audioDurationMs)}`}
+            captions={{ text: output.spoken, durationMs: output.audioDurationMs, label: "Summary" }}
+          >
             <p className="text-sm opacity-70">{output.spoken}</p>
-          </section>
+          </AudioResult>
 
           <details className="text-sm">
             <summary className="cursor-pointer opacity-70">Transcript</summary>

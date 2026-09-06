@@ -1,16 +1,19 @@
 import { formatMoney, plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
+import type {
+  AgentState,
+  ChatMessage,
+  SessionControlButton,
+  ToolCallInfo,
+} from "@alexkroman1/aai-ui";
 import {
-  AGENT_STATE_LABELS,
-  AutoScroll,
+  ConversationView,
   mountClient,
+  SessionControls,
   SessionErrorBanner,
+  SessionStateDot,
+  ToolCallRow,
   useAgentState,
-  useConversation,
-  useSessionActions,
-  useSessionSelector,
-  useSessionStatus,
 } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
 import type {
@@ -23,12 +26,14 @@ import type {
 } from "./shared.ts";
 import { DEMO_PERSONAS, emptyRetailState, storeView } from "./shared.ts";
 
+/*
+ * The desk's own motion is the slide-in alone; the pulse it declared beside it
+ * was the SDK's `aai-pulse` under another name. Scrollbars are `.aai-scroll`
+ * from the same stylesheet, told the thumb colour through a custom property.
+ */
 const CSS = `
-@keyframes rt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @keyframes rt-slide-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-.rt-scroll::-webkit-scrollbar { width: 6px; }
-.rt-scroll::-webkit-scrollbar-track { background: transparent; }
-.rt-scroll::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
+.rt-main { --aai-scrollbar-thumb: #d4d4d8; }
 @media (max-width: 900px) {
   /* Both rows bounded: an auto row sizes to the sidebar's full content, which
      would push the chat (and its Hold/End controls) past the viewport. */
@@ -65,11 +70,11 @@ const EMPTY_VIEW: StoreView = storeView(emptyRetailState());
 // if-chain with a grey default.
 //
 // The palette is this template's own — every client here paints the same six
-// states in its own colours, so the SDK has nothing to share but the union. What
-// the SDK does own is `AgentState`, and `satisfies Record<AgentState, string>`
-// is what borrows it: a state added there stops compiling here, where the
-// `state === "…"` chain this replaced answered a new state with a silent grey
-// badge in three separate files and no way to notice.
+// states in its own colours, so it is the one prop `<SessionStateDot>` cannot
+// default. What the SDK does own is `AgentState`, and `satisfies
+// Record<AgentState, string>` is what borrows it: a state added there stops
+// compiling here, where the `state === "…"` chain this replaced answered a new
+// state with a silent grey badge in three separate files and no way to notice.
 const STATE_COLORS = {
   disconnected: "#a1a1aa",
   connecting: "#a1a1aa",
@@ -182,7 +187,7 @@ function PendingChange({ pending }: { pending: PendingView }) {
         className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1.5"
         style={{ color: "#b45309" }}
       >
-        <span style={{ animation: "rt-pulse 1.4s ease-in-out infinite" }}>●</span>
+        <span style={{ animation: "aai-pulse 1.4s ease-in-out infinite" }}>●</span>
         Awaiting the caller's yes
       </div>
       <div className="text-xs leading-relaxed" style={{ color: "#78350f" }}>
@@ -258,31 +263,34 @@ function SwapOptions({ option }: { option: SwapOptionView }) {
   );
 }
 
-/** One line of the call: a bubble, or the tool the agent ran after it. */
-function Row({ item }: { item: ConversationItem }) {
-  if (item.kind === "tool") {
-    const { name, status } = item.toolCall;
-    return (
-      <div
-        className="self-start rounded-md px-2.5 py-1 text-[11px] font-mono flex items-center gap-2"
-        style={{
-          background: "#ffffff",
-          border: "1px solid #e4e4e7",
-          color: status === "pending" ? "#b45309" : "#71717a",
-        }}
-      >
+/**
+ * The tool the agent ran: the SDK's compact row with the desk's own dot in its
+ * icon slot. `ToolCallRow` owns the shimmer while the call is pending and the
+ * row's shape; the dot's colours are this desk's.
+ */
+function ToolChip({ toolCall }: { toolCall: ToolCallInfo }) {
+  const pending = toolCall.status === "pending";
+  return (
+    <ToolCallRow
+      variant="compact"
+      className="self-start"
+      title={toolCall.name}
+      pending={pending}
+      icon={
         <span
-          className="w-1.5 h-1.5 rounded-full inline-block"
+          className="w-1.5 h-1.5 rounded-full inline-block align-middle"
           style={{
-            background: status === "pending" ? "#ca8a04" : "#16a34a",
-            animation: status === "pending" ? "rt-pulse 1s ease-in-out infinite" : "none",
+            background: pending ? "#ca8a04" : "#16a34a",
+            animation: pending ? "aai-pulse 1s ease-in-out infinite" : "none",
           }}
         />
-        {name}
-      </div>
-    );
-  }
-  const { role, content } = item.message;
+      }
+    />
+  );
+}
+
+/** One line of the call — the markup this template is for. */
+function Bubble({ role, content }: ChatMessage) {
   return (
     <div
       className="rounded-lg text-[13px] max-w-[80%] px-3.5 py-2.5"
@@ -303,182 +311,106 @@ function Row({ item }: { item: ConversationItem }) {
 /**
  * The call transcript.
  *
- * `useConversation()` rather than `session.messages.map(...)`. The messages
+ * `<ConversationView>` rather than `session.messages.map(...)`. The messages
  * were only part of it: this agent runs FIFTEEN tools and the operator could
  * see none of them, because tool calls live in a second array this page never
  * read — and the streaming reply and the thinking indicator were dropped along
- * with them. The hook owns the interleave (a tool row follows the message it
- * was anchored to), the `null`-vs-`""` transcript distinction and the
- * thinking-suppression rule; the markup below is what this template is for.
+ * with them. The view owns the interleave (a tool row follows the message it
+ * was anchored to), the `null`-vs-`""` transcript distinction, the
+ * thinking-suppression rule and the announced thinking row; the markup in each
+ * slot is what this template is for. The live transcript is the strip pinned
+ * BELOW the scroll, which is `transcriptPosition="below"`.
  *
  * It subscribes per FIELD, so the customer file in the sidebar no longer
  * re-renders on every partial transcript the way the whole-page `useSession()`
  * this replaced made it.
  */
 function Conversation() {
-  const { items, streaming, transcript, thinking } = useConversation();
   return (
-    <>
-      <AutoScroll
-        scrollClassName="rt-scroll overflow-y-auto"
-        contentClassName="p-4 flex flex-col gap-2"
-      >
-        {items.length === 0 && streaming === null && (
-          <div className="text-center p-10 text-[13px]" style={{ color: "#a1a1aa" }}>
-            Press start, then read one of the emails from “Who to be” to the agent.
-          </div>
-        )}
-        {items.map((item) => (
-          <Row
-            key={item.kind === "message" ? `m${item.message.id}` : item.toolCall.callId}
-            item={item}
-          />
-        ))}
-        {streaming !== null && (
-          <div
-            className="rounded-lg text-[13px] max-w-[80%] px-3.5 py-2.5 self-start"
-            style={{
-              lineHeight: 1.55,
-              background: "#ffffff",
-              color: "#18181b",
-              border: "1px solid #e4e4e7",
-            }}
-          >
-            {streaming}
-          </div>
-        )}
-        {/* Same contract as the shipped `MessageList`'s indicator: three pulsing
-            dots are the only sign the agent is working, and to a screen reader
-            they are punctuation. */}
-        {thinking && (
-          <div
-            role="status"
-            aria-label="Agent is thinking"
-            className="self-start text-[11px] px-3.5"
-            style={{ color: "#a1a1aa" }}
-          >
-            <span style={{ animation: "rt-pulse 1.2s ease-in-out infinite" }}>· · ·</span>
-          </div>
-        )}
-      </AutoScroll>
-
-      {transcript.speaking && (
+    <ConversationView
+      scrollClassName="aai-scroll overflow-y-auto"
+      contentClassName="p-4 flex flex-col gap-2"
+      empty={
+        <div className="text-center p-10 text-[13px]" style={{ color: "#a1a1aa" }}>
+          Press start, then read one of the emails from “Who to be” to the agent.
+        </div>
+      }
+      renderMessage={(message) => <Bubble {...message} />}
+      renderTool={(toolCall) => <ToolChip toolCall={toolCall} />}
+      renderTranscript={({ text }) => (
         <div
           className="flex items-center px-4 py-2 text-xs italic min-h-8"
           style={{ background: "#fafafa", borderTop: "1px solid #e4e4e7", color: "#71717a" }}
         >
           <span
             className="w-2 h-2 rounded-full inline-block mr-2"
-            style={{ background: "#16a34a", animation: "rt-pulse 1.5s ease-in-out infinite" }}
+            style={{ background: "#16a34a", animation: "aai-pulse 1.5s ease-in-out infinite" }}
           />
-          {transcript.text}
+          {text}
         </div>
       )}
-    </>
+      transcriptPosition="below"
+      thinkingLabel="Agent is thinking"
+      thinkingClassName="self-start text-[11px] px-3.5 text-[#a1a1aa]"
+    />
   );
 }
 
 /** The live status dot, on its own subscription rather than a field off a
- *  whole-page read — the header is the only thing here that wants it. */
+ *  whole-page read — the header is the only thing here that wants it. No
+ *  `labels`: the package's word for each state is the right one here, where a
+ *  caller of this desk used to read a lowercase `disconnected` in the header. */
 function StatusReadout() {
-  const state = useSessionStatus();
   return (
-    <>
-      <span
-        className="w-2 h-2 rounded-full inline-block"
-        style={{
-          background: STATE_COLORS[state],
-          animation:
-            state === "listening"
-              ? "rt-pulse 1.5s ease-in-out infinite"
-              : state === "thinking"
-                ? "rt-pulse 0.8s ease-in-out infinite"
-                : "none",
-        }}
-        title={state}
-      />
-      {/* The package's word for the state, not the enum member: a caller of this
-          desk used to read a lowercase `disconnected` in the header. */}
-      <span className="text-[11px] font-normal" style={{ color: "#a1a1aa" }}>
-        {AGENT_STATE_LABELS[state]}
-      </span>
-    </>
+    <SessionStateDot
+      colors={STATE_COLORS}
+      labelClassName="text-[11px] font-normal text-[#a1a1aa]"
+    />
   );
 }
 
-/*
- * The call controls.
- *
- * The methods come off `useSessionActions()`, which does not subscribe, and the
- * two flags off one-field selectors. The whole-snapshot `useSession()` this
- * replaced re-rendered these four buttons on every STT partial to read two
- * booleans that change once a call.
+const CALL_BUTTON = "px-4 py-2 rounded-md text-xs font-semibold cursor-pointer";
+
+/**
+ * One call button in the desk's colours. `<SessionControls>` decides WHICH
+ * buttons exist and what each presses — including that "New Conversation" is
+ * `end()` then `start()` and never `reset()`, argued once on that component;
+ * this decides only how they look.
+ */
+function callButton({ action, label, onClick, running }: SessionControlButton) {
+  const look =
+    action === "end"
+      ? { background: "#dc2626", color: "#ffffff", border: "none" }
+      : action === "restart"
+        ? { background: "#ffffff", color: "#18181b", border: "1px solid #e4e4e7" }
+        : action === "toggle" && running
+          ? { background: "#e4e4e7", color: "#18181b", border: "none" }
+          : { background: "#2563eb", color: "#ffffff", border: "none" };
+  return (
+    <button type="button" className={CALL_BUTTON} style={look} onClick={onClick}>
+      {label}
+    </button>
+  );
+}
+
+/**
+ * The call controls: Start call, then Hold/Resume, New Conversation and End.
+ * Two one-field subscriptions through `useSessionControls`, so the row
+ * re-renders when a flag flips and not on every STT partial the way the
+ * whole-snapshot `useSession()` it replaced did.
  */
 function CallControls({ productCount }: { productCount: number }) {
-  const { start, toggle, restart, end } = useSessionActions();
-  const started = useSessionSelector((s) => s.started);
-  const running = useSessionSelector((s) => s.running);
   return (
-    <div
-      className="flex items-center gap-2 px-4 py-3"
-      style={{ background: "#ffffff", borderTop: "1px solid #e4e4e7" }}
+    <SessionControls
+      className="px-4 py-3 bg-white border-t border-[#e4e4e7]"
+      labels={{ start: "Start call", pause: "Hold" }}
+      renderButton={callButton}
     >
-      {!started ? (
-        <button
-          type="button"
-          className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
-          style={{ background: "#2563eb" }}
-          onClick={() => start()}
-        >
-          Start call
-        </button>
-      ) : (
-        <>
-          <button
-            type="button"
-            className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer"
-            style={{
-              background: running ? "#e4e4e7" : "#2563eb",
-              color: running ? "#18181b" : "#ffffff",
-            }}
-            onClick={() => toggle()}
-          >
-            {running ? "Hold" : "Resume"}
-          </button>
-          {/* The one-click new conversation the default shell's
-              `<Controls>` gives every other template — a custom
-              `component:` renders no `<Controls>`, so a console like
-              this one has to say it itself. end() then start(), so the
-              redial is a brand-new session (fresh store, greeting
-              included) and the console stays on the call rather than
-              dropping back to "Start call". */}
-          <button
-            type="button"
-            className="px-4 py-2 rounded-md text-xs font-semibold cursor-pointer"
-            style={{ background: "#ffffff", color: "#18181b", border: "1px solid #e4e4e7" }}
-            onClick={restart}
-          >
-            New Conversation
-          </button>
-          {/* end() hangs up and flips `started` back, so the UI
-              returns to "Start call" and the next start is a brand-new
-              session (fresh store, greeting included). reset() would
-              keep the call live — the buttons never toggle back. */}
-          <button
-            type="button"
-            className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
-            style={{ background: "#dc2626" }}
-            onClick={() => end()}
-          >
-            End
-          </button>
-        </>
-      )}
       <div className="flex-1" />
       <span className="text-[10px] tabular-nums" style={{ color: "#a1a1aa" }}>
         {productCount} products
       </span>
-    </div>
+    </SessionControls>
   );
 }
 
@@ -535,7 +467,7 @@ function App() {
 
           {/* Sidebar: the customer file */}
           <div
-            className="rt-scroll overflow-y-auto p-3 flex flex-col gap-3"
+            className="aai-scroll overflow-y-auto p-3 flex flex-col gap-3"
             style={{ background: "#f4f4f5" }}
           >
             {view.pending && <PendingChange pending={view.pending} />}
