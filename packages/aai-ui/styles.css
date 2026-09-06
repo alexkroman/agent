@@ -163,3 +163,33 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * `.aai-scroll` — the thin, quiet scrollbar every custom chrome had drawn.
+ *
+ * Four template clients each carried the same three `::-webkit-scrollbar`
+ * rules under their own class name, differing only in the thumb colour — which
+ * is this package's business to make a variable and not to choose. The thumb
+ * defaults to the theme's border token and the track to transparent; a chrome
+ * with its own scrollbar palette sets `--aai-scrollbar-thumb` and
+ * `--aai-scrollbar-track` on the element or an ancestor (in its own `<style>`
+ * block, or as an inline custom property) and keeps the six lines out of its
+ * file. `scrollbar-width`/`scrollbar-color` are the standard half and cover
+ * Firefox; the `::-webkit-` pseudo-elements are the half Chromium and WebKit
+ * still read.
+ */
+.aai-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--aai-scrollbar-thumb, var(--aai-border, #dcd7cc))
+    var(--aai-scrollbar-track, transparent);
+}
+.aai-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.aai-scroll::-webkit-scrollbar-track {
+  background: var(--aai-scrollbar-track, transparent);
+}
+.aai-scroll::-webkit-scrollbar-thumb {
+  background: var(--aai-scrollbar-thumb, var(--aai-border, #dcd7cc));
+  border-radius: 3px;
+}
