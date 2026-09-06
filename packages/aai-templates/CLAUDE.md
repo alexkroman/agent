@@ -186,15 +186,15 @@ once, and the templates are now their reference use:
 | `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` projects the identity (`(game) => game`). Six templates now export the composed projection from the module that declares the slot and import it at BOTH ends — see `useAgentState(projection)` below |
 | `slot.update` (the synchronous draft) | `dispatch-center` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `plan-and-execute` (`work_next_step` CLAIMS its step inside one window, then awaits outside it — the shape to copy when a body needs a model call) |
 | `slot.updateTool` (the mutating half) | `retail` — every one of its fifteen tools, through `retailTool`, which is what a per-agent wrapper on top of it looks like: the wrapper owns the auth gate and the activity log, and passes the DRAFT to the tool body rather than letting it re-read the slot |
-| `slot.tool` (the reading half) | `pizza-ordering` (`view_order`), `travel-concierge` (`lookup_booking`), `infocom-adventure`, `solo-rpg` (`check_state`, and `save_game` — an async body is fine, only `updateTool` must be synchronous), `dispatch-center` (`incident_get`, `ops_dashboard`, `resources_get_available`) — and choosing wrong is loud, since what a read is handed is frozen |
-| `ctx.generate` with a `schema` | `support-line` (five graders and a rewriter over one binary-score schema), `plan-and-execute` (planner, executor and replanner). `travel-concierge` deliberately uses none — its specialists are prompts, not models |
+| `slot.tool` (the reading half) | `pizza-ordering` (`view_order`), `travel-concierge` (`lookup_booking`), `executive-assistant` (`inbox_status`, `review_memory`), `infocom-adventure`, `solo-rpg` (`check_state`, and `save_game` — an async body is fine, only `updateTool` must be synchronous), `dispatch-center` (`incident_get`, `ops_dashboard`, `resources_get_available`) — and choosing wrong is loud, since what a read is handed is frozen |
+| `ctx.generate` with a `schema` | `support-line` (five graders and a rewriter over one binary-score schema), `plan-and-execute` (planner, executor and replanner), `executive-assistant` (triage, the tone rewrite, and the two reflection steps). `travel-concierge` deliberately uses none — its specialists are prompts, not models |
 | `ToolFailure` / `isToolFailure` | `retail` (~40 sites, failures propagating through `store.ts` helpers), `dispatch-center` (six) |
 | `pushCapped` | `dispatch-center` (incident timeline), `retail` (activity feed), `solo-rpg` (session log), `infocom-adventure` (command history) |
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg`. It admits an explicit `undefined` per field now, so the `...(x ? { x } : {})` two specs wrote around an optional `sessionId` — rule 22's shape — is gone |
 | `expectToolOk` / `expectDialogOk`, `parseToolInput` / `parseSchemaInput` (`@alexkroman1/aai/testing`) | the unwrap five specs wrote, and the `["~standard"].validate` reach 18 sites across ten templates re-derived. `travel-concierge` and `plan-and-execute` had read gated results through `(await run(…)) as { result: {…} }`, so a REFUSAL read `undefined` off the cast and died three assertions later; `expectToolOk` fails at the CALL, quoting what the flow refused |
 | `installStubStepFetch` (`@alexkroman1/aai/testing/vitest`) | every workflow spec. `recap-workflow`'s used to publish over `globalThis.fetch` while every request in that file goes through `stepFetch`, so ~20 tests were green against `step-fetch.ts`'s unpublished-slot FALLBACK — a path production never takes. `link-digest/agent.test.ts` states the rule its sibling broke |
 | `stubTranscribe` (`@alexkroman1/aai/testing`) | the three transcribing templates, which had each re-typed the wire; `transcription-workflow` had ended up asserting the SDK's own `Authorization` header and multipart boundary. Two SDK-contract specs stay there (`speech_models` plural, the file is STREAMED), both out of a live production failure that template's doc narrates |
-| `useAgentState(projection)` | `pizza-ordering`, `dispatch-center`, `plan-and-execute`, `solo-rpg`, `support-line`, `travel-concierge`, `night-owl` — the seven that pass the projection itself, so nothing restates the type and nothing derives the empty frame. `night-owl` is also the one showing a slot BESIDE `useEvent`/`useToolCallStart`; the rule separating them is in `packages/aai-ui/CLAUDE.md` |
+| `useAgentState(projection)` | `pizza-ordering`, `dispatch-center`, `plan-and-execute`, `solo-rpg`, `support-line`, `travel-concierge`, `night-owl`, `executive-assistant` — the eight that pass the projection itself, so nothing restates the type and nothing derives the empty frame. `night-owl` is also the one showing a slot BESIDE `useEvent`/`useToolCallStart`; the rule separating them is in `packages/aai-ui/CLAUDE.md` |
 | `useAgentState(fallback)` | `retail` ONLY, and deliberately: the projection overload calls the slot's `create()`, whose factory pulls a 107 KB `seed.json`, so passing it would ship the catalog to the browser (see below) |
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
 | `useUserTranscript` | the same three. Each had written `userTranscript !== null && (… === "" ? "…" : …)` by hand, re-deriving a PROTOCOL distinction (`null` is silence, `""` is speech detected with no words yet) from the type |
@@ -203,10 +203,10 @@ once, and the templates are now their reference use:
 | `WorkflowPendingNote` + `WorkflowRunError` (`@alexkroman1/aai-ui`) | the six workflow-app pages, which had each written a three-branch `pendingNote()` (pressed here, still looking, found from earlier) differing only in the noun, and a `role="alert"` paragraph for a failed run that had drifted three ways on the sentence and two on the muting class. A page passes the SUBMISSION and names what its run produces — `subject="draft"`, and `scope="browser"` on `podcast-digest`, whose key is `local`. `transcription-workflow` is the documented exception and keeps `recover.ts`'s own function: its streaming flow has a FOURTH branch (a reload does not orphan that run, it ENDS it), which is a fact about the mode rather than about the run, and the sentence is pinned by a spec that has no DOM to render a component in |
 | `SessionErrorBanner` + `AGENT_STATE_LABELS` + `useSessionStatus` (`@alexkroman1/aai-ui`), adopted late | `infocom-adventure` was the one custom chrome still carrying its own `ErrorBanner` (no `role`-independent difference from the SDK's, one more copy to drift), a six-arm ternary over `AgentState` falling through to "Idle", and a raw `useSessionSelector((s) => s.state)`; `retail` rendered the enum member itself, so its header read a lowercase `disconnected`. All three exports had already been published FOR those copies — the audit found them un-adopted. `useSessionError` lost its only template exerciser in the same move and is an allowlist entry now, per "The last remover pays" |
 | `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
-| `dialog()` + `dialog.tool` + `dialog.send` | seven templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, nested, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity), `roadside-assist` (the one that describes a CALL — deadlines, session events and per-phase voice knobs) |
-| `agent({ dialogs })` + `Dialog.receive` / `.timeout` / `.voiceConfig` | `roadside-assist` ALONE, and everything below the tool gate needs it: declaring the dialog on the agent is what feeds it session events, arms its deadlines, puts the active `instruction` in front of the model on every turn, and applies `bargeIn` / `toolChoice` / `temperature`. `AnyDialog` is the type its `DIALOGS` array is written as. See "A dialog can describe a CALL" below |
+| `dialog()` + `dialog.tool` + `dialog.send` | eight templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `executive-assistant` (the human gate, nested, with a per-proposal allow-list enforced inside it), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, nested, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity), `roadside-assist` (the one that describes a CALL — deadlines, session events and per-phase voice knobs) |
+| `agent({ dialogs })` + `Dialog.receive` / `.timeout` / `.voiceConfig` | `roadside-assist` (and `executive-assistant`, for the hang-up alone), and everything below the tool gate needs it: declaring the dialog on the agent is what feeds it session events, arms its deadlines, puts the active `instruction` in front of the model on every turn, and applies `bargeIn` / `toolChoice` / `temperature`. `AnyDialog` is the type its `DIALOGS` array is written as. See "A dialog can describe a CALL" below |
 | `procedure()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
-| `subagent()` + `ctx.delegate` | `briefing-desk` ONLY, and it exists for this: four subagents with different tool surfaces, models and budgets, angles fanned out with `Promise.allSettled`, `stubDelegate` driving its spec. Argued in `packages/aai-runtime/CLAUDE.md`, "Subagents" — this guide is at its cap |
+| `subagent()` + `ctx.delegate` | `briefing-desk` (and `executive-assistant`'s meeting assistant, one subagent over a calendar tool that lives beside it rather than in `tools/`), and it exists for this: four subagents with different tool surfaces, models and budgets, angles fanned out with `Promise.allSettled`, `stubDelegate` driving its spec. Argued in `packages/aai-runtime/CLAUDE.md`, "Subagents" — this guide is at its cap |
 | `stepDelegate` (`@alexkroman1/aai/step`) | `research-workflow` — `investigate` hands one angle to a researcher subagent with `web_search`/`visit_webpage`. **It hand-rolled the loop and the comparison is the point**: an action schema for the model to pick from, a counter for the budget, a "you have used your budget" sentence, a branch for the turn that named an action and filled in no field, and a second model call to compress — 82 lines of loop and helpers, every one re-deriving what `subagent()` already is (the file is 44 code lines lighter; the difference is the researcher, its `cite` tool and reading the cost off `toolCalls`, which are this template's own decisions). A tool call IS a validated action, `maxSteps` IS the budget, the forced final answer IS the stop rule (enforced, not requested), and `expectedOutput` IS the compression, done where the raw material already is. `plan-and-execute`'s `executeStep` is the same conversion one layer up, through `ctx.delegate` — it had a tool context all along |
 | `SubagentDef.tools` beside a builtin | `briefing-desk`'s roster takes none; `plan-and-execute` gives its executor `search` and `read`, which are this template's OWN tools over `@alexkroman1/aai/tools` rather than the `web_search`/`visit_webpage` builtins. That is deliberate and it is what "the last remover pays" looks like in practice: converting both loops would have left the published `/tools` subpath with no worked example, so it moved one layer down into the subagent's tool set instead. `read` is new — the executor's prompt had said "search once, read what comes back" while the loop offered no way to do it |
 | `stubStepDelegate` / `installStubStepDelegate` | `research-workflow`, at both tiers — the step tests and the DURABLE block, which cannot run without it: the slot THROWS unpublished rather than answering emptily, so a durable test cannot pass over a research pass that never happened |
@@ -223,7 +223,7 @@ once, and the templates are now their reference use:
 | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-workflow`, `link-digest`, `redline` and `recap-workflow` specs — the bare `stubGateway` under it is exercised by no template and is an allowlist entry now that `/testing` is in the gate's scope — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
 | `toolOf` / `runTool` / `toolRunner` (`@alexkroman1/aai/testing`) | the TEN specs driving tools through the agent's own table, each opening `const run = toolRunner(agentDef);`. `args` and `ctx` are both optional (66 `{}` placeholders are gone). **The advice that sat here — write the NARROWEST wrapper your specs need — is RETIRED: it is what produced the drift**, measured on `toolRunner` |
 | `deployedAgent` (`@alexkroman1/aai/testing`) | `retail`'s `registry.test.ts` ALONE. Every other spec imports `virtual:aai/agent`, which the `aaiAgentPlugin()` in this package's `vitest.config.ts` serves — the same lowering, resolved against the importing file, so a spec needs no glob of its own. A tool is a FILE, so `def.tools` is empty until one of the two runs. `retail` keeps the explicit call because the tool REGISTRY is that file's subject and because it is the worked example for a runner that is not vitest. See "A `tools/` file IS the tool" below |
-| `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) and `plan-and-execute` (planner, executor, replanner) — the two whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
+| `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) `plan-and-execute` (planner, executor, replanner) and `executive-assistant` (four roles, one system constant each) — the three whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
 | `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-workflow` and `recap-workflow` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
 | `installStubWorkflows` (`@alexkroman1/aai/testing/vitest`) | the same two, and it IS their `stubWorkflows` — fifteen lines apiece, byte-identical apart from the name in `listing`, now one line each. On `/vitest` because `vi.fn` is its CONTENT |
 | `mapConcurrent`, `stepEmit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/step`, NOT the root: that barrel is the step vocabulary and is zero-zod by rule, where the root barrel drags the whole authoring graph in behind it. That subpath used to be outside the coverage gate, so an unexercised step export was caught by nothing; the gate derives its scope now |
@@ -254,7 +254,7 @@ last can see it is owed.
 
 ## A flow is WHERE A CONVERSATION IS, and a board is not one
 
-Six templates declare a `dialog()`, and the interesting one is the template that
+Seven templates declare a `dialog()`, and the interesting one is the template that
 almost could not. `dispatch-center` holds many incidents at once and a flow is
 bound to a session, so it has exactly ONE position — and the first instinct, a
 machine per incident over `Incident.status`, is not available at all.
@@ -1026,7 +1026,7 @@ must import no sibling package (the dependency flow above, enforced by
 that. A root script reads both trees, so neither package declares anything about
 the other, and `check:agent-guide` is what keeps the copy honest.
 
-## Five templates are ports of LangChain/LangGraph agents
+## Six templates are ports of LangChain/LangGraph agents
 
 The reference agents people already know are the best starters this repo can
 ship: an author arriving with a LangGraph mental model gets a working voice
@@ -1042,6 +1042,7 @@ to be re-derived from memory.
 | self-RAG + CRAG | `support-line` | voice | lexical retrieval instead of a vectorstore, and the graders are the thing that makes that fine |
 | plan-and-execute | `plan-and-execute` (the one template named for the pattern it ports, because nothing about it is a "desk") | voice | the execute→replan loop is driven by the CALLER, one step per tool call |
 | reflection (the essay assistant) | `redline` | **page over a durable run** (`workflowApp()`) | the loop's exit becomes a step's journaled VERDICT, so a replay takes the same branch |
+| Executive AI Assistant (EAIA) | `executive-assistant` | voice | their drafting model's TOOLS become the agent's tools, the Agent Inbox interrupt becomes four gated tools, and the reflection graphs write to the session |
 
 **Which front door a port gets is decided by one question: can it answer
 inside a turn?** A caller will hold the line for a tool call and a sentence
@@ -1054,108 +1055,10 @@ the three above it are voice agents. Getting that wrong in either direction is
 the expensive mistake: a voice agent that goes silent for ninety seconds, or a
 page for work that a caller could simply have been told.
 
-**`travel-concierge` — the two mechanisms, and the narrowing that is enforced
-now.** Their graph gives each specialist node its own bound tool set and swaps
-the assistant's prompt as `dialog_state` is pushed and popped. A voice session
-has ONE model with ONE tool list and a system prompt fixed at connect, so the
-stack is real state (`routing.ts`, projected to the sidebar) and the
-specialist's brief arrives as the delegation tool's return value.
-
-**This guide used to call the narrowing "asked for rather than enforced". Its own
-eval disproved the ask — 0 of 5 live runs delegated.** So it is a mechanism:
-`requireDesk` (`shared.ts`) gates all nine desk tools on the dialog stack and
-answers a `ToolFailure` naming the `to_…_assistant` to call. 7 of 7 after. The
-gate then exposed two prompt defects a wording fix would have hidden, both in
-`packages/aai-runtime/CLAUDE.md`'s eval section.
-
-The half that IS enforced is the confirmation gate, and it is the bit worth
-copying into any agent that can spend someone's money. Every sensitive tool
-STAGES a `PendingAction` and mutates nothing; `confirm_action` is the only code
-path that applies one. That is `interrupt_before` with a better interface —
-a caller cannot type "y", but asking out loud and hearing "yes" is the same
-gate — and it is the reason `stageAction` is one helper rather than a pattern
-each tool repeats: the next sensitive tool is otherwise the one that forgets.
-Its spec asserts, per tool, that calling it changes nothing.
-
-**`support-line` — the graders are the product.** Retrieval is idf-weighted term
-overlap over `knowledge.json`, not embeddings, because the SDK has no vector
-store; the argument in `shared.ts` is that this makes CRAG's corrective loop MORE
-valuable rather than less, since a weaker retriever is exactly what its query
-rewriter was designed for. The knowledge base is BAITED to prove it — "cancelling
-your contract" and "cancelling an engineer visit" are two documents, two fees and
-one word apart, and a spec pins that the neighbour ranks FIRST for a caller's
-phrasing. Three decisions in the loop are not defaults:
-
-- **An ungrounded answer is never spoken.** One regeneration, then the answer is
-  withheld and the run ends `exhausted`. A grounded-but-not-useful answer, by
-  contrast, IS returned, with its verdict, because it is still true.
-- **`exhausted` is a reachable state with somewhere to go** — `log_ticket`. An
-  agent that cannot say "I don't have that documented" will eventually say
-  something worse, so the exit has to exist before the grading is worth anything.
-- **There is no web-search fallback**, which CRAG has. A support line answering
-  from the open web about a private product is the exact failure its grader
-  exists to prevent; `plan-and-execute` is where real search lives.
-
-**`plan-and-execute` — the loop belongs to the caller.** Their notebook runs
-plan→execute→replan to completion and prints the answer. A phone line cannot go
-quiet for ninety seconds, so one `work_next_step` call is exactly one
-execute-then-replan turn: the desk reports, and the pause that creates is what
-makes `revise_plan` reachable at all — a replanner driven by the person rather
-than by a step result, which their version has no way to express. Two more
-things are decisions:
-
-- **`Act = Union[Response, Plan]` became one discriminated object.** A union is
-  `anyOf` in JSON Schema and provider support for it varies; a model that emits
-  `{"steps": …}` when it meant to respond leaves a plan looping forever.
-  `normalizeAct` then treats every malformed act as an ANSWER, because a desk
-  that never stops is the failure that matters on a call.
-- **The search is real and therefore injected.** `executeStep` takes a
-  `SearchFn`; the tool passes `liveSearch` (`webSearch`, DuckDuckGo-backed, no
-  key) and the spec passes its own. A template spec that depended on the live web
-  would be a flake with a stranger's rate limit attached.
-
-**`redline` — a loop whose exit is data, and the mixed form.** Two things in it
-are worth reading for, and neither exists elsewhere in `templates/`:
-
-- **The `while` is legal because the verdict is journaled.** `transcription-workflow`
-  derives its fan-out's WIDTH from a step's result; this derives a LOOP EXIT from
-  one. `critiqueDraft` returns `ship` or `revise`, the body breaks on it, and a
-  replay reads that verdict back out of the journal and takes the same branch —
-  where a clock, a random draw or a re-read of anything outside the run lets a
-  replay take a DIFFERENT branch, which nothing detects: a step call that lands
-  in a different position simply reads the entry that position holds. Their
-  `should_continue` stops
-  on a message COUNT, which spends the same money on a draft that was already
-  good; letting the critic stop the loop is the one real addition, and it is
-  possible only because the decision is a step result.
-- **Its page is the MIXED form**, which the guide has described for a while with
-  no template behind it. `<WorkflowFields>` renders the three scalars (the
-  `z.enum` becoming a `<SelectField>` is the schema doing the work), and
-  `mustCover` is an ARRAY, which it deliberately renders nothing for — so
-  `client.tsx` writes that one field itself in the same `<Form>` and maps the
-  textarea into `string[]` in one exported function. `transcription-workflow` stays
-  the all-declared example.
-
-One smaller thing it settles: neither writer step carries an empty-reply guard,
-because `stepGenerate` already refuses an empty completion as a RETRYABLE
-failure. The first draft of the template had both, and both were dead code
-re-deriving an SDK decision — worth checking for before adding a guard to a step.
-
-Both LLM-driven VOICE ports are tested by SCRIPTING `ctx.generate` on the
-system prompt each node carries, so what a spec asserts is WHICH NODES RAN,
-which is the part of a graph port that can actually regress. **`stubGenerate`
-(`@alexkroman1/aai/testing`) is that fake now** — its script is keyed by system
-prompt, which is the same shape both templates had reached for by hand, and it
-owns the `{ text, object }` envelope. That envelope is why it is worth having:
-`GenerateFn`'s schema overload declares `object` as required, so a hand-written
-fake with one `{ text }`-only branch is unassignable AS A WHOLE, and both
-templates carried a comment explaining that to the next reader.
-
-What each template keeps is its own TRANSCRIPT: `support-line`'s routes push
-node names (`grade_documents:D1`) into a local array, because the assertions are
-about the graph rather than about the calls, while `plan-and-execute` reads
-`stubGenerate`'s own `calls` — the prompt of the turn after a failed search is
-exactly what its "a failed search goes back to the model" test is about.
+**The per-template accounts — what each port kept, what it changed, and why —
+are in [`PORTS-CLAUDE.md`](PORTS-CLAUDE.md)**, a sibling of this guide read on
+demand rather than loaded with it: this file is at its cap, and those accounts
+are reference for someone already inside one of the six.
 
 ## `recap-workflow` is where the Temporal patterns were ported
 
