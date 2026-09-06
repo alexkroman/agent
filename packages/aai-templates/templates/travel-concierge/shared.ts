@@ -20,10 +20,18 @@
  * **The dialog stack is what keeps a long call on the rails.** Their insight is
  * that one prompt holding every tool degrades as the tool list grows, so the
  * primary assistant delegates to a specialist and the specialist works with a
- * narrow brief. A voice agent cannot swap its system prompt mid-session — the
- * session's prompt is fixed at connect — so the specialist's brief arrives as
- * the DELEGATION TOOL'S RESULT, which is the last thing the model reads before
- * it answers. The stack itself is real state either way, which is what
+ * narrow brief. The specialist's brief arrives as the DELEGATION TOOL'S RESULT,
+ * which is the last thing the model reads before it answers.
+ *
+ * That used to be stated here as a hard limit — "a voice agent cannot swap its
+ * system prompt mid-session" — and it is no longer true in general: a state's
+ * `instruction` reaches the model on EVERY turn now, on the pipeline and on
+ * OpenAI Realtime (AssemblyAI S2S still resolves once). It stays true for THIS
+ * template, for a different reason: the desks are a STACK in a session slot,
+ * not a dialog position, and a dialog holds one position per session where a
+ * stack holds several. Reaching for the new mechanism here would mean modelling
+ * the desks as states, which is the port's own design question rather than a
+ * fix. The stack itself is real state either way, which is what
  * `complete_or_escalate` pops and what the sidebar renders — and what
  * {@link requireDesk} makes binding, so the position is never merely a label on
  * work that happened somewhere else.
@@ -469,12 +477,34 @@ const gateSpec = {
     browsing: {
       instruction:
         "Nothing is waiting for the caller's yes. Stage a change with a booking tool first.",
-      on: { STAGED: "awaitingConfirmation" },
+      on: { STAGED: "awaitingConfirmation", "@session.timed-out": "abandoned" },
     },
     awaitingConfirmation: {
       instruction:
         "Read the staged change back and hear a clear yes or no, then use confirm_action or cancel_action.",
-      on: { SETTLED: "browsing" },
+      on: { SETTLED: "browsing", "@session.timed-out": "abandoned" },
+    },
+    /**
+     * The caller hung up, or the session timed out under them.
+     *
+     * Declared on both live states rather than on a parent, because wrapping
+     * them would rename `browsing` and `awaitingConfirmation` to
+     * `onCall.browsing` and `onCall.awaitingConfirmation` — the two names every
+     * `when` in `tools/` is written against, and the sidebar renders.
+     *
+     * What it does NOT do is settle the staged action: a deadline or a session
+     * event SENDS AN EVENT, it does not run a tool, so `pending` is still
+     * whatever `stageAction` left there. That is fine here and is the reason
+     * this state is `final` — nothing may act on this call again, so nothing
+     * reads `pending` again either. It would NOT be fine as a timeout that
+     * returned to `browsing`, which is the trap recorded in
+     * `aai-runtime`'s `DIALOG-CLAUDE.md`.
+     */
+    abandoned: {
+      final: true,
+      instruction:
+        "The caller is gone. Do nothing further — do not confirm the staged change, do not " +
+        "book anything, and do not promise a callback.",
     },
   },
 } as const satisfies DialogSpec;

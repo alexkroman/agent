@@ -180,6 +180,20 @@ session takes one of those branches with knobs declared.
 
 ## Not done
 
+- **A transition cannot run a TOOL, so a state whose exit must also mutate a
+  slot cannot safely be timed out.** A deadline and a session event both SEND AN
+  EVENT: the dialog moves, and nothing else does. That is fine when the target
+  is terminal — `retail` and `travel-concierge` both carry `"@session.timed-out"`
+  into a `final` state, where the point is that nothing acts again and nobody
+  reads the staged change either. It is NOT fine for the shape it most looks
+  like: a `timeout` on a confirmation gate that returns to the browsing state
+  would move the position while `pending` still holds a staged change, which is
+  exactly the position/store disagreement `retail/store.ts` argues against in
+  its own note on why `IDENTIFIED` is not declared on `serving`. Closing it
+  means letting a transition name a tool, which is a real design question — a
+  tool body is async and a dialog's mutation window is not — and not a gap to
+  paper over at a call site.
+
 - **`voice` and `keyterms` on the AssemblyAI S2S transport.** That service takes
   both in `session.update` and the handle already exposes the verb, so the knobs
   are reachable there in a way they are not on the pipeline. Wiring them means

@@ -1,6 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
@@ -454,5 +455,48 @@ describe("tripView projection", () => {
     expect(view.total).toBe(395);
     expect(view.bookings.map((b) => b.kind)).toEqual(["hotel", "excursion"]);
     expect(view.pending).toBeNull();
+  });
+});
+
+describe("a caller who hangs up", () => {
+  /** The frame the runtime offers a declared dialog when a session times out. */
+  const CALLER_GONE = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } } as const;
+
+  test("ends the call, from a gate that is holding a staged booking", async () => {
+    const ctx = makeCtx();
+    await atDesk("hotel", ctx);
+    await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
+    expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
+
+    const at = gateFlow.receive(ctx, CALLER_GONE);
+    expect(at.state).toBe("abandoned");
+    expect(at.done).toBe(true);
+  });
+
+  test("a sensitive tool cannot run afterwards", async () => {
+    const ctx = makeCtx();
+    await atDesk("hotel", ctx);
+    await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
+    gateFlow.receive(ctx, CALLER_GONE);
+
+    // The property the state exists for: `confirm_action` is what turns a
+    // staged booking into a real one, and nobody is on the call to agree to it.
+    const refused = await run("confirm_action", {}, ctx);
+    expect(isToolFailure(refused)).toBe(true);
+    expect(isToolFailure(refused) && refused.error).toContain('"abandoned"');
+  });
+
+  test("the staged action is still THERE — the state is final so nothing reads it", async () => {
+    const ctx = makeCtx();
+    await atDesk("hotel", ctx);
+    await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
+    gateFlow.receive(ctx, CALLER_GONE);
+
+    // Stated as a test because it is the feature's sharpest limit: a session
+    // event SENDS AN EVENT and cannot run a tool, so `pending` is untouched.
+    // That is safe here only because `abandoned` is final — the same shape as a
+    // timeout returning to `browsing` would strand a staged change in a call
+    // that carries on.
+    expect(tripSlot.get(ctx).pending).not.toBeNull();
   });
 });
