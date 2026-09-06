@@ -12,22 +12,40 @@
  * ```text
  *   writeBrief      1 step    →  the request as something a researcher is held to
  *   planAngles      1 step    →  the angles worth pursuing (the fan-out's width)
- *   investigate     N steps   →  one researcher each: search, read, compress
+ *   investigate     N steps   →  one SUBAGENT each: search, read, cite, report
  *   findGaps        1 step    →  the supervisor's second look
  *   investigate     M steps   →  the second wave, when there is one
  *   writeReport     1 step    →  the report, then the sentence for the phone
  *   sleep + file    1 step    →  the review wait, then filing
  * ```
  *
- * ## A step can do what a TOOL can do, and that is what makes this real
+ * ## A step can do what a TOOL can do, and `stepDelegate` is where that lands
  *
- * `investigate` calls `webSearch` and `visitWebpage` from
- * `@alexkroman1/aai/tools` — the SAME implementations behind the model-facing
- * builtins, with the same URL screening, redirect re-validation and size caps.
- * A step is not a lesser environment than a tool body: it is bundled with
- * everything it imports, so anything a tool can reach it can reach. Before this,
- * this template's "research" was three model calls asking a model what it
- * already believed, which is the thing deep research exists not to be.
+ * `investigate` hands its angle to a SUBAGENT (`stepDelegate`,
+ * `@alexkroman1/aai/step`) with `web_search` and `visit_webpage` enabled — the
+ * same builtins a voice agent's tools reach, URL screening and size caps
+ * included. A step is not a lesser environment than a tool body.
+ *
+ * **It used to hand-roll the loop, and that is the comparison worth keeping.**
+ * This file carried an action schema for the model to pick from, a counter for
+ * the budget, a sentence in the prompt telling it to answer once the budget was
+ * spent, a branch for the turn where it named an action and filled in none of
+ * its fields, and a second model call to compress what it had seen — 82 lines
+ * of it, every one re-deriving something `subagent()` already does and the voice
+ * pipeline already runs on. A tool call IS an action with a validated schema;
+ * `maxSteps` IS the budget; the forced final answer IS the "stop when it is
+ * spent" rule, enforced rather than requested; and `expectedOutput` IS the
+ * compression, done where the raw material already is instead of in a stage that
+ * could disagree with it.
+ *
+ * The file is 44 code lines lighter for it, which is less than the deletion
+ * because what replaced the loop — the researcher, its `cite` tool, and reading
+ * the cost off `toolCalls` — is not nothing. What it IS, is this template's own
+ * decisions rather than a re-implementation of the framework's.
+ *
+ * Before any of it, this template's "research" was three model calls asking a
+ * model what it already believed, which is the thing deep research exists not to
+ * be.
  *
  * The stage shape and its stop rules come from LangChain's
  * `open_deep_research`; `prompts.ts` carries the attribution and what was
@@ -47,21 +65,26 @@
  * search engine, and replaying it turn by turn would pin a run to decisions that
  * were only ever provisional. What has to survive a resume is what the
  * researcher CONCLUDED, which is exactly what the step returns.
+ *
+ * That is also the rule `stepDelegate` has to be used under, and it is the
+ * ordinary one: a delegation runs a model and reaches the network, so it belongs
+ * inside a `ctx.step` like any other non-deterministic call. Nothing checks it —
+ * see `sdk/step-delegate.ts`.
  */
 
-import type { WorkflowContext } from "@alexkroman1/aai";
-import { mapConcurrent, stepReport } from "@alexkroman1/aai/step";
+import type { SubagentDef, SubagentToolCall, ToolDef, WorkflowContext } from "@alexkroman1/aai";
+import { subagent, tool } from "@alexkroman1/aai";
+import { mapConcurrent, stepDelegate, stepReport } from "@alexkroman1/aai/step";
 import { stepGenerateJsonOrFail, stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
-import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
-import { errorMessage, isToolFailure, plural } from "@alexkroman1/aai/utils";
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import {
   BRIEF_SUMMARY_SYSTEM,
   BRIEF_SYSTEM,
-  COMPRESS_SYSTEM,
   GAPS_SYSTEM,
   PLAN_SYSTEM,
   REPORT_SYSTEM,
+  RESEARCH_OUTPUT,
   RESEARCH_SYSTEM,
 } from "./prompts.ts";
 
@@ -87,20 +110,21 @@ export const REVIEW_DELAY_MS = 30_000;
 const MAX_ANGLES = 4;
 
 /**
- * Actions one researcher may take before it must stop.
+ * Tool-calling steps one researcher may take before it must answer.
  *
- * The budget is the mechanism, not the prompt: a model told to stop when it
- * has enough will sometimes not, and a run whose cost is decided by a model is
- * a run nobody can price. Six covers "search, read, search, read" with room to
- * follow one lead.
+ * The budget is the mechanism, not the prompt: a model told to stop when it has
+ * enough will sometimes not, and a run whose cost is decided by a model is a run
+ * nobody can price. Six covers "search, read, search, read" with room to follow
+ * one lead.
+ *
+ * It is `SubagentDef.maxSteps` now rather than a counter this file keeps, which
+ * changes one thing beyond the bookkeeping: past the cap the researcher is asked
+ * for its answer with its TOOLS WITHHELD, so a capped run still returns findings
+ * instead of stopping mid-chain. The loop this replaced had to ask for that in
+ * the prompt ("ALWAYS stop when the budget is spent") and had no way to enforce
+ * it.
  */
 const RESEARCH_BUDGET = 6;
-
-/** Characters of a page kept for the compression stage. */
-const MAX_PAGE_CHARS = 6000;
-
-/** Results asked for per search. Beyond this they stop being about the query. */
-const SEARCH_RESULTS = 5;
 
 /** One source a researcher actually used. */
 export type Source = { title: string; url: string };
@@ -127,50 +151,11 @@ const StringList = z
   )
   .catch([]);
 
-/** One cited source, as the compression stage is asked to report it. */
-const CitedSource = z.object({ title: z.string(), url: z.string() });
-
-/** The cited sources, with any malformed entry dropped rather than fatal. */
-const CitedSources = z.array(z.unknown()).transform((items) =>
-  items.flatMap((item) => {
-    const parsed = CitedSource.safeParse(item);
-    return parsed.success ? [parsed.data] : [];
-  }),
-);
-
 /** What `writeBrief` asks for. */
 const BriefReply = z.object({ brief: z.string().trim().optional(), criteria: StringList });
 
 /** What `planAngles` and `findGaps` ask for. */
 const AnglesReply = z.object({ angles: StringList });
-
-/**
- * What one turn of the researcher's loop asks for.
- *
- * `.catch("stop")` is the old `parsed.action === "search" || …` guard: an action
- * the model did not name is a stop, not a fatal reply, because the budget is
- * better spent than burned on turns that cannot do anything.
- */
-const ActionReply = z.object({
-  action: z.enum(["search", "read", "stop"]).catch("stop"),
-  query: z.string().optional(),
-  url: z.string().optional(),
-  why: z.string().optional(),
-});
-
-/**
- * What `compress` asks for.
- *
- * `sources` is `.catch(undefined)` rather than merely optional, and the
- * distinction is the one this whole stage turns on: a model that returned
- * something unusable there should fall back to the sources the researcher was
- * ACTUALLY shown, not throw the compressed findings away and research the angle
- * again.
- */
-const CompressReply = z.object({
-  findings: z.string().optional(),
-  sources: CitedSources.optional().catch(undefined),
-});
 
 /** What one researcher concluded about one angle. */
 export type Note = {
@@ -302,37 +287,128 @@ export async function planAngles(brief: Brief): Promise<string[]> {
 }
 
 /**
- * Investigate one angle: search, read, stop, compress.
+ * The researcher — one angle, its own tools, its own context window.
  *
- * The loop is the researcher — the model chooses each action and the budget is
- * what ends it. Everything it saw is kept as raw material for the compression
- * at the end, which is where it becomes small enough to journal.
+ * **This is the whole of what used to be a loop.** The budget, the forced final
+ * answer once it is spent, the failure fed back as an observation, and the
+ * schema the model picks an action from were four things this template wrote by
+ * hand around `stepGenerateJson`; a subagent is all four, and the same four the
+ * voice pipeline already ran on. What is left here is the part that is actually
+ * about research: which tools, how many steps, and what a finding has to be.
+ *
+ * Built per angle rather than declared at module scope, because {@link cite}
+ * closes over the list it records into. That costs nothing: the runner memoizes
+ * its model client per LLM DESCRIPTOR, and this names none — it takes the
+ * gateway default `stepDelegate` binds.
+ */
+function researcher(cited: Source[]): SubagentDef {
+  return subagent({
+    name: "researcher",
+    systemPrompt: RESEARCH_SYSTEM,
+    expectedOutput: RESEARCH_OUTPUT,
+    // The SAME implementations this file used to call directly — `web_search`
+    // and `visit_webpage` are the builtins over `@alexkroman1/aai/tools`, URL
+    // screening and size caps included.
+    builtinTools: ["web_search", "visit_webpage"],
+    tools: { cite: cite(cited) },
+    maxSteps: RESEARCH_BUDGET,
+  });
+}
+
+/**
+ * `cite` — how a researcher says which sources it actually used.
+ *
+ * A tool rather than a field of a structured reply, because a subagent answers
+ * with TEXT: what crosses back is its final message, so anything else it has to
+ * tell the caller has to be told through a tool call. Recording it as it goes is
+ * also the behaviour the prompt wants — a source list written at the end is a
+ * list of what the model remembers reading.
+ */
+function cite(cited: Source[]): ToolDef {
+  return tool({
+    description:
+      "Record a source you actually read and relied on. Call it as you go, once " +
+      "per source — not at the end, and not for a result you only saw in a list.",
+    inputSchema: z.object({
+      title: z.string().max(200).describe("The page's title, as it calls itself"),
+      url: z.url().describe("The page's URL"),
+    }),
+    execute: ({ title, url }) => {
+      cited.push({ title, url });
+      return "Recorded.";
+    },
+  });
+}
+
+/**
+ * Investigate one angle.
+ *
+ * **The narration got COARSER and that is the trade.** Per-search reporting is
+ * gone — the searches happen inside the subagent's own loop, where this body
+ * cannot see them — so the page learns what an angle is doing when it starts and
+ * what it cost when it finishes, rather than per query. Two angles run at once
+ * (`ANGLE_CONCURRENCY`), so the stream still moves; buying the old granularity
+ * back would mean wrapping each builtin in a narrating tool of this template's
+ * own, which is most of the code the subagent just deleted.
  */
 export async function investigate(brief: Brief, angle: string): Promise<Note> {
   await stepReport(`Looking into: ${angle}`);
-  const seen: string[] = [];
-  const sources: Source[] = [];
+  const cited: Source[] = [];
 
-  for (let spent = 0; spent < RESEARCH_BUDGET; spent++) {
-    const action = await nextAction(brief, angle, seen, RESEARCH_BUDGET - spent);
-    if (action.action === "stop") break;
-    if (action.action === "search" && action.query) {
-      const found = await search(action.query);
-      seen.push(`SEARCH ${action.query}\n${found.summary}`);
-      sources.push(...found.sources);
-      continue;
+  const result = await stepDelegate(researcher(cited), {
+    task: angle,
+    // The researcher has not heard the call and cannot see its siblings, so the
+    // brief rides in `context` — the same rule `angleBrief` states in
+    // `briefing-desk`, and the reason a subagent's task must be complete.
+    context: briefText(brief),
+  });
+
+  const work = countWork(result.toolCalls);
+  await stepReport(
+    `Finished ${angle}: ${work.searches} ${plural(work.searches, "search", "searches")}, ` +
+      `${work.reads} ${plural(work.reads, "page")} read.`,
+  );
+
+  return {
+    angle,
+    findings: result.text,
+    // What it SAID it used, falling back to what it actually opened. A
+    // researcher that forgot to cite has still read pages, and reporting no
+    // sources for a note full of findings is the worse of the two failures —
+    // the report stage cites from this list.
+    sources: cited.length > 0 ? dedupe(cited) : dedupe(work.opened),
+  };
+}
+
+/** What one delegated run did, read off the calls it made. */
+function countWork(toolCalls: readonly SubagentToolCall[]): {
+  searches: number;
+  reads: number;
+  opened: Source[];
+} {
+  let searches = 0;
+  const opened: Source[] = [];
+  for (const call of toolCalls) {
+    if (call.name === "web_search") searches += 1;
+    else if (call.name === "visit_webpage") {
+      // The builtin takes the URL as its whole input, so this is the one place
+      // a raw tool input is read. Anything else shaped differently is skipped
+      // rather than coerced — a `url` that is not a string is not a page.
+      const url = readUrl(call.input);
+      if (url) opened.push({ title: url, url });
     }
-    if (action.action === "read" && action.url) {
-      await stepReport(`Reading ${hostname(action.url)}`);
-      seen.push(`PAGE ${action.url}\n${await readPage(action.url)}`);
-      continue;
-    }
-    // An action the model did not fill in: stop rather than spend the budget on
-    // turns that cannot do anything.
-    break;
   }
+  return { searches, reads: opened.length, opened };
+}
 
-  return await compress(angle, seen, sources);
+/** The URL a `visit_webpage` call named, when it named one. */
+function readUrl(input: unknown): string | undefined {
+  if (typeof input === "string") return input;
+  if (input && typeof input === "object" && "url" in input) {
+    const url = (input as { url?: unknown }).url;
+    if (typeof url === "string" && url) return url;
+  }
+  return undefined;
 }
 
 /**
@@ -392,100 +468,6 @@ export async function file(_requestedBy: string, _topic: string): Promise<string
   return "filed";
 }
 
-// ---- The researcher's own calls ---------------------------------------------
-
-/** What the model wants to do next. */
-type Action = z.infer<typeof ActionReply>;
-
-/** Ask the model for one action, given everything the researcher has seen. */
-async function nextAction(
-  brief: Brief,
-  angle: string,
-  seen: readonly string[],
-  left: number,
-): Promise<Action> {
-  return await stepGenerateJsonOrFail(
-    `${briefText(brief)}\n\nYour angle: ${angle}\n` +
-      `Actions left: ${left}\n\n` +
-      (seen.length === 0 ? "You have not looked at anything yet." : seen.join("\n\n")),
-    { system: RESEARCH_SYSTEM, schema: ActionReply },
-  );
-}
-
-/**
- * One search, through the SAME implementation the `web_search` builtin uses.
- *
- * A failed search is not a failed angle, and the failure goes back into `seen`
- * rather than only into the log: the researcher's next turn is chosen from what
- * it has been shown, so a search that quietly returned nothing reads as "no such
- * pages exist" and gets run again, differently worded, until the budget is gone.
- */
-async function search(query: string): Promise<{ summary: string; sources: Source[] }> {
-  await stepReport(`Searching: ${query}`);
-  try {
-    const results = await webSearch<{ results?: { title?: string; url?: string }[] }>({
-      query,
-      maxResults: SEARCH_RESULTS,
-    });
-    // The `catch` below was written for exactly this and could not reach it:
-    // `webSearch` ANSWERS with `{ error }` rather than throwing, so a refused
-    // search arrived here as an empty result list and was reported to the
-    // researcher as "No results." — the thing this function's doc says not to do.
-    if (isToolFailure(results)) throw new Error(results.error);
-    const sources = (results.results ?? [])
-      .filter((one): one is { title: string; url: string } =>
-        Boolean(typeof one.url === "string" && one.url),
-      )
-      .map((one) => ({ title: one.title || one.url, url: one.url }));
-    return {
-      summary: sources.length === 0 ? "No results." : sources.map(describeResult).join("\n"),
-      sources,
-    };
-  } catch (err: unknown) {
-    const summary = `That search failed: ${errorMessage(err)}`;
-    await stepReport(summary);
-    return { summary, sources: [] };
-  }
-}
-
-/** One page, capped — the compression stage reads this, not a browser. */
-async function readPage(url: string): Promise<string> {
-  try {
-    const page = await visitWebpage<{ content?: string; text?: string }>(url);
-    // Same rule as the search above: an unreadable page ANSWERS with `{ error }`,
-    // and `?? ""` would put an empty note in front of the compression stage —
-    // which reads as "this page said nothing" rather than "we never read it".
-    if (isToolFailure(page)) throw new Error(page.error);
-    return String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
-  } catch (err: unknown) {
-    return `Could not read this page: ${errorMessage(err)}`;
-  }
-}
-
-/**
- * Compress what one researcher saw into a journaled note.
- *
- * The stage that keeps a step's result small enough to carry, and the one whose
- * prompt says to REPEAT rather than summarize: a summary of a summary is how a
- * long research pass ends in a confident, sourceless paragraph.
- */
-async function compress(angle: string, seen: readonly string[], sources: Source[]): Promise<Note> {
-  if (seen.length === 0) {
-    return { angle, findings: "Nothing was found on this angle.", sources: [] };
-  }
-  const parsed = await stepGenerateJsonOrFail(`Angle: ${angle}\n\n${seen.join("\n\n")}`, {
-    system: COMPRESS_SYSTEM,
-    schema: CompressReply,
-  });
-  return {
-    angle,
-    findings: parsed.findings ?? seen.join("\n\n"),
-    // A model that cited nothing at all falls back to what the researcher was
-    // actually shown, which is the honest answer and not an empty one.
-    sources: parsed.sources ?? dedupe(sources).slice(0, SEARCH_RESULTS),
-  };
-}
-
 // ---- Model plumbing ---------------------------------------------------------
 //
 // There is none left, and its absence is the point. This desk carried an `ask()`
@@ -515,11 +497,6 @@ function noteText(note: Note): string {
   return `## ${note.angle}\n${note.findings}\n${cited}`;
 }
 
-/** One search result, as the researcher sees it. */
-function describeResult(source: Source): string {
-  return `- ${source.title} — ${source.url}`;
-}
-
 /** Distinct sources by URL, first occurrence winning. */
 export function dedupe(sources: readonly Source[]): Source[] {
   const byUrl = new Map<string, Source>();
@@ -530,13 +507,4 @@ export function dedupe(sources: readonly Source[]): Source[] {
 /** How many distinct sources the whole pass rests on — what the agent quotes. */
 export function countSources(notes: readonly Note[]): number {
   return dedupe(notes.flatMap((note) => note.sources)).length;
-}
-
-/** A URL's host, for a progress line a listener can follow. */
-function hostname(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
 }

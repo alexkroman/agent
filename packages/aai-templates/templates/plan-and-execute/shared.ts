@@ -21,8 +21,10 @@ import {
   isToolFailure,
   pushCapped,
   sessionSlot,
+  tool,
 } from "@alexkroman1/aai";
-import { webSearch } from "@alexkroman1/aai/tools";
+import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+import { z } from "zod";
 
 /** One completed step — their `past_steps`, as a pair rather than a tuple. */
 export interface PastStep {
@@ -158,14 +160,12 @@ export interface SearchHit {
 }
 
 /**
- * The executor's search, as an injected function.
+ * The executor's search.
  *
- * The seam exists because the search is REAL — `webSearch` from
- * `@alexkroman1/aai/tools` is the same DuckDuckGo-backed implementation behind
- * the model-facing `web_search` builtin, with the same screening and size caps,
- * and it needs no API key. A template's spec must not depend on the live web
- * (or on a stranger's rate limit), so the executor takes its searcher as an
- * argument and the tool passes {@link liveSearch}.
+ * It was an INJECTED function, so a spec could drive the executor without the
+ * live web. That seam is gone with the loop it served — the executor is a
+ * subagent now, and a spec fakes the whole delegation with `stubDelegate` — so
+ * what is left is the type {@link searchTool} is written against.
  */
 export type SearchFn = (query: string) => Promise<SearchHit[]>;
 
@@ -189,6 +189,66 @@ export const liveSearch: SearchFn = async (query) => {
     )
     .map((one) => ({ title: one.title || one.url, url: one.url }));
 };
+
+/**
+ * `search` — {@link liveSearch} as a tool the EXECUTOR may call.
+ *
+ * The search is REAL: `webSearch` from `@alexkroman1/aai/tools` is the same
+ * DuckDuckGo-backed implementation behind the model-facing `web_search` builtin,
+ * with the same URL screening and size caps, and it needs no API key. Giving the
+ * subagent this rather than the builtin is what keeps that worked example alive
+ * — a subagent's `tools` are ordinary `ToolDef`s, so an agent's own code is as
+ * reachable from one as a framework builtin is.
+ *
+ * A failed search THROWS rather than returning an empty list, and the runtime
+ * turns that into a tool result the executor reads: told nothing, a model reads
+ * silence as "there is nothing out there" and spends the rest of its budget
+ * asking the same question differently.
+ */
+export const searchTool = tool({
+  description:
+    "Search the web. Use it when the step turns on a current fact — a price, a " +
+    "date, an availability — that you do not reliably know.",
+  inputSchema: z.object({
+    query: z.string().max(120).describe("What to search for"),
+  }),
+  execute: async ({ query }) => {
+    const hits = await liveSearch(query);
+    if (hits.length === 0) return "No results.";
+    return hits.map((hit) => `- ${hit.title} (${hit.url})`).join("\n");
+  },
+});
+
+/** Characters of a page the executor is given. A step is answered from a page's
+ *  substance, not from its whole text, and the rest is context it pays for. */
+export const MAX_PAGE_CHARS = 4000;
+
+/**
+ * `read` — open one page the search turned up.
+ *
+ * `visitWebpage` is the second half of `@alexkroman1/aai/tools`, and the
+ * executor's prompt has always assumed it: "search once, READ what comes back"
+ * was in there while the loop offered no way to do it, so the executor answered
+ * every step from a list of titles. A subagent can hold both tools, so the
+ * instruction and the capability finally agree.
+ *
+ * Throws on a refusal for the same reason {@link searchTool} does — a page that
+ * would not load is not a page that said nothing.
+ */
+export const readTool = tool({
+  description:
+    "Open one page from a search result and read it. Prefer this over a second " +
+    "search when a result looks like it answers the step.",
+  inputSchema: z.object({
+    url: z.url().describe("The page to open, from a search result"),
+  }),
+  execute: async ({ url }) => {
+    const page = await visitWebpage<{ content?: string; text?: string }>(url);
+    if (isToolFailure(page)) throw new Error(`Could not read that page: ${page.error}`);
+    const body = String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
+    return body.length > 0 ? body : "That page had no readable text.";
+  },
+});
 
 // ─── The projection ──────────────────────────────────────────────────────────
 

@@ -18,6 +18,7 @@
  */
 
 import { omitUndefined } from "./omit-undefined.ts";
+import { publishStepDelegate } from "./step-delegate.ts";
 import type {
   DelegateFn,
   DelegateOptions,
@@ -132,6 +133,55 @@ export function stubDelegate(
   };
 
   return { delegate, calls };
+}
+
+/** A fake `stepDelegate`: the calls it recorded, and the slot to give back. */
+export interface StubStepDelegate {
+  /** Every call, in order — the same log {@link stubDelegate} keeps. */
+  calls: StubDelegateCall[];
+  /**
+   * Unpublish the runner.
+   *
+   * Calling it in an `afterEach` is not optional — a stub left published makes
+   * the next file's steps delegate into this one's log, which is the kind of
+   * cross-file leak that presents as a passing test somewhere else.
+   */
+  restore(): void;
+}
+
+/**
+ * PUBLISH a fake runner, so an exported step that calls `stepDelegate` can be
+ * driven without a host.
+ *
+ * `stubDelegate` with the slot filled in, and deliberately nothing more: the
+ * step-side and tool-side capabilities have the same signature because they are
+ * the same runner bound differently, so a spec routes them the same way and a
+ * template that moves a subagent from a tool into a step rewrites no fake.
+ *
+ * An unpublished slot THROWS rather than degrading (see `sdk/step-delegate.ts`),
+ * which is what makes this the ONE way to test such a step — and why the failure
+ * an author meets first names this function.
+ *
+ * @example
+ * ```ts
+ * import { stubStepDelegate } from "@alexkroman1/aai/testing";
+ *
+ * const desk = stubStepDelegate({ researcher: "Prices fell 12% in 2025." });
+ * try {
+ *   // … call the exported step, then assert on `desk.calls`
+ * } finally {
+ *   desk.restore();
+ * }
+ * ```
+ *
+ * @public
+ */
+export function stubStepDelegate(
+  script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute,
+): StubStepDelegate {
+  const { delegate, calls } = stubDelegate(script);
+  publishStepDelegate(delegate);
+  return { calls, restore: () => publishStepDelegate(undefined) };
 }
 
 /**

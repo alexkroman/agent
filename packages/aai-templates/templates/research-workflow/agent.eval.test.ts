@@ -30,7 +30,7 @@
 
 import agentDef from "virtual:aai/agent";
 import { routeStepFetch, stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+import { installStubStepDelegate, installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { type EvalToolCall, type EvalWorkflows, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -64,6 +64,11 @@ const EVAL_ENV = { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "eval-s
 /** The one angle the scripted planner comes back with. */
 const ANGLE = "What second-hand cargo bikes actually sell for";
 
+/** What the scripted researcher concluded — the subagent's final message. */
+const RESEARCH_FINDINGS =
+  "Used cargo bikes in Amsterdam ask 800-2500 EUR depending on age and " +
+  "electric assist, mostly on Marktplaats and at two second-hand dealers.";
+
 /** The written report the scripted `writeReport` produces. */
 const REPORT_BODY =
   "## Second-hand cargo bikes in Amsterdam\n\nAsking prices cluster between 1,200 and 2,400 EUR.";
@@ -91,7 +96,8 @@ const MODEL_SCRIPT: readonly string[] = [
     criteria: ["typical asking prices", "where people buy them"],
   }),
   JSON.stringify({ angles: [ANGLE] }),
-  JSON.stringify({ action: "stop", why: "the budget is better spent elsewhere" }),
+  // No researcher turn here: `investigate` delegates, so its model calls go
+  // through the DELEGATE slot rather than the gateway. See `scriptSteps`.
   JSON.stringify({ angles: [] }),
   REPORT_BODY,
   SPOKEN_SUMMARY,
@@ -143,6 +149,11 @@ function scriptSteps(options: { hold?: boolean } = {}): ScriptedSteps {
     if (options.hold === true && model.calls.length === 1) await gate.promise;
     return answered;
   });
+  // The researcher's own loop, which does NOT go through `stepFetch`: a subagent
+  // resolves a provider client, so the seam a step reaches it through is the
+  // delegate slot. Unstubbed it THROWS, which is why a converted template's eval
+  // cannot silently keep passing over research that never ran.
+  installStubStepDelegate({ researcher: RESEARCH_FINDINGS });
   return { calls: stub.calls, release: () => gate.resolve() };
 }
 

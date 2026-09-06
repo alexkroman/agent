@@ -20,16 +20,21 @@
  * | research brief | {@link BRIEF_SYSTEM} — one call, before anything is searched |
  * | lead researcher / supervisor | {@link PLAN_SYSTEM}, then {@link GAPS_SYSTEM} for the second wave |
  * | researcher | {@link RESEARCH_SYSTEM} — the search loop, bounded |
- * | compress | {@link COMPRESS_SYSTEM} — findings kept verbatim, cited |
+ * | compress | {@link RESEARCH_OUTPUT} — findings kept verbatim, cited; the
+ *   researcher's own `expectedOutput` rather than a second model call |
  * | final report | {@link REPORT_SYSTEM}, plus {@link BRIEF_SUMMARY_SYSTEM} for the phone |
  *
  * They are ADAPTED rather than copied: theirs are written for a LangGraph agent
- * that calls tools by name and returns a long markdown report to a reader, and
- * ours are written for a step that calls `webSearch` itself,
- * returns JSON a later step consumes, and ends at a voice agent reading two
- * sentences down a phone. What survives verbatim is the part that is the actual
- * finding: the numbered stop rules, "repeat the useful text rather than
- * summarizing it away", and citing as you go rather than at the end.
+ * returning a long markdown report to a reader, and ours end at a voice agent
+ * reading two sentences down a phone. The RESEARCHER's is now closest to theirs
+ * of all of them — it went back to describing a job rather than a JSON action
+ * protocol when `stepDelegate` made the loop the runtime's (see
+ * `workflows/research.ts`), which deleted the "reply as JSON, one action per
+ * turn" contract that had been standing in for a tool call.
+ *
+ * What survives verbatim is the part that is the actual finding: the stop
+ * rules, "repeat the useful text rather than summarizing it away", and citing
+ * as you go rather than at the end.
  *
  * A prompt is DATA, so this module carries no directive and the builder leaves
  * it alone — the same reason `transcription-workflow`'s `wav.ts` can sit beside its
@@ -59,17 +64,22 @@ export const PLAN_SYSTEM = [
 ].join(" ");
 
 /**
- * The researcher's loop.
+ * The researcher's BRIEF — no longer its loop.
  *
- * The numbered stop rules are the heart of the adaptation and are close to
- * theirs, because they are the finding: without them a researcher either stops
- * at the first plausible page or keeps searching until the budget runs out, and
- * both look identical in the output.
+ * The stop rules are the heart of the adaptation and are close to theirs,
+ * because they are the finding: without them a researcher either stops at the
+ * first plausible page or keeps searching until the budget runs out, and both
+ * look identical in the output.
+ *
+ * What is gone is the half that was never about research — "reply as JSON, one
+ * action per turn", plus "ALWAYS stop when the budget is spent". The runtime
+ * owns both now: a tool call is how an action is named, and the last step is
+ * spent with tools withheld so a capped run answers instead of stopping
+ * mid-chain. A rule the framework enforces should not also be asked for.
  */
 export const RESEARCH_SYSTEM = [
   "You are a researcher working on one angle of a research brief.",
-  "You decide, one step at a time, what to do next: search the web, read a page",
-  "you have already found, or stop because you have enough.",
+  "Search the web, read the pages worth reading, and cite what you use.",
   "",
   "Rules for how hard to look:",
   "- A simple, factual angle deserves 2 to 3 searches. A comparative or",
@@ -77,31 +87,34 @@ export const RESEARCH_SYSTEM = [
   "- STOP as soon as one of these is true: you can answer the angle thoroughly;",
   "  you have three or more relevant sources agreeing; the last two searches",
   "  returned much the same thing.",
-  "- ALWAYS stop when the budget is spent, even if you are not satisfied. Say",
-  "  what you did not manage to establish rather than guessing at it.",
   "- Prefer READING a promising result over running another search. A page you",
   "  have opened is worth more than a fourth list of titles.",
-  "",
-  'Reply as JSON, one action per turn: {"action": "search", "query": string} or',
-  '{"action": "read", "url": string} or {"action": "stop", "why": string}.',
+  "- Call `cite` for each source you actually relied on, as you go rather than",
+  "  at the end. A source you did not read is not a source.",
 ].join("\n");
 
 /**
- * Compression, and the one instruction it turns on.
+ * What a researcher's FINAL MESSAGE has to be — `SubagentDef.expectedOutput`.
+ *
+ * It was a second model call over everything the researcher had seen, and it is
+ * the researcher's own answer now: a subagent's final message is the only thing
+ * that crosses back, so the compression happens where the raw material already
+ * is. One stage fewer, one prompt fewer, and no way for the two to disagree
+ * about what a finding is.
  *
  * "Repeat the relevant text rather than summarizing it" is theirs and is
  * counter-intuitive enough to be worth keeping verbatim in spirit: a summary of
  * a summary is what makes a long research pass produce a confident, sourceless
  * paragraph at the end.
  */
-export const COMPRESS_SYSTEM = [
-  "You are compressing one researcher's raw findings for a later stage.",
-  "Keep ALL of the information that bears on the angle, rewritten cleanly —",
-  "repeat the relevant text rather than summarizing it away. A later stage will",
-  "do the summarizing, and it can only work with what you keep.",
-  "Cite as you go: mark each claim with the number of the source it came from.",
-  'Reply as JSON: {"findings": string, "sources": {"title": string, "url": string}[]}.',
-  "The numbers you cite are 1-based indexes into `sources`.",
+export const RESEARCH_OUTPUT = [
+  "Everything you found that bears on the angle, written out cleanly — repeat",
+  "the relevant text rather than summarizing it away. A later stage does the",
+  "summarizing and can only work with what you keep, so length is not the thing",
+  "to economize on here.",
+  "Mark each claim with the source you took it from. If you could not establish",
+  "something, say so rather than guessing at it — including when the budget ran",
+  "out before you were satisfied.",
 ].join(" ");
 
 /** The supervisor's second look: what is still unanswered. */

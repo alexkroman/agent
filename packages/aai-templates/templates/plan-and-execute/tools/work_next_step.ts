@@ -1,13 +1,6 @@
 import { errorMessage, type ToolFailure, toolFailure } from "@alexkroman1/aai";
 import { executeStep, replanNode } from "../procedure.ts";
-import {
-  liveSearch,
-  noteRevision,
-  type PastStep,
-  planFlow,
-  planSlot,
-  recordStep,
-} from "../shared.ts";
+import { noteRevision, type PastStep, planFlow, planSlot, recordStep } from "../shared.ts";
 
 /**
  * What the claim window decided, as a DISCRIMINATED union.
@@ -93,7 +86,7 @@ export default planFlow.tool({
     const { step, objective, pastSteps } = claimed;
 
     try {
-      const outcome = await executeStep(ctx.generate, liveSearch, objective, step, pastSteps);
+      const outcome = await executeStep(ctx.delegate, objective, step, pastSteps);
       planSlot.update(ctx, (plan) => {
         // Capped: `historyOf` renders this whole list into two prompts, so an
         // append with no bound is a model bill that grows with the plan.

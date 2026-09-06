@@ -10,7 +10,7 @@
  * | --- | --- |
  * | `Plan` (pydantic, `steps: List[str]`) | {@link planSchema} |
  * | `planner` prompt | {@link PLANNER_SYSTEM} |
- * | the ReAct `agent_executor` with a search tool | {@link EXECUTOR_SYSTEM} + {@link stepActionSchema} |
+ * | the ReAct `agent_executor` with a search tool | {@link EXECUTOR_SYSTEM}, run as a SUBAGENT |
  * | `Act = Union[Response, Plan]` | {@link actSchema} |
  * | `replanner` prompt | {@link REPLANNER_SYSTEM} |
  *
@@ -57,17 +57,6 @@ export const actSchema = z.object({
     .optional(),
 });
 
-/** One turn of the executor's ReAct loop: search, or answer the step. */
-export const stepActionSchema = z.object({
-  action: z.enum(["search", "answer"]),
-  query: z.string().max(120).describe("The web search to run, when action is 'search'").optional(),
-  answer: z
-    .string()
-    .max(600)
-    .describe("What the step established, when action is 'answer'")
-    .optional(),
-});
-
 export const PLANNER_SYSTEM = [
   "For the given objective, come up with a simple step by step plan.",
   "The plan is individual tasks which, done in order, yield the objective.",
@@ -79,14 +68,31 @@ export const PLANNER_SYSTEM = [
 ].join(" ");
 
 export const EXECUTOR_SYSTEM = [
-  "You are doing one step of a plan. You may search the web, or answer.",
+  "You are doing one step of a plan. You may search the web, read a page you",
+  "found, or answer.",
   "Search when the step turns on a fact you do not reliably know — a price, a",
-  "date, an availability, anything current. Search once, read what comes back,",
-  "and search again only if it genuinely did not answer the step.",
-  "Answer as soon as you can support the step; say what you found and where it",
-  "came from. If searching did not settle it, say that plainly in the answer",
-  "rather than inventing a result — a later step may be able to work around it,",
-  "but only if it is told the truth.",
+  "date, an availability, anything current. Then READ the result that looks like",
+  "it answers the step: a page you have opened is worth more than a second list",
+  "of titles. Search again only if what you read genuinely did not settle it.",
+].join(" ");
+
+/**
+ * What the executor's FINAL MESSAGE has to be — `SubagentDef.expectedOutput`.
+ *
+ * The half of the prompt that was about the ANSWER rather than about how to
+ * work, split out when the executor became a subagent: what crosses back to the
+ * desk is this message and nothing else, so the shape of it is a declaration
+ * rather than a paragraph buried in the instructions.
+ *
+ * "Say that plainly rather than inventing a result" is the load-bearing
+ * sentence and is close to theirs: a step that failed is workable by a later
+ * step, but only if it is told the truth.
+ */
+export const EXECUTOR_OUTPUT = [
+  "What the step established, in a sentence or two, saying where it came from.",
+  "If searching did not settle it, say that plainly rather than inventing a",
+  "result — a later step may be able to work around it, but only if it is told",
+  "the truth.",
 ].join(" ");
 
 export const REPLANNER_SYSTEM = [

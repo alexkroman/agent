@@ -30,7 +30,11 @@
  *   `ctx.workflows.publicWebhookUrl`, which a body and its steps cannot reach.
  * - **The model** — {@link stepGenerate} (one `fetch` to the LLM gateway on the
  *   agent's own key, because the AI SDK would be megabytes in a ~7 KB artifact)
- *   and {@link stepGenerateJson} / {@link stripJsonFence}.
+ *   and {@link stepGenerateJson} / {@link stripJsonFence}. For a whole tool
+ *   LOOP rather than one prompt, {@link stepDelegate} — a published slot for the
+ *   same reason `stepGenerate` is a raw `fetch`: the host owns `ToolLoopAgent`,
+ *   and this barrel's whole budget is that nothing here drags it into the agent
+ *   bundle.
  * - **Audio, both directions** — {@link stepWriteUpload} / {@link stepReadUpload} /
  *   {@link stepUploadInfo}, {@link stepSpeak} and {@link encodeWav} out, and
  *   {@link stepTranscribeUpload} / {@link stepTranscribeSubmit} /
@@ -73,6 +77,7 @@ export {
 } from "./_transcribe-shared.ts";
 export { mapConcurrent } from "./map-concurrent.ts";
 export { type StepInfo, stepInfo } from "./step-attempt.ts";
+export { stepDelegate } from "./step-delegate.ts";
 export { requireStepEnv, stepEnv } from "./step-env.ts";
 export {
   type MultipartBody,

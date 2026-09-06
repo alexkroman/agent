@@ -107,6 +107,34 @@ shape, the silence it answers with, and how to make it fail instead.
 
 ***
 
+### installStubStepDelegate()
+
+```ts
+function installStubStepDelegate(script: 
+  | StubDelegateRoute
+  | Readonly<Record<string, StubDelegateRoute>>): StubStepDelegate;
+```
+
+Publish a fake subagent runner for `stepDelegate`, restored when this test
+finishes.
+
+`stubStepDelegate` with the bookkeeping done. It is the only way to drive an
+exported step that delegates — the real slot THROWS when nothing has published,
+deliberately, because there is no degraded version of running a model loop.
+
+#### Parameters
+
+##### script
+
+  \| [`StubDelegateRoute`](../testing.md#stubdelegateroute)
+  \| `Readonly`\<`Record`\<`string`, [`StubDelegateRoute`](../testing.md#stubdelegateroute)\>\>
+
+#### Returns
+
+[`StubStepDelegate`](../testing.md#stubstepdelegate)
+
+***
+
 ### installStubStepFetch()
 
 ```ts

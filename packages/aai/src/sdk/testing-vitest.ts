@@ -46,6 +46,8 @@ import type { StubTranscribe, StubTranscribeOptions } from "./_testing-transcrib
 import { stubTranscribe } from "./_testing-transcribe.ts";
 import type { StubReporter } from "./testing.ts";
 import { stubReporter } from "./testing.ts";
+import type { StubDelegateRoute, StubStepDelegate } from "./testing-delegate.ts";
+import { stubStepDelegate } from "./testing-delegate.ts";
 import type { StubGatewayCall, StubGatewayOptions } from "./testing-gateway.ts";
 import { stubGateway } from "./testing-gateway.ts";
 import type { StubSpeech, StubSpeechOptions } from "./testing-speech.ts";
@@ -178,6 +180,24 @@ export function installStubReporter(): StubReporter {
   const reported = stubReporter();
   restoreAfterThisTest(reported.restore);
   return reported;
+}
+
+/**
+ * Publish a fake subagent runner for `stepDelegate`, restored when this test
+ * finishes.
+ *
+ * `stubStepDelegate` with the bookkeeping done. It is the only way to drive an
+ * exported step that delegates — the real slot THROWS when nothing has published,
+ * deliberately, because there is no degraded version of running a model loop.
+ *
+ * @public
+ */
+export function installStubStepDelegate(
+  script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute,
+): StubStepDelegate {
+  const delegated = stubStepDelegate(script);
+  restoreAfterThisTest(delegated.restore);
+  return delegated;
 }
 
 /**

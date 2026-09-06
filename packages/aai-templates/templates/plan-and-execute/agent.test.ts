@@ -4,66 +4,76 @@ import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
+  stubDelegate,
   stubGenerate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
-import { describe, expect, test } from "vitest";
+import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+import { describe, expect, test, vi } from "vitest";
 
-import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./procedure.ts";
-import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
-import type { SearchFn } from "./shared.ts";
-import { MAX_PAST_STEPS, planFlow, planProjection, planSlot, planView } from "./shared.ts";
+import { executeStep, MAX_STEP_TURNS, normalizeAct, planNode } from "./procedure.ts";
+import { PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
+import {
+  MAX_PAGE_CHARS,
+  MAX_PAST_STEPS,
+  planFlow,
+  planProjection,
+  planSlot,
+  planView,
+  readTool,
+  searchTool,
+} from "./shared.ts";
 
-// ─── A scripted model ────────────────────────────────────────────────────────
+/**
+ * The web, faked at the SDK's own seam.
+ *
+ * `webSearch` screens a URL and then really fetches it, through an undici
+ * dispatcher a `globalThis.fetch` stub cannot reach — so mocking the module is
+ * the only honest way to keep this suite offline. The EXECUTOR's own tests need
+ * none of it: they stub the delegation, which is the seam a subagent is reached
+ * through.
+ */
+vi.mock("@alexkroman1/aai/tools", () => ({ webSearch: vi.fn(), visitWebpage: vi.fn() }));
+
+// ─── A scripted desk ─────────────────────────────────────────────────────────
 //
-// Each node is one `ctx.generate` call carrying its own system prompt, so
-// `stubGenerate` — whose script IS keyed by system prompt — drives the whole
-// loop with no model and no network. `calls` is every call the fake took, which
-// is how the "a failed search goes back to the model" assertion is made: it
-// asserts on the PROMPT the next turn carried.
+// TWO fakes now, because the desk reaches a model two ways. The planner and the
+// replanner are `ctx.generate` calls carrying their own system prompt, so
+// `stubGenerate` — whose script IS keyed by system prompt — drives them; the
+// EXECUTOR is a subagent, so `stubDelegate` drives it, routed by subagent name.
+// That split is the conversion showing through in the test file, and it is the
+// honest one: a spec that scripted the executor's turns was scripting a loop
+// this template no longer owns.
 
 interface Script {
   steps?: string[];
-  /** One entry per executor turn: search that query, or answer with that text. */
-  turns?: ({ search: string } | { answer: string })[];
+  /** One entry per executed step: what the executor concluded. */
+  answers?: string[];
+  /** Searches to report on each executed step, as the run's tool calls. */
+  searches?: string[];
   /** One entry per replan/revise call. */
   acts?: { kind: "respond" | "plan"; response?: string; steps?: string[] }[];
 }
 
-function scriptedModel(script: Script = {}) {
-  const turns = [...(script.turns ?? [{ answer: "Settled it." }])];
+function scriptedDesk(script: Script = {}) {
+  const answers = [...(script.answers ?? [])];
   const acts = [...(script.acts ?? [])];
   // The replanner and the reviser are the same node with a different brief, so
   // they share one queue — which is what the "revise then carry on" test rests on.
   const act = () => ({ object: acts.shift() ?? { kind: "respond", response: "All done." } });
 
-  return stubGenerate({
+  const model = stubGenerate({
     [PLANNER_SYSTEM]: { object: { steps: script.steps ?? ["Only step"] } },
-    [EXECUTOR_SYSTEM]: () => {
-      const turn = turns.shift() ?? { answer: "Settled it." };
-      return "search" in turn
-        ? { object: { action: "search", query: turn.search } }
-        : { object: { action: "answer", answer: turn.answer } };
-    },
     [REPLANNER_SYSTEM]: act,
     [REVISE_SYSTEM]: act,
   });
-}
-
-/** A searcher that never touches the network. The tools use `liveSearch`, so
- *  every tool-level test below scripts the executor to answer without one. */
-function fakeSearch(hits: Record<string, { title: string; url: string }[]>): {
-  search: SearchFn;
-  queries: string[];
-} {
-  const queries: string[] = [];
-  const search: SearchFn = async (query) => {
-    queries.push(query);
-    const found = hits[query];
-    if (!found) throw new Error("search backend unavailable");
-    return found;
-  };
-  return { search, queries };
+  const desk = stubDelegate({
+    executor: () => ({
+      text: answers.shift() ?? "Settled it.",
+      toolCalls: (script.searches ?? []).map((query) => ({ name: "search", input: { query } })),
+    }),
+  });
+  return { generate: model.generate, calls: model.calls, delegate: desk.delegate, desk };
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup,
@@ -80,7 +90,7 @@ function stateOf(ctx: ToolContext) {
 
 describe("planNode", () => {
   test("returns the steps the planner produced", async () => {
-    const { generate, calls } = scriptedModel({ steps: ["Check prices", "Book it"] });
+    const { generate, calls } = scriptedDesk({ steps: ["Check prices", "Book it"] });
     expect(await planNode(generate, "get me to Lisbon in May")).toEqual([
       "Check prices",
       "Book it",
@@ -90,52 +100,104 @@ describe("planNode", () => {
 });
 
 describe("executeStep", () => {
-  test("searches, reads the results, then answers — and reports what it searched", async () => {
-    const { generate, calls } = scriptedModel({
-      turns: [{ search: "lisbon flights may" }, { answer: "Flights are around 180 return." }],
-    });
-    const { search, queries } = fakeSearch({
-      "lisbon flights may": [{ title: "Fares to Lisbon", url: "https://example.test/fares" }],
-    });
+  test("hands the step to the executor, with the objective and the history as context", async () => {
+    const desk = stubDelegate({ executor: "Flights are around 180 return." });
 
-    const outcome = await executeStep(generate, search, "get to Lisbon", "Check prices", []);
-    expect(queries).toEqual(["lisbon flights may"]);
-    expect(outcome.result).toContain("180");
-    expect(outcome.searches).toEqual(["lisbon flights may"]);
-    // The results are what the second turn reasons over, not a note in a log.
-    expect(calls[1]?.prompt).toContain("https://example.test/fares");
+    const outcome = await executeStep(desk.delegate, "get to Lisbon", "Check prices", [
+      { step: "Pick dates", result: "Mid-May", searches: [] },
+    ]);
+
+    expect(outcome.result).toBe("Flights are around 180 return.");
+    // The STEP is the task; everything the executor needs to do it in context
+    // rides in `context`, because a subagent has not heard the call.
+    expect(desk.calls[0]?.task).toBe("Check prices");
+    expect(desk.calls[0]?.options.context).toContain("get to Lisbon");
+    expect(desk.calls[0]?.options.context).toContain("Mid-May");
   });
 
-  test("a failed search goes back to the model rather than only to a log", async () => {
-    // Told nothing, the model reads silence as "no such pages exist" and burns
-    // the rest of its budget re-asking the same question.
-    const { generate, calls } = scriptedModel({
-      turns: [{ search: "unindexed thing" }, { answer: "Could not confirm that." }],
+  test("reports what it searched, read off the calls the run made", async () => {
+    // A search's RESULTS stayed inside the executor's context — that is the
+    // delegation — so the calls are the only honest source for the desk's
+    // "what the wait bought" line.
+    const desk = stubDelegate({
+      executor: {
+        text: "Flights are around 180 return.",
+        toolCalls: [
+          { name: "search", input: { query: "lisbon flights may" } },
+          { name: "search", input: { query: "lisbon flights june" } },
+        ],
+      },
     });
-    const { search } = fakeSearch({});
 
-    const outcome = await executeStep(generate, search, "objective", "Check the thing", []);
-    expect(calls[1]?.prompt).toContain("search backend unavailable");
-    expect(outcome.result).toBe("Could not confirm that.");
+    const outcome = await executeStep(desk.delegate, "get to Lisbon", "Check prices", []);
+
+    expect(outcome.searches).toEqual(["lisbon flights may", "lisbon flights june"]);
   });
 
-  test("the search budget is a bound, not a suggestion", async () => {
-    const { generate, calls } = scriptedModel({
-      // Three searches asked for, two allowed.
-      turns: [{ search: "a" }, { search: "b" }, { search: "c" }],
-    });
-    const { search, queries } = fakeSearch({
-      a: [{ title: "A", url: "https://example.test/a" }],
-      b: [{ title: "B", url: "https://example.test/b" }],
-      c: [{ title: "C", url: "https://example.test/c" }],
+  test("the executor is given its two tools and a bounded budget", async () => {
+    // What this template still OWNS now that the loop is the runtime's: which
+    // capabilities the step is worth, and how long it may spend.
+    const desk = stubDelegate({ executor: "done" });
+    await executeStep(desk.delegate, "objective", "step", []);
+
+    const executor = desk.calls[0]?.subagent;
+    expect(Object.keys(executor?.tools ?? {})).toEqual(["search", "read"]);
+    expect(executor?.maxSteps).toBe(MAX_STEP_TURNS);
+    // No `builtinTools`: both are this template's own tools over
+    // `@alexkroman1/aai/tools`, which is the example that outlived the loop.
+    expect(executor?.builtinTools).toBeUndefined();
+  });
+});
+
+describe("the executor's search tool", () => {
+  test("renders the hits the model reasons over", async () => {
+    vi.mocked(webSearch).mockResolvedValueOnce({
+      results: [{ title: "Fares to Lisbon", url: "https://example.test/fares" }],
     });
 
-    const outcome = await executeStep(generate, search, "objective", "step", []);
-    expect(queries).toHaveLength(MAX_STEP_SEARCHES);
-    // The last turn is told the budget is gone, which is what turns a search
-    // loop into an answer.
-    expect(calls.at(-1)?.prompt).toContain("search budget");
-    expect(outcome.result).toBe("This step could not be settled within its budget.");
+    const rendered = await searchTool.execute({ query: "lisbon flights" }, createToolContext());
+
+    expect(rendered).toContain("Fares to Lisbon");
+    expect(rendered).toContain("https://example.test/fares");
+  });
+
+  test("a REFUSED search throws rather than reading as an empty web", async () => {
+    // `webSearch` answers with `{ error }` rather than throwing, and measured,
+    // DuckDuckGo answers 403 often enough to be the ordinary case. The runtime
+    // turns this throw into a tool result the executor can recover from; an
+    // empty list would tell it there is nothing out there.
+    vi.mocked(webSearch).mockResolvedValueOnce({ error: "403 Forbidden" });
+
+    await expect(searchTool.execute({ query: "anything" }, createToolContext())).rejects.toThrow(
+      /403 Forbidden/,
+    );
+  });
+
+  test("says so when the web really had nothing", async () => {
+    vi.mocked(webSearch).mockResolvedValueOnce({ results: [] });
+    expect(await searchTool.execute({ query: "anything" }, createToolContext())).toBe(
+      "No results.",
+    );
+  });
+});
+
+describe("the executor's read tool", () => {
+  test("hands back the page body, capped", async () => {
+    vi.mocked(visitWebpage).mockResolvedValueOnce({ content: "x".repeat(MAX_PAGE_CHARS + 500) });
+
+    const body = await readTool.execute({ url: "https://example.test/fares" }, createToolContext());
+
+    // A step is answered from a page's substance; the rest is context the run
+    // pays for and the executor does not read.
+    expect(String(body)).toHaveLength(MAX_PAGE_CHARS);
+  });
+
+  test("a page that would not load is not a page that said nothing", async () => {
+    vi.mocked(visitWebpage).mockResolvedValueOnce({ error: "404 Not Found" });
+
+    await expect(
+      readTool.execute({ url: "https://example.test/gone" }, createToolContext()),
+    ).rejects.toThrow(/404 Not Found/);
   });
 });
 
@@ -171,8 +233,10 @@ describe("normalizeAct", () => {
 
 describe("start_plan", () => {
   test("stores the objective and the steps", async () => {
-    const { generate } = scriptedModel({ steps: ["Check prices", "Compare hotels", "Book"] });
-    const ctx = createToolContext({ generate });
+    const { generate, delegate } = scriptedDesk({
+      steps: ["Check prices", "Compare hotels", "Book"],
+    });
+    const ctx = createToolContext({ generate, delegate });
     const result = (await run("start_plan", { objective: "a weekend in Lisbon" }, ctx)) as {
       steps: string[];
     };
@@ -197,8 +261,8 @@ describe("start_plan", () => {
 
 describe("work_next_step", () => {
   test("is refused before there is a plan, by the flow rather than by the body", async () => {
-    const { generate } = scriptedModel();
-    const ctx = createToolContext({ generate });
+    const { generate, delegate } = scriptedDesk();
+    const ctx = createToolContext({ generate, delegate });
     // The gate is `when: "working"`, so the refusal names the state the call is
     // actually in and quotes that state's instruction — which is what the model
     // needs in order to do the right thing on its own next turn.
@@ -213,12 +277,12 @@ describe("work_next_step", () => {
   });
 
   test("does the head step, records it, and takes the replanner's next plan", async () => {
-    const { generate } = scriptedModel({
+    const { generate, delegate } = scriptedDesk({
       steps: ["Check prices", "Compare hotels"],
-      turns: [{ answer: "Fares are about 180 return." }],
+      answers: ["Fares are about 180 return."],
       acts: [{ kind: "plan", steps: ["Compare hotels"] }],
     });
-    const ctx = createToolContext({ generate });
+    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
 
     const first = expectDialogOk<{
@@ -241,12 +305,12 @@ describe("work_next_step", () => {
   });
 
   test("a 'respond' act finishes the plan and clears what is left", async () => {
-    const { generate } = scriptedModel({
+    const { generate, delegate } = scriptedDesk({
       steps: ["Check prices", "Compare hotels"],
-      turns: [{ answer: "Fares are about 180 return." }],
+      answers: ["Fares are about 180 return."],
       acts: [{ kind: "respond", response: "Go in May — flights are about 180 return." }],
     });
-    const ctx = createToolContext({ generate });
+    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
     const answered = expectDialogOk<{ finished: boolean; response: string }>(
       await run("work_next_step", ctx),
@@ -277,15 +341,15 @@ describe("work_next_step", () => {
     // replanner's, so an uncapped list is a model bill that grows linearly with
     // the plan — the reason `recordStep` holds MAX_PAST_STEPS.
     const total = MAX_PAST_STEPS + 3;
-    const { generate } = scriptedModel({
+    const { generate, delegate } = scriptedDesk({
       steps: Array.from({ length: total }, (_, i) => `Step ${i + 1}`),
-      turns: Array.from({ length: total }, (_, i) => ({ answer: `Found ${i + 1}.` })),
+      answers: Array.from({ length: total }, (_, i) => `Found ${i + 1}.`),
       acts: Array.from({ length: total }, (_, i) => ({
         kind: "plan" as const,
         steps: Array.from({ length: total - i - 1 }, (_, j) => `Step ${i + j + 2}`),
       })),
     });
-    const ctx = createToolContext({ generate });
+    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a long one" }, ctx);
     for (let i = 0; i < total; i++) await run("work_next_step", ctx);
 
@@ -303,9 +367,9 @@ describe("work_next_step", () => {
     // detached slot store, so the isolation is per CONTEXT — two distinct
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
-    const { generate } = scriptedModel({ steps: ["Only step"] });
-    const first = createToolContext({ generate });
-    const second = createToolContext({ generate });
+    const { generate, delegate } = scriptedDesk({ steps: ["Only step"] });
+    const first = createToolContext({ generate, delegate });
+    const second = createToolContext({ generate, delegate });
 
     await run("start_plan", { objective: "mine" }, first);
     expect(stateOf(second).objective).toBeNull();
@@ -319,15 +383,15 @@ describe("work_next_step", () => {
 
 describe("revise_plan", () => {
   test("rewrites what is left, keeps what is done, and reopens a finished plan", async () => {
-    const { generate, calls } = scriptedModel({
+    const { generate, delegate, calls } = scriptedDesk({
       steps: ["Check Lisbon prices", "Book Lisbon"],
-      turns: [{ answer: "Lisbon is about 180 return." }],
+      answers: ["Lisbon is about 180 return."],
       acts: [
         { kind: "respond", response: "Lisbon in May, about 180." },
         { kind: "plan", steps: ["Check Porto prices"] },
       ],
     });
-    const ctx = createToolContext({ generate });
+    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
     await run("work_next_step", ctx);
     expect(stateOf(ctx).response).not.toBeNull();
@@ -353,19 +417,19 @@ describe("revise_plan", () => {
   });
 
   test("is refused before there is a plan", async () => {
-    const { generate } = scriptedModel();
-    const ctx = createToolContext({ generate });
+    const { generate, delegate } = scriptedDesk();
+    const ctx = createToolContext({ generate, delegate });
     expect(await run("revise_plan", { instruction: "change it" }, ctx)).toMatchObject({
       error: expect.stringContaining('this conversation is at "idle"'),
     });
   });
 
   test("a revision that answers outright lands in `answered`", async () => {
-    const { generate } = scriptedModel({
+    const { generate, delegate } = scriptedDesk({
       steps: ["Check Lisbon prices"],
       acts: [{ kind: "respond", response: "Nothing to do — you already booked it." }],
     });
-    const ctx = createToolContext({ generate });
+    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
     const revised = expectDialogOk<{ finished: boolean }>(
       await run("revise_plan", { instruction: "never mind, it is booked" }, ctx),
@@ -377,12 +441,12 @@ describe("revise_plan", () => {
 
 describe("plan_status", () => {
   test("reports done, remaining and the answer", async () => {
-    const { generate } = scriptedModel({
+    const { generate, delegate } = scriptedDesk({
       steps: ["Check prices", "Book"],
-      turns: [{ answer: "About 180 return." }],
+      answers: ["About 180 return."],
       acts: [{ kind: "plan", steps: ["Book"] }],
     });
-    const ctx = createToolContext({ generate });
+    const ctx = createToolContext({ generate, delegate });
     // Legal in every state, so it READS the position rather than being gated on
     // one — and "no plan yet" is the flow's own answer, not a third derivation
     // of `!objective`.
@@ -420,12 +484,12 @@ describe("planView projection", () => {
   });
 
   test("progress is derived once, so the bar and any spoken count agree", async () => {
-    const { generate } = scriptedModel({
+    const { generate, delegate } = scriptedDesk({
       steps: ["One", "Two", "Three"],
-      turns: [{ answer: "Done one." }],
+      answers: ["Done one."],
       acts: [{ kind: "plan", steps: ["Two", "Three"] }],
     });
-    const ctx = createToolContext({ generate });
+    const ctx = createToolContext({ generate, delegate });
     await run("start_plan", { objective: "three things" }, ctx);
     expect(planView(stateOf(ctx)).progress).toBe(0);
 

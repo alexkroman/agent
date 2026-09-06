@@ -715,6 +715,15 @@ export type StubStepAnswer = Response | {
 };
 
 // @public
+export interface StubStepDelegate {
+    calls: StubDelegateCall[];
+    restore(): void;
+}
+
+// @public
+export function stubStepDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubStepDelegate;
+
+// @public
 export type StubStepFetch = {
     calls: StubStepRequest[];
     restore: () => void;
