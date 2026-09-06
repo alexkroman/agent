@@ -50,17 +50,6 @@ import { research } from "./shared.ts";
  */
 import { REVIEW_DELAY_MS } from "./workflows/research.ts";
 
-/**
- * The key the run's steps read with `requireStepEnv`.
- *
- * Passed as the agent env so the eval's workflow engine publishes it: the
- * gateway call below is answered by a fake, but `stepGenerate` asks for the key
- * BEFORE it makes the request, so a run with no key fails on the missing
- * credential rather than reaching the script. The ENVIRONMENT and nothing else —
- * a template may not read a developer's CLI config.
- */
-const EVAL_ENV = { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "eval-scripted-key" };
-
 /** The one angle the scripted planner comes back with. */
 const ANGLE = "What second-hand cargo bikes actually sell for";
 
@@ -206,139 +195,135 @@ async function drain(workflows: EvalWorkflows | undefined, steps: ScriptedSteps)
   await workflows?.settleAll();
 }
 
-describeEval(
-  agentDef,
-  (test) => {
-    test(
-      "hands the topic to a run and answers the turn without waiting for it",
-      async ({ session, workflows }) => {
-        // Held, so the run cannot possibly have finished by the time the desk
-        // replies — which is the whole claim of the handoff shape.
-        const steps = scriptSteps({ hold: true });
+describeEval(agentDef, (test) => {
+  test(
+    "hands the topic to a run and answers the turn without waiting for it",
+    async ({ session, workflows }) => {
+      // Held, so the run cannot possibly have finished by the time the desk
+      // replies — which is the whole claim of the handoff shape.
+      const steps = scriptSteps({ hold: true });
 
-        const turn = await session.say(ASK);
+      const turn = await session.say(ASK);
 
-        const runId = startedRunId(turn.toolCalls);
-        expect(turn.completed).toBe(true);
-        // The topic it passed is the caller's, not a paraphrase of the prompt.
-        const asked = turn.toolCalls.find((one) => one.name === "request_research");
-        expect(String(asked?.args.topic)).toMatch(/cargo bike/i);
+      const runId = startedRunId(turn.toolCalls);
+      expect(turn.completed).toBe(true);
+      // The topic it passed is the caller's, not a paraphrase of the prompt.
+      const asked = turn.toolCalls.find((one) => one.name === "request_research");
+      expect(String(asked?.args.topic)).toMatch(/cargo bike/i);
 
-        // The run is REAL: the engine started it, under the name the agent
-        // declares, and it is still going now that the turn has ended.
-        const runs = await (workflows?.runs() ?? []);
-        const started = runs.find((one) => one.runId === runId);
-        expect(started?.workflow).toBe("research");
-        expect(started?.status).toBe("running");
-        // And it really began work — the brief stage narrated before its model
-        // call, which is the request this case is holding.
-        expect(started?.reported.join("\n")).toMatch(/really asking/);
+      // The run is REAL: the engine started it, under the name the agent
+      // declares, and it is still going now that the turn has ended.
+      const runs = await (workflows?.runs() ?? []);
+      const started = runs.find((one) => one.runId === runId);
+      expect(started?.workflow).toBe("research");
+      expect(started?.status).toBe("running");
+      // And it really began work — the brief stage narrated before its model
+      // call, which is the request this case is holding.
+      expect(started?.reported.join("\n")).toMatch(/really asking/);
 
-        await drain(workflows, steps);
-      },
-      { stubReply: [...START_TURN] },
-    );
+      await drain(workflows, steps);
+    },
+    { stubReply: [...START_TURN] },
+  );
 
-    test(
-      "the run really writes the report, and asks for the review wait",
-      async ({ session, workflows }) => {
-        const steps = scriptSteps();
+  test(
+    "the run really writes the report, and asks for the review wait",
+    async ({ session, workflows }) => {
+      const steps = scriptSteps();
 
-        const turn = await session.say(ASK);
-        const runId = startedRunId(turn.toolCalls);
-        const run = await workflows?.settle(runId, research);
+      const turn = await session.say(ASK);
+      const runId = startedRunId(turn.toolCalls);
+      const run = await workflows?.settle(runId, research);
 
-        // What a completed run reports as `output` is what the agent reads back
-        // and what the announcement is built from, so every field is asserted.
-        expect(run?.status).toBe("completed");
-        expect(run?.output?.report).toBe(REPORT_BODY);
-        expect(run?.output?.summary).toBe(SPOKEN_SUMMARY);
-        expect(run?.output?.angles).toEqual([ANGLE]);
-        expect(run?.output?.filedAt).toBe("filed");
+      // What a completed run reports as `output` is what the agent reads back
+      // and what the announcement is built from, so every field is asserted.
+      expect(run?.status).toBe("completed");
+      expect(run?.output?.report).toBe(REPORT_BODY);
+      expect(run?.output?.summary).toBe(SPOKEN_SUMMARY);
+      expect(run?.output?.angles).toEqual([ANGLE]);
+      expect(run?.output?.filedAt).toBe("filed");
 
-        // The five stages, in order, off the run's own narration — which is
-        // also what `research_progress` reads back down the phone. A stage that
-        // stopped reporting is a caller who is told nothing for minutes.
-        const narration = run?.reported.join("\n") ?? "";
-        expect(narration).toMatch(/really asking/);
-        expect(narration).toMatch(/Researching 1 angle/);
-        expect(narration).toMatch(new RegExp(`Looking into: ${ANGLE}`));
-        expect(narration).toMatch(/writing it up/);
-        expect(narration).toMatch(/Writing up 1 angle/);
-        expect(run?.reported.at(-1)).toBe("Filing the findings.");
+      // The five stages, in order, off the run's own narration — which is
+      // also what `research_progress` reads back down the phone. A stage that
+      // stopped reporting is a caller who is told nothing for minutes.
+      const narration = run?.reported.join("\n") ?? "";
+      expect(narration).toMatch(/really asking/);
+      expect(narration).toMatch(/Researching 1 angle/);
+      expect(narration).toMatch(new RegExp(`Looking into: ${ANGLE}`));
+      expect(narration).toMatch(/writing it up/);
+      expect(narration).toMatch(/Writing up 1 angle/);
+      expect(run?.reported.at(-1)).toBe("Filing the findings.");
 
-        // The review wait, ASKED FOR and not taken: this engine records a
-        // durable `sleep` rather than suspending, so what a case can honestly
-        // claim is that the body asked — and that is the assertion that fails
-        // if the suspension is ever deleted.
-        expect(run?.slept).toEqual([{ label: "reviewWindow", duration: REVIEW_DELAY_MS }]);
+      // The review wait, ASKED FOR and not taken: this engine records a
+      // durable `sleep` rather than suspending, so what a case can honestly
+      // claim is that the body asked — and that is the assertion that fails
+      // if the suspension is ever deleted.
+      expect(run?.slept).toEqual([{ label: "reviewWindow", duration: REVIEW_DELAY_MS }]);
 
-        // Six model calls, all through the step slot: the fan-out's width came
-        // from a journaled stage rather than from anything the body recomputed.
-        expect(steps.calls).toHaveLength(MODEL_SCRIPT.length);
-      },
-      { stubReply: [...START_TURN] },
-    );
+      // Six model calls, all through the step slot: the fan-out's width came
+      // from a journaled stage rather than from anything the body recomputed.
+      expect(steps.calls).toHaveLength(MODEL_SCRIPT.length);
+    },
+    { stubReply: [...START_TURN] },
+  );
 
-    test(
-      "reads the live run back rather than guessing at it",
-      async ({ session, workflows }) => {
-        const steps = scriptSteps({ hold: true });
+  test(
+    "reads the live run back rather than guessing at it",
+    async ({ session, workflows }) => {
+      const steps = scriptSteps({ hold: true });
 
-        const started = await session.say(ASK);
-        const runId = startedRunId(started.toolCalls);
-        const turn = await session.say("What's it doing right now?");
+      const started = await session.say(ASK);
+      const runId = startedRunId(started.toolCalls);
+      const turn = await session.say("What's it doing right now?");
 
-        // WHICH of the two readback tools the model picks is its business —
-        // the prompt offers both — so the claim is about what it was told:
-        // either the run's own latest progress line or its status, and never
-        // an answer the desk invented.
-        const read = readbacks(turn.toolCalls);
-        expect(read.length).toBeGreaterThan(0);
-        const answered = read.map((one) => one.result ?? "").join("\n");
-        expect(answered).toMatch(/really asking|Still working on it/);
-        expect(answered).not.toMatch(/Nothing started yet/);
+      // WHICH of the two readback tools the model picks is its business —
+      // the prompt offers both — so the claim is about what it was told:
+      // either the run's own latest progress line or its status, and never
+      // an answer the desk invented.
+      const read = readbacks(turn.toolCalls);
+      expect(read.length).toBeGreaterThan(0);
+      const answered = read.map((one) => one.result ?? "").join("\n");
+      expect(answered).toMatch(/really asking|Still working on it/);
+      expect(answered).not.toMatch(/Nothing started yet/);
 
-        // The load-bearing half: that readback happened while the run was
-        // genuinely in flight, which is the only state these two tools exist
-        // for.
-        const runs = await (workflows?.runs() ?? []);
-        expect(runs.find((one) => one.runId === runId)?.status).toBe("running");
+      // The load-bearing half: that readback happened while the run was
+      // genuinely in flight, which is the only state these two tools exist
+      // for.
+      const runs = await (workflows?.runs() ?? []);
+      expect(runs.find((one) => one.runId === runId)?.status).toBe("running");
 
-        await drain(workflows, steps);
-      },
-      {
-        stubReply: [
-          ...START_TURN,
-          { tool: "research_progress", args: {} },
-          "It's still working out what the question really is.",
-        ],
-      },
-    );
+      await drain(workflows, steps);
+    },
+    {
+      stubReply: [
+        ...START_TURN,
+        { tool: "research_progress", args: {} },
+        "It's still working out what the question really is.",
+      ],
+    },
+  );
 
-    test(
-      "says nothing is running when nothing is, and starts nothing to find out",
-      async ({ session, workflows }) => {
-        const steps = scriptSteps();
+  test(
+    "says nothing is running when nothing is, and starts nothing to find out",
+    async ({ session, workflows }) => {
+      const steps = scriptSteps();
 
-        const turn = await session.say("Any news on that research I asked for?");
+      const turn = await session.say("Any news on that research I asked for?");
 
-        const read = readbacks(turn.toolCalls);
-        expect(read.length).toBeGreaterThan(0);
-        expect(read.map((one) => one.result ?? "").join("\n")).toMatch(/Nothing started yet/);
-        // A question is not a request: asking after work nobody asked for must
-        // not put a run — and a research pass's worth of model calls — on the
-        // account.
-        expect(await (workflows?.runs() ?? [])).toEqual([]);
-        expect(steps.calls).toEqual([]);
-      },
-      {
-        stubReply: [
-          { tool: "research_status", args: {} },
-          "Nothing has been started yet — want me to look into something?",
-        ],
-      },
-    );
-  },
-  { env: EVAL_ENV },
-);
+      const read = readbacks(turn.toolCalls);
+      expect(read.length).toBeGreaterThan(0);
+      expect(read.map((one) => one.result ?? "").join("\n")).toMatch(/Nothing started yet/);
+      // A question is not a request: asking after work nobody asked for must
+      // not put a run — and a research pass's worth of model calls — on the
+      // account.
+      expect(await (workflows?.runs() ?? [])).toEqual([]);
+      expect(steps.calls).toEqual([]);
+    },
+    {
+      stubReply: [
+        { tool: "research_status", args: {} },
+        "Nothing has been started yet — want me to look into something?",
+      ],
+    },
+  );
+});

@@ -70,11 +70,17 @@
  */
 
 import { basename, extname, join } from "node:path";
-import { ffmpegBaseArgs, probeMedia, runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
+import {
+  describeMedia,
+  ffmpegBaseArgs,
+  probeMedia,
+  runFfmpeg,
+  wavEncodeArgs,
+} from "@alexkroman1/aai/ffmpeg";
 import { stepReadUpload, stepReport, stepRequireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
-import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
+import { formatBytes } from "@alexkroman1/aai/utils";
 import {
   heavierThanNormalizedFormat,
   NORMALIZED_CHANNELS,
@@ -178,7 +184,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
         throwFfmpegStepError,
       );
       await stepReport(
-        `It is ${describeSource(info.audio?.codec, info.durationSec)} — re-encoding to ` +
+        `It is ${describeMedia(info)} — re-encoding to ` +
           `${NORMALIZED_SAMPLE_RATE / 1000} kHz mono WAV.`,
       );
 
@@ -273,12 +279,4 @@ export function cuttable(head: Uint8Array, totalBytes: number): boolean {
  */
 export function heavierThanNormalized(head: Uint8Array, totalBytes: number): boolean {
   return heavierThanNormalizedFormat(parseWav(head, totalBytes));
-}
-
-/** `41:20 of aac`, or as much of that as ffprobe would say. */
-function describeSource(codec: string | undefined, durationSec: number | undefined): string {
-  const length =
-    durationSec === undefined ? undefined : formatDuration(Math.round(durationSec * 1000));
-  if (length !== undefined && codec !== undefined) return `${length} of ${codec}`;
-  return length ?? codec ?? "the recording";
 }

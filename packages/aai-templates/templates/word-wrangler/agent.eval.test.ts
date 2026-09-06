@@ -12,14 +12,11 @@ import agentDef from "virtual:aai/agent";
 // which still boots this agent, still resolves `tools/`, still arms the dialog
 // and still executes the tool a script names — so a stub run proves the wiring
 // and proves nothing about what the agent chose.
+import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import { lastStateIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
-
-/** What a GATED tool answers with: the SDK's envelope around the tool's own result. */
-const gated = <T extends z.ZodType>(result: T) =>
-  z.object({ result, state: z.string(), done: z.boolean() });
 
 /** The scoreboard, as these cases read it. */
 const Board = z.object({
@@ -42,7 +39,7 @@ describeEval(agentDef, (test) => {
       const started = toolResultIn(
         turn.toolCalls,
         "start_game",
-        gated(z.object({ word: z.string(), intro: z.string() })),
+        dialogResultSchema(z.object({ word: z.string(), intro: z.string() })),
       );
       expect(started.state).toBe("playing");
       expect(started.result.intro).toMatch(/^Welcome to Word Wrangler!/);
@@ -69,7 +66,9 @@ describeEval(agentDef, (test) => {
       const relayed = toolResultIn(
         turn.toolCalls,
         "relay_description",
-        gated(z.object({ verdict: z.string(), playerSaid: z.string(), score: z.number() })),
+        dialogResultSchema(
+          z.object({ verdict: z.string(), playerSaid: z.string(), score: z.number() }),
+        ),
       );
       expect(relayed.result).toMatchObject({
         verdict: "wrong",
@@ -104,7 +103,7 @@ describeEval(agentDef, (test) => {
       const { word } = toolResultIn(
         first.toolCalls,
         "start_game",
-        gated(z.object({ word: z.string() })),
+        dialogResultSchema(z.object({ word: z.string() })),
       ).result;
       // The host's relay below is sanitized — the word is not in the script's
       // args — and the tool still rules a foul off what the caller actually said.
@@ -113,7 +112,7 @@ describeEval(agentDef, (test) => {
       const relayed = toolResultIn(
         turn.toolCalls,
         "relay_description",
-        gated(z.object({ verdict: z.string(), word: z.string(), score: z.number() })),
+        dialogResultSchema(z.object({ verdict: z.string(), word: z.string(), score: z.number() })),
       );
       expect(relayed.result).toMatchObject({ verdict: "foul", word, score: 0 });
       expect(lastStateIn(turn.events, Board)).toMatchObject({ fouls: 1, score: 0 });
@@ -137,7 +136,7 @@ describeEval(agentDef, (test) => {
       const { word } = toolResultIn(
         first.toolCalls,
         "start_game",
-        gated(z.object({ word: z.string() })),
+        dialogResultSchema(z.object({ word: z.string() })),
       ).result;
       const turn = await session.say("Ugh, skip this one.");
       expect(toolNames(turn.toolCalls)).toEqual(["skip_word"]);

@@ -18,6 +18,10 @@
  * - {@link transcodeToWav} — make it the one format the arithmetic works on.
  * - {@link runFfmpeg} — everything else, as an argv you build yourself.
  *
+ * And one that is not a call at all: {@link describeMedia} turns a probe into the
+ * `41:20 of aac` a progress line wants, which every step that probed had written
+ * for itself.
+ *
  * ```ts
  * import { stepReadUpload } from "@alexkroman1/aai/step";
  * import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
@@ -82,6 +86,7 @@
  * @module ffmpeg
  */
 
+import { formatDuration } from "../sdk/format.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { type MediaInfo, parseProbeJson } from "./_ffmpeg-json.ts";
 import {
@@ -232,6 +237,43 @@ export async function probeMedia(
     },
   );
   return parseProbeJson(Buffer.from(stdout).toString("utf-8"));
+}
+
+/**
+ * A probe as one phrase for a progress line — `41:20 of aac`.
+ *
+ * Duration and codec are both optional on a {@link MediaInfo}, and the phrase
+ * degrades a field at a time rather than printing `undefined of undefined`:
+ * `41:20` when ffprobe measured a length but named no codec (a raw PCM file has
+ * none), `aac` when the container declared no duration (a stream copy with no
+ * index, or a non-faststart MP4 probed over a pipe — see {@link probeMedia}),
+ * and `the recording` when it reported neither, so the sentence around it still
+ * reads.
+ *
+ * The codec is the first AUDIO stream's, which is what a transcription step
+ * means by "what is this file"; a video's own codec is not the thing being
+ * re-encoded. Duration comes from the container, rounded to the second by
+ * `formatDuration`.
+ *
+ * @example
+ * ```ts
+ * import { describeMedia, probeMedia } from "@alexkroman1/aai/ffmpeg";
+ * import { stepReport } from "@alexkroman1/aai/step";
+ *
+ * const info = await probeMedia("/tmp/recording.m4a");
+ * await stepReport(`Re-encoding ${describeMedia(info)} to 16 kHz mono WAV.`);
+ * ```
+ *
+ * @public
+ */
+export function describeMedia(info: MediaInfo): string {
+  const length =
+    info.durationSec === undefined
+      ? undefined
+      : formatDuration(Math.round(info.durationSec * 1000));
+  const codec = info.audio?.codec;
+  if (length !== undefined && codec !== undefined) return `${length} of ${codec}`;
+  return length ?? codec ?? "the recording";
 }
 
 export type WavEncodeOptions = {

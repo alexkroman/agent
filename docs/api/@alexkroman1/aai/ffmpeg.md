@@ -15,6 +15,49 @@ suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 
+### describeMedia()
+
+```ts
+function describeMedia(info: MediaInfo): string;
+```
+
+A probe as one phrase for a progress line — `41:20 of aac`.
+
+Duration and codec are both optional on a [MediaInfo](#mediainfo), and the phrase
+degrades a field at a time rather than printing `undefined of undefined`:
+`41:20` when ffprobe measured a length but named no codec (a raw PCM file has
+none), `aac` when the container declared no duration (a stream copy with no
+index, or a non-faststart MP4 probed over a pipe — see [probeMedia](#probemedia)),
+and `the recording` when it reported neither, so the sentence around it still
+reads.
+
+The codec is the first AUDIO stream's, which is what a transcription step
+means by "what is this file"; a video's own codec is not the thing being
+re-encoded. Duration comes from the container, rounded to the second by
+`formatDuration`.
+
+#### Parameters
+
+##### info
+
+[`MediaInfo`](#mediainfo)
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { describeMedia, probeMedia } from "@alexkroman1/aai/ffmpeg";
+import { stepReport } from "@alexkroman1/aai/step";
+
+const info = await probeMedia("/tmp/recording.m4a");
+await stepReport(`Re-encoding ${describeMedia(info)} to 16 kHz mono WAV.`);
+```
+
+***
+
 ### ffmpegBaseArgs()
 
 ```ts

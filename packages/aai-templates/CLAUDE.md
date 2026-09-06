@@ -661,6 +661,12 @@ included. `transcribeStream` still refuses, and has to: it cuts while the bytes
 are still arriving, and a partial file is not something a decoder can be pointed
 at.
 
+Both probing steps report what the file WAS before they touch it — "Levelling
+41:20 of aac to 16 kHz mono" — and both had written the phrase themselves, one
+answering `unknown` where the other answered `the recording` for a codec ffprobe
+did not name. `describeMedia` (`@alexkroman1/aai/ffmpeg`) is that phrase now,
+degrading a field at a time; the two lines are one `stepReport` each.
+
 ### A `workflows/` module may hold a Node-only import at module scope
 
 That rule is RETIRED, and this is the account of what it cost.

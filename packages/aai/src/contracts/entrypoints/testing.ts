@@ -63,6 +63,7 @@ export {
   createWorkflowContext,
   deployedAgent,
   dialogRefusalPattern,
+  dialogResultSchema,
   expectDeployable,
   expectDialogOk,
   expectDialogRefused,

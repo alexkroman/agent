@@ -38,6 +38,7 @@ import {
   type EvalMode,
   registerEmptySuiteFailure,
 } from "./_announce.ts";
+import { stubbedEnv } from "./_stubbed-env.ts";
 import {
   type EvalCredentials,
   type EvalSession,
@@ -338,7 +339,11 @@ async function runCase(run: CaseRun): Promise<void> {
     options?.workflows === undefined && hasWorkflows(agent)
       ? openEvalWorkflows({
           agent,
-          ...omitUndefined({ env: options?.env }),
+          // The same env `describeWorkflowEval` gives a workflow app: in stub
+          // mode a declared key nobody has is a placeholder, so a step's
+          // `requireStepEnv` reaches the scripted provider instead of throwing
+          // over a credential the case was never going to use.
+          env: options?.env ?? stubbedEnv(agent, mode),
           ...(options?.workflowOptions ?? {}),
         })
       : undefined;

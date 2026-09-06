@@ -55,29 +55,9 @@ import {
   type EvalMode,
   registerEmptySuiteFailure,
 } from "./_announce.ts";
+import { stubbedEnv } from "./_stubbed-env.ts";
 import { resolveWorkflowEvalMode } from "./describe.ts";
-import {
-  type EvalWorkflows,
-  type EvalWorkflowsOptions,
-  evalWorkflowCredentials,
-  openEvalWorkflows,
-} from "./workflows.ts";
-
-/**
- * What a missing declared credential is worth in stub mode.
- *
- * A step reads its key with `requireStepEnv`, which THROWS by name for a key the
- * agent env does not carry — so without this a scripted run of any workflow app
- * fails on the credential rather than on anything a case wrote, which is exactly
- * the "keyless run proves the wiring" property `describeEval` exists to protect.
- * Nothing real is dialled in stub mode, so a placeholder is the honest value; it
- * is recognizable on the off chance one reaches a provider, which would mean a
- * case forgot to fake something.
- *
- * The same decision `installStubLlm` makes by handing back an env carrying
- * `STUB_LLM_API_KEY_ENV`.
- */
-const STUB_ENV_VALUE = "aai-eval-stub-credential";
+import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
 
 /** What a workflow case gets to say about how it should be run. */
 export type EvalWorkflowCaseOptions = {
@@ -169,19 +149,4 @@ export function describeWorkflowEval(
     announceEvalCoverage(agent.name, mode, declared, skipped);
     registerEmptySuiteFailure(agent.name, mode, declared, skipped);
   });
-}
-
-/**
- * The agent env a suite runs on: what this machine has, plus a placeholder for
- * every declared key it does not, in stub mode only.
- *
- * In LIVE mode a missing key is not filled in — the mode was only chosen because
- * nothing was missing, and filling one would turn a real call into a 401 that
- * reads as the provider's fault.
- */
-function stubbedEnv(agent: AgentDef, mode: EvalMode): Record<string, string> {
-  const creds = evalWorkflowCredentials(agent);
-  const env: Record<string, string> = { ...creds.env };
-  if (mode === "stub") for (const name of creds.missing) env[name] = STUB_ENV_VALUE;
-  return env;
 }

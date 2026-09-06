@@ -239,6 +239,18 @@ the first and third; neither is built.
 a keyless run goes live and 401s three layers down inside a step. It reads
 `requiredEnv` too, which is the only place a workflow app declares what it needs.
 
+**And in stub mode a declared key nobody has is a PLACEHOLDER, by both doors.**
+A step reads its key with `requireStepEnv`, which throws by name, so a scripted
+run with no key failed on the credential before reaching the fake a case had
+installed. `describeWorkflowEval` fills every missing declared key with
+`aai-eval-stub-credential` (`eval/_stubbed-env.ts`); `describeEval` does the
+same for the engine it opens beside a voice agent that hands off to a run — it
+used to hand that engine exactly the `env` the suite passed, so both templates
+with that shape carried an `EVAL_ENV` of their own to say
+`process.env.ASSEMBLYAI_API_KEY ?? "eval-scripted-key"`. In LIVE mode nothing is
+filled: the mode was chosen because nothing was missing, and a placeholder would
+turn a real call into a 401 that reads as the provider's fault.
+
 ### A keyless run gets a SCRIPTED model, not a skip
 
 `describeEval` (on `/eval/vitest`, which is what pulls the optional `vitest`

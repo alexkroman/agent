@@ -65,7 +65,12 @@ export {
   type StubStepRequest,
   stubStepFetch,
 } from "./_testing-step-fetch.ts";
-export { expectDialogOk, expectDialogRefused, expectToolOk } from "./_testing-tool-results.ts";
+export {
+  dialogResultSchema,
+  expectDialogOk,
+  expectDialogRefused,
+  expectToolOk,
+} from "./_testing-tool-results.ts";
 export {
   type StubTranscribe,
   type StubTranscribeCall,

@@ -14,22 +14,12 @@ import agentDef from "virtual:aai/agent";
 // resolves `tools/`, still applies the dialog gate and still executes the tool
 // a script names — so a stub run proves the wiring and proves nothing about
 // what the agent chose.
+import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import { toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { disclosureFor, PLANS } from "./shared.ts";
-
-/**
- * What a GATED tool answers with, as this eval reads it.
- *
- * The envelope is the SDK's: `result` is the tool's own return value and
- * `state` is where the call landed, written by `dialog.tool` rather than by any
- * tool file. Parsing rather than casting is what makes a template that stopped
- * carrying its position fail here naming the field.
- */
-const gated = <T extends z.ZodType>(result: T) =>
-  z.object({ result, state: z.string(), done: z.boolean() });
 
 /** A refusal: what a `when` gate answers instead of running the body. */
 const REFUSAL = z.object({ error: z.string() });
@@ -59,7 +49,7 @@ describeEval(agentDef, (test) => {
       const landed = toolResultIn(
         turn.toolCalls,
         "report_location",
-        gated(z.object({ where: z.string() })),
+        dialogResultSchema(z.object({ where: z.string() })),
       );
       expect(landed.state).toBe("onCall.verifying");
     },
@@ -137,7 +127,7 @@ describeEval(agentDef, (test) => {
       const handed = toolResultIn(
         turn.toolCalls,
         "service_disclosure",
-        gated(z.object({ readThisVerbatim: z.string() })),
+        dialogResultSchema(z.object({ readThisVerbatim: z.string() })),
       );
       expect(handed.result.readThisVerbatim).toBe(
         disclosureFor({

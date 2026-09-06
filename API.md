@@ -179,6 +179,9 @@ export interface SlackChannelOptions {
 
 ```ts
 // @public
+export function describeMedia(info: MediaInfo): string;
+
+// @public
 export function ffmpegBaseArgs(options?: {
     loglevel?: string;
 }): string[];
@@ -5927,6 +5930,14 @@ interface DialogPosition {
 
 // @public
 export function dialogRefusalPattern(state?: string): RegExp;
+
+// @public
+export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<{
+    result: T;
+    state: z.ZodString;
+    done: z.ZodBoolean;
+    instruction: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
 
 // @public
 interface DialogTimeout {

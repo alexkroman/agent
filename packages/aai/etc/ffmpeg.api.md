@@ -5,6 +5,9 @@
 ```ts
 
 // @public
+export function describeMedia(info: MediaInfo): string;
+
+// @public
 export function ffmpegBaseArgs(options?: {
     loglevel?: string;
 }): string[];

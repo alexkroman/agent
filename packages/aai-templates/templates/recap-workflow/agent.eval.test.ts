@@ -76,18 +76,6 @@ import { expect } from "vitest";
 import { z } from "zod";
 import { recap, SAMPLE_RECORDING } from "./shared.ts";
 
-/**
- * The key every step reads with `requireStepEnv` — the one name `agent.ts`
- * declares in `requiredEnv`.
- *
- * Passed as the agent env so the eval's workflow engine publishes it: the
- * provider calls are answered by a fake, but each asks for the key BEFORE it
- * makes its request, so a run with no key fails on the credential rather than
- * reaching the script. The ENVIRONMENT and nothing else — a template may not
- * read a developer's CLI config.
- */
-const EVAL_ENV = { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "eval-scripted-key" };
-
 /** The job id the scripted provider mints for every submission. */
 const TRANSCRIPT_ID = "t_eval_1";
 
@@ -255,206 +243,202 @@ async function drain(workflows: EvalWorkflows | undefined, provider: ScriptedPro
   await workflows?.settleAll();
 }
 
-describeEval(
-  agentDef,
-  (test) => {
-    test(
-      "starts one run for the caller and will not pay for a second",
-      async ({ session, workflows }) => {
-        // Held, so the first run is unambiguously still live when the caller
-        // asks again — which is the state the live-run check exists for.
-        const provider = stubProvider({ hold: true });
+describeEval(agentDef, (test) => {
+  test(
+    "starts one run for the caller and will not pay for a second",
+    async ({ session, workflows }) => {
+      // Held, so the first run is unambiguously still live when the caller
+      // asks again — which is the state the live-run check exists for.
+      const provider = stubProvider({ hold: true });
 
-        const first = await session.say(ASK);
-        const runId = startedRunId(first.toolCalls);
-        const again = await session.say("Actually, start it again from scratch, please.");
+      const first = await session.say(ASK);
+      const runId = startedRunId(first.toolCalls);
+      const again = await session.say("Actually, start it again from scratch, please.");
 
-        // Temporal's workflow-id reuse policy, as this desk spells it: a caller
-        // who asks twice is told about the run they already have. WHETHER the
-        // model calls the tool a second time is its business — it may simply
-        // remember — so each call it did make has to have been refused with the
-        // run it found.
-        for (const answer of recapStarts(again.toolCalls)) {
-          expect(answer.started).toBe(false);
-          expect(answer.runId).toBe(runId);
-        }
+      // Temporal's workflow-id reuse policy, as this desk spells it: a caller
+      // who asks twice is told about the run they already have. WHETHER the
+      // model calls the tool a second time is its business — it may simply
+      // remember — so each call it did make has to have been refused with the
+      // run it found.
+      for (const answer of recapStarts(again.toolCalls)) {
+        expect(answer.started).toBe(false);
+        expect(answer.runId).toBe(runId);
+      }
 
-        // The half that is not vacuous either way, and the one the caller pays
-        // for: ONE run, and ONE submission to the provider.
-        const runs = await (workflows?.runs() ?? []);
-        expect(runs.map((one) => one.runId)).toEqual([runId]);
-        expect(runs[0]?.workflow).toBe("recap");
-        const posts = requests(provider, "POST");
-        expect(posts).toHaveLength(1);
-        // And it submitted the recording the DESK supplies, because a phone
-        // caller cannot read a URL aloud.
-        const submitted = JSON.parse(String(posts[0]?.body));
-        expect(submitted).toMatchObject({
-          audio_url: SAMPLE_RECORDING,
-          speaker_labels: true,
-        });
-        // NO `webhook_url`, asserted positively — see the third boundary in this
-        // file's header. Nothing publishes a webhook minter here, so
-        // `stepWebhookUrl` throws, `callbackUrl` degrades, and every run in this
-        // file polls rather than parking on a callback. Pinning it here is what
-        // stops an eval runtime that later publishes one from silently changing
-        // which arm all of these cases measure.
-        expect(Object.keys(submitted)).not.toContain("webhook_url");
-
-        await drain(workflows, provider);
-      },
-      {
-        stubReply: [
-          ...START_TURN,
-          { tool: "request_recap", args: {} },
-          "There's already one running for you — I'll tell you as soon as it lands.",
-        ],
-      },
-    );
-
-    test(
-      "reads the live run back rather than guessing at it",
-      async ({ session, workflows }) => {
-        const provider = stubProvider({ hold: true });
-
-        const started = await session.say(ASK);
-        const runId = startedRunId(started.toolCalls);
-        const turn = await session.say("How's that going?");
-
-        const read = readbacks(turn.toolCalls);
-        expect(read.length).toBeGreaterThan(0);
-        const answered = read.map((one) => one.result ?? "").join("\n");
-
-        // The load-bearing half: that readback happened while the run really
-        // was in flight, waiting on the provider — which is the only state
-        // these two tools exist for.
-        const runs = await (workflows?.runs() ?? []);
-        const live = runs.find((one) => one.runId === runId);
-        expect(live?.status).toBe("running");
-        expect(requests(provider, "GET")).toHaveLength(1);
-
-        // WHICH readback tool the model picks is its business — the prompt
-        // offers both — so the claim is about what it was TOLD, and each has its
-        // own shape: `recap_progress` hands back the run's own latest line and
-        // `recap_status` the snapshot's status. Compared against what the RUN
-        // really wrote rather than against a literal, because which line that is
-        // depends on how far the body got: with the durable `sleep` skipped here
-        // the `PATIENCE` race resolves at once, so the note the caller would
-        // hear two minutes in is already written.
-        const lastLine = String(live?.reported.at(-1));
-        expect(live?.reported.length).toBeGreaterThan(0);
-        expect(answered).toMatch(new RegExp(`${literal(lastLine)}|Still working on that one`));
-        expect(answered).not.toMatch(/Nothing started yet/);
-
-        await drain(workflows, provider);
-      },
-      {
-        stubReply: [
-          ...START_TURN,
-          { tool: "recap_progress", args: {} },
-          "It's with the transcription service now — nothing back yet.",
-        ],
-      },
-    );
-
-    test(
-      "cancelling says plainly what it did NOT roll back, and really does not",
-      async ({ session, workflows }) => {
-        const provider = stubProvider({ hold: true });
-
-        const started = await session.say(ASK);
-        const runId = startedRunId(started.toolCalls);
-        const turn = await session.say("Forget it — cancel that, please.");
-
-        const answer = toolResultIn(turn.toolCalls, "cancel_recap", Cancelled);
-        expect(answer.cancelled).toBe(true);
-        // The sentence is a documented promise of this template, not a
-        // decoration: cancellation is NOT cooperative here, so the transcript
-        // the run had already created stays on the account and the caller is
-        // told so rather than left to assume a rollback.
-        expect(answer.note).toMatch(/left behind/);
-        expect(answer.note).toMatch(/does not roll back/);
-
-        // And it is TRUE, which is the part only an eval with a real run can
-        // check: the run is cancelled, and no compensating DELETE went out.
-        const runs = await (workflows?.runs() ?? []);
-        expect(runs.find((one) => one.runId === runId)?.status).toBe("cancelled");
-        expect(requests(provider, "DELETE")).toEqual([]);
-
-        // Released after the assertions on purpose: the body runs on regardless
-        // (there is no queue here to stop delivering to, and Temporal's
-        // deliver-cancellation-into-the-workflow is the one thing this template
-        // says does not port), so anything it does afterwards is not what the
-        // caller was told about.
-        await drain(workflows, provider);
-      },
-      {
-        stubReply: [
-          ...START_TURN,
-          { tool: "cancel_recap", args: {} },
-          "Stopped it. The partial transcript stays on file — cancelling doesn't undo that.",
-        ],
-      },
-    );
-
-    test("nobody answers the retention gate, so the transcript is not kept", async ({
-      workflows,
-    }) => {
-      // The gate's SAFE DEFAULT, and the branch of it this tier really does
-      // reach: `ctx.waitFor` here carries a `timeoutMs` and no one can send a
-      // payload, which is the closed window rather than a missing feature. So
-      // this is the ordinary ending of every run in this file, and it is worth
-      // an assertion of its own — a gate whose no-answer branch KEPT the data
-      // would be a prompt with a grace period, and nothing else here would
-      // notice the difference.
-      const provider = stubProvider();
-
-      const run = await workflows?.run(recap, {
-        url: SAMPLE_RECORDING,
-        requestedBy: "eval-session",
+      // The half that is not vacuous either way, and the one the caller pays
+      // for: ONE run, and ONE submission to the provider.
+      const runs = await (workflows?.runs() ?? []);
+      expect(runs.map((one) => one.runId)).toEqual([runId]);
+      expect(runs[0]?.workflow).toBe("recap");
+      const posts = requests(provider, "POST");
+      expect(posts).toHaveLength(1);
+      // And it submitted the recording the DESK supplies, because a phone
+      // caller cannot read a URL aloud.
+      const submitted = JSON.parse(String(posts[0]?.body));
+      expect(submitted).toMatchObject({
+        audio_url: SAMPLE_RECORDING,
+        speaker_labels: true,
       });
+      // NO `webhook_url`, asserted positively — see the third boundary in this
+      // file's header. Nothing publishes a webhook minter here, so
+      // `stepWebhookUrl` throws, `callbackUrl` degrades, and every run in this
+      // file polls rather than parking on a callback. Pinning it here is what
+      // stops an eval runtime that later publishes one from silently changing
+      // which arm all of these cases measure.
+      expect(Object.keys(submitted)).not.toContain("webhook_url");
 
-      expect(run?.status).toBe("completed");
-      // `answered: false` is the half that separates this from a caller who
-      // said no: the desk reports which of the two happened rather than only
-      // what it did.
-      expect(run?.output).toMatchObject({ kept: false, answered: false });
-      // And the default really is DELETE — the same request the compensation
-      // makes, reached by the opposite path: this run succeeded.
-      expect(requests(provider, "DELETE").map((one) => one.url)).toEqual([
-        `https://api.assemblyai.com/v2/transcript/${TRANSCRIPT_ID}`,
-      ]);
-      // The caller was ASKED first, which is what makes two minutes of silence
-      // an answer at all.
-      expect(run?.reported.join("\n")).toMatch(/Keep the transcript on file/);
+      await drain(workflows, provider);
+    },
+    {
+      stubReply: [
+        ...START_TURN,
+        { tool: "request_recap", args: {} },
+        "There's already one running for you — I'll tell you as soon as it lands.",
+      ],
+    },
+  );
+
+  test(
+    "reads the live run back rather than guessing at it",
+    async ({ session, workflows }) => {
+      const provider = stubProvider({ hold: true });
+
+      const started = await session.say(ASK);
+      const runId = startedRunId(started.toolCalls);
+      const turn = await session.say("How's that going?");
+
+      const read = readbacks(turn.toolCalls);
+      expect(read.length).toBeGreaterThan(0);
+      const answered = read.map((one) => one.result ?? "").join("\n");
+
+      // The load-bearing half: that readback happened while the run really
+      // was in flight, waiting on the provider — which is the only state
+      // these two tools exist for.
+      const runs = await (workflows?.runs() ?? []);
+      const live = runs.find((one) => one.runId === runId);
+      expect(live?.status).toBe("running");
+      expect(requests(provider, "GET")).toHaveLength(1);
+
+      // WHICH readback tool the model picks is its business — the prompt
+      // offers both — so the claim is about what it was TOLD, and each has its
+      // own shape: `recap_progress` hands back the run's own latest line and
+      // `recap_status` the snapshot's status. Compared against what the RUN
+      // really wrote rather than against a literal, because which line that is
+      // depends on how far the body got: with the durable `sleep` skipped here
+      // the `PATIENCE` race resolves at once, so the note the caller would
+      // hear two minutes in is already written.
+      const lastLine = String(live?.reported.at(-1));
+      expect(live?.reported.length).toBeGreaterThan(0);
+      expect(answered).toMatch(new RegExp(`${literal(lastLine)}|Still working on that one`));
+      expect(answered).not.toMatch(/Nothing started yet/);
+
+      await drain(workflows, provider);
+    },
+    {
+      stubReply: [
+        ...START_TURN,
+        { tool: "recap_progress", args: {} },
+        "It's with the transcription service now — nothing back yet.",
+      ],
+    },
+  );
+
+  test(
+    "cancelling says plainly what it did NOT roll back, and really does not",
+    async ({ session, workflows }) => {
+      const provider = stubProvider({ hold: true });
+
+      const started = await session.say(ASK);
+      const runId = startedRunId(started.toolCalls);
+      const turn = await session.say("Forget it — cancel that, please.");
+
+      const answer = toolResultIn(turn.toolCalls, "cancel_recap", Cancelled);
+      expect(answer.cancelled).toBe(true);
+      // The sentence is a documented promise of this template, not a
+      // decoration: cancellation is NOT cooperative here, so the transcript
+      // the run had already created stays on the account and the caller is
+      // told so rather than left to assume a rollback.
+      expect(answer.note).toMatch(/left behind/);
+      expect(answer.note).toMatch(/does not roll back/);
+
+      // And it is TRUE, which is the part only an eval with a real run can
+      // check: the run is cancelled, and no compensating DELETE went out.
+      const runs = await (workflows?.runs() ?? []);
+      expect(runs.find((one) => one.runId === runId)?.status).toBe("cancelled");
+      expect(requests(provider, "DELETE")).toEqual([]);
+
+      // Released after the assertions on purpose: the body runs on regardless
+      // (there is no queue here to stop delivering to, and Temporal's
+      // deliver-cancellation-into-the-workflow is the one thing this template
+      // says does not port), so anything it does afterwards is not what the
+      // caller was told about.
+      await drain(workflows, provider);
+    },
+    {
+      stubReply: [
+        ...START_TURN,
+        { tool: "cancel_recap", args: {} },
+        "Stopped it. The partial transcript stays on file — cancelling doesn't undo that.",
+      ],
+    },
+  );
+
+  test("nobody answers the retention gate, so the transcript is not kept", async ({
+    workflows,
+  }) => {
+    // The gate's SAFE DEFAULT, and the branch of it this tier really does
+    // reach: `ctx.waitFor` here carries a `timeoutMs` and no one can send a
+    // payload, which is the closed window rather than a missing feature. So
+    // this is the ordinary ending of every run in this file, and it is worth
+    // an assertion of its own — a gate whose no-answer branch KEPT the data
+    // would be a prompt with a grace period, and nothing else here would
+    // notice the difference.
+    const provider = stubProvider();
+
+    const run = await workflows?.run(recap, {
+      url: SAMPLE_RECORDING,
+      requestedBy: "eval-session",
     });
 
-    test("a run that fails after creating a transcript deletes it again", async ({ workflows }) => {
-      // Started from the CASE rather than through a tool, because the subject
-      // is the saga and the failure has to be injected: the provider refuses
-      // the job, which is the branch that unwinds the compensation stack.
-      // `request_recap` is what the other three cases drive.
-      const provider = stubProvider({ ending: "error" });
+    expect(run?.status).toBe("completed");
+    // `answered: false` is the half that separates this from a caller who
+    // said no: the desk reports which of the two happened rather than only
+    // what it did.
+    expect(run?.output).toMatchObject({ kept: false, answered: false });
+    // And the default really is DELETE — the same request the compensation
+    // makes, reached by the opposite path: this run succeeded.
+    expect(requests(provider, "DELETE").map((one) => one.url)).toEqual([
+      `https://api.assemblyai.com/v2/transcript/${TRANSCRIPT_ID}`,
+    ]);
+    // The caller was ASKED first, which is what makes two minutes of silence
+    // an answer at all.
+    expect(run?.reported.join("\n")).toMatch(/Keep the transcript on file/);
+  });
 
-      const run = await workflows?.run(recap, {
-        url: SAMPLE_RECORDING,
-        requestedBy: "eval-session",
-      });
+  test("a run that fails after creating a transcript deletes it again", async ({ workflows }) => {
+    // Started from the CASE rather than through a tool, because the subject
+    // is the saga and the failure has to be injected: the provider refuses
+    // the job, which is the branch that unwinds the compensation stack.
+    // `request_recap` is what the other three cases drive.
+    const provider = stubProvider({ ending: "error" });
 
-      expect(run?.status).toBe("failed");
-      expect(run?.error).toMatch(/could not transcribe/);
-      // The unwind, off the run's own narration — one compensation, named.
-      const narration = run?.reported.join("\n") ?? "";
-      expect(narration).toMatch(/undoing 1 step/);
-      expect(narration).toMatch(`Discarding transcript ${TRANSCRIPT_ID}.`);
-      // And it really happened: the transcript this run created was deleted
-      // from the account, which is the promise "a failed recap leaves nothing
-      // behind" rests on. An undo registered BEFORE its step, or a `catch`
-      // that stopped compensating, fails here.
-      expect(requests(provider, "DELETE").map((one) => one.url)).toEqual([
-        `https://api.assemblyai.com/v2/transcript/${TRANSCRIPT_ID}`,
-      ]);
+    const run = await workflows?.run(recap, {
+      url: SAMPLE_RECORDING,
+      requestedBy: "eval-session",
     });
-  },
-  { env: EVAL_ENV },
-);
+
+    expect(run?.status).toBe("failed");
+    expect(run?.error).toMatch(/could not transcribe/);
+    // The unwind, off the run's own narration — one compensation, named.
+    const narration = run?.reported.join("\n") ?? "";
+    expect(narration).toMatch(/undoing 1 step/);
+    expect(narration).toMatch(`Discarding transcript ${TRANSCRIPT_ID}.`);
+    // And it really happened: the transcript this run created was deleted
+    // from the account, which is the promise "a failed recap leaves nothing
+    // behind" rests on. An undo registered BEFORE its step, or a `catch`
+    // that stopped compensating, fails here.
+    expect(requests(provider, "DELETE").map((one) => one.url)).toEqual([
+      `https://api.assemblyai.com/v2/transcript/${TRANSCRIPT_ID}`,
+    ]);
+  });
+});

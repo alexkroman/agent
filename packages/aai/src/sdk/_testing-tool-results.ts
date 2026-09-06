@@ -26,6 +26,7 @@
  * @module _testing-tool-results
  */
 
+import { z } from "zod";
 import { dialogRefusalPattern } from "./_dialog-refusal.ts";
 import type { DialogToolResult } from "./dialog.ts";
 import { isRecord } from "./is-record.ts";
@@ -175,4 +176,52 @@ function describeValue(value: unknown): string {
   if (Array.isArray(value)) return "an array";
   if (isRecord(value)) return `an object with keys: ${Object.keys(value).join(", ") || "(none)"}`;
   return typeof value;
+}
+
+/**
+ * The envelope a gated tool answers with, as a schema around the tool's own.
+ *
+ * {@link expectDialogOk} unwraps a value a spec HOLDS. An eval holds the
+ * serialized copy the model was handed and reads it back through a schema —
+ * `toolResultIn(turn.toolCalls, "set_stay", schema)` — so it needs the same
+ * envelope as a schema rather than as a function, and three shipped evals had
+ * each written it out: `z.object({ result, state: z.string(), done:
+ * z.boolean() })`, under a comment saying the shape was the SDK's. It is, and
+ * this is where it lives: `result` is whatever the author's `execute` returned,
+ * `state` is where the call landed, `done` whether that state is final, and
+ * `instruction` is the state's own brief when it declares one — the fields of
+ * {@link DialogToolResult}, which a `dialog.tool` writes and no tool file does.
+ *
+ * Parsing rather than casting is what makes a template that stopped carrying its
+ * position fail naming the field, instead of a later `expect` reading
+ * `undefined.state`.
+ *
+ * @typeParam T - The schema of the tool's OWN result, under `result`.
+ *
+ * @param result - What the tool's `execute` answers with.
+ *
+ * @example
+ * ```ts
+ * import { dialogResultSchema } from "@alexkroman1/aai/testing";
+ * import { z } from "zod";
+ *
+ * // In an eval: `toolResultIn(turn.toolCalls, "set_stay", Stay)`. Holding the
+ * // serialized result yourself, it is the same parse:
+ * const Stay = dialogResultSchema(z.object({ options: z.string() }));
+ * const stay = Stay.parse(
+ *   JSON.parse('{"result":{"options":"garden view"},"state":"booking.room","done":false}'),
+ * );
+ * stay.state; // "booking.room"
+ * stay.result.options; // "garden view"
+ * ```
+ *
+ * @public
+ */
+export function dialogResultSchema<T extends z.ZodType>(result: T) {
+  return z.object({
+    result,
+    state: z.string(),
+    done: z.boolean(),
+    instruction: z.string().optional(),
+  });
 }

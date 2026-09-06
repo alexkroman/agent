@@ -206,6 +206,14 @@ interface DialogPosition {
 export function dialogRefusalPattern(state?: string): RegExp;
 
 // @public
+export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<{
+    result: T;
+    state: z.ZodString;
+    done: z.ZodBoolean;
+    instruction: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+
+// @public
 interface DialogTimeout {
     readonly afterMs: number;
     readonly event: {
