@@ -148,7 +148,7 @@ import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { type Logger, silentLogger } from "../runtime-config.ts";
 import { createTextAgent } from "../text-agent.ts";
 import { assertTurnMeasurable } from "./_turn-faults.ts";
-import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
+import { type EvalToolCall, errorsIn, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
 import type { EvalTurn } from "./session.ts";
 
 /**
@@ -405,6 +405,7 @@ export async function openEvalTextAgent(options: EvalTextAgentOptions): Promise<
       events: turn,
       toolCalls: toolCallsInEvents(turn),
       completed: turn.some((e) => e.type === "reply.completed"),
+      errors: errorsIn(turn),
     };
   };
 

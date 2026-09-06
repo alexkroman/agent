@@ -17,6 +17,7 @@
  */
 
 export {
+  commandedBuiltins,
   createProgressStream,
   createRunSnapshot,
   createStubWorkflows,
@@ -24,8 +25,10 @@ export {
   createWorkflowContext,
   deployedAgent,
   dialogRefusalPattern,
+  expectDeployable,
   expectDialogOk,
   expectDialogRefused,
+  expectPromptBuiltinsDeclared,
   expectToolOk,
   type ProjectFiles,
   parseSchemaInput,

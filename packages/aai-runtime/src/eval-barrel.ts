@@ -53,11 +53,11 @@
  * {@link openEvalSession}'s `workflows` option takes, which is what makes a
  * VOICE agent's run-starting tool executable in an eval.
  *
- * The assertion READERS ({@link saidIn}, {@link toolCallsInEvents}, {@link TURN_ENDS},
- * {@link toolArgsIn}, {@link toolResultIn}, {@link toolResultsIn},
- * {@link lastStateIn}, {@link statesIn}, {@link customEventsIn},
- * {@link toolNames}, {@link toolCallsInTurns}, {@link turnCalling},
- * {@link completedOutput}) are here rather than a vocabulary of matchers because
+ * The assertion READERS ({@link saidIn}, {@link errorsIn}, {@link toolCallsInEvents},
+ * {@link TURN_ENDS}, {@link toolArgsIn}, {@link toolResultIn}, {@link toolResultsIn},
+ * {@link runCodeIn}, {@link runCodeOutput}, {@link lastStateIn}, {@link statesIn},
+ * {@link customEventsIn}, {@link toolNames}, {@link toolCallsInTurns},
+ * {@link turnCalling}, {@link completedOutput}) are here rather than a vocabulary of matchers because
  * an eval already has a runner: `expect` in a vitest file is the simple case, and
  * a case that must PROFILE rather than bisect on the first failure wants a
  * recording runner, which is a different tool. What both need is one honest
@@ -71,6 +71,17 @@
  * and an `expect` that fails says "expected undefined to be defined" unless the
  * case hands it a message. Ten sites across five templates hand-built that
  * message, four of them byte-identically, which is what says it belongs here.
+ *
+ * One per-turn CLAIM ({@link expectToolBeforeSpeech}) is the exception to
+ * "readers, not assertions", and it is here because the hand-written form was
+ * WRONG in the same way at both sites: two `findIndex` calls compared by
+ * `toBeLessThan` fail as "expected 4 to be less than 2", naming neither the
+ * sentence spoken too early nor the tool. An ordering has no value to hand
+ * back, so a reader could not carry that message; a claim whose only correct
+ * spelling has a trap in it is the harness's to make once. The OTHER claim the
+ * templates wrote out — a declared builtin really answered — needed no new
+ * name: `toolNames` says it was called and {@link runCodeOutput} throws on the
+ * refusal that `toBeDefined()` used to be satisfied by.
  *
  * Exports are enumerated explicitly (no `export *`) so the public surface is
  * deliberate: a new symbol in one of these modules does not ship as public API
@@ -95,6 +106,7 @@ export {
   customEventsIn,
   describeToolCalls,
   type EvalToolCall,
+  errorsIn,
   lastStateIn,
   saidIn,
   statesIn,
@@ -105,6 +117,12 @@ export {
   toolResultIn,
   toolResultsIn,
 } from "./eval/events.ts";
+// The `run_code` builtin's two halves, read off a call list. Public because
+// four template evals had each declared the same schema and the same reader, and
+// each then guarded against the builtin's REFUSAL with a hand-typed regex over a
+// sentence the runtime owns — `runCodeOutput` imports the constant instead and
+// throws on it, so a reworded refusal cannot read as output.
+export { runCodeIn, runCodeOutput } from "./eval/run-code.ts";
 export {
   type EvalCredentials,
   type EvalSession,
@@ -156,7 +174,14 @@ export {
 // get somewhere is the model's business and it measurably varies, so a case
 // pinned to an index is a flake with a misleading name. Three templates reached
 // that conclusion independently and wrote these three out under it.
-export { describeTurn, toolCallsInTurns, turnCalling } from "./eval/turns.ts";
+// …plus the one per-turn CLAIM two templates wrote out by hand: the agent acted
+// before it spoke.
+export {
+  describeTurn,
+  expectToolBeforeSpeech,
+  toolCallsInTurns,
+  turnCalling,
+} from "./eval/turns.ts";
 // The `node:vm` `run_code` executor. Public because the `run_code` builtin
 // REFUSES without one off-platform (the Modal container is the security
 // boundary), so a case about an agent that answers by running code cannot assert

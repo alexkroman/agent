@@ -118,6 +118,53 @@ export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolC
 }
 
 /**
+ * The agent ACTED before it spoke: this turn's first `tool.called` precedes its
+ * first committed reply.
+ *
+ * "Report RESULTS, never intentions" is a rule two shipped prompts state and a
+ * model routinely breaks — "Let me look that up." and then the search, so the
+ * caller hears a promise and then dead air while the tool runs. Two templates
+ * asserted it by hand-indexing the event stream (`findIndex` twice, three
+ * `expect`s), which on failure prints "expected 4 to be less than 2" and names
+ * neither the sentence nor the tool. This names both.
+ *
+ * Both halves have to be present: a turn that called nothing has nothing to
+ * order, and a turn that said nothing reported no result at all — each is its
+ * own finding and each throws saying which.
+ *
+ * A THROW rather than a predicate, which is the exception to "readers, not
+ * assertions" that `eval-barrel.ts` argues: the ordering has no value to hand
+ * back, and a `toBe(true)` over a boolean would lose the sentence.
+ *
+ * ```ts
+ * import { type EvalTurn, expectToolBeforeSpeech } from "@alexkroman1/aai-runtime/eval";
+ *
+ * export function searchedFirst(turn: EvalTurn): void {
+ *   // The search comes before the answer, not after a sentence announcing one.
+ *   expectToolBeforeSpeech(turn);
+ * }
+ * ```
+ */
+export function expectToolBeforeSpeech(turn: EvalTurn): void {
+  const firstTool = turn.events.find((e) => e.type === "tool.called");
+  const firstSaid = turn.events.find((e) => e.type === "agent-transcript.committed");
+  if (firstTool === undefined) {
+    throw new Error(`no tool was called, so nothing came before speech: ${describeTurn(turn)}`);
+  }
+  if (firstSaid === undefined) {
+    throw new Error(
+      `the turn said nothing, so there is no reply to order the call against: ${describeTurn(turn)}`,
+    );
+  }
+  if (turn.events.indexOf(firstSaid) < turn.events.indexOf(firstTool)) {
+    throw new Error(
+      `the agent spoke before it acted — said ${elide(firstSaid.text)} and only then called ` +
+        `${firstTool.toolName}`,
+    );
+  }
+}
+
+/**
  * The turn `name` was called in — the FIRST one, and a throw naming what
  * happened instead when there is none.
  *

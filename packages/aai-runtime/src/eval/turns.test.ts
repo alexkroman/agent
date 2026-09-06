@@ -14,7 +14,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import type { EvalToolCall } from "./events.ts";
 import type { EvalTurn } from "./session.ts";
-import { describeTurn, toolCallsInTurns, turnCalling } from "./turns.ts";
+import { describeTurn, expectToolBeforeSpeech, toolCallsInTurns, turnCalling } from "./turns.ts";
 
 const call = (name: string, result?: string): EvalToolCall => ({
   toolCallId: `c-${name}`,
@@ -23,12 +23,21 @@ const call = (name: string, result?: string): EvalToolCall => ({
   ...omitUndefined({ result }),
 });
 
-/** One turn. `events` is unread by everything here, so it stays empty. */
-const turn = (text: string, toolCalls: readonly EvalToolCall[], completed = true): EvalTurn => ({
+/**
+ * One turn. `events` is unread by the sequence readers, so it stays empty
+ * unless a case hands one in — `expectToolBeforeSpeech` reads the ORDER.
+ */
+const turn = (
+  text: string,
+  toolCalls: readonly EvalToolCall[],
+  completed = true,
+  events: readonly SessionEvent[] = [],
+): EvalTurn => ({
   text,
-  events: [] as readonly SessionEvent[],
+  events,
   toolCalls,
   completed,
+  errors: [],
 });
 
 const CALL = [
@@ -142,5 +151,54 @@ describe("turnCalling", () => {
     expect(() => turnCalling(CALL, "cancel_pending_order", () => false)).toThrow(
       /2 call\(s\) to "cancel_pending_order" and none matched the predicate/,
     );
+  });
+});
+
+describe("expectToolBeforeSpeech", () => {
+  const meta = { id: "e", at: 0 };
+  const calledEvent: SessionEvent = {
+    type: "tool.called",
+    meta,
+    toolCallId: "c1",
+    toolName: "web_search",
+    args: { query: "who won" },
+  };
+  const saidEvent = (text: string): SessionEvent => ({
+    type: "agent-transcript.committed",
+    meta,
+    text,
+  });
+
+  test("passes when the first tool call precedes the first committed reply", () => {
+    const ok = turn("Argentina.", [call("web_search", "[]")], true, [
+      calledEvent,
+      saidEvent("Argentina."),
+    ]);
+    expect(() => expectToolBeforeSpeech(ok)).not.toThrow();
+  });
+
+  test("a sentence spoken before the call fails naming the sentence and the tool", () => {
+    // "Let me look that up." and then the search: the promise-then-dead-air the
+    // prompt rule exists to stop.
+    const spokeFirst = turn("Let me look that up. Argentina.", [call("web_search", "[]")], true, [
+      saidEvent("Let me look that up."),
+      calledEvent,
+      saidEvent("Argentina."),
+    ]);
+    expect(() => expectToolBeforeSpeech(spokeFirst)).toThrow(
+      /spoke before it acted — said "Let me look that up\." and only then called web_search/,
+    );
+  });
+
+  test("no tool call at all is its own finding", () => {
+    expect(() =>
+      expectToolBeforeSpeech(turn("Argentina.", [], true, [saidEvent("Argentina.")])),
+    ).toThrow(/no tool was called.*called no tools/s);
+  });
+
+  test("a turn that said nothing has no reply to order against", () => {
+    expect(() =>
+      expectToolBeforeSpeech(turn("", [call("web_search", "[]")], true, [calledEvent])),
+    ).toThrow(/said nothing, so there is no reply/);
   });
 });

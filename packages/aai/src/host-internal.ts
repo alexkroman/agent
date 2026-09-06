@@ -18,7 +18,7 @@
  */
 
 export { asDispatcher, type PinnedRequestInit, pinnedFetch } from "./host/_undici.ts";
-export type { RunCodeExecutor } from "./host/builtin-run-code.ts";
+export { RUN_CODE_REFUSAL, type RunCodeExecutor } from "./host/builtin-run-code.ts";
 export {
   type BuiltinToolOptions,
   type ResolvedBuiltins,

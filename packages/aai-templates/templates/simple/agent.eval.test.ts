@@ -17,6 +17,7 @@
 // What no eval here can see: anything below the audio boundary — where the
 // agent decides you stopped talking, how it handles being interrupted, whether
 // two sentences merged into one turn. Those need real paced audio.
+import { errorsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import agentDef from "./agent.ts";
@@ -45,7 +46,9 @@ describeEval(agentDef, (test) => {
       const turn = await session.say("What did I say my name was?");
 
       expect(turn.text).toMatch(/sam/i);
-      expect(session.events().some((e) => e.type === "error.reported")).toBe(false);
+      // Over the whole SESSION, greeting included: a failure prints the error
+      // events themselves, where a boolean printed "expected true to be false".
+      expect(errorsIn(session.events())).toEqual([]);
     },
     // One reply per turn: the second is the one under test, and a stub that
     // answered the first would fail the case it is supposed to let run.
