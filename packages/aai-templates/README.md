@@ -26,7 +26,7 @@ the CLI build's `inputs` so editing a template invalidates that build.
 
 | Path | What it is |
 | --- | --- |
-| `templates/<name>/` | 26 complete agent projects, each self-contained |
+| `templates/<name>/` | 28 complete agent projects, each self-contained |
 | `scaffold/` | the base project files layered under any template — `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `global.d.ts`, `pnpm-workspace.yaml`, `.gitignore`, `.env.example` — plus `CLAUDE.md`, which is the guide rather than a project file |
 | `src/` | this package's suites: the template gates, plus the gates that guard the repo's gates |
 | `template-api-allowlist.json` | the coverage ratchet's baseline — published exports no template exercises |
@@ -55,14 +55,14 @@ now, and only the `deno` build target still emits a file by that name.
 
 | File | Role | Count |
 | --- | --- | --- |
-| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 27 |
-| `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 15 templates |
+| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 28 |
+| `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 16 templates |
 | `workflows/` | durable workflow bodies | 8 templates |
-| `client.tsx` | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app) | 15 templates |
-| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 17 templates |
+| `client.tsx` | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app) | 16 templates |
+| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 18 templates |
 | `shared.ts` | the session slot, its projection, and anything both ends need | most |
-| `agent.test.ts` | unit tests, run by `pnpm test` | 27 templates |
-| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 27 templates |
+| `agent.test.ts` | unit tests, run by `pnpm test` | 28 templates |
+| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 28 templates |
 
 Tool discovery happens where the bundle is assembled — the guest sandbox is
 handed one ESM string and has no directory to scan — so `tools/` is enumerated
@@ -92,6 +92,7 @@ work off to a durable workflow.
 | `dispatch-center` | voice | an emergency dispatch board: incidents, units, and a live dashboard projection that keeps caller PII server-side |
 | `retail` | voice | the largest — fifteen tools over a seeded catalog, an auth gate, and a call's dialog ending in a terminal state |
 | `travel-concierge` | voice | LangGraph's customer-support tutorial as a phone concierge: a dialog stack and a confirmation gate |
+| `executive-assistant` | voice | LangChain's Executive AI Assistant (EAIA) as a call about your inbox: triage, drafts in your voice, a calendar subagent, the Agent Inbox's four answers as gated tools, and a memory that rewrites its own prompts from your corrections |
 | `roadside-assist` | voice | a dialog that describes a CALL rather than a form: a silence ladder, an uninterruptible fee disclosure, and per-phase LLM knobs |
 | `support-line` | voice | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) |
 | `plan-and-execute` | voice | a planning desk that really searches — plan-and-execute with the caller in the loop |
