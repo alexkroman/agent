@@ -26,7 +26,7 @@ the CLI build's `inputs` so editing a template invalidates that build.
 
 | Path | What it is |
 | --- | --- |
-| `templates/<name>/` | 28 complete agent projects, each self-contained |
+| `templates/<name>/` | 31 complete agent projects, each self-contained |
 | `scaffold/` | the base project files layered under any template — `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `global.d.ts`, `pnpm-workspace.yaml`, `.gitignore`, `.env.example` — plus `CLAUDE.md`, which is the guide rather than a project file |
 | `src/` | this package's suites: the template gates, plus the gates that guard the repo's gates |
 | `template-api-allowlist.json` | the coverage ratchet's baseline — published exports no template exercises |
@@ -55,14 +55,14 @@ now, and only the `deno` build target still emits a file by that name.
 
 | File | Role | Count |
 | --- | --- | --- |
-| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 28 |
-| `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 16 templates |
+| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 31 |
+| `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 19 templates |
 | `workflows/` | durable workflow bodies | 8 templates |
-| `client.tsx` | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app) | 16 templates |
-| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 18 templates |
+| `client.tsx` | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app) | 19 templates |
+| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 21 templates |
 | `shared.ts` | the session slot, its projection, and anything both ends need | most |
-| `agent.test.ts` | unit tests, run by `pnpm test` | 28 templates |
-| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 28 templates |
+| `agent.test.ts` | unit tests, run by `pnpm test` | 31 templates |
+| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 31 templates |
 
 Tool discovery happens where the bundle is assembled — the guest sandbox is
 handed one ESM string and has no directory to scan — so `tools/` is enumerated
@@ -98,6 +98,8 @@ work off to a durable workflow.
 | `plan-and-execute` | voice | a planning desk that really searches — plan-and-execute with the caller in the loop |
 | `briefing-desk` | voice | phone a desk, it puts several subagents on a topic at once — the `ctx.delegate` example |
 | `hiring-desk` | voice | CrewAI's `lead-score-flow` as a call about a stack of applicants: one crew scores them through `ctx.generate`, a human-in-the-loop router becomes a dialog with a bounded feedback loop, and the other crew writes every email as a guarded subagent |
+| `hotel-desk` | voice | LiveKit Agents' `hotel_receptionist` as a phone front desk: a seeded hotel in one slot, verification the TOOLS run, a booking dialog whose read-back is owed until the caller's next turn, a dispute engine, and the walk procedure — forty-one tools |
+| `word-wrangler` | voice | Pipecat's three-way phone word game: the host is the agent, the A.I. player is `ctx.generate` on its own context, the referee is a function, and the two-minute clock is a dialog `timeout` |
 | `research-workflow` | voice + workflow | the **handoff**: a tool starts a durable run, answers the turn, and the finished run speaks back |
 | `recap-workflow` | voice + workflow | transcribe and write up a recording — the Temporal patterns (cancel, signal, compensate) over a phone call |
 | `link-digest` | workflow app | the smallest one: a URL in, a digest out. Read this before the other five |
@@ -121,7 +123,7 @@ Evals are the slow tier and are **not** run by `pnpm test` — a live one spends
 real tokens on your own key:
 
 ```sh
-pnpm test:eval:templates                         # the 25 template evals, live
+pnpm test:eval:templates                         # the 31 template evals, live
 pnpm --filter aai-templates test:eval
 ```
 

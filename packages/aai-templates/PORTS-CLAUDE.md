@@ -1,8 +1,9 @@
 <!-- A SIBLING of packages/aai-templates/CLAUDE.md, read on demand: the guide is
 at its 120,000-character cap, and these are reference accounts for someone
-already inside one of the ported templates. The table that says which template
-ports what stays in CLAUDE.md, under "Six templates are ports of
-LangChain/LangGraph agents". -->
+already inside one of the ported templates. The tables that say which template
+ports what stay in CLAUDE.md, under "Six templates are ports of
+LangChain/LangGraph agents", "One template is a port of a CrewAI flow" and "Two
+templates are ports of the other voice frameworks' largest samples". -->
 
 # The LangChain/LangGraph ports — what each one kept, and what it changed
 
@@ -215,3 +216,114 @@ was handed) and `stubDelegate` routed to `hr-coordinator` — over one MUTABLE
 script, because a test that screens and then re-scores changes the score table
 between the two calls and the slot is keyed by the context, so swapping the
 context to swap the model would also swap the state.
+
+## The LiveKit port — `hotel-desk`
+
+LiveKit Agents' `hotel_receptionist` is the largest example that repository
+ships and the closest thing in it to a production desk: a `HotelDB` over apsw,
+thirty-odd `@function_tool`s across three mixins, five `AgentTask` sub-agents
+for the flows that need their own tool set, a policy knowledge base, and a
+grader that diffs the final database against an expected one. `shared.ts`
+carries the table. Five things are decisions:
+
+- **Verification is a gate, not a sub-conversation.** Their `_verified_booking`
+  `await`ed a `VerifyBookingTask` from inside every tool that needed one — a
+  model with two lookup tools and a three-strike rule that COMPLETED with the
+  booking. A voice tool cannot open a sub-conversation, so `verify_booking` fills
+  `verifiedCode` and `requireVerified` refuses every booking tool with the
+  sentence naming it. The three strikes survive as a counter, and email is still
+  not a verification field. What is lost is the task's isolation of the lookup
+  tools from the main model; what is gained is that the gate is checked by
+  twelve tools through one function rather than by a prompt.
+- **`BookRoomTask` and `ModifyBookingTask` are ONE dialog with a `mode`.** Their
+  `_step()` derived the flow's position from the captured values on every call so
+  a correction landed on the right step with no rollback bookkeeping; `nextStep`
+  (`booking.ts`) does the same and every recording tool ends with
+  `sendFrom: (r) => ({ type: r.next })`, into a step ladder declared ONCE on the
+  `booking` parent as `.child` targets. The modification pre-fills the draft and
+  enters `booking.editing`, so a guest whose room is not what they booked is
+  moved through the same tools — and `choose_room`'s refusal for a view the type
+  lacks says which type HAS it, which is their "the garden view IS open as a
+  queen" message and the whole fix for that call.
+- **`_Owed` is two states and a session event.** Their flow tracked speech it
+  owed the caller — offer the options before a room may be picked, read the
+  booking back before it may be confirmed — with a counter over the caller's
+  turns in the history, and the comment explains why the history rather than a
+  VAD hook: it had to hold for a caller who types. `offering` and `readBack`
+  each leave on `@user-transcript.committed`, and `confirm_booking` is gated on
+  `agreeing`, so the confirm is unreachable until the read-back has been
+  ANSWERED. `agent.test.ts` drives the event with `deskFlow.receive`. This is
+  the reason the template needs `agent({ dialogs })`.
+- **A room taken between read-back and confirm is a MOVE, not a failure.** A
+  `ToolFailure` sends no event, which would leave the position at `agreeing`
+  with no room on the draft. `confirm_booking` answers a success shape with
+  `next: "NEED_ROOM"` instead, so the flow lands where the caller has to pick
+  again — their "That room just got booked, pick another; I've kept everything
+  else", with the position moved to match.
+- **The money never passes through the model, and the seed proves the
+  procedures.** `computeInvoice` is the one pricing function; a dispute's refund
+  is the stored line item's amount or nothing, decided by `disputes.ts`; a
+  cancellation's forfeit is one night at the rate the BOOKING holds. The seed is
+  theirs to the row, offsets from a frozen `TODAY`, and every cluster in it is a
+  spec case: tonight is oversold so Kenji Tanaka is WALKED, next weekend is
+  oversold so Tom Whelan is UPGRADED to a suite at his own total, Robert Klein's
+  garden view is room 205 kept free on purpose, and July 3 is sold out so the
+  waitlist has a reason to exist.
+
+Two things the port dropped, stated rather than hidden. Their `ui_view.py`
+streamed SQLite changesets to the playground; `syncState` pushes the slot, and
+the sidebar renders the ledger of everything the call wrote. And their
+`policies/tours.md` and `spa.md` did not exist while the prompt pointed the
+model at them — the four catalog topics are rendered from `catalogs.ts`, which
+also retires the "keep the two in sync" comment on each catalog.
+
+## The Pipecat port — `word-wrangler`
+
+Pipecat's `word-wrangler-gemini-live` phone game is a three-way conversation —
+an AI host, a human describer, an AI player — built on a `ParallelPipeline`
+because, as its README says, LLMs are turn-based and this needs three
+participants in real time. Two Gemini Live sessions run on two branches; a
+`ProducerProcessor`/`ConsumerProcessor` pair resamples the player's speech and
+feeds it into the host's ears; a text filter swallows the host's "NO" and
+"IGNORE" replies before TTS; a regex over the host's streamed text detects a new
+word and a score; and the player disconnects and reconnects on every new word so
+it never carries the previous one's context. `shared.ts` carries the table. Four
+things are decisions:
+
+- **The second model is `ctx.generate`, and the tool boundary is the room.** The
+  host model calls `relay_description` with what the describer said; the tool
+  runs the PLAYER's prompt with only this word's descriptions and this word's
+  wrong guesses, and hands back a structured guess. The host never sees the
+  player's context and the player never hears the host, which is exactly the
+  isolation two branches, a resampler and a reconnect were buying; the
+  per-word reset is structural because the prompt is built per word. The honest
+  cost is one voice: the host relays the guess in its own.
+- **The referee is a function and the score is a number.** Their host was asked
+  to judge guesses and keep score in its head, announce it in a fixed phrase, and
+  a regex parsed the score back out of the transcript — a host that said
+  "Correct! Three points" lost it. `isCorrectGuess` (`guess.ts`) compares a word
+  to a word (articles, case, punctuation and a plural set aside; nothing fuzzier),
+  the tool increments `score`, and the scoreboard renders it.
+- **The foul is ruled off the describer's OWN transcript.** "The describer
+  CANNOT say any part of the word" was a rule in the host's prompt; a describer
+  who said the word was scored a point if the host did not notice. `ctx.messages`
+  holds the conversation, so `relay_description` checks the last user turn as
+  well as the description the host passed — a host that paraphrased the word
+  away cannot launder it. The eval's third case is exactly that: the scripted
+  host's arguments are sanitized and the tool still calls the foul.
+- **The two-minute clock is `playing`'s `timeout`, and the state's silence is
+  the clock's correctness.** Their `GameTimer` was an `asyncio.sleep(120)` that
+  queued "Time's up" and an `EndFrame`. A dialog deadline is armed on entry and
+  re-armed on every MOVE, so `playing` declares no transition on anything but
+  `TIME_UP` and `WORDS_DONE`, and the three in-round tools send nothing. Time's
+  up is therefore announced a turn late — a fired deadline moves the position and
+  pushes the instruction, it does not make the agent speak — and the describer's
+  next description is answered by a refusal quoting `over`'s instruction, which
+  is what tells the host to read the score. `relay_description` also checks the
+  slot's own clock, for the process that restarted mid-round and lost the timer.
+
+What did NOT port is the second voice, and it is worth being plain about: the
+phone game's charm is partly two AIs talking past a human, and one TTS stream
+cannot do that. The web game — the describer sees the word, one AI guesses —
+is the shape this template lands closest to, with the phone game's host logic
+made mechanical.
