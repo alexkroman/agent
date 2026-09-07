@@ -4,14 +4,11 @@ import { runCorrectiveRag } from "../procedure.ts";
 import { supportSlot } from "../shared.ts";
 
 /**
- * How long the whole corrective loop may run before it gives up.
- *
- * Under the runtime's own per-tool deadline (`TOOL_EXECUTION_TIMEOUT_MS`, 30s)
- * with room for this tool's own bookkeeping, and written as a literal because
- * that constant is on `@alexkroman1/aai/internal` — a subpath a template may
- * not import. If the runtime's default ever moves, this is the number to move.
+ * Room left under the deadline for this tool's own bookkeeping: unwinding the
+ * graph, writing the trace to the slot, and composing the sentence the caller
+ * hears. Subtracted from `ctx.deadlineAt`, never from a copy of the deadline.
  */
-const LOOKUP_BUDGET_MS = 28_000;
+const WRAP_UP_MS = 2000;
 
 /**
  * The whole graph, as one tool.
@@ -33,7 +30,8 @@ const LOOKUP_BUDGET_MS = 28_000;
  * really does exceed it: the model was handed
  * `{"error":"Tool \"answer_question\" timed out after 30000ms"}`, which tells
  * it nothing it can act on and reads to a caller as the line going dead.
- * `LOOKUP_BUDGET_MS` lands the overrun on the graph's OWN exit instead — the
+ * Budgeting under `ctx.deadlineAt` lands the overrun on the graph's OWN exit
+ * instead — the
  * same "offer to look again, or log a ticket" the design already has for an
  * interrupted run — so the slow path degrades into a sentence rather than into
  * an internal error. It does not make the loop faster; it makes running out
@@ -65,13 +63,15 @@ export default tool({
     try {
       // `ctx.signal` is what stops the graph on a barge-in: this loop is five
       // to nine model calls, and a caller who interrupts on the second should
-      // not be charged for the rest. The budget rides alongside it — see the
-      // module doc on `LOOKUP_BUDGET_MS` — and `AbortSignal.any` is what
-      // combines the two without any unlink bookkeeping.
+      // not be charged for the rest. The budget rides alongside it and comes
+      // from `ctx.deadlineAt` — THIS call's deadline, so a host that gave this
+      // tool a different `timeoutMs` is followed rather than second-guessed —
+      // and `AbortSignal.any` combines the two with no unlink bookkeeping.
+      const budgetMs = Math.max(0, ctx.deadlineAt - Date.now() - WRAP_UP_MS);
       trace = await runCorrectiveRag(
         ctx.generate,
         args.question,
-        AbortSignal.any([ctx.signal, AbortSignal.timeout(LOOKUP_BUDGET_MS)]),
+        AbortSignal.any([ctx.signal, AbortSignal.timeout(budgetMs)]),
       );
     } catch (err: unknown) {
       // An INTERRUPTED lookup is not a broken one, and the difference is worth

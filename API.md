@@ -1482,6 +1482,7 @@ type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 
@@ -2744,6 +2745,7 @@ export type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 
@@ -4181,6 +4183,7 @@ type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 
@@ -5165,6 +5168,7 @@ type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 
@@ -6742,6 +6746,7 @@ type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 
@@ -7321,6 +7326,7 @@ type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 

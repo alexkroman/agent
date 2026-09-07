@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { AgentDef, ToolContext, ToolDef } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
-import { type Db, rejectingWorkflows } from "@alexkroman1/aai/internal";
+import { type Db, rejectingWorkflows, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
@@ -93,6 +93,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     // method — the laundering idiom the escape-hatch ratchet now counts.
     generate: () => Promise.reject(new Error("generate not mocked")),
     delegate: () => Promise.reject(new Error("delegate not mocked")),
+    deadlineAt: Date.now() + TOOL_EXECUTION_TIMEOUT_MS,
     messages: [],
     sessionId: "test-session",
     send: vi.fn(),

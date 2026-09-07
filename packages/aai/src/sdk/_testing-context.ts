@@ -13,6 +13,7 @@
  */
 
 import { clientEventDropMessage, decideClientEvent } from "./client-event.ts";
+import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 import type { ToolContext } from "./types.ts";
@@ -208,6 +209,10 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
     // Never aborts: a test has no turn to cancel. Present rather than omitted
     // because it is always present at runtime, so a tool may read it.
     signal: new AbortController().signal,
+    // The runtime's default deadline, from now — so a tool that budgets under
+    // `ctx.deadlineAt` sees a realistic window rather than one already past,
+    // and a spec that wants the tight case passes its own instant.
+    deadlineAt: Date.now() + TOOL_EXECUTION_TIMEOUT_MS,
     /**
      * Records what the client would RECEIVE, which is not everything a tool
      * sends: `decideClientEvent` is the runtime's own rule, so an event over

@@ -145,6 +145,44 @@ export type ToolContext = {
    */
   signal: AbortSignal;
   /**
+   * When THIS call's deadline expires, as epoch milliseconds — the instant the
+   * runtime will abort {@link ToolContext.signal} and hand the model a timeout.
+   *
+   * Read it to budget under the deadline rather than to be cut off by it: a
+   * tool that can answer partially (a search that has some results, a graph that
+   * has walked some of its nodes) should leave itself room to return something
+   * useful, because what the model gets otherwise is
+   * `Tool "x" timed out after 30000ms` and nothing else.
+   *
+   * ```ts
+   * const budget = ctx.deadlineAt - Date.now() - 2_000; // room to write an answer
+   * const stop = AbortSignal.any([ctx.signal, AbortSignal.timeout(budget)]);
+   * ```
+   *
+   * @remarks
+   * The ELEVENTH field on this type, and the one that raised
+   * `guard-invariants` rule 24 from nine occurrences to ten. The rule asks
+   * that a field earn its place by being per-CALL and unreachable any other
+   * way, and this is both.
+   *
+   * It is per-call because the deadline is not a constant: `executeToolCall`
+   * resolves `options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS`, and a caller
+   * that passes its own `timeoutMs` — `createTextAgent` does — gives its tools
+   * a different one. And it was unreachable because the default lives on
+   * `@alexkroman1/aai/internal`, a subpath an agent may not import, while the
+   * per-call override was visible nowhere at all. What an author wrote instead
+   * was the number, by hand: `support-line` carried
+   * `const LOOKUP_BUDGET_MS = 28_000` under a comment saying where the real
+   * constant lived and that this copy would have to be moved with it.
+   *
+   * An absolute INSTANT rather than a duration, because a duration is only
+   * true at the moment it is read — a tool that awaited twice and subtracted
+   * the same `timeoutMs` twice would budget against a deadline that had
+   * already moved. Subtracting `Date.now()` at each use is the correct
+   * reading and is what the example does.
+   */
+  deadlineAt: number;
+  /**
    * Start and inspect durable workflow runs — the way a tool hands off work that
    * must outlive the call.
    *

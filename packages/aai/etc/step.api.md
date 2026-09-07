@@ -422,6 +422,7 @@ type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 

@@ -21,6 +21,7 @@ describe("createToolContext", () => {
     expect(Object.keys(ctx).sort()).toEqual([
       // `db` was first here, and its removal is the point: `ctx.db` is gone, so a
       // helper still supplying one would advertise an API the runtime does not build.
+      "deadlineAt",
       "delegate",
       "env",
       "generate",
