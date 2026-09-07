@@ -23,6 +23,7 @@
 // What no eval here can see: anything below the audio boundary — endpointing,
 // barge-in, a sentence split across two turns. Those need real paced audio.
 
+import agentDef from "virtual:aai/agent";
 /**
  * The def a DEPLOYED agent runs, assembled the way the build assembles it: the
  * authored export, plus what `tools/` declares, plus `system-prompt.md`.
@@ -32,7 +33,7 @@
  * eval run against the framework default prompt would measure an agent nobody
  * deployed.
  */
-import agentDef from "virtual:aai/agent";
+import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import { type EvalTurn, toolResultIn, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -59,15 +60,13 @@ const Status = z.object({
   gameOver: z.boolean(),
   playerName: z.string(),
 });
-const Roll = z.object({
-  state: z.string(),
-  result: z.object({ actionDice: z.array(z.number()), challengeDice: z.array(z.number()) }),
-});
-const Settled = z.object({
-  state: z.string(),
-  done: z.boolean(),
-  result: z.object({ gameOver: z.boolean() }),
-});
+// Both tools are `storyFlow.tool`s, so the SDK writes the envelope around their
+// own result — `dialogResultSchema` is that envelope, rather than two hand-written
+// copies of it that had already drifted (`Roll` was missing `done`).
+const Roll = dialogResultSchema(
+  z.object({ actionDice: z.array(z.number()), challengeDice: z.array(z.number()) }),
+);
+const Settled = dialogResultSchema(z.object({ gameOver: z.boolean() }));
 const Refusal = z.object({ error: z.string() });
 
 /**

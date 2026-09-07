@@ -23,7 +23,7 @@
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus its PROMPT. */
 import agentDef from "virtual:aai/agent";
-import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
+import { dialogRefusalPattern, dialogResultSchema } from "@alexkroman1/aai/testing";
 import { countWords } from "@alexkroman1/aai/utils";
 import {
   describeTurn,
@@ -74,15 +74,18 @@ const Screened = z.object({
   state: z.string(),
 });
 
-/** What `rescore_with_feedback` answers with, inside the dialog's envelope. */
-const Rescored = z.object({
-  result: z.object({
+/**
+ * What `rescore_with_feedback` answers with, inside the dialog's envelope —
+ * asked of the SDK rather than restated, which is the drift the comment used to
+ * assert away.
+ */
+const Rescored = dialogResultSchema(
+  z.object({
     round: z.number(),
     feedbackApplied: z.array(z.string()),
     top: z.array(z.object({ name: z.string() })),
   }),
-  state: z.string(),
-});
+);
 
 /** What `screening_status` answers with on an untouched desk. */
 const IdleStatus = z.object({ stage: z.string(), state: z.string(), screened: z.number() });

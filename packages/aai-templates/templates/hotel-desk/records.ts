@@ -8,6 +8,7 @@
  */
 
 import { spokenAlphanumeric } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 
 // ─── Money, dates, codes ─────────────────────────────────────────────────────
 
@@ -32,11 +33,16 @@ export const TODAY = "2026-06-08";
 /** The partner property a walked guest is sent to. */
 export const WALK_PARTNER_HOTEL = "the Harbor House";
 
-/** `$240.00` — for the sidebar and the ledger. */
+/**
+ * `$240.00` — for the sidebar and the ledger.
+ *
+ * The formatting is `formatMoney`'s; what is local is that this desk counts in
+ * CENTS. The hand-rolled version here was `formatMoney` minus thousands
+ * grouping, so a multi-night bill printed `$1240.00` where every other template
+ * prints `$1,240.00`.
+ */
 export function usd(cents: number): string {
-  const sign = cents < 0 ? "-" : "";
-  const abs = Math.abs(cents);
-  return `${sign}$${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+  return formatMoney(cents / 100);
 }
 
 /** `240 dollars` / `240 dollars and 50 cents` — for anything the model reads out. */

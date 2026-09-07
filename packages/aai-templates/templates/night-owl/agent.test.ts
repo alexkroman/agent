@@ -1,8 +1,9 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import {
   createToolContext,
+  expectDeployable,
+  expectPromptBuiltinsDeclared,
   parseToolInput,
   toolInputIssues,
   toolRunner,
@@ -19,16 +20,32 @@ import { CATEGORIES, MOODS, nightProjection, nightSlot } from "./shared.ts";
 const run = toolRunner(agentDef);
 
 describe("night-owl template", () => {
-  test("config passes manifest validation", () => {
-    // Same conversion `aai build`/`aai deploy` run.
-    expect(() => toAgentConfig(agentDef)).not.toThrow();
+  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
+    // The same conversion `aai build`/`aai deploy` run. `expectDeployable`
+    // rather than `expect(() => toAgentConfig(…)).not.toThrow()`: that spelling
+    // fails as "expected function not to throw" and buries the sentence the
+    // conversion wrote, and it checks neither the nameable nor the per-mode
+    // stage cascade. `not.toThrow()` because the helper's throw IS the finding.
+    expect(() => expectDeployable(agentDef)).not.toThrow();
   });
 
   test("declares run_code, which is the other half of the template", () => {
     // The sleep-time arithmetic is the builtin's job, not a tool's — that split
     // IS this template's subject, so a dropped builtin leaves the agent doing
-    // mental arithmetic out loud.
-    expect(agentDef.builtinTools).toContain("run_code");
+    // mental arithmetic out loud. Asserted on the CONFIG, which is what a
+    // deploy ships.
+    expect(expectDeployable(agentDef).builtinTools).toContain("run_code");
+  });
+
+  test("every builtin the prompt tells Night Owl to use is one it declares", () => {
+    // `system-prompt.md` heads its arithmetic rules with `run_code`, and
+    // `agent.ts` is what makes that tool exist. The failure is silent in both
+    // directions: a prompt commanding a builtin the agent never declared
+    // produces a model apologising for a tool it cannot see. Which snake_case
+    // tokens in the prose are tool NAMES is a question for the SDK's schema
+    // rather than a list restated here — this prompt also names `wake_time`
+    // and `cycles`, which any underscore-matching scan would redden on.
+    expect(expectPromptBuiltinsDeclared(agentDef)).toContain("run_code");
   });
 
   test("recommend is discovered from tools/", () => {
