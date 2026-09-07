@@ -31,8 +31,14 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 // What no eval here can see: anything below the audio boundary. Whether a
 // caller reading an order number in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
-import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
-import { describeTurn, lastStateIn, toolNames, turnCalling } from "@alexkroman1/aai-runtime/eval";
+import { dialogRefusalPattern, dialogResultSchema } from "@alexkroman1/aai/testing";
+import {
+  describeTurn,
+  lastStateIn,
+  toolNames,
+  toolResultIn,
+  turnCalling,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -100,6 +106,10 @@ const STAGE_TURN = [
   "So that would cancel your pending order and refund one thousand two hundred dollars " +
     "and fifty-seven cents to your Visa. Is that right?",
 ] as const;
+
+/** The handoff, inside the dialog envelope — `transferred` is a TERMINAL state,
+ *  so `done` is the flow saying there is nowhere left to go. */
+const Transferred = dialogResultSchema(z.object({}).loose());
 
 describeEval(retailAgent, (test) => {
   test(
@@ -245,8 +255,16 @@ describeEval(retailAgent, (test) => {
       // The terminal state is what makes "say nothing else after this" a
       // property of the agent rather than a line in its prompt: `done` is the
       // flow saying there is nowhere left to go.
-      expect(transfer?.result).toMatch(/"state":"transferred"/);
-      expect(transfer?.result).toMatch(/"done":true/);
+      // Read as a SHAPE, not as a substring of the result's own JSON: this
+      // claim is about the flow's position, and nothing about it is about
+      // serialization.
+      const handed = toolResultIn(
+        transfer ? [transfer] : [],
+        "transfer_to_human_agents",
+        Transferred,
+      );
+      expect(handed.state).toBe("transferred");
+      expect(handed.done).toBe(true);
 
       const after = await session.say("Actually, before you go — just cancel my pending order.");
       for (const call of after.toolCalls) {

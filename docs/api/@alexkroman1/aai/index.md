@@ -1183,23 +1183,45 @@ spokenOrdinal("cancel my order"); // undefined
 
 ### subagent()
 
+#### Call Signature
+
+```ts
+function subagent<S extends StandardSchemaV1<unknown, unknown>>(def: SubagentDef & {
+  schema: S;
+}): TypedSubagentDef<InferSchemaOutput<S>>;
+```
+
+##### Type Parameters
+
+###### S
+
+`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+
+##### Parameters
+
+###### def
+
+[`SubagentDef`](#subagentdef) & \{
+  `schema`: `S`;
+\}
+
+##### Returns
+
+[`TypedSubagentDef`](#typedsubagentdef)\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\>\>
+
+#### Call Signature
+
 ```ts
 function subagent(def: SubagentDef): SubagentDef;
 ```
 
-Define a subagent.
+##### Parameters
 
-An identity function, like [tool](#tool-2) — it exists for the type, for the
-name to grep for, and so a subagent is declared at module scope rather than
-rebuilt inside `execute` on every call.
-
-#### Parameters
-
-##### def
+###### def
 
 [`SubagentDef`](#subagentdef)
 
-#### Returns
+##### Returns
 
 [`SubagentDef`](#subagentdef)
 
@@ -2603,6 +2625,10 @@ took.
 
 - [`SubagentAnswer`](#subagentanswer)
 
+#### Extended by
+
+- [`TypedDelegateResult`](#typeddelegateresult)
+
 #### Properties
 
 ##### accepted
@@ -3685,7 +3711,7 @@ narrow a value it is never handed: the failure check returns before it runs.
 description: string;
 ```
 
-See [ToolDef.description](#description-3) — what the model reads to decide to call it.
+See [ToolDef.description](#description-4) — what the model reads to decide to call it.
 
 ##### inputSchema?
 
@@ -4825,7 +4851,7 @@ The tool body, handed this session's slot value alongside the usual args.
 description: string;
 ```
 
-See [ToolDef.description](#description-3) — what the model reads to decide to call it.
+See [ToolDef.description](#description-4) — what the model reads to decide to call it.
 
 ##### inputSchema?
 
@@ -4951,6 +4977,10 @@ Every field except `name` and `systemPrompt` is optional, and the defaults
 are the parent agent's: the same LLM descriptor, no tools, and
 the framework default (`DEFAULT_MAX_STEPS`) steps.
 
+#### Extended by
+
+- [`TypedSubagentDef`](#typedsubagentdef)
+
 #### Properties
 
 ##### builtinTools?
@@ -5065,7 +5095,7 @@ optional llm?: string | LlmProvider;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-2). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -5126,6 +5156,49 @@ What this subagent is called. It reaches the model only as the id on the
 subagent's own requests; its reader is a log line and a failure message
 ("subagent \"researcher\" ran out of steps"), which is why it is required
 and why an anonymous subagent is not expressible.
+
+##### schema?
+
+```ts
+optional schema?: StandardSchemaV1<unknown, unknown>;
+```
+
+The SHAPE the final message must have — any
+[Standard Schema](https://standardschema.dev), zod being the documented
+default. The runtime parses the answer as JSON and checks it, and a reply
+that does not match is sent BACK the way a
+[SubagentDef.guardrail](#guardrail) rejection is, with the schema's own issues as
+the complaint. Declare it through [subagent](#subagent) to get the parsed value
+typed on [TypedDelegateResult.object](#object).
+
+**This is not the guardrail, and the two are complementary.** A schema
+settles the SHAPE — that a verdict is one of three words rather than a
+sentence that implies one — where a guardrail is the judgement a shape
+cannot express (a missing citation, sources that are all one publisher).
+A subagent may declare both; the shape is checked first, because a
+guardrail asked to judge a malformed answer is being asked the wrong
+question.
+
+Reach for it when the CALLER has to branch on the answer.
+`briefing-desk`'s fact-checker had a three-value verdict crossing three
+layers as an English sentence prefix — restated in `expectedOutput`,
+re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
+budget — because a model that wrote `"Confirmed - "` was wrong in a way
+only prose could describe. A schema makes that a parse.
+
+```ts
+import { subagent } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const factChecker = subagent({
+  name: "fact-checker",
+  systemPrompt: "Check ONE claim against what you can find.",
+  schema: z.object({
+    verdict: z.enum(["confirmed", "contradicted", "unclear"]),
+    detail: z.string(),
+  }),
+});
+```
 
 ##### systemPrompt
 
@@ -5188,6 +5261,466 @@ name: string;
 ```
 
 The tool's name, as the subagent's model called it.
+
+***
+
+### TypedDelegateResult
+
+Run a subagent to completion — the signature of `ctx.delegate`.
+
+Rejects when the run cannot be started (no LLM configured or named, an
+unknown builtin) and when the parent turn is cancelled. A subagent whose own
+TOOL fails does not reject: the failure goes back to the subagent as a tool
+result, exactly as it would in the parent loop, and the subagent gets to
+recover from it.
+
+A [SubagentDef.guardrail](#guardrail) that never accepts does not reject either —
+the run comes back with [DelegateResult.accepted](#accepted) `false`. The two
+rejections above are both "this delegation could not happen"; a rejected
+answer is a delegation that happened and produced something, and a caller on
+a live call can use the difference.
+
+#### Extends
+
+- [`DelegateResult`](#delegateresult)
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Properties
+
+##### accepted
+
+```ts
+accepted: boolean;
+```
+
+Whether the guardrail ACCEPTED this answer. Always `true` when the subagent
+declares no guardrail.
+
+`false` means the retry budget ran out and `text` is the last REJECTED
+attempt. It comes back rather than throwing because the caller is a tool on
+a live call and needs something to say — but it is a distinct value, not a
+silently-returned failure, so a tool that cares can apologize instead of
+reading a bad answer out loud.
+
+###### Inherited from
+
+[`DelegateResult`](#delegateresult).[`accepted`](#accepted)
+
+##### complaint?
+
+```ts
+optional complaint?: string;
+```
+
+The guardrail's last complaint. Present exactly when `accepted` is `false`
+— it is the reason, and a caller that reports the failure should quote it.
+
+###### Inherited from
+
+[`DelegateResult`](#delegateresult).[`complaint`](#complaint)
+
+##### object
+
+```ts
+object: T;
+```
+
+The final message, PARSED against [SubagentDef.schema](#schema).
+
+Present exactly when the subagent declares one, which is why it lives on
+this type rather than on [DelegateResult](#delegateresult): a caller that declared no
+shape should not be handed a field it has no way to read.
+
+`text` is still the raw answer beside it — the JSON the model wrote — so a
+caller that wants to quote what came back can, and one that wants to branch
+on it reads this.
+
+##### revisions
+
+```ts
+revisions: number;
+```
+
+How many times the guardrail sent an answer back before this one.
+
+`0` when it passed first time, and `0` for a subagent with no guardrail at
+all. Reported for the same reason `steps` is: it is most of what the run
+cost, and a wait that included two rewrites is a wait the caller was owed a
+word about.
+
+###### Inherited from
+
+[`DelegateResult`](#delegateresult).[`revisions`](#revisions)
+
+##### steps
+
+```ts
+steps: number;
+```
+
+How many steps this attempt took, including the final answering step.
+
+###### Inherited from
+
+[`DelegateResult`](#delegateresult).[`steps`](#steps)
+
+##### text
+
+```ts
+text: string;
+```
+
+The subagent's final message — see [SubagentDef.expectedOutput](#expectedoutput).
+
+###### Inherited from
+
+[`DelegateResult`](#delegateresult).[`text`](#text-1)
+
+##### toolCalls
+
+```ts
+toolCalls: readonly SubagentToolCall[];
+```
+
+Every tool call this attempt made, in order.
+
+###### Inherited from
+
+[`DelegateResult`](#delegateresult).[`toolCalls`](#toolcalls)
+
+***
+
+### TypedSubagentDef
+
+Define a subagent.
+
+An identity function, like [tool](#tool-2) — it exists for the type, for the
+name to grep for, and so a subagent is declared at module scope rather than
+rebuilt inside `execute` on every call.
+
+#### Extends
+
+- [`SubagentDef`](#subagentdef)
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Properties
+
+##### builtinTools?
+
+```ts
+optional builtinTools?: readonly BuiltinTool[];
+```
+
+Builtins this subagent may call, resolved exactly as `agent({
+builtinTools })` resolves them. Independent of the parent's: a parent that
+enables none can still delegate to a subagent that searches the web.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`builtinTools`](#builtintools-1)
+
+##### description?
+
+```ts
+optional description?: string;
+```
+
+What this subagent is FOR, in one line, written for whoever is choosing
+between specialists rather than for the subagent itself.
+
+Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
+subagent in code, so the choice is already made and there is nothing to
+describe it to. It is REQUIRED of a subagent listed in
+`agent({ subagents })`, and that is the whole reason it exists: a roster is
+routed by the model, which reads this and nothing else. `agent()` refuses a
+roster entry without one rather than shipping an agent that picks a
+coworker off a list of bare names.
+
+Write it as the job, not the mechanism: "Researches a topic on the open web
+and reports what it found" — not "calls web_search".
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`description`](#description-2)
+
+##### expectedOutput?
+
+```ts
+optional expectedOutput?: string;
+```
+
+What a GOOD final message looks like — the shape of the answer, declared
+apart from the instructions for producing it.
+
+The runtime appends it to the instructions as its own labelled section, so
+it lands in the same place every time rather than wherever an author
+happened to put it in prose. It is also what a [SubagentDef.guardrail](#guardrail)
+is quoted against when it sends an answer back, so the two halves of "what
+this run owes" stay one sentence rather than two that can disagree.
+
+Split out of `systemPrompt` for the reason CrewAI splits `expected_output`
+off `description`: the failure it prevents is structural, not a matter of
+prompting skill. A subagent whose brief says only what to DO ends its run
+when it is done, which for a delegated run is precisely the wrong moment to
+stop talking.
+
+```ts
+import { subagent } from "@alexkroman1/aai";
+
+const researcher = subagent({
+  name: "researcher",
+  systemPrompt: "Research the task with the tools you have.",
+  expectedOutput:
+    "A self-contained paragraph of what you found, naming the sources you " +
+    "trusted. Three sentences is plenty; do not write a report.",
+});
+```
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`expectedOutput`](#expectedoutput)
+
+##### guardrail?
+
+```ts
+optional guardrail?: SubagentGuardrail;
+```
+
+Check the subagent's answer, and send it back with a complaint when it is
+not good enough.
+
+Return `true` to accept. Return a STRING to reject: the string is the
+complaint, and the runtime re-runs the subagent with its own rejected
+answer and that complaint appended to the conversation it already has — so
+the retry keeps every tool result the first attempt paid for and is told
+exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries).
+
+**A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
+of an answer and cannot say that a citation is missing, that the sources
+were all one publisher, or that the answer contradicts what the caller
+already said. That judgement is a function, and until now the only place to
+put it was after the delegation returned — where the one thing it could not
+do was ask for a better answer.
+
+Runs on every attempt including the last. Throwing from it fails the
+delegation, so a guardrail that cannot decide should return `true`.
+
+```ts
+import { subagent } from "@alexkroman1/aai";
+
+const researcher = subagent({
+  name: "researcher",
+  systemPrompt: "Research the task with the tools you have.",
+  expectedOutput: "A paragraph naming the sources you trusted.",
+  guardrail: ({ text, toolCalls }) =>
+    toolCalls.length === 0
+      ? "You answered without looking anything up. Search first, then answer."
+      : text.length > 1200
+        ? "Too long for someone listening on a phone — three sentences."
+        : true,
+});
+```
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`guardrail`](#guardrail)
+
+##### llm?
+
+```ts
+optional llm?: string | LlmProvider;
+```
+
+LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
+model-id string — the same shorthand as `agent({ llm })` and
+[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
+
+Naming a cheaper model here is the usual reason to set it: a subagent
+doing lookups is spending most of its tokens on tool results, not on
+reasoning.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`llm`](#llm-1)
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed through to the provider.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`maxOutputTokens`](#maxoutputtokens)
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
+```
+
+How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
+
+###### Default Value
+
+`1` (`DEFAULT_GUARDRAIL_MAX_RETRIES`)
+
+One, not CrewAI's three, because a revision is another FULL run of the
+subagent and the caller is on a live phone call — the third attempt at a
+summary arrives well after the moment anyone was waiting for it. Raise it
+for a subagent delegated from a workflow step, where nobody is listening.
+
+Exhausting the budget is not an error: the last attempt comes back with
+[DelegateResult.accepted](#accepted) `false` and the guardrail's
+[DelegateResult.complaint](#complaint), because a voice agent holding a rejected
+answer still has to say something, and it should be the caller's tool —
+not the runtime — that decides what.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries)
+
+##### maxSteps?
+
+```ts
+optional maxSteps?: number;
+```
+
+Tool-calling steps this subagent may take before it must answer. Defaults
+to the framework's `DEFAULT_MAX_STEPS`.
+
+The budget is the mechanism: a subagent told to "keep looking until sure"
+is a subagent whose cost nobody can quote. Past the cap it is asked for
+its answer with tools withheld, so a capped run still returns prose rather
+than stopping mid-chain.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`maxSteps`](#maxsteps-2)
+
+##### name
+
+```ts
+name: string;
+```
+
+What this subagent is called. It reaches the model only as the id on the
+subagent's own requests; its reader is a log line and a failure message
+("subagent \"researcher\" ran out of steps"), which is why it is required
+and why an anonymous subagent is not expressible.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`name`](#name-1)
+
+##### schema
+
+```ts
+schema: StandardSchemaV1<unknown, T>;
+```
+
+The SHAPE the final message must have — any
+[Standard Schema](https://standardschema.dev), zod being the documented
+default. The runtime parses the answer as JSON and checks it, and a reply
+that does not match is sent BACK the way a
+[SubagentDef.guardrail](#guardrail) rejection is, with the schema's own issues as
+the complaint. Declare it through [subagent](#subagent) to get the parsed value
+typed on [TypedDelegateResult.object](#object).
+
+**This is not the guardrail, and the two are complementary.** A schema
+settles the SHAPE — that a verdict is one of three words rather than a
+sentence that implies one — where a guardrail is the judgement a shape
+cannot express (a missing citation, sources that are all one publisher).
+A subagent may declare both; the shape is checked first, because a
+guardrail asked to judge a malformed answer is being asked the wrong
+question.
+
+Reach for it when the CALLER has to branch on the answer.
+`briefing-desk`'s fact-checker had a three-value verdict crossing three
+layers as an English sentence prefix — restated in `expectedOutput`,
+re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
+budget — because a model that wrote `"Confirmed - "` was wrong in a way
+only prose could describe. A schema makes that a parse.
+
+```ts
+import { subagent } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const factChecker = subagent({
+  name: "fact-checker",
+  systemPrompt: "Check ONE claim against what you can find.",
+  schema: z.object({
+    verdict: z.enum(["confirmed", "contradicted", "unclear"]),
+    detail: z.string(),
+  }),
+});
+```
+
+###### Overrides
+
+[`SubagentDef`](#subagentdef).[`schema`](#schema)
+
+##### systemPrompt
+
+```ts
+systemPrompt: string;
+```
+
+The subagent's system prompt.
+
+**Tell it to summarize** — or, better, declare [SubagentDef.expectedOutput](#expectedoutput)
+and let the runtime say it. The parent gets [DelegateResult.text](#text-2),
+which is the subagent's FINAL message, so a subagent that ends its run by
+saying "Done." has thrown away everything it learned and no amount of step
+budget recovers it. This is the single most common way a subagent
+disappoints, and it was a sentence every author had to remember to write
+here; `expectedOutput` is the field that remembers it for them.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`systemPrompt`](#systemprompt-1)
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature passed through to the provider.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`temperature`](#temperature-3)
+
+##### tools?
+
+```ts
+optional tools?: Readonly<Record<string, ToolDef>>;
+```
+
+The tools this subagent may call, by the name the model calls them by.
+
+A MAP rather than the filesystem registration `agent()` uses, and the
+difference is deliberate: `tools/` declares what the CALLER can reach, and
+this declares the strictly narrower set one delegated task can reach. A
+subagent with no entry here and no `builtinTools` is a pure reasoning
+pass — legal, and occasionally what you want.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`tools`](#tools-1)
 
 ## Type Aliases
 
@@ -5396,34 +5929,65 @@ once `aai build` type-checked.
 ### DelegateFn
 
 ```ts
-type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+type DelegateFn = {
+<T>  (subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+  (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
 ```
 
 Run a subagent to completion — the signature of `ctx.delegate`.
 
-Rejects when the run cannot be started (no LLM configured or named, an
-unknown builtin) and when the parent turn is cancelled. A subagent whose own
-TOOL fails does not reject: the failure goes back to the subagent as a tool
-result, exactly as it would in the parent loop, and the subagent gets to
-recover from it.
+OVERLOADED, the way [GenerateFn](#generatefn) is and for the same reason: a subagent
+that declares a [SubagentDef.schema](#schema) answers with the parsed value
+typed on [TypedDelegateResult.object](#object), and one that does not should not
+be handed the field at all. Declaring the def through [subagent](#subagent) is
+what picks the overload — a `SubagentRoster` entry stays a plain
+[SubagentDef](#subagentdef), so a model-chosen delegation is untyped, which is
+correct: nothing at that call site knows which subagent the model picked.
 
-A [SubagentDef.guardrail](#guardrail) that never accepts does not reject either —
-the run comes back with [DelegateResult.accepted](#accepted) `false`. The two
-rejections above are both "this delegation could not happen"; a rejected
-answer is a delegation that happened and produced something, and a caller on
-a live call can use the difference.
+#### Call Signature
 
-#### Parameters
+```ts
+<T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+```
 
-##### subagent
+##### Type Parameters
 
-[`SubagentDef`](#subagentdef)
+###### T
 
-##### options
+`T`
+
+##### Parameters
+
+###### subagent
+
+[`TypedSubagentDef`](#typedsubagentdef)\<`T`\>
+
+###### options
 
 [`DelegateOptions`](#delegateoptions)
 
-#### Returns
+##### Returns
+
+`Promise`\<[`TypedDelegateResult`](#typeddelegateresult)\<`T`\>\>
+
+#### Call Signature
+
+```ts
+(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+```
+
+##### Parameters
+
+###### subagent
+
+[`SubagentDef`](#subagentdef)
+
+###### options
+
+[`DelegateOptions`](#delegateoptions)
+
+##### Returns
 
 `Promise`\<[`DelegateResult`](#delegateresult)\>
 
@@ -6662,7 +7226,7 @@ steps; passing nothing is the common case.
 
 `S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
 
-The schema [StepOptions.schema](#schema-1) carries, when one is
+The schema [StepOptions.schema](#schema-3) carries, when one is
   given. Defaulted, so `StepOptions` is still spellable without an argument —
   every caller that predates the schema still means what it meant.
 
@@ -6739,7 +7303,7 @@ whatever the body happened to return.
 schema: S;
 ```
 
-The shape — see [StepOptions.schema](#schema-1).
+The shape — see [StepOptions.schema](#schema-3).
 
 #### Type Parameters
 
@@ -6984,6 +7548,7 @@ SDK's `toolChoice`.
 
 ```ts
 type ToolContext = {
+  deadlineAt: number;
   delegate: DelegateFn;
   env: Readonly<Partial<Record<string, string>>>;
   generate: GenerateFn;
@@ -7055,6 +7620,61 @@ dropped (with a warning log), not thrown.
 `void`
 
 #### Properties
+
+##### deadlineAt
+
+```ts
+deadlineAt: number;
+```
+
+When THIS call's deadline expires, as epoch milliseconds — the instant the
+runtime will abort [ToolContext.signal](#signal-1) and hand the model a timeout.
+
+Read it to budget under the deadline rather than to be cut off by it: a
+tool that can answer partially (a search that has some results, a graph that
+has walked some of its nodes) should leave itself room to return something
+useful, because what the model gets otherwise is
+`Tool "x" timed out after 30000ms` and nothing else.
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const search = tool({
+  description: "Search the archive.",
+  inputSchema: z.object({ query: z.string() }),
+  async execute({ query }, ctx) {
+    // Room left to write an answer, rather than being cut off without one.
+    const budget = Math.max(0, ctx.deadlineAt - Date.now() - 2_000);
+    const stop = AbortSignal.any([ctx.signal, AbortSignal.timeout(budget)]);
+    const res = await fetch(`https://archive.example/?q=${query}`, { signal: stop });
+    return { hits: res.ok ? await res.json() : [] };
+  },
+});
+```
+
+###### Remarks
+
+The ELEVENTH field on this type, and the one that raised
+`guard-invariants` rule 24 from nine occurrences to ten. The rule asks
+that a field earn its place by being per-CALL and unreachable any other
+way, and this is both.
+
+It is per-call because the deadline is not a constant: `executeToolCall`
+resolves `options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS`, and a caller
+that passes its own `timeoutMs` — `createTextAgent` does — gives its tools
+a different one. And it was unreachable because the default lives on
+`@alexkroman1/aai/internal`, a subpath an agent may not import, while the
+per-call override was visible nowhere at all. What an author wrote instead
+was the number, by hand: `support-line` carried
+`const LOOKUP_BUDGET_MS = 28_000` under a comment saying where the real
+constant lived and that this copy would have to be moved with it.
+
+An absolute INSTANT rather than a duration, because a duration is only
+true at the moment it is read — a tool that awaited twice and subtracted
+the same `timeoutMs` twice would budget against a deadline that had
+already moved. Subtracting `Date.now()` at each use is the correct
+reading and is what the example does.
 
 ##### delegate
 
@@ -7494,7 +8114,7 @@ its result must not carry `| undefined`.
 schema: S;
 ```
 
-The shape the payload must have — see [WaitForOptions.schema](#schema-2).
+The shape the payload must have — see [WaitForOptions.schema](#schema-4).
 
 ***
 
@@ -8330,7 +8950,7 @@ to pass an unbounded name narrows `ctx.step` through one typed alias rather
 than casting at each site.
 
 `options.schema` checks the output on both sides of the journal and makes
-the schema's output what this resolves to — see [StepOptions.schema](#schema-1)
+the schema's output what this resolves to — see [StepOptions.schema](#schema-3)
 for what each side catches, and why a read-side failure is not the step's.
 
 ###### Type Parameters
@@ -8480,7 +9100,7 @@ generated body-side for exactly this reason a problem.
 that option existed this paragraph was advice with no mechanism under it. A
 schema SUPERSEDES the parameter, and a payload failing one fails the RUN
 fatally with the window left as the delivery found it;
-[WaitForOptions.schema](#schema-2) carries why none of the three can be otherwise.
+[WaitForOptions.schema](#schema-4) carries why none of the three can be otherwise.
 
 ## A deadline is an OPTION, and still the one to reach for
 

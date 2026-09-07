@@ -47,16 +47,15 @@ import {
   scheduleIntervalMs,
   submitTranscript,
   summarizeTranscript,
-  timestamp,
 } from "./workflows/digest.ts";
 import {
+  carriesAudio,
   discoverEpisodes,
   discoverFeedUrl,
   episodeFromItem,
   extractAppleSerializedFeed,
   isApplePodcastUrl,
   isSpotifyShowUrl,
-  looksLikePodcastFeed,
   parsePodcastChannels,
   stableEpisodeId,
   titleMatchesSpotify,
@@ -281,19 +280,19 @@ describe("reading a feed", () => {
   test("requires BOTH a parseable feed and an enclosure to call it a podcast", () => {
     const withAudio =
       '<rss><channel><item><title>E</title><enclosure url="https://a.test/a.mp3"/></item></channel></rss>';
-    expect(looksLikePodcastFeed(withAudio)).toBe(true);
+    expect(carriesAudio(parseFeed(withAudio))).toBe(true);
     // A blog feed: a real feed, but nothing to transcribe.
     expect(
-      looksLikePodcastFeed("<rss><channel><item><title>Post</title></item></channel></rss>"),
+      carriesAudio(parseFeed("<rss><channel><item><title>Post</title></item></channel></rss>")),
     ).toBe(false);
-    expect(looksLikePodcastFeed("<html></html>")).toBe(false);
+    expect(carriesAudio(parseFeed("<html></html>"))).toBe(false);
   });
 
   test("an ATOM podcast feed counts, which the `<rss` test refused outright", () => {
     const atom =
       '<feed xmlns="http://www.w3.org/2005/Atom"><title>Show</title>' +
       '<entry><title>E</title><enclosure url="https://a.test/a.mp3"/></entry></feed>';
-    expect(looksLikePodcastFeed(atom)).toBe(true);
+    expect(carriesAudio(parseFeed(atom))).toBe(true);
   });
 
   test("finds an advertised feed in either attribute order, and resolves it", () => {
@@ -398,8 +397,8 @@ describe("the repeat schedule", () => {
 // ---- The steps ---------------------------------------------------------------
 
 /**
- * A feed body. `looksLikePodcastFeed` wants BOTH an `<rss` root and an
- * `<enclosure url=`, so these fixtures carry both unless a case is about not.
+ * A feed body. `carriesAudio` asks whether some parsed ITEM has an
+ * `<enclosure url=`, so these fixtures carry one unless a case is about not.
  */
 const feedXml = (items: string, title = "Example Show") =>
   `<?xml version="1.0"?><rss><channel><title>${title}</title>${items}</channel></rss>`;
@@ -668,7 +667,7 @@ describe("discoverEpisodes", () => {
 
   test("names the four accepted shapes when a feed carries no episode audio", async () => {
     // Reached through APPLE, which resolves a feed URL from the lookup API and
-    // does not run it past `looksLikePodcastFeed` — so this is the one route
+    // does not run it past `carriesAudio` — so this is the one route
     // left to a feed that resolves and yields nothing, and the case a bare "no
     // episodes" would not explain. The plain-web route can no longer get here:
     // the predicate asks whether some ITEM carries audio, which is the same
@@ -821,10 +820,6 @@ describe("transcribing one episode", () => {
     expect(digest.summary).toContain("corrupt media");
     expect(digest.keyPoints).toHaveLength(1);
   });
-
-  test("reads the clock in a step, so a replay sees the same timestamp", async () => {
-    expect(Date.parse(await timestamp())).not.toBeNaN();
-  });
 });
 
 describe("posting the digest", () => {
@@ -893,8 +888,10 @@ describe("the body — the run that IS the schedule", () => {
         pollTranscript: pollResults,
         summarizeTranscript: EPISODE,
         postDigest: { ok: true },
-        timestamp: "2026-08-21T00:00:00.000Z",
       },
+      // The clock is `ctx.now()`, a journaled READ rather than a step, so it is
+      // scripted here instead of in `results`.
+      now: Date.parse("2026-08-21T00:00:00.000Z"),
     });
     return { ctx };
   }

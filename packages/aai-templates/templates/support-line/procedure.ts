@@ -80,9 +80,12 @@ export const MAX_REGENERATIONS = 1;
  */
 interface Ctx extends AnswerTrace {
   generate: GenerateFn;
-  /** 1-based, bounded by {@link MAX_ATTEMPTS}. */
-  attempt: number;
-  /** Regenerations spent WITHIN this attempt; reset by `transform_query`. */
+  /**
+   * Regenerations spent WITHIN this attempt; reset by `transform_query`.
+   *
+   * There is no separate attempt counter: an attempt is a rewrite plus one, and
+   * `rewrites` (which the trace reports anyway) is the one place it is kept.
+   */
   regenerations: number;
   /** What this attempt's query retrieved, before grading. */
   retrieved: Doc[];
@@ -155,7 +158,7 @@ const machine = setup({
   guards: {
     /** Their `decide_to_generate`: is there anything to answer FROM? */
     hasRelevant: ({ context }) => context.relevant.length > 0,
-    canRetry: ({ context }) => context.attempt < MAX_ATTEMPTS,
+    canRetry: ({ context }) => context.rewrites + 1 < MAX_ATTEMPTS,
     canRegenerate: ({ context }) => context.regenerations < MAX_REGENERATIONS,
   },
   // A grader's verdict is read INLINE (`event.output.pass`) rather than through
@@ -175,7 +178,6 @@ const machine = setup({
     grounded: null,
     useful: null,
     exhausted: false,
-    attempt: 1,
     regenerations: 0,
     retrieved: [],
     relevant: [],
@@ -353,7 +355,6 @@ const machine = setup({
             assign({
               query: ({ event }) => event.output,
               rewrites: ({ context }) => context.rewrites + 1,
-              attempt: ({ context }) => context.attempt + 1,
               regenerations: () => 0,
               answer: () => null,
               grounded: () => null,

@@ -8,6 +8,8 @@
  */
 
 import { spokenAlphanumeric } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
+import { z } from "zod";
 
 // ─── Money, dates, codes ─────────────────────────────────────────────────────
 
@@ -32,11 +34,16 @@ export const TODAY = "2026-06-08";
 /** The partner property a walked guest is sent to. */
 export const WALK_PARTNER_HOTEL = "the Harbor House";
 
-/** `$240.00` — for the sidebar and the ledger. */
+/**
+ * `$240.00` — for the sidebar and the ledger.
+ *
+ * The formatting is `formatMoney`'s; what is local is that this desk counts in
+ * CENTS. The hand-rolled version here was `formatMoney` minus thousands
+ * grouping, so a multi-night bill printed `$1240.00` where every other template
+ * prints `$1,240.00`.
+ */
 export function usd(cents: number): string {
-  const sign = cents < 0 ? "-" : "";
-  const abs = Math.abs(cents);
-  return `${sign}$${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+  return formatMoney(cents / 100);
 }
 
 /** `240 dollars` / `240 dollars and 50 cents` — for anything the model reads out. */
@@ -89,6 +96,25 @@ export function isIsoDate(value: string): boolean {
   const at = new Date(Date.UTC(y, m - 1, d));
   return at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d;
 }
+
+/**
+ * A date field, as a SCHEMA — the same rule, declared where the model can see it.
+ *
+ * Ten tools used to pair `z.string().describe("YYYY-MM-DD")` with an
+ * `if (!isIsoDate(...)) return toolFailure(...)` in the body, which meant ten
+ * hand-written sentences for one rule (already drifted across "the date", "the
+ * pickup date", "the new date", "the arrival date") and a constraint the model
+ * only ever learned by failing. Declared here it reaches the model as JSON
+ * Schema and is rejected by `parseToolInput` before `execute` runs.
+ *
+ * `refine(isIsoDate)` rather than `z.iso.date()`: the predicate above stays the
+ * one definition of what this desk accepts, so the two cannot disagree.
+ */
+export const isoDate = (what: string) =>
+  z
+    .string()
+    .refine(isIsoDate, { message: `${what} must be a real date in YYYY-MM-DD form` })
+    .describe(`${what}, YYYY-MM-DD`);
 
 /** `iso` plus `days`, as ISO. Computed in UTC so no machine's zone can move it. */
 export function addDays(iso: string, days: number): string {
@@ -257,7 +283,6 @@ export const FOLLOWUP_KINDS = [
   "lost_and_found",
   "other",
 ] as const;
-export type FollowupKind = (typeof FOLLOWUP_KINDS)[number];
 
 export const TRANSFER_DESTINATIONS = ["restaurant", "duty_manager", "housekeeping"] as const;
 export type TransferDestination = (typeof TRANSFER_DESTINATIONS)[number];

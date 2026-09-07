@@ -5,20 +5,13 @@
  * of one, and the never-guess contract that turns a list of candidates into one
  * of them or into a failure that lists them — is `resolveOne`, `spokenDigits`,
  * `spokenAlphanumeric` and `spokenOrdinal` (`@alexkroman1/aai`). What stays here
- * is the STORE's
- * vocabulary: what an order id looks like when a caller reads it aloud, which
- * words name a status, and what a variant's options are matched against.
+ * is the STORE's vocabulary: what an order id looks like when a caller reads it
+ * aloud, and which words name a status.
  */
 
-import {
-  isToolFailure,
-  resolveOne,
-  spokenAlphanumeric,
-  spokenDigits,
-  type ToolFailure,
-} from "@alexkroman1/aai";
+import { isToolFailure, resolveOne, spokenAlphanumeric, type ToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { Order, OrderStatus, Product, RetailState } from "./shared.ts";
+import type { Order, OrderStatus, RetailState } from "./shared.ts";
 import { authenticatedUser } from "./store.ts";
 
 /**
@@ -41,14 +34,8 @@ export function normalizeOrderId(spoken: string): string {
   return `#W${spokenAlphanumeric(spoken).replace(/^W/, "")}`;
 }
 
-/** Item ids are 10 digits; callers read them in groups. */
-export function normalizeItemId(spoken: string): string {
-  return spokenDigits(spoken);
-}
-
 /** A digit run long enough to be an id rather than an ordinal. */
 const LOOKS_LIKE_ORDER_ID = /\d[\d\s-]{5,}/;
-const LOOKS_LIKE_ITEM_ID = /(?:\d[\s-]*){8,}/;
 
 /** Spoken status words → the statuses they select. `pending` deliberately
  *  excludes `pending (item modified)`, which no tool will accept anyway. */
@@ -104,42 +91,4 @@ export function resolveOrder(state: RetailState, spoken: string): Order | ToolFa
   // A position, then exactly-one, then an ambiguity that lists them — and never
   // a guess, because the consequence here is cancelling the wrong order.
   return resolveOne(candidates, spoken, { label: "order", describe: describeOrder });
-}
-
-/**
- * Resolve a spoken variant reference within one product: a 10-digit item id, or
- * an option phrase like "the blue medium".
- */
-export function resolveVariantId(
-  product: Product,
-  spoken: string,
-  opts: { availableOnly?: boolean } = {},
-): string | ToolFailure {
-  if (LOOKS_LIKE_ITEM_ID.test(spoken)) {
-    const itemId = normalizeItemId(spoken);
-    const variant = product.variants[itemId];
-    if (!variant) {
-      return {
-        error: `Item ${itemId} is not a variant of ${product.name} (${product.product_id}). Its variants are: ${Object.values(
-          product.variants,
-        )
-          .map((v) => `${v.item_id} (${Object.values(v.options).join(", ")})`)
-          .join("; ")}.`,
-      };
-    }
-    return itemId;
-  }
-
-  const pool = Object.values(product.variants).filter((v) => !opts.availableOnly || v.available);
-
-  // A variant is named by its OPTIONS ("the blue medium"), so the score is how
-  // many of them the caller said. Everything after that — no match, one match, a
-  // tie — is `resolveOne`'s, and a tie is answered rather than broken.
-  const picked = resolveOne(pool, spoken, {
-    label: `${product.name} option`,
-    describe: (v) => `${v.item_id} (${Object.values(v.options).join(", ")})`,
-    score: (variant, text) =>
-      Object.values(variant.options).filter((value) => text.includes(value.toLowerCase())).length,
-  });
-  return isToolFailure(picked) ? picked : picked.item_id;
 }

@@ -1,6 +1,5 @@
-import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { digitsOf, isIsoDate, speakCode } from "../records.ts";
+import { digitsOf, isoDate, speakCode } from "../records.ts";
 import { addTicket, hotelSlot } from "../shared.ts";
 
 /** Their `record_group_inquiry`: fifteen or more guests is a block, never a booking. */
@@ -18,11 +17,10 @@ export default hotelSlot.updateTool({
     shareType: z
       .enum(["twin", "double", "single", "mixed"])
       .describe("The predominant room-share arrangement"),
-    checkIn: z.string().describe("YYYY-MM-DD"),
+    checkIn: isoDate("the arrival date"),
     nights: z.number().int().min(1),
   }),
   execute(args, hotel) {
-    if (!isIsoDate(args.checkIn)) return toolFailure("the arrival date must be YYYY-MM-DD");
     const ticket = addTicket(
       hotel,
       "group_inquiry",

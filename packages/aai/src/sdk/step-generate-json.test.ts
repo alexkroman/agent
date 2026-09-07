@@ -38,15 +38,47 @@ describe("stepGenerateJson", () => {
     expect((await stepGenerateJson("Summarize.", { schema: Reply })).headline).toBe("H");
   });
 
-  test("passes the system instruction and prompt straight through", async () => {
+  test("keeps the caller's system instruction and appends the schema's shape", async () => {
     const gateway = install('{"headline":"H","points":[]}');
 
-    await stepGenerateJson("The article.", { schema: Reply, system: "Reply with JSON." });
+    await stepGenerateJson("The article.", { schema: Reply, system: "Be terse." });
 
-    expect(gateway.calls[0]).toMatchObject({
-      prompt: "The article.",
-      system: "Reply with JSON.",
-    });
+    const call = gateway.calls[0] as { prompt: string; system: string };
+    expect(call.prompt).toBe("The article.");
+    // The caller's wording survives — it is the half that gets a model to
+    // comply, and only the mechanical half is added.
+    expect(call.system.startsWith("Be terse.")).toBe(true);
+    // …followed by the shape, DERIVED rather than restated, so it cannot drift
+    // from the schema the reply is then checked against.
+    expect(call.system).toContain("matching this JSON Schema");
+    expect(call.system).toContain('"headline"');
+    expect(call.system).toContain('"points"');
+    // The dialect line is noise to a model, and is stripped for providers too.
+    expect(call.system).not.toContain("$schema");
+  });
+
+  test("supplies the shape when the caller sets no system instruction", async () => {
+    const gateway = install('{"headline":"H","points":[]}');
+
+    await stepGenerateJson("The article.", { schema: Reply });
+
+    expect((gateway.calls[0] as { system: string }).system).toContain("matching this JSON Schema");
+  });
+
+  test("a schema that cannot render JSON Schema still validates, and constrains nothing", async () => {
+    // The zero-zod duck type: a vendor exposing neither `toJSONSchema()` nor
+    // `toJsonSchema()` degrades to the old behaviour rather than failing.
+    const gateway = install('{"n":1}');
+    const plain = {
+      "~standard": {
+        version: 1 as const,
+        vendor: "handmade",
+        validate: (value: unknown) => ({ value: value as { n: number } }),
+      },
+    };
+
+    expect(await stepGenerateJson("Go.", { schema: plain, system: "Be terse." })).toEqual({ n: 1 });
+    expect((gateway.calls[0] as { system: string }).system).toBe("Be terse.");
   });
 
   test("does not leak `schema` into the request body", async () => {

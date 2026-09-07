@@ -552,6 +552,23 @@ export function describeAction(action: DeepReadonly<PendingAction>): string | To
 }
 
 /**
+ * The sentence for an action that has ALREADY been staged.
+ *
+ * `describeAction` answers `string | ToolFailure` because {@link stageAction} is
+ * the one caller that can be handed an id naming nothing, and its refusal names
+ * that id. Everything else describes something `stageAction` already accepted,
+ * so the failure arm is unreachable — and every such site had written
+ * `typeof described === "string" ? described : ...` to guard it, one of which
+ * read as if a `ToolFailure` might be spoken to the caller. The fallback is the
+ * action's own kind, so a catalog that somehow lost an entry mid-call degrades
+ * to a rough noun rather than to a stray `[object Object]`.
+ */
+export function describeStaged(action: DeepReadonly<PendingAction>): string {
+  const described = describeAction(action);
+  return typeof described === "string" ? described : action.kind;
+}
+
+/**
  * Stage a sensitive action and return what a sensitive tool answers with.
  *
  * Every sensitive tool ends in this call and none of them mutate anything —
@@ -578,11 +595,10 @@ export function stageAction(
   | ToolFailure {
   const described = describeAction(action);
   if (typeof described !== "string") return described;
-  const waiting = state.pending ? describeAction(state.pending) : null;
-  if (waiting !== null) {
+  if (state.pending) {
     return {
       error:
-        `Something is already waiting for the caller's yes: ${typeof waiting === "string" ? waiting : state.pending?.kind}. ` +
+        `Something is already waiting for the caller's yes: ${describeStaged(state.pending)}. ` +
         "Settle it with confirm_action or cancel_action, then ask for this one. " +
         "Only one change can be waiting at a time — nothing about this request has been staged.",
     };
@@ -617,8 +633,6 @@ export function applyPending(
   if (!action) {
     return { error: "Nothing is staged after all — ask the caller again what they want." };
   }
-  const described = describeAction(action);
-  if (typeof described !== "string") return described;
   state.pending = null;
   state.bookingCounter++;
   const reference = `BK${String(1000 + state.bookingCounter)}`;
@@ -713,7 +727,7 @@ export interface TripView {
 export function tripView(state: FrozenTripState): TripView {
   const assistant = activeAssistant(state);
   const flight = state.ticket ? FLIGHTS.find((f) => f.id === state.ticket?.flightId) : undefined;
-  const described = state.pending ? describeAction(state.pending) : null;
+  const described = state.pending ? describeStaged(state.pending) : null;
   return {
     passenger: state.passenger,
     assistant,
@@ -729,7 +743,7 @@ export function tripView(state: FrozenTripState): TripView {
         : null,
     bookings: state.bookings,
     total: state.bookings.reduce((sum, b) => sum + b.price, 0),
-    pending: typeof described === "string" ? described : null,
+    pending: described,
     log: state.log,
   };
 }

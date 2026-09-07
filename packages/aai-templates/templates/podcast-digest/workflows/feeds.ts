@@ -139,7 +139,10 @@ export async function discoverEpisodes(
   // what happens inside it.
   const feeds = await mapConcurrent(links, RESOLVE_CONCURRENCY, resolvePodcastFeed);
 
-  const episodes = (await Promise.all(feeds.map((feed) => readPodcastFeed(feed))))
+  // Bounded for the same reason the resolve above is, and against the same
+  // hosts: `readPodcastFeed` fetches any feed it was not handed a parse for, so
+  // a bare `Promise.all` opens one request per link at once.
+  const episodes = (await mapConcurrent(feeds, RESOLVE_CONCURRENCY, readPodcastFeed))
     .flat()
     .sort((a, b) => publishedAt(b) - publishedAt(a))
     .slice(0, maxEpisodes);
@@ -423,13 +426,8 @@ export function titleMatchesSpotify(
  * mentioning `<rss` in prose is not a feed. It is also wider where being wide is
  * right — an Atom podcast feed has no `<rss` root and was refused outright.
  */
-function carriesAudio(parsed: ParsedFeed | undefined): parsed is ParsedFeed {
+export function carriesAudio(parsed: ParsedFeed | undefined): parsed is ParsedFeed {
   return parsed?.items.some((item) => item.enclosureUrl !== undefined) ?? false;
-}
-
-/** {@link carriesAudio} over a document that has not been parsed yet. */
-export function looksLikePodcastFeed(xml: string): boolean {
-  return carriesAudio(parseFeed(xml));
 }
 
 /** The first feed a page advertises, resolved against the page's own URL. */

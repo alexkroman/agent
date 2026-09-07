@@ -296,6 +296,125 @@ describe("createSubagentRunner", () => {
     });
   });
 
+  describe("schema", () => {
+    const Verdict = z.object({
+      verdict: z.enum(["confirmed", "contradicted", "unclear"]),
+      detail: z.string(),
+    });
+
+    it("parses the answer and hands the caller the typed object", async () => {
+      const { descriptor, env } = setup([
+        { text: '{"verdict":"confirmed","detail":"Two sources agree."}' },
+      ]);
+      const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+
+      const result = await run(
+        subagent({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
+        { task: "x" },
+        parentCall(),
+      );
+
+      // `text` is still the raw answer beside it, so a caller can quote what
+      // came back as well as branch on it.
+      expect(result).toMatchObject({
+        object: { verdict: "confirmed", detail: "Two sources agree." },
+        revisions: 0,
+        accepted: true,
+      });
+    });
+
+    it("unwraps a fence, which models add however firmly they are told not to", async () => {
+      const { descriptor, env } = setup([
+        { text: '```json\n{"verdict":"unclear","detail":"Nothing found."}\n```' },
+      ]);
+      const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+
+      const result = await run(
+        subagent({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
+        { task: "x" },
+        parentCall(),
+      );
+
+      expect(result).toMatchObject({ object: { verdict: "unclear" }, revisions: 0 });
+    });
+
+    it("sends a mis-shaped answer BACK, and keeps what the attempt already paid for", async () => {
+      const { model, descriptor, env } = setup([
+        { text: '{"verdict":"probably","detail":"Hmm."}' },
+        { text: '{"verdict":"unclear","detail":"Hmm."}' },
+      ]);
+      const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+
+      const result = await run(
+        subagent({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
+        { task: "Is it raining?" },
+        parentCall(),
+      );
+
+      expect(result).toMatchObject({
+        object: { verdict: "unclear" },
+        revisions: 1,
+        accepted: true,
+      });
+      // The retry CONTINUES the run, exactly as a guardrail rejection does: the
+      // second request carries the task, the rejected answer, and the issues.
+      const second = promptOf(model.calls[1]);
+      expect(second.filter((message) => message.role === "user")).toHaveLength(2);
+      expect(JSON.stringify(second)).toContain("did not match the required shape");
+      expect(JSON.stringify(second)).toContain("Is it raining?");
+    });
+
+    it("gives up after the retry budget and says the shape is why", async () => {
+      const { descriptor, env } = setup([{ text: "not json at all" }, { text: "still not json" }]);
+      const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+
+      const result = await run(
+        subagent({
+          name: "checker",
+          systemPrompt: "Check it.",
+          schema: Verdict,
+          maxRetries: 1,
+        }),
+        { task: "x" },
+        parentCall(),
+      );
+
+      // Unaccepted rather than thrown — the caller is a tool on a live call and
+      // needs something to say, which is the same trade `accepted: false` makes
+      // for a guardrail.
+      expect(result.accepted).toBe(false);
+      expect(result.complaint).toContain("JSON");
+      expect(result).not.toHaveProperty("object");
+    });
+
+    it("is checked BEFORE the guardrail, which judges a well-formed answer", async () => {
+      const seen: string[] = [];
+      const { descriptor, env } = setup([
+        { text: "not json" },
+        { text: '{"verdict":"confirmed","detail":"ok"}' },
+      ]);
+      const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+
+      await run(
+        subagent({
+          name: "checker",
+          systemPrompt: "Check it.",
+          schema: Verdict,
+          guardrail: ({ text }) => {
+            seen.push(text);
+            return true;
+          },
+        }),
+        { task: "x" },
+        parentCall(),
+      );
+
+      // The malformed attempt never reached the guardrail: judging a reply that
+      // is not the right shape is asking the wrong question.
+      expect(seen).toEqual(['{"verdict":"confirmed","detail":"ok"}']);
+    });
+  });
+
   describe("guardrail", () => {
     it("accepts the first answer when the guardrail passes it", async () => {
       const { model, descriptor, env } = setup([{ text: "Confirmed: yes." }]);

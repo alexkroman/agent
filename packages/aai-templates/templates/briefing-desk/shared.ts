@@ -49,6 +49,7 @@ import {
   subagent,
 } from "@alexkroman1/aai";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { z } from "zod";
 
 /**
  * Steps one angle may take. A budget, not a limit to be raised when an answer
@@ -88,8 +89,21 @@ export const researcher = subagent({
   maxSteps: MAX_RESEARCH_STEPS,
 });
 
-/** The three verdicts a check may come back with — see {@link factChecker}. */
-export const VERDICT_PREFIXES = ["Confirmed:", "Contradicted:", "Unclear:"] as const;
+/**
+ * The three verdicts a check may come back with — see {@link factChecker}.
+ *
+ * A SCHEMA rather than a sentence prefix. The desk branches on which of the
+ * three it is (`tools/verify_claim.ts` tells it to correct itself on
+ * `contradicted`), so this is a value the caller reads, not prose it forwards —
+ * and a value the caller reads is what `SubagentDef.schema` is for.
+ */
+export const VerdictSchema = z.object({
+  verdict: z.enum(["confirmed", "contradicted", "unclear"]),
+  /** One sentence of what was found, in the checker's own words. */
+  detail: z.string().min(1),
+});
+
+export type Verdict = z.infer<typeof VerdictSchema>;
 
 /**
  * The fact-checker: a second ROLE, deliberately narrower than the first.
@@ -99,17 +113,19 @@ export const VERDICT_PREFIXES = ["Confirmed:", "Contradicted:", "Unclear:"] as c
  * reason to reach for a subagent: a capability a run does not need is one it
  * cannot misuse.
  *
- * **And it is the worked example for `guardrail`.** The verdict prefix is not a
- * style preference — `tools/verify_claim.ts` tells the desk to CORRECT itself
- * when a claim comes back contradicted, and the desk can only act on that if
- * the answer says which of the three it is. Asking for the prefix in the prompt
- * and hoping is what every version of this before the guardrail did; the check
- * is four lines and the retry costs one extra run of a run that takes two steps
- * on the cheapest model here.
+ * **And it is the worked example for `SubagentDef.schema`.** The verdict is not
+ * a style preference — `tools/verify_claim.ts` tells the desk to CORRECT itself
+ * when a claim comes back contradicted, and the desk can only act on that if it
+ * can READ which of the three it is. This used to be an English sentence prefix
+ * (`"Confirmed:"`), restated in `expectedOutput` and re-checked by a
+ * `guardrail` doing `startsWith` — three layers carrying one enum, and a model
+ * that wrote `"Confirmed - "` was wrong in a way only prose could describe.
+ * The schema makes it a parse, and the runtime sends a mis-shaped answer back
+ * on the same retry budget the guardrail used.
  *
- * A schema could not do this job. `ctx.generate({ schema })` constrains the
- * SHAPE of an answer, and what is wrong with "It seems that prices did fall" is
- * not its shape.
+ * The `guardrail` is gone with it, and that is the split worth remembering: a
+ * guardrail is for the judgement a shape cannot express — a missing citation,
+ * sources that are all one publisher — and this was never that.
  */
 export const factChecker = subagent({
   name: "fact-checker",
@@ -118,14 +134,10 @@ export const factChecker = subagent({
     "",
     "Search for it. 'Unclear' is a real answer — say it rather than guessing.",
   ].join("\n"),
-  expectedOutput: [
-    `One sentence, starting with one of ${VERDICT_PREFIXES.join(" ")} and naming`,
-    "what you found.",
-  ].join("\n"),
-  guardrail: ({ text }) =>
-    VERDICT_PREFIXES.some((prefix) => text.trimStart().startsWith(prefix)) ||
-    `Start your answer with exactly one of ${VERDICT_PREFIXES.join(" ")} — the desk decides ` +
-      "whether to correct itself from that word, and cannot from a sentence that only implies it.",
+  // The SHAPE comes from `schema`; what stays here is what a schema cannot say —
+  // that `detail` is one sentence and names the evidence.
+  expectedOutput: "`detail` is one sentence naming what you found and where.",
+  schema: VerdictSchema,
   llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
   builtinTools: ["web_search"],
   maxSteps: 2,

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { bookingStatus, nextStep, requote } from "../booking.ts";
 import { deskFlow, IN_BOOKING } from "../desk.ts";
 import { describeRoomOptions, listRoomOptions } from "../hotel.ts";
-import { daysBetween, isIsoDate, MAX_PARTY_SIZE, spokenDate, TODAY } from "../records.ts";
+import { daysBetween, isoDate, MAX_PARTY_SIZE, spokenDate, TODAY } from "../records.ts";
 import { bookingByCode, hotelSlot } from "../shared.ts";
 
 const MAX_NIGHTS = 30;
@@ -28,8 +28,8 @@ export default deskFlow.tool({
     "Never pick a type yourself. Pass the FULL stay even when only one field changes.",
   when: IN_BOOKING,
   inputSchema: z.object({
-    checkIn: z.string().describe("Check-in date, YYYY-MM-DD"),
-    checkOut: z.string().describe("Check-out date, YYYY-MM-DD"),
+    checkIn: isoDate("the check-in date"),
+    checkOut: isoDate("the check-out date"),
     guests: z
       .number()
       .int()
@@ -42,9 +42,6 @@ export default deskFlow.tool({
       const d = hotel.draft;
       if (d === null)
         return toolFailure("No booking flow is open - call start_room_booking first.");
-      if (!(isIsoDate(checkIn) && isIsoDate(checkOut))) {
-        return toolFailure("dates must be real calendar dates in YYYY-MM-DD form");
-      }
       if (checkOut <= checkIn) return toolFailure("check-out must be after check-in");
       if (daysBetween(checkIn, checkOut) > MAX_NIGHTS)
         return toolFailure(`the max stay is ${MAX_NIGHTS} nights`);

@@ -155,7 +155,10 @@ export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number 
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
-type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+type DelegateFn = {
+    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
 
 // @public
 interface DelegateOptions {
@@ -644,6 +647,7 @@ interface SubagentDef {
     maxRetries?: number;
     maxSteps?: number;
     name: string;
+    schema?: StandardSchemaV1;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
@@ -686,6 +690,7 @@ type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 
@@ -733,6 +738,17 @@ export const ToolSchemaSchema: z.ZodObject<{
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+interface TypedDelegateResult<T> extends DelegateResult {
+    object: T;
+}
+
+// @public
+interface TypedSubagentDef<T> extends SubagentDef {
+    // (undocumented)
+    schema: StandardSchemaV1<unknown, T>;
+}
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

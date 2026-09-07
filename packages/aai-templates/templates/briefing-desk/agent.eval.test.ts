@@ -26,6 +26,7 @@
  * spelled out in `../code-interpreter/agent.eval.test.ts`.
  */
 import agentDef from "virtual:aai/agent";
+import { countWords } from "@alexkroman1/aai/utils";
 import { describeTurn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -74,7 +75,13 @@ const EmptyRecap = z.object({
 });
 
 /** What `verify_claim` answers with. */
-const Verdict = z.object({ claim: z.string(), verdict: z.string() });
+// `verdict` is the parsed WORD now, so the eval can pin the enum rather than
+// asserting a sentence is non-empty. `null` is the unaccepted case.
+const Verdict = z.object({
+  claim: z.string(),
+  verdict: z.enum(["confirmed", "contradicted", "unclear"]).nullable(),
+  detail: z.string(),
+});
 
 describeEval(agentDef, (test) => {
   test(
@@ -156,8 +163,10 @@ describeEval(agentDef, (test) => {
       const calls = turn.toolCalls.filter((call) => call.name === "verify_claim");
       expect(calls, describeTurn(turn)).toHaveLength(1);
       const verdict = toolResultIn(turn.toolCalls, "verify_claim", Verdict);
-      expect(verdict.claim.split(/\s+/).length).toBeGreaterThan(3);
-      expect(verdict.verdict).not.toBe("");
+      expect(countWords(verdict.claim)).toBeGreaterThan(3);
+      // A word the desk can act on, not a sentence it must read one out of.
+      expect(verdict.verdict).not.toBeNull();
+      expect(countWords(verdict.detail)).toBeGreaterThan(2);
       expect(toolNames(turn.toolCalls).filter((name) => !DESK_TOOLS.includes(name))).toEqual([]);
     },
     { live: true },

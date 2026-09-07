@@ -72,6 +72,8 @@
     "TextAgentParams",
     "ToolChoice",
     "TtsProvider",
+    "TypedDelegateResult",
+    "TypedSubagentDef",
     "WaitForOptions",
     "WaitForSchemaOptions",
     "withLock"
@@ -235,7 +237,6 @@
     "UseSessionControlsResult",
     "useSessionError",
     "useSessionStatus",
-    "useToolResult",
     "useUserTranscript",
     "UseUserTranscriptResult",
     "UseWorkflowProgressResult",

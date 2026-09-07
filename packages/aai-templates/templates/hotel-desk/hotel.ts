@@ -407,14 +407,20 @@ export function freeTable(
       )
       .map((r) => r.tableId),
   );
-  return state.tables
-    .filter((t) => t.capacity >= partySize && !taken.has(t.id))
-    .sort(
-      (a, b) =>
-        Number(b.id === options.prefer) - Number(a.id === options.prefer) ||
-        a.capacity - b.capacity ||
-        a.id - b.id,
-    )[0];
+  // The ordering picks a single winner, so this is a MINIMUM, not a sort: the
+  // filtered copy and the O(t log t) that followed it both went to read `[0]`.
+  // Same comparator, one pass, no intermediate array.
+  type Seat = (typeof state.tables)[number];
+  const order = (a: Seat, b: Seat) =>
+    Number(b.id === options.prefer) - Number(a.id === options.prefer) ||
+    a.capacity - b.capacity ||
+    a.id - b.id;
+  let best: Seat | undefined;
+  for (const table of state.tables) {
+    if (table.capacity < partySize || taken.has(table.id)) continue;
+    if (best === undefined || order(table, best) < 0) best = table;
+  }
+  return best;
 }
 
 export interface ReserveTableInput {

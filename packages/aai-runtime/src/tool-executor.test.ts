@@ -137,6 +137,43 @@ describe("executeToolCall", () => {
     }
   });
 
+  test("ctx.deadlineAt is THIS call's deadline, and follows a custom timeoutMs", async () => {
+    // The value a tool budgets against. It is per-call rather than the constant
+    // — `createTextAgent` passes its own `timeoutMs` — which is the whole
+    // reason this is on the context and not an exported number.
+    let seen = 0;
+    const tool = makeTool({
+      execute: (_args, ctx) => {
+        seen = ctx.deadlineAt;
+        return "ok";
+      },
+    });
+
+    const before = Date.now();
+    await run("t", {}, tool);
+    // The default 30s window, allowing for the clock moving during the call.
+    expect(seen).toBeGreaterThanOrEqual(before + 30_000 - 50);
+    expect(seen).toBeLessThanOrEqual(Date.now() + 30_000);
+
+    const custom = Date.now();
+    await run("t", {}, tool, { timeoutMs: 5000 });
+    expect(seen).toBeGreaterThanOrEqual(custom + 5000 - 50);
+    expect(seen).toBeLessThanOrEqual(Date.now() + 5000);
+  });
+
+  test("a tool can answer BEFORE its deadline by reading it", async () => {
+    // The case the field exists for: the alternative is being cut off with
+    // `Tool "..." timed out after Nms` and nothing else reaching the model.
+    const tool = makeTool({
+      execute: async (_args, ctx) => {
+        const budget = ctx.deadlineAt - Date.now() - 40;
+        await sleep(Math.max(0, budget));
+        return "partial answer";
+      },
+    });
+    expect(await run("t", {}, tool, { timeoutMs: 120 })).toBe("partial answer");
+  });
+
   test("ctx.send calls the send callback", async () => {
     const sends: Array<{ event: string; data: unknown }> = [];
     const tool = makeTool({

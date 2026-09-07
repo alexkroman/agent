@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BETWEEN_ROUNDS, gameFlow } from "../game.ts";
-import { currentWord, GAME_SECONDS, gameSlot, WORDS_PER_GAME } from "../shared.ts";
+import { currentWord, GAME_SECONDS, gameSlot, newGame, score, WORDS_PER_GAME } from "../shared.ts";
 import { pickWords } from "../words.ts";
 
 /**
@@ -22,19 +22,15 @@ export default gameFlow.tool({
   inputSchema: z.object({}),
   execute: (_args, ctx) =>
     gameSlot.update(ctx, (game) => {
-      const best = Math.max(game.best, game.score);
-      game.words = pickWords(WORDS_PER_GAME);
-      game.index = 0;
-      game.score = 0;
-      game.skips = 0;
-      game.fouls = 0;
-      game.startedAt = Date.now();
-      game.endedAt = null;
-      game.descriptions = [];
-      game.wrongGuesses = [];
-      game.rounds = [];
-      game.best = best;
-      game.lastRemark = null;
+      // Through `newGame()` rather than a second list of fields to zero: a
+      // field added to `GameState` was otherwise reset in one place and left
+      // standing here, surviving into the next round.
+      const best = Math.max(game.best, score(game));
+      Object.assign(game, newGame(), {
+        words: pickWords(WORDS_PER_GAME),
+        startedAt: Date.now(),
+        best,
+      });
       const word = currentWord(game) ?? "";
       return {
         word,

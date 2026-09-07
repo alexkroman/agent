@@ -1,9 +1,10 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { findReservation, modifyReservation, openDinnerSlots } from "../hotel.ts";
 import {
   DINNER_SLOTS,
-  isIsoDate,
+  isoDate,
   MAX_PARTY_SIZE,
   speakCode,
   spokenDate,
@@ -26,12 +27,11 @@ export default hotelSlot.updateTool({
   inputSchema: z.object({
     lastName: z.string().min(1),
     confirmationCode: z.string().min(1),
-    newDate: z.string().describe("YYYY-MM-DD"),
+    newDate: isoDate("the new date"),
     newTime: z.string().describe("24-hour HH:MM"),
     newPartySize: z.number().int().min(1).max(MAX_PARTY_SIZE).optional(),
   }),
   execute({ lastName, confirmationCode, newDate, newTime, newPartySize }, hotel) {
-    if (!isIsoDate(newDate)) return toolFailure("the new date must be YYYY-MM-DD");
     if (newDate < TODAY) return toolFailure("the new date can't be in the past");
     if (!(DINNER_SLOTS as readonly string[]).includes(newTime)) {
       return toolFailure(
@@ -67,7 +67,7 @@ export default hotelSlot.updateTool({
       partySize: updated.partySize,
       message:
         `Done - the reservation is now ${spokenTime(updated.time)} on ${spokenDate(updated.date)} for ` +
-        `${updated.partySize} guest${updated.partySize === 1 ? "" : "s"}, same code. Confirm the date, time AND ` +
+        `${updated.partySize} ${plural(updated.partySize, "guest")}, same code. Confirm the date, time AND ` +
         "party size to the caller - if the size isn't what they expect, this is their chance to catch it.",
     };
   },

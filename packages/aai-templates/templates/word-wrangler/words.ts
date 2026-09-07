@@ -252,8 +252,6 @@ export const WORD_CATEGORIES = {
   ],
 } as const;
 
-export type WordCategory = keyof typeof WORD_CATEGORIES;
-
 /** Every word, once, whatever category it came from. */
 export function allWords(): string[] {
   return [...new Set(Object.values(WORD_CATEGORIES).flat())];

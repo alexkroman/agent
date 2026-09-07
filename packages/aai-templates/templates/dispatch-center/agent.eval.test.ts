@@ -34,11 +34,12 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 // What no eval here can see: anything below the audio boundary. Whether a
 // dispatcher reading a callsign in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
-import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
+import { dialogRefusalPattern, dialogResultSchema } from "@alexkroman1/aai/testing";
 import {
   type EvalSession,
   lastStateIn,
   toolNames,
+  toolResultIn,
   turnCalling,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -82,6 +83,37 @@ const ProjectedDashboard = z.object({
     }),
   ),
 });
+
+/**
+ * The three tool results asserted below, as SHAPES rather than as substrings of
+ * their own JSON.
+ *
+ * These were `toMatch(/"newStatus":"resolved"/)` over the serialized result, and
+ * one went as far as pinning adjacent key ORDER
+ * (`/"callsign":"Medic-1","reason":"Currently dispatched"/`). Nothing in this
+ * template is about serialization: a reordered field, a renamed sibling key or a
+ * pretty-print would have broken tests that were never about any of that.
+ *
+ * `incident_create` is ungated and SPREADS its position, so `state` sits beside
+ * its own fields; the other two are `callFlow.tool`s, so the SDK wraps them and
+ * `dialogResultSchema` is that wrapper.
+ */
+const Created = z.object({
+  recommendedSeverity: z.string(),
+  recommendedType: z.string(),
+  state: z.string(),
+});
+
+const Dispatch = dialogResultSchema(
+  z.object({
+    dispatched: z.array(z.object({ callsign: z.string() })),
+    failed: z.array(z.object({ callsign: z.string(), reason: z.string() })).optional(),
+  }),
+);
+
+const StatusChange = dialogResultSchema(
+  z.object({ newStatus: z.string(), timeline: z.array(z.string()) }),
+);
 
 /**
  * The latest dashboard the session pushed, or undefined if it pushed none.
@@ -161,15 +193,18 @@ describeEval(dispatchAgent, (test) => {
 
       const logged = turn.toolCalls.find((c) => c.name === "incident_create");
       expect(logged?.args.location).toMatch(/oak/i);
+      const created = toolResultIn(turn.toolCalls, "incident_create", Created);
       // The recommendation is the desk's own scoring, not the model's opinion:
       // `recommendSeverity` reads "cardiac arrest" and `recommendType` reads
       // "cardiac". A model that paraphrased the emergency away would show up
       // here rather than in a sentence nobody checks.
-      expect(logged?.result).toMatch(/"recommendedSeverity":"critical"/);
-      expect(logged?.result).toMatch(/"recommendedType":"medical"/);
+      expect(created).toMatchObject({
+        recommendedSeverity: "critical",
+        recommendedType: "medical",
+      });
       // `incident_create` is ungated and SPREADS the position it landed in, so
       // the model reads "confirm the severity and type" as part of this result.
-      expect(logged?.result).toMatch(/"state":"working\.triaging"/);
+      expect(created.state).toBe("working.triaging");
       // And the board the browser holds has it, at the severity the desk chose.
       expect(boardEntry(session.events(), FIRST_INCIDENT)).toMatchObject({
         severity: "critical",
@@ -190,13 +225,13 @@ describeEval(dispatchAgent, (test) => {
       // that never dispatched at all fails HERE, with every turn's tool list in
       // the message, rather than as an `undefined` three assertions later.
       const dispatching = turnCalling(turns, "resources_dispatch");
-      const rolled = dispatching.toolCalls.find((c) => c.name === "resources_dispatch");
+      const rolled = toolResultIn(dispatching.toolCalls, "resources_dispatch", Dispatch);
       // Units really assigned — `dispatched` is empty when every requested
       // callsign was busy, which is the case the fourth test owns.
-      expect(rolled?.result).toMatch(/"dispatched":\[\{/);
+      expect(rolled.result.dispatched.length).toBeGreaterThan(0);
       // `sendFrom` only fires when something rolled, so this is the position
       // moving BECAUSE of the dispatch rather than alongside it.
-      expect(rolled?.result).toMatch(/"state":"working\.monitoring"/);
+      expect(rolled.state).toBe("working.monitoring");
       // The board agrees: the incident is dispatched, not merely triaged.
       expect(boardEntry(session.events(), FIRST_INCIDENT)?.status).toBe("dispatched");
       // And the order is the one the desk's flow requires: log, then dispatch.
@@ -232,8 +267,14 @@ describeEval(dispatchAgent, (test) => {
       // an earlier draft tried to assert here is the case below: a competent
       // dispatcher checks availability first and never triggers it, so it is
       // `{ scripted: true }` rather than weakened into this one.)
-      expect(closed[0]?.result).toMatch(/"newStatus":"resolved"/);
-      expect(closed[0]?.result).toMatch(/All resources released/);
+      const resolved = toolResultIn(closed.slice(0, 1), "incident_update_status", StatusChange);
+      expect(resolved.result.newStatus).toBe("resolved");
+      // On the incident's TIMELINE, which is where the desk writes it — the
+      // regex this replaces matched the sentence anywhere in the JSON without
+      // saying which field was supposed to carry it.
+      expect(resolved.result.timeline).toContainEqual(
+        expect.stringContaining("All resources released"),
+      );
       // The board agrees, which is the half a browser would show.
       expect(boardEntry(session.events(), FIRST_INCIDENT)?.status).toBe("resolved");
       // And the shift ran in the order the flow requires.
@@ -277,18 +318,23 @@ describeEval(dispatchAgent, (test) => {
       const [first, second] = dispatches;
       // Medic-1 really rolled the first time — otherwise the refusal below is
       // about a unit that was never busy.
-      expect(first?.result).toMatch(/"callsign":"Medic-1"/);
-      expect(first?.result).toMatch(/"state":"working\.monitoring"/);
+      const firstRoll = toolResultIn(first ? [first] : [], "resources_dispatch", Dispatch);
+      expect(firstRoll.result.dispatched.map((r) => r.callsign)).toContain("Medic-1");
+      expect(firstRoll.state).toBe("working.monitoring");
       // And the second time the desk REFUSED rather than double-booking it:
       // `failed` carries the reason and `dispatched` is empty. The unit is
       // committed to ONE incident, which is the property a dispatch desk is
       // useless without and which no prompt can carry.
-      expect(second?.result).toMatch(/"dispatched":\[\]/);
-      expect(second?.result).toMatch(/"callsign":"Medic-1","reason":"Currently dispatched"/);
+      const secondRoll = toolResultIn(second ? [second] : [], "resources_dispatch", Dispatch);
+      expect(secondRoll.result.dispatched).toEqual([]);
+      expect(secondRoll.result.failed).toContainEqual({
+        callsign: "Medic-1",
+        reason: "Currently dispatched",
+      });
       // `sendFrom` only fires when something rolled, so the call did NOT
       // advance: logging Pine Lane put it back at `triaging`, and a dispatch
       // that dispatched nothing leaves it there.
-      expect(second?.result).toMatch(/"state":"working\.triaging"/);
+      expect(secondRoll.state).toBe("working.triaging");
       // The board agrees on both halves — the second incident never reached
       // `dispatched`, and the first one still holds the unit.
       expect(boardEntry(session.events(), SECOND_INCIDENT)?.status).not.toBe("dispatched");

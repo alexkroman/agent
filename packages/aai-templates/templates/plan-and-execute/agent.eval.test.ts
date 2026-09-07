@@ -31,6 +31,7 @@ import {
   type EvalSession,
   lastStateIn,
   toolNames,
+  toolResultIn,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -64,6 +65,10 @@ const ProjectedPlan = z.object({
  */
 const planState = (session: EvalSession) => lastStateIn(session.events(), ProjectedPlan);
 
+/** What `plan_status` answers on an untouched desk. An ordinary `tool()`, so no
+ *  dialog envelope — it reads the position itself. */
+const IdleStatus = z.object({ stage: z.string(), reads: z.string(), next: z.string() });
+
 describeEval(agentDef, (test) => {
   test(
     "the stage the desk reports is the flow's, not a guess at the plan",
@@ -80,10 +85,13 @@ describeEval(agentDef, (test) => {
       for (const call of turn.toolCalls.filter((one) => one.name === "plan_status")) {
         // `stage` comes off `planFlow.position`, and `reads` off `stageLabel` —
         // deriving either from `!plan.objective` a second time is the drift this
-        // template removed, and it would show up right here.
-        expect(call.result).toMatch(/"stage":"idle"/);
-        expect(call.result).toMatch(/no plan yet/);
-        expect(call.result).toMatch(/start_plan/);
+        // template removed, and it would show up right here. Read as a SHAPE:
+        // the regex this replaces asserted on the result's JSON text, so a
+        // renamed sibling key would have broken a claim about neither.
+        const status = toolResultIn([call], "plan_status", IdleStatus);
+        expect(status.stage).toBe("idle");
+        expect(status.reads).toMatch(/no plan yet/);
+        expect(status.next).toMatch(/start_plan/);
       }
     },
     { stubReply: [{ tool: "plan_status" }, "Nothing on the go yet — what are you trying to do?"] },

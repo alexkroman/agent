@@ -1,9 +1,10 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { gameFlow } from "../game.ts";
 import { isCorrectGuess } from "../guess.ts";
 import { askPlayer } from "../player.ts";
-import { advanceWord, currentWord, gameSlot, isFoul, secondsLeft } from "../shared.ts";
+import { advanceWord, currentWord, gameSlot, isFoul, score, secondsLeft } from "../shared.ts";
 
 /**
  * Hand the describer's words to the player and referee the guess — their whole
@@ -48,23 +49,22 @@ export default gameFlow.tool({
     const word = currentWord(before);
     if (word === null) return toolFailure("No word is in play - start_game starts a round.");
     if ((secondsLeft(before) ?? 0) <= 0) {
-      return { verdict: "time_up" as const, score: before.score, next: "TIME_UP" as const };
+      return { verdict: "time_up" as const, score: score(before), next: "TIME_UP" as const };
     }
 
     // The describer's actual words, if the runtime handed them over, beside the
     // host's relay of them: a foul in either is a foul.
-    const lastSaid = [...ctx.messages].reverse().find((m) => m.role === "user");
+    const lastSaid = ctx.messages.findLast((m) => m.role === "user");
     const spoken = typeof lastSaid?.content === "string" ? lastSaid.content : "";
     if (isFoul(description, word) || isFoul(spoken, word)) {
       return gameSlot.update(ctx, (game) => {
-        game.fouls += 1;
         game.lastRemark = null;
         advanceWord(game, "fouled");
         const nextWord = currentWord(game);
         return {
           verdict: "foul" as const,
           word,
-          score: game.score,
+          score: score(game),
           nextWord,
           next: nextWord === null ? ("WORDS_DONE" as const) : undefined,
           say:
@@ -87,27 +87,28 @@ export default gameFlow.tool({
       if (currentWord(game) !== word) {
         return {
           verdict: "stale" as const,
-          score: game.score,
+          score: score(game),
           say: "That word has already moved on.",
         };
       }
       game.descriptions = heard;
       game.lastRemark = guess.remark;
       if (isCorrectGuess(guess.guess, word)) {
-        game.score += 1;
+        // The point IS the settled round, so `advanceWord` is what scores it.
         advanceWord(game, "solved");
+        const points = score(game);
         const nextWord = currentWord(game);
         return {
           verdict: "correct" as const,
           playerSaid: guess.remark,
           guess: guess.guess,
           word,
-          score: game.score,
+          score: points,
           nextWord,
           secondsLeft: secondsLeft(game),
           next: nextWord === null ? ("WORDS_DONE" as const) : undefined,
           say:
-            `Correct! That's ${game.score} point${game.score === 1 ? "" : "s"}. ` +
+            `Correct! That's ${points} ${plural(points, "point")}. ` +
             (nextWord === null ? "That was the last word!" : `Your next word is ${nextWord}.`),
         };
       }
@@ -116,7 +117,7 @@ export default gameFlow.tool({
         verdict: "wrong" as const,
         playerSaid: guess.remark,
         guess: guess.guess,
-        score: game.score,
+        score: score(game),
         secondsLeft: secondsLeft(game),
         say: `Relay the player's remark ("${guess.remark}") and let the describer keep going.`,
       };

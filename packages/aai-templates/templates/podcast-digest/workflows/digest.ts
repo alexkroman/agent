@@ -172,8 +172,8 @@ const SummaryReply = z.object({
  * to replay: the DevKit re-runs this function from the top after any crash, and
  * each step it reaches is either replayed from the journal or executed for the
  * first time. Nothing here reads a clock, generates an id, or touches anything
- * that would answer differently on the second pass — {@link timestamp} is a step
- * for exactly that reason.
+ * that would answer differently on the second pass: the one clock read goes
+ * through `ctx.now()`, which the engine journals under its own key.
  */
 export async function dailyDigestFlow(
   input: DigestInput,
@@ -206,19 +206,35 @@ export async function dailyDigestFlow(
       ctx.step("summarizeTranscript", () => summarizeTranscript(transcript), { maxAttempts: 6 }),
     );
 
-    const slackStatus = await ctx.step("postDigest", () =>
-      sendDigestToSlack({
-        slackWebhookUrl: input.slackWebhookUrl,
-        slackWorkflowTextParam: input.slackWorkflowTextParam,
-        podcastChannels: input.podcastChannels,
-        episodes: digests,
-        digestNumber,
-        totalDigests,
-      }),
-    );
+    // Both at once: the clock read does not depend on what Slack said, and the
+    // two calls go out synchronously left to right, so a replay reproduces the
+    // ORDER as a pure function of this expression.
+    //
+    // `ctx.now()` rather than a step of its own: the engine journals the read
+    // under its own key, so it is stable across replays without costing a queue
+    // dispatch and a journal write — and this loop runs once per digest, so the
+    // whole scheduled series paid for it.
+    const [slackStatus, sentAt] = await Promise.all([
+      ctx.step("postDigest", () =>
+        sendDigestToSlack({
+          slackWebhookUrl: input.slackWebhookUrl,
+          slackWorkflowTextParam: input.slackWorkflowTextParam,
+          podcastChannels: input.podcastChannels,
+          episodes: digests,
+          digestNumber,
+          totalDigests,
+        }),
+      ),
+      ctx.now(),
+    ]);
 
     lastDigest = {
-      sentAt: await ctx.step("timestamp", () => timestamp()),
+      // A BASELINED occurrence of `guard-invariants` rule 30, and deterministic:
+      // `new Date` is given the journaled number above, so this is FORMATTING a
+      // replayed value, not reading a clock. The rule matches `new Date(x)` as
+      // well as `new Date()` on purpose — the argument is not decidable from a
+      // line — so the exemption is declared here rather than argued away.
+      sentAt: new Date(sentAt).toISOString(),
       slackStatus,
       episodes: digests,
     };
@@ -418,24 +434,6 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
     summary: parsed.summary,
     keyPoints: parsed.keyPoints,
   };
-}
-
-/**
- * The clock, as a step.
- *
- * A step's result is journaled and therefore stable across replays, where
- * `new Date()` in the body would answer differently on every one — and a body
- * that is not deterministic is a body the engine cannot replay.
- *
- * The read below is therefore a BASELINED occurrence of `guard-invariants`
- * rule 30, and that is the reason: it is inside a step, not inside a body. The
- * rule bans the call anywhere in a shipped `workflows/` file because the
- * `ctx.step` callback boundary is not decidable from a line; `dailyDigestFlow`
- * is what reaches this one, as `ctx.step("timestamp", () => timestamp())`.
- * Anything at BODY level is the bug, not an exception.
- */
-export async function timestamp(): Promise<string> {
-  return new Date().toISOString();
 }
 
 // ---- Pure helpers -----------------------------------------------------------

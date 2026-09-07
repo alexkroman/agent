@@ -1,8 +1,9 @@
+import type { DelegateOptions, SubagentDef } from "@alexkroman1/aai";
 import { DELEGATE_TOOL_NAME } from "@alexkroman1/aai";
 import {
   createToolContext,
-  runGuardrail,
   type StubDelegateCall,
+  scriptedToolContext,
   stubDelegate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -21,7 +22,7 @@ import {
   MAX_FINDINGS,
   MAX_RESEARCH_STEPS,
   researcher,
-  VERDICT_PREFIXES,
+  VerdictSchema,
 } from "./shared.ts";
 
 /** A finding whose cost is irrelevant to the case at hand. */
@@ -33,10 +34,6 @@ import agentDef from "virtual:aai/agent";
 const run = toolRunner(agentDef);
 const deployed = agentDef;
 
-/** The fact-checker's guardrail, called the way the runtime calls it — the
- *  check is entirely about the text, so the default zero cost report is honest. */
-const check = (text: string) => runGuardrail(factChecker, text);
-
 /**
  * The desk's two subagents, faked.
  *
@@ -47,26 +44,28 @@ const check = (text: string) => runGuardrail(factChecker, text);
  * worth asserting is what the desk ASKS for and what it does with what comes
  * back.
  */
-function desk(
+function scriptedDesk(
   options: {
     research?: (call: StubDelegateCall) => string | { text: string; searches?: number };
     check?: string;
   } = {},
 ) {
   const research = options.research ?? ((call) => `Findings for ${call.task}.`);
-  return stubDelegate({
-    researcher: (call) => {
-      const reply = research(call);
-      if (typeof reply === "string") return { text: reply };
-      return {
-        text: reply.text,
-        toolCalls: Array.from({ length: reply.searches ?? 0 }, (_unused, index) => ({
-          name: "web_search",
-          input: { query: `q${index}` },
-        })),
-      };
+  return scriptedToolContext({
+    delegate: {
+      researcher: (call) => {
+        const reply = research(call);
+        if (typeof reply === "string") return { text: reply };
+        return {
+          text: reply.text,
+          toolCalls: Array.from({ length: reply.searches ?? 0 }, (_unused, index) => ({
+            name: "web_search",
+            input: { query: `q${index}` },
+          })),
+        };
+      },
+      "fact-checker": options.check ?? '{"verdict": "confirmed", "detail": "Two sources say so."}',
     },
-    "fact-checker": options.check ?? "Confirmed: two sources say so.",
   });
 }
 
@@ -117,28 +116,29 @@ describe("the desk itself", () => {
   });
 });
 
-describe("the fact-checker's guardrail", () => {
-  test("accepts a verdict that opens with one of the three words", () => {
-    for (const prefix of VERDICT_PREFIXES) {
-      expect(check(`${prefix} the figure holds up.`)).toBe(true);
+describe("the fact-checker's schema", () => {
+  test("admits exactly the three verdicts the desk can act on", () => {
+    for (const verdict of ["confirmed", "contradicted", "unclear"]) {
+      expect(VerdictSchema.safeParse({ verdict, detail: "why" }).success).toBe(true);
     }
-    // Leading whitespace is the model's, not a different answer.
-    expect(check("  Unclear: nobody publishes it.")).toBe(true);
-  });
-
-  test("sends back a verdict the desk could not act on, saying what to do", () => {
     // The failure this exists for: a hedge the desk cannot tell from a
     // confirmation, which `tools/verify_claim.ts` would then read out as one.
-    const complaint = check("It seems that prices did fall last year.");
-    expect(complaint).not.toBe(true);
-    expect(String(complaint)).toContain("Confirmed:");
+    // It is not a judgement call any more — it does not parse.
+    expect(VerdictSchema.safeParse({ verdict: "probably", detail: "why" }).success).toBe(false);
+    expect(VerdictSchema.safeParse({ verdict: "confirmed" }).success).toBe(false);
+  });
+
+  test("the checker declares it, so the runtime is what enforces it", () => {
+    expect(factChecker.schema).toBe(VerdictSchema);
+    // And the guardrail it replaced is gone: a guardrail is for the judgement a
+    // shape cannot express, and a three-word enum was never that.
+    expect(factChecker.guardrail).toBeUndefined();
   });
 });
 
 describe("research_topic", () => {
   test("fans every angle out as its own run, each with a self-contained task", async () => {
-    const model = desk();
-    const ctx = createToolContext({ delegate: model.delegate });
+    const { ctx, desk: subagents } = scriptedDesk();
 
     await run(
       "research_topic",
@@ -146,11 +146,11 @@ describe("research_topic", () => {
       ctx,
     );
 
-    expect(model.calls).toHaveLength(2);
-    expect(model.calls.map((call) => call.subagent.name)).toEqual(["researcher", "researcher"]);
-    expect(model.calls.map((call) => call.task)).toEqual(["price trend", "install lead times"]);
+    expect(subagents.calls).toHaveLength(2);
+    expect(subagents.calls.map((call) => call.subagent.name)).toEqual(["researcher", "researcher"]);
+    expect(subagents.calls.map((call) => call.task)).toEqual(["price trend", "install lead times"]);
     // The subagent has not heard the call, so the topic rides in `context`.
-    expect(model.calls[0]?.options.context).toContain("home batteries");
+    expect(subagents.calls[0]?.options.context).toContain("home batteries");
   });
 
   test("starts the runs concurrently rather than one after another", async () => {
@@ -165,7 +165,10 @@ describe("research_topic", () => {
     });
     // The fake answers synchronously, so `inFlight` is only ever 1 unless the
     // tool really did start every run before awaiting any — which is the claim.
-    const delegate = ((sub, options) =>
+    // Parameters ANNOTATED rather than inferred: `DelegateFn` is overloaded
+    // (a subagent with a `schema` answers with a parsed `object`), and a bare
+    // arrow has no single signature to contextually type itself against.
+    const delegate = ((sub: SubagentDef, options: DelegateOptions) =>
       model.delegate(sub, options).finally(() => {
         inFlight -= 1;
       })) as typeof model.delegate;
@@ -180,10 +183,9 @@ describe("research_topic", () => {
   });
 
   test("records what each angle concluded, and only that", async () => {
-    const model = desk({
+    const { ctx } = scriptedDesk({
       research: (call) => ({ text: `Answer to ${call.task}.`, searches: 3 }),
     });
-    const ctx = createToolContext({ delegate: model.delegate });
 
     const result = (await run("research_topic", { topic: "t", angles: ["a"] }, ctx)) as {
       findings: Finding[];
@@ -236,16 +238,12 @@ describe("research_topic", () => {
   });
 
   test("refuses a call whose angles are all blank, without spending a subagent", async () => {
-    const model = desk();
+    const { ctx, desk: subagents } = scriptedDesk();
 
-    const result = await run(
-      "research_topic",
-      { topic: "t", angles: ["   "] },
-      createToolContext({ delegate: model.delegate }),
-    );
+    const result = await run("research_topic", { topic: "t", angles: ["   "] }, ctx);
 
     expect(result).toEqual({ error: expect.stringContaining("No angles") });
-    expect(model.calls).toEqual([]);
+    expect(subagents.calls).toEqual([]);
   });
 
   test("accepts at most MAX_ANGLES angles", () => {
@@ -257,22 +255,25 @@ describe("research_topic", () => {
 
 describe("verify_claim", () => {
   test("asks the fact-checker, not the researcher", async () => {
-    const model = desk({ check: "Contradicted: the figure is 12%." });
-    const ctx = createToolContext({ delegate: model.delegate });
+    const { ctx, desk: subagents } = scriptedDesk({
+      check: '{"verdict": "contradicted", "detail": "The figure is 12%."}',
+    });
 
     const result = (await run("verify_claim", { claim: "The figure is 40%." }, ctx)) as {
-      verdict: string;
+      verdict: string | null;
+      detail: string;
       checkedAgainst: string | null;
     };
 
-    expect(model.calls.map((call) => call.subagent.name)).toEqual(["fact-checker"]);
-    expect(result.verdict).toBe("Contradicted: the figure is 12%.");
+    expect(subagents.calls.map((call) => call.subagent.name)).toEqual(["fact-checker"]);
+    // The WORD the desk branches on, parsed — not a sentence it must read one out of.
+    expect(result.verdict).toBe("contradicted");
+    expect(result.detail).toBe("The figure is 12%.");
     expect(result.checkedAgainst).toBeNull();
   });
 
   test("quotes the finding a claim came from, so the checker can see the source", async () => {
-    const model = desk();
-    const ctx = createToolContext({ delegate: model.delegate });
+    const { ctx, desk: subagents } = scriptedDesk();
     briefingSlot.update(ctx, (board) => {
       board.findings.push({
         angle: "install lead times",
@@ -287,37 +288,46 @@ describe("verify_claim", () => {
       ctx,
     )) as { checkedAgainst: string | null };
 
-    expect(model.calls[0]?.options.context).toContain("Installers quote eight weeks.");
+    expect(subagents.calls[0]?.options.context).toContain("Installers quote eight weeks.");
     expect(result.checkedAgainst).toBe("install lead times");
   });
 
-  test("tells the desk not to act on a verdict the guardrail never accepted", async () => {
+  test("tells the desk not to act on a verdict the schema never accepted", async () => {
+    // A run the runtime could not parse after its retries: `accepted` is false
+    // and the complaint says why. The scripted text is well-formed here because
+    // `stubDelegate` parses it — what makes this the UNACCEPTED case is the
+    // staged `complaint`.
     const model = stubDelegate({
-      "fact-checker": { text: "It seems prices fell.", complaint: "no verdict word" },
+      "fact-checker": {
+        text: '{"verdict": "unclear", "detail": "Nothing conclusive."}',
+        complaint: "no verdict word",
+      },
     });
 
     const result = (await run(
       "verify_claim",
       { claim: "Prices fell." },
       createToolContext({ delegate: model.delegate }),
-    )) as { verdict: string; unusable?: string; message: string };
+    )) as { verdict: string | null; detail: string; unusable?: string; message: string };
 
     // Not a tool failure: there IS an answer, and the desk is on a live call.
     // What changes is the instruction — the desk must not round a hedge up to a
-    // confirmation, which is exactly what it would have done before.
-    expect(result.verdict).toBe("It seems prices fell.");
+    // confirmation, which is exactly what it would have done before. `verdict`
+    // is null rather than a word, so there is nothing to round.
+    expect(result.verdict).toBeNull();
     expect(result.unusable).toBe("no verdict word");
     expect(result.message).toContain("unresolved");
   });
 
   test("carries no `unusable` when the verdict was accepted", async () => {
-    const model = desk({ check: "Confirmed: two sources say so." });
+    const { ctx } = scriptedDesk({
+      check: '{"verdict": "confirmed", "detail": "Two sources say so."}',
+    });
 
-    const result = (await run(
-      "verify_claim",
-      { claim: "Prices fell." },
-      createToolContext({ delegate: model.delegate }),
-    )) as { unusable?: string; message: string };
+    const result = (await run("verify_claim", { claim: "Prices fell." }, ctx)) as {
+      unusable?: string;
+      message: string;
+    };
 
     expect(result.unusable).toBeUndefined();
     expect(result.message).toContain("correct what you told them earlier");
@@ -340,14 +350,10 @@ describe("verify_claim", () => {
   });
 
   test("refuses a blank claim without spending a subagent", async () => {
-    const model = desk();
-    const result = await run(
-      "verify_claim",
-      { claim: "  " },
-      createToolContext({ delegate: model.delegate }),
-    );
+    const { ctx, desk: subagents } = scriptedDesk();
+    const result = await run("verify_claim", { claim: "  " }, ctx);
     expect(result).toEqual({ error: expect.stringContaining("Nothing to check") });
-    expect(model.calls).toEqual([]);
+    expect(subagents.calls).toEqual([]);
   });
 });
 

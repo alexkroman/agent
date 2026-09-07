@@ -16,9 +16,13 @@
  * ## The four tools are four files
  *
  * `tools/` is the tool list — a file there IS a tool, named by its own filename —
- * so this module declares the agent and the workflow it hands off to, and nothing
- * about tools. The declaration they all share lives in `shared.ts`, because a
- * tool starts a run by passing the DEFINITION rather than its name.
+ * so this module declares the agent and nothing about tools. The workflow
+ * DEFINITION they all share lives in `shared.ts`, because a tool starts a run by
+ * passing the definition rather than its name, and a tool cannot reach back into
+ * this file: `virtual:aai/agent` is `agent.ts` plus a static import of every
+ * `tools/` file, so importing it from one closes a cycle through that module.
+ * A `workflowApp()` has no `tools/` and therefore declares its own def beside
+ * itself; `template-layout-gate.test.ts` holds both halves.
  *
  * ## And it SAYS SO when the work lands
  *
@@ -50,8 +54,9 @@
  *
  * No step function and no waitpoint. The body composes them with `ctx.step`
  * and suspends with `ctx.sleep`; the functions themselves live in
- * `workflows/research.ts`. What `agent.ts` owns is declaring the workflow and
- * the two tools that start and read runs.
+ * `workflows/research.ts`, and the def that names the body is in `shared.ts`.
+ * What `agent.ts` owns is the AGENT — its prompt, its voice, and the workflow
+ * it hands off to by name.
  *
  * ## The research is real, and it really searches the web
  *

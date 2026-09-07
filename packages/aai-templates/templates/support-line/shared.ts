@@ -92,13 +92,24 @@ function tokenize(text: string): string[] {
     .filter((word) => word.length > 2 && !STOPWORDS.has(word));
 }
 
-/** Term → how many documents contain it. Computed once at module load. */
+/**
+ * Term → how many documents contain it, and per document, term → how often it
+ * occurs. Both computed once at module load, in the one pass that has to visit
+ * every token anyway.
+ *
+ * The per-document COUNTS are what scoring needs. Keeping the raw token list
+ * instead made `retrieve` walk it end to end once per query term, allocating a
+ * filtered array each time, to recover a number this loop already had.
+ */
 const DOC_FREQUENCY = new Map<string, number>();
-const DOC_TOKENS = new Map<string, string[]>();
+const DOC_TERM_COUNTS = new Map<string, Map<string, number>>();
 for (const doc of DOCS) {
-  const tokens = tokenize(`${doc.title} ${doc.topic} ${doc.text}`);
-  DOC_TOKENS.set(doc.id, tokens);
-  for (const term of new Set(tokens)) {
+  const counts = new Map<string, number>();
+  for (const token of tokenize(`${doc.title} ${doc.topic} ${doc.text}`)) {
+    counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  DOC_TERM_COUNTS.set(doc.id, counts);
+  for (const term of counts.keys()) {
     DOC_FREQUENCY.set(term, (DOC_FREQUENCY.get(term) ?? 0) + 1);
   }
 }
@@ -123,10 +134,10 @@ export function retrieve(query: string, k: number = RETRIEVE_K): Retrieved[] {
   if (terms.size === 0) return [];
   const scored: Retrieved[] = [];
   for (const doc of DOCS) {
-    const tokens = DOC_TOKENS.get(doc.id) ?? [];
+    const counts = DOC_TERM_COUNTS.get(doc.id);
     let score = 0;
     for (const term of terms) {
-      const hits = tokens.filter((token) => token === term).length;
+      const hits = counts?.get(term) ?? 0;
       if (hits === 0) continue;
       const frequency = DOC_FREQUENCY.get(term) ?? 1;
       // Diminishing returns per repeat, so one long document cannot win on

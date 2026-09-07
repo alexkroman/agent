@@ -10,7 +10,7 @@ import {
   MAX_RESOURCE,
   MIN_MOMENTUM,
   type NPC,
-  type StoryBlueprint,
+  type StoryArcView,
   type TIME_PHASES,
 } from "./shared.ts";
 
@@ -390,11 +390,10 @@ function NpcCard({ npc }: { npc: DeepReadonly<NPC> }) {
   );
 }
 
-function StoryArc({ story }: { story: DeepReadonly<StoryBlueprint> }) {
-  const totalActs = story.acts.length;
-  const currentPhase = story.acts[story.currentAct - 1]?.phase ?? "";
+function StoryArc({ story }: { story: DeepReadonly<StoryArcView> }) {
+  const totalActs = story.totalActs;
   const pct = totalActs > 0 ? ((story.currentAct - 1) / totalActs) * 100 : 0;
-  const phaseLabel = PHASE_LABELS[currentPhase] || currentPhase;
+  const phaseLabel = PHASE_LABELS[story.phase] || story.phase;
   return (
     <div style={{ marginBottom: "8px" }}>
       <SectionHeader
@@ -671,9 +670,9 @@ function Sidebar() {
           </div>
 
           {/* Story Arc */}
-          {game.storyBlueprint && (
+          {game.storyArc && (
             <div className="et-section">
-              <StoryArc story={game.storyBlueprint} />
+              <StoryArc story={game.storyArc} />
             </div>
           )}
 

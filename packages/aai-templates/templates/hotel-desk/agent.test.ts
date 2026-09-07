@@ -148,6 +148,28 @@ describe("records.ts", () => {
     expect(isIsoDate("2026-06-08")).toBe(true);
   });
 
+  test("every date a tool takes is refused by its SCHEMA, before the body runs", async () => {
+    // The rule used to be ten hand-written `if (!isIsoDate(...)) return
+    // toolFailure(...)` lines, so it reached the model only by failing and each
+    // tool worded it differently. `isoDate` declares it on the field, which is
+    // what `executeToolCall` validates against before it calls `execute` —
+    // asserted through `toolInputIssues`, which is the SDK's reader for exactly
+    // this: `toolRunner` deliberately passes arguments straight through, so a
+    // tool driven through it never meets its own schema.
+    const dated: [string, Record<string, unknown>][] = [
+      ["check_restaurant_availability", { partySize: 2 }],
+      ["check_room_availability", { checkIn: "2026-06-09", guests: 2 }],
+      ["schedule_wakeup_call", { room: "412", time: "07:00" }],
+    ];
+    for (const [name, rest] of dated) {
+      const field = name === "check_room_availability" ? "checkOut" : "date";
+      for (const value of ["2026-02-30", "next tuesday"]) {
+        const issues = await toolInputIssues(agentDef, name, { ...rest, [field]: value });
+        expect(JSON.stringify(issues), `${name} accepted ${value}`).toMatch(/YYYY-MM-DD/);
+      }
+    }
+  });
+
   test("a minted code carries no character a caller could mishear as another", () => {
     for (let i = 0; i < 50; i++)
       expect(mintCode("HTL")).toMatch(/^HTL-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}$/);

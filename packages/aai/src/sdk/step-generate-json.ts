@@ -68,9 +68,10 @@ export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOp
  * named sits unread. Reach for the raw call where the failure is not simply a
  * failure — a `404` that means "already deleted".
  *
- * @param prompt - The user message. The SHAPE belongs in `system` — this says
- *   nothing about JSON on the caller's behalf, because the wording that gets a
- *   model to comply is part of the prompt a template is demonstrating.
+ * @param prompt - The user message. The SHAPE is added for you: the schema is
+ *   rendered as JSON Schema and appended to `system` (see `shapeInstruction`),
+ *   so a caller writes only the wording that gets a model to comply and never
+ *   restates the fields.
  * @returns The validated reply.
  * @throws {Error} A plain error — retryable by the engine's default, which is
  *   the point — when the reply is not JSON, is not an object, or does not
@@ -101,7 +102,13 @@ export async function stepGenerateJson<S extends StandardSchemaV1>(
   options: StepGenerateJsonOptions<S>,
 ): Promise<InferSchemaOutput<S>> {
   const { schema, ...generate } = options;
-  const reply = await stepGenerate(prompt, generate);
+  // The caller's wording first, then the shape — the order an author would
+  // write by hand, and the one `buildInstructions` uses for a subagent.
+  const system = [generate.system, shapeInstruction(schema)].filter(Boolean).join("\n\n");
+  const reply = await stepGenerate(prompt, {
+    ...generate,
+    ...(system === "" ? {} : { system }),
+  });
   const parsed = safeJsonParse(stripJsonFence(reply));
   // A record OR an array, spelled out — this is the one guard in the package
   // that must accept arrays, because a caller's schema is free to describe a
@@ -119,6 +126,60 @@ export async function stepGenerateJson<S extends StandardSchemaV1>(
     );
   }
   return result.value as InferSchemaOutput<S>;
+}
+
+/**
+ * The reply's shape, as a section the model is GIVEN rather than a sentence the
+ * caller writes out.
+ *
+ * `ctx.generate({ schema })` has always constrained the request as well as
+ * validating the reply — `host/generate.ts` runs an `Output.object` spec — and
+ * this call only ever did the second half. So the shape was written twice, once
+ * as the schema and once in English, and the two could disagree: four prompts
+ * across two shipped templates carried lines like
+ * `'Reply as JSON: {"brief": string, "criteria": string[]}.'`. Rename a field
+ * in the schema and the prompt keeps asking for the old one — the model obeys
+ * the prompt, the schema rejects, and the step burns every remaining attempt on
+ * a mismatch no error message names.
+ *
+ * Derived from the schema, so it cannot drift. Appended to `system` rather than
+ * replacing it: the wording that gets a model to comply is still the caller's,
+ * and this only adds the part that is mechanical.
+ *
+ * **And it stays zero-zod.** A Zod v4 schema exposes `toJSONSchema()` as an
+ * INSTANCE method and ArkType exposes `toJsonSchema()`, so both convert through
+ * the duck type and neither needs importing — which is what keeps this module
+ * inside `@alexkroman1/aai/step`'s dependency budget. `sdk/schema.ts` reaches
+ * for `z.toJSONSchema` instead because it needs to pick the `io` DIRECTION; a
+ * reply shape is always the output side, which is the instance method's own
+ * default, so that reason does not apply here.
+ *
+ * A schema from a vendor exposing neither returns `undefined` and the call
+ * behaves exactly as it did before — validated, not constrained.
+ */
+function shapeInstruction(schema: StandardSchemaV1): string | undefined {
+  // Narrowed rather than cast, the way `sdk/schema.ts` probes the same two
+  // methods: a record's properties are `unknown`, and `typeof === "function"`
+  // is the whole check.
+  if (!isRecord(schema)) return undefined;
+  const convert = schema.toJsonSchema ?? schema.toJSONSchema;
+  if (typeof convert !== "function") return undefined;
+  let document: unknown;
+  try {
+    document = convert.call(schema);
+  } catch {
+    // A schema the vendor itself cannot render (a transform with no JSON form)
+    // is not a reason to fail the call: the validation below still holds.
+    return undefined;
+  }
+  if (!isRecord(document)) return undefined;
+  // The dialect line is noise to a model and is what `sdk/schema.ts` strips for
+  // providers, for the same reason.
+  const { $schema: _dialect, ...rest } = document;
+  return (
+    "Reply with JSON only - no prose, no code fence - matching this JSON Schema:\n" +
+    JSON.stringify(rest)
+  );
 }
 
 /**

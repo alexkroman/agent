@@ -47,7 +47,10 @@ export const BRIEF_SYSTEM = [
   "The request came over the phone, so it is short and may be ambiguous.",
   "Do NOT ask questions — you cannot; the caller is gone. Instead, state the most",
   "reasonable reading of the request and say what would make the answer good.",
-  'Reply as JSON: {"brief": string, "criteria": string[]}.',
+  // The SHAPE is not written here: `stepGenerateJson` renders the schema as
+  // JSON Schema and appends it, so it cannot drift from what the reply is
+  // checked against. What stays is what the fields must CONTAIN, which no
+  // schema says.
   "`brief` is two or three sentences naming what is being researched and for whom.",
   "`criteria` is two to four things a complete answer must contain.",
 ].join(" ");
@@ -60,7 +63,6 @@ export const PLAN_SYSTEM = [
   "only add angles where a genuinely separate line of enquiry exists. Two",
   "researchers covering the same ground is the failure to avoid.",
   "Each angle is one short noun phrase, specific enough to search for.",
-  'Reply as JSON: {"angles": string[]}.',
 ].join(" ");
 
 /**
@@ -125,7 +127,6 @@ export const GAPS_SYSTEM = [
   "merely be said at greater length.",
   "Answer with an EMPTY list when the brief is covered; a second wave costs the",
   "caller minutes and it should buy something.",
-  'Reply as JSON: {"angles": string[]}.',
 ].join(" ");
 
 /** The written report — what a page renders and what is filed. */

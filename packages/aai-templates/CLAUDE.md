@@ -325,11 +325,21 @@ an inline arrow whose parameters are contextually typed, so its return type is
 inferred in a LATER pass than `sendFrom`'s signature is checked: A/B'd on
 `dispatch-center/tools/resources_dispatch.ts`, where moving `sendFrom` above the
 inline `execute` still gives `TS18046: 'result' is of type 'unknown'`. The
-mutually-dependent case is worse — where the body ends in a generic call the
-outer inference must resolve first (`planSlot.update(ctx, …)`, i.e. `update<R>`)
-TypeScript gives up and `R` lands as `unknown` with NO error at the declaration,
-reproduced both ways in `plan-and-execute`, whose two tools declare `sendFrom`
-last and say why.
+mutually-dependent case behaves the same way — where the body ends in a generic
+call the outer inference must resolve first (`planSlot.update(ctx, …)`, i.e.
+`update<R>`), `R` lands as `unknown` when `sendFrom` is written first, which is
+why `plan-and-execute`'s two tools declare it last and say so.
+
+**It is NOT silent, and the sentence here used to say it was.** Re-A/B'd on
+`plan-and-execute/tools/work_next_step.ts`, the hardest case in the tree:
+declared last, `R` resolves to the full three-arm union (probed by assigning it
+to `never` and reading the error); moved above `execute`, the body reports
+`TS18046: 'outcome' is of type 'unknown'` at the first property read. So the
+convention is enforced by the compiler rather than by this paragraph, and the
+cost of getting it wrong is a compile error naming the parameter — not a
+narrowing that quietly stops meaning anything. Do not plan an API change around
+the silent case; it was fixed when `NoInfer` landed and the prose did not catch
+up.
 
 So the rule SHRANK rather than going away: **declare `sendFrom` after
 `execute`; if you do not, you now get an error instead of silence.** Do not
@@ -772,15 +782,29 @@ is what `podcast-digest`'s two hand-written
 `err instanceof TranscribeError && err.retryable` checks were missing —
 both dropped `retryAfter`.
 
-**`research-workflow` is the workflow template, and the split between its two
+**`research-workflow` is the workflow template, and the split between its
 files is a CONVENTION now rather than a build requirement.** The body and the
-functions it steps through live in `workflows/research.ts`; `agent.ts` holds the
-declaration (`workflow({ description, input, run })`) and nothing else about the
-run. That directory used to be load-bearing — a body written in `agent.ts` was
-never transformed and ran inline once, undurably, with nothing saying so. The
-engine takes the body from the declaration wherever it was written, so what the
-split buys now is that `agent.ts` reads as a declaration and a spec can import
-the steps alone.
+functions it steps through live in `workflows/research.ts`. That directory used
+to be load-bearing — a body written in `agent.ts` was never transformed and ran
+inline once, undurably, with nothing saying so. The engine takes the body from
+the declaration wherever it was written, so what the split buys now is that a
+spec can import the steps alone.
+
+**The DECLARATION goes where its importers can reach it, and this paragraph used
+to get that backwards.** It said `agent.ts` holds it "and nothing else about the
+run" — of the one template where that is not true. `research-workflow` declares
+`research` in `shared.ts`, and so does `recap-workflow` with `recap`, because
+four tools apiece import the def to start, poll and cancel a run: a tool cannot
+reach back into `agent.ts`, since `virtual:aai/agent` is `agent.ts` PLUS a
+static import of every `tools/` file and importing it from a tool closes a cycle
+through that module.
+
+The split across the eight templates that declare one is therefore exact rather
+than stylistic — the six `workflowApp()`s declare in `agent.ts`, where nothing
+else needs it and `workflowApp`'s own `@example` puts it; the two voice agents
+that hand off declare in `shared.ts`. `template-layout-gate.test.ts` is what
+holds it now, so the next reader gets a failing test rather than this
+paragraph.
 
 **Its research is real, and it really searches the web.** Five stages, adapted
 from LangChain's `open_deep_research` (MIT — `workflows/prompts.ts` carries the

@@ -1,6 +1,7 @@
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { gameFlow } from "../game.ts";
-import { gameSlot } from "../shared.ts";
+import { gameSlot, score, tally } from "../shared.ts";
 
 /**
  * Close the round and read the score — their `GameTimer`'s "Time's up! ... Your
@@ -20,17 +21,17 @@ export default gameFlow.tool({
   execute: (_args, ctx) =>
     gameSlot.update(ctx, (game) => {
       game.endedAt ??= Date.now();
-      game.best = Math.max(game.best, game.score);
+      const points = score(game);
+      game.best = Math.max(game.best, points);
       const solved = game.rounds.filter((r) => r.outcome === "solved").map((r) => r.word);
-      const points = game.score;
       return {
         score: points,
         best: game.best,
         newBest: points > 0 && points === game.best && game.rounds.length > 0,
         solved,
-        skipped: game.skips,
-        fouled: game.fouls,
-        say: `Time's up! Thank you for playing Word Wrangler. Your final score is ${points} point${points === 1 ? "" : "s"}. Great job!`,
+        skipped: tally(game, "skipped"),
+        fouled: tally(game, "fouled"),
+        say: `Time's up! Thank you for playing Word Wrangler. Your final score is ${points} ${plural(points, "point")}. Great job!`,
       };
     }),
 });

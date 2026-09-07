@@ -521,7 +521,10 @@ export function defaultProviders(config: ProviderFields): {
 } | null;
 
 // @public
-type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+type DelegateFn = {
+    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
 
 // @public
 interface DelegateOptions {
@@ -1159,6 +1162,7 @@ interface SubagentDef {
     maxRetries?: number;
     maxSteps?: number;
     name: string;
+    schema?: StandardSchemaV1;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
@@ -1186,6 +1190,7 @@ type ToolContext = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    deadlineAt: number;
     workflows: WorkflowClient;
 };
 
@@ -1269,6 +1274,17 @@ export interface TtsWordTiming {
     readonly endMs: number;
     readonly startMs: number;
     readonly text: string;
+}
+
+// @public
+interface TypedDelegateResult<T> extends DelegateResult {
+    object: T;
+}
+
+// @public
+interface TypedSubagentDef<T> extends SubagentDef {
+    // (undocumented)
+    schema: StandardSchemaV1<unknown, T>;
 }
 
 // @public

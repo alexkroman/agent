@@ -137,10 +137,13 @@ type ExecuteToolCallOptions = {
 // `ExecuteToolCallOptions.signal` is the turn signal and is optional, but the
 // context's signal is the per-call controller `executeToolCall` always builds,
 // which is what makes `ToolContext.signal` non-optional.
-function buildToolContext(options: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
+function buildToolContext(
+  options: ExecuteToolCallOptions & { signal: AbortSignal; deadlineAt: number },
+): ToolContext {
   const { env, slots, messages, sessionId, send, signal, generate, subagents, workflows } = options;
   return {
     env,
+    deadlineAt: options.deadlineAt,
     // A caller with no session gets its own detached store rather than a shared
     // one: two such calls must not read each other's slots, which is the same
     // rule the `sessionId ?? randomUUID()` below encodes for the note builtins.
@@ -170,13 +173,19 @@ function buildToolContext(options: ExecuteToolCallOptions & { signal: AbortSigna
     // call inside it. `tool` is dropped by destructuring rather than by a cast:
     // a new option is then carried into a delegated run automatically, which is
     // the property `ToolCallDefaults` exists to keep.
+    // Asserted rather than inferred, for the reason the `generate` forwarder
+    // above is: `DelegateFn` is OVERLOADED — a subagent declaring a `schema`
+    // answers with a parsed `object` — and TypeScript cannot check an
+    // overloaded signature against a single implementation. The narrowing is
+    // backed by `runUntilAccepted`, which attaches `object` exactly when the
+    // def carries a schema.
     delegate: ((subagent: SubagentDef, delegateOpts: DelegateOptions): Promise<DelegateResult> => {
       if (!subagents) {
         return Promise.reject(new Error("delegate is not available in this execution context"));
       }
       const { tool: _tool, ...defaults } = options;
       return subagents(subagent, delegateOpts, { ...defaults, signal });
-    }) satisfies DelegateFn,
+    }) as DelegateFn,
     messages: messages ?? [],
     // No session → a unique per-call id, NOT "": the builtin remember/recall
     // notes are keyed by sessionId in a process-wide map, so sessionless
@@ -230,14 +239,23 @@ export async function executeToolCall(
   else turnSignal?.addEventListener("abort", followTurn, { once: true });
 
   try {
-    const ctx = buildToolContext({ ...options, signal: callController.signal });
+    // Resolved BEFORE the context is built, because the context carries it:
+    // `ctx.deadlineAt` is what lets a tool budget under its own deadline rather
+    // than be cut off by it. Read here rather than at the `pTimeout` below, so
+    // the instant a tool is told is a hair EARLIER than the one it is held to —
+    // the safe direction for a budget.
+    const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
+    const ctx = buildToolContext({
+      ...options,
+      signal: callController.signal,
+      deadlineAt: Date.now() + timeoutMs,
+    });
     await yieldTick();
     if (callController.signal.aborted) {
       return serializeToolFailure(`Tool "${name}" was cancelled before it ran`);
     }
     // The signal makes the await settle promptly on barge-in/reset/stop; the
     // underlying execute keeps running unless it observes ctx.signal itself.
-    const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
     const result = await pTimeout(Promise.resolve(tool.execute(parsed.value, ctx)), {
       milliseconds: timeoutMs,
       message: `Tool "${name}" timed out after ${timeoutMs}ms`,

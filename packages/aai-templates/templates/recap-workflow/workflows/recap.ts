@@ -485,7 +485,7 @@ export async function awaitTranscript(
     // at the same turn or not at all.
     if (attempt === patienceAt) {
       await ctx.step("noteSlow", () =>
-        note("Still transcribing — this is a long one. I'll keep going."),
+        stepReport("Still transcribing — this is a long one. I'll keep going."),
       );
     }
     // Both arms SUSPEND — nothing is resident while either waits — and the only
@@ -521,7 +521,7 @@ export async function askWhetherToKeep(
   ctx: WorkflowContext,
 ): Promise<Retention> {
   await ctx.step("noteGate", () =>
-    note(
+    stepReport(
       "Recap ready. Keep the transcript on file, or delete it? Deleting in two minutes otherwise.",
     ),
   );
@@ -568,14 +568,14 @@ export async function compensate(
   // than said twice. Each undo is a step too — registered as one by whoever
   // stacked it — which is what makes an interrupted unwind resumable at all.
   await ctx.step("noteUnwind", () =>
-    note(`Recap failed (${because}) — undoing ${compensations.length} step(s).`),
+    stepReport(`Recap failed (${because}) — undoing ${compensations.length} step(s).`),
   );
   for (const compensation of compensations) {
     try {
       await compensation.undo();
     } catch (err) {
       await ctx.step("noteUndoFailed", () =>
-        note(`Could not undo ${compensation.label}: ${errorMessage(err)}`),
+        stepReport(`Could not undo ${compensation.label}: ${errorMessage(err)}`),
       );
     }
   }
@@ -787,18 +787,6 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
     spoken: parsed.spoken,
     minutes: Math.round((transcript.audioDuration ?? 0) / 60),
   };
-}
-
-/**
- * Say one line into the run's progress channel.
- *
- * A step for one reason: the body REPLAYS, so a `stepReport()` written there is
- * re-emitted on every resume. Everything the body itself wants to narrate —
- * the slow-recording note, the unwind — comes through here, and `agent.ts`'s
- * `recap_progress` is what reads it back down the phone.
- */
-export async function note(line: string): Promise<void> {
-  await stepReport(line);
 }
 
 // ---- HTTP -------------------------------------------------------------------

@@ -308,16 +308,30 @@ export function deskView(state: FrozenHotelState): DeskView {
           total: d.quotedTotal === null ? null : usd(d.quotedTotal),
         }
       : null,
-    ledger: [...state.tickets]
+    // `slice(-12)` before the reverse, not after: `tickets` carries no cap (only
+    // `log` does), so copying the whole list to show twelve of it grew with the
+    // call — and this runs on every tool call, being what `syncState` sends.
+    ledger: state.tickets
+      .slice(-LEDGER_ENTRIES)
       .reverse()
-      .slice(0, 12)
       .map((t) => ({ code: t.code, kind: t.kind, summary: t.summary })),
-    inHouse: state.bookings.filter(
-      (b) => b.status === "confirmed" && b.checkIn <= TODAY && b.checkOut > TODAY,
-    ).length,
-    arrivingToday: state.bookings.filter((b) => b.status === "confirmed" && b.checkIn === TODAY)
-      .length,
+    ...bookingCounts(state),
   };
+}
+
+/** How many ledger entries the sidebar shows. */
+const LEDGER_ENTRIES = 12;
+
+/** The two headline counts, in one pass over the bookings rather than two. */
+function bookingCounts(state: FrozenHotelState): { inHouse: number; arrivingToday: number } {
+  let inHouse = 0;
+  let arrivingToday = 0;
+  for (const b of state.bookings) {
+    if (b.status !== "confirmed") continue;
+    if (b.checkIn <= TODAY && b.checkOut > TODAY) inHouse += 1;
+    if (b.checkIn === TODAY) arrivingToday += 1;
+  }
+  return { inHouse, arrivingToday };
 }
 
 /** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */

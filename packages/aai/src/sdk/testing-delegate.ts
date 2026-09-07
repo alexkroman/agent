@@ -18,7 +18,10 @@
  */
 
 import { omitUndefined } from "./omit-undefined.ts";
+import { safeJsonParse } from "./safe-json-parse.ts";
+import { formatSchemaIssues } from "./standard-schema.ts";
 import { publishStepDelegate } from "./step-delegate.ts";
+import { stripJsonFence } from "./step-generate-json.ts";
 import type {
   DelegateFn,
   DelegateOptions,
@@ -119,7 +122,12 @@ export function stubDelegate(
   // sync throw would escape a caller's `Promise.allSettled` and take down the
   // whole fan-out, so a spec asserting "one failed angle does not sink the
   // briefing" would fail against a tool that handles it correctly.
-  const delegate: DelegateFn = async (subagent: SubagentDef, options: DelegateOptions) => {
+  // Declared with the WIDEST signature and asserted, the way `buildToolContext`
+  // declares its `generate` forwarder: `DelegateFn` is OVERLOADED — a subagent
+  // declaring a `schema` answers with `object` — and TypeScript cannot check an
+  // overloaded type against a single implementation. `envelope` is what really
+  // delivers the narrowing, by parsing the scripted text against that schema.
+  const run = async (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult> => {
     const call: StubDelegateCall = { subagent, task: options.task, options };
     calls.push(call);
     const route = routes ? routes[subagent.name] : (script as StubDelegateRoute);
@@ -129,10 +137,10 @@ export function stubDelegate(
           `Routed subagents: ${Object.keys(routes ?? {}).join(", ") || "(none)"}.`,
       );
     }
-    return envelope(typeof route === "function" ? route(call) : route);
+    return await envelope(subagent, typeof route === "function" ? route(call) : route);
   };
 
-  return { delegate, calls };
+  return { delegate: run as DelegateFn, calls };
 }
 
 /** A fake `stepDelegate`: the calls it recorded, and the slot to give back. */
@@ -199,12 +207,41 @@ function isRouteTable(
 }
 
 /** The full {@link DelegateResult} a route's shorthand stands for. */
-function envelope(reply: StubDelegateReply): DelegateResult {
+/**
+ * Parse the scripted text against the subagent's schema, when it declares one.
+ *
+ * A spec driving a schema-declaring subagent gets the same `object` the real
+ * runner would build — so a fake whose script does not match the shape fails in
+ * the spec rather than passing and leaving the tool under test to read
+ * `undefined`. The failure names the subagent, because a route table's
+ * scripted reply is several lines from where it is read.
+ */
+async function typedObject(sub: SubagentDef, text: string): Promise<{ object: unknown } | object> {
+  if (!sub.schema) return {};
+  const parsed = safeJsonParse(stripJsonFence(text));
+  const result = await sub.schema["~standard"].validate(parsed);
+  if (result.issues) {
+    throw new Error(
+      `stubDelegate: the scripted reply for subagent ${JSON.stringify(sub.name)} does not match its schema: ${formatSchemaIssues(result.issues)}`,
+    );
+  }
+  return { object: result.value };
+}
+
+async function envelope(sub: SubagentDef, reply: StubDelegateReply): Promise<DelegateResult> {
   if (typeof reply === "string") {
-    return { text: reply, steps: 1, toolCalls: [], revisions: 0, accepted: true };
+    return {
+      text: reply,
+      steps: 1,
+      toolCalls: [],
+      revisions: 0,
+      accepted: true,
+      ...(await typedObject(sub, reply)),
+    };
   }
   const toolCalls = reply.toolCalls ?? [];
   return {
+    ...(await typedObject(sub, reply.text)),
     text: reply.text,
     // `steps` defaults to one MORE than the tool calls, not to zero: a run that
     // called two tools took at least three steps, and a spec reading `steps` off

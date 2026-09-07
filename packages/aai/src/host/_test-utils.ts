@@ -13,7 +13,7 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
-import { rejectingWorkflows } from "@alexkroman1/aai/internal";
+import { rejectingWorkflows, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { vi } from "vitest";
 
@@ -43,6 +43,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     generate: () => Promise.reject(new Error("generate not mocked")),
     delegate: () => Promise.reject(new Error("delegate not mocked")),
     messages: [],
+    deadlineAt: Date.now() + TOOL_EXECUTION_TIMEOUT_MS,
     sessionId: "test-session",
     send: vi.fn(),
     // Rejects rather than no-ops: a spec that reaches `ctx.workflows` without
