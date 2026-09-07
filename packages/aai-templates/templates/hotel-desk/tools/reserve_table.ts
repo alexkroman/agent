@@ -1,4 +1,5 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { openDinnerSlots, reserveTable } from "../hotel.ts";
 import { DINNER_SLOTS, isIsoDate, speakCode, spokenDate, spokenTime, TODAY } from "../records.ts";
@@ -72,7 +73,7 @@ export default hotelSlot.updateTool({
       partySize: reservation.partySize,
       message:
         `You're set for ${spokenTime(reservation.time)} on ${spokenDate(reservation.date)} for ${reservation.partySize} ` +
-        `guest${reservation.partySize === 1 ? "" : "s"}. Confirmation code ${speakCode(reservation.code)}. Relay this; ` +
+        `${plural(reservation.partySize, "guest")}. Confirmation code ${speakCode(reservation.code)}. Relay this; ` +
         "no further tool call is needed.",
     };
   },

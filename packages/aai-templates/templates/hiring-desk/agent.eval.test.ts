@@ -24,6 +24,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus its PROMPT. */
 import agentDef from "virtual:aai/agent";
 import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
+import { countWords } from "@alexkroman1/aai/utils";
 import {
   describeTurn,
   type EvalSession,
@@ -225,7 +226,7 @@ describeEval(agentDef, (test) => {
       // The feedback is the caller's, carried whole — not a keyword.
       const feedback = rescored.result.feedbackApplied.at(-1) ?? "";
       expect(feedback.toLowerCase()).toContain("typescript");
-      expect(feedback.split(/\s+/).length).toBeGreaterThan(3);
+      expect(countWords(feedback)).toBeGreaterThan(3);
       expect(rescored.result.top).toHaveLength(SHORTLIST_SIZE);
       const view = hiringState(session);
       expect(view?.rounds).toBe(1);

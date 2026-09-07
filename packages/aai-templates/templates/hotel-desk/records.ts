@@ -257,7 +257,6 @@ export const FOLLOWUP_KINDS = [
   "lost_and_found",
   "other",
 ] as const;
-export type FollowupKind = (typeof FOLLOWUP_KINDS)[number];
 
 export const TRANSFER_DESTINATIONS = ["restaurant", "duty_manager", "housekeeping"] as const;
 export type TransferDestination = (typeof TRANSFER_DESTINATIONS)[number];

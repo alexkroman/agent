@@ -52,8 +52,6 @@ export const TOURS = {
   },
 } as const satisfies Record<string, Tour>;
 
-export type TourId = keyof typeof TOURS;
-
 export interface SpaService {
   name: string;
   /** Cents, per guest. */
@@ -94,8 +92,6 @@ export const SPA_SERVICES = {
   },
 } as const satisfies Record<string, SpaService>;
 
-export type SpaServiceId = keyof typeof SPA_SERVICES;
-
 export interface BusinessCenterService {
   name: string;
   pricePerHour: number | null;
@@ -128,8 +124,6 @@ export const BUSINESS_CENTER_SERVICES = {
   },
 } as const satisfies Record<string, BusinessCenterService>;
 
-export type BusinessServiceId = keyof typeof BUSINESS_CENTER_SERVICES;
-
 export interface FloralArrangement {
   name: string;
   /** Cents, flat per arrangement. */
@@ -154,8 +148,6 @@ export const FLORIST_ARRANGEMENTS = {
     description: "a low table centerpiece for a room or event",
   },
 } as const satisfies Record<string, FloralArrangement>;
-
-export type ArrangementId = keyof typeof FLORIST_ARRANGEMENTS;
 
 /** The hotel car: flat to SFO, seats four with luggage, charged to the room. */
 export const AIRPORT_CAR = { flatPrice: 8500, maxPassengers: 4, destination: "SFO" } as const;

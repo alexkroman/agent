@@ -423,13 +423,8 @@ export function titleMatchesSpotify(
  * mentioning `<rss` in prose is not a feed. It is also wider where being wide is
  * right — an Atom podcast feed has no `<rss` root and was refused outright.
  */
-function carriesAudio(parsed: ParsedFeed | undefined): parsed is ParsedFeed {
+export function carriesAudio(parsed: ParsedFeed | undefined): parsed is ParsedFeed {
   return parsed?.items.some((item) => item.enclosureUrl !== undefined) ?? false;
-}
-
-/** {@link carriesAudio} over a document that has not been parsed yet. */
-export function looksLikePodcastFeed(xml: string): boolean {
-  return carriesAudio(parseFeed(xml));
 }
 
 /** The first feed a page advertises, resolved against the page's own URL. */

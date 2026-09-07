@@ -1,3 +1,4 @@
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { SPA_SERVICES } from "../catalogs.ts";
 import { catalogBookingTool } from "../concierge.ts";
@@ -25,7 +26,7 @@ export default catalogBookingTool({
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
       return { error: "the start time must be 24-hour HH:MM" };
     if (partySize > s.maxParty)
-      return { error: `${s.name} takes at most ${s.maxParty} guest${s.maxParty === 1 ? "" : "s"}` };
+      return { error: `${s.name} takes at most ${s.maxParty} ${plural(s.maxParty, "guest")}` };
     const total = s.price * partySize;
     return {
       total,

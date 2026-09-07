@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { normalizeItemId, normalizeOrderId, resolveOrder, resolveVariantId } from "./resolve.ts";
-import { createDefaultState, findProduct } from "./store.ts";
+import { normalizeOrderId, resolveOrder } from "./resolve.ts";
+import { createDefaultState } from "./store.ts";
 
 function stateFor(userId: string) {
   const state = createDefaultState();
@@ -24,14 +24,6 @@ describe("normalizeOrderId", () => {
       // which ones it drops is what says where the pattern went wrong.
       expect.soft(normalizeOrderId(spoken), spoken).toBe("#W5866402");
     }
-  });
-});
-
-describe("normalizeItemId", () => {
-  test("strips spoken separators from a digit run", () => {
-    expect(normalizeItemId("3909406921")).toBe("3909406921");
-    expect(normalizeItemId("390 940 6921")).toBe("3909406921");
-    expect(normalizeItemId("3909-406-921")).toBe("3909406921");
   });
 });
 
@@ -104,58 +96,5 @@ describe("resolveOrder — shorthand", () => {
   test("unresolvable input is refused before authentication too", () => {
     const state = createDefaultState();
     expect(isToolFailure(resolveOrder(state, "my pending order"))).toBe(true);
-  });
-});
-
-describe("resolveVariantId", () => {
-  const state = createDefaultState();
-  function teaKettle() {
-    const product = findProduct(state, "9832717871");
-    if (isToolFailure(product)) throw new Error(product.error);
-    return product;
-  }
-
-  test("passes a canonical item id through", () => {
-    expect(resolveVariantId(teaKettle(), "3909406921")).toBe("3909406921");
-    expect(resolveVariantId(teaKettle(), "390 940 6921")).toBe("3909406921");
-  });
-
-  test("refuses an item id belonging to a different product", () => {
-    expect(isToolFailure(resolveVariantId(teaKettle(), "4725166838"))).toBe(true);
-  });
-
-  test("matches a spoken option phrase", () => {
-    // 3738831434 is the only stainless steel 1.5 liter kettle. The seed's
-    // capacity value is the digit form "1.5 liters" — the matcher is a plain
-    // substring test, so the spoken text has to contain it verbatim, not the
-    // spelled-out "one point five liters" an STT transcript never produces
-    // for a written spec like this either.
-    const result = resolveVariantId(teaKettle(), "the stainless steel 1.5 liters");
-    expect(result).toBe("3738831434");
-  });
-
-  test("an ambiguous phrase lists the candidates with their options", () => {
-    const result = resolveVariantId(teaKettle(), "glass");
-    if (!isToolFailure(result)) throw new Error("expected ambiguity");
-    expect(result.error).toContain("glass");
-    expect(result.error.match(/\d{10}/g)?.length).toBeGreaterThan(1);
-  });
-
-  test("a phrase matching nothing is refused", () => {
-    expect(isToolFailure(resolveVariantId(teaKettle(), "titanium"))).toBe(true);
-  });
-
-  test("availableOnly excludes unavailable variants from matching", () => {
-    // 6454334990 is glass / 1.5 liters / induction and unavailable. "glass"
-    // is required in the phrase too — capacity + stovetop alone also match
-    // the available stainless-steel 1.5L induction variant (3738831434) at
-    // the same score, which would make the "loose" match ambiguous instead
-    // of the unique glass one this test needs.
-    const loose = resolveVariantId(teaKettle(), "glass 1.5 liters induction");
-    expect(loose).toBe("6454334990");
-    const strict = resolveVariantId(teaKettle(), "glass 1.5 liters induction", {
-      availableOnly: true,
-    });
-    expect(strict).not.toBe("6454334990");
   });
 });

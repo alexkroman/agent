@@ -1,3 +1,4 @@
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { gameFlow } from "../game.ts";
 import { gameSlot } from "../shared.ts";
@@ -30,7 +31,7 @@ export default gameFlow.tool({
         solved,
         skipped: game.skips,
         fouled: game.fouls,
-        say: `Time's up! Thank you for playing Word Wrangler. Your final score is ${points} point${points === 1 ? "" : "s"}. Great job!`,
+        say: `Time's up! Thank you for playing Word Wrangler. Your final score is ${points} ${plural(points, "point")}. Great job!`,
       };
     }),
 });

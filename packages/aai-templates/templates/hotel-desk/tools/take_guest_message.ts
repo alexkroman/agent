@@ -1,4 +1,5 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { countWords } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { digitsOf, speakCode, TODAY } from "../records.ts";
 import { addTicket, hotelSlot } from "../shared.ts";
@@ -27,7 +28,7 @@ export default hotelSlot.updateTool({
     message: z.string().min(1).max(500).describe("In the caller's words"),
   }),
   execute({ recipient, callerName, callerPhone, message }, hotel) {
-    if (recipient.trim().split(/\s+/).length < 2) {
+    if (countWords(recipient) < 2) {
       return toolFailure(
         `"${recipient}" is only one name - a message needs the recipient's full name to reach the right ` +
           "person. Ask the caller for the last name, then call again.",

@@ -1,4 +1,5 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { findReservation, modifyReservation, openDinnerSlots } from "../hotel.ts";
 import {
@@ -67,7 +68,7 @@ export default hotelSlot.updateTool({
       partySize: updated.partySize,
       message:
         `Done - the reservation is now ${spokenTime(updated.time)} on ${spokenDate(updated.date)} for ` +
-        `${updated.partySize} guest${updated.partySize === 1 ? "" : "s"}, same code. Confirm the date, time AND ` +
+        `${updated.partySize} ${plural(updated.partySize, "guest")}, same code. Confirm the date, time AND ` +
         "party size to the caller - if the size isn't what they expect, this is their chance to catch it.",
     };
   },

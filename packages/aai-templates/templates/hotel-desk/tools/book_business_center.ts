@@ -1,3 +1,4 @@
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { BUSINESS_CENTER_SERVICES } from "../catalogs.ts";
 import { catalogBookingTool } from "../concierge.ts";
@@ -29,7 +30,7 @@ export default catalogBookingTool({
       return { error: "the start time must be 24-hour HH:MM" };
     if (durationHours > s.maxHours)
       return {
-        error: `${s.name} is booked for at most ${s.maxHours} hour${s.maxHours === 1 ? "" : "s"}`,
+        error: `${s.name} is booked for at most ${s.maxHours} ${plural(s.maxHours, "hour")}`,
       };
     const total = s.flatPrice ?? (s.pricePerHour ?? 0) * durationHours;
     return {

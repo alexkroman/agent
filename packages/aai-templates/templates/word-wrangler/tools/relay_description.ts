@@ -1,4 +1,5 @@
 import { toolFailure } from "@alexkroman1/aai";
+import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { gameFlow } from "../game.ts";
 import { isCorrectGuess } from "../guess.ts";
@@ -53,7 +54,7 @@ export default gameFlow.tool({
 
     // The describer's actual words, if the runtime handed them over, beside the
     // host's relay of them: a foul in either is a foul.
-    const lastSaid = [...ctx.messages].reverse().find((m) => m.role === "user");
+    const lastSaid = ctx.messages.findLast((m) => m.role === "user");
     const spoken = typeof lastSaid?.content === "string" ? lastSaid.content : "";
     if (isFoul(description, word) || isFoul(spoken, word)) {
       return gameSlot.update(ctx, (game) => {
@@ -107,7 +108,7 @@ export default gameFlow.tool({
           secondsLeft: secondsLeft(game),
           next: nextWord === null ? ("WORDS_DONE" as const) : undefined,
           say:
-            `Correct! That's ${game.score} point${game.score === 1 ? "" : "s"}. ` +
+            `Correct! That's ${game.score} ${plural(game.score, "point")}. ` +
             (nextWord === null ? "That was the last word!" : `Your next word is ${nextWord}.`),
         };
       }

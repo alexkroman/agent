@@ -26,6 +26,7 @@
  * spelled out in `../code-interpreter/agent.eval.test.ts`.
  */
 import agentDef from "virtual:aai/agent";
+import { countWords } from "@alexkroman1/aai/utils";
 import { describeTurn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -156,7 +157,7 @@ describeEval(agentDef, (test) => {
       const calls = turn.toolCalls.filter((call) => call.name === "verify_claim");
       expect(calls, describeTurn(turn)).toHaveLength(1);
       const verdict = toolResultIn(turn.toolCalls, "verify_claim", Verdict);
-      expect(verdict.claim.split(/\s+/).length).toBeGreaterThan(3);
+      expect(countWords(verdict.claim)).toBeGreaterThan(3);
       expect(verdict.verdict).not.toBe("");
       expect(toolNames(turn.toolCalls).filter((name) => !DESK_TOOLS.includes(name))).toEqual([]);
     },
