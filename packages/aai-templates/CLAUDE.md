@@ -782,15 +782,29 @@ is what `podcast-digest`'s two hand-written
 `err instanceof TranscribeError && err.retryable` checks were missing —
 both dropped `retryAfter`.
 
-**`research-workflow` is the workflow template, and the split between its two
+**`research-workflow` is the workflow template, and the split between its
 files is a CONVENTION now rather than a build requirement.** The body and the
-functions it steps through live in `workflows/research.ts`; `agent.ts` holds the
-declaration (`workflow({ description, input, run })`) and nothing else about the
-run. That directory used to be load-bearing — a body written in `agent.ts` was
-never transformed and ran inline once, undurably, with nothing saying so. The
-engine takes the body from the declaration wherever it was written, so what the
-split buys now is that `agent.ts` reads as a declaration and a spec can import
-the steps alone.
+functions it steps through live in `workflows/research.ts`. That directory used
+to be load-bearing — a body written in `agent.ts` was never transformed and ran
+inline once, undurably, with nothing saying so. The engine takes the body from
+the declaration wherever it was written, so what the split buys now is that a
+spec can import the steps alone.
+
+**The DECLARATION goes where its importers can reach it, and this paragraph used
+to get that backwards.** It said `agent.ts` holds it "and nothing else about the
+run" — of the one template where that is not true. `research-workflow` declares
+`research` in `shared.ts`, and so does `recap-workflow` with `recap`, because
+four tools apiece import the def to start, poll and cancel a run: a tool cannot
+reach back into `agent.ts`, since `virtual:aai/agent` is `agent.ts` PLUS a
+static import of every `tools/` file and importing it from a tool closes a cycle
+through that module.
+
+The split across the eight templates that declare one is therefore exact rather
+than stylistic — the six `workflowApp()`s declare in `agent.ts`, where nothing
+else needs it and `workflowApp`'s own `@example` puts it; the two voice agents
+that hand off declare in `shared.ts`. `template-layout-gate.test.ts` is what
+holds it now, so the next reader gets a failing test rather than this
+paragraph.
 
 **Its research is real, and it really searches the web.** Five stages, adapted
 from LangChain's `open_deep_research` (MIT — `workflows/prompts.ts` carries the
