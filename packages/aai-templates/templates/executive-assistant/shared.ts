@@ -262,6 +262,28 @@ export function rememberExample(
   });
 }
 
+const tokensOf = (text: string) => new Set(text.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []);
+
+/**
+ * The token set for a stored example, memoized against the example itself.
+ *
+ * `triage_inbox` calls {@link similarExamples} once per pending email and only
+ * the TARGET differs between those calls, so re-tokenizing every stored example
+ * each time did the work N times over — with the shipped inbox and the 40-example
+ * cap, 320 regex-and-Set passes instead of 40, synchronously on the guest's one
+ * thread, in the tool the prompt says to call FIRST on every call. Keyed by the
+ * example object so a dropped example is collected with it.
+ */
+const EXAMPLE_TOKENS = new WeakMap<object, Set<string>>();
+
+function exampleTokens(eg: TriageExample): Set<string> {
+  const cached = EXAMPLE_TOKENS.get(eg);
+  if (cached) return cached;
+  const built = tokensOf(`${eg.from} ${eg.subject} ${eg.excerpt}`);
+  EXAMPLE_TOKENS.set(eg, built);
+  return built;
+}
+
 /**
  * Their `store.asearch(namespace, query=str(email), limit=5)` — nearest examples
  * by a token overlap over sender, subject and body. A vector index is what the
@@ -273,11 +295,10 @@ export function similarExamples(
   email: { from: string; subject: string; body: string },
   limit = 5,
 ): TriageExample[] {
-  const tokens = (text: string) => new Set(text.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []);
-  const target = tokens(`${email.from} ${email.subject} ${email.body}`);
+  const target = tokensOf(`${email.from} ${email.subject} ${email.body}`);
   const score = (eg: TriageExample) => {
     let overlap = 0;
-    for (const token of tokens(`${eg.from} ${eg.subject} ${eg.excerpt}`)) {
+    for (const token of exampleTokens(eg)) {
       if (target.has(token)) overlap += 1;
     }
     return overlap;

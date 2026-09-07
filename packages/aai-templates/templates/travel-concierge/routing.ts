@@ -26,7 +26,7 @@ import { z } from "zod";
 import {
   activeAssistant,
   applyPending,
-  describeAction,
+  describeStaged,
   gateFlow,
   SPECIALISTS,
   type SpecialistId,
@@ -156,8 +156,7 @@ export function cancelActionTool(): ToolDef {
         // `applyPending`. Reported rather than thrown, mid-call.
         if (!action) return { discarded: null, message: "Nothing was staged after all." };
         trip.pending = null;
-        const described = describeAction(action);
-        const summary = typeof described === "string" ? described : action.kind;
+        const summary = describeStaged(action);
         trip.log.push(`Declined: ${summary}`);
         return { discarded: summary, message: "Nothing was changed." };
       }),

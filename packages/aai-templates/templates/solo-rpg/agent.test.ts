@@ -7,6 +7,7 @@ import {
   DEFAULT_STATE,
   type GameState,
   gameSlot,
+  gameView,
   inCrisis,
   isGameOver,
   MAX_NPCS,
@@ -652,6 +653,43 @@ describe("the story flow", () => {
     // Starting over is legal from anywhere, the ending included.
     const restarted = await setupCharacter.execute(SETUP_ARGS, ctx);
     expect(restarted.state).toBe("playing.awaitingRoll");
+  });
+
+  test("the projection withholds the plot the player has not reached", () => {
+    const game: GameState = {
+      ...structuredClone(DEFAULT_STATE),
+      backstory: "SPOILER backstory",
+      playerWishes: "SPOILER wishes",
+      contentLines: "SPOILER lines",
+      settingTone: "SPOILER tone",
+      settingArchetype: "SPOILER archetype",
+      settingDescription: "SPOILER description",
+      storyBlueprint: {
+        structureType: "3act",
+        centralConflict: "c",
+        antagonistForce: "a",
+        thematicThread: "t",
+        currentAct: 1,
+        storyComplete: false,
+        acts: [
+          { phase: "setup", title: "One", goal: "g1", mood: "m1", transitionTrigger: "SPOILER1" },
+          { phase: "turn", title: "Two", goal: "g2", mood: "m2", transitionTrigger: "SPOILER2" },
+        ],
+      },
+    };
+
+    const view = gameView(game);
+    // The sidebar needs how far along and which phase, and nothing else about
+    // the arc: an act's goal, mood and transition trigger are the twists the
+    // player has not reached, and slot state is otherwise server-side, so this
+    // projection is the only thing standing between them and devtools.
+    expect(view.storyArc).toEqual({
+      currentAct: 1,
+      totalActs: 2,
+      phase: "setup",
+      storyComplete: false,
+    });
+    expect(JSON.stringify(view)).not.toMatch(/SPOILER/);
   });
 
   // Two resume tests stood here — a saved game reopening in play, and one saved

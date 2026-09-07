@@ -345,11 +345,59 @@ export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE)
 });
 
 /**
- * The IDENTITY projection, used by `syncState` and by `useAgentState`: this
- * campaign IS what the client renders, so there is nothing to trim — and it
- * carries the deep-readonly type the client's components take.
+ * The story arc as the CLIENT needs it: how far along, which phase, and whether
+ * the story has finished.
+ *
+ * NOT the acts. Each `StoryAct` carries a `goal`, a `mood` and a
+ * `transitionTrigger` — the twists the player has not reached — and the sidebar
+ * renders none of them.
  */
-export const gameProjection = gameSlot.projection((game) => game);
+export interface StoryArcView {
+  currentAct: number;
+  totalActs: number;
+  phase: string;
+  storyComplete: boolean;
+}
+
+/**
+ * What the browser is sent, which is NOT the whole campaign.
+ *
+ * This was `gameSlot.projection((game) => game)`, argued as "this campaign IS
+ * what the client renders, so there is nothing to trim". It isn't: the sidebar
+ * reads 26 of ~35 fields and touches none of the seven dropped here, and of the
+ * blueprint it uses only the act COUNT and the current act's phase — so every
+ * unplayed act's goal and mood rode in every `syncState` frame. The projection
+ * seam is the only defence there is, since slot state is otherwise server-side,
+ * and a spoiler leak is invisible in the UI and permanent once someone opens
+ * devtools.
+ */
+export function gameView(game: FrozenGameState) {
+  const {
+    settingTone,
+    settingArchetype,
+    settingDescription,
+    backstory,
+    playerWishes,
+    contentLines,
+    lastRoll,
+    storyBlueprint,
+    ...shown
+  } = game;
+  return {
+    ...shown,
+    storyArc: storyBlueprint
+      ? {
+          currentAct: storyBlueprint.currentAct,
+          totalActs: storyBlueprint.acts.length,
+          phase: storyBlueprint.acts[storyBlueprint.currentAct - 1]?.phase ?? "",
+          storyComplete: storyBlueprint.storyComplete,
+        }
+      : null,
+  };
+}
+
+/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
+export const gameProjection = gameSlot.projection(gameView);
 
 // ── The story, as a machine ──────────────────────────────────────────────────
 
