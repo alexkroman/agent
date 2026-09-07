@@ -1,26 +1,48 @@
 import { dispatchSlot, incidentAgeMinutes, resourceBrief, resourceUtilization } from "../shared.ts";
 
+/** Which `resourceSummary` counter a status belongs to — the two spellings differ. */
+const COUNT_KEY = {
+  available: "available",
+  dispatched: "dispatched",
+  en_route: "enRoute",
+  on_scene: "onScene",
+  returning: "returning",
+} as const;
+
 export default dispatchSlot.tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
   execute(_args, state) {
-    const activeIncidents = Object.values(state.incidents)
-      .filter((i) => i.status !== "resolved")
-      .sort((a, b) => b.triageScore - a.triageScore);
+    // The incidents, split in one pass rather than filtered twice over the same
+    // record: every incident is either active or resolved.
+    type Incident = (typeof state.incidents)[string];
+    const activeIncidents: Incident[] = [];
+    let resolvedCount = 0;
+    for (const incident of Object.values(state.incidents)) {
+      if (incident.status === "resolved") resolvedCount += 1;
+      else activeIncidents.push(incident);
+    }
+    activeIncidents.sort((a, b) => b.triageScore - a.triageScore);
 
-    const resolvedCount = Object.values(state.incidents).filter(
-      (i) => i.status === "resolved",
-    ).length;
-
+    // Likewise the resource breakdown: five `.filter().length` scans and a sixth
+    // for the briefs, all over the one list, become one walk of it.
     const resourceSummary = {
       total: state.resources.length,
-      available: state.resources.filter((r) => r.status === "available").length,
-      dispatched: state.resources.filter((r) => r.status === "dispatched").length,
-      enRoute: state.resources.filter((r) => r.status === "en_route").length,
-      onScene: state.resources.filter((r) => r.status === "on_scene").length,
-      returning: state.resources.filter((r) => r.status === "returning").length,
+      available: 0,
+      dispatched: 0,
+      enRoute: 0,
+      onScene: 0,
+      returning: 0,
     };
+    const availableResources: ReturnType<typeof resourceBrief>[] = [];
+    for (const resource of state.resources) {
+      resourceSummary[COUNT_KEY[resource.status]] += 1;
+      if (resource.status === "available") availableResources.push(resourceBrief(resource));
+    }
 
+    // Still `resourceUtilization`, not a ratio derived from the counts above:
+    // that function is deliberately the ONE definition of the word, shared with
+    // the alert level, and a second one here is how the two come to disagree.
     const utilization = Math.round(resourceUtilization(state) * 100);
 
     return {
@@ -44,9 +66,7 @@ export default dispatchSlot.tool({
         ageMinutes: incidentAgeMinutes(i),
         casualties: i.casualties,
       })),
-      availableResources: state.resources
-        .filter((r) => r.status === "available")
-        .map(resourceBrief),
+      availableResources,
     };
   },
 });

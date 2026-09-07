@@ -139,7 +139,10 @@ export async function discoverEpisodes(
   // what happens inside it.
   const feeds = await mapConcurrent(links, RESOLVE_CONCURRENCY, resolvePodcastFeed);
 
-  const episodes = (await Promise.all(feeds.map((feed) => readPodcastFeed(feed))))
+  // Bounded for the same reason the resolve above is, and against the same
+  // hosts: `readPodcastFeed` fetches any feed it was not handed a parse for, so
+  // a bare `Promise.all` opens one request per link at once.
+  const episodes = (await mapConcurrent(feeds, RESOLVE_CONCURRENCY, readPodcastFeed))
     .flat()
     .sort((a, b) => publishedAt(b) - publishedAt(a))
     .slice(0, maxEpisodes);

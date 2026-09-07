@@ -47,7 +47,6 @@ import {
   scheduleIntervalMs,
   submitTranscript,
   summarizeTranscript,
-  timestamp,
 } from "./workflows/digest.ts";
 import {
   carriesAudio,
@@ -821,10 +820,6 @@ describe("transcribing one episode", () => {
     expect(digest.summary).toContain("corrupt media");
     expect(digest.keyPoints).toHaveLength(1);
   });
-
-  test("reads the clock in a step, so a replay sees the same timestamp", async () => {
-    expect(Date.parse(await timestamp())).not.toBeNaN();
-  });
 });
 
 describe("posting the digest", () => {
@@ -893,8 +888,10 @@ describe("the body — the run that IS the schedule", () => {
         pollTranscript: pollResults,
         summarizeTranscript: EPISODE,
         postDigest: { ok: true },
-        timestamp: "2026-08-21T00:00:00.000Z",
       },
+      // The clock is `ctx.now()`, a journaled READ rather than a step, so it is
+      // scripted here instead of in `results`.
+      now: Date.parse("2026-08-21T00:00:00.000Z"),
     });
     return { ctx };
   }

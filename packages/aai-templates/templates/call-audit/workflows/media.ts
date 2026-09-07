@@ -507,14 +507,25 @@ export function planSegments(silences: readonly Silence[], totalBytes: number): 
 
   const cuts: number[] = [];
   let at = 0;
+  // `candidates` is ascending — the `break` below already relies on it — and `at`
+  // only moves forward, so each pass resumes where the last one stopped instead of
+  // re-walking the prefix it has already consumed. That is O(candidates) over the
+  // whole plan rather than O(cuts x candidates), and the two are far apart: an hour
+  // of audio at MIN_SILENCE_SECONDS yields on the order of a thousand pauses
+  // against ~33 segments.
+  let from = 0;
   while (durationSec - at > MAX_SEGMENT_SECONDS) {
     const limit = at + MAX_SEGMENT_SECONDS;
-    // The last candidate that still fits, and strictly after where we are — a
-    // candidate at `at` would make a zero-length segment and never advance.
+    // Strictly after where we are: a candidate at `at` would make a zero-length
+    // segment and never advance. Skipping them here is what lets the scan below
+    // test only the upper bound.
+    while (from < candidates.length && (candidates[from] ?? 0) <= at) from += 1;
+    // The last candidate that still fits.
     let chosen: number | undefined;
-    for (const candidate of candidates) {
-      if (candidate > at && candidate <= limit) chosen = candidate;
+    for (let j = from; j < candidates.length; j += 1) {
+      const candidate = candidates[j] ?? 0;
       if (candidate > limit) break;
+      chosen = candidate;
     }
     cuts.push(chosen ?? limit);
     at = chosen ?? limit;
@@ -523,7 +534,13 @@ export function planSegments(silences: readonly Silence[], totalBytes: number): 
   // Whether a boundary is a cut this planner INVENTED, rather than a pause it found
   // or the recording's own end. One expression, used by both branches below —
   // computing it twice is how they came to disagree in a first draft.
-  const blind = (endSec: number): boolean => cuts.includes(endSec) && !candidates.includes(endSec);
+  // As sets: `blind` is called once per segment and both lists are scanned whole by
+  // `includes`, which on a long recording is a thousand-element walk per call. The
+  // membership test is identical — `Set` matches numbers by SameValueZero, exactly
+  // as `includes` does.
+  const cutSet = new Set(cuts);
+  const candidateSet = new Set(candidates);
+  const blind = (endSec: number): boolean => cutSet.has(endSec) && !candidateSet.has(endSec);
 
   const bounds = [0, ...cuts, durationSec];
   const segments: Segment[] = [];
