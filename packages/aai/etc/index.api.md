@@ -141,7 +141,10 @@ export type DefaultToolResult = any;
 export const DELEGATE_TOOL_NAME = "delegate";
 
 // @public
-export type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+export type DelegateFn = {
+    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
 
 // @public
 export interface DelegateOptions {
@@ -887,7 +890,12 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
     readonly __stage?: "stt";
 };
 
-// @public
+// @public (undocumented)
+export function subagent<S extends StandardSchemaV1>(def: SubagentDef & {
+    schema: S;
+}): TypedSubagentDef<InferSchemaOutput<S>>;
+
+// @public (undocumented)
 export function subagent(def: SubagentDef): SubagentDef;
 
 // @public
@@ -908,6 +916,7 @@ export interface SubagentDef {
     maxRetries?: number;
     maxSteps?: number;
     name: string;
+    schema?: StandardSchemaV1;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
@@ -996,6 +1005,17 @@ export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+export interface TypedDelegateResult<T> extends DelegateResult {
+    object: T;
+}
+
+// @public
+export interface TypedSubagentDef<T> extends SubagentDef {
+    // (undocumented)
+    schema: StandardSchemaV1<unknown, T>;
+}
 
 // @public
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

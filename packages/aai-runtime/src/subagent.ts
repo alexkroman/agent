@@ -52,10 +52,11 @@ import type {
 import { DEFAULT_GUARDRAIL_MAX_RETRIES } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { normalizeLlm, resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
-import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
+import { DEFAULT_MAX_STEPS, formatSchemaIssues } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { stripJsonFence } from "@alexkroman1/aai/step";
+import { omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { type LanguageModel, type ModelMessage, stepCountIs, ToolLoopAgent } from "ai";
 import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
 import { forceFinalAnswer } from "./_prepare-step.ts";
@@ -199,6 +200,34 @@ type GuardedRun = {
 };
 
 /**
+ * Check one attempt against {@link SubagentDef.schema}, if it declares one.
+ *
+ * Answers the parsed value, or the complaint to send back. A subagent with no
+ * schema passes with nothing parsed — the shape check is opt-in, and a plain
+ * prose subagent must not be asked for JSON it was never told to write.
+ */
+async function checkShape(
+  sub: SubagentDef,
+  text: string,
+): Promise<{ value?: unknown; issue?: string }> {
+  if (!sub.schema) return {};
+  const parsed = safeJsonParse(stripJsonFence(text));
+  if (parsed === undefined) {
+    return {
+      issue:
+        "Answer with JSON only — no prose, no code fence. What you sent could not be parsed as JSON.",
+    };
+  }
+  const result = await sub.schema["~standard"].validate(parsed);
+  if (result.issues) {
+    return {
+      issue: `Your JSON did not match the required shape: ${formatSchemaIssues(result.issues)}`,
+    };
+  }
+  return { value: result.value };
+}
+
+/**
  * Run the subagent, and keep running it while its guardrail sends the answer
  * back.
  *
@@ -227,20 +256,42 @@ async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
       steps: result.steps.length,
       toolCalls: collectToolCalls(result.steps),
     };
-    if (!sub.guardrail) return { ...answer, revisions, accepted: true };
 
-    const verdict = await sub.guardrail(answer);
-    if (verdict === true) return { ...answer, revisions, accepted: true };
+    // The SHAPE first, then the judgement — a guardrail asked to judge a
+    // malformed answer is being asked the wrong question. Both produce the same
+    // thing, a complaint or nothing, so ONE retry path serves them: the
+    // machinery a guardrail rejection already needed is exactly what a
+    // mis-shaped reply needs, and a single accounting means the two cannot
+    // disagree about how many revisions a run has left.
+    const shape = await checkShape(sub, answer.text);
+    const parsed = shape.issue === undefined && sub.schema ? { object: shape.value } : {};
+    const complaint = shape.issue ?? (await judgeAnswer(sub, answer));
+    if (complaint === undefined) return { ...answer, ...parsed, revisions, accepted: true };
+
     if (revisions >= maxRetries) {
+      // Naming WHICH check rejected: "guardrail" and "schema" are different
+      // problems for whoever reads the log — one is a judgement the answer
+      // failed, the other is a reply that never had the right shape.
+      const rejectedBy = shape.issue === undefined ? "guardrail" : "schema";
       logger.info?.(
-        `subagent "${sub.name}": guardrail still rejecting after ${revisions} ${revisions === 1 ? "revision" : "revisions"} — returning the last answer unaccepted (${verdict})`,
+        `subagent "${sub.name}": ${rejectedBy} still rejecting after ${revisions} ${revisions === 1 ? "revision" : "revisions"} — returning the last answer unaccepted (${complaint})`,
       );
-      return { ...answer, revisions, accepted: false, complaint: verdict };
+      return { ...answer, ...parsed, revisions, accepted: false, complaint };
     }
 
-    messages.push(...result.responseMessages, { role: "user", content: reviseRequest(verdict) });
+    messages.push(...result.responseMessages, { role: "user", content: reviseRequest(complaint) });
     revisions += 1;
   }
+}
+
+/**
+ * The guardrail's verdict as a complaint or nothing — the same shape
+ * {@link checkShape} answers in, so one retry path serves both.
+ */
+async function judgeAnswer(sub: SubagentDef, answer: SubagentAnswer): Promise<string | undefined> {
+  if (!sub.guardrail) return undefined;
+  const verdict = await sub.guardrail(answer);
+  return verdict === true ? undefined : verdict;
 }
 
 /**

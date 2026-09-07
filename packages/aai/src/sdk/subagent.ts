@@ -74,6 +74,7 @@
  */
 
 import type { LlmProvider } from "./providers.ts";
+import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
 import type { BuiltinTool, ToolDef } from "./types.ts";
 
 /**
@@ -253,6 +254,45 @@ export interface SubagentDef {
    * not the runtime — that decides what.
    */
   maxRetries?: number;
+  /**
+   * The SHAPE the final message must have — any
+   * [Standard Schema](https://standardschema.dev), zod being the documented
+   * default. The runtime parses the answer as JSON and checks it, and a reply
+   * that does not match is sent BACK the way a
+   * {@link SubagentDef.guardrail} rejection is, with the schema's own issues as
+   * the complaint. Declare it through {@link subagent} to get the parsed value
+   * typed on {@link TypedDelegateResult.object}.
+   *
+   * **This is not the guardrail, and the two are complementary.** A schema
+   * settles the SHAPE — that a verdict is one of three words rather than a
+   * sentence that implies one — where a guardrail is the judgement a shape
+   * cannot express (a missing citation, sources that are all one publisher).
+   * A subagent may declare both; the shape is checked first, because a
+   * guardrail asked to judge a malformed answer is being asked the wrong
+   * question.
+   *
+   * Reach for it when the CALLER has to branch on the answer.
+   * `briefing-desk`'s fact-checker had a three-value verdict crossing three
+   * layers as an English sentence prefix — restated in `expectedOutput`,
+   * re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
+   * budget — because a model that wrote `"Confirmed - "` was wrong in a way
+   * only prose could describe. A schema makes that a parse.
+   *
+   * ```ts
+   * import { subagent } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * const factChecker = subagent({
+   *   name: "fact-checker",
+   *   systemPrompt: "Check ONE claim against what you can find.",
+   *   schema: z.object({
+   *     verdict: z.enum(["confirmed", "contradicted", "unclear"]),
+   *     detail: z.string(),
+   *   }),
+   * });
+   * ```
+   */
+  schema?: StandardSchemaV1;
   /** Sampling temperature passed through to the provider. */
   temperature?: number;
   /** Cap on generated tokens per step, passed through to the provider. */
@@ -268,6 +308,14 @@ export interface SubagentDef {
  *
  * @public
  */
+export interface TypedSubagentDef<T> extends SubagentDef {
+  schema: StandardSchemaV1<unknown, T>;
+}
+
+export function subagent<S extends StandardSchemaV1>(
+  def: SubagentDef & { schema: S },
+): TypedSubagentDef<InferSchemaOutput<S>>;
+export function subagent(def: SubagentDef): SubagentDef;
 export function subagent(def: SubagentDef): SubagentDef {
   return def;
 }
@@ -398,7 +446,35 @@ export interface DelegateResult extends SubagentAnswer {
  *
  * @public
  */
-export type DelegateFn = (
-  subagent: SubagentDef,
-  options: DelegateOptions,
-) => Promise<DelegateResult>;
+export interface TypedDelegateResult<T> extends DelegateResult {
+  /**
+   * The final message, PARSED against {@link SubagentDef.schema}.
+   *
+   * Present exactly when the subagent declares one, which is why it lives on
+   * this type rather than on {@link DelegateResult}: a caller that declared no
+   * shape should not be handed a field it has no way to read.
+   *
+   * `text` is still the raw answer beside it — the JSON the model wrote — so a
+   * caller that wants to quote what came back can, and one that wants to branch
+   * on it reads this.
+   */
+  object: T;
+}
+
+/**
+ * Run a subagent to completion — the signature of `ctx.delegate`.
+ *
+ * OVERLOADED, the way {@link GenerateFn} is and for the same reason: a subagent
+ * that declares a {@link SubagentDef.schema} answers with the parsed value
+ * typed on {@link TypedDelegateResult.object}, and one that does not should not
+ * be handed the field at all. Declaring the def through {@link subagent} is
+ * what picks the overload — a `SubagentRoster` entry stays a plain
+ * {@link SubagentDef}, so a model-chosen delegation is untyped, which is
+ * correct: nothing at that call site knows which subagent the model picked.
+ *
+ * @public
+ */
+export type DelegateFn = {
+  <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+  (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};

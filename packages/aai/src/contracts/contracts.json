@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 23,
-    "supported": [18, 20, 23],
+    "current": 24,
+    "supported": [18, 20, 23, 24],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -47,8 +47,8 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 18,
-    "supported": [14, 17, 18],
+    "current": 19,
+    "supported": [14, 17, 18, 19],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -118,8 +118,8 @@
     }
   },
   "state": {
-    "current": 18,
-    "supported": [14, 17, 18],
+    "current": 19,
+    "supported": [14, 17, 18, 19],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -139,8 +139,8 @@
     }
   },
   "step": {
-    "current": 11,
-    "supported": [11],
+    "current": 12,
+    "supported": [11, 12],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -181,8 +181,8 @@
     }
   },
   "subagent": {
-    "current": 16,
-    "supported": [13, 16],
+    "current": 18,
+    "supported": [13, 16, 17, 18],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
@@ -201,8 +201,8 @@
     }
   },
   "testing": {
-    "current": 30,
-    "supported": [27, 28, 29, 30],
+    "current": 31,
+    "supported": [27, 28, 29, 30, 31],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -233,8 +233,8 @@
     }
   },
   "tool": {
-    "current": 17,
-    "supported": [14, 17],
+    "current": 18,
+    "supported": [14, 17, 18],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",

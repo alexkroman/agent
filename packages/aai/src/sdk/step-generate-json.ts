@@ -158,15 +158,15 @@ export async function stepGenerateJson<S extends StandardSchemaV1>(
  * behaves exactly as it did before — validated, not constrained.
  */
 function shapeInstruction(schema: StandardSchemaV1): string | undefined {
-  const vendor = schema as unknown as {
-    toJsonSchema?: unknown;
-    toJSONSchema?: unknown;
-  };
-  const convert = vendor.toJsonSchema ?? vendor.toJSONSchema;
+  // Narrowed rather than cast, the way `sdk/schema.ts` probes the same two
+  // methods: a record's properties are `unknown`, and `typeof === "function"`
+  // is the whole check.
+  if (!isRecord(schema)) return undefined;
+  const convert = schema.toJsonSchema ?? schema.toJSONSchema;
   if (typeof convert !== "function") return undefined;
   let document: unknown;
   try {
-    document = (convert as () => unknown).call(schema);
+    document = convert.call(schema);
   } catch {
     // A schema the vendor itself cannot render (a transform with no JSON form)
     // is not a reason to fail the call: the validation below still holds.

@@ -72,6 +72,8 @@
     "TextAgentParams",
     "ToolChoice",
     "TtsProvider",
+    "TypedDelegateResult",
+    "TypedSubagentDef",
     "WaitForOptions",
     "WaitForSchemaOptions",
     "withLock"

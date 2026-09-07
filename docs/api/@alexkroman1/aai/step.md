@@ -834,9 +834,10 @@ failure — a `404` that means "already deleted".
 
 `string`
 
-The user message. The SHAPE belongs in `system` — this says
-  nothing about JSON on the caller's behalf, because the wording that gets a
-  model to comply is part of the prompt a template is demonstrating.
+The user message. The SHAPE is added for you: the schema is
+  rendered as JSON Schema and appended to `system` (see `shapeInstruction`),
+  so a caller writes only the wording that gets a model to comply and never
+  restates the fields.
 
 ##### options
 

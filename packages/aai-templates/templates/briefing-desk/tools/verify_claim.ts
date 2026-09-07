@@ -1,6 +1,6 @@
 import { errorMessage, omitUndefined, tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { briefingSlot, countWork, factChecker, findByAngle } from "../shared.ts";
+import { briefingSlot, countWork, factChecker, findByAngle, type Verdict } from "../shared.ts";
 
 /**
  * Check one sentence against the web, on the narrower of the desk's two
@@ -45,7 +45,8 @@ export default tool({
     const board = briefingSlot.get(ctx);
     const source = args.about ? findByAngle(board, args.about) : undefined;
 
-    let verdict: string;
+    let verdict: Verdict | undefined;
+    let detail: string;
     let searches: number;
     let unusable: string | undefined;
     try {
@@ -59,21 +60,26 @@ export default tool({
         task: claim,
         ...omitUndefined({ context }),
       });
-      verdict = result.text;
       searches = countWork(result.toolCalls).searches;
-      // The checker's `guardrail` sends a verdict back when it does not start
-      // with one of the three words. Exhausting that budget is not a failure —
-      // there IS an answer, and on a live call the desk is better off reading a
-      // hedged one and saying it is hedged than apologizing for the tooling.
-      // What it must not do is treat it as a verdict it can correct itself from.
+      // `object` is the parsed verdict, present exactly when the run was
+      // accepted. The checker's schema sends a mis-shaped answer back; exhausting
+      // that budget is not a failure — there IS an answer, and on a live call the
+      // desk is better off reading a hedged one and saying it is hedged than
+      // apologizing for the tooling. What it must not do is treat it as a verdict
+      // it can correct itself from, which is what `unusable` says.
       unusable = result.accepted ? undefined : result.complaint;
+      verdict = result.accepted ? result.object : undefined;
+      detail = verdict?.detail ?? result.text;
     } catch (err: unknown) {
       return toolFailure(`The check did not come back: ${errorMessage(err)}`);
     }
 
     return {
       claim,
-      verdict,
+      // The word the desk BRANCHES on, as a word — not a sentence it has to
+      // read a word out of.
+      verdict: verdict?.verdict ?? null,
+      detail,
       searches,
       checkedAgainst: source?.angle ?? null,
       ...omitUndefined({ unusable }),

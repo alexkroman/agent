@@ -41,4 +41,9 @@ export {
   type SubagentRoster,
   type SubagentToolCall,
   subagent,
+  // The typed half of the surface: a subagent declaring a `schema` answers with
+  // a parsed `object`. Both are reached only through `subagent()` and
+  // `ctx.delegate`, so they belong to this capability rather than to `tool`.
+  type TypedDelegateResult,
+  type TypedSubagentDef,
 } from "../../index.ts";

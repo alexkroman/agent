@@ -155,8 +155,20 @@ export type ToolContext = {
    * `Tool "x" timed out after 30000ms` and nothing else.
    *
    * ```ts
-   * const budget = ctx.deadlineAt - Date.now() - 2_000; // room to write an answer
-   * const stop = AbortSignal.any([ctx.signal, AbortSignal.timeout(budget)]);
+   * import { tool } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * export const search = tool({
+   *   description: "Search the archive.",
+   *   inputSchema: z.object({ query: z.string() }),
+   *   async execute({ query }, ctx) {
+   *     // Room left to write an answer, rather than being cut off without one.
+   *     const budget = Math.max(0, ctx.deadlineAt - Date.now() - 2_000);
+   *     const stop = AbortSignal.any([ctx.signal, AbortSignal.timeout(budget)]);
+   *     const res = await fetch(`https://archive.example/?q=${query}`, { signal: stop });
+   *     return { hits: res.ok ? await res.json() : [] };
+   *   },
+   * });
    * ```
    *
    * @remarks

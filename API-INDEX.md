@@ -515,6 +515,8 @@ each is for.
 | `TtsSession` | `@alexkroman1/aai-runtime` |
 | `TtsWordTiming` | `@alexkroman1/aai-runtime` |
 | `TypecheckResult` | `@alexkroman1/aai-cli/typecheck` |
+| `TypedDelegateResult` | `@alexkroman1/aai` |
+| `TypedSubagentDef` | `@alexkroman1/aai` |
 | `UPLOADS_TABLE` | `@alexkroman1/aai-runtime` |
 | `UPLOAD_KEY_PREFIX` | `@alexkroman1/aai-runtime` |
 | `UPLOAD_STORAGE_BUCKET_ENV` | `@alexkroman1/aai-runtime` |

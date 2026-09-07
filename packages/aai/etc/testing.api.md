@@ -155,7 +155,10 @@ export function createToolContext(overrides?: ToolContextOverrides): TestToolCon
 export function createWorkflowContext(options?: WorkflowContextOptions): WorkflowContextRecorder;
 
 // @public
-type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+type DelegateFn = {
+    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
 
 // @public
 interface DelegateOptions {
@@ -967,6 +970,7 @@ interface SubagentDef {
     maxRetries?: number;
     maxSteps?: number;
     name: string;
+    schema?: StandardSchemaV1;
     systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
@@ -1059,6 +1063,17 @@ export function toolRunner(agent: ToolBearingAgent): ToolRunner;
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+interface TypedDelegateResult<T> extends DelegateResult {
+    object: T;
+}
+
+// @public
+interface TypedSubagentDef<T> extends SubagentDef {
+    // (undocumented)
+    schema: StandardSchemaV1<unknown, T>;
+}
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

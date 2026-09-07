@@ -325,11 +325,21 @@ an inline arrow whose parameters are contextually typed, so its return type is
 inferred in a LATER pass than `sendFrom`'s signature is checked: A/B'd on
 `dispatch-center/tools/resources_dispatch.ts`, where moving `sendFrom` above the
 inline `execute` still gives `TS18046: 'result' is of type 'unknown'`. The
-mutually-dependent case is worse — where the body ends in a generic call the
-outer inference must resolve first (`planSlot.update(ctx, …)`, i.e. `update<R>`)
-TypeScript gives up and `R` lands as `unknown` with NO error at the declaration,
-reproduced both ways in `plan-and-execute`, whose two tools declare `sendFrom`
-last and say why.
+mutually-dependent case behaves the same way — where the body ends in a generic
+call the outer inference must resolve first (`planSlot.update(ctx, …)`, i.e.
+`update<R>`), `R` lands as `unknown` when `sendFrom` is written first, which is
+why `plan-and-execute`'s two tools declare it last and say so.
+
+**It is NOT silent, and the sentence here used to say it was.** Re-A/B'd on
+`plan-and-execute/tools/work_next_step.ts`, the hardest case in the tree:
+declared last, `R` resolves to the full three-arm union (probed by assigning it
+to `never` and reading the error); moved above `execute`, the body reports
+`TS18046: 'outcome' is of type 'unknown'` at the first property read. So the
+convention is enforced by the compiler rather than by this paragraph, and the
+cost of getting it wrong is a compile error naming the parameter — not a
+narrowing that quietly stops meaning anything. Do not plan an API change around
+the silent case; it was fixed when `NoInfer` landed and the prose did not catch
+up.
 
 So the rule SHRANK rather than going away: **declare `sendFrom` after
 `execute`; if you do not, you now get an error instead of silence.** Do not

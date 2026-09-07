@@ -173,13 +173,19 @@ function buildToolContext(
     // call inside it. `tool` is dropped by destructuring rather than by a cast:
     // a new option is then carried into a delegated run automatically, which is
     // the property `ToolCallDefaults` exists to keep.
+    // Asserted rather than inferred, for the reason the `generate` forwarder
+    // above is: `DelegateFn` is OVERLOADED — a subagent declaring a `schema`
+    // answers with a parsed `object` — and TypeScript cannot check an
+    // overloaded signature against a single implementation. The narrowing is
+    // backed by `runUntilAccepted`, which attaches `object` exactly when the
+    // def carries a schema.
     delegate: ((subagent: SubagentDef, delegateOpts: DelegateOptions): Promise<DelegateResult> => {
       if (!subagents) {
         return Promise.reject(new Error("delegate is not available in this execution context"));
       }
       const { tool: _tool, ...defaults } = options;
       return subagents(subagent, delegateOpts, { ...defaults, signal });
-    }) satisfies DelegateFn,
+    }) as DelegateFn,
     messages: messages ?? [],
     // No session → a unique per-call id, NOT "": the builtin remember/recall
     // notes are keyed by sessionId in a process-wide map, so sessionless

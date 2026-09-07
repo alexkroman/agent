@@ -75,7 +75,13 @@ const EmptyRecap = z.object({
 });
 
 /** What `verify_claim` answers with. */
-const Verdict = z.object({ claim: z.string(), verdict: z.string() });
+// `verdict` is the parsed WORD now, so the eval can pin the enum rather than
+// asserting a sentence is non-empty. `null` is the unaccepted case.
+const Verdict = z.object({
+  claim: z.string(),
+  verdict: z.enum(["confirmed", "contradicted", "unclear"]).nullable(),
+  detail: z.string(),
+});
 
 describeEval(agentDef, (test) => {
   test(
@@ -158,7 +164,9 @@ describeEval(agentDef, (test) => {
       expect(calls, describeTurn(turn)).toHaveLength(1);
       const verdict = toolResultIn(turn.toolCalls, "verify_claim", Verdict);
       expect(countWords(verdict.claim)).toBeGreaterThan(3);
-      expect(verdict.verdict).not.toBe("");
+      // A word the desk can act on, not a sentence it must read one out of.
+      expect(verdict.verdict).not.toBeNull();
+      expect(countWords(verdict.detail)).toBeGreaterThan(2);
       expect(toolNames(turn.toolCalls).filter((name) => !DESK_TOOLS.includes(name))).toEqual([]);
     },
     { live: true },

@@ -320,6 +320,8 @@
     "ToolFailure",
     "ToolInputSchema",
     "TtsProvider",
+    "TypedDelegateResult",
+    "TypedSubagentDef",
     "WaitForOptions",
     "WaitForSchemaOptions",
     "WorkflowClient",

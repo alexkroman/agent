@@ -167,7 +167,7 @@ describe("executeToolCall", () => {
     const tool = makeTool({
       execute: async (_args, ctx) => {
         const budget = ctx.deadlineAt - Date.now() - 40;
-        await new Promise((r) => setTimeout(r, Math.max(0, budget)));
+        await sleep(Math.max(0, budget));
         return "partial answer";
       },
     });
