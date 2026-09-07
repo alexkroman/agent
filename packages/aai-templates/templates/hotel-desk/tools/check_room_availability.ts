@@ -1,7 +1,7 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { describeRoomOptions, listRoomOptions } from "../hotel.ts";
-import { isIsoDate, MAX_PARTY_SIZE, ROOM_TYPES, spokenDate } from "../records.ts";
+import { isoDate, MAX_PARTY_SIZE, ROOM_TYPES, spokenDate } from "../records.ts";
 import { hotelSlot } from "../shared.ts";
 
 /** Their `check_room_availability`: read-only browsing, never a booking. */
@@ -11,15 +11,13 @@ export default hotelSlot.tool({
     'have?", "how much?", "any king free?". Read-only: when the caller wants to book, call ' +
     "start_room_booking instead. Surface results progressively (types first, details once they narrow).",
   inputSchema: z.object({
-    checkIn: z.string().describe("YYYY-MM-DD"),
-    checkOut: z.string().describe("YYYY-MM-DD"),
+    checkIn: isoDate("the check-in date"),
+    checkOut: isoDate("the check-out date"),
     guests: z.number().int().min(1).max(MAX_PARTY_SIZE).describe("Ask if not said"),
     smoking: z.enum(["smoking", "non_smoking", "no_preference"]).optional(),
     roomType: z.enum([...ROOM_TYPES, "any"]).optional(),
   }),
   execute({ checkIn, checkOut, guests, smoking = "no_preference", roomType = "any" }, hotel) {
-    if (!(isIsoDate(checkIn) && isIsoDate(checkOut)))
-      return toolFailure("dates must be YYYY-MM-DD");
     if (checkOut <= checkIn) return toolFailure("check-out must be after check-in");
     const smokingFilter =
       smoking === "smoking" ? true : smoking === "non_smoking" ? false : undefined;

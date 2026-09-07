@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import seedJson from "./seed.json";
+import { ORDER_STATUSES } from "./shared.ts";
 
 const AddressSchema = z.object({
   address1: z.string(),
@@ -64,7 +65,7 @@ const SeedSchema = z.object({
           options: z.record(z.string(), z.string()),
         }),
       ),
-      status: z.string(),
+      status: z.enum(ORDER_STATUSES),
       fulfillments: z
         .array(z.object({ tracking_id: z.array(z.string()), item_ids: z.array(z.string()) }))
         .optional(),

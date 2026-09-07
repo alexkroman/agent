@@ -11,8 +11,9 @@ import "@alexkroman1/aai-ui/styles.css";
  * The "recommending…" flash and the wind-down nudge are MOMENTS. Neither is
  * worth storing and neither should replay: a spinner for a call that finished
  * before this component mounted would be a lie, and a nudge re-shown on every
- * reconnect is nagging. `useToolCallStart` and `useEvent` are for exactly this —
- * they fire once, carry no history, and drive throwaway `useState`.
+ * reconnect is nagging. `useToolCallStart`/`useToolResult` and `useEvent` are
+ * for exactly this — they fire once, carry no history, and drive throwaway
+ * `useState`.
  */
 import {
   Button,
@@ -20,8 +21,9 @@ import {
   useAgentState,
   useEvent,
   useToolCallStart,
+  useToolResult,
 } from "@alexkroman1/aai-ui";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MOODS, nightProjection } from "./shared.ts";
 
 const MOOD_EMOJI: Record<string, string> = {
@@ -46,12 +48,14 @@ function RecSidebar() {
   const [pendingMood, setPendingMood] = useState<string | null>(null);
   const [nudge, setNudge] = useState<string | null>(null);
 
+  // The flash is armed by the call STARTING and cleared by that same call
+  // SETTLING — the two halves of one tool call, which is what these two hooks
+  // are. Clearing it off `recs.length` instead was a proxy: a `recommend` that
+  // returned no picks, or whose picks were all deduped away, left "Finding
+  // something chill…" pulsing for the rest of the call.
   useToolCallStart("recommend", (tc) => setPendingMood(String(tc.args.mood)));
+  useToolResult("recommend", () => setPendingMood(null));
   useEvent<string>("wind_down", (text) => setNudge(text));
-
-  // The flash ends when the picks land, which is the projection changing —
-  // the same signal the list itself renders from.
-  useEffect(() => setPendingMood(null), [recs.length]);
 
   const filtered = activeMood ? recs.filter((r) => r.mood === activeMood) : recs;
 

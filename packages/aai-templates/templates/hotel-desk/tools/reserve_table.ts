@@ -2,7 +2,7 @@ import { toolFailure } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { openDinnerSlots, reserveTable } from "../hotel.ts";
-import { DINNER_SLOTS, isIsoDate, speakCode, spokenDate, spokenTime, TODAY } from "../records.ts";
+import { DINNER_SLOTS, isoDate, speakCode, spokenDate, spokenTime, TODAY } from "../records.ts";
 import { hotelSlot } from "../shared.ts";
 
 /**
@@ -21,7 +21,7 @@ export default hotelSlot.updateTool({
     "phone, read back and agreed. A time that is not open comes back with the open ones. Parties " +
     "over six are private dining - transfer_call to the restaurant instead.",
   inputSchema: z.object({
-    date: z.string().describe("YYYY-MM-DD"),
+    date: isoDate("the date"),
     time: z.string().describe("24-hour HH:MM, e.g. 19:30"),
     partySize: z.number().int().min(1),
     firstName: z.string().min(1),
@@ -30,7 +30,6 @@ export default hotelSlot.updateTool({
     notes: z.string().max(200).optional().describe("Allergy, anniversary, seating wish"),
   }),
   execute(args, hotel) {
-    if (!isIsoDate(args.date)) return toolFailure("the date must be YYYY-MM-DD");
     if (args.date < TODAY) return toolFailure("the date can't be in the past");
     if (args.partySize > 6) {
       return toolFailure(

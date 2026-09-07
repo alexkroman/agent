@@ -53,16 +53,28 @@ export interface OrderItem {
   options: Record<string, string>;
 }
 
-/** tau2's exact status strings. `pending (item modified)` is terminal — see
- *  `modify_pending_order_items`. */
-export type OrderStatus =
-  | "pending"
-  | "pending (item modified)"
-  | "processed"
-  | "delivered"
-  | "cancelled"
-  | "return requested"
-  | "exchange requested";
+/**
+ * tau2's exact status strings. `pending (item modified)` is terminal — see
+ * `modify_pending_order_items`.
+ *
+ * A const TUPLE with the type derived from it, so `seed.test.ts` can validate
+ * the seed's `status` against this same list. That is the one field the
+ * `as unknown as Store` cast in `store.ts` narrows unsoundly, and the schema
+ * used to say `z.string()` there — so a typo'd status parsed, type-checked, and
+ * reached every `o.status === "delivered"` comparison as a value the union says
+ * cannot exist.
+ */
+export const ORDER_STATUSES = [
+  "pending",
+  "pending (item modified)",
+  "processed",
+  "delivered",
+  "cancelled",
+  "return requested",
+  "exchange requested",
+] as const;
+
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export interface OrderPayment {
   transaction_type: "payment" | "refund";

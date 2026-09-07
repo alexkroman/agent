@@ -148,6 +148,29 @@ describe("records.ts", () => {
     expect(isIsoDate("2026-06-08")).toBe(true);
   });
 
+  test("every date a tool takes is refused by its SCHEMA, before the body runs", async () => {
+    // The rule used to be ten hand-written `if (!isIsoDate(...)) return
+    // toolFailure(...)` lines, so it reached the model only by failing and each
+    // tool worded it differently. `isoDate` declares it on the field, which is
+    // what `executeToolCall` validates against before it calls `execute` —
+    // asserted here because nothing else covers it: `toolRunner` deliberately
+    // passes arguments straight through, so a tool spec cannot see this.
+    const dated: [string, Record<string, unknown>][] = [
+      ["check_restaurant_availability", { partySize: 2 }],
+      ["check_room_availability", { checkIn: "2026-06-09", guests: 2 }],
+      ["schedule_wakeup_call", { room: "412", time: "07:00" }],
+    ];
+    for (const [name, rest] of dated) {
+      const schema = agentDef.tools?.[name]?.inputSchema;
+      if (!schema) throw new Error(`${name} declares no inputSchema`);
+      const field = name === "check_room_availability" ? "checkOut" : "date";
+      const bad = await schema["~standard"].validate({ ...rest, [field]: "2026-02-30" });
+      expect(JSON.stringify(bad.issues), name).toMatch(/YYYY-MM-DD/);
+      const words = await schema["~standard"].validate({ ...rest, [field]: "next tuesday" });
+      expect(JSON.stringify(words.issues), name).toMatch(/YYYY-MM-DD/);
+    }
+  });
+
   test("a minted code carries no character a caller could mishear as another", () => {
     for (let i = 0; i < 50; i++)
       expect(mintCode("HTL")).toMatch(/^HTL-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}$/);

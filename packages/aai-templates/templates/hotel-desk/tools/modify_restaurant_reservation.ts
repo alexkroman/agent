@@ -4,7 +4,7 @@ import { z } from "zod";
 import { findReservation, modifyReservation, openDinnerSlots } from "../hotel.ts";
 import {
   DINNER_SLOTS,
-  isIsoDate,
+  isoDate,
   MAX_PARTY_SIZE,
   speakCode,
   spokenDate,
@@ -27,12 +27,11 @@ export default hotelSlot.updateTool({
   inputSchema: z.object({
     lastName: z.string().min(1),
     confirmationCode: z.string().min(1),
-    newDate: z.string().describe("YYYY-MM-DD"),
+    newDate: isoDate("the new date"),
     newTime: z.string().describe("24-hour HH:MM"),
     newPartySize: z.number().int().min(1).max(MAX_PARTY_SIZE).optional(),
   }),
   execute({ lastName, confirmationCode, newDate, newTime, newPartySize }, hotel) {
-    if (!isIsoDate(newDate)) return toolFailure("the new date must be YYYY-MM-DD");
     if (newDate < TODAY) return toolFailure("the new date can't be in the past");
     if (!(DINNER_SLOTS as readonly string[]).includes(newTime)) {
       return toolFailure(

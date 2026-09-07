@@ -1,6 +1,6 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { isIsoDate, MAX_PARTY_SIZE, speakCode, spokenDate } from "../records.ts";
+import { isoDate, MAX_PARTY_SIZE, speakCode, spokenDate } from "../records.ts";
 import { addTicket, hotelSlot } from "../shared.ts";
 
 /** Their `add_to_waitlist`: for dates the hotel is sold out on. Holds nothing. */
@@ -13,13 +13,13 @@ export default hotelSlot.updateTool({
     firstName: z.string().min(1),
     lastName: z.string().min(1),
     phone: z.string().min(1),
-    checkIn: z.string(),
-    checkOut: z.string(),
+    checkIn: isoDate("the check-in date"),
+    checkOut: isoDate("the check-out date"),
     guests: z.number().int().min(1).max(MAX_PARTY_SIZE),
   }),
   execute(args, hotel) {
-    if (!(isIsoDate(args.checkIn) && isIsoDate(args.checkOut)) || args.checkOut <= args.checkIn) {
-      return toolFailure("dates must be YYYY-MM-DD with check-out after check-in");
+    if (args.checkOut <= args.checkIn) {
+      return toolFailure("check-out must be after check-in");
     }
     const ticket = addTicket(
       hotel,

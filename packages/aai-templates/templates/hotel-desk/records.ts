@@ -9,6 +9,7 @@
 
 import { spokenAlphanumeric } from "@alexkroman1/aai";
 import { formatMoney } from "@alexkroman1/aai/utils";
+import { z } from "zod";
 
 // ─── Money, dates, codes ─────────────────────────────────────────────────────
 
@@ -95,6 +96,25 @@ export function isIsoDate(value: string): boolean {
   const at = new Date(Date.UTC(y, m - 1, d));
   return at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d;
 }
+
+/**
+ * A date field, as a SCHEMA — the same rule, declared where the model can see it.
+ *
+ * Ten tools used to pair `z.string().describe("YYYY-MM-DD")` with an
+ * `if (!isIsoDate(...)) return toolFailure(...)` in the body, which meant ten
+ * hand-written sentences for one rule (already drifted across "the date", "the
+ * pickup date", "the new date", "the arrival date") and a constraint the model
+ * only ever learned by failing. Declared here it reaches the model as JSON
+ * Schema and is rejected by `parseToolInput` before `execute` runs.
+ *
+ * `refine(isIsoDate)` rather than `z.iso.date()`: the predicate above stays the
+ * one definition of what this desk accepts, so the two cannot disagree.
+ */
+export const isoDate = (what: string) =>
+  z
+    .string()
+    .refine(isIsoDate, { message: `${what} must be a real date in YYYY-MM-DD form` })
+    .describe(`${what}, YYYY-MM-DD`);
 
 /** `iso` plus `days`, as ISO. Computed in UTC so no machine's zone can move it. */
 export function addDays(iso: string, days: number): string {
