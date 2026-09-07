@@ -1,5 +1,10 @@
 import { isToolFailure } from "@alexkroman1/aai";
-import { toolInputIssues, toolRunner } from "@alexkroman1/aai/testing";
+import {
+  expectDeployable,
+  expectPromptBuiltinsDeclared,
+  toolInputIssues,
+  toolRunner,
+} from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { excerptAround, type FdaLabel, toDrugInfo } from "./fda.ts";
 
@@ -64,6 +69,63 @@ describe("health-assistant template", () => {
     // template with no tools.
     expect(Object.keys(agentDef.tools ?? {})).toEqual(
       expect.arrayContaining(["check_drug_interaction", "medication_lookup"]),
+    );
+  });
+
+  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
+    // The same conversion `aai build`/`aai deploy` run, and the only thing that
+    // checks the three builtin NAMES against the SDK's own enum — so a typo in
+    // `builtinTools` fails here rather than shipping an agent whose prompt
+    // commands a tool the platform never resolved. This template declares no
+    // provider at all, so the default all-AssemblyAI cascade is what makes it
+    // run the moment it is deployed; `expectDeployable` asserts that per MODE,
+    // so it survives a swap. `not.toThrow()` because the helper's throw IS the
+    // finding: vitest quotes the message, which names the invariant that went.
+    expect(() => expectDeployable(agentDef)).not.toThrow();
+  });
+
+  test("all three builtins survive into the config a deploy carries", () => {
+    const builtins = expectDeployable(agentDef).builtinTools ?? [];
+
+    // Asserted on the CONFIG rather than the def because that is what a deploy
+    // ships, and because `DEFAULT_BUILTIN_TOOLS` is empty: a builtin is
+    // something an agent asks for, never something it has to notice and switch
+    // off. So a dropped entry is not a quieter Dr. Sage — it is the same one
+    // with a prompt rule addressed to nothing. Adding builtins beside these
+    // three is an ordinary edit; losing one is the regression.
+    //
+    // `run_code` is the arithmetic rule's only mechanism (a BMI or a
+    // weight-based dose worked out in the model's head reads exactly like a
+    // computed one), `web_search` the only route to current symptom
+    // information, and `fetch_json` the only route to the adverse-event
+    // dataset — which is a COUNTING query the two `tools/` files cannot
+    // answer, since they read the label endpoint and a label is what the
+    // manufacturer wrote.
+    expect(builtins).toEqual(expect.arrayContaining(["web_search", "run_code", "fetch_json"]));
+  });
+
+  test("every builtin the prompt tells Dr. Sage to use is one it declares", () => {
+    // The pairing this template's prose is built on: the prompt holds the
+    // formulas, the endpoint and the caveats, each list headed by the tool that
+    // consumes it, and `agent.ts` holds the array that makes those tools exist.
+    // The failure is silent in both directions and shows up in a diff of
+    // neither file — a prompt commanding `fetch_json` at an agent that never
+    // declared it produces a model apologizing for a tool it cannot see, and a
+    // builtin dropped from `agent.ts` alone leaves the endpoint addressed to
+    // nothing.
+    //
+    // Which snake_case tokens in the prose are tool NAMES is a question for the
+    // SDK's own schema rather than a catalog restated here: this prompt also
+    // names `weight_kg`, `dose_mg`, `medication_lookup` and
+    // `patient.reaction.reactionmeddrapt.exact`, so matching every underscored
+    // word would redden on a formula or a query field.
+    // `expectPromptBuiltinsDeclared` asks the schema, and it also FAILS on a
+    // prompt naming no builtin at all — the state this template lands in when
+    // `system-prompt.md` was not applied, since the framework default names
+    // none. The converse is deliberately not asserted: declaring a builtin the
+    // prompt never mentions is an ordinary edit.
+    expect(expectPromptBuiltinsDeclared(agentDef)).toEqual(
+      expect.arrayContaining(["web_search", "run_code", "fetch_json"]),
     );
   });
 });

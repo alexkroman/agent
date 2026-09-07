@@ -48,6 +48,28 @@ describe("pipeline-simple template", () => {
       expect(config[stage]?.kind, stage).toBe(agentDef[stage]?.kind ?? "assemblyai");
     }
   });
+
+  test("a declared stage's TUNING survives too, not just its provider", () => {
+    // The half `kind` cannot see, and the one a swap loses quietly: a
+    // descriptor that arrives with its `options` dropped still reports the
+    // right provider while running the gateway's default model — a different,
+    // usually slower agent, with nothing on the line saying so. Read off the
+    // def rather than pinned, because changing the model id is the first
+    // tuning an author of this template tries. (This claim came from
+    // `math-buddy`, which declared an LLM for the same reason and was removed
+    // as a near-duplicate of `code-interpreter`; the stage swap lives here.)
+    const config = expectDeployable(agentDef);
+    const declared = (["stt", "llm", "tts"] as const).filter(
+      (stage) => agentDef[stage] !== undefined,
+    );
+    // The loop below is a sweep over a FILTER, so it asserts nothing at all on
+    // a def that declares no stage — the state the test above forbids, said
+    // again here because a vacuous pass looks exactly like a passing one.
+    expect(declared.length).toBeGreaterThan(0);
+    for (const stage of declared) {
+      expect(config[stage]?.options, stage).toEqual(agentDef[stage]?.options);
+    }
+  });
 });
 
 /**

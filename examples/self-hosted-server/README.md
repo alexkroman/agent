@@ -101,7 +101,7 @@ agent and execute their own tools out over the socket.
 ## Try another template
 
 Replace `agent.ts` with any of the
-[templates](../../packages/aai-templates/templates) — `math-buddy`,
+[templates](../../packages/aai-templates/templates) — `code-interpreter`,
 `health-assistant`, `pizza-ordering`, `web-researcher`. Nothing in
 `server.mjs` changes. Templates that declare a different provider stage
 (`pipeline-simple` uses Anthropic for the LLM) need that provider's key added

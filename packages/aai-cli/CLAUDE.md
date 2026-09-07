@@ -1335,8 +1335,8 @@ belongs, and a failing test must not be what stops a container from starting.
 
 `packages/aai-cli/src/e2e.test.ts` boots `npm start` against a real installed
 project — **`pizza-ordering`, chosen for its `tools/` directory**, which is what
-this leg is now about (it keeps the old `math-buddy` coverage anyway, whose
-prompt is a discovered `system-prompt.md`). It probes `/health`,
+this leg is now about (it keeps the coverage of the starter it replaced anyway,
+whose prompt is a discovered `system-prompt.md`). It probes `/health`,
 `/client-config` and `/`, and then
 reads the six tool names out of the artifact the server booted, because nothing
 over HTTP exposes a tool list. That tier is the only one that can prove any of
