@@ -197,11 +197,11 @@ describe("a round", () => {
     );
     expect(foul.result).toMatchObject({ verdict: "foul", word, score: 0 });
     expect(player.model.calls).toHaveLength(0);
+    // The round LOG is the fact; the foul count and the position are read off it.
     expect(gameSlot.get(ctx)).toMatchObject({
-      fouls: 1,
-      index: 1,
       rounds: [{ word, outcome: "fouled", guesses: 0 }],
     });
+    expect(gameView(gameSlot.get(ctx))).toMatchObject({ fouls: 1, score: 0 });
   });
 
   test("the foul check reads the describer's own transcript, not only the host's relay", async () => {
@@ -237,7 +237,8 @@ describe("a round", () => {
     );
     expect(skipped.result).toMatchObject({ skipped: word, score: 0 });
     expect(skipped.result.nextWord).toBe(currentWord(gameSlot.get(ctx)));
-    expect(gameSlot.get(ctx)).toMatchObject({ skips: 1, index: 1 });
+    expect(gameSlot.get(ctx)).toMatchObject({ rounds: [{ word, outcome: "skipped" }] });
+    expect(gameView(gameSlot.get(ctx))).toMatchObject({ skips: 1, score: 0 });
     expect(skipped.state).toBe("playing");
   });
 
@@ -268,7 +269,8 @@ describe("a round", () => {
     // Another round: the score resets, the best survives.
     expectDialogOk(await run("start_game", ctx));
     expect(at(ctx)).toBe("playing");
-    expect(gameSlot.get(ctx)).toMatchObject({ score: 0, best: 1, index: 0 });
+    expect(gameSlot.get(ctx)).toMatchObject({ best: 1, rounds: [] });
+    expect(gameView(gameSlot.get(ctx))).toMatchObject({ score: 0, best: 1 });
   });
 
   test("a description arriving after two minutes ends the round even if the deadline was lost", async () => {

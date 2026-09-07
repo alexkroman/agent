@@ -165,37 +165,34 @@ export const DIALOGS: readonly AnyDialog[] = [deskFlow];
 export const IN_BOOKING = "booking";
 
 /**
+ * The booking steps in the order they are reached. Every gate below is a
+ * SUFFIX of this, so each is sliced from it rather than typed out: adding a
+ * step to the ladder used to mean editing up to four hand-kept lists, and a
+ * miss was silent — the tool simply refused at the new step.
+ */
+const LADDER = ["room", "extras", "details", "card", "readBack", "agreeing"] as const;
+
+/** The ladder from `step` onward, as dialog positions. */
+function from<S extends (typeof LADDER)[number]>(step: S) {
+  return LADDER.slice(LADDER.indexOf(step)).map((s) => `booking.${s}` as const);
+}
+
+/**
  * Where `choose_room` may run: any step past the stay, and NOT `offering` —
  * the options have to be spoken before a room can be picked, and the caller's
  * next turn is what opens the step.
+ *
+ * `editing` is reachable from here and from {@link AFTER_ROOM} but NOT from the
+ * two below: the guest's name and card cannot be changed from that state, so
+ * the asymmetry is a decision rather than an omission.
  */
-export const AFTER_STAY = [
-  "booking.room",
-  "booking.extras",
-  "booking.details",
-  "booking.card",
-  "booking.readBack",
-  "booking.agreeing",
-  "booking.editing",
-] as const;
+export const AFTER_STAY = [...from("room"), "booking.editing"] as const;
 
 /** Where `set_extras` may run: once a room is on the draft. */
-export const AFTER_ROOM = [
-  "booking.extras",
-  "booking.details",
-  "booking.card",
-  "booking.readBack",
-  "booking.agreeing",
-  "booking.editing",
-] as const;
+export const AFTER_ROOM = [...from("extras"), "booking.editing"] as const;
 
 /** Where the guest's details may be recorded or corrected. */
-export const AFTER_EXTRAS = [
-  "booking.details",
-  "booking.card",
-  "booking.readBack",
-  "booking.agreeing",
-] as const;
+export const AFTER_EXTRAS = from("details");
 
 /** Where the card may be taken or corrected. */
-export const AFTER_DETAILS = ["booking.card", "booking.readBack", "booking.agreeing"] as const;
+export const AFTER_DETAILS = from("card");

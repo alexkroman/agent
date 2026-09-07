@@ -68,11 +68,6 @@ export interface RoundLog {
 export interface GameState {
   /** This round's words, in the order they will be given. */
   words: string[];
-  /** Index of the word in play. */
-  index: number;
-  score: number;
-  skips: number;
-  fouls: number;
   /** Epoch ms when `start_game` ran; `null` until the first round. */
   startedAt: number | null;
   /** Epoch ms when `final_score` closed the round. */
@@ -92,10 +87,6 @@ export interface GameState {
 export function newGame(): GameState {
   return {
     words: [],
-    index: 0,
-    score: 0,
-    skips: 0,
-    fouls: 0,
     startedAt: null,
     endedAt: null,
     descriptions: [],
@@ -112,9 +103,33 @@ export const gameSlot = sessionSlot("game", newGame);
 /** The game as a READ hands it out: deep-frozen, and typed to say so. */
 export type FrozenGameState = DeepReadonly<GameState>;
 
+/**
+ * The tallies, COUNTED from the round log rather than kept beside it.
+ *
+ * Every settled word is one {@link RoundLog} entry carrying its outcome, so the
+ * score, the skips, the fouls and the position in the word list are all facts
+ * about that list. Storing them as well meant four counters a new tool had to
+ * remember to bump next to its `advanceWord` call, and four things that could
+ * disagree with the log they mirror — `final_score` already read the solved
+ * words one way and the skips the other, in one object literal.
+ */
+export function tally(game: FrozenGameState, outcome: RoundOutcome): number {
+  return game.rounds.filter((round) => round.outcome === outcome).length;
+}
+
+/** Points: one per word the player solved. */
+export function score(game: FrozenGameState): number {
+  return tally(game, "solved");
+}
+
+/** How many words have been settled — and so the index of the one in play. */
+export function wordsPlayed(game: FrozenGameState): number {
+  return game.rounds.length;
+}
+
 /** The word in play, or `null` between rounds and once the list is spent. */
 export function currentWord(game: FrozenGameState): string | null {
-  return game.words[game.index] ?? null;
+  return game.words[wordsPlayed(game)] ?? null;
 }
 
 /** Whole seconds left on the clock, never negative. `null` before a round starts. */
@@ -128,10 +143,9 @@ export function secondsLeft(game: FrozenGameState, now: number = Date.now()): nu
  * settled, or `null` when nothing was in play.
  */
 export function advanceWord(game: GameState, outcome: RoundOutcome): string | null {
-  const word = game.words[game.index];
+  const word = game.words[wordsPlayed(game)];
   if (word === undefined) return null;
   game.rounds.push({ word, outcome, guesses: game.wrongGuesses.length });
-  game.index += 1;
   game.descriptions = [];
   game.wrongGuesses = [];
   return word;
@@ -165,13 +179,13 @@ export function gameView(game: FrozenGameState): GameView {
   return {
     phase,
     word: phase === "playing" ? currentWord(game) : null,
-    score: game.score,
-    skips: game.skips,
-    fouls: game.fouls,
+    score: score(game),
+    skips: tally(game, "skipped"),
+    fouls: tally(game, "fouled"),
     best: game.best,
     startedAt: game.startedAt,
     durationMs: GAME_SECONDS * 1000,
-    wordsLeft: Math.max(0, game.words.length - game.index),
+    wordsLeft: Math.max(0, game.words.length - wordsPlayed(game)),
     rounds: game.rounds,
     lastRemark: game.lastRemark,
     wrongGuesses: game.wrongGuesses,

@@ -524,33 +524,18 @@ export function clockSummary(c: DeepReadonly<Clock>) {
  * content boundaries (contentLines) so they survive past the setup turn.
  */
 export function stateSummary(state: FrozenGameState) {
+  // The scalars go through UNCHANGED, so they are spread rather than re-listed:
+  // what the names pulled out below do to them is the whole content of this
+  // function, and it was buried in twenty-six lines of `x: state.x`. A field
+  // added to `GameState` now reaches the model without a second edit here.
+  //
+  // `lastRoll` is destructured to WITHHOLD it — the dice are narrated by the
+  // tool that rolled them, not inspected; `crisisMode` and `gameOver` are
+  // pulled out because the stored flags are stale here and recomputed below.
+  const { npcs, clocks, storyBlueprint, sessionLog, lastRoll, crisisMode, gameOver, ...scalars } =
+    state;
   return {
-    initialized: state.initialized,
-    settingGenre: state.settingGenre,
-    settingTone: state.settingTone,
-    settingArchetype: state.settingArchetype,
-    settingDescription: state.settingDescription,
-    playerName: state.playerName,
-    characterConcept: state.characterConcept,
-    backstory: state.backstory,
-    playerWishes: state.playerWishes,
-    contentLines: state.contentLines,
-    kidMode: state.kidMode,
-    edge: state.edge,
-    heart: state.heart,
-    iron: state.iron,
-    shadow: state.shadow,
-    wits: state.wits,
-    health: state.health,
-    spirit: state.spirit,
-    supply: state.supply,
-    momentum: state.momentum,
-    maxMomentum: state.maxMomentum,
-    sceneCount: state.sceneCount,
-    currentLocation: state.currentLocation,
-    currentSceneContext: state.currentSceneContext,
-    timeOfDay: state.timeOfDay,
-    chaosFactor: state.chaosFactor,
+    ...scalars,
     // DERIVED here rather than copied off the state: `after` restores the
     // stored flags only once the calling body has returned, so a summary built
     // inside that body would report the tracks it just emptied as survivable.
@@ -558,34 +543,48 @@ export function stateSummary(state: FrozenGameState) {
     gameOver: isGameOver(state),
     // NPCs go to the LLM whole (nothing withheld) — copied so a mutation of
     // the summary can't reach live state.
-    npcs: state.npcs.filter((n) => n.status !== "deceased").map((n) => ({ ...n })),
-    clocks: state.clocks.map(clockSummary),
-    storyBlueprint: state.storyBlueprint
+    npcs: npcs.filter((n) => n.status !== "deceased").map((n) => ({ ...n })),
+    clocks: clocks.map(clockSummary),
+    storyBlueprint: storyBlueprint
       ? {
-          structureType: state.storyBlueprint.structureType,
-          currentAct: state.storyBlueprint.currentAct,
-          totalActs: state.storyBlueprint.acts.length,
-          centralConflict: state.storyBlueprint.centralConflict,
-          thematicThread: state.storyBlueprint.thematicThread,
-          storyComplete: state.storyBlueprint.storyComplete,
-          currentPhase: state.storyBlueprint.acts[state.storyBlueprint.currentAct - 1]?.phase,
+          structureType: storyBlueprint.structureType,
+          currentAct: storyBlueprint.currentAct,
+          totalActs: storyBlueprint.acts.length,
+          centralConflict: storyBlueprint.centralConflict,
+          thematicThread: storyBlueprint.thematicThread,
+          storyComplete: storyBlueprint.storyComplete,
+          currentPhase: storyBlueprint.acts[storyBlueprint.currentAct - 1]?.phase,
         }
       : null,
-    recentLog: state.sessionLog.slice(-5),
+    recentLog: sessionLog.slice(-5),
   };
 }
 
 // ── Dice System ──────────────────────────────────────────────────────────────
+export type RollOutcome = "STRONG_HIT" | "WEAK_HIT" | "MISS";
+
+/**
+ * The game's central rule: a score beats both challenge dice, one of them, or
+ * neither. Written ONCE — burning momentum is "re-resolve with momentum as the
+ * score", so both callers ask the same function rather than each spelling the
+ * ladder out.
+ */
+export function resolveRoll(score: number, c1: number, c2: number): RollOutcome {
+  if (score > c1 && score > c2) return "STRONG_HIT";
+  if (score > c1 || score > c2) return "WEAK_HIT";
+  return "MISS";
+}
+
+/** How good an outcome is, for comparing two of them. */
+const OUTCOME_RANK: Record<RollOutcome, number> = { MISS: 0, WEAK_HIT: 1, STRONG_HIT: 2 };
+
 export function rollAction(statName: string, statValue: number, move: string) {
   const d1 = d(6),
     d2 = d(6);
   const c1 = d(10),
     c2 = d(10);
   const actionScore = Math.min(d1 + d2 + statValue, 10);
-  let result: "STRONG_HIT" | "WEAK_HIT" | "MISS";
-  if (actionScore > c1 && actionScore > c2) result = "STRONG_HIT";
-  else if (actionScore > c1 || actionScore > c2) result = "WEAK_HIT";
-  else result = "MISS";
+  const result = resolveRoll(actionScore, c1, c2);
   const match = c1 === c2;
   return { d1, d2, c1, c2, statName, statValue, actionScore, result, move, match };
 }
@@ -797,18 +796,19 @@ export function revertConsequences(game: GameState, deltas: ConsequenceDeltas): 
 }
 
 // ── Momentum Burn ────────────────────────────────────────────────────────────
+/**
+ * Burning momentum re-resolves the roll with momentum standing in for the action
+ * score. It is offered only when that IMPROVES the outcome — which is what the
+ * rank comparison says, where four flat `if`s said it as a truth table.
+ */
 export function canBurnMomentum(
   game: GameState,
   roll: Pick<RollResult, "result" | "c1" | "c2">,
 ): "STRONG_HIT" | "WEAK_HIT" | null {
   if (game.momentum <= 0) return null;
-  if (roll.result === "MISS" && game.momentum > roll.c1 && game.momentum > roll.c2)
-    return "STRONG_HIT";
-  if (roll.result === "MISS" && (game.momentum > roll.c1 || game.momentum > roll.c2))
-    return "WEAK_HIT";
-  if (roll.result === "WEAK_HIT" && game.momentum > roll.c1 && game.momentum > roll.c2)
-    return "STRONG_HIT";
-  return null;
+  const upgraded = resolveRoll(game.momentum, roll.c1, roll.c2);
+  if (OUTCOME_RANK[upgraded] <= OUTCOME_RANK[roll.result]) return null;
+  return upgraded === "MISS" ? null : upgraded;
 }
 
 // ── Kishotenketsu Probability ────────────────────────────────────────────────
