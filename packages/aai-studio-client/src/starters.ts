@@ -32,20 +32,8 @@ export const AGENT_STARTERS: Starter[] = [
     prompt: "Use the code-interpreter template.",
   },
   {
-    label: "A math tutor that never does arithmetic in its head",
-    prompt: "Use the math-buddy template.",
-  },
-  {
-    label: "A personal finance helper with live prices",
-    prompt: "Use the personal-finance template.",
-  },
-  {
     label: "A web researcher that cites its sources",
     prompt: "Use the web-researcher template.",
-  },
-  {
-    label: "An FAQ bot over an embedded knowledge base",
-    prompt: "Use the embedded-assets template.",
   },
   {
     label: "A drug-interaction checker on openFDA",

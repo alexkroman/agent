@@ -93,18 +93,24 @@ export const EXPECTATIONS: readonly Expectation[] = [
     ui: true,
   },
   {
-    // These two prescribe run_code and name no custom tools, so grading on
-    // tool names would fail the very design they asked for — the finance
-    // trap, one starter over. But `capabilities: []` made them assert nothing
-    // about the agent at all: with no UI expected either, "shippable" reduced
-    // to "builds, declares run_code, is pipeline mode", which a three-line
-    // systemPrompt satisfies. Both were passing in 3 tool calls and ~17s.
+    // This one prescribes run_code and names no custom tools, so grading on
+    // tool names would fail the very design it asked for. But
+    // `capabilities: []` made it assert nothing about the agent at all: with
+    // no UI expected either, "shippable" reduced to "builds, declares
+    // run_code, is pipeline mode", which a three-line systemPrompt satisfies
+    // — it was passing in 3 tool calls and ~17s.
     //
-    // What IS gradeable is what each prompt DEMANDS, via builtinDelegation:
+    // What IS gradeable is what the prompt DEMANDS, via builtinDelegation:
     // the agent must declare run_code AND say what to reach for it for. Only
     // the demands, never the illustrative examples — "things like the 50th
     // Fibonacci number" enumerates nothing, and requiring it would recreate
     // the over-specification bug this file has been bitten by four times.
+    //
+    // It is the LAST `builtinDelegation` starter, which is why the sweep in
+    // `starter-expectations.test.ts` that proves prose alone cannot pass has
+    // a floor of one rather than two: the two prompt-only starters beside it
+    // (a math tutor and a finance helper) were the near-duplicate templates
+    // they scaffolded from, and both went with them.
     label: "An agent that solves problems by writing code",
     // "always compute rather than guess, and read results aloud
     // conversationally" — two explicit clauses of the ask.
@@ -117,52 +123,10 @@ export const EXPECTATIONS: readonly Expectation[] = [
     builtinDelegation: ["run_code"],
   },
   {
-    label: "A math tutor that never does arithmetic in its head",
-    // "arithmetic, unit conversions, and dice rolls" — three enumerated
-    // subjects. The prompt's negative framing ("never in its head") is
-    // deliberately NOT graded: an agent that says "always use run_code"
-    // without the negative has satisfied the ask by another wording.
-    capabilities: [
-      ["arithmetic", "calculat"],
-      ["conversion", "convert"],
-      ["dice", "roll"],
-    ],
-    builtins: ["run_code"],
-    builtinDelegation: ["run_code"],
-  },
-  {
-    label: "A personal finance helper with live prices",
-    capabilities: [
-      ["convert", "currency", "exchange"],
-      ["price", "quote", "crypto", "bitcoin"],
-      ["split", "tip", "bill"],
-    ],
-    // Deliberately NO `builtins` requirement, despite the prompt naming
-    // fetch_json and run_code. Those are MODEL-facing tools; tool code cannot
-    // call them, so an agent that writes custom tools using plain fetch has
-    // satisfied the ask by another valid design. Requiring the declaration
-    // failed two good agents. The capability check above covers the substance.
-    //
-    // The other valid design is the one the reference template actually uses:
-    // no custom tools at all, just these two builtins and a system prompt
-    // telling the model what to do with them. Graded on tool names that run
-    // fails, and it failed three iterations running while being a near copy
-    // of templates/personal-finance/agent.ts. See `builtinDelegation`.
-    builtinDelegation: ["fetch_json", "run_code"],
-  },
-  {
     label: "A web researcher that cites its sources",
     capabilities: [],
     builtins: ["web_search", "visit_webpage"],
     ui: true,
-  },
-  {
-    label: "An FAQ bot over an embedded knowledge base",
-    capabilities: [
-      ["list_topics", "topics"],
-      ["search", "knowledge", "lookup"],
-    ],
-    minTools: 2,
   },
   {
     label: "A drug-interaction checker on openFDA",
@@ -171,6 +135,14 @@ export const EXPECTATIONS: readonly Expectation[] = [
       ["drug", "label", "lookup", "info"],
     ],
     minTools: 2,
+    // The three the template's prompt heads a rule with: `run_code` for the
+    // BMI and dosage arithmetic, `web_search` for current symptom
+    // information, and `fetch_json` for the adverse-event dataset its two
+    // tools cannot reach (they read the LABEL endpoint, which is what the
+    // manufacturer wrote). Exact rather than `builtinDelegation` because this
+    // starter's capabilities live in real tools — the builtins are the
+    // wiring, and a dropped one leaves a prompt rule addressed to nothing.
+    builtins: ["web_search", "run_code", "fetch_json"],
   },
   {
     label: "A 911-style dispatch command center",

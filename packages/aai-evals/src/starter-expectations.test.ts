@@ -109,7 +109,14 @@ describe("starter expectations", () => {
     // the catalog is still full; what emptied is the SELECTION.
     //
     // Floors rather than exact counts, so adding a starter never fails this,
-    // and each is well under today's number (7 / 3 / 3 / 3 of 12).
+    // and each is at or under today's number (7 / 3 / 1 of 9).
+    //
+    // The delegation floor is ONE, and deliberately: `builtinDelegation` is
+    // for a prompt-only starter — no custom tools, the builtins and the prose
+    // telling the model what to reach for them for — and only the
+    // code-interpreter one is left, the other two having gone with the
+    // near-duplicate templates they scaffolded from. One case is still enough
+    // for the rename this catches, since the field NAME is what each filter reads.
     const withUi = EXPECTATIONS.filter((e) => e.ui);
     const withBuiltins = EXPECTATIONS.filter(
       (e) => (e.builtins ?? []).length > 0 || (e.builtinDelegation ?? []).length > 0,
@@ -128,7 +135,7 @@ describe("starter expectations", () => {
       withDelegation.length,
       "no expectation pairs `builtinDelegation` with `capabilities`, so the " +
         "prose-alone test checks nothing",
-    ).toBeGreaterThan(1);
+    ).toBeGreaterThan(0);
   });
 });
 

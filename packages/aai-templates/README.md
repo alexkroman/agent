@@ -26,7 +26,7 @@ the CLI build's `inputs` so editing a template invalidates that build.
 
 | Path | What it is |
 | --- | --- |
-| `templates/<name>/` | 31 complete agent projects, each self-contained |
+| `templates/<name>/` | 28 complete agent projects, each self-contained |
 | `scaffold/` | the base project files layered under any template — `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `global.d.ts`, `pnpm-workspace.yaml`, `.gitignore`, `.env.example` — plus `CLAUDE.md`, which is the guide rather than a project file |
 | `src/` | this package's suites: the template gates, plus the gates that guard the repo's gates |
 | `template-api-allowlist.json` | the coverage ratchet's baseline — published exports no template exercises |
@@ -55,14 +55,14 @@ now, and only the `deno` build target still emits a file by that name.
 
 | File | Role | Count |
 | --- | --- | --- |
-| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 31 |
-| `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 19 templates |
+| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 28 |
+| `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 18 templates |
 | `workflows/` | durable workflow bodies | 8 templates |
 | `client.tsx` | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app) | 19 templates |
-| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 21 templates |
+| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 18 templates |
 | `shared.ts` | the session slot, its projection, and anything both ends need | most |
-| `agent.test.ts` | unit tests, run by `pnpm test` | 31 templates |
-| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 31 templates |
+| `agent.test.ts` | unit tests, run by `pnpm test` | 28 templates |
+| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 28 templates |
 
 Tool discovery happens where the bundle is assembled — the guest sandbox is
 handed one ESM string and has no directory to scan — so `tools/` is enumerated
@@ -81,10 +81,7 @@ work off to a durable workflow.
 | `pipeline-simple` | voice | the same pipeline with one stage swapped for an Anthropic LLM |
 | `web-researcher` | voice | Scout — `web_search` + `visit_webpage`, the smallest builtin-tool agent |
 | `code-interpreter` | voice | Coda — answers by writing and running code (`run_code`) |
-| `math-buddy` | voice | a tutor that delegates every calculation to `run_code`, on a faster, cheaper LLM |
-| `personal-finance` | voice | Penny — conversions, live prices, bill splitting |
-| `health-assistant` | voice | Dr. Sage — web search and code over health questions |
-| `embedded-assets` | voice | an FAQ bot whose knowledge base is a bundled asset import |
+| `health-assistant` | voice | Dr. Sage — the smallest custom tool over a live REST API (openFDA), beside `web_search`, `run_code` and `fetch_json` |
 | `night-owl` | voice | movie picks and sleep timing, with a synced recommendation log |
 | `pizza-ordering` | voice | the smallest stateful agent: a cart in one `sessionSlot`, six tools, one projection |
 | `infocom-adventure` | voice | a spoken text adventure; the world lives in a slot, custom chrome renders it |
@@ -94,7 +91,7 @@ work off to a durable workflow.
 | `travel-concierge` | voice | LangGraph's customer-support tutorial as a phone concierge: a dialog stack and a confirmation gate |
 | `executive-assistant` | voice | LangChain's Executive AI Assistant (EAIA) as a call about your inbox: triage, drafts in your voice, a calendar subagent, the Agent Inbox's four answers as gated tools, and a memory that rewrites its own prompts from your corrections |
 | `roadside-assist` | voice | a dialog that describes a CALL rather than a form: a silence ladder, an uninterruptible fee disclosure, and per-phase LLM knobs |
-| `support-line` | voice | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) |
+| `support-line` | voice | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) — and the reference for a knowledge base bundled as a JSON asset import |
 | `plan-and-execute` | voice | a planning desk that really searches — plan-and-execute with the caller in the loop |
 | `briefing-desk` | voice | phone a desk, it puts several subagents on a topic at once — the `ctx.delegate` example |
 | `hiring-desk` | voice | CrewAI's `lead-score-flow` as a call about a stack of applicants: one crew scores them through `ctx.generate`, a human-in-the-loop router becomes a dialog with a bounded feedback loop, and the other crew writes every email as a guarded subagent |
@@ -123,7 +120,7 @@ Evals are the slow tier and are **not** run by `pnpm test` — a live one spends
 real tokens on your own key:
 
 ```sh
-pnpm test:eval:templates                         # the 31 template evals, live
+pnpm test:eval:templates                         # the 28 template evals, live
 pnpm --filter aai-templates test:eval
 ```
 

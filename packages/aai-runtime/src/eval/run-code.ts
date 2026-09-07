@@ -3,8 +3,9 @@
  * Reading what an agent RAN — the `run_code` builtin's two halves, the code it
  * was handed and what came back.
  *
- * Four template evals — `code-interpreter`, `math-buddy`, `night-owl` and
- * `personal-finance` — each declared the same `RunCodeArgs` schema and the same
+ * Four template evals — `code-interpreter`, `night-owl` and the two starters
+ * since removed as near-duplicates (`math-buddy`, `personal-finance`) — each
+ * declared the same `RunCodeArgs` schema and the same
  * `codeIn` reader under the same ten-line comment about reading arguments
  * through a schema, and each then asserted the OUTPUT with
  * `toolResultsIn(turn.toolCalls, "run_code").join("\n")` followed by

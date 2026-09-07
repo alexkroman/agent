@@ -158,10 +158,10 @@ no directory to scan — the same lowering eve does. `toolRegistry` /`withTools`
 default-export requirement, the flat-only rule and a duplicate name are one
 implementation and each is a build error naming the file.
 
-**All thirteen tool-declaring templates are files now, and the param is GONE.**
-For a while six were not — `health-assistant`, `embedded-assets`,
-`infocom-adventure`, `night-owl`, `recap-workflow` and `research-workflow`
-declared theirs
+**Every tool-declaring template is files now, and the param is GONE.**
+For a while six were not — `health-assistant`, `infocom-adventure`,
+`night-owl`, `recap-workflow`, `research-workflow` and `embedded-assets` (since
+removed as a near-duplicate of `support-line`) declared theirs
 inline, and this guide's own measurement missed them because it counted only the
 templates that already had a `tools/` directory. That is what made the rule
 conventional: `agent({ tools })` still worked, so "a tool is a file" was true of

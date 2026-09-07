@@ -403,6 +403,7 @@
     "SttProvider"
   ],
   "@alexkroman1/aai/testing": [
+    "commandedBuiltins",
     "createProgressStream",
     "createStubWorkflows",
     "ProjectFiles",

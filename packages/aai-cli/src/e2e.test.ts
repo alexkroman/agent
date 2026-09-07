@@ -165,7 +165,8 @@ describe("self-hosted server: npm start", () => {
    * leg is really about.** A tool is registered by EXISTING, enumerated into the
    * bundler's generated entry, so an entrypoint loading `agent.ts` directly boots
    * an agent with none of its six tools and no error anywhere. It also keeps what
-   * `math-buddy` was picked for: a `./system-prompt.md?raw` import.
+   * the starter it replaced was picked for: a `system-prompt.md` the BUILD
+   * resolves rather than `agent.ts` importing it.
    */
   test("boots a scaffolded pizza-ordering project and serves it", async ({ skip }) => {
     const projectDir = path.join(tmpDir, "_self-hosted");

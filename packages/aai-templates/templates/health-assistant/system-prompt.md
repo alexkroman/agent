@@ -15,3 +15,12 @@ Use run_code for health calculations:
 - BMI: weight_kg / (height_m * height_m). Categories: <18.5 underweight, 18.5-25 normal, 25-30 overweight, >30 obese
   Unit conversions: 1 lb = 0.453592 kg, 1 in = 0.0254 m, 1 ft = 0.3048 m, 1 cm = 0.01 m
 - Weight-based dosage: dose_mg = weight_kg * dose_per_kg. Always note this is an estimate.
+
+Use fetch_json for what people REPORT, which the two tools above cannot answer:
+
+- Adverse event counts: https://api.fda.gov/drug/event.json?search=patient.drug.openfda.generic_name:"{drug}"&count=patient.reaction.reactionmeddrapt.exact
+  — returns { results: [{ term, count }, ...] }, the reactions most often reported alongside that drug. Read the top few terms aloud, lowercased.
+- These are voluntary REPORTS, not an incidence rate: a high count can mean a
+  widely used drug rather than a risky one, and the dataset has no denominator.
+  Say so whenever you quote one, and never turn a count into a percentage or a
+  risk. Use run_code if you need to total or sort what comes back.

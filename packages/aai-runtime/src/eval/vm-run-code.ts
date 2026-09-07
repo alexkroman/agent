@@ -11,11 +11,12 @@
  * answer: a `toBeDefined()` on the result is satisfied by the refusal string
  * itself.
  *
- * So four template evals — `code-interpreter`, `math-buddy`, `night-owl` and
- * `personal-finance` — each wrote the same eleven lines: a `runInNewContext`
+ * So four template evals — `code-interpreter`, `night-owl` and the two
+ * starters since removed as near-duplicates (`math-buddy`,
+ * `personal-finance`) — each wrote the same eleven lines: a `runInNewContext`
  * with a capturing `console.log`, a one-second timeout, and `errorMessage` on
  * the throw. Byte-identical in all four, comment included. This is that, once,
- * and all four now call it.
+ * and the survivors call it.
  *
  * **They did not, for a while, and the gap was invisible.** This module shipped
  * with its argument written and the four copies left in place, so the dedupe
