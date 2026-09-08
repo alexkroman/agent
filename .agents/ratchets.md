@@ -4,7 +4,7 @@ every task's context. AGENTS.md's "Detailed references" table points here. -->
 # Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run
-thirteen **gates** (all also runnable standalone) that hold the line on technical
+fourteen **gates** (all also runnable standalone) that hold the line on technical
 debt. Three compare against a COMMITTED PER-FILE BASELINE
 (`check:hatches`, `check:invariants`, `check:api-nameable`); the rest are
 absolute. They must stay
@@ -131,6 +131,58 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   package: every package must also HAVE a non-empty `src/`. Two corpus floors,
   for the reason every counting gate here carries them. Its header has the
   argument and the three failures the flat layout cost.
+
+- **`pnpm check:optional-peers`** (`scripts/check-optional-peers.mjs`) — no
+  module a PUBLISHED entry can reach may statically import an OPTIONAL PEER.
+  A consumer bundles these packages with `ssr: { noExternal: true }` and
+  `codeSplitting: false` (that is `aai build`'s worker and every deployment
+  target's entry), and both settings together INLINE a dynamic import — so a
+  module reached only lazily still has its own imports resolved at the
+  consumer's build time, against a project that installed nothing it never
+  enabled. Vite substitutes `__vite-optional-peer-dep:<peer>`, which exports
+  nothing, and rolldown fails every named binding against it. Twelve
+  `[MISSING_EXPORT]` errors killed a real `vercel deploy`, out of
+  `aai-runtime/_tracing-otel.ts`; the same module had done it once before
+  through a different importer, and the remedy both times was "keep it out of
+  that bundle" — an invariant over the whole import graph, re-decided by every
+  new caller and checked by nothing.
+
+  So the rule is about the IMPORT FORM, which is local and visible: an optional
+  peer is reached through `await import(...)`, or through `import type`, never
+  through a static value import. Measured against vite 8 / rolldown, a dynamic
+  import is not export-checked in either spelling (`(await import(p)).X` and
+  `const { X } = await import(p)` both build clean), so the missing peer
+  surfaces when the feature is switched on rather than at a stranger's build.
+  `import type` is erased entirely; `import { type A }` is NOT allowed, because
+  `verbatimModuleSyntax` still emits an `import {} from "..."` that evaluates
+  the stub.
+
+  The corpus is REACHABILITY, not a file-name convention: the transitive graph
+  (static and dynamic edges, since a bundler inlines both; type-only edges are
+  erased and therefore not edges) from each package's `exports`, minus the
+  entries declared test-only in the script's `TEST_ONLY_ENTRIES`. That is what
+  distinguishes `_tracing-otel.ts` from the dozen test helpers that import
+  `vitest` — also an optional peer — perfectly correctly. Two floors, for the
+  reason every counting gate here carries them: the modules reached, and the
+  dynamic peer imports found (a parse that stopped seeing specifiers would
+  otherwise print a clean zero).
+
+  **`TEST_ONLY_EDGES` is the one exemption, and it is two edges**: the dynamic
+  imports inside `internal.ts`'s conformance loaders, whose only callers are
+  `aai-server`'s platform arms. They are the one place where following a
+  dynamic edge over-reports — a bundler inlines one, but it also tree-shakes an
+  export nobody calls, and no runtime path calls a conformance suite (measured:
+  the guest harness bundles `/internal` with `codeSplitting: false` and carries
+  no vitest). Keyed by the module that names them, so a NEW edge out of the
+  same module is still checked, and a declared edge that stops existing fails
+  the gate rather than rotting. The shape this gate was written for — a loader
+  a shipped feature really calls — is still caught on that same subpath.
+
+  Its empirical half is `aai-cli`'s `_target-bundle-peers.scenario.test.ts`,
+  which builds a real target entry in a project whose runtime is COPIED out of
+  the workspace with the peers unlinked — the only way to reproduce a user's
+  install, since resolution follows a symlink to its realpath and finds this
+  workspace's devDependency.
 
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
   source files at 500 lines and test files at 700. Files that already

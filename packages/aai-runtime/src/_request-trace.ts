@@ -19,11 +19,18 @@
  * every named import became a `MISSING_EXPORT` build failure. The e2e suite
  * caught it: six specs, including `npm start` on a scaffolded project.
  *
- * Note what would NOT have fixed it: `@ai-sdk/mcp` survives the same bundle
- * because `mcp-connect.ts` reads a PROPERTY off the namespace
- * (`(await import(…)).createMCPClient`), so there are no named bindings for
- * rolldown to check against the stub. Writing the OTel imports that way would
- * hide the failure rather than remove it.
+ * **That fix was necessary and not sufficient, and this paragraph used to say
+ * the opposite.** It argued that reaching OTel the way `mcp-connect.ts` reaches
+ * `@ai-sdk/mcp` — off a namespace the dynamic import hands back, so there are no
+ * named bindings for rolldown to check — would "hide the failure rather than
+ * remove it". It removes it. The named bindings were the failure: keeping this
+ * module's graph out of ONE bundle left the same twelve `[MISSING_EXPORT]`
+ * errors waiting for the next caller, and a `vercel deploy` of a scaffolded
+ * project found one. `_tracing-otel.ts` now loads all five peers through
+ * `loadOtelPeers`, which is what makes the missing-peer path surface where it
+ * belongs — when tracing is armed — instead of at a user's build. This module
+ * still earns its keep: it keeps the OTel graph out of the WORKER, which is a
+ * boot-cost property rather than a build-time one.
  *
  * ## The worker does not start tracing, and does not need to
  *

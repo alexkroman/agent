@@ -152,18 +152,25 @@ export async function startTracing(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RuntimeTracing | undefined> {
   if (!tracingEndpoint(env)) return undefined;
-  const { startTracingOtel } = await loadTracingOtel();
+  const otel = await orInstallLine(() => import("./_tracing-otel.ts"));
+  // The PEERS are loaded through a second gated await rather than by that
+  // module's own top level, because they are the half that a self-hoster can
+  // be missing — see `OtelPeers` there, and `check:optional-peers`.
+  const peers = await orInstallLine(otel.loadOtelPeers);
   // The service name is resolved HERE and passed down, so the OTel module
   // imports nothing from this one — see `TracingHandle` there for why a
   // cycle is not merely a lint failure.
-  const handle = startTracingOtel(env[OTEL_SERVICE_NAME_ENV]?.trim() || DEFAULT_SERVICE_NAME);
+  const handle = otel.startTracingOtel(
+    peers,
+    env[OTEL_SERVICE_NAME_ENV]?.trim() || DEFAULT_SERVICE_NAME,
+  );
   setRequestTraceAdopter(handle.adoptRequestTrace);
   return handle;
 }
 
 /**
- * The OTel graph, loaded on the first start rather than imported at module
- * load — and answered with the INSTALL LINE when the optional peers are absent.
+ * Either half of the lazy OTel load, answered with the INSTALL LINE when it
+ * fails — the module (a hashed chunk once bundled), and the peers themselves.
  *
  * Same shape and same reason as `mcp-connect.ts`'s `loadCreateMcpClient`: the
  * packages are optional peers, so "configured a collector but never installed
@@ -173,12 +180,20 @@ export async function startTracing(
  * told a file they did not write cannot be found, rather than which five
  * packages to install.
  *
- * A guest never reaches this: `aai-guest` declares the peers as its own
+ * **Both awaits go through here because the failure moved.** The peers used to
+ * be static imports of that module, so a missing one failed its IMPORT; they
+ * are dynamic now (`OtelPeers` there carries the build-time argument), so a
+ * missing one fails `loadOtelPeers` instead, and a bundled deployment reaches
+ * that second door rather than the first — Vite's optional-peer stub resolves,
+ * imports, and throws on evaluation. One message covers both because the remedy
+ * is identical, and the `cause` still carries which package was not there.
+ *
+ * A guest never reaches either: `aai-guest` declares the peers as its own
  * dependencies and tsdown inlines them into `dist/harness.mjs`.
  */
-async function loadTracingOtel(): Promise<typeof import("./_tracing-otel.ts")> {
+async function orInstallLine<T>(load: () => Promise<T>): Promise<T> {
   try {
-    return await import("./_tracing-otel.ts");
+    return await load();
   } catch (cause) {
     throw new Error(
       "A collector is configured, which needs the optional OpenTelemetry peers. " +

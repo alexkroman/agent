@@ -198,6 +198,12 @@ const GATES = [
     why: "The other diff-scoped one, and a merge hazard rather than an authoring one: each branch picks a plausible next timestamp against the main it can see, both apply cleanly in isolation, and the inversion exists only in the merge. `supabase db push` then REFUSES a pending file older than the last remote row — at release time, after the npm publish, on a branch that has merged and gone. It has already cost a manual re-dating of two migrations (f376585). platform-schema.test.ts catches two files claiming ONE version; nothing caught one file claiming an older one.",
   },
   {
+    script: "check:optional-peers",
+    phase: "ratchets",
+    fatal: false,
+    why: "A consumer bundles these packages with `noExternal` and no code splitting, which INLINES dynamic imports — so a module reached only lazily still has its own imports resolved at their build time, against a project that installed no optional peer. Vite substitutes a stub that exports nothing and rolldown fails every named binding against it: twelve [MISSING_EXPORT] errors killed a real `vercel deploy`, from `_tracing-otel.ts` reached through `aai-cli/start`. The same module had done it once before through `server.ts`, and both remedies were `keep it out of that bundle` — an invariant over the whole import graph, re-decided by every new caller and checked by nothing. This checks the IMPORT FORM instead, which is local: an optional peer is reached through `await import()` or `import type`, never a static value import. It found a second live one on the first run (the conformance loaders on /internal, one live call away from putting vitest in every user's function).",
+  },
+  {
     script: "check:untyped-imports",
     phase: "ratchets",
     fatal: false,
