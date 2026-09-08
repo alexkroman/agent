@@ -759,6 +759,9 @@ importers:
       '@alexkroman1/aai-runtime':
         specifier: workspace:*
         version: link:../aai-runtime
+      '@alexkroman1/aai-ui':
+        specifier: workspace:*
+        version: link:../aai-ui
       '@hono/zod-validator':
         specifier: 'catalog:'
         version: 0.9.1(hono@4.13.5)(zod@4.5.4)

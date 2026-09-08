@@ -1523,6 +1523,21 @@ own location is no longer where its source lives.** `createRequire(import.meta
 harness path. Anything else that resolves a workspace sibling by module
 location owes the same fallback.
 
+**A sibling aai-server IMPORTS owes the opposite fix: declare it here, so it
+never moves.** tsdown externalizes only what this manifest declares, so an
+undeclared workspace package is inlined at `dist/index.mjs` — silent to the
+build and to tsc, and fatal to any module in it that resolves by its own
+location. `@alexkroman1/aai-ui` was undeclared (nothing here imports it;
+`aai-server/transport-websocket.ts` does), so `client-dir.ts` came in with it:
+`defaultClientDir()` finds the prebuilt browser client by self-referencing
+`@alexkroman1/aai-ui/package.json`, legal from inside that package and nowhere
+else, and every deployed agent page answered 500 with **"Could not locate the
+default client UI — is @alexkroman1/aai-ui installed?"** on a platform where it
+plainly was. A fallback was the wrong shape: that resolution is aai-ui's own,
+three modules from anything aai-server wrote. `bundled-deps.test.ts` holds
+every workspace package aai-server imports to this manifest; knip.json carries
+the ignore an unimported declaration needs.
+
 **The shared core is the `exports` map, and nothing else.** It is an
 explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
 machinery, schemas, app composition, the routes the studio reuses), and
