@@ -133,6 +133,12 @@
  *   (`MAX_IDLE_POLLS`) before it calls the uploader gone and fails the run, so a
  *   pause longer than a coffee ends the run rather than the upload.
  *
+ * That difference reaches the reader rather than only this comment: the note
+ * under the form takes the hook's `UploadStatus`, so a paused upload gets its
+ * own sentence and the streaming one says the run is on a clock. Without it the
+ * desk answered a pause with "reloading is safe" — true about the reload, and
+ * beside the point.
+ *
  * ## Two waits, ONE number
  *
  * The two bars describe the two stretches separately, and neither answers the

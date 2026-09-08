@@ -191,7 +191,7 @@ export function requireConfirmedBooking<S extends FrozenHotelState | HotelState>
 }
 
 /** The room a booking sits in, or the refusal — a booking always has one. */
-function requireFloorPlanRoom<S extends FrozenHotelState | HotelState>(
+export function requireFloorPlanRoom<S extends FrozenHotelState | HotelState>(
   state: S,
   roomId: string,
 ): S["rooms"][number] | ToolFailure {

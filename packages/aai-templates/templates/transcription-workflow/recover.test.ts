@@ -22,7 +22,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { pendingNote, type PendingNoteInput, recalledMode, rememberMode } from "./recover.ts";
+import { type PendingNoteInput, pendingNote, recalledMode, rememberMode } from "./recover.ts";
 
 /** The modes the page offers, in the page's own order. */
 const MODES = ["streaming", "classic", "batch"] as const;
@@ -156,9 +156,16 @@ describe("pendingNote", () => {
     // First and unconditional: that run is reading the file from this page, so
     // a reload does not orphan it, it ends it. A page promising otherwise in
     // the mode it OPENS in would be the worst copy on the desk.
-    const started = pendingNote({ upload: MOVING, recoverable: false, startedHere: true, found: true });
+    const started = pendingNote({
+      upload: MOVING,
+      recoverable: false,
+      startedHere: true,
+      found: true,
+    });
     expect(started).toMatch(/keep this tab open/i);
-    expect(pendingNote({ upload: MOVING, recoverable: false, startedHere: false, found: false })).toBe(started);
+    expect(
+      pendingNote({ upload: MOVING, recoverable: false, startedHere: false, found: false }),
+    ).toBe(started);
   });
 
   test("promises the reload back to whoever pressed the button", () => {
@@ -167,14 +174,24 @@ describe("pendingNote", () => {
   });
 
   test("says it is LOOKING while the lookup is still out", () => {
-    const note = pendingNote({ upload: MOVING, recoverable: true, startedHere: false, found: false });
+    const note = pendingNote({
+      upload: MOVING,
+      recoverable: true,
+      startedHere: false,
+      found: false,
+    });
     expect(note).toMatch(/looking for/i);
   });
 
   test("explains a run the reader did not start, and says not to send it again", () => {
     // The line that stops a second 600 MB upload of the same recording, which
     // is what the key is for.
-    const note = pendingNote({ upload: MOVING, recoverable: true, startedHere: false, found: true });
+    const note = pendingNote({
+      upload: MOVING,
+      recoverable: true,
+      startedHere: false,
+      found: true,
+    });
     expect(note).toMatch(/earlier/i);
     expect(note).toMatch(/no need to send it again/i);
   });

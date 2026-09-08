@@ -26,6 +26,15 @@
  * one. It posts the findings to a channel now (`filing.ts`), and the channel is
  * optional — a desk with none still researches and still says so.
  *
+ * ## Three modules beside this one, and what each is for
+ *
+ * `notes.ts` is the leaf: the four shapes the stages pass between them and the
+ * pure functions that read them, imported by this file and by `filing.ts`.
+ * `review.ts` holds the two constants the review wait needs, because
+ * `file_it_now` has to name the same one. `prompts.ts` is the prompts. What is
+ * left here is the FLOW — which stages exist, in what order, and what each one
+ * is allowed to cost.
+ *
  * ## A step can do what a TOOL can do, and `stepDelegate` is where that lands
  *
  * `investigate` hands its angle to a SUBAGENT (`stepDelegate`,
