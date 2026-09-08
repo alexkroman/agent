@@ -4,6 +4,7 @@
  * edges of `randomInt` (which decide whether a shuffle can index past the end)
  * and that `shuffled` is a permutation of a copy rather than of the input.
  */
+import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 
 import { createSeededRandom, pickOne, randomInt, shuffled } from "./random.ts";
@@ -113,5 +114,62 @@ describe("createSeededRandom", () => {
         expect(v).toBeLessThan(1);
       }
     }
+  });
+});
+
+/**
+ * Value-level properties. The two that matter are the ones a hand-written table
+ * cannot state: `randomInt` stays in range for EVERY source a stub might be,
+ * and `shuffled` is always a permutation.
+ */
+describe("random properties", () => {
+  /** Anything a hand-written stub might return, including out-of-contract values. */
+  const sources = fc.double({ min: 0, max: 1, noNaN: true }).map((v) => () => v);
+
+  test("randomInt stays inside [0, max) for any source", () => {
+    // Including a source that returns exactly 1, which is outside
+    // `Math.random`'s contract and squarely inside what a stub does.
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 10_000 }), sources, (max, random) => {
+        const n = randomInt(max, random);
+        expect(Number.isInteger(n)).toBe(true);
+        expect(n).toBeGreaterThanOrEqual(0);
+        expect(n).toBeLessThan(max);
+      }),
+    );
+  });
+
+  test("pickOne only ever returns a member of the list", () => {
+    fc.assert(
+      fc.property(fc.array(fc.integer(), { minLength: 1 }), sources, (items, random) => {
+        expect(items).toContain(pickOne(items, random));
+      }),
+    );
+  });
+
+  test("shuffled is a permutation of its input, and leaves it alone", () => {
+    fc.assert(
+      fc.property(fc.array(fc.integer()), fc.integer(), (items, seed) => {
+        const frozen = Object.freeze([...items]);
+        const out = shuffled(frozen, createSeededRandom(seed));
+        expect(out).toHaveLength(items.length);
+        expect([...out].sort((a, b) => a - b)).toEqual([...items].sort((a, b) => a - b));
+        expect([...frozen]).toEqual(items);
+      }),
+    );
+  });
+
+  test("createSeededRandom is a pure function of its seed", () => {
+    fc.assert(
+      fc.property(fc.integer(), fc.integer({ min: 1, max: 50 }), (seed, draws) => {
+        const first = Array.from({ length: draws }, createSeededRandom(seed));
+        const second = Array.from({ length: draws }, createSeededRandom(seed));
+        expect(second).toEqual(first);
+        for (const v of first) {
+          expect(v).toBeGreaterThanOrEqual(0);
+          expect(v).toBeLessThan(1);
+        }
+      }),
+    );
   });
 });

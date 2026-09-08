@@ -227,7 +227,15 @@ export function formatMoney(amount: number, symbol = "$"): string {
  */
 export function roundMoney(amount: number): number {
   if (!Number.isFinite(amount)) return amount;
-  return Number(amount.toFixed(2));
+  const rounded = Number(amount.toFixed(2));
+  // `-0` normalized to `0`, which is what makes this IDEMPOTENT — the property
+  // a caller relies on when rounding at every step of a total. `toFixed` is
+  // asymmetric here: a tiny negative gives `"-0.00"` (so `-0`) while `-0`
+  // itself gives `"0.00"` (so `0`), and without this
+  // `roundMoney(roundMoney(-5e-324))` differs from `roundMoney(-5e-324)`.
+  // A negative zero amount of money is not a thing; `formatMoney` already
+  // prints both as `$0.00`.
+  return rounded === 0 ? 0 : rounded;
 }
 
 /**

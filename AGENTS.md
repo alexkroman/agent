@@ -232,19 +232,39 @@ reference, and the `typescript@6` pin — **and, because they answer three
 versions of one question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-Seven files sit outside the table for a different reason:
-`packages/aai/AUTHORING-HELPERS-CLAUDE.md`,
-`packages/aai-server/MODAL-CLAUDE.md`, `packages/aai-server/SCHEMA-CLAUDE.md`,
-`packages/aai-runtime/JOURNAL-CLAUDE.md`, `packages/aai-ui/PLAYBACK-CLAUDE.md`,
-`packages/aai-templates/PORTS-CLAUDE.md` and
-`packages/aai-templates/STEP-IO-CLAUDE.md`, SIBLINGS of their package's guide
-rather than second package guides. `check:claude-md` measures it (its pathspec is
-`*CLAUDE.md`) and konsistent permits it (`workspace-package-layout` requires a
-`CLAUDE.md` and forbids nothing else), but Claude Code auto-loads only
-`CLAUDE.md`, so a sibling is read on demand and is only the right shape for
-REFERENCE — a build recipe — never for a rule someone needs resident. Prefer
-moving a section to the package that owns the surface; reach for a sibling when
-no other package owns it and the guide is at the cap.
+Twelve files sit outside the table for a different reason — SIBLINGS of their
+package's guide rather than second package guides:
+
+| Sibling | Covers |
+| --- | --- |
+| `packages/aai/AUTHORING-HELPERS-CLAUDE.md` | The speech boundary both ways, the calendar/zod argument shapes, `ctx.random`, `orFail`/`failable`, `parseWav`, `roundMoney` |
+| `packages/aai/S2S-CLAUDE.md` | S2S wire-level: the one sample rate, tool-call captions, in-band errors, `endSession`, abandoning a handshake |
+| `packages/aai-runtime/DIALOG-CLAUDE.md` | What each dialog voice knob can and cannot do |
+| `packages/aai-runtime/JOURNAL-CLAUDE.md` | The workflow journal |
+| `packages/aai-runtime/TEXT-AGENT-CLAUDE.md` | Text mode |
+| `packages/aai-server/MODAL-CLAUDE.md` | Modal sandboxes and backends |
+| `packages/aai-server/PLATFORM-SOCKET-CLAUDE.md` | The platform session socket |
+| `packages/aai-server/SCHEMA-CLAUDE.md` | The platform database schema |
+| `packages/aai-server/TRACING-CLAUDE.md` | Platform tracing |
+| `packages/aai-templates/PORTS-CLAUDE.md` | Porting a framework's example to a voice agent |
+| `packages/aai-templates/STEP-IO-CLAUDE.md` | A template's step I/O |
+| `packages/aai-ui/PLAYBACK-CLAUDE.md` | The browser playback path |
+
+**The list is CHECKED, and it had drifted** — four of these were missing from
+the prose roster that stood here, because `claude-md-limit.test.ts` globbed
+`*/CLAUDE.md` and never saw a sibling at all while `check:claude-md`'s pathspec
+(`*CLAUDE.md`) always did. The spec globs `*/*-CLAUDE.md` too now, so its
+"the root guide points at every package guide" assertion covers these, and a new
+sibling that nobody lists here fails. That matters more than it sounds: a
+sibling is exactly where a section pushed out of a full guide LANDS, so it is
+the file most likely to appear next and the one least likely to get written down.
+
+konsistent permits them (`workspace-package-layout` requires a `CLAUDE.md` and
+forbids nothing else), but Claude Code auto-loads only `CLAUDE.md`, so a sibling
+is read on demand and is only the right shape for REFERENCE — a build recipe —
+never for a rule someone needs resident. Prefer moving a section to the package
+that owns the surface; reach for a sibling when no other package owns it and the
+guide is at the cap.
 
 ### A guide says what to do in code that EXISTS
 
@@ -536,6 +556,13 @@ The split is not cosmetic. This file was 118,862 characters against a
 reading a line of code, and the next well-justified paragraph had nowhere to
 go. It is 38k now. When a reference file approaches the cap in turn, split it
 the same way rather than moving anything back.
+
+**`check:claude-md` prints WHERE a nearly-full guide's characters went** — its
+five biggest `##` sections, largest first — because the remedy is always a
+decision about which section and a bare total leaves that to be measured by
+hand. It is the same move `check-file-length.mjs` makes one level down. Read
+that report before shaving prose: `aai-ui/CLAUDE.md` turned out to hold 49% of
+itself in one section, which no amount of tightening elsewhere would have found.
 
 **The root guide is `AGENTS.md`, and `CLAUDE.md` is one line: `@AGENTS.md`** —
 the two-name split and why it exists are in this file's opening paragraph.

@@ -56,6 +56,32 @@ Three things the API is load-bearing about:
 copy: the SDK owns never-guess, the template owns what an order id looks like
 when a caller reads it aloud and which words name a status.
 
+**Three templates use it, and that is close to all the ones that should** —
+worth writing down, because "3 of 28" reads like an adoption problem and is not
+one. Every `.find()` / `.filter()` over a caller-supplied value in the template
+corpus was classified, and they fall into three groups:
+
+- **An exact id or code the model already chose off a list** — `travel-concierge`
+  has eleven (`FLIGHTS.find((f) => f.id === action.flightId)`), `hotel-desk`
+  nine (`b.code === code`, after `spokenAlphanumeric` has normalized the
+  read-back), `solo-rpg` six, `executive-assistant` and `support-line` one each.
+  There is no ambiguity to resolve here: the id came from a catalog the desk
+  itself read out, so "no such id" is the entire answer and a plain not-found is
+  correct.
+- **A SEARCH that is supposed to return many** — `travel-concierge`'s four
+  `search_*` tools. Picking one would be the bug.
+- **A phrase in the caller's OWN WORDS over a list where several could match.**
+  This is the only group `resolveOne` is for, and `briefing-desk`'s `findByAngle`
+  was the one unconverted member of it. It took the first angle whose text
+  overlapped in either direction, so "lead times" picked between "install lead
+  times" and "battery lead times" by board order, and answered `undefined` for
+  both "nothing matches" and "several do".
+
+So the number to watch is not the adoption count, it is whether a NEW lookup is
+in the third group. The tell is the argument's type: an id or code the desk
+issued is group one; a `string` the model filled in from what the caller said is
+group three.
+
 ### Outbound: `spokenMoney`, `spokenDate`, `spokenTime`, `mintCode`
 
 **The failure these prevent is not ugliness, it is being MISHEARD.** A TTS

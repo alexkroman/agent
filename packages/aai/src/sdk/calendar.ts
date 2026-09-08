@@ -29,7 +29,10 @@
  * @module
  */
 
-import { isoDateParts } from "./_civil-date.ts";
+import { isoDateParts, utcDate } from "./_civil-date.ts";
+
+/** `1970-01-01T00:00:00.000Z` — what `toISOString` returns inside 0000-9999. */
+const ISO_INSTANT_LENGTH = 24;
 
 /** 24-hour `HH:MM`. Anchored, so `"9:30"` and `"19:30:00"` are both refused. */
 const CLOCK_TIME_SHAPE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -106,7 +109,21 @@ export function addDays(iso: string, days: number): string {
   const ymd = isoDateParts(iso);
   if (ymd === undefined) throw new RangeError(`addDays: ${iso} is not a YYYY-MM-DD date`);
   const [y, m, d] = ymd;
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  const at = utcDate(y, m, d + days);
+  // `toISOString` switches to the EXPANDED year form outside 0000-9999
+  // (`+010000-01-01T…`), where a 10-character slice answers `"+010000-01"` — a
+  // string that is not a date and that nothing downstream would question.
+  // Found by the property below, which is the whole reason it is a property:
+  // the offset that crosses the boundary is not a number anyone writes in a
+  // table. Refused rather than clamped, because a stay that ran off the end of
+  // the representable calendar has no right answer either.
+  const rendered = at.toISOString();
+  if (rendered.length !== ISO_INSTANT_LENGTH) {
+    throw new RangeError(
+      `addDays: ${iso} plus ${days} days is outside the years 0000-9999 this can represent`,
+    );
+  }
+  return rendered.slice(0, 10);
 }
 
 /**
@@ -136,6 +153,9 @@ export function daysBetween(from: string, to: string): number {
   if (b === undefined) throw new RangeError(`daysBetween: ${to} is not a YYYY-MM-DD date`);
   const MS_PER_DAY = 86_400_000;
   // Both endpoints are midnight UTC, so the difference is an exact multiple of
-  // a day and the rounding only absorbs float noise at extreme years.
-  return Math.round((Date.UTC(b[0], b[1] - 1, b[2]) - Date.UTC(a[0], a[1] - 1, a[2])) / MS_PER_DAY);
+  // a day and the rounding only absorbs float noise at extreme years. Through
+  // `utcDate` rather than `Date.UTC` directly, for the two-digit-year reason
+  // that module states — a bare `Date.UTC` here answered in the 1900s for any
+  // year under 100.
+  return Math.round((utcDate(...b).getTime() - utcDate(...a).getTime()) / MS_PER_DAY);
 }

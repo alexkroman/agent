@@ -1,5 +1,5 @@
 import type { DelegateOptions, SubagentDef } from "@alexkroman1/aai";
-import { DELEGATE_TOOL_NAME } from "@alexkroman1/aai";
+import { DELEGATE_TOOL_NAME, isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   type StubDelegateCall,
@@ -426,8 +426,35 @@ describe("the board", () => {
       board.findings.push({ angle: "install lead times", summary: "s", work: NO_WORK });
     });
     const board = briefingSlot.get(ctx);
-    expect(findByAngle(board, "lead times")?.angle).toBe("install lead times");
-    expect(findByAngle(board, "  ")).toBeUndefined();
-    expect(findByAngle(board, "battery chemistry")).toBeUndefined();
+    const found = findByAngle(board, "lead times");
+    expect(isToolFailure(found) ? found : found.angle).toBe("install lead times");
+  });
+
+  test("an angle the caller could mean two ways is ASKED about, not guessed", () => {
+    // What the `.find()` this replaced did: it took the first angle whose text
+    // overlapped in either direction, so board order decided which of these the
+    // claim got checked against — and it answered `undefined` for "nothing
+    // matches" and "several do" alike.
+    const ctx = createToolContext();
+    briefingSlot.update(ctx, (board) => {
+      board.findings.push({ angle: "install lead times", summary: "s", work: NO_WORK });
+      board.findings.push({ angle: "battery lead times", summary: "s", work: NO_WORK });
+    });
+    const found = findByAngle(briefingSlot.get(ctx), "lead times");
+    expect(isToolFailure(found)).toBe(true);
+    expect(isToolFailure(found) && found.error).toContain("install lead times");
+    expect(isToolFailure(found) && found.error).toContain("battery lead times");
+  });
+
+  test("an angle on nothing, and a blank one, each say so", () => {
+    const ctx = createToolContext();
+    briefingSlot.update(ctx, (board) => {
+      board.findings.push({ angle: "install lead times", summary: "s", work: NO_WORK });
+    });
+    const board = briefingSlot.get(ctx);
+    const missing = findByAngle(board, "battery chemistry");
+    expect(isToolFailure(missing) && missing.error).toContain("install lead times");
+    const blank = findByAngle(board, "  ");
+    expect(isToolFailure(blank) && blank.error).toContain("which angle");
   });
 });

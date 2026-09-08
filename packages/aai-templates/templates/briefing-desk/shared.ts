@@ -43,10 +43,13 @@ import {
   type DelegateFn,
   type DelegateOptions,
   type DelegateResult,
+  resolveOne,
   type SubagentRoster,
   type SubagentToolCall,
   sessionSlot,
   subagent,
+  type ToolFailure,
+  toolFailure,
 } from "@alexkroman1/aai";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import { z } from "zod";
@@ -303,15 +306,41 @@ export const briefingSlot = sessionSlot("briefing", emptyBriefing, {
  */
 export type FrozenBriefing = DeepReadonly<BriefingState>;
 
-/** A finding named by what the caller would say: its angle, loosely matched. */
+/**
+ * A finding named by what the caller would say: its angle, loosely matched.
+ *
+ * `resolveOne`'s, and this is the one place on the board where that contract is
+ * the right one. Every other lookup in this template — and in almost every
+ * template — is an exact id the model already chose off a list, where "no such
+ * id" is the whole answer. Here the argument is the caller's OWN WORDS about
+ * something already on the board, so two findings can match one phrase.
+ *
+ * What it replaces guessed. The `.find()` here took the FIRST angle whose text
+ * overlapped the phrase in either direction, so "lead times" quietly picked one
+ * of "install lead times" and "battery lead times" by board order — and
+ * answered `undefined` for both "nothing matches" and "several do", which is
+ * the distinction the caller needs. It now returns a `ToolFailure` LISTING the
+ * candidates, so the desk asks which one instead of fact-checking against the
+ * wrong context.
+ *
+ * The scorer is the overlap that was inline before, scored rather than
+ * booleaned: a longer shared prefix of words wins, and a tie FAILS.
+ */
 export function findByAngle(
   state: FrozenBriefing,
   angle: string,
-): DeepReadonly<Finding> | undefined {
+): DeepReadonly<Finding> | ToolFailure {
   const wanted = angle.trim().toLowerCase();
-  if (wanted === "") return undefined;
-  return state.findings.find(
-    (finding) =>
-      finding.angle.toLowerCase().includes(wanted) || wanted.includes(finding.angle.toLowerCase()),
-  );
+  if (wanted === "") return toolFailure("Say which angle on the board this claim came from.");
+  return resolveOne(state.findings, wanted, {
+    label: "angle",
+    describe: (finding) => finding.angle,
+    // Word overlap in either direction, which is what the substring test was
+    // approximating — counted, so "install lead times" beats "lead times" for
+    // the phrase "install lead times" instead of both merely being true.
+    score: (finding, text) => {
+      const words = finding.angle.toLowerCase().split(/\s+/).filter(Boolean);
+      return words.filter((word) => text.includes(word)).length;
+    },
+  });
 }

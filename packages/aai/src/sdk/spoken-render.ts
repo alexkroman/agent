@@ -30,7 +30,7 @@
  * @module
  */
 
-import { isoDateParts } from "./_civil-date.ts";
+import { isoDateParts, utcDate } from "./_civil-date.ts";
 import { plural } from "./format.ts";
 
 /** Fixed English names, so no ICU build can change what a desk says. */
@@ -146,7 +146,9 @@ export function spokenDate(iso: string): string {
   const ymd = isoDateParts(iso);
   if (ymd === undefined) return iso;
   const [y, m, d] = ymd;
-  const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  // `utcDate`, not `Date.UTC`: the latter maps a year under 100 onto the
+  // 1900s, which is the wrong WEEKDAY rather than a visibly wrong date.
+  const weekday = WEEKDAYS[utcDate(y, m, d).getUTCDay()];
   return `${weekday}, ${MONTHS[m - 1]} ${d}`;
 }
 

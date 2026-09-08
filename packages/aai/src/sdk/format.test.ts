@@ -7,6 +7,7 @@
  * assertion on anything looser than the exact output would let the same drift
  * back in.
  */
+import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import {
   countWords,
@@ -231,5 +232,75 @@ describe("the shapes the template copies produced", () => {
     // rendered "$1,234" for the same amount, and `retail` spelled a third
     // convention inline twelve times.
     expect(formatMoney(1234)).toBe("$1,234.00");
+  });
+});
+
+/**
+ * Value-level properties, so no coverage floor. What they add over the tables
+ * above is the pair of claims that have to hold for EVERY amount, because a
+ * total is assembled from amounts nobody wrote down.
+ */
+describe("money properties", () => {
+  const amounts = fc.double({
+    min: -1e12,
+    max: 1e12,
+    noNaN: true,
+    noDefaultInfinity: true,
+  });
+
+  test("roundMoney is idempotent", () => {
+    // A total is rounded at each step, so applying it twice must not move the
+    // value — otherwise a sum drifts by a cent per operation.
+    fc.assert(
+      fc.property(amounts, (amount) => {
+        expect(roundMoney(roundMoney(amount))).toBe(roundMoney(amount));
+      }),
+    );
+  });
+
+  test("roundMoney never changes what formatMoney prints", () => {
+    // The whole reason it shares `toFixed(2)`: a value that compares as one
+    // number and reads as another is the bug this replaced in `retail`.
+    fc.assert(
+      fc.property(amounts, (amount) => {
+        expect(formatMoney(roundMoney(amount))).toBe(formatMoney(amount));
+      }),
+    );
+  });
+
+  test("a rounded amount survives a round-trip through its own printed form", () => {
+    // What "on a whole cent" actually means for a float: printing at two
+    // decimals and parsing back is the identity. Asserted this way rather than
+    // through `x * 100`, which reintroduces exactly the error being tested for.
+    fc.assert(
+      fc.property(fc.double({ min: -1e9, max: 1e9, noNaN: true, noDefaultInfinity: true }), (a) => {
+        const rounded = roundMoney(a);
+        expect(Number(rounded.toFixed(2))).toBe(rounded);
+      }),
+    );
+  });
+
+  test("roundMoney never answers negative zero", () => {
+    // The asymmetry that broke idempotence: `(-5e-324).toFixed(2)` is "-0.00"
+    // while `(-0).toFixed(2)` is "0.00".
+    expect(Object.is(roundMoney(-5e-324), 0)).toBe(true);
+    expect(Object.is(roundMoney(-0), 0)).toBe(true);
+    expect(Object.is(roundMoney(-0.001), 0)).toBe(true);
+  });
+
+  test("formatMoney always prints two decimals and a grouped whole part", () => {
+    fc.assert(
+      fc.property(amounts, (amount) => {
+        expect(formatMoney(amount)).toMatch(/^-?\$\d{1,3}(,\d{3})*\.\d\d$/);
+      }),
+    );
+  });
+
+  test("plural agrees with the count for every integer", () => {
+    fc.assert(
+      fc.property(fc.integer(), (n) => {
+        expect(plural(n, "risk")).toBe(n === 1 ? "risk" : "risks");
+      }),
+    );
   });
 });

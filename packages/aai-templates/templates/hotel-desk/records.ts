@@ -91,10 +91,16 @@ export function normalizeCode(code: string): string {
  * the characters that come back wrong — and which bounds its retries, where the
  * loop here was `for (;;)`.
  *
- * It takes no `random`: the four minting sites are reached through
- * {@link addTicket} and the two booking builders, none of which carries a
- * `ToolContext`, so threading `ctx.random` down to here would change fourteen
- * signatures to make one code assertable. A desk that wants that passes
+ * It takes no `random`, and that was PRICED rather than assumed. The four
+ * minting sites are reached through {@link addTicket} (thirteen callers) and the
+ * two booking builders, and every one of those tool bodies is
+ * `execute(args, hotel)` — `ctx` is `updateTool`'s THIRD parameter and none of
+ * them declares it. So threading `ctx.random` here is about 26 edits across 15
+ * files, and what it buys is four assertions: `toMatch(/^RES-/)` and three
+ * siblings, which check a PREFIX and would become an exact code. `mintCode`'s
+ * own alphabet and retry are covered by the SDK's specs, and every test that
+ * needs a specific code either uses a seeded one or reads the minted value back
+ * (`done.result.code`). Not worth it; a desk that does want it passes
  * `{ random }` to `mintCode` directly.
  */
 export function mintCode(prefix: string, taken: ReadonlySet<string> = new Set()): string {

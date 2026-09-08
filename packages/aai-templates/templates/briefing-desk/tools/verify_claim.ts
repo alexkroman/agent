@@ -1,4 +1,11 @@
-import { errorMessage, omitUndefined, tool, toolFailure } from "@alexkroman1/aai";
+import {
+  errorMessage,
+  isToolFailure,
+  omitUndefined,
+  type ToolFailure,
+  tool,
+  toolFailure,
+} from "@alexkroman1/aai";
 import { z } from "zod";
 import { briefingSlot, countWork, factChecker, findByAngle, type Verdict } from "../shared.ts";
 
@@ -43,7 +50,17 @@ export default tool({
     if (claim === "") return toolFailure("Nothing to check — say the claim in a full sentence.");
 
     const board = briefingSlot.get(ctx);
-    const source = args.about ? findByAngle(board, args.about) : undefined;
+    // The caller pointed at something on the board, so an AMBIGUOUS pointer is
+    // returned to the model rather than resolved by board order. Checking the
+    // claim against the wrong finding is worse than spending a turn asking
+    // which — the verdict would come back about a different conversation. A
+    // caller who named no angle is the `undefined` case and is fine.
+    let source: Exclude<ReturnType<typeof findByAngle>, ToolFailure> | undefined;
+    if (args.about !== undefined) {
+      const found = findByAngle(board, args.about);
+      if (isToolFailure(found)) return found;
+      source = found;
+    }
 
     let verdict: Verdict | undefined;
     let detail: string;
