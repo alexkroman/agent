@@ -1,6 +1,8 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` and the prompt add. */
 import agentDef from "virtual:aai/agent";
-import type { ToolContext } from "@alexkroman1/aai";
+import type { Message, ToolContext } from "@alexkroman1/aai";
+import { createSeededRandom } from "@alexkroman1/aai";
+import type { ToolContextOverrides } from "@alexkroman1/aai/testing";
 import {
   createToolContext,
   expectDialogOk,
@@ -9,7 +11,7 @@ import {
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { gameFlow } from "./game.ts";
+import { endsRound, gameFlow } from "./game.ts";
 import { containsWord, isCorrectGuess, normalizeWord } from "./guess.ts";
 import { PLAYER_SYSTEM, playerPrompt } from "./player.ts";
 import {
@@ -43,14 +45,41 @@ function scriptedPlayer() {
   });
   return {
     model,
-    /** A context whose player will answer `guess` next. */
-    ctx: (messages: { role: "user" | "assistant"; content: string }[] = []) =>
-      createToolContext({ generate: model.generate, messages }),
+    /**
+     * A context whose player will answer `guess` next. The overrides are
+     * `createToolContext`'s own — a spec that wants a seeded `random` or a
+     * conversation behind the call fills in that field and nothing else.
+     */
+    ctx: (overrides: ToolContextOverrides = {}) =>
+      createToolContext({ generate: model.generate, messages: [], ...overrides }),
     guess(word: string) {
       nextGuess = word;
     },
   };
 }
+
+/**
+ * A turn the RUNTIME handed the tool: what `ctx.messages` holds.
+ *
+ * Pair it with {@link heard} below. The two are different evidence of the same
+ * describer — this is the conversation a tool call arrives with, that is the
+ * transcript stream — and `relay_description` rules a foul off either.
+ */
+const saidAloud = (content: string): Message => ({ role: "user", content });
+
+/**
+ * What the describer said, delivered the way the RUNTIME delivers it.
+ *
+ * A session event handler is a plain function on the def, so this needs no
+ * harness — which is the point of driving it here: `game.spoken` is maintained
+ * by something the model never calls, and nothing else in this file would
+ * notice if the hook stopped running.
+ */
+const heard = (text: string, ctx: ToolContext) =>
+  agentDef.events?.["user-transcript.committed"]?.(
+    { type: "user-transcript.committed", text, meta: { id: "evt_1", at: 0 } },
+    ctx,
+  );
 
 /** Start a round and hand back the word the describer is looking at. */
 async function startRound(ctx: ToolContext): Promise<string> {
@@ -103,8 +132,12 @@ describe("words.ts", () => {
     const round = pickWords(20);
     expect(round).toHaveLength(20);
     expect(new Set(round).size).toBe(20);
-    // A fixed generator gives a fixed round — which is what lets a spec know the word.
-    expect(pickWords(3, () => 0)).toEqual(pickWords(3, () => 0));
+    // A SEEDED generator gives a fixed round — which is what lets a spec know
+    // the word. `createSeededRandom` rather than a `() => 0` stand-in: a
+    // constant is not a shuffle, so it would pin the arithmetic to a degenerate
+    // case the real game never draws.
+    expect(pickWords(3, createSeededRandom(7))).toEqual(pickWords(3, createSeededRandom(7)));
+    expect(pickWords(3, createSeededRandom(7))).not.toEqual(pickWords(3, createSeededRandom(8)));
   });
 });
 
@@ -209,9 +242,8 @@ describe("a round", () => {
     // The host sanitized the word out of what it passed; the caller's turn still has it.
     const ctx = player.ctx();
     const word = await startRound(ctx);
-    const laundered = createToolContext({
-      generate: player.model.generate,
-      messages: [{ role: "user", content: `Okay so the word is ${word}, how do I describe that` }],
+    const laundered = player.ctx({
+      messages: [saidAloud(`Okay so the word is ${word}, how do I describe that`)],
     });
     gameSlot.set(
       laundered,
@@ -319,6 +351,74 @@ describe("a round", () => {
     expect(prompt).toContain("1. a\n2. b");
     expect(prompt).toContain("- x");
     expect(playerPrompt({ descriptions: ["a"], wrongGuesses: [] })).toContain("None yet.");
+  });
+
+  test("a foul the host never relayed is still a foul: the hook heard it", async () => {
+    const player = scriptedPlayer();
+    const ctx = player.ctx();
+    const word = await startRound(ctx);
+    // Two committed turns, neither of them the one the host relays below, and
+    // `ctx.messages` is empty — so `game.spoken` is the only evidence there is.
+    heard(`hmm, ${word}, how would you even describe that`, ctx);
+    heard("okay, here goes", ctx);
+    heard("   ", ctx); // blank: nothing to record, and nothing recorded
+    expect(gameSlot.get(ctx).spoken).toEqual([
+      `hmm, ${word}, how would you even describe that`,
+      "okay, here goes",
+    ]);
+
+    const foul = expectDialogOk<{ verdict: string; word: string }>(
+      await run("relay_description", { description: "okay, here goes" }, ctx),
+    );
+    expect(foul.result).toMatchObject({ verdict: "foul", word });
+    expect(player.model.calls).toHaveLength(0);
+    // Settling the word clears what was said about it, so the next word starts
+    // clean and cannot inherit a foul.
+    expect(gameSlot.get(ctx).spoken).toEqual([]);
+  });
+
+  test("the per-word lists are capped on the slot; the round log is deliberately not", async () => {
+    const player = scriptedPlayer();
+    const ctx = player.ctx();
+    await startRound(ctx);
+    for (let i = 0; i < 15; i++) {
+      heard(`clue ${i}`, ctx);
+      player.guess(`wrong-${i}`);
+      expectDialogOk(await run("relay_description", { description: `clue ${i}` }, ctx));
+    }
+    const game = gameSlot.get(ctx);
+    // Bounded, and the OLDEST is what went: the newest clue is the one the
+    // player should be guessing from.
+    expect(game.spoken).toHaveLength(12);
+    expect(game.spoken.at(-1)).toBe("clue 14");
+    expect(game.descriptions).toHaveLength(12);
+    expect(game.wrongGuesses).toHaveLength(10);
+    expect(game.wrongGuesses.at(-1)).toBe("wrong-14");
+
+    // `rounds` carries no cap, and this is why: its length IS the index into
+    // `words`, so dropping the oldest entry would rewind the describer.
+    for (let i = 0; i < 15; i++) expectDialogOk(await run("skip_word", ctx));
+    const played = gameSlot.get(ctx);
+    expect(played.rounds).toHaveLength(15);
+    expect(currentWord(played)).toBe(played.words[15]);
+  });
+
+  test("a seeded round is reproducible, which is what `ctx.random` is for", async () => {
+    const player = scriptedPlayer();
+    const a = player.ctx({ random: createSeededRandom(4242) });
+    const b = player.ctx({ random: createSeededRandom(4242) });
+    const c = player.ctx({ random: createSeededRandom(1) });
+    const [wordA, wordB, wordC] = [await startRound(a), await startRound(b), await startRound(c)];
+    expect(wordA).toBe(wordB);
+    expect(gameSlot.get(a).words).toEqual(gameSlot.get(b).words);
+    expect(wordC).not.toBe(wordA);
+  });
+
+  test("endsRound is the one rule both round-ending tools send by", () => {
+    expect(endsRound({})).toBeUndefined();
+    expect(endsRound({ next: undefined })).toBeUndefined();
+    expect(endsRound({ next: "WORDS_DONE" })).toEqual({ type: "WORDS_DONE" });
+    expect(endsRound({ next: "TIME_UP" })).toEqual({ type: "TIME_UP" });
   });
 
   test("two contexts never share a round", async () => {

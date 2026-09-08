@@ -15,7 +15,7 @@ import {
 import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { CATEGORIES, MAX_RECS, MOODS, nightProjection, nightSlot } from "./shared.ts";
-import recommend from "./tools/recommend.ts";
+import type recommend from "./tools/recommend.ts";
 
 /**
  * What `recommend` takes and answers, read off the tool itself.

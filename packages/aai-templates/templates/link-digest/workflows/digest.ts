@@ -222,24 +222,21 @@ export async function summarize(article: Article): Promise<Digest> {
   // model that answered with prose may answer correctly on the next attempt,
   // where a 401 will not. The `OrFail` suffix is what makes the 401 half
   // terminal: it is `stepGenerateJson` with `throwStepError` already applied.
-  const parsed = await stepGenerateJsonOrFail(
-    articlePrompt(article),
-    {
-      schema: DigestReply,
-      system:
-        `You digest articles. Reply with JSON only: {"headline": string, "points": string[]}. ` +
-        `Give exactly ${POINTS} points. No markdown fence, no preamble.` +
-        // The instruction is blunter on the last try for the same reason the
-        // model is different: whatever it has been doing for five attempts is
-        // not working.
-        (lastChance ? " Keep every point to one short sentence." : ""),
-      // Read `isLastAttempt`, never `attempt === 6`: the ceiling lives at the
-      // `ctx.step` call site in `digestFlow`, so a number written here degrades
-      // early on every run the moment somebody changes it there — silently,
-      // because the step still returns an answer.
-      ...omitUndefined({ model }),
-    },
-  );
+  const parsed = await stepGenerateJsonOrFail(articlePrompt(article), {
+    schema: DigestReply,
+    system:
+      `You digest articles. Reply with JSON only: {"headline": string, "points": string[]}. ` +
+      `Give exactly ${POINTS} points. No markdown fence, no preamble.` +
+      // The instruction is blunter on the last try for the same reason the
+      // model is different: whatever it has been doing for five attempts is
+      // not working.
+      (lastChance ? " Keep every point to one short sentence." : ""),
+    // Read `isLastAttempt`, never `attempt === 6`: the ceiling lives at the
+    // `ctx.step` call site in `digestFlow`, so a number written here degrades
+    // early on every run the moment somebody changes it there — silently,
+    // because the step still returns an answer.
+    ...omitUndefined({ model }),
+  });
 
   return {
     url: article.url,
@@ -289,7 +286,8 @@ export async function file(_digest: Digest): Promise<string> {
  */
 export function articlePrompt(article: Article): string {
   const head = [`Title: ${article.title}`, `URL: ${article.url}`];
-  if (article.description !== undefined) head.push(`The page's own summary: ${article.description}`);
+  if (article.description !== undefined)
+    head.push(`The page's own summary: ${article.description}`);
   return `${head.join("\n")}\n\n${article.text}`;
 }
 

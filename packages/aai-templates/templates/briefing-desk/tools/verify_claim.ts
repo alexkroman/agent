@@ -3,15 +3,15 @@ import {
   errorMessage,
   isToolFailure,
   omitUndefined,
-  toolFailure,
   type TypedDelegateResult,
+  toolFailure,
 } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   briefingSlot,
   countWork,
-  factChecker,
   type Finding,
+  factChecker,
   findByAngle,
   type Verdict,
 } from "../shared.ts";

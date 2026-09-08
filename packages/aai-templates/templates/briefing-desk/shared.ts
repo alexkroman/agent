@@ -49,8 +49,8 @@ import {
   sessionSlot,
   subagent,
   type ToolFailure,
-  toolFailure,
   type TypedSubagentDef,
+  toolFailure,
 } from "@alexkroman1/aai";
 import { type AssemblyAIGatewayModel, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { z } from "zod";

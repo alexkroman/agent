@@ -45,7 +45,7 @@ const RANKS = [
  * `game_state_score` is the one that does.
  */
 export function rankFor(score: number): string {
-  let rank = RANKS[0][1];
+  let rank: string = RANKS[0][1];
   for (const [at, title] of RANKS) {
     if (score >= at) rank = title;
   }

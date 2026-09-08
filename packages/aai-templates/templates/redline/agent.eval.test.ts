@@ -18,9 +18,9 @@
 //   * without one — a SCRIPTED run. The body, the loop and the three steps all
 //     really execute; only the gateway is answered in memory.
 //
-// Two of the three cases below are SCRIPTED IN BOTH MODES on purpose, and say so
-// where they are: their claims are about the loop's arithmetic and about what a
-// stage was SHOWN, and a live model cannot be asked to make either of those
+// Three of the four cases below are SCRIPTED IN BOTH MODES on purpose, and say
+// so where they are: their claims are about the loop's arithmetic and about what
+// a stage was SHOWN, and a live model cannot be asked to make either of those
 // true — it can only be asked and then have its answer accepted, which is not
 // evidence.
 //
@@ -44,6 +44,12 @@ const MUST_COVER = ["Nobody carries the pager two weeks running"];
 const DRAFT = [
   "The on-call rotation is moving to a two-week quokka cycle.",
   "Nobody carries the pager two weeks running: the second week is review and follow-up.",
+].join(" ");
+
+/** A draft the author brought, long enough for the desk to agree to grade it. */
+const ATTACHED = [
+  DRAFT,
+  "It starts on the first Monday of the month, and the handover is a written note.",
 ].join(" ");
 
 const critique = (verdict: "ship" | "revise", score = 8): string =>
@@ -204,7 +210,7 @@ describeWorkflowEval(agentDef, (test) => {
       audience: "engineers",
       rounds: MAX_ROUNDS,
       mustCover: MUST_COVER,
-      source: { name: "quokka-cycle.md", text: DRAFT },
+      source: { name: "quokka-cycle.md", text: ATTACHED },
     });
 
     expect(run.error).toBeUndefined();
@@ -214,10 +220,10 @@ describeWorkflowEval(agentDef, (test) => {
     // ONE call — the critique. A desk that wrote a first draft anyway would make
     // two, and the page would show a piece nobody attached.
     expect(model.calls).toHaveLength(1);
-    expect(output.draft).toBe(DRAFT);
+    expect(output.draft).toBe(ATTACHED);
     expect(output.source).toBe("quokka-cycle.md");
     // The critic was shown the attached prose and the brief that grades it.
-    expect(model.calls[0]?.prompt).toContain(DRAFT);
+    expect(model.calls[0]?.prompt).toContain(ATTACHED);
     expect(model.calls[0]?.prompt).toContain(MUST_COVER[0]);
     // And the narration says which way in the run took, first line.
     expect(run.reported[0]).toContain("Redlining quokka-cycle.md");

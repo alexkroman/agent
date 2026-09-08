@@ -95,7 +95,7 @@ function Heard({ transcript, word }: { transcript: UseUserTranscriptResult; word
   const foul = word !== null && containsWord(transcript.text, word);
   return (
     <div className={`text-sm italic ${foul ? "text-red-400" : "opacity-60"}`}>
-      {foul ? `Careful - that's the word. ` : ""}
+      {foul ? "Careful - that's the word. " : ""}
       {transcript.text}
     </div>
   );

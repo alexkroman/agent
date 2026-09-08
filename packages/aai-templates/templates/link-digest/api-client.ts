@@ -38,6 +38,7 @@
  * other's.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   type AgentClient,
   createAgentClient,
@@ -48,7 +49,6 @@ import {
   type WorkflowOutputOf,
   type WorkflowRunOf,
 } from "@alexkroman1/aai/workflow-api";
-import { omitUndefined } from "@alexkroman1/aai/utils";
 // ERASED at build time, exactly as in `client.tsx`: the def is what knows the
 // output's shape, and naming it here is what stops this module restating a type
 // `workflows/digest.ts` already declares.

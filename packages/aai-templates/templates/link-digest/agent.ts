@@ -22,6 +22,15 @@
  *   model runs, so every one of them was inert; this file used to carry a
  *   `systemPrompt` addressed to a model that never ran.
  *
+ * ## The page is one caller of the API, not the only one
+ *
+ * A workflow app IS an HTTP API, and the page is written against it like anybody
+ * else. `api-client.ts` beside this file is the other end of that same contract
+ * — a nightly job with a list of links, driving a DEPLOYED copy of this agent
+ * with `createAgentClient` — and it exists so the durability this file argues
+ * about is visible from a caller that is not a tab at all. Nothing in it is
+ * bundled: it is a consumer, shipped beside the agent it consumes.
+ *
  * ## What the page needs from this file, and how it gets it
  *
  * Only the workflow's NAME and its output TYPE. The name is the key in

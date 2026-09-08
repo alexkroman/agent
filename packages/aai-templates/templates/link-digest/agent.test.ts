@@ -36,8 +36,8 @@ import {
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import {
-  runWorkflow,
   type RunWorkflowOptions,
+  runWorkflow,
   type WorkflowTestStep,
 } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
@@ -148,8 +148,9 @@ describe("extractMetadata", () => {
     // The `|| undefined` rather than `?? undefined`: a head field indented onto
     // its own line collapses to `""`, and an empty summary in the prompt is
     // worse than none — see `articlePrompt`.
-    expect(extractMetadata('<html><head><meta name="description" content="  ">').description)
-      .toBeUndefined();
+    expect(
+      extractMetadata('<html><head><meta name="description" content="  ">').description,
+    ).toBeUndefined();
   });
 });
 
@@ -214,7 +215,9 @@ describe("fetchArticle", () => {
       "Otters use stones as anvils.",
     );
 
-    stubPage(`<html><title>Otters</title><body><p>${"Otters use tools. ".repeat(20)}</p></body></html>`);
+    stubPage(
+      `<html><title>Otters</title><body><p>${"Otters use tools. ".repeat(20)}</p></body></html>`,
+    );
     expect(await fetchArticle("https://example.com/otters")).not.toHaveProperty("description");
   });
 
@@ -397,7 +400,11 @@ describe("the run is DURABLE", () => {
    * lets a case add `crashAt` without restating it.
    */
   function start(options?: RunWorkflowOptions) {
-    return runWorkflow(digest, { url: "https://example.com/otters" }, { name: "digest", ...options });
+    return runWorkflow(
+      digest,
+      { url: "https://example.com/otters" },
+      { name: "digest", ...options },
+    );
   }
 
   /** One journal entry, by NAME — the position of a step in the list is not one. */

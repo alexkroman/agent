@@ -40,6 +40,15 @@ export const binaryScore = z.object({
   reason: z.string().max(200).describe("One short sentence of justification"),
 });
 
+/**
+ * What a grader call comes back with, as `nodes.ts` names it.
+ *
+ * Inferred from the schema rather than written out, so the two cannot drift —
+ * and exported because it is the type argument the schema overload of
+ * `ctx.generate` resolves to (`GenerateObjectResult<BinaryScore>`).
+ */
+export type BinaryScore = z.infer<typeof binaryScore>;
+
 /** Their `retrieval_grader`: deliberately NOT a stringent test. */
 export const DOC_GRADER_SYSTEM = [
   "You are a grader assessing whether a retrieved support document is relevant",

@@ -1,15 +1,82 @@
-import { isToolFailure } from "@alexkroman1/aai";
+import { failable, isToolFailure, orFail, toolFailure, type ToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { roadsideCall } from "../call.ts";
 import {
-  assignTruck,
   describeVehicle,
   etaMinutes,
+  type FrozenRoadsideState,
+  type Quote,
   quoteFee,
   rateFor,
   roadsideSlot,
-  TRUCK_FOR,
+  type Situation,
+  type Truck,
 } from "../shared.ts";
+import { reserveTruck } from "../yard.ts";
+
+/**
+ * Everything the desk needs off the slot before a truck can move — or the
+ * sentence saying what is missing.
+ *
+ * Unreachable while the gate holds: `onCall.dispatching` is four states
+ * downstream of `report_location`. Reported rather than thrown for the reason
+ * every guard in this template is — this runs mid-call, and a sentence the
+ * model can act on beats an exception down a phone line.
+ */
+function dispatchBasis(state: FrozenRoadsideState): DispatchBasis | ToolFailure {
+  if (state.situation === null || state.where === null || state.vehicle === null) {
+    return toolFailure(
+      "Nothing is on file for this call yet — no location, vehicle or situation. Take those " +
+        "first with report_location.",
+    );
+  }
+  return { situation: state.situation, where: state.where, vehicle: state.vehicle };
+}
+
+interface DispatchBasis {
+  readonly situation: Situation;
+  readonly where: NonNullable<FrozenRoadsideState["where"]>;
+  readonly vehicle: NonNullable<FrozenRoadsideState["vehicle"]>;
+}
+
+interface DispatchPlan {
+  readonly truck: Truck;
+  readonly etaMinutes: number;
+  readonly quote: Quote;
+  readonly lookFor: string;
+  readonly at: string;
+}
+
+/**
+ * The whole decision, off the slot and against the yard, before anything is
+ * written.
+ *
+ * **`failable` pays here and would not have paid inside the `update` body it
+ * came out of.** The SDK's own rule is that the wrapper earns its three lines
+ * on a NAMED helper returning `T | ToolFailure` and not on an inline mutator
+ * with one or two guards; this is the named helper, it forwards two failures
+ * ({@link dispatchBasis} and a yard that has nothing free or does not answer),
+ * and each `orFail` replaces an `if (isToolFailure(x)) return x;` that said
+ * nothing about roadside assistance.
+ *
+ * It is also deliberately OUTSIDE the mutation window. `reserveTruck` awaits
+ * the yard, and a `slot.update` body is synchronous — so the shape is claim,
+ * await, then write, which is the same order `plan-and-execute`'s
+ * `work_next_step` uses for a body that has to call out mid-tool.
+ */
+const planDispatch = failable(
+  async (state: FrozenRoadsideState, callKey: string, towMiles: number): Promise<DispatchPlan> => {
+    const basis = orFail(dispatchBasis(state));
+    const truck = orFail(await reserveTruck(basis.situation, callKey));
+    return {
+      truck,
+      etaMinutes: etaMinutes(truck, basis.where.safeToWait),
+      quote: quoteFee(rateFor(state.coverage), towMiles),
+      lookFor: describeVehicle(basis.vehicle),
+      at: basis.where.described,
+    };
+  },
+);
 
 /**
  * Send the truck.
@@ -21,6 +88,12 @@ import {
  * sending one") and would be a fleet of trucks if a second call rolled a second
  * one. So the job is written once and every later call answers with the job
  * that already exists, refreshed ETA and all.
+ *
+ * The idempotency is stated TWICE, and both are load-bearing because the body
+ * awaits. The slot check below catches the ordinary repeat; the yard's own
+ * `callKey` hold catches two pinned calls in the SAME step, which the LLM loop
+ * runs concurrently and which would otherwise both read `job === null` and both
+ * take a truck. `yard.ts` has the argument.
  *
  * It also means the tool must need nothing the caller has not already said: a
  * pinned step cannot ask a question. Everything here comes off the slot, except
@@ -43,44 +116,33 @@ export default roadsideCall.tool({
       .max(500)
       .describe("Road miles from the vehicle to that destination. Use 0 for a roadside fix."),
   }),
-  execute: (args, ctx) =>
-    roadsideSlot.update(ctx, (state) => {
-      // Every later pinned step lands here. A COPY rather than the draft's own
-      // object: what a read hands out is frozen, and aliasing a draft into a
-      // result is how a value escapes the mutation window it was made in.
+  execute: async (args, ctx) => {
+    // A COPY rather than the stored object: what a read hands out is frozen,
+    // and spreading it is what makes the result a plain value again.
+    const dispatched = roadsideSlot.get(ctx).job;
+    if (dispatched !== null) return { ...dispatched, alreadyDispatched: true };
+
+    const plan = await planDispatch(roadsideSlot.get(ctx), ctx.sessionId, args.towMiles);
+    if (isToolFailure(plan)) return plan;
+
+    return roadsideSlot.update(ctx, (state) => {
+      // Read again inside the window: the yard round trip above is an await, so
+      // a concurrent pinned call may have landed here first. It holds the same
+      // truck — that is the yard's `callKey` contract — and the job it wrote is
+      // the one this call keeps.
       if (state.job !== null) return { ...state.job, alreadyDispatched: true };
-
-      // Unreachable while the gate holds — `onCall.dispatching` is four states
-      // downstream of `report_location`. Reported rather than thrown for the
-      // reason every guard in this template is: this runs mid-call, and a
-      // sentence the model can act on beats an exception down a phone line.
-      if (state.situation === null || state.where === null || state.vehicle === null) {
-        return {
-          error:
-            "Nothing is on file for this call yet — no location, vehicle or situation. Take " +
-            "those first with report_location.",
-        };
-      }
-
-      const truck = assignTruck(state.situation);
-      if (isToolFailure(truck)) return truck;
-
-      const eta = etaMinutes(truck, state.where.safeToWait);
-      const quote = quoteFee(rateFor(state.coverage), args.towMiles);
       state.job = {
-        callsign: truck.callsign,
-        kind: TRUCK_FOR[state.situation],
+        callsign: plan.truck.callsign,
+        kind: plan.truck.kind,
         destination: args.destination,
         towMiles: args.towMiles,
-        etaMinutes: eta,
-        quote,
+        etaMinutes: plan.etaMinutes,
+        quote: plan.quote,
       };
-      state.log.push(`Dispatched ${truck.callsign}, ETA ${eta} min, total ${quote.total}`);
-      return {
-        ...state.job,
-        alreadyDispatched: false,
-        lookFor: describeVehicle(state.vehicle),
-        at: state.where.described,
-      };
-    }),
+      state.log.push(
+        `Dispatched ${plan.truck.callsign}, ETA ${plan.etaMinutes} min, total ${plan.quote.total}`,
+      );
+      return { ...state.job, alreadyDispatched: false, lookFor: plan.lookFor, at: plan.at };
+    });
+  },
 });

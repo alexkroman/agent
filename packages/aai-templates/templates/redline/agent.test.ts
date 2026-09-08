@@ -20,9 +20,9 @@
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
-import { fieldKindFor } from "@alexkroman1/aai-ui";
 import type { WorkflowTestStep } from "@alexkroman1/aai-runtime/testing";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import { fieldKindFor } from "@alexkroman1/aai-ui";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import agentDef, { MAX_ROUNDS, redline, redlineInput } from "./agent.ts";
@@ -52,8 +52,7 @@ const ATTACHED = {
 };
 
 /** The journal's own record of which call sites a walk reached, in its order. */
-const stepKeys = (steps: readonly WorkflowTestStep[]): string[] =>
-  steps.map((step) => step.key);
+const stepKeys = (steps: readonly WorkflowTestStep[]): string[] => steps.map((step) => step.key);
 
 // ─── 1. The declaration ──────────────────────────────────────────────────────
 
@@ -118,7 +117,9 @@ describe("the input schema", () => {
     // which is what the run narrates and what the output carries back.
     expect(await issues({ ...INPUT, source: { text: ATTACHED.text } })).toBeDefined();
     expect(await issues({ ...INPUT, source: ATTACHED.text })).toBeDefined();
-    expect(await issues({ ...INPUT, source: { name: "stub.md", text: "Too short." } })).toBeDefined();
+    expect(
+      await issues({ ...INPUT, source: { name: "stub.md", text: "Too short." } }),
+    ).toBeDefined();
   });
 
   test("and omitting it is the ordinary run rather than a validation error", async () => {

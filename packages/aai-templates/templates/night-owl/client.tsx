@@ -1,4 +1,3 @@
-import "@alexkroman1/aai-ui/styles.css";
 /**
  * Three kinds of thing arrive from the agent, and this page keeps them apart.
  *
@@ -22,6 +21,9 @@ import "@alexkroman1/aai-ui/styles.css";
  * first line is still up must re-arm the timer rather than stack a second one,
  * and neither may fire into a component React has thrown away.
  */
+
+import "@alexkroman1/aai-ui/styles.css";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import {
   BulletList,
   Button,
@@ -32,7 +34,6 @@ import {
   useToolCallStart,
   useToolResult,
 } from "@alexkroman1/aai-ui";
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { useState } from "react";
 import { MOODS, nightProjection, type Rec } from "./shared.ts";
 

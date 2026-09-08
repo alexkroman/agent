@@ -1,4 +1,4 @@
-import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
+import type { DeepReadonly, SlotCaps } from "@alexkroman1/aai";
 import { sessionSlot, spokenAlphanumeric } from "@alexkroman1/aai";
 import { formatMoney } from "@alexkroman1/aai/utils";
 
@@ -167,7 +167,14 @@ export interface Truck {
   minutesOut: number;
 }
 
-/** A small fixed fleet, nearest first. A real desk queries a dispatch API here. */
+/**
+ * A small fixed fleet, nearest first. A real desk queries a dispatch API here.
+ *
+ * Which of these is FREE is not a fact about this call, so it is not in this
+ * file: `yard.ts` owns the board, because two callers who both need a van are
+ * competing for the same two vehicles and nothing in a `sessionSlot` can see
+ * the other call.
+ */
 export const FLEET: readonly Truck[] = [
   { callsign: "Van-3", kind: "service_van", minutesOut: 18 },
   { callsign: "Van-7", kind: "service_van", minutesOut: 31 },
@@ -180,17 +187,6 @@ export const FLEET: readonly Truck[] = [
 export const PRIORITY_MINUTES = 8;
 /** No promise is ever shorter than this, however the arithmetic comes out. */
 export const MIN_ETA_MINUTES = 6;
-
-/** The nearest truck that can do this job, or a failure naming what is out. */
-export function assignTruck(situation: Situation): Truck | ToolFailure {
-  const kind = TRUCK_FOR[situation];
-  const truck = FLEET.find((candidate) => candidate.kind === kind);
-  return (
-    truck ?? {
-      error: `No ${kind} is on the road right now. Tell the caller a supervisor will call back with a time, and do not promise one.`,
-    }
-  );
-}
 
 /** What the caller is told, in minutes — the one number they will hold us to. */
 export function etaMinutes(truck: Truck, safeToWait: boolean): number {
@@ -292,6 +288,22 @@ export function emptyRoadsideState(): RoadsideState {
 }
 
 /**
+ * How much of the call the log keeps, as the slot's own bound.
+ *
+ * Named and typed rather than written inline for the two reasons a `MAX_*`
+ * constant survives at all: a spec reads it (`agent.test.ts` proves the oldest
+ * lines really are evicted rather than trusting the declaration), and
+ * {@link SlotCaps} is what says WHICH keys may carry a bound — it maps only the
+ * array-valued fields of {@link RoadsideState}, so a cap on `coverage` or a
+ * typo like `logs` is a compile error here rather than a number the slot
+ * silently ignores.
+ *
+ * Twenty-four lines is enough to read a whole call back: a located caller, a
+ * coverage line, a disclosure, a dispatch, and room for whatever went wrong.
+ */
+export const LOG_CAP: SlotCaps<RoadsideState> = { log: 24 };
+
+/**
  * Everything this call has established, as one typed slot.
  *
  * **No `after` hook, and that is a claim rather than an omission.** Nothing
@@ -303,7 +315,7 @@ export function emptyRoadsideState(): RoadsideState {
  * tool happened to write last; see `dispatch-center` for the worked version of
  * that.
  */
-export const roadsideSlot = sessionSlot("roadside", emptyRoadsideState, { caps: { log: 24 } });
+export const roadsideSlot = sessionSlot("roadside", emptyRoadsideState, { caps: LOG_CAP });
 
 /**
  * The slot as a READ hands it out: deep-frozen, and typed to say so.

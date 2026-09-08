@@ -28,7 +28,7 @@ import { nightSlot } from "../shared.ts";
  */
 export default nightSlot.tool({
   description:
-    "Read back one recommendation already given tonight — the listener names it in their own words (\"the second one\", \"the last one\", \"those cozy movies\").",
+    'Read back one recommendation already given tonight — the listener names it in their own words ("the second one", "the last one", "those cozy movies").',
   inputSchema: z.object({
     which: z
       .string()

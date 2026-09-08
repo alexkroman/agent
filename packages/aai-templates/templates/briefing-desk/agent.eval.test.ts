@@ -11,6 +11,14 @@
 // SCRIPTED model (its `stubReply`), which proves the wiring and nothing about
 // the choice — so the two claims above are `{ live: true }` and the recap case,
 // whose whole point is that it spends no model at all, is not.
+//
+// `send_briefing` deliberately has no case here, and the reason is worth
+// stating rather than leaving as an omission: the only way to measure it is to
+// really post, and an eval that writes to a real Slack channel on every run is
+// a test with a side effect nobody asked for. It is settled in `agent.test.ts`
+// against `installStubStepFetch` instead; what an eval could add — that the
+// desk offers it rather than reciting the briefing — is a judgement about
+// phrasing, which is the kind of claim these evals stay away from.
 
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus
@@ -35,7 +43,8 @@ import { MAX_ANGLES } from "./shared.ts";
 
 /**
  * Every tool the desk declares — the two that reach the outside world through a
- * named subagent, the recap that reaches nothing, and the roster's `delegate`.
+ * named subagent, the recap that reaches nothing, the one that posts the board
+ * to Slack, and the roster's `delegate`.
  *
  * Named here because the isolation claim is stated as a NEGATIVE — no
  * `web_search`, no `visit_webpage` — and a negative over a hand-typed list is
@@ -50,6 +59,7 @@ const DESK_TOOLS: readonly string[] = [
   "research_topic",
   "verify_claim",
   "briefing_so_far",
+  "send_briefing",
   "delegate",
 ];
 

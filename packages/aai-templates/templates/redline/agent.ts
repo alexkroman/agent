@@ -74,7 +74,11 @@ export const redlineInput = z.object({
     .max(MAX_ROUNDS)
     .default(2)
     .describe("How many critique-and-revise rounds to allow"),
-  mustCover: z.array(z.string().max(200)).max(6).default([]).describe("Points the piece must cover"),
+  mustCover: z
+    .array(z.string().max(200))
+    .max(6)
+    .default([])
+    .describe("Points the piece must cover"),
   // An OBJECT, and that shape is load-bearing twice over. It keeps the file's
   // name beside its text, so the run can narrate what it is marking up; and it
   // is what stops `<WorkflowFields>` rendering a text box over the page's own

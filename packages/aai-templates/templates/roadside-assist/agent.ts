@@ -1,5 +1,25 @@
+import type { TelephonyAccess } from "@alexkroman1/aai";
 import { agent } from "@alexkroman1/aai";
 import { DIALOGS } from "./call.ts";
+import { DESK_EVENTS } from "./events.ts";
+
+/**
+ * Who may put a call on this agent.
+ *
+ * **This is the one template where declaring it is not a detail**: a roadside
+ * desk is reached by a stranded person on a phone, not by a browser tab, and
+ * `WS /phone` is not served at all unless an agent asks for it. `true` would
+ * admit every carrier the runtime ships a codec for; the list is the honest
+ * shape for a desk whose numbers are with known carriers, and it is an
+ * ALLOW-LIST — adding a third carrier's number without adding it here is a
+ * refused upgrade rather than a call that half works.
+ *
+ * Typed {@link TelephonyAccess} because the field takes a boolean OR a list and
+ * the annotation is what says which of the two this is. What it is NOT is a
+ * claim about credentials: a carrier does not sign the WebSocket upgrade, and
+ * its webhook signature is checked where the webhook lands.
+ */
+const PHONE_LINE: TelephonyAccess = ["twilio", "telnyx"];
 
 /**
  * A roadside-assistance line: find the caller, price the call, read them the
@@ -37,6 +57,19 @@ export default agent({
    * and the session events work on every transport.
    */
   dialogs: DIALOGS,
+
+  telephony: PHONE_LINE,
+
+  /**
+   * The desk's own record of what happened, for the two outcomes no tool sees.
+   *
+   * The pairing with `dialogs` above is the point: `@session.timed-out` MOVES
+   * the dialog to `abandoned`, and this WRITES the line saying so. A handler
+   * cannot change what the agent does — that is what keeps the event stream a
+   * log rather than a second control path — and a transition writes nothing to
+   * the slot, so a call that ends badly needs both. See `events.ts`.
+   */
+  events: DESK_EVENTS,
 
   // No `syncState` and no `client.tsx`: what a caller of this line can see is
   // the phone. The state worth rendering would be the POSITION rather than the
