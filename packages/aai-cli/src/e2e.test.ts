@@ -73,7 +73,15 @@ import { WORKER_ARTIFACT_REL } from "./build.ts";
 // wiring (telephony defaults off, `/websocket` is declined with a reason), and
 // until it was added no workflow app was built or booted anywhere in this tier;
 // the shipped set has six of them.
-const templates = ["simple", "web-researcher", "research-workflow", "link-digest"];
+//
+// `retail` is the MULTI-SPEC case, and it is here because nothing verified it.
+// A template that ships more than `agent.test.ts` — retail ships eight — is a
+// different shape of project to build and boot, and every template in this set
+// used to ship exactly one, so "the suite passes in a real project" and "this
+// template happens to have one spec file" were the same assertion. They came
+// apart the moment a template gained a second spec, and the tier failed for a
+// reason that was not a defect in the template.
+const templates = ["simple", "web-researcher", "research-workflow", "link-digest", "retail"];
 
 let aaiBin: string;
 let tmpDir: string;
@@ -121,7 +129,13 @@ describe("pack + build + boot: template workflows", () => {
       );
       ctx.skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
     }
-    aai(aaiBin, ["test"], projectDir);
+    // `--all`, so the claim is the template's WHOLE suite passing in a project
+    // `aai init` produced. Bare `aai test` runs `agent.test.ts` and refuses when
+    // the project holds specs it did not run, which is deliberate — but that
+    // makes it a test of how many files a template ships, and this loop is not
+    // where that contract lives. "`aai test` FAILS naming the spec files it did
+    // not run" pins it below, on a lab project built to have exactly that shape.
+    aai(aaiBin, ["test", "--all"], projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
 
     // `aai` only signals a successful build by not throwing — so name the
