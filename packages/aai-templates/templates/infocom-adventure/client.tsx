@@ -6,11 +6,13 @@ import {
   SessionControls,
   SessionErrorBanner,
   SessionStateDot,
+  useAgentState,
   useSessionActions,
   useSessionSelector,
   useTheme,
 } from "@alexkroman1/aai-ui";
 import type { CSSProperties, ReactNode } from "react";
+import { gameStatus } from "./shared.ts";
 
 const CSS = `
 @keyframes ic-flicker {
@@ -152,19 +154,34 @@ function Transcript() {
   );
 }
 
-/** Module scope, so the selector has a STABLE identity: an inline arrow makes
- *  `useSyncExternalStoreWithSelector` rebuild its selection memo every render,
- *  and this runs on every snapshot push — each STT partial and streaming
- *  delta. Counting with `reduce` rather than `filter().length` for the same
- *  reason: the array copy is thrown away, and it grows for the whole adventure. */
-const userTurns = (snapshot: { messages: { role: string }[] }): number =>
-  snapshot.messages.reduce((n, message) => (message.role === "user" ? n + 1 : n), 0);
-
-/** The turn counter — a NUMBER out of the selector, so a new message array with
- *  the same user-message count re-renders nothing. */
-function TurnCount() {
-  const turns = useSessionSelector(userTurns);
-  return <span>Turns: {turns}</span>;
+/**
+ * The status line the printed games put across the top of the screen: the room
+ * you are in on the left, the score and the turn count on the right.
+ *
+ * Every number here is the GAME's, arriving through `syncState` — the projection
+ * `shared.ts` declares and `agent.ts` sends. What stood here counted the turns
+ * in the browser, by reducing over the message list for `role === "user"`, and
+ * that count is a different quantity from the `moves` the narrator is told: the
+ * transcript hook counts a committed utterance, while the message list also
+ * moves on a resumed session and on turns the runtime merges. The room and the
+ * score it could not show at all.
+ */
+function StatusBar() {
+  const { currentRoom, score, rank, moves } = useAgentState(gameStatus);
+  return (
+    <div
+      className="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"
+      style={{ background: GREEN, color: CRT_BG }}
+    >
+      <span>{currentRoom}</span>
+      <div className="flex gap-6">
+        <span>
+          Score: {score} ({rank})
+        </span>
+        <span>Moves: {moves}</span>
+      </div>
+    </div>
+  );
 }
 
 /*
@@ -314,17 +331,7 @@ function InfocomAdventure() {
   return (
     <Crt>
       <div className="flex flex-col h-full">
-        {/* Status bar */}
-        <div
-          className="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"
-          style={{ background: GREEN, color: CRT_BG }}
-        >
-          <div className="flex gap-6">
-            <span>CAVERN ADVENTURE</span>
-            <TurnCount />
-          </div>
-          <span>Voice Adventure</span>
-        </div>
+        <StatusBar />
 
         {/* The SDK's announced banner, not a CRT-coloured copy: once `session-core`
             latches a fatal error the state eyebrow goes back to reading like a

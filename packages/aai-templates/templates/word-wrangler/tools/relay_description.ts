@@ -1,7 +1,7 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { gameFlow } from "../game.ts";
+import { endsRound, gameFlow } from "../game.ts";
 import { isCorrectGuess } from "../guess.ts";
 import { askPlayer } from "../player.ts";
 import { advanceWord, currentWord, gameSlot, isFoul, score, secondsLeft } from "../shared.ts";
@@ -13,10 +13,13 @@ import { advanceWord, currentWord, gameSlot, isFoul, score, secondsLeft } from "
  * Three things happen in here that were three processors there:
  *
  * - **The FOUL check reads the describer's own transcript**, not only what the
- *   host passed. `ctx.messages` holds the conversation, so the last user turn is
- *   what the describer actually said — and a host that paraphrased the word away
- *   cannot launder it. Their rule was a sentence in the host's prompt; a
- *   describer who said the word was scored a point if the host did not notice.
+ *   host passed — and reads ALL of it. `game.spoken` is every committed
+ *   utterance since this word came up, written by the session-event hook rather
+ *   than by any tool, so a host that batched three sentences into one relay
+ *   cannot hide the one that said the word; `ctx.messages`' last user turn is
+ *   the same evidence for a run where nothing committed a transcript. Their
+ *   rule was a sentence in the host's prompt; a describer who said the word was
+ *   scored a point if the host did not notice.
  * - **The player's model runs with only this word's context** (`askPlayer`),
  *   which is what their disconnect-and-reconnect on every new word was for.
  * - **The referee is `isCorrectGuess`**, so the host never rules on a guess and
@@ -28,7 +31,9 @@ import { advanceWord, currentWord, gameSlot, isFoul, score, secondsLeft } from "
  *
  * `sendFrom` rather than `send`: almost every call moves nothing (the position
  * stays `playing`, which is what keeps the clock honest), and the two that do —
- * the last word solved, the clock found expired — pick their own event.
+ * the last word solved, the clock found expired — pick their own event. It is
+ * `endsRound`, shared with `skip_word`, so "a `next` field, or stay put" is one
+ * rule typed once against the dialog's own `GameEvent`.
  */
 export default gameFlow.tool({
   description:
@@ -52,11 +57,16 @@ export default gameFlow.tool({
       return { verdict: "time_up" as const, score: score(before), next: "TIME_UP" as const };
     }
 
-    // The describer's actual words, if the runtime handed them over, beside the
-    // host's relay of them: a foul in either is a foul.
-    const lastSaid = ctx.messages.findLast((m) => m.role === "user");
-    const spoken = typeof lastSaid?.content === "string" ? lastSaid.content : "";
-    if (isFoul(description, word) || isFoul(spoken, word)) {
+    // Everything the describer is on record as having said since this word came
+    // up — every committed transcript (`GAME_EVENTS` writes them) and the turn
+    // the runtime handed this call — beside the host's relay of them. A foul in
+    // any of them is a foul.
+    const said = [
+      description,
+      ...before.spoken,
+      ctx.messages.findLast((m) => m.role === "user")?.content ?? "",
+    ];
+    if (said.some((text) => isFoul(text, word))) {
       return gameSlot.update(ctx, (game) => {
         game.lastRemark = null;
         advanceWord(game, "fouled");
@@ -123,6 +133,5 @@ export default gameFlow.tool({
       };
     });
   },
-  sendFrom: (result) =>
-    "next" in result && result.next !== undefined ? { type: result.next } : undefined,
+  sendFrom: (result) => endsRound(result),
 });

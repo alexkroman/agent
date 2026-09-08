@@ -7,6 +7,9 @@
  * `pickWords` is their `generate_game_words`: flatten, dedupe, sample.
  */
 
+import type { RandomSource } from "@alexkroman1/aai";
+import { shuffled } from "@alexkroman1/aai";
+
 export const WORD_CATEGORIES = {
   animals: [
     "elephant",
@@ -260,15 +263,16 @@ export function allWords(): string[] {
 /**
  * A round's words: `count` of them, sampled without replacement.
  *
- * `random` is a parameter so a spec can hand in a fixed sequence and know
- * which word is up; the tools pass `Math.random`.
+ * `shuffled` is the SDK's Fisher-Yates and this used to be a hand-rolled one —
+ * a partial shuffle over just the prefix, which is the version of it that is
+ * easy to get subtly wrong (the swap index must be drawn from the REMAINING
+ * range, not the whole pool) and which bought nothing measurable over two
+ * hundred words.
+ *
+ * `random` is a {@link RandomSource} so the caller owns determinism: `start_game`
+ * passes `ctx.random`, and a spec passes `createSeededRandom(seed)` and knows
+ * exactly which word is up.
  */
-export function pickWords(count: number, random: () => number = Math.random): string[] {
-  const pool = allWords();
-  // Fisher-Yates over the prefix we need, which is what `random.sample` does.
-  for (let i = 0; i < Math.min(count, pool.length); i++) {
-    const j = i + Math.floor(random() * (pool.length - i));
-    [pool[i], pool[j]] = [pool[j] as string, pool[i] as string];
-  }
-  return pool.slice(0, count);
+export function pickWords(count: number, random?: RandomSource): string[] {
+  return shuffled(allWords(), random).slice(0, count);
 }

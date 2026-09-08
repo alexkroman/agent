@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 /**
- * Two kinds of thing arrive from the agent, and this page keeps them apart.
+ * Three kinds of thing arrive from the agent, and this page keeps them apart.
  *
  * The recommendation LOG is state: the agent owns it in a `sessionSlot`,
  * `syncState` projects it, and `useAgentState(nightProjection)` reads it. The
@@ -8,23 +8,33 @@ import "@alexkroman1/aai-ui/styles.css";
  * the pattern to reach for by default — see `pizza-ordering` for the same shape
  * over a shopping cart.
  *
- * The "recommending…" flash and the wind-down nudge are MOMENTS. Neither is
- * worth storing and neither should replay: a spinner for a call that finished
- * before this component mounted would be a lie, and a nudge re-shown on every
- * reconnect is nagging. `useToolCallStart`/`useToolResult` and `useEvent` are
- * for exactly this — they fire once, carry no history, and drive throwaway
- * `useState`.
+ * The "recommending…" flash and the wind-down nudge are MOMENTS someone else
+ * ends. Neither is worth storing and neither should replay: a spinner for a
+ * call that finished before this component mounted would be a lie, and a nudge
+ * re-shown on every reconnect is nagging. `useToolCallStart`/`useToolResult`
+ * and `useEvent` are for exactly this — they fire once, carry no history, and
+ * drive throwaway `useState`.
+ *
+ * The read-back line is the third: a moment TIME ends, with nothing coming to
+ * clear it. That is `useFlash`, and it is a hook rather than four lines here
+ * because the two things a `useState` + `setTimeout` at a call site gets wrong
+ * are exactly the two this page would meet — a second read-back while the
+ * first line is still up must re-arm the timer rather than stack a second one,
+ * and neither may fire into a component React has thrown away.
  */
 import {
+  BulletList,
   Button,
   mountClient,
   useAgentState,
   useEvent,
+  useFlash,
   useToolCallStart,
   useToolResult,
 } from "@alexkroman1/aai-ui";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { useState } from "react";
-import { MOODS, nightProjection } from "./shared.ts";
+import { MOODS, nightProjection, type Rec } from "./shared.ts";
 
 const MOOD_EMOJI: Record<string, string> = {
   chill: "\u{1F60C}",
@@ -56,6 +66,18 @@ function RecSidebar() {
   useToolCallStart("recommend", (tc) => setPendingMood(String(tc.args.mood)));
   useToolResult("recommend", () => setPendingMood(null));
   useEvent<string>("wind_down", (text) => setNudge(text));
+
+  // A read-back names a pick the sidebar is ALREADY showing, so there is
+  // nothing to add to the list — the line just says which one is being read
+  // out, for as long as reading it out takes. Five seconds rather than the
+  // hook's 1500ms default for that reason: this one is paced by a voice.
+  // `revisit` answers the entry or a refusal that lists the candidates, so the
+  // guard is `isToolFailure` — the refusal is the model's to read, not a line
+  // on this page.
+  const { value: readingBack, flash } = useFlash<string>(5000);
+  useToolResult<Rec | ToolFailure>("revisit", (rec) => {
+    if (!isToolFailure(rec)) flash(`${rec.mood} ${rec.category}s`);
+  });
 
   const filtered = activeMood ? recs.filter((r) => r.mood === activeMood) : recs;
 
@@ -92,6 +114,9 @@ function RecSidebar() {
             Finding something {pendingMood}&hellip;
           </p>
         )}
+        {readingBack && (
+          <p className="text-xs py-2 text-aai-primary">Reading back the {readingBack}&hellip;</p>
+        )}
         {filtered.length === 0 && !pendingMood && (
           <p className="text-xs text-center py-8 opacity-40">
             Ask me to recommend a movie, album, or book
@@ -109,11 +134,13 @@ function RecSidebar() {
               </span>
               <span className="text-xs capitalize opacity-50">{rec.mood}</span>
             </div>
-            {rec.picks.map((pick) => (
-              <p key={pick} className="text-xs pl-5 py-0.5 opacity-80">
-                {pick}
-              </p>
-            ))}
+            {/*
+              The package's list rather than a `map` to `<p>`: three picks are
+              a list and read as one, and the keying is the part a hand-rolled
+              copy gets wrong — this one keyed by the TITLE, and two shelves
+              recommending the same album is a duplicate React key.
+            */}
+            <BulletList items={rec.picks} className="text-xs opacity-80" />
           </div>
         ))}
       </div>
@@ -136,5 +163,6 @@ mountClient({
   },
   tools: {
     recommend: { icon: "\u{1F989}", label: "Recommending" },
+    revisit: { icon: "\u{1F50E}", label: "Looking back" },
   },
 });

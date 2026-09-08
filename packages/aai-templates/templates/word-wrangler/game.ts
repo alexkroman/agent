@@ -27,7 +27,7 @@
  * the timer.
  */
 
-import type { AnyDialog } from "@alexkroman1/aai";
+import type { AnyDialog, DialogEvent } from "@alexkroman1/aai";
 import { dialog } from "@alexkroman1/aai";
 import { GAME_SECONDS } from "./shared.ts";
 
@@ -72,6 +72,36 @@ export const gameFlow = dialog("round", gameSpec);
 
 /** What `agent({ dialogs })` is handed — the line that arms the clock. */
 export const DIALOGS: readonly AnyDialog[] = [gameFlow];
+
+/**
+ * The round's whole event vocabulary, read off the spec rather than retyped:
+ * `STARTED`, `TIME_UP`, `WORDS_DONE`.
+ *
+ * {@link DialogEvent} is what makes it one declaration instead of a union a
+ * tool re-spells every time it names an event, and what makes a tool that
+ * returns `next: "WORDS_DUNE"` a compile error where the RESULT is built rather
+ * than only where `sendFrom` reads it.
+ */
+export type GameEvent = DialogEvent<typeof gameSpec>;
+
+/**
+ * The `sendFrom` the two tools that can END a round share.
+ *
+ * Both `relay_description` and `skip_word` decide the move inside their
+ * `slot.update` window — they know whether that was the last word — and carry
+ * it out as a `next` field. Nothing else in the result is the dialog's business,
+ * and `undefined` there means STAY PUT, which is the property the clock rests
+ * on: a move re-arms `playing`'s two minutes, so a tool that moved on every
+ * guess would make the round endless.
+ */
+export function endsRound(result: {
+  // `| undefined` and not just `?`: under `exactOptionalPropertyTypes` a result
+  // that WRITES `next: undefined` — which both callers do, in the ternary that
+  // decides whether that was the last word — is not an absent property.
+  next?: GameEvent["type"] | undefined;
+}): GameEvent | undefined {
+  return result.next === undefined ? undefined : { type: result.next };
+}
 
 /** Where a round can be started from: before the first, and after any. */
 export const BETWEEN_ROUNDS = ["lobby", "over"] as const;

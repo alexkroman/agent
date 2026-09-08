@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { gameSlot, recordTurn } from "./shared.ts";
+import { gameStatus, recordTurn } from "./shared.ts";
 
 export default agent({
   name: "Cavern Adventure",
@@ -8,6 +8,18 @@ export default agent({
   // A narrator wants a narrative voice; everything else stays on the
   // default all-AssemblyAI pipeline.
   voice: "paul",
+  /**
+   * The status line, pushed to the CRT's top bar — where you are, your score,
+   * your rank and the turn count, the four facts the printed games put across
+   * the top of the screen.
+   *
+   * The client used to COUNT the turns itself, by reducing over the message
+   * list for `role === "user"`, which is a different number from the one the
+   * game keeps: a barge-in, a session resumed mid-adventure or a turn the
+   * runtime merges all move the two apart, and the one on screen was never the
+   * one the narrator was told. `syncState` sends the game's own.
+   */
+  syncState: gameStatus,
   // The opening scene here must agree with DEFAULT_GAME_STATE.currentRoom
   // (shared.ts) and the world map in system-prompt.md.
   greeting:
@@ -29,7 +41,6 @@ export default agent({
    * reads the result on its next `game_state_get`.
    */
   events: {
-    "user-transcript.committed": (event, ctx) =>
-      gameSlot.update(ctx, (game) => recordTurn(game, event.text)),
+    "user-transcript.committed": (event, ctx) => recordTurn(ctx, event.text),
   },
 });

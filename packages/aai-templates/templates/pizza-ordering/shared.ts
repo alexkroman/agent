@@ -1,5 +1,5 @@
-import { type DeepReadonly, sessionSlot } from "@alexkroman1/aai";
-import { formatMoney } from "@alexkroman1/aai/utils";
+import { type DeepReadonly, type StateProjection, sessionSlot } from "@alexkroman1/aai";
+import { formatMoney, roundMoney, type ToolFailure, toolFailure } from "@alexkroman1/aai/utils";
 
 export const SIZES = ["small", "medium", "large"] as const;
 export const CRUSTS = ["thin", "regular", "thick", "stuffed"] as const;
@@ -34,8 +34,16 @@ export const MENU = {
   },
 } as const;
 
+/**
+ * The cart's price, in whole cents.
+ *
+ * `roundMoney` on the way out for the same reason {@link pizzaPrice} uses it,
+ * and it is not redundant with rounding each line: three rounded lines still
+ * sum to a value a float cannot hold exactly, and this total is what a spec
+ * compares and what `place_order` stores.
+ */
 export function calculateTotal(pizzas: readonly ReadonlyPizza[]): number {
-  return pizzas.reduce((total, pizza) => total + pizzaPrice(pizza), 0);
+  return roundMoney(pizzas.reduce((total, pizza) => total + pizzaPrice(pizza), 0));
 }
 
 /**
@@ -76,6 +84,17 @@ export function toppingKey(name: string): string {
     .replaceAll(/[\s-]+/g, "_");
 }
 
+/**
+ * One pizza's price, snapped to whole cents by `roundMoney`.
+ *
+ * Menu prices are dollars in a float, so the arithmetic drifts off a cent the
+ * moment it is done: a large stuffed pepperoni-and-mushroom for two is
+ * `38.980000000000004`. `formatMoney` prints that as `$38.98` and leaves the
+ * value alone, which is the trap — the number the sidebar SHOWS and the number
+ * a total is summed from would be different things, and this template's whole
+ * claim is that the price quoted is the price charged. `roundMoney` rounds on
+ * the same basis `formatMoney` does, so the two can never disagree.
+ */
 export function pizzaPrice(p: ReadonlyPizza): number {
   const base = MENU.sizes[p.size];
   const crust = MENU.crusts[p.crust];
@@ -83,7 +102,7 @@ export function pizzaPrice(p: ReadonlyPizza): number {
     (sum, t) => sum + (MENU.toppings[toppingKey(t) as keyof typeof MENU.toppings] ?? 1.0),
     0,
   );
-  return (base + crust + toppings) * p.quantity;
+  return roundMoney((base + crust + toppings) * p.quantity);
 }
 
 // ── Order state ──────────────────────────────────────────────────────────────
@@ -109,6 +128,39 @@ export function emptyOrder(): OrderState {
 
 /** The session's cart, as one typed slot. */
 export const orderSlot = sessionSlot("order", emptyOrder);
+
+/**
+ * The running cart, as every tool that touches it reports it back.
+ *
+ * All five spelled the total as `formatMoney(calculateTotal(order.pizzas))`
+ * themselves — one price formatter per file to keep in step with the one the
+ * sidebar renders and the one `menuText()` quotes — and two counted the items
+ * beside it. Spread it (`{ added, ...cartSummary(order.pizzas) }`) so a tool's
+ * own field stays the thing you read first.
+ */
+export function cartSummary(pizzas: readonly ReadonlyPizza[]): {
+  orderTotal: string;
+  itemCount: number;
+} {
+  return { orderTotal: formatMoney(calculateTotal(pizzas)), itemCount: pizzas.length };
+}
+
+/**
+ * The pizza an id names, or the failure the model should hear.
+ *
+ * `remove_pizza` and `update_pizza` each opened with the same `findIndex`, the
+ * same `=== -1`, and the same sentence written out twice — two spellings of one
+ * rule, which is how the two drift apart. Returning `Pizza | ToolFailure` is the
+ * SDK's propagation shape: the caller narrows with `isToolFailure` and forwards
+ * the failure unchanged rather than re-wording it.
+ *
+ * It takes the DRAFT, so what comes back is the cart's own pizza — a caller
+ * inside an `updateTool` window can edit it in place, and `indexOf` finds it
+ * when the caller is removing it.
+ */
+export function findPizza(order: OrderState, id: number): Pizza | ToolFailure {
+  return order.pizzas.find((p) => p.id === id) ?? toolFailure("Pizza not found in the order.");
+}
 
 /**
  * A pizza as a READ hands it out, and the cart likewise: deep-frozen, and typed
@@ -172,5 +224,12 @@ export function orderView(order: FrozenOrderState): OrderView {
   };
 }
 
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const orderProjection = orderSlot.projection(orderView);
+/**
+ * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the
+ * client.
+ *
+ * Annotated rather than left to inference because this is the WIRE contract —
+ * `StateProjection<OrderView>` is what a reader of `client.tsx` has to know the
+ * browser is handed, and it is stated here, at the one place both ends import.
+ */
+export const orderProjection: StateProjection<OrderView> = orderSlot.projection(orderView);

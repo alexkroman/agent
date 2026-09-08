@@ -25,7 +25,7 @@
  */
 
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { htmlToText, pageMetadata } from "@alexkroman1/aai/html";
+import { htmlToText, type PageMetadata, pageMetadata } from "@alexkroman1/aai/html";
 import { stepInfo, stepReport } from "@alexkroman1/aai/step";
 import { FatalError, stepFetchOrFail, stepGenerateJsonOrFail } from "@alexkroman1/aai/step-errors";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -96,6 +96,15 @@ export type Article = {
   url: string;
   /** The `<title>`, or the hostname when there is none. */
   title: string;
+  /**
+   * The page's OWN one-line summary (`og:description`, or the `description`
+   * meta tag), absent when it declares neither.
+   *
+   * Optional rather than an empty string, because the two mean different things
+   * to the prompt below — an author's abstract is worth showing a model, and a
+   * blank label is worth nothing and costs tokens.
+   */
+  description?: string;
   /** Readable text, capped — see {@link MAX_ARTICLE_CHARS}. */
   text: string;
 };
@@ -171,7 +180,17 @@ export async function fetchArticle(url: string): Promise<Article> {
     // (rightly) want the original error kept.
     throw new FatalError(`${hostname} returned no readable text — is the page rendered in JS?`);
   }
-  return { url, title: extractTitle(html) ?? hostname, text };
+  // One parse of the head for both of the things it is worth reading. The
+  // description may be absent, and `omitUndefined` is what keeps the key off
+  // the object rather than sending a `"description": undefined` across the
+  // queue — the guard IS the value, which is the case that primitive is for.
+  const meta = extractMetadata(html);
+  return {
+    url,
+    title: meta.title ?? hostname,
+    text,
+    ...omitUndefined({ description: meta.description }),
+  };
 }
 
 /**
@@ -204,7 +223,7 @@ export async function summarize(article: Article): Promise<Digest> {
   // where a 401 will not. The `OrFail` suffix is what makes the 401 half
   // terminal: it is `stepGenerateJson` with `throwStepError` already applied.
   const parsed = await stepGenerateJsonOrFail(
-    `Title: ${article.title}\nURL: ${article.url}\n\n${article.text}`,
+    articlePrompt(article),
     {
       schema: DigestReply,
       system:
@@ -256,14 +275,45 @@ export async function file(_digest: Digest): Promise<string> {
 // ---- Pure helpers -----------------------------------------------------------
 
 /**
- * The page's own name for itself.
+ * What the model is SHOWN: the page's own framing, then the page.
+ *
+ * The description line is the author's own abstract, which is the one thing a
+ * page states about itself that the body text usually does not — a news article
+ * opens on a scene, and its `og:description` opens on the claim. It is LABELLED
+ * rather than pasted in front of the text, and it is no more trusted than the
+ * body beside it: both come off a stranger's server, which is why the system
+ * prompt below states the job and this side of the boundary states nothing.
+ *
+ * Omitted entirely when the page declares none — a bare `Summary:` reads to a
+ * model as an empty summary rather than as an absent one.
+ */
+export function articlePrompt(article: Article): string {
+  const head = [`Title: ${article.title}`, `URL: ${article.url}`];
+  if (article.description !== undefined) head.push(`The page's own summary: ${article.description}`);
+  return `${head.join("\n")}\n\n${article.text}`;
+}
+
+/**
+ * What the page says about itself in its own head: a name and an abstract.
  *
  * `pageMetadata` prefers `og:title` over the `<title>` element, which is what a
  * digest wants: a `<title>` usually carries the site name and a separator
- * ("Otters and tools | Nature Weekly") that a one-line summary does not.
+ * ("Otters and tools | Nature Weekly") that a one-line summary does not. It
+ * reads `og:description` and the `description` meta tag the same way.
+ *
+ * Annotated `PageMetadata` rather than left to inference, and the annotation is
+ * what makes the spread below safe: this returns the SDK's own record with two
+ * of its fields tidied, so a field the SDK adds later rides through untouched
+ * instead of being silently dropped by a hand-written shape.
  */
-export function extractTitle(html: string): string | undefined {
-  return pageMetadata(html).title?.replace(/\s+/g, " ").trim() || undefined;
+export function extractMetadata(html: string): PageMetadata {
+  const meta = pageMetadata(html);
+  return { ...meta, title: collapse(meta.title), description: collapse(meta.description) };
+}
+
+/** One line of it, or nothing — a head field is often indented across three. */
+function collapse(value: string | undefined): string | undefined {
+  return value?.replace(/\s+/g, " ").trim() || undefined;
 }
 
 /**

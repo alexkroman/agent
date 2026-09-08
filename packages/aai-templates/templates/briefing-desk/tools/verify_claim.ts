@@ -1,13 +1,20 @@
 import {
+  type DeepReadonly,
   errorMessage,
   isToolFailure,
   omitUndefined,
-  type ToolFailure,
-  tool,
   toolFailure,
+  type TypedDelegateResult,
 } from "@alexkroman1/aai";
 import { z } from "zod";
-import { briefingSlot, countWork, factChecker, findByAngle, type Verdict } from "../shared.ts";
+import {
+  briefingSlot,
+  countWork,
+  factChecker,
+  type Finding,
+  findByAngle,
+  type Verdict,
+} from "../shared.ts";
 
 /**
  * Check one sentence against the web, on the narrower of the desk's two
@@ -24,9 +31,11 @@ import { briefingSlot, countWork, factChecker, findByAngle, type Verdict } from 
  * **The claim may be quoted from the board.** The caller says "check the second
  * thing you told me", so `about` names an angle and the claim is read out of
  * the slot — a subagent has not heard the call, and handing it "the second
- * thing" as its task would get a confident answer about nothing.
+ * thing" as its task would get a confident answer about nothing. The board
+ * arrives through `briefingSlot.tool` rather than a `get` inside the body,
+ * which is what declares that this tool reads it and never writes.
  */
-export default tool({
+export default briefingSlot.tool({
   description:
     "Check one specific factual claim against the web. Use it when the caller " +
     "pushes back on something, or asks whether a finding is right. Pass the " +
@@ -45,17 +54,16 @@ export default tool({
           "something already on the board",
       ),
   }),
-  async execute(args, ctx) {
+  async execute(args, board, ctx) {
     const claim = args.claim.trim();
     if (claim === "") return toolFailure("Nothing to check — say the claim in a full sentence.");
 
-    const board = briefingSlot.get(ctx);
     // The caller pointed at something on the board, so an AMBIGUOUS pointer is
     // returned to the model rather than resolved by board order. Checking the
     // claim against the wrong finding is worse than spending a turn asking
     // which — the verdict would come back about a different conversation. A
     // caller who named no angle is the `undefined` case and is fine.
-    let source: Exclude<ReturnType<typeof findByAngle>, ToolFailure> | undefined;
+    let source: DeepReadonly<Finding> | undefined;
     if (args.about !== undefined) {
       const found = findByAngle(board, args.about);
       if (isToolFailure(found)) return found;
@@ -73,7 +81,12 @@ export default tool({
       // repo's one spelling for an optional field, and the shape its own
       // `guard-invariants` rule 22 counts as debt.
       const context = source ? `The desk told the caller: ${source.summary}` : undefined;
-      const result = await ctx.delegate(factChecker, {
+      // ANNOTATED, as `researchAngle`'s plain `DelegateResult` is, and the pair
+      // is the lesson: `factChecker` declares a `schema`, so `ctx.delegate`
+      // takes its typed overload and the reply carries a parsed `object`. A
+      // schema removed upstream lands here as a type error rather than as an
+      // `.object` that quietly went `unknown`.
+      const result: TypedDelegateResult<Verdict> = await ctx.delegate(factChecker, {
         task: claim,
         ...omitUndefined({ context }),
       });

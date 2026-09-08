@@ -47,7 +47,13 @@
  * renders the number.
  */
 
-import type { DeepReadonly } from "@alexkroman1/aai";
+import type {
+  DeepReadonly,
+  SessionEventHandlers,
+  SlotCaps,
+  SlotHolder,
+  StateProjection,
+} from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import { containsWord } from "./guess.ts";
 
@@ -74,6 +80,15 @@ export interface GameState {
   endedAt: number | null;
   /** What the describer has said about the current word, in order. */
   descriptions: string[];
+  /**
+   * What the describer was HEARD to say since this word came up — every
+   * committed transcript, written by {@link GAME_EVENTS} and never by a tool.
+   *
+   * The host's relay is a paraphrase and arrives once per tool call; this is
+   * the caller's own words and arrives once per utterance, which is what makes
+   * the foul check whole when the host batches three sentences into one relay.
+   */
+  spoken: string[];
   /** The player's wrong guesses for the current word. */
   wrongGuesses: string[];
   /** Every settled word this round, newest last. */
@@ -90,6 +105,7 @@ export function newGame(): GameState {
     startedAt: null,
     endedAt: null,
     descriptions: [],
+    spoken: [],
     wrongGuesses: [],
     rounds: [],
     best: 0,
@@ -97,8 +113,53 @@ export function newGame(): GameState {
   };
 }
 
+/**
+ * The bounds on the three lists that grow WITHIN one word, declared on the slot
+ * rather than trimmed by whichever tool happened to append.
+ *
+ * All three feed the player's prompt, and a describer who talks for ninety
+ * seconds about one word would otherwise send every sentence of it to the model
+ * on every guess. `caps` drops the OLDEST past the bound on every writer, which
+ * is the right end to lose here — the newest clue is the one worth guessing
+ * from — and `advanceWord` empties all three anyway, so a cap only ever bites
+ * inside a single stubborn word.
+ *
+ * **`rounds` and `words` are deliberately NOT capped**, and that is the rule
+ * this list is worth reading for: `wordsPlayed` is `rounds.length` and indexes
+ * `words`, so dropping the oldest round would rewind the describer to a word
+ * they already played. A cap is only safe on a list nothing counts.
+ */
+const GAME_CAPS: SlotCaps<GameState> = { descriptions: 12, spoken: 12, wrongGuesses: 10 };
+
 /** The round, as one typed slot. */
-export const gameSlot = sessionSlot("game", newGame);
+export const gameSlot = sessionSlot("game", newGame, { caps: GAME_CAPS });
+
+/**
+ * The describer's own words, recorded as the runtime commits them.
+ *
+ * Takes a {@link SlotHolder} rather than the session-event context it is called
+ * with: writing the slot is all it does, so a spec can drive it with a plain
+ * tool context and assert the foul it causes.
+ */
+export function recordSpoken(ctx: SlotHolder, text: string): void {
+  const said = text.trim();
+  if (said === "") return;
+  gameSlot.update(ctx, (game) => {
+    game.spoken.push(said);
+  });
+}
+
+/**
+ * What `agent({ events })` is handed.
+ *
+ * `.committed` rather than `.updated`: partials arrive several times per
+ * utterance and would record one sentence a dozen times. It writes and does not
+ * speak — nothing here can decide what the host says next; `relay_description`
+ * reads the result on its next call.
+ */
+export const GAME_EVENTS: SessionEventHandlers = {
+  "user-transcript.committed": (event, ctx) => recordSpoken(ctx, event.text),
+};
 
 /** The game as a READ hands it out: deep-frozen, and typed to say so. */
 export type FrozenGameState = DeepReadonly<GameState>;
@@ -147,6 +208,7 @@ export function advanceWord(game: GameState, outcome: RoundOutcome): string | nu
   if (word === undefined) return null;
   game.rounds.push({ word, outcome, guesses: game.wrongGuesses.length });
   game.descriptions = [];
+  game.spoken = [];
   game.wrongGuesses = [];
   return word;
 }
@@ -192,5 +254,10 @@ export function gameView(game: FrozenGameState): GameView {
   };
 }
 
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const gameProjection = gameSlot.projection(gameView);
+/**
+ * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in
+ * the client. Annotated because {@link StateProjection} is the contract at that
+ * seam — one declaration naming the frame the scoreboard renders, so the two
+ * ends cannot drift and neither has to infer it from the other.
+ */
+export const gameProjection: StateProjection<GameView> = gameSlot.projection(gameView);

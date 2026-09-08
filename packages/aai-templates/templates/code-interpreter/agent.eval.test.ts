@@ -19,8 +19,8 @@
 // model-written JavaScript in the host process. That is right, and it left this
 // template's whole subject assertable as a CALL and never as an answer: a
 // `toBeDefined()` on the result is satisfied by the refusal itself. So the suite
-// passes `createVmRunCode()` — a developer's own machine may evaluate generated
-// code, a deployment may not — and every case here asserts BOTH halves: that
+// supplies one built by `createVmRunCode` — a developer's own machine may run
+// generated code, a deployment may not — and every case here asserts BOTH: that
 // Coda reached for code (`runCodeIn`, the code read through a schema), and what
 // the code came back with (`runCodeOutput`, which THROWS on the refusal rather
 // than handing it back as output).
@@ -30,12 +30,46 @@ import {
   createVmRunCode,
   describeTurn,
   expectToolBeforeSpeech,
+  type RunCodeExecutor,
   runCodeIn,
   runCodeOutput,
   toolNames,
+  type VmRunCodeOptions,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
+
+/**
+ * The vm executor's budget, set to the DEPLOYED one rather than left at the
+ * default.
+ *
+ * `createVmRunCode` defaults to one second, which is the smallest thing that
+ * stops a model's `while (true) {}` from hanging a case to the suite deadline.
+ * The guest sandbox gives a real `run_code` call five (`RUN_CODE_TIMEOUT_MS`,
+ * enforced by terminating the worker thread the snippet runs in), so at the
+ * default this suite is four seconds STRICTER than production: a snippet that
+ * a deployed Coda completes — a sieve over a big range, a brute-force search,
+ * the kind of thing a prompt forbidding mental arithmetic invites — comes back
+ * as a timed-out `{ "error": … }` here, and the case measures the harness's
+ * deadline instead of the agent. The other knob is `globals`, and
+ * everything in it is a capability grant into a context that can reach the
+ * host realm; this suite needs none, so the executor sees `console.log` and
+ * nothing else.
+ */
+const VM_RUN_CODE: VmRunCodeOptions = { timeoutMs: 5000 };
+
+/**
+ * What makes these cases about the ANSWER and not just the call.
+ *
+ * Annotated with the type the PLATFORM fills: the guest harness hands the
+ * runtime its in-sandbox executor under exactly this signature, so what the
+ * suite substitutes is the implementation and not the seam. `createVmRunCode`'s
+ * own doc carries why the builtin refuses without one, and why a `node:vm`
+ * context — an isolation boundary for accidents, not for adversaries — is the
+ * right thing to hand it on a developer's own machine and the wrong thing to
+ * deploy.
+ */
+const runCode: RunCodeExecutor = createVmRunCode(VM_RUN_CODE);
 
 describeEval(
   agentDef,
@@ -112,9 +146,49 @@ describeEval(
       },
       { stubReply: [{ tool: "run_code", args: { code: "console.log(1 + 1)" } }, "That's two."] },
     );
+
+    test(
+      "a snippet that throws is fixed and re-run, not answered from memory",
+      async ({ session }) => {
+        const turn = await session.say("What is 6 times 7?");
+
+        // The fourth CRITICAL RULE — "If the code throws an error, fix it and
+        // try again" — and the only one with no live case, because a competent
+        // model does not emit a `ReferenceError` on request. `scripted` is the
+        // marker for exactly that: a claim a live run cannot observe, which
+        // without it costs a red run and then gets weakened until it observes
+        // nothing.
+        expect(toolNames(turn.toolCalls), describeTurn(turn)).toEqual(["run_code", "run_code"]);
+
+        // Both calls' output, verbatim and in call order: the throw first, the
+        // retry's answer second. What this really pins is that a failed
+        // evaluation went BACK to the model rather than up to the harness —
+        // `createVmRunCode` catches and answers `{ error }` precisely so the
+        // agent is handed its own typo and the case measures what it did next.
+        // A copy that let the throw propagate would fail this template's suite
+        // on Coda's first bad snippet, which is why the SDK owns the executor.
+        // `runCodeOutput` reads a code error as the result it is; the string it
+        // throws on is the REFUSAL, and this is not one.
+        const output = runCodeOutput(turn.toolCalls);
+        expect(output, `run_code printed: ${output}`).toContain("is not defined");
+        expect(output, `run_code printed: ${output}`).toContain("42");
+
+        // And the reply still ended on its own terms. A tool error the model
+        // can read is a step inside a turn, not a broken one.
+        expect(turn.completed).toBe(true);
+      },
+      {
+        scripted: true,
+        stubReply: [
+          // A `ReferenceError`, which is the failure a model actually makes —
+          // it reaches for a binding it meant to define — rather than a
+          // `SyntaxError`, which the vm would refuse before running anything.
+          { tool: "run_code", args: { code: "console.log(sixTimesSeven)" } },
+          { tool: "run_code", args: { code: "console.log(6 * 7)" } },
+          "Forty-two.",
+        ],
+      },
+    );
   },
-  // The executor is what makes these cases about the ANSWER and not just the
-  // call — `createVmRunCode`'s own doc carries why the builtin refuses without
-  // one and why a `node:vm` context is the right thing to hand it here.
-  { runCode: createVmRunCode() },
+  { runCode },
 );

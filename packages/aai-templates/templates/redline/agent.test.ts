@@ -20,14 +20,19 @@
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
+import { fieldKindFor } from "@alexkroman1/aai-ui";
+import type { WorkflowTestStep } from "@alexkroman1/aai-runtime/testing";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
+import { z } from "zod";
+import agentDef, { MAX_ROUNDS, redline, redlineInput } from "./agent.ts";
 import {
+  acceptDraft,
   briefBlock,
   clampScore,
   critiqueDraft,
   MAX_NOTES,
+  MIN_DRAFT_CHARS,
   type RedlineInput,
   reviseDraft,
   writeDraft,
@@ -39,6 +44,16 @@ const INPUT: RedlineInput = {
   rounds: 2,
   mustCover: ["what to do about it", "how to raise the cap"],
 };
+
+/** A draft long enough for the desk to take, as a file the page would have read. */
+const ATTACHED = {
+  name: "over-budget.md",
+  text: `A 402 means the workspace is over its budget. ${"Every call is refused until the cap is raised. ".repeat(4)}`,
+};
+
+/** The journal's own record of which call sites a walk reached, in its order. */
+const stepKeys = (steps: readonly WorkflowTestStep[]): string[] =>
+  steps.map((step) => step.key);
 
 // ─── 1. The declaration ──────────────────────────────────────────────────────
 
@@ -95,6 +110,51 @@ describe("the input schema", () => {
     // writes this field itself and maps a textarea into it.
     expect(await issues({ ...INPUT, mustCover: "one point" })).toBeDefined();
     expect(await issues({ ...INPUT, mustCover: ["one point"] })).toBeUndefined();
+  });
+
+  test("takes an attached draft as an OBJECT, and refuses one too short to grade", async () => {
+    expect(await issues({ ...INPUT, source: ATTACHED })).toBeUndefined();
+    // The page's `<FileField>` contributes the file's own name beside its text,
+    // which is what the run narrates and what the output carries back.
+    expect(await issues({ ...INPUT, source: { text: ATTACHED.text } })).toBeDefined();
+    expect(await issues({ ...INPUT, source: ATTACHED.text })).toBeDefined();
+    expect(await issues({ ...INPUT, source: { name: "stub.md", text: "Too short." } })).toBeDefined();
+  });
+
+  test("and omitting it is the ordinary run rather than a validation error", async () => {
+    // Nothing chosen contributes no key at all — `collectValues` skips a file
+    // input with no file — so absence has to be the default, not a special case.
+    expect(await issues(INPUT)).toBeUndefined();
+  });
+});
+
+describe("which fields the FORM declares, and which the page writes", () => {
+  /**
+   * The mixed form, asserted through the function that decides it.
+   *
+   * `<WorkflowFields>` renders one control per property by asking
+   * `fieldKindFor` (`@alexkroman1/aai-ui`) — the same published function — over
+   * the JSON Schema served on `GET /workflows`. Both halves are silent when
+   * wrong: a property that starts rendering a control gets one BESIDE the
+   * hand-written field with the same `name`, where the later control quietly
+   * wins the submit, and one that stops rendering simply disappears from the
+   * page. Neither shows up in a diff of this template.
+   */
+  const properties = z.toJSONSchema(redlineInput, { io: "input" }).properties ?? {};
+
+  test.each([
+    ["brief", "text"],
+    ["audience", "select"],
+    ["rounds", "number"],
+  ])("%s is DECLARED — the schema renders it", (name, kind) => {
+    expect(fieldKindFor(properties[name])).toBe(kind);
+  });
+
+  test.each(["mustCover", "source"])("%s is WRITTEN — no generic control fits it", (name) => {
+    // An array and an object. `client.tsx` owns a control for each and maps it
+    // in `toInput`, which is the whole reason this template exists beside
+    // `transcription-workflow`'s all-declared one.
+    expect(fieldKindFor(properties[name])).toBe("none");
   });
 });
 
@@ -155,6 +215,33 @@ describe("the steps", () => {
       expect(failure).toBeInstanceOf(Error);
       expect(failure).not.toBeInstanceOf(FatalError);
       expect(String(failure)).toMatch(/empty completion/);
+    });
+  });
+
+  describe("acceptDraft", () => {
+    test("hands the attached file's text to the loop, trimmed, and calls no model", async () => {
+      const calls = stubGateway("nothing should ask for this");
+      expect(await acceptDraft({ ...ATTACHED, text: `\n  ${ATTACHED.text}  \n` })).toBe(
+        ATTACHED.text.trim(),
+      );
+      // The whole point of the other way in: the writer never runs, so the
+      // desk's first model call is the critique.
+      expect(calls).toHaveLength(0);
+    });
+
+    test("fails FATALLY on a file with nothing in it to grade", async () => {
+      // The same layering as `writeDraft`: the schema's `.min()` counts
+      // CHARACTERS, so a file of nothing but whitespace validates at `start()`
+      // and arrives here as nothing to critique. Re-reading it will not make it
+      // longer, so it is fatal rather than retryable — and the message names the
+      // file, since a desk that took three attachments cannot say which.
+      const failure = await acceptDraft({
+        name: "empty.md",
+        text: " ".repeat(MIN_DRAFT_CHARS + 5),
+      }).catch((err: unknown) => err);
+
+      expect(FatalError.is(failure)).toBe(true);
+      expect((failure as Error).message).toContain("empty.md");
     });
   });
 
@@ -255,8 +342,71 @@ describe("the run is DURABLE", () => {
     // Two rounds of budget went unspent, so the journal holds one critique and
     // no revision at all — `(name, occurrence)` identity means the entries are
     // the record of which call sites the body actually reached.
-    expect(run.steps.map((step) => step.key)).toEqual(["critiqueDraft#0", "writeDraft#0"]);
+    expect(stepKeys(run.steps)).toEqual(["critiqueDraft#0", "writeDraft#0"]);
     expect(model).toHaveLength(2);
+  });
+
+  test("starts at the CRITIQUE when a draft came attached, and journals which way in", async () => {
+    // The branch is on the INPUT, so the journal is the record of it: the walk
+    // reached `acceptDraft`, never `writeDraft`, and did so without spending a
+    // model call — the desk's first is the critique.
+    const model = stubGateway([SHIP]);
+    const run = await runWorkflow(
+      redline,
+      { ...BRIEF, rounds: 3, source: ATTACHED },
+      { name: "redline" },
+    );
+
+    expect(run.status).toBe("completed");
+    expect(stepKeys(run.steps)).toEqual(["acceptDraft#0", "critiqueDraft#0"]);
+    expect(model).toHaveLength(1);
+    // The piece is the author's own file, and the output says whose.
+    expect(run.output?.draft).toBe(ATTACHED.text.trim());
+    expect(run.output?.source).toBe("over-budget.md");
+  });
+
+  test("takes the same way in on the walk after a crash, because the input is journaled", async () => {
+    // The cheap half of the replay rule, next to the paid one below: a branch on
+    // the input needs no journaled RESULT to be stable, because the input is the
+    // same object on every walk. What a resume must not do is change its mind
+    // and go looking for a `writeDraft#0` this run never wrote.
+    const model = stubGateway([REVISE, "A better draft.", SHIP]);
+    const run = await runWorkflow(
+      redline,
+      { ...BRIEF, rounds: 3, source: ATTACHED },
+      { name: "redline", crashAt: "reviseDraft" },
+    );
+    expect(run.crashed).toBe(true);
+    expect(stepKeys(run.steps)).toEqual(["acceptDraft#0", "critiqueDraft#0"]);
+
+    await run.restart();
+    expect(run.status).toBe("completed");
+    expect(run.output?.source).toBe("over-budget.md");
+    // Three calls for three call sites that make one: the resume re-issued the
+    // revision and the second critique, and `acceptDraft` was never a call at all.
+    expect(model).toHaveLength(3);
+    expect(stepKeys(run.steps)).toEqual([
+      "acceptDraft#0",
+      "critiqueDraft#0",
+      "critiqueDraft#1",
+      "reviseDraft#0",
+    ]);
+  });
+
+  test("a file with nothing in it fails the run rather than quietly writing one", async () => {
+    // `acceptDraft` asks for ONE attempt, so a fatal guard is the whole story:
+    // the run fails, and the journal shows the desk never fell back to writing.
+    const model = stubGateway(["nothing should ask for this"]);
+    const run = await runWorkflow(
+      redline,
+      { ...BRIEF, rounds: 3, source: { name: "empty.md", text: " ".repeat(MIN_DRAFT_CHARS + 5) } },
+      { name: "redline" },
+    );
+
+    expect(run.status).toBe("failed");
+    expect(run.error).toContain("empty.md");
+    expect(stepKeys(run.steps)).toEqual(["acceptDraft#0"]);
+    expect(model).toHaveLength(0);
   });
 
   test("journals a round per iteration, so `critiqueDraft#1` is round two", async () => {
@@ -273,7 +423,7 @@ describe("the run is DURABLE", () => {
 
     expect(run.status).toBe("completed");
     expect(run.output?.roundsRun).toBe(3);
-    expect(run.steps.map((step) => step.key)).toEqual([
+    expect(stepKeys(run.steps)).toEqual([
       "critiqueDraft#0",
       "critiqueDraft#1",
       "critiqueDraft#2",
@@ -296,7 +446,7 @@ describe("the run is DURABLE", () => {
     );
 
     expect(run.crashed).toBe(true);
-    expect(run.steps.map((step) => step.key)).toEqual(["critiqueDraft#0", "writeDraft#0"]);
+    expect(stepKeys(run.steps)).toEqual(["critiqueDraft#0", "writeDraft#0"]);
     const spentBeforeTheCrash = model.length;
     expect(spentBeforeTheCrash).toBe(2);
 
@@ -307,7 +457,7 @@ describe("the run is DURABLE", () => {
     // resume paid for the revision and the second critique and NOT for the
     // draft or the first critique, which came back out of the journal.
     expect(model).toHaveLength(4);
-    expect(run.steps.map((step) => step.key)).toEqual([
+    expect(stepKeys(run.steps)).toEqual([
       "critiqueDraft#0",
       "critiqueDraft#1",
       "reviseDraft#0",
@@ -329,7 +479,7 @@ describe("the run is DURABLE", () => {
     // Crashed BEFORE the critique's body ran, so nothing is journaled but the
     // draft — and the resume is what reaches the verdict.
     expect(run.crashed).toBe(true);
-    expect(run.steps.map((step) => step.key)).toEqual(["writeDraft#0"]);
+    expect(stepKeys(run.steps)).toEqual(["writeDraft#0"]);
 
     await run.restart();
     expect(run.status).toBe("completed");

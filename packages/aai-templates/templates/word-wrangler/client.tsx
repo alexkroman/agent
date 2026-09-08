@@ -1,6 +1,14 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
+import type { AgentState, UseUserTranscriptResult } from "@alexkroman1/aai-ui";
+import {
+  AGENT_STATE_LABELS,
+  mountClient,
+  useAgentState,
+  useSessionStatus,
+  useUserTranscript,
+} from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
+import { containsWord } from "./guess.ts";
 import { type GameView, gameProjection } from "./shared.ts";
 
 /**
@@ -12,6 +20,12 @@ import { type GameView, gameProjection } from "./shared.ts";
  * countdown is computed on the client from `startedAt`, exactly as their
  * `useGameTimer` counted down from the moment the intro finished: the server
  * owns whether the round is over, the screen owns the ticking digits.
+ *
+ * Two things come off the SESSION rather than the projection, because they are
+ * facts about the call and not about the game: what the describer is being
+ * heard to say, and what the host is doing with the turn. Their web game had
+ * neither, and both are the difference between a fair round and a mystifying
+ * one — a foul is ruled on the transcript, so the transcript is on screen.
  */
 
 /** Once a second, so the ring moves. */
@@ -56,6 +70,57 @@ function Clock({ view, now }: { view: GameView; now: number }) {
   );
 }
 
+/**
+ * The game's own word for three of the seven agent states — the three a
+ * describer on a two-minute clock actually needs, said in the game's terms
+ * rather than the console's. Everything else falls through to
+ * `AGENT_STATE_LABELS`, so a state added upstream still reads as something.
+ */
+const STATE_WORD: Partial<Record<AgentState, string>> = {
+  listening: "your turn",
+  thinking: "player is guessing",
+  speaking: "host is talking",
+};
+
+/**
+ * The describer's own words as the host hears them, red the moment they give
+ * the word away.
+ *
+ * The foul is ruled on this text (`relay_description` reads the committed
+ * transcript, not the host's relay), so showing it is showing the evidence —
+ * and `containsWord` is the very function the referee uses, imported rather
+ * than approximated, so the warning cannot disagree with the ruling.
+ */
+function Heard({ transcript, word }: { transcript: UseUserTranscriptResult; word: string | null }) {
+  const foul = word !== null && containsWord(transcript.text, word);
+  return (
+    <div className={`text-sm italic ${foul ? "text-red-400" : "opacity-60"}`}>
+      {foul ? `Careful - that's the word. ` : ""}
+      {transcript.text}
+    </div>
+  );
+}
+
+/**
+ * One row, narrowly subscribed: the live transcript while the describer holds
+ * the turn, and what the host is doing when they do not.
+ *
+ * `speaking` rather than a falsy check on the text — `""` is "speech detected,
+ * no words back yet", which is the moment the row is for. Both hooks live here
+ * and not in {@link Scoreboard} so the STT-partial re-render rate stays off the
+ * clock, the word card and the round log.
+ */
+function Listening({ word }: { word: string | null }) {
+  const transcript = useUserTranscript();
+  const status = useSessionStatus();
+  if (transcript.speaking) return <Heard transcript={transcript} word={word} />;
+  return (
+    <div className="text-xs uppercase tracking-wider opacity-60">
+      {STATE_WORD[status] ?? AGENT_STATE_LABELS[status]}
+    </div>
+  );
+}
+
 function Scoreboard() {
   const view = useAgentState(gameProjection);
   const now = useNow();
@@ -93,6 +158,8 @@ function Scoreboard() {
           <p className="mt-2 text-xs opacity-60">Best this session: {view.best}</p>
         )}
       </div>
+
+      <Listening word={view.word} />
 
       {view.lastRemark !== null && (
         <div className="rounded-lg border border-aai-border p-3 text-sm">

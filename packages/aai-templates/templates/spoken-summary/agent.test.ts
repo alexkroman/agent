@@ -17,9 +17,20 @@
  * its return value, and audio in one is megabytes replayed on every resume.
  */
 
-import { stepReadUpload, stepUploadInfo } from "@alexkroman1/aai/step";
+import {
+  parseWav,
+  pcmDurationMs,
+  STEP_SPEAK_SAMPLE_RATE,
+  stepReadUpload,
+  stepUploadInfo,
+  WAV_HEADER_BYTES,
+} from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowContext, stubGatewayRoute } from "@alexkroman1/aai/testing";
+import {
+  createWorkflowContext,
+  STUB_SPEECH_PCM_BYTES,
+  stubGatewayRoute,
+} from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
   installStubReporter,
@@ -27,14 +38,25 @@ import {
   installStubTranscribe,
   installStubUploads,
 } from "@alexkroman1/aai/testing/vitest";
+import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import agentDef, { spokenSummary } from "./agent.ts";
+import agentDef, { SUMMARY_LANGUAGE, spokenSummary, VOICES } from "./agent.ts";
 import { speak, spokenSummaryFlow, summarize } from "./workflows/summarize.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/transcribe.ts";
 
 /** The id every spec below uploads under. */
 const UPLOAD_ID = "upl_test";
+
+/**
+ * How long a PCM16 payload of `bytes` lasts, measured the way the step does.
+ *
+ * `pcmDurationMs` at `STEP_SPEAK_SAMPLE_RATE` is exactly the arithmetic
+ * `stepSpeak` runs on the synthesizer's answer, so the durations below are
+ * DERIVED from the SDK's own rate rather than three unexplained milliseconds
+ * that would go stale the day it changes.
+ */
+const spokenMs = (bytes: number) => pcmDurationMs(bytes, { sampleRate: STEP_SPEAK_SAMPLE_RATE });
 
 beforeEach(() => {
   // WRITABLE, because this app's whole second half stores a file — and it is
@@ -85,9 +107,25 @@ describe("the declaration", () => {
 
     expect((await parsed)?.issues).toBeTruthy();
     expect(
-      (await spokenSummary.input?.["~standard"].validate({ recording: UPLOAD_ID, voice: "jane" }))
-        ?.issues,
+      (
+        await spokenSummary.input?.["~standard"].validate({
+          recording: UPLOAD_ID,
+          voice: ASSEMBLYAI_TTS_DEFAULT_VOICE,
+        })
+      )?.issues,
     ).toBeUndefined();
+  });
+
+  test("the voice that fills in when nobody chooses is one the form would have offered", () => {
+    // `voice` is OPTIONAL, so an unchosen summary is read by the SDK's own
+    // default rather than by anything this template names — and every voice in
+    // the catalog speaks exactly one language. If that default ever stopped
+    // speaking `SUMMARY_LANGUAGE`, the form would still offer nothing but
+    // English while the common path spoke something else, which is the failure
+    // no voice-id validation can see: the id is real, it is simply the wrong
+    // one. Asked of the catalog rather than restated, so the answer stays true.
+    expect(VOICES).toContain(ASSEMBLYAI_TTS_DEFAULT_VOICE);
+    expect(ASSEMBLYAI_TTS_VOICES[ASSEMBLYAI_TTS_DEFAULT_VOICE].language).toBe(SUMMARY_LANGUAGE);
   });
 });
 
@@ -205,12 +243,13 @@ describe("speaking", () => {
 
     // An id, because a step is journaled by its return value: audio in one is
     // megabytes replayed on every resume.
-    expect(spoken).toEqual({ audio: "upl_stub_1", durationMs: 1000 });
+    expect(spoken).toEqual({ audio: "upl_stub_1", durationMs: spokenMs(48_000) });
     expect(speech.calls[0]?.text).toBe("The launch is on for Tuesday.");
   });
 
   test("what it stored is a real WAV, named and typed for the browser", async () => {
-    installStubSpeech({ pcmBytes: 4000 });
+    const PCM_BYTES = 4000;
+    installStubSpeech({ pcmBytes: PCM_BYTES });
     installStubReporter();
 
     const { audio } = await speak("Hello.");
@@ -220,23 +259,39 @@ describe("speaking", () => {
       // The byte route serves this as `Content-Type`, and a browser will not
       // play inline a file it was handed as octet-stream.
       type: "audio/wav",
-      size: 44 + 4000,
+      size: WAV_HEADER_BYTES + PCM_BYTES,
     });
-    const { bytes } = await stepReadUpload(audio, { end: 12 });
-    expect(String.fromCharCode(...bytes.subarray(0, 4))).toBe("RIFF");
-    expect(String.fromCharCode(...bytes.subarray(8, 12))).toBe("WAVE");
+
+    // Handed to the SDK's OWN reader rather than checked for `RIFF`/`WAVE` by
+    // hand. The four magic bytes are the cheap half of being a WAV; what a
+    // browser, a bucket and a transcription API each need is a header that
+    // parses, declares a rate and says where the samples start — and
+    // `parseWav` is the authority `transcription-workflow` asks the same
+    // question of before it cuts a recording. It THROWS on anything it cannot
+    // address by byte offset, so this is the strictest available reading of
+    // "the step really produced a playable file".
+    const head = await stepReadUpload(audio, { end: WAV_HEADER_BYTES });
+    expect(parseWav(head.bytes, head.info.size)).toEqual({
+      // The rate `stepSpeak` synthesizes at when nobody asks for another.
+      sampleRate: STEP_SPEAK_SAMPLE_RATE,
+      channels: 1,
+      bitsPerSample: 16,
+      dataStart: WAV_HEADER_BYTES,
+      dataEnd: WAV_HEADER_BYTES + PCM_BYTES,
+    });
   });
 
   test("passes a chosen voice through, and omits it entirely when none was chosen", async () => {
     const speech = installStubSpeech();
     installStubReporter();
 
-    await speak("Hello.", "michael");
+    await speak("Hello.", { voice: "michael" });
     await speak("Hello.");
 
     expect(speech.calls[0]?.voice).toBe("michael");
-    // The SDK's own default, not one this template restates.
-    expect(speech.calls[1]?.voice).toBe("jane");
+    // The SDK's own default, named rather than restated — a literal here would
+    // have been this template quietly keeping a second copy of it.
+    expect(speech.calls[1]?.voice).toBe(ASSEMBLYAI_TTS_DEFAULT_VOICE);
   });
 });
 
@@ -305,7 +360,7 @@ describe("the whole run", () => {
       // The output carries an ID, never the audio — the rule the whole
       // template exists to demonstrate.
       audio: "upl_stub_1",
-      audioDurationMs: 250,
+      audioDurationMs: spokenMs(STUB_SPEECH_PCM_BYTES),
     });
   });
 

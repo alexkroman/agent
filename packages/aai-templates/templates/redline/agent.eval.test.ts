@@ -192,6 +192,37 @@ describeWorkflowEval(agentDef, (test) => {
     expect(prompts[2]).toContain("The critique");
   });
 
+  test("redlines an ATTACHED draft instead of writing one", async ({ app }) => {
+    // Scripted in both modes, for the same reason the budget case above is: the
+    // claim is that the writer was never called, which is arithmetic over the
+    // gateway's call log. A live critic can be asked to grade the attached
+    // prose, and its answer is not evidence about which steps ran.
+    const model = scriptGateway([critique("ship")]);
+
+    const run = await app.run(redline, {
+      brief: BRIEF,
+      audience: "engineers",
+      rounds: MAX_ROUNDS,
+      mustCover: MUST_COVER,
+      source: { name: "quokka-cycle.md", text: DRAFT },
+    });
+
+    expect(run.error).toBeUndefined();
+    const output = run.output;
+    if (output === undefined) expect.fail("a completed run must carry an output");
+
+    // ONE call — the critique. A desk that wrote a first draft anyway would make
+    // two, and the page would show a piece nobody attached.
+    expect(model.calls).toHaveLength(1);
+    expect(output.draft).toBe(DRAFT);
+    expect(output.source).toBe("quokka-cycle.md");
+    // The critic was shown the attached prose and the brief that grades it.
+    expect(model.calls[0]?.prompt).toContain(DRAFT);
+    expect(model.calls[0]?.prompt).toContain(MUST_COVER[0]);
+    // And the narration says which way in the run took, first line.
+    expect(run.reported[0]).toContain("Redlining quokka-cycle.md");
+  });
+
   test("refuses a brief that is only whitespace, terminally", async ({ app }) => {
     // No model is reached on this path in either mode, so it costs nothing live.
     // The case exists because the schema's `.min(20)` counts CHARACTERS: twenty

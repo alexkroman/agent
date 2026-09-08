@@ -1,5 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
+import type { InferToolInput, InferToolOutput } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDeployable,
@@ -8,8 +9,27 @@ import {
   toolInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
+// The failure vocabulary from the subpath that DECLARES it — `/utils` is the
+// zero-dependency half a tool body (and a page) reaches for, and `client.tsx`
+// takes the same guard from the same place.
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-import { CATEGORIES, MOODS, nightProjection, nightSlot } from "./shared.ts";
+import { CATEGORIES, MAX_RECS, MOODS, nightProjection, nightSlot } from "./shared.ts";
+import recommend from "./tools/recommend.ts";
+
+/**
+ * What `recommend` takes and answers, read off the tool itself.
+ *
+ * `InferToolInput`/`InferToolOutput` rather than the `{ category: string; mood:
+ * string }` and `{ picks: string[] }` this spec used to hand-type: those are a
+ * restatement of a schema declared two files away, they are WEAKER than it
+ * (`string`, not the two enums), and nothing makes them fail when the schema
+ * moves. Imported as a MODULE for it — `virtual:aai/agent` is the def a deploy
+ * ships and is what every assertion below still drives, but a def erases which
+ * tool has which shape.
+ */
+type RecommendInput = InferToolInput<typeof recommend>;
+type RecommendResult = InferToolOutput<typeof recommend>;
 
 /**
  * `runTool` takes the context in the ARGUMENTS' place when a tool needs none,
@@ -55,6 +75,8 @@ describe("night-owl template", () => {
     // is that discovery ran at all — a template whose `tools/` is never
     // resolved ships a model with no tools.
     expect(Object.keys(agentDef.tools ?? {})).toContain("recommend");
+    // Its reading half, declared the same way and discovered the same way.
+    expect(Object.keys(agentDef.tools ?? {})).toContain("revisit");
   });
 
   test("the projection an untouched session pushes is an empty log", () => {
@@ -66,9 +88,9 @@ describe("night-owl template", () => {
 
 describe("recommend", () => {
   test("answers with picks for the category and mood asked for", async () => {
-    const result = await run("recommend", { category: "movie", mood: "cozy" });
+    const result = (await run("recommend", { category: "movie", mood: "cozy" })) as RecommendResult;
     expect(result).toMatchObject({ category: "movie", mood: "cozy" });
-    expect((result as { picks: string[] }).picks.length).toBeGreaterThan(0);
+    expect(result.picks.length).toBeGreaterThan(0);
   });
 
   test("the picks land in the session's own log, newest first", async () => {
@@ -79,6 +101,27 @@ describe("recommend", () => {
     const first = await run("recommend", { category: "book", mood: "spooky" }, ctx);
     const second = await run("recommend", { category: "music", mood: "chill" }, ctx);
     expect(nightProjection(nightSlot.get(ctx))).toEqual({ recs: [second, first] });
+    // The two orders are DIFFERENT and both are deliberate: the slot keeps the
+    // night in the order it happened, which is what a position word means and
+    // which end `caps` trims; newest-first is the sidebar's, and the projection
+    // is where that turn happens.
+    expect(nightSlot.get(ctx).recs).toEqual([first, second]);
+  });
+
+  test("the log stops at the cap the slot declares, and it is the OLDEST that goes", async () => {
+    // Declared on the slot rather than enforced by this tool, so the bound
+    // holds whatever writes — the wrapper form only caps the paths that
+    // remember to call it. The list rides every `syncState` frame, which is
+    // what makes an unbounded one a real cost rather than a tidiness point.
+    const ctx = createToolContext();
+    const asked = Array.from({ length: MAX_RECS + 2 }, (_, i) => ({
+      category: CATEGORIES[i % CATEGORIES.length]!,
+      mood: MOODS[i % MOODS.length]!,
+    }));
+    for (const args of asked) await run("recommend", args, ctx);
+
+    const key = (rec: { category: string; mood: string }) => `${rec.category}/${rec.mood}`;
+    expect(nightSlot.get(ctx).recs.map(key)).toEqual(asked.slice(2).map(key));
   });
 
   test("two calls with no shared context are two sessions", async () => {
@@ -112,14 +155,14 @@ describe("recommend", () => {
     // package's guide records three shipped tools having.
     for (const category of CATEGORIES) {
       for (const mood of MOODS) {
-        const result = await run("recommend", { category, mood });
-        expect((result as { picks: string[] }).picks, `${category}/${mood}`).not.toHaveLength(0);
+        const result = (await run("recommend", { category, mood })) as RecommendResult;
+        expect(result.picks, `${category}/${mood}`).not.toHaveLength(0);
       }
     }
   });
 
   test("the schema accepts a category/mood pair from the enums", async () => {
-    const parsed = await parseToolInput<{ category: string; mood: string }>(agentDef, "recommend", {
+    const parsed = await parseToolInput<RecommendInput>(agentDef, "recommend", {
       category: "movie",
       mood: "cozy",
     });
@@ -136,5 +179,79 @@ describe("recommend", () => {
     expect(
       await toolInputIssues(agentDef, "recommend", { category: "movie", mood: "melancholy" }),
     ).toBeDefined();
+  });
+});
+
+describe("revisit", () => {
+  /** Three picks, in the order the night gave them. */
+  const threePicks = async (ctx: ReturnType<typeof createToolContext>) => {
+    await run("recommend", { category: "movie", mood: "cozy" }, ctx);
+    await run("recommend", { category: "book", mood: "spooky" }, ctx);
+    await run("recommend", { category: "music", mood: "chill" }, ctx);
+  };
+
+  test("a position counts the order the NIGHT went in, not the order the sidebar paints", async () => {
+    const ctx = createToolContext();
+    await threePicks(ctx);
+
+    // The distinction is the whole reason the two orders are separate: the
+    // sidebar's top card is the newest, and a listener saying "the last one you
+    // gave me" means that same pick from the other end.
+    expect(nightProjection(nightSlot.get(ctx)).recs[0]).toMatchObject({ category: "music" });
+    expect(await run("revisit", { which: "the last one" }, ctx)).toMatchObject({
+      category: "music",
+      mood: "chill",
+    });
+    expect(await run("revisit", { which: "the second one" }, ctx)).toMatchObject({
+      category: "book",
+      mood: "spooky",
+    });
+  });
+
+  test("the listener's own words pick one out when they name no position", async () => {
+    const ctx = createToolContext();
+    await threePicks(ctx);
+    const found = (await run("revisit", { which: "those spooky books" }, ctx)) as RecommendResult;
+    expect(found).toMatchObject({ category: "book", mood: "spooky" });
+    // It answers with the shelf's own picks, which is what makes this a lookup
+    // rather than the model recalling three titles from a trimmed transcript.
+    expect(found.picks).toEqual(
+      ((await run("recommend", { category: "book", mood: "spooky" })) as RecommendResult).picks,
+    );
+  });
+
+  test("words that fit two entries equally refuse, listing them", async () => {
+    // Never a guess: reading out the spooky book when they asked for the cozy
+    // one is worse than asking which. The failure has to name the candidates,
+    // because the companion reads it out as the question.
+    const ctx = createToolContext();
+    await run("recommend", { category: "movie", mood: "cozy" }, ctx);
+    await run("recommend", { category: "book", mood: "cozy" }, ctx);
+
+    const refused = await run("revisit", { which: "the cozy ones" }, ctx);
+    expect(isToolFailure(refused)).toBe(true);
+    expect(isToolFailure(refused) && refused.error).toMatch(/cozy movies/);
+    expect(isToolFailure(refused) && refused.error).toMatch(/cozy books/);
+  });
+
+  test("an empty log refuses rather than answering", async () => {
+    // The first thing `resolveOne` checks, and the one a hand-rolled lookup
+    // reports as "nothing matched" — which sends the companion looking for a
+    // pick it never gave.
+    const refused = await run("revisit", { which: "the first one" });
+    expect(isToolFailure(refused)).toBe(true);
+    expect(isToolFailure(refused) && refused.error).toMatch(/recommendation/);
+  });
+
+  test("reading the log back writes nothing to it", async () => {
+    // `slot.tool`, not `updateTool`: what a read is handed is frozen, so this
+    // is a compile-time guarantee as much as a runtime one — the test is here
+    // because the guarantee is the reason to declare a read tool as one.
+    const ctx = createToolContext();
+    await threePicks(ctx);
+    const before = nightProjection(nightSlot.get(ctx));
+    await run("revisit", { which: "the first one" }, ctx);
+    await run("revisit", { which: "nothing like this" }, ctx);
+    expect(nightProjection(nightSlot.get(ctx))).toEqual(before);
   });
 });

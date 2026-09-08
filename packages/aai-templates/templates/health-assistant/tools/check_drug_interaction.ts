@@ -11,13 +11,16 @@ export default tool({
       .min(2)
       .describe("Medication names to check, e.g. ['ibuprofen', 'warfarin']"),
   }),
-  async execute(args) {
+  async execute(args, ctx) {
     const names = args.drugs.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
     if (names.length < 2) {
       return toolFailure("Provide at least two medication names to check.");
     }
 
-    const labels = await Promise.all(names.map((n) => fetchFdaLabel(n)));
+    // One request per drug, all under the caller's own signal (`CallOptions`).
+    // This fan-out is the reason `fetchFdaLabel` takes one at all: a hang-up
+    // used to leave N openFDA requests running with nobody left to answer.
+    const labels = await Promise.all(names.map((n) => fetchFdaLabel(n, { signal: ctx.signal })));
     const unresolved = names.filter((_, i) => labels[i] === null);
     if (unresolved.length > 0) {
       // Never silently drop a drug from an interaction check — a partial

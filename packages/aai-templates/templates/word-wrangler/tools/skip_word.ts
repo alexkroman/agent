@@ -1,6 +1,6 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { gameFlow } from "../game.ts";
+import { endsRound, gameFlow } from "../game.ts";
 import { advanceWord, currentWord, gameSlot, score } from "../shared.ts";
 
 /**
@@ -27,5 +27,5 @@ export default gameFlow.tool({
         say: nextWord === null ? "That was the last word." : `The new word is ${nextWord}.`,
       };
     }),
-  sendFrom: (result) => (result.next === undefined ? undefined : { type: result.next }),
+  sendFrom: (result) => endsRound(result),
 });

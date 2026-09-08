@@ -32,52 +32,67 @@
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { z } from "zod";
-import { redlineFlow } from "./workflows/redline.ts";
+import { MAX_DRAFT_CHARS, MIN_DRAFT_CHARS, redlineFlow } from "./workflows/redline.ts";
 
 /** The most rounds one run may spend. Their `should_continue` cap, as an input:
  *  the critic can stop earlier, and nothing can go past this. */
 export const MAX_ROUNDS = 3;
 
 /**
- * The declaration: schema, description, and the directive body.
+ * The input schema, named rather than inline so a spec can convert it.
  *
- * The input schema is doing three jobs at once here, which is the thing to
- * notice. It validates at `start()`, so a `rounds: 40` is a 400 at the call site
- * rather than forty model calls discovered on the bill; it is served on
+ * It is doing three jobs at once here, which is the thing to notice. It
+ * validates at `start()`, so a `rounds: 40` is a 400 at the call site rather
+ * than forty model calls discovered on the bill; it is served on
  * `GET /workflows` as JSON Schema, which is what lets `<WorkflowFields>` render
  * most of this form without the page naming a field; and it is the type the
  * body reads.
  *
- * `mustCover` is an ARRAY, deliberately. `<WorkflowFields>` renders scalars only
- * — there is no honest control for an array — so the page writes that one field
- * by hand in the same `<Form>` and maps it on submit. That mixed shape is the
- * common case for any schema past the simplest, and this is its worked example;
- * `transcription-workflow` is the all-declared one.
+ * **Two of its four properties are deliberately not scalars, and that is what
+ * makes this the MIXED form.** `<WorkflowFields>` renders one control per SCALAR
+ * property and nothing at all for the rest, so `mustCover` (an array — no honest
+ * generic control) and `source` (an object) are the two the page writes by hand
+ * and maps on submit. `agent.test.ts` pins that split through `fieldKindFor`,
+ * the same function `<WorkflowFields>` decides with, because the failure is
+ * silent in both directions: a property that starts rendering a control gets one
+ * beside the hand-written field, and one that stops rendering simply vanishes.
+ * `transcription-workflow` is the all-declared form.
  */
+export const redlineInput = z.object({
+  // Short on purpose: it renders as a one-line control, and a brief that
+  // needs three paragraphs is the `mustCover` list wearing a disguise.
+  brief: z.string().min(20).max(400).describe("One sentence: what to write, and why"),
+  audience: z
+    .enum(["general readers", "engineers", "executives", "customers"])
+    .describe("Who it is for"),
+  // A `z.enum` is what makes the control above a `<SelectField>` rather than a
+  // text box — the form is as good as the schema is specific.
+  rounds: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_ROUNDS)
+    .default(2)
+    .describe("How many critique-and-revise rounds to allow"),
+  mustCover: z.array(z.string().max(200)).max(6).default([]).describe("Points the piece must cover"),
+  // An OBJECT, and that shape is load-bearing twice over. It keeps the file's
+  // name beside its text, so the run can narrate what it is marking up; and it
+  // is what stops `<WorkflowFields>` rendering a text box over the page's own
+  // `<FileField>` — a `draft: z.string()` here would produce two controls for
+  // one property, the second silently overwriting the first on submit.
+  source: z
+    .object({
+      name: z.string().min(1).max(200),
+      text: z.string().min(MIN_DRAFT_CHARS).max(MAX_DRAFT_CHARS),
+    })
+    .optional()
+    .describe("A draft to redline, instead of writing one from the brief"),
+});
+
+/** The declaration: schema, description, and the directive body. */
 export const redline = workflow({
   description: "Write a piece from a brief, then critique and revise it until it is worth shipping",
-  input: z.object({
-    // Short on purpose: it renders as a one-line control, and a brief that
-    // needs three paragraphs is the `mustCover` list wearing a disguise.
-    brief: z.string().min(20).max(400).describe("One sentence: what to write, and why"),
-    audience: z
-      .enum(["general readers", "engineers", "executives", "customers"])
-      .describe("Who it is for"),
-    // A `z.enum` is what makes the control above a `<SelectField>` rather than a
-    // text box — the form is as good as the schema is specific.
-    rounds: z
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_ROUNDS)
-      .default(2)
-      .describe("How many critique-and-revise rounds to allow"),
-    mustCover: z
-      .array(z.string().max(200))
-      .max(6)
-      .default([])
-      .describe("Points the piece must cover"),
-  }),
+  input: redlineInput,
   run: redlineFlow,
 });
 

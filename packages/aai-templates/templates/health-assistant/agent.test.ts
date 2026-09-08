@@ -1,4 +1,9 @@
-import { isToolFailure } from "@alexkroman1/aai";
+import {
+  type InferToolInput,
+  type InferToolOutput,
+  isToolFailure,
+  type ToolFailure,
+} from "@alexkroman1/aai";
 import {
   expectDeployable,
   expectPromptBuiltinsDeclared,
@@ -7,6 +12,8 @@ import {
 } from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { excerptAround, type FdaLabel, toDrugInfo } from "./fda.ts";
+import type CheckDrugInteraction from "./tools/check_drug_interaction.ts";
+import type MedicationLookup from "./tools/medication_lookup.ts";
 
 /**
  * Only the NETWORK half of `fda.ts` is faked.
@@ -36,6 +43,37 @@ import agentDef from "virtual:aai/agent";
  * sharing state want.
  */
 const run = toolRunner(agentDef);
+
+/**
+ * The two tools, reached through their OWN input types.
+ *
+ * `run` takes `Record<string, unknown>`, so `run("medication_lookup", { drug:
+ * "advil" })` compiles and fails at run time as a schema rejection — in the one
+ * spec that is supposed to be the worked example of calling this tool.
+ * `InferToolInput` reads the argument type off the tool's `execute`, which is
+ * the zod schema the tool really declares, so a renamed or retyped field breaks
+ * the BUILD here and the two files cannot drift apart quietly.
+ *
+ * The imports are TYPE-only, deliberately: the defs under test still come from
+ * `agentDef`, which is what a deploy resolves, and nothing here re-registers a
+ * tool module by importing it.
+ */
+const lookUp = (args: InferToolInput<typeof MedicationLookup>) => run("medication_lookup", args);
+const check = (args: InferToolInput<typeof CheckDrugInteraction>) =>
+  run("check_drug_interaction", args);
+
+/**
+ * What `check_drug_interaction` answers when it did NOT refuse.
+ *
+ * `run` is typed `unknown` — the registry lookup is by string — so reading a
+ * field off the answer needs an assertion either way. `InferToolOutput` makes
+ * it an assertion about the tool's OWN return type rather than a shape retyped
+ * beside it, so renaming `interactions_found` reddens here instead of quietly
+ * comparing `undefined`. The SDK's `expectToolOk` is deliberately not used: it
+ * unwraps a `dialog()` envelope and throws for a plain `tool()`, which both of
+ * these are.
+ */
+type CheckResult = Exclude<InferToolOutput<typeof CheckDrugInteraction>, ToolFailure>;
 
 const IBUPROFEN: FdaLabel = {
   openfda: { generic_name: ["IBUPROFEN"], brand_name: ["Advil"], manufacturer_name: ["Acme"] },
@@ -133,26 +171,30 @@ describe("health-assistant template", () => {
 describe("medication_lookup", () => {
   test("folds the label's array fields into one flat answer", async () => {
     label.mockResolvedValue(IBUPROFEN);
-    const result = await run("medication_lookup", { name: "advil" });
+    const result = await lookUp({ name: "advil" });
     expect(result).toMatchObject({
       name: "IBUPROFEN",
       brand_names: ["Advil"],
       purpose: "Pain reliever",
       manufacturer: "Acme",
     });
+    // And the lookup carried the caller's `ctx.signal` down to openFDA — the
+    // `CallOptions` half. A tool that forgets it leaves a request running past
+    // the turn that wanted it, which nothing else here would notice.
+    expect(label.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   test("an unknown drug is a tool FAILURE, not an empty answer", async () => {
     // The model has to be able to tell "no such drug" from "a drug with no
     // warnings", which is why this is a failure rather than a record of "N/A".
     label.mockResolvedValue(null);
-    const result = await run("medication_lookup", { name: "sparkleforin" });
+    const result = await lookUp({ name: "sparkleforin" });
     expect(isToolFailure(result) && result.error).toContain("sparkleforin");
   });
 
   test("a missing section reads N/A rather than undefined", async () => {
     label.mockResolvedValue(WARFARIN);
-    expect(await run("medication_lookup", { name: "warfarin" })).toMatchObject({
+    expect(await lookUp({ name: "warfarin" })).toMatchObject({
       warnings: "N/A",
       dosage: "N/A",
       side_effects: "N/A",
@@ -166,10 +208,9 @@ describe("check_drug_interaction", () => {
     label.mockImplementation(async (name: string) =>
       name.includes("ibuprofen") ? IBUPROFEN : WARFARIN,
     );
-    const result = await run("check_drug_interaction", { drugs: ["ibuprofen", "warfarin"] });
-    expect(result).toMatchObject({ interactions_found: 1 });
-    const [first] = (result as { interactions: { drug: string; mentions: string }[] }).interactions;
-    expect(first).toMatchObject({ drug: "ibuprofen", mentions: "warfarin" });
+    const result = (await check({ drugs: ["ibuprofen", "warfarin"] })) as CheckResult;
+    expect(result.interactions_found).toBe(1);
+    expect(result.interactions[0]).toMatchObject({ drug: "ibuprofen", mentions: "warfarin" });
   });
 
   test("matches on a BRAND alias, not only the name the caller used", async () => {
@@ -182,7 +223,7 @@ describe("check_drug_interaction", () => {
     label.mockImplementation(async (name: string) =>
       name.includes("ibuprofen") ? coumadinMention : WARFARIN,
     );
-    const result = await run("check_drug_interaction", { drugs: ["ibuprofen", "warfarin"] });
+    const result = await check({ drugs: ["ibuprofen", "warfarin"] });
     expect(result).toMatchObject({ interactions_found: 1 });
   });
 
@@ -192,21 +233,37 @@ describe("check_drug_interaction", () => {
     label.mockImplementation(async (name: string) =>
       name.includes("ibuprofen") ? IBUPROFEN : null,
     );
-    const result = await run("check_drug_interaction", { drugs: ["ibuprofen", "sparkleforin"] });
+    const result = await check({ drugs: ["ibuprofen", "sparkleforin"] });
     expect(isToolFailure(result) && result.error).toContain("sparkleforin");
   });
 
   test("two drugs with no cross-mention are reported as such, with the caveat", async () => {
     label.mockResolvedValue(WARFARIN);
-    const result = await run("check_drug_interaction", { drugs: ["warfarin", "aspirin"] });
-    expect(result).toMatchObject({ interactions_found: 0 });
-    expect((result as { note: string }).note).toContain("does not guarantee");
+    const result = (await check({ drugs: ["warfarin", "aspirin"] })) as CheckResult;
+    expect(result.interactions_found).toBe(0);
+    // The caveat is the point of the zero case: "no cross-mention" is not
+    // "safe", and this tool must never be read as saying it was.
+    expect(result.note).toContain("does not guarantee");
+  });
+
+  test("every drug in the fan-out is looked up under the caller's signal", async () => {
+    // The reason `fetchFdaLabel` takes `CallOptions` at all: this tool fires one
+    // request per drug the caller named, so a hang-up mid-check has N of them
+    // to take down, not one.
+    label.mockResolvedValue(WARFARIN);
+
+    await check({ drugs: ["warfarin", "aspirin"] });
+
+    expect(label).toHaveBeenCalledTimes(2);
+    for (const [, options] of label.mock.calls) {
+      expect(options?.signal).toBeInstanceOf(AbortSignal);
+    }
   });
 
   test("whitespace-only names are refused before any lookup happens", async () => {
     // The schema's `min(2)` counts entries, not real names, so the body
     // re-checks after trimming — and must do so BEFORE touching the network.
-    const result = await run("check_drug_interaction", { drugs: ["ibuprofen", "   "] });
+    const result = await check({ drugs: ["ibuprofen", "   "] });
     expect(isToolFailure(result) && result.error).toContain("at least two");
     expect(label).not.toHaveBeenCalled();
   });
