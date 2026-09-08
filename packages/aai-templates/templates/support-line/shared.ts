@@ -19,9 +19,9 @@
 
 import {
   type DeepReadonly,
-  sessionSlot,
   type SlotCaps,
   type StateProjection,
+  sessionSlot,
 } from "@alexkroman1/aai";
 import knowledge from "./knowledge.json" with { type: "json" };
 
@@ -278,5 +278,4 @@ export function supportView(state: FrozenSupportState): SupportView {
  * and `create`) is what tells a reader why passing it to `useAgentState`
  * derives the pre-first-frame value for free.
  */
-export const supportProjection: StateProjection<SupportView> =
-  supportSlot.projection(supportView);
+export const supportProjection: StateProjection<SupportView> = supportSlot.projection(supportView);

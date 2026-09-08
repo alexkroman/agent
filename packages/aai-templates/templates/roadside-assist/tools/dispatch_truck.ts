@@ -1,4 +1,4 @@
-import { failable, isToolFailure, orFail, toolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { failable, isToolFailure, orFail, type ToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { roadsideCall } from "../call.ts";
 import {

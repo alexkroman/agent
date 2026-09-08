@@ -1,4 +1,4 @@
-import { toolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { type ToolFailure, toolFailure } from "@alexkroman1/aai";
 import {
   createKeyedLock,
   type KeyedLock,
@@ -58,7 +58,7 @@ interface Hold {
 export const HOLD_MINUTES = 90;
 
 /** How long a caller waits for the yard before the desk stops waiting for it. */
-export const YARD_WAIT: KeyedLockOptions = { timeoutMs: 5_000 };
+export const YARD_WAIT: KeyedLockOptions = { timeoutMs: 5000 };
 
 /**
  * The yard's lock.

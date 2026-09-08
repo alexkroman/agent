@@ -42,11 +42,7 @@ import { formatDoc } from "./shared.ts";
  * step — and a node that dropped its `schema` would stop compiling here rather
  * than start reading `undefined` at run time.
  */
-async function scoreOf(
-  generate: GenerateFn,
-  system: string,
-  prompt: string,
-): Promise<BinaryScore> {
+async function scoreOf(generate: GenerateFn, system: string, prompt: string): Promise<BinaryScore> {
   const result: GenerateObjectResult<BinaryScore> = await generate({
     system,
     prompt,

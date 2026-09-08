@@ -1,10 +1,10 @@
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { HOTELS, requireDesk, tripSlot } from "../shared.ts";
+import { deskTool, HOTELS } from "../shared.ts";
 
 /** Their `search_hotels`, with `price_tier` collapsed to a nightly ceiling —
  *  a caller says "under two hundred", not "midscale". */
-export default tripSlot.tool({
+export default deskTool("hotel", {
   description:
     "The HOTEL DESK's search: hotels by city, and optionally by the most they want to pay " +
     "per night. Only usable while the call is at that desk — from anywhere else it refuses, " +
@@ -13,9 +13,7 @@ export default tripSlot.tool({
     city: z.string().max(80).describe("City to search, e.g. 'Boston'"),
     maxPerNight: z.number().positive().describe("Nightly ceiling in dollars").optional(),
   }),
-  execute(args, trip) {
-    const offDesk = requireDesk(trip, "hotel");
-    if (offDesk) return offDesk;
+  execute(args) {
     const city = args.city.trim().toLowerCase();
     const hotels = HOTELS.filter(
       (h) =>

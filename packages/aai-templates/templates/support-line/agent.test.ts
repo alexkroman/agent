@@ -71,17 +71,13 @@ function scriptedModel(script: Script = {}) {
    * overload with no `object` to read, which is the one failure a stub of a
    * `ctx.generate({ schema })` can produce.
    */
-  const verdictRoute = (
-    node: string,
-    queue: ("yes" | "no")[],
-    reason: string,
-  ): StubGenerateRoute => {
-    return () => {
+  const verdictRoute =
+    (node: string, queue: ("yes" | "no")[], reason: string): StubGenerateRoute =>
+    () => {
       const verdict = queue.shift() ?? "yes";
       calls.push(`${node}:${verdict}`);
       return { object: { score: verdict, reason } };
     };
-  };
 
   const { generate } = stubGenerate({
     [DOC_GRADER_SYSTEM]: (call) => {
@@ -346,7 +342,8 @@ describe("answer_question", () => {
     // The failure envelope is the SDK's, so the spec asks the SDK whether this
     // is one rather than casting to `{ error }` — a cast reads `undefined` off
     // a SUCCESS and fails three lines later on something else.
-    if (!isToolFailure(result)) throw new Error(`expected a refusal, got ${JSON.stringify(result)}`);
+    if (!isToolFailure(result))
+      throw new Error(`expected a refusal, got ${JSON.stringify(result)}`);
     expect(result.error).toContain("knowledge base lookup failed");
   });
 
@@ -388,11 +385,13 @@ describe("the support slot", () => {
 describe("log_ticket", () => {
   test("logs a reference and keeps the callback number off the wire", async () => {
     const ctx = createToolContext({});
-    const logged = (await run(
-      "log_ticket",
-      { question: "landline install", callback: "07700 900123" },
-      ctx,
-    )) as { reference: string };
+    const args: InferToolInput<typeof LogTicket> = {
+      question: "landline install",
+      callback: "07700 900123",
+    };
+    const logged = answered<Exclude<InferToolOutput<typeof LogTicket>, ToolFailure>>(
+      await run("log_ticket", args, ctx),
+    );
     expect(logged.reference).toBe("TCK4001");
 
     const state = supportSlot.get(ctx);
@@ -401,6 +400,35 @@ describe("log_ticket", () => {
     const view = supportView(state);
     expect(view.ticket).toBe("TCK4001");
     expect(JSON.stringify(view)).not.toContain("900123");
+  });
+});
+
+// ─── 4. The front door ───────────────────────────────────────────────────────
+
+/**
+ * Does this agent admit a call from `carrier`?
+ *
+ * `TelephonyAccess` is `true` (every carrier the runtime ships a codec for) OR
+ * an allow-list, and only the second is a claim about a PARTICULAR one — so a
+ * spec asserting "twilio reaches this line" has to handle both arms rather than
+ * compare the field to an array. `undefined` is the third state and the one
+ * that matters most: `WS /phone` is an allow-list, so an agent that says
+ * nothing about carriers answers no calls at all.
+ */
+function admits(access: TelephonyAccess | undefined, carrier: TelephonyCarrier): boolean {
+  if (access === undefined) return false;
+  return access === true || access.includes(carrier);
+}
+
+describe("the phone route", () => {
+  test("is armed, and named narrowly", () => {
+    // A support line is a PHONE line — the premise of the whole template — and
+    // nothing else here would notice the day `telephony` came off the def.
+    expect(admits(agentDef.telephony, "twilio")).toBe(true);
+    // `["twilio"]` rather than `true`: the narrower statement is the one to
+    // copy, and it is only a statement if a carrier this agent did not name is
+    // actually refused.
+    expect(admits(agentDef.telephony, "telnyx")).toBe(false);
   });
 });
 

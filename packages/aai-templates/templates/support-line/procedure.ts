@@ -57,9 +57,9 @@ import {
   type GenerateFn,
   type GuardrailVerdict,
   omitUndefined,
-  procedure,
   type Procedure,
   type ProcedureRunOptions,
+  procedure,
 } from "@alexkroman1/aai";
 import { assign, fromPromise, setup } from "xstate";
 import {
