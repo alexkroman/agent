@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "ffmpeg",
   "epoch": 1,
-  "sha256": "a4f88ddb316eb6552f362e4d777a91dc2e4495e10190de70e5549d2957219dd7",
+  "sha256": "3130ea25be08de7a2939d2fe7322e679f159c21b7705a2e4c983edfe24f14e42",
   "exports": [
     "FfmpegError",
     "FfmpegFailureKind",
@@ -14,6 +14,8 @@
     "ProbeOptions",
     "TranscodeToWavOptions",
     "WavEncodeOptions",
+    "describeMedia",
+    "ffmpegBaseArgs",
     "isFfmpegError",
     "probeMedia",
     "runFfmpeg",

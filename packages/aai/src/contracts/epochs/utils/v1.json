@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "utils",
   "epoch": 1,
-  "sha256": "48294e83b3a01a50bd21a8aa622546fe2e5885151faf8dd92307470d1ec8d527",
+  "sha256": "a34ea7601ab9ed23c204e866b2e6aa9578d3b60a00e049d383f0a84e013ab337",
   "exports": [
     "KeyedLock",
     "KeyedLockOptions",
@@ -14,11 +14,13 @@
     "errorMessage",
     "formatBytes",
     "formatDuration",
+    "formatMoney",
     "isRecord",
     "omitUndefined",
     "plural",
     "pushCapped",
     "responseErrorMessage",
+    "roundMoney",
     "safeJsonParse",
     "withLock"
   ]

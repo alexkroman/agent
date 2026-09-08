@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "stt",
   "epoch": 1,
-  "sha256": "28486ba3378ca609a45c140dd3eb5a6060cc917d1daf85fd4ec7ce6f802d0fa9",
+  "sha256": "eb327921e8ed115e77f98cf5b35f7895ac7e2ae61ba918353919d1ecc9afa131",
   "exports": [
     "ASSEMBLYAI_STT_EU_URL",
     "AssemblyAISttOptions",

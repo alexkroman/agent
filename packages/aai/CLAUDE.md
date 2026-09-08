@@ -90,8 +90,10 @@ epoch N"). That change is a changeset-and-review matter, not a gated one.
 
 The other shape — a signature change breaking frozen examples at several
 superseded epochs, which `--bump --drop` cannot reach because it classifies only
-the current one — cannot arise today: with no external consumers every superseded
-epoch is dropped rather than retained, so no frozen example exists to break.
+the current one — cannot arise today, and now by construction: every capability
+was reset to epoch 1 and nothing is retained, so there is no frozen example to
+break. See "Every capability restarts at epoch 1" in `docs/CLAUDE.md` for why
+the history went, and for the one condition that makes it wrong to do again.
 
 ## Subpath export → file mapping
 
@@ -1031,11 +1033,13 @@ survives as an `@internal` type: the shape this runtime's own Postgres consumers
 take (upload records, the session-state backend, the workflow journal's
 postgres arm), not an authoring type. `sdk/db.ts` carries that.
 
-Removing it dropped ten capability epochs — `aai:db` retired outright, and
+Removing it moved ten capability contracts — `aai:db` retired outright, and
 `agent`/`tool`/`dialog`/`state`/`subagent`/`testing` plus five `aai-runtime`
-ones bumped, because `ToolContext` appears in their reports. The `aai:testing`
-bump also removed `createUnusedDb`, the rejecting `Db` that `createToolContext`
-defaulted to.
+ones bumped, because `ToolContext` appears in their reports. It also removed
+`createUnusedDb`, the rejecting `Db` that `createToolContext` defaulted to.
+(Those epoch numbers are gone — the numbering was reset to 1 — but the fan-out
+is the durable lesson: a type on `ToolContext` is reachable from six contracts
+at once.)
 
 **What the platform DOES persist**, with no setup, is the part worth leading
 with: `sessionSlot` for a session's own state (durable across a crash and a

@@ -2,12 +2,17 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "agent",
   "epoch": 1,
-  "sha256": "f481c9316609b3c0eedf85e436d358038645672ea84aca906a4d1da269570e96",
+  "sha256": "6d17c76482ae1f8cc43a5db0042c5052773f2f3bbabb620b7a11b0d68f908754",
   "exports": [
     "AgentDef",
     "AgentParams",
     "AssemblyAIPipelineOptions",
     "BuiltinTool",
+    "MCP_SERVER_KEY_RE",
+    "MCP_TOOL_NAME_MAX",
+    "MCP_TOOL_PREFIX",
+    "McpServerConfig",
+    "McpServers",
     "PipelineAgentParams",
     "PipelineVoiceTuning",
     "ProviderCredentialOptions",
@@ -19,10 +24,13 @@
     "SessionEventType",
     "SharedAgentParams",
     "StaticAgentParams",
+    "TelephonyAccess",
+    "TelephonyCarrier",
     "TextAgentParams",
     "ToolChoice",
     "agent",
     "assemblyAIPipeline",
+    "mcpToolName",
     "workflowApp"
   ]
 }

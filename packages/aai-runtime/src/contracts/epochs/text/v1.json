@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "text",
   "epoch": 1,
-  "sha256": "c306ce9b2fe9f089309b9099891ca425a6ba5fd9e2e59b96388ea21cf07f6ed9",
+  "sha256": "64a1bab92067fb54665721c2a477404fbea5f4a63f1263591aa179f828316a90",
   "exports": [
     "TextAgent",
     "TextAgentOptions",

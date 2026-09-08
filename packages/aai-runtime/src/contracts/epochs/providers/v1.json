@@ -2,11 +2,11 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "providers",
   "epoch": 1,
-  "sha256": "ae4837409453df46e7f304ad79734d1b7f9f5a94bd74930bbe72e91649aba9ad",
+  "sha256": "5b240ea94ce8263025899516d3477e835f7b63903545538f918773ceca12caf7",
   "exports": [
     "LlmRegistryEntry",
     "OpenerRegistryEntry",
-    "S2SConfig",
+    "S2sConfig",
     "SttError",
     "SttEvents",
     "SttOpenOptions",
