@@ -222,6 +222,25 @@ export const readInternalSurface = (pkg) =>
   /** @type {InternalSurface} */ (readJson(pkg.internalSurfacePath));
 export const writeInternalSurface = (pkg, surface) => writeJson(pkg.internalSurfacePath, surface);
 
+/** The `kind` every epoch file carries, so a stray JSON file is not mistaken for one. */
+export const CONTRACT_KIND = "aai-authoring-capability-contract";
+
+/**
+ * One epoch file's contents, from a freshly generated report.
+ *
+ * Here rather than in the CLI because it IS the {@link EpochRecord} shape this
+ * module already declares, and three commands write one — `--init`, `--bump`
+ * and `--rehash`. A second spelling in any of them is a field that silently
+ * stops being committed.
+ */
+export const epochRecord = (capability, epoch, generated) => ({
+  kind: CONTRACT_KIND,
+  capability,
+  epoch,
+  sha256: generated.sha256,
+  exports: generated.exports,
+});
+
 export const epochPath = (pkg, capability, version) =>
   join(pkg.epochRoot, capability, `v${version}.json`);
 /** @returns {EpochRecord} */

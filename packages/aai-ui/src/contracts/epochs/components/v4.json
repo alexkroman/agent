@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "components",
   "epoch": 4,
-  "sha256": "cb7ac544dc1d732cb0784f482177e8eefd719e654133a8affc32107e53e9c332",
+  "sha256": "a9356df2c66eb39a2eac03726411a49c57bf728e469e9f73e8c2688340c0cd61",
   "exports": [
     "AutoScroll",
     "BulletList",

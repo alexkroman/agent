@@ -322,10 +322,58 @@ Six properties are load-bearing:
   as supported only for as long as the frozen example stays quiet about it.
   `aai-runtime:db` epoch 2 is the standing instance (`SweepSkip`), and epoch 4
   was dropped for precisely that removal.
-- **The hash covers the rollup BODY, not the report file.** API Extractor's
-  preamble is identical in every report and is the tool's, not ours; hashing it
-  would make an api-extractor upgrade that reworded one line bump every epoch at
-  once, each demanding a classification for a change to nothing.
+- **The hash covers the rollup BODY, not the report file, and not all of that
+  body.** API Extractor's preamble is identical in every report and is the
+  tool's, not ours; hashing it would make an api-extractor upgrade that reworded
+  one line bump every epoch at once, each demanding a classification for a
+  change to nothing. That argument generalizes, and
+  `scripts/_api-contracts-hash.mjs` is where it is applied: a hash that moves
+  for a change nobody can observe does not RECORD a decision, it EXTRACTS one.
+  **114 of the 268 dropped epochs (43%) carry a reason admitting, in its own
+  words, that the superseded epoch "would in fact still compile"** — each of
+  them a paragraph somebody wrote to explain that nothing happened. Two classes
+  are normalized away, both measured off that record:
+
+  - **Parameter names, replaced positionally.** TypeScript has no named
+    arguments, so a rename cannot make a caller stop compiling. One PR (`opts`
+    to `options`) forced 36 classifications, every one recorded with the same
+    sentence. The rename is still a real change to the reference a reader uses,
+    so it stays in the committed `etc/*.api.md` and `check:api-report` still
+    fails until that is regenerated — a reviewer sees it either way. What it is
+    not is a compatibility decision. A type predicate naming the parameter is
+    rewritten with it, or the rename escapes through `value is Foo`.
+  - **The BODY of a declaration another capability of the same package
+    contracts**, collapsed to `// (contracted elsewhere) <Name>`. 38% of all
+    hashed declaration lines — and **74% of `aai:tool`'s** — were somebody
+    else's type, reached through a field like `ToolContext.workflows`, so
+    `tool` was five times likelier to be bumped by a change to another surface
+    than to its own. That produced 35 drops whose reason begins "Collateral:".
+    471 declarations collapse this way, 26% of the hashed text.
+
+  Neither weakens the gate, and the tests are written in PAIRS to keep that
+  honest (`packages/aai-gates/src/api-contracts-hash.test.ts`): the NAME of a
+  foreign declaration is still hashed, so a capability that starts or stops
+  reaching one still bumps; a declaration NO capability owns — a forgotten
+  export, which `includeForgottenExports` puts there precisely because a
+  consumer must satisfy it while having no name to import it by — is still
+  hashed by body; and a capability's own surface is never elided. The real
+  backward-compatibility test was never the hash anyway: it is the frozen
+  example under `contracts/compatibility/`, which `pnpm typecheck` compiles, so
+  a foreign type that breaks reddens every retained epoch that uses it whichever
+  capability owns the name. Verified end to end — renaming `tool()`'s parameter
+  in source and rebuilding leaves all 53 contracts green, while widening its
+  return type flags `aai:tool` and only `aai:tool`.
+
+- **Changing the normalization is a `--rehash`, never one bump per
+  capability.** Every committed hash stops matching at once while not one
+  signature moved, so
+  `node scripts/api-contracts.mjs --rehash --because "<reason>"` recomputes each
+  CURRENT epoch in place. It refuses any capability whose export list has moved
+  — that is a surface change and `--bump` owns it — and it is only sound from a
+  tree where the gate was GREEN beforehand, since green means every committed
+  hash already matched the surface. Run it in the commit that changes the rule
+  and in no other: a rehash shows in review as changed `sha256` fields under
+  unchanged epoch numbers and nothing else.
 - **Old epoch metadata is immutable and retained** (`v1..current`, enforced), so
   "when did this break and what did we say" is answerable from the tree.
 - **The export-list delta suggests the bump.** A removed name prints `major`, an

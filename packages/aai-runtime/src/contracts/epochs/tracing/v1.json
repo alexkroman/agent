@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "tracing",
   "epoch": 1,
-  "sha256": "6d169ee87a6ad659280bdb4187a9be629b5d85c38ccde1d0b2e05c2f6a6e30d7",
+  "sha256": "36c8939194ca7f86ecbd86968b107b51e0815340cf1404ce9ee824a4b75f7abe",
   "exports": [
     "DEFAULT_SERVICE_NAME",
     "OTEL_ENDPOINT_ENVS",

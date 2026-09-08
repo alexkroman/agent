@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "workflow",
   "epoch": 12,
-  "sha256": "4b441eec311252bf151e1a6c95f003405a1663c0bb140aa407a8224c01688e10",
+  "sha256": "79b72a671bc7c23597144884a377361948b894beb9a42495998611a1292afdee",
   "exports": [
     "AudioResult",
     "AudioResultCaptions",

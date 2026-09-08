@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "testing",
   "epoch": 8,
-  "sha256": "c0484e03ea794c21cd39c6f4d950f5aafb2b866f6ef1d4c70c55046feb409033",
+  "sha256": "37edc557a1dcfccb07f4557b777cc9270979d2d46284b97960b95c8644794a48",
   "exports": [
     "DEFAULT_MAX_DELIVERIES",
     "DeterminismKind",

@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "dialog",
   "epoch": 20,
-  "sha256": "e98bf4b04a039cafcff5962dfc7db3c8c250eaabfc8735deb56f611467aa6f14",
+  "sha256": "0f45aac07852ca13070304eb08acbd2c258e6c163f29468bdb2694326c71523d",
   "exports": [
     "AnyDialog",
     "Dialog",

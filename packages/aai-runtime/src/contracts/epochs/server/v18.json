@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "server",
   "epoch": 18,
-  "sha256": "145a78d91804fe762f811a4a4649a778cbbd19693685ae1b06cdf49e35d87c19",
+  "sha256": "1f26339c1ad983ccf7b60c336c04db82906943cb12e66b5675ec44d37efb611b",
   "exports": [
     "AgentEnv",
     "AgentServer",

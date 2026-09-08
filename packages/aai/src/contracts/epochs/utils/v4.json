@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "utils",
   "epoch": 4,
-  "sha256": "3564c81dd8231fb94817354b89e49e2f427c584e13b2537cdbcdeef6ca252b81",
+  "sha256": "a34ea7601ab9ed23c204e866b2e6aa9578d3b60a00e049d383f0a84e013ab337",
   "exports": [
     "KeyedLock",
     "KeyedLockOptions",

@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "step",
   "epoch": 13,
-  "sha256": "9e0d15ebb56f8608d99a19b8d5b7db79576919836c92b1c544662bb73f731254",
+  "sha256": "6d8499c96d6bbb2ec702c89bf436652c814f5e66199405632a330d1d698e8e09",
   "exports": [
     "MultipartBody",
     "MultipartPart",

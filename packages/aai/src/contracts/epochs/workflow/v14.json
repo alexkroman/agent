@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "workflow",
   "epoch": 14,
-  "sha256": "39bad585c74ab1b44f4285084bcb7853b94c172223c97b3ecc43f8fde08a5a7b",
+  "sha256": "abb9ce09d3a1f8b7a71114fe36b5731f842283794b8935865c4f3add7bc3d2c5",
   "exports": [
     "DEFAULT_STEP_MAX_ATTEMPTS",
     "SleepOptions",
