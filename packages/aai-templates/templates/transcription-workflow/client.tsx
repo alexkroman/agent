@@ -490,15 +490,13 @@ function UploadPicker({
   return (
     <fieldset className="flex flex-col gap-3" disabled={disabled}>
       <legend className="text-sm font-medium uppercase tracking-[1.2px]">Upload</legend>
-      {/* The SDK's own control rather than markup of this page's: the box, its
-          label and the line under it were hand-written here and had drifted from
-          every declared field on the page — a different label size, a different
-          hint colour, and no theme at all. `<CheckboxField>` is what
-          `<WorkflowFields>` renders for a boolean, so a control the page writes
-          itself and one the schema declares now look the same. It sits OUTSIDE
-          `<Form>` deliberately: `parallel` describes how the recording travels,
-          not what the workflow is asked for, so it is page state rather than a
-          collected value — the `name` is for the DOM, not for `FormValues`. */}
+      {/* `<CheckboxField>` is what `<WorkflowFields>` renders for a declared
+          boolean, so the one control this page writes itself now matches the
+          ones its schema declares — the hand-written box, label and hint here
+          had drifted on all three (size, colour, and no theme at all). It sits
+          OUTSIDE `<Form>` deliberately: `parallel` describes how the recording
+          travels rather than what the workflow is asked for, so it is page state
+          and the `name` is for the DOM, not for `FormValues`. */}
       <CheckboxField
         name="parallel"
         label="Split the file across connections"

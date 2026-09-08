@@ -341,9 +341,12 @@ export async function requireWholeRecording(uploadId: string): Promise<UploadInf
  * true, terminal, and about ffmpeg's argv rather than about the file the person
  * chose.
  *
- * `MediaInfo.audio` is the FIRST audio stream, which is the one a
- * single-track encode means; a file with several is downmixed by ffmpeg
- * exactly as it was before.
+ * `MediaInfo.audio` is the FIRST audio stream. ffmpeg's own default selection
+ * prefers the WIDEST one, so a file carrying several could be read here and
+ * encoded there from two different streams — which costs at most a lower
+ * {@link encodeTargets} ceiling, never a wrong file, because that target is a
+ * `Math.min`. Recordings with two audio tracks are rare enough not to pay for
+ * an explicit `-map` and the mismatch it would then have to explain.
  */
 export function audioTrack(info: MediaInfo): MediaStreamInfo {
   return (
@@ -365,8 +368,9 @@ export function audioTrack(info: MediaInfo): MediaStreamInfo {
  * `sampleRate: NORMALIZED_SAMPLE_RATE` upsampled 8 kHz telephony audio to
  * 16 kHz: twice the bytes per request, against an endpoint whose budget is a
  * 30-second wall clock covering the upload, for information the source does not
- * contain. The two are one decision now, so a file converted here and a segment
- * sent from `transcribeStream` are priced the same way.
+ * contain. The two are one decision now, so a file converted here and a window
+ * `transcribeSegment` resamples on its way out are priced the same way — which
+ * is also what `segmentConcurrency` divides to get the fan-out's width.
  *
  * A source ffprobe reported no rate for falls back to the ceiling, which is what
  * the desk asked for before it looked.
