@@ -1,5 +1,52 @@
 # aai-guest
 
+## 0.6.3
+
+### Patch Changes
+
+- Updated dependencies [b890150]
+- Updated dependencies [66568a5]
+- Updated dependencies [8bd5841]
+- Updated dependencies [bbd1a47]
+- Updated dependencies [1ecf911]
+- Updated dependencies [e845c19]
+- Updated dependencies [14e70ea]
+- Updated dependencies [b463bb5]
+- Updated dependencies [e845c19]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [c94f702]
+- Updated dependencies [b463bb5]
+- Updated dependencies [66568a5]
+- Updated dependencies [b890150]
+- Updated dependencies [3b33de3]
+- Updated dependencies [b463bb5]
+- Updated dependencies [b463bb5]
+- Updated dependencies [07f0a3e]
+- Updated dependencies [7062ab9]
+- Updated dependencies [4986d01]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [c36a3c0]
+- Updated dependencies [ffb795f]
+- Updated dependencies [3b55bab]
+- Updated dependencies [9f78b85]
+- Updated dependencies [8bd5841]
+- Updated dependencies [31bec98]
+- Updated dependencies [b890150]
+- Updated dependencies [dae6658]
+- Updated dependencies [aa105a4]
+- Updated dependencies [0b81685]
+- Updated dependencies [66568a5]
+- Updated dependencies [a09acd2]
+- Updated dependencies [083662f]
+- Updated dependencies [0666785]
+- Updated dependencies [b463bb5]
+- Updated dependencies [ffb795f]
+- Updated dependencies [55ddb0a]
+  - @alexkroman1/aai-runtime@16.0.0
+  - @alexkroman1/aai@16.0.0
+  - @alexkroman1/aai-cli@16.0.0
+  - @alexkroman1/aai-ui@16.0.0
+
 ## 0.6.2
 
 ### Patch Changes

@@ -1,5 +1,98 @@
 # @alexkroman1/aai-runtime
 
+## 16.0.0
+
+### Minor Changes
+
+- bbd1a47: Three things the templates kept rebuilding move into the SDK.
+  
+  `describeMedia(info)` on `@alexkroman1/aai/ffmpeg` turns a `probeMedia` result into the `41:20 of aac` a progress line wants, degrading a field at a time (`41:20`, `aac`, `the recording`) when ffprobe did not report one. `call-audit` and `transcription-workflow` each carried the same function.
+  
+  `dialogResultSchema(result)` on `@alexkroman1/aai/testing` is the envelope a `dialog.tool` answers with — `{ result, state, done, instruction? }` — as a zod schema around the tool's own, for an eval reading a serialized result back through `toolResultIn`. Three template evals had written it out under a comment saying the shape was the SDK's.
+  
+  `describeEval` now gives the workflow engine it opens beside a voice agent the same env `describeWorkflowEval` gives a workflow app: in stub mode a declared key nobody has is a placeholder, so a step's `requireStepEnv` reaches the scripted provider instead of throwing over a credential the case was never going to use. The two templates that hand off to a run drop the `EVAL_ENV` they each carried for exactly this.
+- b463bb5: Drive a declared `agent({ dialogs })` from the session: session events reach the dialog, per-state deadlines fire, the active state's instruction reaches the model every turn, and three of its voice knobs take effect.
+  
+  Events are offered to each dialog between the client send and the author's `events` hooks, so a hook reading `position()` sees the state the dialog moved TO. Deadlines run from the dialog's last move, which is what makes both a silence ladder (a self-transition on `@user-transcript.committed` restarts the window) and an abandonment deadline (nothing extends it) expressible without the runtime guessing. `bargeIn`, `toolChoice` and `temperature` are live on the pipeline, the latter two per STEP; `voice` and `keyterms` cannot take effect mid-session and warn at the first session rather than doing nothing quietly. Preemptive generation is disabled for a session whose dialogs vary the LLM knobs, since a speculation decides once whether it is free.
+- c94f702: Subagents gain `expectedOutput`, a `guardrail` that can send an answer back, and `agent({ subagents })` — a roster the model routes over.
+  
+  `SubagentDef.expectedOutput` declares what a good final message is and the runtime appends it as its own section, making structural the "tell it to summarize" rule that was previously a sentence every author had to remember. `SubagentDef.guardrail` checks an attempt and may return a complaint, in which case the subagent is re-run with its own rejected answer and that complaint appended to the conversation it already has — so the retry keeps the tool results the first attempt paid for. Exhausting `maxRetries` (default 1) returns the last attempt with `accepted: false` and the `complaint` rather than throwing, because a caller on a live call still has to say something.
+  
+  `agent({ subagents: [a, b] })` publishes a roster as one `delegate` tool whose `coworker` argument is an enum over the names, described by each subagent's new `description`. It is the other way to choose a subagent: a tool body naming one is the author routing in code, a roster is the model routing per turn. `briefing-desk` demonstrates both side by side.
+- 07f0a3e: `stepDelegate` — a whole tool loop from inside a workflow step, and two templates stop hand-rolling one.
+  
+  `stepGenerate` was the one-shot a step already had; the gap beside it was the loop. A step is handed no `ToolContext`, so `ctx.delegate` was unreachable there and a workflow that needed a model to search-read-search hand-rolled it: an action schema for the model to pick from, a counter for the budget, a sentence telling it to answer once the budget was spent, and a branch for the turn where it named an action and filled in none of its fields. `stepDelegate(subagent, { task })` is the same `createSubagentRunner` `ctx.delegate` runs on, bound to a sessionless parent bag — a published `Symbol.for` slot rather than an import, because `ToolLoopAgent` may not ride into the agent bundle. `stubStepDelegate` and `installStubStepDelegate` drive one in a spec; an unpublished slot throws rather than answering emptily, since there is no degraded version of running a model loop.
+  
+  `research-workflow`'s `investigate` deletes 82 lines of loop and helpers for it, and its second model call went too — `expectedOutput` compresses where the raw material already is (the file nets 44 code lines lighter; the rest is the researcher, its `cite` tool, and reading the run's cost off `toolCalls`). `plan-and-execute`'s `executeStep` is the same conversion through `ctx.delegate`, which its tool had all along; its executor gained a `read` tool, closing a gap its own prompt had left open ("search once, read what comes back", with no way to read).
+- 4986d01: Move OTLP span export into the runtime, so self-hosted and `aai dev` agents can point at a collector — not only the managed platform. The OpenTelemetry packages are optional peer dependencies loaded through a dynamic import, so nothing is installed or constructed unless a deployment enables tracing. Adds the `@alexkroman1/aai-runtime/tracing` subpath, and joins a model call to the request that caused it by forwarding W3C `traceparent` across the platform hop.
+- 0b81685: Publish the eval and workflow-test types that were referenced by public options and exported by nothing (`HostGenerateFn`, `EvalWorkflowEngineOptions`, `JournalStore` and its six records, `DeterminismKind`, `JournalConflictError`, `DEFAULT_RUN_TIMEOUT_MS`), and render `/eval`, `/eval/vitest` and `/testing` in the API reference.
+- b463bb5: Resolve the system prompt per turn rather than once per session, so a phase-aware prompt can reach the model on turns that call no tool.
+  
+  `TransportSessionConfig.systemPrompt` accepts a thunk as well as a string, and `Transport.refreshSystemPrompt()` pushes a changed prompt to a live OpenAI Realtime session as an `instructions`-only `session.update`, sent only on a change. A speculation now records the prompt it launched on and is discarded as `prompt-moved` when that has since changed, because a request in flight cannot have its `system` amended. AssemblyAI S2S resolves once at construction — its tool loop is service-side and has no per-turn moment. A plain string behaves exactly as before.
+- ffb795f: The second half of the template audit: five families of code the templates kept rebuilding move into the SDK, and the templates become their worked examples.
+  
+  **`@alexkroman1/aai-ui` — the session chrome kit.** `SessionStateDot`, `SessionControls` (with the headless `useSessionControls`), `ConversationView` (which `MessageList` is now built on, DOM unchanged), plus `AudioResult` and `WorkflowRunPanel` for workflow-app pages, and an `.aai-scroll` utility in `styles.css`. Three custom chromes (`dispatch-center`, `retail`, `infocom-adventure`) each rebuilt the dot, the Start/Pause/New/End row with the same twelve-line comment on `end()` vs `reset()`, and the conversation skeleton; two pages each rendered the audio block and the run panel by hand.
+  
+  **`@alexkroman1/aai` — `sessionSlot({ caps })`.** A per-array growth cap the slot enforces after every write (after the author's `after` hook), typed so only array-valued keys are accepted (`SlotCaps<T>`). Ten templates paired a `MAX_*` constant with a wrapper whose whole body was `pushCapped`, and a wrapper caps only the paths that call it: `executive-assistant` had three uncapped arrays riding every `syncState` frame. `pushCapped` stays for nested lists.
+  
+  **`@alexkroman1/aai/step` `mapSettled` / `partitionSettled` / `Settled`** — bounded fan-out with per-item failure isolated into a value, which `hiring-desk` and `briefing-desk` had composed over `mapConcurrent` and `Promise.allSettled`. **`@alexkroman1/aai/tts` `ttsVoiceIds(language?)`** — the `z.enum` tuple of catalog voices two templates derived by hand. **`spokenAlphanumeric`** beside `spokenDigits`.
+  
+  **`@alexkroman1/aai/testing`** — `expectDeployable` (the three starter invariants six specs wrote out), `expectPromptBuiltinsDeclared` / `commandedBuiltins` (the prompt↔`builtinTools` scan two specs had byte-identically), `runGuardrail`, and `scriptedToolContext` (both model seams scripted, answering `{ ctx, model, desk }`).
+  
+  **`@alexkroman1/aai-runtime/eval`** — `runCodeIn` / `runCodeOutput` (the second throws on the executor's refusal, importing the sentence from the executor rather than letting a spec re-type it), `expectToolBeforeSpeech`, and `EvalTurn.errors` with `errorsIn`.
+  
+  Epochs: `aai:state` 18, `aai:testing` 29 and `aai-runtime:eval` 9 retain their predecessors with frozen examples; `aai:spoken`, `aai:step`, `aai:tts` and the three `aai-ui` capabilities are bumped with the additive-drop reason this repo records for a package that keeps no example of the superseded epoch.
+
+### Patch Changes
+
+- b890150: Load the six @ai-sdk provider packages and the Postgres driver on first use instead of at import.
+- 8bd5841: Move six things the templates kept rebuilding into the SDK.
+  
+  - **The OUTBOUND half of `spoken.ts`.** `spokenMoney`, `spokenDate`,
+    `spokenTime` and `mintCode` — data as the words a TTS voice reads correctly,
+    which is the same problem `resolveOne` solves from the other end. Fixed ASCII
+    shapes and no `Intl`: the `toLocaleDateString("en-US", …)` this replaces
+    answers to the host's ICU build, so a desk could read dates correctly on a
+    laptop and differently in a sandbox.
+  - **`ctx.random`.** `ToolContext` gains a required `random`, with `randomInt` /
+    `pickOne` / `shuffled` / `createSeededRandom` beside it. Ten sites across
+    seven templates called `Math.random()` directly and could not be pinned by a
+    spec. `createToolContext` defaults it to a SEEDED source, so a spec that never
+    mentions randomness is still deterministic.
+  - **`isoDate(what)` / `clockTime(what)`**, plus the `calendar.ts` predicates and
+    UTC arithmetic behind them. A tool-argument rule declared where the model
+    READS it rather than discovered by being refused after it has committed.
+  - **`orFail` / `failable`.** The forwarding half of the `T | ToolFailure` union,
+    so a chain of lookups is written once rather than guarded per step. The union
+    and how a tool returns it are unchanged.
+  - **`parseWav`** and the RIFF chunk walk, the read side matching `encodeWav`.
+    A reader that assumes 44 bytes transcribes ffmpeg's own `LIST`/`INFO` chunk as
+    audio.
+  - **`roundMoney`**, sharing `formatMoney`'s `toFixed(2)` basis so a total cannot
+    compare as one number and print as another.
+  
+  Breaking: `ToolContext.random` is required, so code that hand-builds a
+  `ToolContext` rather than using `createToolContext` no longer compiles.
+- Updated dependencies [66568a5]
+- Updated dependencies [8bd5841]
+- Updated dependencies [bbd1a47]
+- Updated dependencies [1ecf911]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [c94f702]
+- Updated dependencies [b890150]
+- Updated dependencies [b463bb5]
+- Updated dependencies [07f0a3e]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [c36a3c0]
+- Updated dependencies [ffb795f]
+- Updated dependencies [8bd5841]
+- Updated dependencies [31bec98]
+- Updated dependencies [b890150]
+- Updated dependencies [0666785]
+- Updated dependencies [ffb795f]
+- Updated dependencies [55ddb0a]
+  - @alexkroman1/aai@16.0.0
+
 ## 15.1.0
 
 ### Patch Changes
