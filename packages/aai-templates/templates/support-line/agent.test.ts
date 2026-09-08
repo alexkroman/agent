@@ -116,8 +116,10 @@ const run = toolRunner(agentDef);
  * A tool context wired to a scripted model — the pair every tool case needs.
  *
  * `TestToolContext` is the SDK's `ToolContext` plus the `sent` log, and naming
- * it is what lets this hand one value back where five cases were destructuring
- * a `{ generate }` only to feed it straight into `createToolContext`.
+ * it is what lets this hand one value back where a case was destructuring a
+ * `{ generate }` only to feed it straight into `createToolContext`. The
+ * isolation case below deliberately does NOT use it: its claim is two contexts
+ * over ONE model, which is the pair this collapses.
  */
 function supportContext(script: Script): TestToolContext {
   return createToolContext({ generate: scriptedModel(script).generate });

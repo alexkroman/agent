@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { deskUpdateTool, stageAction } from "../shared.ts";
 
 /**
@@ -10,6 +11,9 @@ export default deskUpdateTool("flight", {
     "The FLIGHT DESK's cancellation tool: cancel the caller's ticket outright. Only usable " +
     "while the call is at that desk. This does NOT cancel anything yet — it stages the " +
     "cancellation so you can read it back and hear a yes.",
+  // The desk's one tool that takes nothing: declared anyway, so `deskUpdateTool`
+  // has a single code path rather than a branch for the no-argument case.
+  inputSchema: z.object({}),
   execute(_args, trip, ctx) {
     if (!trip.ticket) return { error: "There is no ticket to cancel." };
     return stageAction(ctx, trip, { kind: "cancel_ticket" });

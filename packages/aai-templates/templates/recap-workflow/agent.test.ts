@@ -43,23 +43,34 @@
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { WorkflowClient } from "@alexkroman1/aai";
+import { DEFAULT_STEP_MAX_ATTEMPTS, type WorkflowClient } from "@alexkroman1/aai";
 import {
   createRunSnapshot,
+  createStubWorkflows,
   createToolContext,
   createWorkflowContext,
   parseSchemaInput,
+  type RecordedStep,
   schemaInputIssues,
   stubGatewayRoute,
   toolRunner,
+  type WorkflowContextRecorder,
 } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
   installStubWorkflows,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
-import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import type { WorkflowOutputOf, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
+import {
+  type JournalStore,
+  runWorkflow,
+  type RunWorkflowOptions,
+  type SleepRecord,
+  type WorkflowTestHandle,
+  type WorkflowTestRun,
+  type WorkflowTestStep,
+} from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { recap } from "./shared.ts";
 import {
@@ -97,6 +108,20 @@ const run = toolRunner(agentDef);
  */
 function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
   return installStubWorkflows({ runs, names: ["recap"] });
+}
+
+/**
+ * Every step of one name the body issued, in order.
+ *
+ * Five assertions in this file ask that question — four about `noteSlow`, which
+ * must be said once and only once, and one about what `summarize` was allowed
+ * to spend — and each had re-written the predicate. `RecordedStep` is what
+ * `createWorkflowContext` records per `ctx.step` call, and it carries the
+ * OPTIONS as well as the name, which is why the retry-policy assertion can be
+ * made here at all.
+ */
+function recordedSteps(ctx: WorkflowContextRecorder, name: string): RecordedStep[] {
+  return ctx.steps.filter((step) => step.name === name);
 }
 
 /** A finished recap, as the workflow's output reaches the tools. */

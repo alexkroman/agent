@@ -59,7 +59,7 @@ import {
   type ToolFailure,
   type ToolInputSchema,
 } from "@alexkroman1/aai";
-import { formatMoney, omitUndefined, plural, roundMoney } from "@alexkroman1/aai/utils";
+import { formatMoney, plural, roundMoney } from "@alexkroman1/aai/utils";
 
 // ─── The booking world ───────────────────────────────────────────────────────
 // Their notebook downloads a sqlite database of a real airline's schedule and
@@ -471,28 +471,46 @@ function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailure | un
  * draft. `requireDesk` short-circuits before either body runs, so a refused call
  * really searches, stages and books nothing.
  */
+/**
+ * What a desk tool declares: the slot's own {@link SlotToolDef}, with the schema
+ * REQUIRED — `cancel_ticket` takes no arguments and passes `z.object({})`.
+ *
+ * One code path in the wrapper is worth more than a line saved at one call
+ * site: `exactOptionalPropertyTypes` is on, so an `inputSchema` forwarded
+ * through a spread arrives as `P | undefined`, which is not what "this tool
+ * takes no arguments" means to the slot.
+ */
+type DeskToolDef<P extends ToolInputSchema, V, R> = Omit<SlotToolDef<P, V, R>, "inputSchema"> & {
+  inputSchema: P;
+};
+
 export function deskTool<P extends ToolInputSchema, R>(
   id: SpecialistId,
-  def: SlotToolDef<P, FrozenTripState, R>,
+  def: DeskToolDef<P, FrozenTripState, R>,
 ): ToolDef<P, R | ToolFailure> {
   return tripSlot.tool<P, R | ToolFailure>({
     description: def.description,
-    // `omitUndefined` rather than a spread of `def`: `exactOptionalPropertyTypes`
-    // is on, and a spread widens an optional `inputSchema` to `P | undefined` —
-    // which is not what "a tool with no arguments" means to the slot.
-    ...omitUndefined({ inputSchema: def.inputSchema }),
+    inputSchema: def.inputSchema,
     execute: (args, trip, ctx) => requireDesk(trip, id) ?? def.execute(args, trip, ctx),
   });
 }
 
-/** {@link deskTool} for a tool that WRITES — the draft half of the slot. */
-export function deskUpdateTool<P extends ToolInputSchema, R>(
+/**
+ * {@link deskTool} for a tool that WRITES — the draft half of the slot.
+ *
+ * Its result type is FIXED at {@link StagedReadBack} rather than generic, and
+ * that is the template's central rule stated as a type: a desk tool that touches
+ * the draft may only STAGE. There is nothing else for one to answer — a body
+ * that applied a change itself would have to invent a receipt, and the compiler
+ * asks for the read-back instead.
+ */
+export function deskUpdateTool<P extends ToolInputSchema>(
   id: SpecialistId,
-  def: SlotToolDef<P, TripState, R>,
-): ToolDef<P, R | ToolFailure> {
-  return tripSlot.updateTool<P, R | ToolFailure>({
+  def: DeskToolDef<P, TripState, StagedReadBack | ToolFailure>,
+): ToolDef<P, StagedReadBack | ToolFailure> {
+  return tripSlot.updateTool<P, StagedReadBack | ToolFailure>({
     description: def.description,
-    ...omitUndefined({ inputSchema: def.inputSchema }),
+    inputSchema: def.inputSchema,
     execute: (args, trip, ctx) => requireDesk(trip, id) ?? def.execute(args, trip, ctx),
   });
 }
@@ -658,9 +676,7 @@ export function stageAction(
   ctx: ToolContext,
   state: TripState,
   action: PendingAction,
-):
-  | { awaitingConfirmation: true; readBack: string; expires: "on the caller's next answer" }
-  | ToolFailure {
+): StagedReadBack | ToolFailure {
   const described = describeAction(action);
   if (typeof described !== "string") return described;
   if (state.pending) {

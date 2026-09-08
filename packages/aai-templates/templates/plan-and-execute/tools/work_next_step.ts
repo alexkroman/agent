@@ -90,7 +90,12 @@ export default planFlow.tool({
       planSlot.update(ctx, (plan) => {
         // Capped: `historyOf` renders this whole list into two prompts, so an
         // append with no bound is a model bill that grows with the plan.
-        plan.pastSteps.push({ step, result: outcome.result, searches: outcome.searches });
+        plan.pastSteps.push({
+          step,
+          result: outcome.result,
+          settled: outcome.settled,
+          searches: outcome.searches,
+        });
       });
 
       // Their `replan_step`: the plan after a step is whatever still needs
