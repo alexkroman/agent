@@ -55,31 +55,84 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isRecord } from "@alexkroman1/aai/utils";
-import {
-  type Context,
-  context as otelContext,
-  ROOT_CONTEXT,
-  type Span,
-  SpanKind,
-  SpanStatusCode,
-  type TextMapGetter,
-  type TextMapPropagator,
-  type TextMapSetter,
-  TraceFlags,
-  type Tracer,
-  trace,
+import type {
+  Context,
+  Span,
+  TextMapGetter,
+  TextMapPropagator,
+  TextMapSetter,
+  Tracer,
 } from "@opentelemetry/api";
-import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
-import {
-  BasicTracerProvider,
-  BatchSpanProcessor,
-  type SpanExporter,
-} from "@opentelemetry/sdk-trace-base";
+import type { SpanExporter } from "@opentelemetry/sdk-trace-base";
 import { registerTelemetry, type Telemetry } from "ai";
 import pTimeout from "p-timeout";
 import { parseTraceparent } from "./_trace-context.ts";
+
+/**
+ * The five optional peers, as loaded namespaces — the ONLY way this module may
+ * reach OpenTelemetry.
+ *
+ * ## Not one static import, and that is a BUILD-TIME property
+ *
+ * `import type` is erased, so nothing below survives into the emitted JS except
+ * the dynamic `import()`s in {@link loadOtelPeers}. That is not stylistic. A
+ * consumer bundles this package with `ssr: { noExternal: true }` and
+ * `codeSplitting: false` — `aai build`'s worker, and every deployment target's
+ * entry (`_target-bundle.ts` in the CLI) — and BOTH settings together mean the
+ * dynamic `import()` that reaches this module is INLINED, so this file's own
+ * imports have to resolve at build time against a project that never installed
+ * an optional peer. Vite answers such an import with
+ * `__vite-optional-peer-dep:@opentelemetry/api`, a module that exports nothing,
+ * and rolldown then checks every NAMED binding against it:
+ *
+ * ```
+ * [MISSING_EXPORT] "ROOT_CONTEXT" is not exported by
+ *   "__vite-optional-peer-dep:@opentelemetry/api:@alexkroman1/aai-runtime"
+ * ```
+ *
+ * Twelve of those — one per name this module used to import — failed a real
+ * `vercel deploy` of a scaffolded project. It had already failed once before,
+ * through a different importer (`server.ts`, which is why `_request-trace.ts`
+ * exists), and the invariant that both breaches violated ("keep this module out
+ * of that bundle") is not one any author can be expected to hold: it is a
+ * property of the whole import graph, re-decided by every new caller.
+ *
+ * A DYNAMIC import has no such check — measured against vite 8 / rolldown, both
+ * `(await import(p)).X` and `const { X } = await import(p)` build clean and
+ * defer the missing peer to the moment the stub is evaluated, which is when
+ * tracing is armed and never before. So the peer's absence surfaces where it
+ * always should have: as {@link loadOtelPeers} rejecting, which the gate in
+ * `tracing.ts` turns into the install line. A project that DID install the
+ * peers gets them inlined and traced exactly as before.
+ *
+ * `check:optional-peers` is what keeps it that way; a static import of any
+ * optional peer from a module a published entry can reach fails that gate.
+ */
+export type OtelPeers = {
+  api: typeof import("@opentelemetry/api");
+  contextHooks: typeof import("@opentelemetry/context-async-hooks");
+  exporter: typeof import("@opentelemetry/exporter-trace-otlp-proto");
+  resources: typeof import("@opentelemetry/resources");
+  sdk: typeof import("@opentelemetry/sdk-trace-base");
+};
+
+/**
+ * Load the peers, or reject — see {@link OtelPeers} for why this is the seam.
+ *
+ * In parallel because they are five independent resolutions on the arming path
+ * of a guest whose boot latency is measured, and one rejection is one rejection
+ * however many of them are missing: the caller's answer names all five.
+ */
+export async function loadOtelPeers(): Promise<OtelPeers> {
+  const [api, contextHooks, exporter, resources, sdk] = await Promise.all([
+    import("@opentelemetry/api"),
+    import("@opentelemetry/context-async-hooks"),
+    import("@opentelemetry/exporter-trace-otlp-proto"),
+    import("@opentelemetry/resources"),
+    import("@opentelemetry/sdk-trace-base"),
+  ]);
+  return { api, contextHooks, exporter, resources, sdk };
+}
 
 /**
  * A started tracer.
@@ -134,28 +187,31 @@ const TRACEPARENT_HEADER = "traceparent";
  * spans root their own traces. Installing the propagator is what makes a parent
  * be honoured the day one arrives.
  */
-export const traceparentPropagator: TextMapPropagator = {
-  fields: () => [TRACEPARENT_HEADER],
-  inject(ctx: Context, carrier: unknown, setter: TextMapSetter): void {
-    const sc = trace.getSpanContext(ctx);
-    if (!(sc?.traceId && sc.spanId)) return;
-    const flags = (sc.traceFlags & 0xff).toString(16).padStart(2, "0");
-    const header = `00-${sc.traceId}-${sc.spanId}-${flags}`;
-    if (parseTraceparent(header) === undefined) return;
-    setter.set(carrier, TRACEPARENT_HEADER, header);
-  },
-  extract(ctx: Context, carrier: unknown, getter: TextMapGetter): Context {
-    const raw = getter.get(carrier, TRACEPARENT_HEADER);
-    const parsed = parseTraceparent(typeof raw === "string" ? raw : undefined);
-    if (!parsed) return ctx;
-    return trace.setSpanContext(ctx, {
-      traceId: parsed.traceId,
-      spanId: parsed.spanId,
-      traceFlags: parsed.flags & TraceFlags.SAMPLED,
-      isRemote: true,
-    });
-  },
-};
+export function createTraceparentPropagator(api: OtelPeers["api"]): TextMapPropagator {
+  const { trace, TraceFlags } = api;
+  return {
+    fields: () => [TRACEPARENT_HEADER],
+    inject(ctx: Context, carrier: unknown, setter: TextMapSetter): void {
+      const sc = trace.getSpanContext(ctx);
+      if (!(sc?.traceId && sc.spanId)) return;
+      const flags = (sc.traceFlags & 0xff).toString(16).padStart(2, "0");
+      const header = `00-${sc.traceId}-${sc.spanId}-${flags}`;
+      if (parseTraceparent(header) === undefined) return;
+      setter.set(carrier, TRACEPARENT_HEADER, header);
+    },
+    extract(ctx: Context, carrier: unknown, getter: TextMapGetter): Context {
+      const raw = getter.get(carrier, TRACEPARENT_HEADER);
+      const parsed = parseTraceparent(typeof raw === "string" ? raw : undefined);
+      if (!parsed) return ctx;
+      return trace.setSpanContext(ctx, {
+        traceId: parsed.traceId,
+        spanId: parsed.spanId,
+        traceFlags: parsed.flags & TraceFlags.SAMPLED,
+        isRemote: true,
+      });
+    },
+  };
+}
 
 /** A finite number, or nothing — an absent field must not become `NaN`. */
 function num(value: unknown): number | undefined {
@@ -272,11 +328,18 @@ type LiveOperation = { span: Span; ctx: Context };
 const MAX_LIVE_OPERATIONS = 64;
 
 export function startTracingOtel(
+  /** The loaded peers — see {@link OtelPeers} for why they arrive as a value. */
+  peers: OtelPeers,
   /** Already resolved by the gate — see {@link TracingHandle}. */
   serviceName: string,
   /** Test seam: the real exporter dials the collector named in `process.env`. */
-  createExporter: () => SpanExporter = () => new OTLPTraceExporter(),
+  createExporter: () => SpanExporter = () => new peers.exporter.OTLPTraceExporter(),
 ): TracingHandle {
+  const { api, contextHooks, resources, sdk } = peers;
+  const { context: otelContext, ROOT_CONTEXT, trace } = api;
+  const { defaultResource, resourceFromAttributes } = resources;
+  const { BasicTracerProvider, BatchSpanProcessor } = sdk;
+  const propagator = createTraceparentPropagator(api);
   const provider = new BasicTracerProvider({
     resource: defaultResource().merge(resourceFromAttributes({ "service.name": serviceName })),
     spanProcessors: [new BatchSpanProcessor(createExporter())],
@@ -288,11 +351,11 @@ export function startTracingOtel(
   // instead of rooting beside it. It is an OPTIONAL PEER like the rest of the
   // graph, so a deployment that never enables tracing installs no
   // AsyncLocalStorage and pays nothing; only this branch constructs one.
-  otelContext.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
+  otelContext.setGlobalContextManager(new contextHooks.AsyncLocalStorageContextManager().enable());
   // The `Telemetry` contract is checked HERE: `TelemetryIntegration`'s handlers all
   // take `unknown`, and this call is what proves that satisfies the SDK's own
   // per-event signatures.
-  const integration: Telemetry = buildIntegration(provider.getTracer("aai-runtime"));
+  const integration: Telemetry = buildIntegration(api, provider.getTracer("aai-runtime"));
   registerTelemetry(integration);
 
   const guard = (run: () => Promise<void>) => async () => {
@@ -308,7 +371,7 @@ export function startTracingOtel(
     forceFlush: guard(() => provider.forceFlush()),
     shutdown: guard(() => provider.shutdown()),
     adoptRequestTrace: (headers) => {
-      const ctx = traceparentPropagator.extract(ROOT_CONTEXT, headers, incomingHeaderGetter);
+      const ctx = propagator.extract(ROOT_CONTEXT, headers, incomingHeaderGetter);
       // Only when a PARENT really arrived: no header, or one the grammar
       // rejects, leaves `extract` returning the context it was given, and
       // pinning THAT for a request's whole subtree is a no-op that costs an
@@ -338,7 +401,8 @@ export type TelemetryIntegration = {
 };
 
 /** The integration: the operation pair, plus the four inner callbacks. */
-export function buildIntegration(tracer: Tracer): TelemetryIntegration {
+export function buildIntegration(api: OtelPeers["api"], tracer: Tracer): TelemetryIntegration {
+  const { context: otelContext, ROOT_CONTEXT, SpanKind, SpanStatusCode, trace } = api;
   const live = new Map<string, LiveOperation>();
 
   /** The parent for an inner span, or the root when the operation was missed. */

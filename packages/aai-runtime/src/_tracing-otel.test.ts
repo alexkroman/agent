@@ -27,8 +27,19 @@ import { generateText, stepCountIs, tool } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { z } from "zod";
-import { buildIntegration, startTracingOtel } from "./_tracing-otel.ts";
+import { buildIntegration, loadOtelPeers, startTracingOtel } from "./_tracing-otel.ts";
 import { DEFAULT_SERVICE_NAME } from "./tracing.ts";
+
+/**
+ * The peers, loaded the one way the module offers them.
+ *
+ * A spec may import `@opentelemetry/*` statically — it is never bundled for a
+ * consumer, which is the whole of what `check:optional-peers` is about — but
+ * what it hands `startTracingOtel` has to come from `loadOtelPeers`, because
+ * that call IS the seam under test: a peer this workspace resolves and a
+ * deployment does not is exactly the case that reaches it.
+ */
+const peers = await loadOtelPeers();
 
 /** Strings that exist nowhere but the conversation this test drives. */
 const PROMPT = "MAGICPROMPT-my-card-is-4111111111111111";
@@ -58,7 +69,11 @@ function withRuntimeTracing(env: Record<string, string> = CONFIGURED): {
 } {
   clearTelemetryRegistry();
   const exporter = new InMemorySpanExporter();
-  const tracing = startTracingOtel(env.OTEL_SERVICE_NAME ?? DEFAULT_SERVICE_NAME, () => exporter);
+  const tracing = startTracingOtel(
+    peers,
+    env.OTEL_SERVICE_NAME ?? DEFAULT_SERVICE_NAME,
+    () => exporter,
+  );
   onTestFinished(async () => {
     await tracing.shutdown();
     trace.disable();
@@ -273,7 +288,7 @@ describe("the allow-list", () => {
     onTestFinished(async () => {
       await provider.shutdown();
     });
-    drive(buildIntegration(provider.getTracer("test")));
+    drive(buildIntegration(peers.api, provider.getTracer("test")));
     return exporter.getFinishedSpans();
   }
 
@@ -365,7 +380,7 @@ describe("the allow-list", () => {
 describe("a broken collector", () => {
   test("cannot break the model call", async () => {
     clearTelemetryRegistry();
-    const tracing = startTracingOtel(DEFAULT_SERVICE_NAME, () => ({
+    const tracing = startTracingOtel(peers, DEFAULT_SERVICE_NAME, () => ({
       export() {
         throw new Error("ECONNREFUSED 127.0.0.1:4318");
       },
