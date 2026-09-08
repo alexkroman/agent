@@ -38,8 +38,21 @@
   font-size: var(--sl-text-code-sm);
 }
 
-/* The splash page's hero: the tagline should not compete with the title. */
+/*
+ * The splash page's hero. With no hero image the two-column layout collapses
+ * to one, and its reserved height became ~130px of nothing between the call to
+ * action and the first section — which reads as a page that has ended.
+ */
+.hero {
+  padding-block: 1rem 0;
+}
+
 .hero .tagline {
   font-size: var(--sl-text-body-lg);
   max-width: 34rem;
+}
+
+/* First section of a splash page follows the hero directly. */
+.hero + .sl-markdown-content > :first-child {
+  margin-top: 1.5rem;
 }

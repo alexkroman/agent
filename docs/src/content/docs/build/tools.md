@@ -7,7 +7,8 @@ A tool is an ordinary async function the model can decide to call. It lives in
 `tools/`, and the filename is its name:
 
 ```ts
-// tools/get_weather.ts → the model calls this `get_weather`
+// tools/get_weather.ts
+// The model calls this `get_weather`.
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
@@ -109,4 +110,5 @@ guessing.
 ## Next
 
 - [Remembering things](/agent/build/state/) — state across tool calls
-- [Testing](/agent/build/testing/) — tools are plain functions, so test them like any
+- [Testing](/agent/build/testing/) — a tool is a plain function, so test it
+  like one

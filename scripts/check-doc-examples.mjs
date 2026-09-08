@@ -147,14 +147,12 @@ const MARKDOWN_FILES = [
  */
 function assertEveryDocsPageListed() {
   const dir = "docs/src/content/docs";
-  const out = execFileSync(
-    "git",
-    ["ls-files", "--cached", "--others", "--exclude-standard", dir],
-    { cwd: repo, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-  );
-  const onDisk = out
-    .split("\n")
-    .filter((p) => /\.mdx?$/.test(p) && existsSync(path.join(repo, p)));
+  const out = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", dir], {
+    cwd: repo,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const onDisk = out.split("\n").filter((p) => /\.mdx?$/.test(p) && existsSync(path.join(repo, p)));
   const listed = new Set(MARKDOWN_FILES);
   const missing = onDisk.filter((p) => !listed.has(p));
   if (missing.length > 0) {

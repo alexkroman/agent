@@ -79,6 +79,22 @@ export const DOC_EXAMPLE_MARKDOWN: Record<string, string> = Object.fromEntries(
       import: "default",
       eager: true,
     }),
+    // The narrative docs site. A directory rather than named files, because
+    // the gate's own list has to be literal (this module's regex reads it) and
+    // a hand-kept copy of a growing directory HERE would then have to be kept
+    // in step with a hand-kept copy THERE. Globbing wide is what this record
+    // is for: `check-doc-examples.mjs` decides which of these it reads, and
+    // its `assertEveryDocsPageListed` is what stops a page defaulting out.
+    ...import.meta.glob<string>("../../../docs/src/content/docs/**/*.md", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+    ...import.meta.glob<string>("../../../docs/src/content/docs/**/*.mdx", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
   }).map(([key, source]) => [repoPathOf(key), source]),
 );
 

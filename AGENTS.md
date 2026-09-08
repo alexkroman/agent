@@ -227,9 +227,10 @@ rather than here:
 | `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
 
 One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the
-`aai-docs` workspace — both TypeDoc renderings, the committed markdown
-reference, and the `typescript@6` pin — **and, because they answer three
-versions of one question, the API REPORTS and the capability EPOCHS as well.**
+`aai-docs` workspace — the narrative documentation SITE (Astro + Starlight
+under `docs/src/`), both TypeDoc renderings, the committed markdown reference,
+and the `typescript@6` pin — **and, because they answer three versions of one
+question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
 Twelve files sit outside the table for a different reason — SIBLINGS of their
@@ -488,10 +489,18 @@ prevents and why the shipped SKILL carries no API guidance of its own.
 
 The third artifact of the three above: two renderings of the published type
 surface, both from TypeDoc over the built `dist/*.d.ts` of `aai` and `aai-ui`
-(only those two, deliberately). `pnpm docs:api` renders `docs/dist/**` as HTML
-for GitHub Pages; `pnpm docs:md` renders `docs/api/**` as **committed**
+(only those two, deliberately). `pnpm docs:api` builds the whole GitHub Pages
+site into `docs/dist/**` — the handwritten guide, with the TypeDoc HTML nested
+at `/reference/`; `pnpm docs:md` renders `docs/api/**` as **committed**
 markdown, so an agent can `cat` the API reference instead of a rendered site,
 and `pnpm check:docs-md` fails when it is stale.
+
+**The GUIDE is the site's other half, and it is gated like code.** Its pages
+live in `docs/src/content/docs/`; every ` ```ts ` fence on them compiles under
+`check:doc-examples` exactly as a JSDoc example does, and a broken internal
+link fails the build. `turbo run docs` — which CI already runs on every PR —
+builds both halves, so neither can rot silently. `docs/CLAUDE.md` carries the
+rest.
 
 **All of it is in [`docs/CLAUDE.md`](docs/CLAUDE.md)** — the two commands and
 what gates each, the `@module`/entry-point rule a new subpath export owes, the

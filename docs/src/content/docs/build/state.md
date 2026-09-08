@@ -8,7 +8,8 @@ state goes. A `sessionSlot` is — one declaration that owns a key, its default,
 and its type:
 
 ```ts
-// shared.ts — the one place the shape is written down.
+// shared.ts
+// The one place the shape is written down.
 import { sessionSlot } from "@alexkroman1/aai";
 
 export type Item = { sku: string; qty: number };
