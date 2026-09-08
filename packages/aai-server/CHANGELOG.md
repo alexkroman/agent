@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 5.3.4
+
+### Patch Changes
+
+- Updated dependencies [da1967d]
+  - @alexkroman1/aai-runtime@16.0.1
+  - aai-guest@0.6.4
+  - @alexkroman1/aai@16.0.1
+  - @alexkroman1/aai-ui@16.0.1
+
 ## 5.3.3
 
 ### Patch Changes
