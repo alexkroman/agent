@@ -115,6 +115,32 @@ export const sharedConfig = {
     // default; a helper or fast-check harness that needs a SUB-test boundary
     // still calls `vi.unstubAllEnvs()` itself.
     unstubEnvs: true,
+    // Every test runs in UTC, whatever zone the machine is in.
+    //
+    // A date test is otherwise a test of WHERE it ran.
+    // `aai-runtime/runtime-system-prompt.test.ts` ("a replica that lives across
+    // midnight stops serving yesterday's date") failed on every branch on a
+    // Pacific laptop and passed in CI, which runs UTC — so a green
+    // `pnpm check` was a property of the runner's timezone, and the documented
+    // workaround was to remember `TZ=UTC pnpm check` before pushing. A default
+    // nobody has to remember is the fix; the alternative is a note in a guide,
+    // which is the shape this repo already has too many of.
+    //
+    // Node re-reads `process.env.TZ` on assignment rather than caching the
+    // zone for the life of the process, so setting it here really does move
+    // `Date` — verified by the named test passing in Pacific with no `TZ` in
+    // the environment.
+    //
+    // It also composes with `unstubEnvs` above: UTC is part of the baseline
+    // each test is restored TO, so a test that deliberately stubs `TZ` to
+    // exercise another zone still gets UTC back afterwards rather than leaking
+    // it into the rest of the file.
+    //
+    // `env` is an OBJECT, so a package config writing `env: { … }` after
+    // `...sharedConfig.test` replaces this silently — the same trap
+    // `sharedSetupFiles` above documents for the array. No config declares one
+    // today; a new one must spread `...sharedConfig.test.env`.
+    env: { TZ: "UTC" },
     // Turns an EventEmitter/AbortSignal listener leak into a failure — see
     // `sharedSetupFiles` above for why this cannot simply be assigned, and
     // `scripts/fail-on-process-warning.mjs` for why the signal needed a gate.
