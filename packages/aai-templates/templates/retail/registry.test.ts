@@ -1,4 +1,4 @@
-import { isToolFailure } from "@alexkroman1/aai";
+import { isToolFailure, type SessionEventContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   deployedAgent,
@@ -70,8 +70,9 @@ const SHIPPED_PUBLIC_TOOLS = [
  *
  * The return type is `TestToolContext` — what `createToolContext` actually
  * builds — rather than the `ToolContext` this said, which is a WIDENING that
- * drops the `sent` log. Parameters below stay `ToolContext`: a helper takes the
- * narrowest thing it needs and hands back the widest thing it has.
+ * drops the `sent` log. The rule this and `called` below now follow together:
+ * hand back the widest thing you have, and ask for the narrowest thing you
+ * need.
  */
 function servingCtx(): TestToolContext {
   const ctx = createToolContext();
@@ -285,8 +286,15 @@ describe("the blocked-call hook", () => {
    * The hook is a plain function on the def, so this needs no harness — and
    * asserting on it here is the only way the blocked lines are covered at all:
    * they are written by something no tool call executes.
+   *
+   * The context is typed {@link SessionEventContext}, which is what a session
+   * event handler is really handed — a session id, the env and the slot store,
+   * and none of the tool-call machinery a `ToolContext` also carries. It said
+   * `ToolContext` because that is what the callers below happen to have; a
+   * `TestToolContext` still satisfies this, and typing it this way is what says
+   * the hook needs nothing a tool call brings with it.
    */
-  const called = (name: string, ctx: ToolContext) =>
+  const called = (name: string, ctx: SessionEventContext) =>
     retailAgent.events?.["tool.called"]?.(
       {
         type: "tool.called",

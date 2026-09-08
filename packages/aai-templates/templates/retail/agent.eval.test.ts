@@ -34,6 +34,7 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { dialogRefusalPattern, dialogResultSchema } from "@alexkroman1/aai/testing";
 import {
   describeTurn,
+  expectToolBeforeSpeech,
   lastStateIn,
   toolNames,
   toolResultIn,
@@ -252,6 +253,16 @@ describeEval(retailAgent, (test) => {
       // that sentence, done by the harness: the tools it called and what it
       // said, plus whether the reply was cancelled.
       expect(transfer, describeTurn(handoff)).toBeDefined();
+      // And it acted BEFORE it spoke, which is the other half of the tool's own
+      // description: "call it before you say anything about a transfer, and
+      // never say 'You are being transferred' until it has answered." The
+      // failure it guards is the one a phone agent really makes — announcing a
+      // handoff and then calling nothing, or calling it afterwards, so a caller
+      // told they are being transferred is still on a call the desk is working.
+      // `expectToolBeforeSpeech` names the sentence and the tool; the
+      // `findIndex`-twice version of this claim prints "expected 4 to be less
+      // than 2".
+      expectToolBeforeSpeech(handoff);
       // The terminal state is what makes "say nothing else after this" a
       // property of the agent rather than a line in its prompt: `done` is the
       // flow saying there is nowhere left to go.

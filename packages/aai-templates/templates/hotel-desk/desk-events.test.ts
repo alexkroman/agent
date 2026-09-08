@@ -17,7 +17,12 @@ import { describe, expect, test } from "vitest";
 import { validateCard } from "./card.ts";
 import { deskFlow } from "./desk.ts";
 import { DESK_EVENTS, recordAbandonedBooking } from "./events.ts";
-import { cancelBooking, requireConfirmedBooking, resolveRoomConflict } from "./hotel.ts";
+import {
+  cancelBooking,
+  requireConfirmedBooking,
+  requireRoom,
+  resolveRoomConflict,
+} from "./hotel.ts";
 import type { Ticket } from "./records.ts";
 import { hotelSlot, requireVerified } from "./shared.ts";
 import type recordCard from "./tools/record_card.ts";
@@ -96,7 +101,9 @@ describe("a hang-up mid-booking leaves a lead behind", () => {
     // and the ledger entry is what replaces it.
     expect(hotel.draft).toBeNull();
     expect(hotel.tickets.at(-1)?.code).toBe(ticket?.code);
-    expect(hotel.log.at(-1)).toBe("followup: abandoned_booking: Maria Whitfield dropped mid-booking");
+    expect(hotel.log.at(-1)).toBe(
+      "followup: abandoned_booking: Maria Whitfield dropped mid-booking",
+    );
   });
 
   test("a call that ends at the desk writes no followup, only the log line", () => {
@@ -209,6 +216,33 @@ describe("a refusal is one object, made once and passed along", () => {
       expect(isToolFailure(cancelled)).toBe(false);
       expect(hotel.log.at(-1)).toBe("Cancelled HTL-GH78");
     });
+  });
+});
+
+// ─── One rule for reading a spoken reference ─────────────────────────────────
+
+describe("a RES code is read the way a caller says one", () => {
+  test('"R E S dash J K nine zero" finds RES-JK90, and so does res jk90', async () => {
+    const ctx = createToolContext();
+    for (const spoken of ["RES-JK90", "res jk90", "R E S dash J K 9 0"]) {
+      const found = await run(
+        "lookup_restaurant_reservation",
+        { lastName: "Bennett", confirmationCode: spoken },
+        ctx,
+      );
+      expect(isToolFailure(found)).toBe(false);
+      expect((found as { code: string }).code).toBe("RES-JK90");
+    }
+  });
+
+  test("a spoken room number is read by the same rule", () => {
+    const hotel = hotelSlot.get(createToolContext());
+    for (const spoken of ["304", "room 304", "Room-304"]) {
+      const room = requireRoom(hotel, spoken);
+      expect(isToolFailure(room)).toBe(false);
+      expect((room as { id: string }).id).toBe("304");
+    }
+    expect(isToolFailure(requireRoom(hotel, "999"))).toBe(true);
   });
 });
 

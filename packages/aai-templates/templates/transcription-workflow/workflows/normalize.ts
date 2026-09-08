@@ -67,9 +67,15 @@
  * what breaks a run at replay; this template used to carry a whole
  * `ffmpeg-verdict.ts` because of it, and `throwFfmpegStepError` — which reaches
  * no `node:` builtin at all — is what dissolved the boundary.
+ *
+ * A TYPE off the same subpath is not a name in that sense: `import type` is
+ * erased before anything is bundled, so {@link audioTrack} and
+ * {@link encodeTargets} sit at module scope — which is what makes the two
+ * decisions this step makes about a probed file testable without ffmpeg.
  */
 
 import { basename, extname, join } from "node:path";
+import type { MediaInfo, MediaStreamInfo, WavEncodeOptions } from "@alexkroman1/aai/ffmpeg";
 import {
   describeMedia,
   ffmpegBaseArgs,
@@ -77,8 +83,14 @@ import {
   runFfmpeg,
   wavEncodeArgs,
 } from "@alexkroman1/aai/ffmpeg";
-import { stepReadUpload, stepReport, stepRequireCompleteUpload } from "@alexkroman1/aai/step";
-import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+import {
+  stepReadUpload,
+  stepReport,
+  stepRequireCompleteUpload,
+  UploadIncompleteError,
+  type UploadInfo,
+} from "@alexkroman1/aai/step";
+import { throwFatalStepError, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes } from "@alexkroman1/aai/utils";
 import {
@@ -128,10 +140,10 @@ export type NormalizedRecording = {
  * file that already exists instead of paying for a second one.
  */
 export async function normalizeRecording(uploadId: string): Promise<NormalizedRecording> {
-  // `stepRequireCompleteUpload`, not `stepUploadInfo`: `size` is the readable PREFIX, and
+  // `requireWholeRecording`, not `stepUploadInfo`: `size` is the readable PREFIX, and
   // every judgement below — cuttable, heavier-per-second, the byte count copied to
   // disk — is about the WHOLE file.
-  const stored = await stepRequireCompleteUpload(uploadId);
+  const stored = await requireWholeRecording(uploadId);
   const head = await stepReadUpload(uploadId, { end: HEADER_PROBE_BYTES });
 
   if (cuttable(head.bytes, stored.size) && !heavierThanNormalized(head.bytes, stored.size)) {
@@ -176,16 +188,20 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
       // trip, against the dozens of window reads it overlaps.
       await readUploadToFile(uploadId, source);
 
-      // What it WAS, for the progress line. Worth one ffprobe: "converted 41
-      // minutes of aac" is a line that explains the run's shape, where
-      // "converted the recording" leaves a reader wondering what the desk decided.
-      // On a temp file rather than a pipe, so a trailing index is readable.
+      // What it WAS, for the progress line AND for the targets. Worth one
+      // ffprobe: "converted 41 minutes of aac" is a line that explains the run's
+      // shape, where "converted the recording" leaves a reader wondering what the
+      // desk decided. On a temp file rather than a pipe, so a trailing index is
+      // readable.
       const info = await probeMedia(source, { timeoutMs: CONVERT_TIMEOUT_MS }).catch(
         throwFfmpegStepError,
       );
+      // The `MediaInfo` is read TWICE, and the second read is the newer one:
+      // what to encode to is a function of what came in — see `encodeTargets`.
+      const targets = encodeTargets(audioTrack(info));
       await stepReport(
         `It is ${describeMedia(info)} — re-encoding to ` +
-          `${NORMALIZED_SAMPLE_RATE / 1000} kHz mono WAV.`,
+          `${targets.sampleRate / 1000} kHz mono WAV.`,
       );
 
       await runFfmpeg(
@@ -197,10 +213,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
           ...ffmpegBaseArgs(),
           "-i",
           source,
-          ...wavEncodeArgs({
-            sampleRate: NORMALIZED_SAMPLE_RATE,
-            channels: NORMALIZED_CHANNELS,
-          }),
+          ...wavEncodeArgs(targets),
           converted,
         ],
         { timeoutMs: CONVERT_TIMEOUT_MS },
@@ -284,4 +297,85 @@ export function cuttable(head: Uint8Array, totalBytes: number): boolean {
  */
 export function heavierThanNormalized(head: Uint8Array, totalBytes: number): boolean {
   return heavierThanNormalizedFormat(parseWav(head, totalBytes));
+}
+
+/**
+ * The recording, refused unless every byte of it has landed.
+ *
+ * `stepRequireCompleteUpload` already refuses — it raises
+ * {@link UploadIncompleteError}, whose `retryable = false` the engine reads as
+ * terminal — so what this adds is the SENTENCE, and it is the mirror of the one
+ * `planStreamed` raises next door: that flow refuses a WAV declaring no length
+ * and names `transcribe`, and this one refuses a recording still arriving and
+ * names `transcribeStream`. A desk offering three flows over one file owes a
+ * refusal that says which of the other two to use.
+ *
+ * Both whole-file steps go through it — this one and `splitRecording` — so the
+ * two cannot drift into two different explanations of one state.
+ *
+ * Exported for that second caller and for its spec.
+ */
+export async function requireWholeRecording(uploadId: string): Promise<UploadInfo> {
+  try {
+    return await stepRequireCompleteUpload(uploadId);
+  } catch (err: unknown) {
+    if (!(err instanceof UploadIncompleteError)) throw err;
+    // `err.stored` is what HAS arrived, which is the number that tells a reader
+    // whether the uploader died early or nearly finished.
+    return throwFatalStepError(
+      err,
+      `${uploadId} is still uploading — ${formatBytes(err.stored)} of it has arrived. This flow ` +
+        "cuts the whole file, so it needs all of it; use the `transcribeStream` workflow to " +
+        "transcribe a recording while it is still on its way.",
+    );
+  }
+}
+
+/**
+ * The audio stream ffmpeg will read, or a terminal refusal if there is none.
+ *
+ * A public form takes whatever anyone drops on it, and a screen recording with
+ * the microphone off is a real file with real video and nothing to transcribe.
+ * Without this the desk copies the whole recording to disk and hands it to
+ * ffmpeg, which refuses with `Output file #0 does not contain any stream` —
+ * true, terminal, and about ffmpeg's argv rather than about the file the person
+ * chose.
+ *
+ * `MediaInfo.audio` is the FIRST audio stream, which is the one a
+ * single-track encode means; a file with several is downmixed by ffmpeg
+ * exactly as it was before.
+ */
+export function audioTrack(info: MediaInfo): MediaStreamInfo {
+  return (
+    info.audio ??
+    throwFatalStepError(
+      new UnsupportedRecordingError(
+        "That file has no audio track, so there is nothing in it to transcribe.",
+      ),
+    )
+  );
+}
+
+/**
+ * What to re-encode a recording TO, given what it is.
+ *
+ * Mono at {@link NORMALIZED_SAMPLE_RATE}, except that the rate is a CEILING and
+ * never a target — which is the rule `downsample.ts`'s `requestFormat` states
+ * for one segment ("Never UP") and which this side used to contradict. A fixed
+ * `sampleRate: NORMALIZED_SAMPLE_RATE` upsampled 8 kHz telephony audio to
+ * 16 kHz: twice the bytes per request, against an endpoint whose budget is a
+ * 30-second wall clock covering the upload, for information the source does not
+ * contain. The two are one decision now, so a file converted here and a segment
+ * sent from `transcribeStream` are priced the same way.
+ *
+ * A source ffprobe reported no rate for falls back to the ceiling, which is what
+ * the desk asked for before it looked.
+ */
+export function encodeTargets(
+  track: Pick<MediaStreamInfo, "sampleRate">,
+): Required<Pick<WavEncodeOptions, "sampleRate" | "channels">> {
+  return {
+    sampleRate: Math.min(track.sampleRate ?? NORMALIZED_SAMPLE_RATE, NORMALIZED_SAMPLE_RATE),
+    channels: NORMALIZED_CHANNELS,
+  };
 }

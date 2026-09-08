@@ -159,100 +159,97 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
   const stored = await stepRequireCompleteUpload(uploadId).catch(throwStepError);
   await stepReport(`Reading ${stored.name || uploadId} (${formatBytes(stored.size)}).`);
 
-  return await withTempDir(
-    async (dir) => {
-      const source = join(dir, "source");
-      const normalized = join(dir, "audio.pcm");
-      const silenceLog = join(dir, "silence.txt");
+  return await withTempDir(async (dir) => {
+    const source = join(dir, "source");
+    const normalized = join(dir, "audio.pcm");
+    const silenceLog = join(dir, "silence.txt");
 
-      // NO `size`, though `stored.size` is right there — and that is the whole
-      // difference between this copy being one window at a time and being
-      // `STEP_FILE_READ_CONCURRENCY` of them. Passing `size` means "I am judging
-      // completeness myself", which is what a body polling a still-arriving
-      // upload needs and is the opposite of what happened above: this step has
-      // already called `stepRequireCompleteUpload`, so the file IS whole and the
-      // windows may land in any order. Omitting it lets `readUploadToFile`
-      // establish that for itself and fan out. The cost is one metadata round
-      // trip, against the dozens of window reads it overlaps.
-      await readUploadToFile(uploadId, source);
+    // NO `size`, though `stored.size` is right there — and that is the whole
+    // difference between this copy being one window at a time and being
+    // `STEP_FILE_READ_CONCURRENCY` of them. Passing `size` means "I am judging
+    // completeness myself", which is what a body polling a still-arriving
+    // upload needs and is the opposite of what happened above: this step has
+    // already called `stepRequireCompleteUpload`, so the file IS whole and the
+    // windows may land in any order. Omitting it lets `readUploadToFile`
+    // establish that for itself and fan out. The cost is one metadata round
+    // trip, against the dozens of window reads it overlaps.
+    await readUploadToFile(uploadId, source);
 
-      // What it WAS, for the progress log and the page. Worth one ffprobe: "41
-      // minutes of aac" explains the shape of the run, where "the recording" leaves
-      // a reader guessing what the desk decided. On a temp FILE rather than a pipe,
-      // so a trailing index is readable.
-      const probed = await probeMedia(source, { timeoutMs: FFMPEG_TIMEOUT_MS }).catch(
-        throwFfmpegStepError,
-      );
-      // Terminal when the file carries no sound at all, BEFORE the measure pass
-      // decodes a gigabyte of it — see `requireAudioStream`. The codec then comes
-      // off the track itself rather than off an optional chain, so `unknown` here
-      // means "ffprobe named no codec" and no longer doubles as "there was
-      // nothing to name".
-      const track = analyse(() => requireAudioStream(probed));
-      const codec = track.codec ?? "unknown";
-      await stepReport(
-        `Levelling ${describeMedia(probed)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
-      );
+    // What it WAS, for the progress log and the page. Worth one ffprobe: "41
+    // minutes of aac" explains the shape of the run, where "the recording" leaves
+    // a reader guessing what the desk decided. On a temp FILE rather than a pipe,
+    // so a trailing index is readable.
+    const probed = await probeMedia(source, { timeoutMs: FFMPEG_TIMEOUT_MS }).catch(
+      throwFfmpegStepError,
+    );
+    // Terminal when the file carries no sound at all, BEFORE the measure pass
+    // decodes a gigabyte of it — see `requireAudioStream`. The codec then comes
+    // off the track itself rather than off an optional chain, so `unknown` here
+    // means "ffprobe named no codec" and no longer doubles as "there was
+    // nothing to name".
+    const track = analyse(() => requireAudioStream(probed));
+    const codec = track.codec ?? "unknown";
+    await stepReport(
+      `Levelling ${describeMedia(probed)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
+    );
 
-      // Pass one: measure. `-f null -` decodes every frame and writes no audio, so
-      // this costs a decode and produces five numbers.
-      const measured = await runFfmpeg(measureLoudnessArgs(source), {
-        timeoutMs: FFMPEG_TIMEOUT_MS,
-      }).catch(throwFfmpegStepError);
-      const loudness = analyse(() => parseLoudness(measured.stderr));
+    // Pass one: measure. `-f null -` decodes every frame and writes no audio, so
+    // this costs a decode and produces five numbers.
+    const measured = await runFfmpeg(measureLoudnessArgs(source), {
+      timeoutMs: FFMPEG_TIMEOUT_MS,
+    }).catch(throwFfmpegStepError);
+    const loudness = analyse(() => parseLoudness(measured.stderr));
 
-      // Pass two: apply the measurement, find the pauses, write the audio.
-      const levelled = await runFfmpeg(normalizeArgs(source, loudness, normalized, silenceLog), {
-        timeoutMs: FFMPEG_TIMEOUT_MS,
-      }).catch(throwFfmpegStepError);
+    // Pass two: apply the measurement, find the pauses, write the audio.
+    const levelled = await runFfmpeg(normalizeArgs(source, loudness, normalized, silenceLog), {
+      timeoutMs: FFMPEG_TIMEOUT_MS,
+    }).catch(throwFfmpegStepError);
 
-      // The duration comes from the BYTE COUNT, not from the original's header or
-      // from ffprobe. It is the only measurement that agrees with the byte offsets
-      // the fan-out will use — a container's declared duration can disagree with
-      // what was actually decoded (an AAC file's encoder padding puts this one ~16ms
-      // over), and a segment planned against the wrong one runs off the end.
-      const bytes = (await stat(normalized)).size;
-      const durationMs = pcmDurationMs(bytes, ANALYSIS_FORMAT);
+    // The duration comes from the BYTE COUNT, not from the original's header or
+    // from ffprobe. It is the only measurement that agrees with the byte offsets
+    // the fan-out will use — a container's declared duration can disagree with
+    // what was actually decoded (an AAC file's encoder padding puts this one ~16ms
+    // over), and a segment planned against the wrong one runs off the end.
+    const bytes = (await stat(normalized)).size;
+    const durationMs = pcmDurationMs(bytes, ANALYSIS_FORMAT);
 
-      // Verified on ffmpeg 6.1: `ametadata` creates the file at filter-init, so a
-      // recording with no pause in it leaves an EMPTY log rather than no log. A
-      // missing file here is therefore a real failure and not a case to tolerate.
-      const log = await readFile(silenceLog, "utf-8");
-      const silences = analyse(() => parseSilences(log, durationMs / 1000));
+    // Verified on ffmpeg 6.1: `ametadata` creates the file at filter-init, so a
+    // recording with no pause in it leaves an EMPTY log rather than no log. A
+    // missing file here is therefore a real failure and not a case to tolerate.
+    const log = await readFile(silenceLog, "utf-8");
+    const silences = analyse(() => parseSilences(log, durationMs / 1000));
 
-      const written = await writeUploadFromFile(normalized, {
-        // Named after the original, so a download reads as the recording it came
-        // from. `.pcm` because that is what it is — raw samples with no header, and
-        // a `.wav` name on a headerless file is one no player will open.
-        name: `${baseName(stored.name || uploadId)}.pcm`,
-        // Not `audio/wav`: the type is served back on the byte route, and claiming a
-        // container this file does not have would be a lie a browser acts on. Not
-        // `audio/L16` either, which looks right and is not — that type is defined as
-        // BIG-endian 16-bit PCM, where this is `s16le`. Nothing plays this file; the
-        // fan-out reads byte ranges out of it and puts a real header back on each one
-        // with `encodeWav`.
-        type: "application/octet-stream",
-      });
+    const written = await writeUploadFromFile(normalized, {
+      // Named after the original, so a download reads as the recording it came
+      // from. `.pcm` because that is what it is — raw samples with no header, and
+      // a `.wav` name on a headerless file is one no player will open.
+      name: `${baseName(stored.name || uploadId)}.pcm`,
+      // Not `audio/wav`: the type is served back on the byte route, and claiming a
+      // container this file does not have would be a lie a browser acts on. Not
+      // `audio/L16` either, which looks right and is not — that type is defined as
+      // BIG-endian 16-bit PCM, where this is `s16le`. Nothing plays this file; the
+      // fan-out reads byte ranges out of it and puts a real header back on each one
+      // with `encodeWav`.
+      type: "application/octet-stream",
+    });
 
-      await stepReport(
-        `Levelled ${formatDuration(durationMs)} from ${loudness.inputLufs} LUFS, ` +
-          `${Math.round(speechFraction(silences, durationMs / 1000) * 100)}% speech across ` +
-          `${silences.length} ${plural(silences.length, "pause")}.`,
-      );
+    await stepReport(
+      `Levelled ${formatDuration(durationMs)} from ${loudness.inputLufs} LUFS, ` +
+        `${Math.round(speechFraction(silences, durationMs / 1000) * 100)}% speech across ` +
+        `${silences.length} ${plural(silences.length, "pause")}.`,
+    );
 
-      return {
-        audio: written.id,
-        source: stored.name || uploadId,
-        codec,
-        durationMs,
-        bytes,
-        loudness,
-        ffmpegMs: totalFfmpegMs(measured, levelled),
-        silences,
-      };
-    },
-    TEMP_DIR,
-  );
+    return {
+      audio: written.id,
+      source: stored.name || uploadId,
+      codec,
+      durationMs,
+      bytes,
+      loudness,
+      ffmpegMs: totalFfmpegMs(measured, levelled),
+      silences,
+    };
+  }, TEMP_DIR);
 }
 
 /**

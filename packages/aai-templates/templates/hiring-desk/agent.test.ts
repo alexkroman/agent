@@ -8,18 +8,18 @@ import {
   expectDialogRefused,
   parseSchemaInput,
   runGuardrail,
-  schemaInputIssues,
   type SentEvent,
   type StubDelegateCall,
   type StubGenerateCall,
+  schemaInputIssues,
   scriptedToolContext,
   type TestToolContext,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import {
-  candidateScoreSchema,
   COORDINATOR_NAME,
+  candidateScoreSchema,
   crewAgentPrompt,
   crewExpectedOutput,
   EMAIL_FOLLOWUP_AGENT,
@@ -861,8 +861,7 @@ const check = (text: string) => runGuardrail(emailWriter, text);
  *  `GuardrailVerdict` is `true | string`, and narrowing it here is what stops
  *  an ACCEPTING verdict being matched against a complaint by accident — a
  *  stringified `true` matches no pattern in this file and would read as a pass. */
-const complaint = (verdict: GuardrailVerdict): string | null =>
-  verdict === true ? null : verdict;
+const complaint = (verdict: GuardrailVerdict): string | null => (verdict === true ? null : verdict);
 
 describe("the crews", () => {
   test("render a CrewAI agent through CrewAI's own role_playing template", () => {

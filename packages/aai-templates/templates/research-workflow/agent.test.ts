@@ -19,6 +19,8 @@
  * what it does with none.
  */
 
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 import type { WorkflowClient } from "@alexkroman1/aai";
 import {
   createRunSnapshot,
@@ -32,9 +34,6 @@ import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { research } from "./shared.ts";
 import { REVIEW_SLEEP_ID } from "./workflows/review.ts";
-
-/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
-import agentDef from "virtual:aai/agent";
 
 /**
  * Every tool here is driven through the agent's own table, by the name the model

@@ -173,7 +173,10 @@ const deskSpec = {
  *
  * `hungUp` is `final`: a booking abandoned mid-flow by a hang-up must not be
  * confirmed by a model that keeps talking to a dead line. Their
- * `abandoned_booking` followup is the human half of the same case.
+ * `abandoned_booking` followup is the human half of the same case, and it is
+ * written by `events.ts` on the SAME event — a transition decides what may
+ * still be done, a handler records what happened, and neither does the other's
+ * job.
  */
 export const deskFlow = dialog("desk", deskSpec);
 

@@ -191,6 +191,7 @@
 
 import "@alexkroman1/aai-ui/styles.css";
 import {
+  CheckboxField,
   Form,
   isTerminal,
   mountPage,
@@ -404,8 +405,7 @@ function TranscriptionDesk() {
       )}
 
       <History
-        runs={history.runs}
-        error={history.error}
+        history={history}
         openId={openId}
         onOpen={(runId) => setOpenId((current) => (current === runId ? undefined : runId))}
       />
@@ -480,23 +480,22 @@ function UploadPicker({
   return (
     <fieldset className="flex flex-col gap-3" disabled={disabled}>
       <legend className="text-sm font-medium uppercase tracking-[1.2px]">Upload</legend>
-      <label className="flex items-start gap-3 text-sm">
-        <input
-          type="checkbox"
-          className="mt-1"
-          name="parallel"
-          checked={parallel}
-          onChange={(event) => onPick(event.target.checked)}
-        />
-        <span className="flex flex-col gap-0.5">
-          <span>Split the file across connections</span>
-          <span className="text-xs opacity-70">
-            Sends the recording as several parts at once instead of in one request, which is most of
-            the wait on a long file — and is the only upload a dropped connection can resume. Falls
-            back to the single request on a small one.
-          </span>
-        </span>
-      </label>
+      {/* The SDK's own control rather than markup of this page's: the box, its
+          label and the line under it were hand-written here and had drifted from
+          every declared field on the page — a different label size, a different
+          hint colour, and no theme at all. `<CheckboxField>` is what
+          `<WorkflowFields>` renders for a boolean, so a control the page writes
+          itself and one the schema declares now look the same. It sits OUTSIDE
+          `<Form>` deliberately: `parallel` describes how the recording travels,
+          not what the workflow is asked for, so it is page state rather than a
+          collected value — the `name` is for the DOM, not for `FormValues`. */}
+      <CheckboxField
+        name="parallel"
+        label="Split the file across connections"
+        hint="Sends the recording as several parts at once instead of in one request, which is most of the wait on a long file — and is the only upload a dropped connection can resume. Falls back to the single request on a small one."
+        checked={parallel}
+        onChange={(event) => onPick(event.target.checked)}
+      />
     </fieldset>
   );
 }

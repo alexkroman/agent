@@ -28,7 +28,7 @@
  */
 
 import type { ToolFailure } from "@alexkroman1/aai";
-import { failable, orFail, toolFailure } from "@alexkroman1/aai";
+import { failable, orFail, spokenAlphanumeric, toolFailure } from "@alexkroman1/aai";
 import {
   addDays,
   computeInvoice,
@@ -37,6 +37,7 @@ import {
   digitsOf,
   type Invoice,
   mintCode,
+  normalizeCode,
   type Reservation,
   type Room,
   type RoomBooking,
@@ -392,12 +393,17 @@ export const resolveRoomConflict = failable(
   },
 );
 
-/** A spoken room number ("304", "room 304", "ph") as the floor plan spells it. */
+/**
+ * A spoken room number ("304", "room 304", "ph") as the floor plan spells it.
+ *
+ * The strip-and-fold is `spokenAlphanumeric`'s — this had its own regex pair
+ * doing the same job in the other order, and it is `normalizeCode`'s basis too,
+ * so the desk now reads a room number and a confirmation code by one rule. What
+ * stays local is the word "room" itself, which is this floor plan's vocabulary
+ * rather than a fact about spoken ids.
+ */
 export function requireRoom(state: FrozenHotelState, spoken: string): Room | ToolFailure {
-  const id = spoken
-    .replaceAll(/[^a-z0-9]/gi, "")
-    .replace(/^(ROOM|RM)/i, "")
-    .toUpperCase();
+  const id = spokenAlphanumeric(spoken).replace(/^(ROOM|RM)/, "");
   const room = state.rooms.find((r) => r.id === id);
   return (
     room ?? toolFailure(`no such room: ${spoken} - re-confirm the room number with the caller`)
@@ -515,16 +521,25 @@ export function modifyReservation(
   return reservation;
 }
 
-/** A reservation by last name and code, whatever its status. */
+/**
+ * A reservation by last name and code, whatever its status.
+ *
+ * Both sides go through {@link normalizeCode}, which is what `verify_booking`
+ * uses on a room booking. The two halves here used to differ — the caller's
+ * code was stripped of punctuation and folded, the STORED one only of its dash
+ * — so `RES-AB12` compared as `RESAB12` against a `res ab12` that had already
+ * become `RESAB12` and matched, while "R E S dash A B one two", which is how a
+ * caller reads a code down a phone, kept the word `dash` and never did.
+ */
 export function findReservation<S extends FrozenHotelState | HotelState>(
   state: S,
   lastName: string,
   code: string,
 ): S["reservations"][number] | undefined {
-  const wanted = code.replaceAll(/[^a-z0-9]/gi, "").toUpperCase();
+  const wanted = normalizeCode(code);
   return state.reservations.find(
     (r) =>
       r.lastName.toLowerCase() === lastName.trim().toLowerCase() &&
-      r.code.replaceAll("-", "") === wanted,
+      normalizeCode(r.code) === wanted,
   );
 }

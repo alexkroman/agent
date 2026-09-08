@@ -161,44 +161,41 @@ export async function narrate(
 ): Promise<{ audio: string; durationMs: number; bytes: number; ffmpegMs: number }> {
   const spoken = await stepSpeak(script, omitUndefined({ voice }));
 
-  return await withTempDir(
-    async (dir) => {
-      const wav = join(dir, "spoken.wav");
-      const mp3 = join(dir, "summary.mp3");
+  return await withTempDir(async (dir) => {
+    const wav = join(dir, "spoken.wav");
+    const mp3 = join(dir, "summary.mp3");
 
-      // `writeFile` rather than a stream, and this is the one place in the template
-      // where holding the whole thing in memory is right: `stepSpeak` already
-      // returned it as a single `Uint8Array`, so streaming it to disk would be
-      // copying from the heap to the heap on the way. It is bounded by the script,
-      // which the schema keeps under 150 words.
-      await writeFile(wav, spoken.audio);
+    // `writeFile` rather than a stream, and this is the one place in the template
+    // where holding the whole thing in memory is right: `stepSpeak` already
+    // returned it as a single `Uint8Array`, so streaming it to disk would be
+    // copying from the heap to the heap on the way. It is bounded by the script,
+    // which the schema keeps under 150 words.
+    await writeFile(wav, spoken.audio);
 
-      const mastered = await runFfmpeg(masterArgs(wav, mp3), {
-        timeoutMs: MASTER_TIMEOUT_MS,
-      }).catch(throwFfmpegStepError);
-      const bytes = (await stat(mp3)).size;
+    const mastered = await runFfmpeg(masterArgs(wav, mp3), {
+      timeoutMs: MASTER_TIMEOUT_MS,
+    }).catch(throwFfmpegStepError);
+    const bytes = (await stat(mp3)).size;
 
-      const stored = await writeUploadFromFile(mp3, {
-        // Named, because this is what a person sees on the download link rather than
-        // an opaque id — and typed, because the byte route serves the type it was
-        // given and a browser will not play a file it was handed as bytes.
-        name: "audit.mp3",
-        type: "audio/mpeg",
-      });
+    const stored = await writeUploadFromFile(mp3, {
+      // Named, because this is what a person sees on the download link rather than
+      // an opaque id — and typed, because the byte route serves the type it was
+      // given and a browser will not play a file it was handed as bytes.
+      name: "audit.mp3",
+      type: "audio/mpeg",
+    });
 
-      await stepReport(
-        `Recorded a ${Math.round(spoken.durationMs / 1000)}s audit in ${spoken.voice}'s voice — ` +
-          `${formatBytes(bytes)} of MP3, from ${formatBytes(spoken.audio.byteLength)} of WAV.`,
-      );
-      return {
-        audio: stored.id,
-        durationMs: spoken.durationMs,
-        bytes,
-        // The pass on the way OUT, so the page's one ffmpeg number covers both
-        // directions rather than only the one the ingest paid for.
-        ffmpegMs: totalFfmpegMs(mastered),
-      };
-    },
-    TEMP_DIR,
-  );
+    await stepReport(
+      `Recorded a ${Math.round(spoken.durationMs / 1000)}s audit in ${spoken.voice}'s voice — ` +
+        `${formatBytes(bytes)} of MP3, from ${formatBytes(spoken.audio.byteLength)} of WAV.`,
+    );
+    return {
+      audio: stored.id,
+      durationMs: spoken.durationMs,
+      bytes,
+      // The pass on the way OUT, so the page's one ffmpeg number covers both
+      // directions rather than only the one the ingest paid for.
+      ffmpegMs: totalFfmpegMs(mastered),
+    };
+  }, TEMP_DIR);
 }

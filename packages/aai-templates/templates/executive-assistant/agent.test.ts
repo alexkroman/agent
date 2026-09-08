@@ -3,7 +3,6 @@ import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import {
-  createToolContext,
   expectDialogOk,
   expectToolOk,
   scriptedToolContext,
@@ -12,7 +11,6 @@ import {
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_MEMORY, EXECUTIVE, INBOX } from "./inbox.ts";
-import { calendarTool, weekdayOf } from "./meeting.ts";
 import { reflect } from "./nodes.ts";
 import {
   CHOOSE_MEMORY_SYSTEM,
@@ -101,7 +99,7 @@ function scriptedDesk(
 
 const stateOf = (ctx: ToolContext) => assistantSlot.get(ctx);
 const at = (ctx: ToolContext) => reviewFlow.position(ctx).state;
-const openById = (id: string, ctx: ToolContext) => run("open_email", { id }, ctx);
+const openById = (id: string, ctx: ToolContext) => run("open_email", { which: id }, ctx);
 
 // ─── 1. Triage ───────────────────────────────────────────────────────────────
 
@@ -229,13 +227,43 @@ describe("open_email (their graph's entry)", () => {
     expect(again.reopened).toBe(true);
   });
 
-  test("refuses while an email is open, and names the ids for a bad one", async () => {
+  test("refuses while an email is open, and lists the inbox for a name it cannot place", async () => {
     const { ctx } = scriptedDesk();
     await openById("m2", ctx);
-    const refused = await run("open_email", { id: "m4" }, ctx);
+    const refused = await run("open_email", { which: "m4" }, ctx);
     expect(isToolFailure(refused) && refused.error).toContain(`"${DRAFTING}"`);
     await run("ignore", ctx);
-    expect(await openById("zz", ctx)).toMatchObject({ error: expect.stringContaining("m2, m3") });
+    // `resolveOne`'s never-guess half: nothing matched, so the failure names
+    // what it could have meant rather than opening the nearest thing.
+    const lost = await openById("zz", ctx);
+    expect(isToolFailure(lost) && lost.error).toMatch(/No email matches "zz"/);
+    expect(isToolFailure(lost) && lost.error).toContain("m3");
+  });
+
+  test("opens the one the executive named in their own words", async () => {
+    const { ctx } = scriptedDesk();
+    await run("triage_inbox", ctx);
+    const opened = expectToolOk<{ email: { id: string } }>(
+      await run("open_email", { which: "the one from Dana at Northwind" }, ctx),
+    );
+    expect(opened.email.id).toBe("m2");
+  });
+
+  test("a position is a pick too, and an ambiguous phrase is refused", async () => {
+    const { ctx } = scriptedDesk();
+    await run("triage_inbox", ctx);
+    // A POSITION is taken as read, and it counts down what is still live in
+    // arrival order — not the reply-before-heads-up ranking `nextToOpen` uses,
+    // which is why m3 is second here and last there.
+    const second = expectToolOk<{ email: { id: string } }>(
+      await run("open_email", { which: "the second one" }, ctx),
+    );
+    expect(second.email.id).toBe("m3");
+    await run("ignore", ctx);
+    // Two senders named in one breath match one email each. Opening either is
+    // a guess, and a guess here drafts a reply against the wrong thread.
+    const tied = await run("open_email", { which: "the one from Dana, or Sam" }, ctx);
+    expect(isToolFailure(tied) && tied.error).toMatch(/matches 2 emails/);
   });
 
   test.each(INBOX.map((e) => e.id))(
@@ -263,8 +291,9 @@ describe("the drafting tools (their drafting model's tool list)", () => {
       {
         emails: ["sam.reyes@acme-partners.com"],
         title: "Lumen x Acme",
-        startTime: "2026-03-18T13:00:00",
-        endTime: "2026-03-18T13:30:00",
+        date: "2026-03-18",
+        startTime: "13:00",
+        endTime: "13:30",
       },
     ],
     ["meeting_assistant", { request: "Tuesday or Wednesday afternoon next week" }],
@@ -327,7 +356,7 @@ describe("the drafting tools (their drafting model's tool list)", () => {
     await openById("m4", ctx);
     const invite = DRAFTERS[3][1];
     expect(
-      await run("send_calendar_invite", { ...invite, endTime: "2026-03-18T12:00:00" }, ctx),
+      await run("send_calendar_invite", { ...invite, endTime: "12:00" }, ctx),
     ).toMatchObject({
       error: expect.stringContaining("ends before it starts"),
     });
@@ -463,8 +492,9 @@ describe("accept / edit / ignore / respond", () => {
       {
         emails: ["sam.reyes@acme-partners.com"],
         title: "Lumen x Acme",
-        startTime: "2026-03-18T13:00:00",
-        endTime: "2026-03-18T13:30:00",
+        date: "2026-03-18",
+        startTime: "13:00",
+        endTime: "13:30",
       },
       ctx,
     );
@@ -595,27 +625,6 @@ describe("reflect (their multi_reflection_graph)", () => {
     const model = stubGenerate({ [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: [] } } });
     expect(await reflect(model.generate, { ...input, promptTypes: ["tone"] })).toEqual([]);
     expect(model.calls).toHaveLength(1);
-  });
-});
-
-describe("the meeting assistant's calendar tool", () => {
-  test("answers each day's events with its weekday", async () => {
-    const days = await calendarTool.execute(
-      { days: ["2026-03-17", "2026-03-21"] },
-      createToolContext(),
-    );
-    expect(days).toMatchObject({
-      timezone: "PST",
-      days: [
-        {
-          date: "2026-03-17",
-          weekday: "Tuesday",
-          events: ["13:00-14:00 Customer call — Fable Health", "15:00-17:00 Board meeting"],
-        },
-        { date: "2026-03-21", weekday: "Saturday", events: [] },
-      ],
-    });
-    expect(weekdayOf("2026-03-09")).toBe("Monday");
   });
 });
 

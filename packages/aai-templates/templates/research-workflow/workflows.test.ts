@@ -52,10 +52,10 @@ import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { research } from "./shared.ts";
 import {
-  file,
   FILING_TEXT_PARAM_ENV,
   FILING_WEBHOOK_ENV,
   type Filing,
+  file,
   filingChannel,
   renderFiling,
 } from "./workflows/filing.ts";
@@ -288,8 +288,8 @@ describe("the steps that research", () => {
     });
     await researchFlow({ topic: "Tool use", requestedBy: "Ada" }, ctx);
 
-    expect(ctx.sleeps).toHaveLength(1);
-    expect(ctx.sleeps[0]?.options?.correlationId).toBe(REVIEW_SLEEP_ID);
+    expect(ctx.slept).toHaveLength(1);
+    expect(ctx.slept[0]?.correlationId).toBe(REVIEW_SLEEP_ID);
   });
 
   // Driven through `writeBrief` rather than `investigate`: the classification is
@@ -458,8 +458,9 @@ describe("filing the findings", () => {
     expect(message.heading).toBe("Research: how otters use tools");
     expect(message.subtitle).toContain("Requested by sess_1");
     expect(message.subtitle).toContain("1 source across 1 angle");
-    expect(message.sections).toHaveLength(1);
-    expect(message.sections?.[0]).toMatchObject({
+    // The answer first, then one section per angle.
+    expect(message.sections?.[0]).toMatchObject({ title: "In short" });
+    expect(message.sections?.[1]).toMatchObject({
       title: "Tool use",
       bullets: ["Otters and stones — https://otters.example/tools"],
     });

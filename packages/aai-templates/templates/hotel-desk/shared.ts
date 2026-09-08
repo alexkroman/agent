@@ -26,6 +26,7 @@
  * | `policies/*.md` + `build_lookup_policy_tool` | `policies.ts` + `tools/lookup_policy.ts` |
  * | `TOURS` / `SPA_SERVICES` / `BUSINESS_CENTER_SERVICES` / `FLORIST_ARRANGEMENTS` | `catalogs.ts`, and `concierge.ts` makes one tool of each |
  * | `record_followup`, `take_guest_message`, `dispatch_emergency`, … (write-only tables) | {@link Ticket}s on the slot, rendered by `client.tsx` |
+ * | a caller who rings off mid-booking (their `abandoned_booking` followup) | `events.ts`, on `agent({ events })` — the one write no tool can make |
  * | `HOTEL_TODAY=2026-06-08` (the simulation pin) | {@link TODAY}, fixed |
  * | `ui_view.py` (SQLite changesets streamed to the playground) | `deskProjection`, the slot pushed by `syncState` |
  *
