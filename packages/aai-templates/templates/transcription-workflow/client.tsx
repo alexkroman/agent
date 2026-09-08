@@ -386,6 +386,10 @@ function TranscriptionDesk() {
             recoverable: mode !== "streaming",
             startedHere,
             found: run !== undefined,
+            // The hook's own `UploadStatus`, so a PAUSED upload gets a sentence
+            // rather than the recovery copy — which in streaming mode is a
+            // promise the run cannot keep. See `recover.ts`.
+            upload,
           })}
         </p>
       )}

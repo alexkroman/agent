@@ -97,6 +97,7 @@ import {
   type Brief,
   briefText,
   countSources,
+  dedupe,
   type Findings,
   type Note,
   noteText,

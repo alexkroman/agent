@@ -1,7 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` and the prompt add. */
 import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
-import { isToolFailure, resolveOne } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import {
   createToolContext,
@@ -13,7 +13,7 @@ import {
 import { describe, expect, test } from "vitest";
 import { luhnOk, validateCard } from "./card.ts";
 import { deskFlow } from "./desk.ts";
-import { DISPUTE_POLICIES, LINE_ITEM_PICK, resolveDisputeOutcome } from "./disputes.ts";
+import { DISPUTE_POLICIES, resolveDisputeOutcome } from "./disputes.ts";
 import { listRoomOptions } from "./hotel.ts";
 import { POLICIES } from "./policies.ts";
 import {
@@ -706,41 +706,6 @@ describe("disputes", () => {
     expect(isToolFailure(refused) && refused.error).toMatch(
       /Room \(2 nights\) \(560 dollars\); Late checkout \(40 dollars\)/,
     );
-  });
-
-  test("the disputed line is picked the way a caller names it: by ordinal, or by a word", async () => {
-    const ctx = createToolContext();
-    await verify(ctx, "Lee", "HTL-GH78");
-    const lines = ok<{ lineItems: { label: string }[] }>(await run("lookup_invoice", ctx));
-    // Second line of the folio the desk has just read out.
-    expect(lines.lineItems[1]?.label).toBe("Late checkout");
-
-    const byOrdinal = ok<{ outcome: string; refund: number }>(
-      await run(
-        "dispute_charge",
-        {
-          category: "late_checkout_fee",
-          lineItemLabel: "the second one",
-          callerNote: "Front desk said 1 PM was fine.",
-          acceptsOfferedResolution: true,
-        },
-        ctx,
-      ),
-    );
-    expect(byOrdinal).toMatchObject({ outcome: "goodwill_waived", refund: PRICING.lateCheckout });
-  });
-
-  test("a word that names two lines is REFUSED rather than guessed at", () => {
-    const folio = [
-      { label: "Room (2 nights)", amount: 56_000 },
-      { label: "Room service", amount: 4200 },
-    ];
-    const ambiguous = resolveOne(folio, "the room charge", LINE_ITEM_PICK);
-    expect(isToolFailure(ambiguous) && ambiguous.error).toMatch(
-      /matches 2 invoice lines.*Room \(2 nights\).*Room service/,
-    );
-    // The same scorer picks a single winner once a second word narrows it.
-    expect(resolveOne(folio, "the room service charge", LINE_ITEM_PICK)).toEqual(folio[1]);
   });
 
   test("the outcome table, branch by branch", () => {

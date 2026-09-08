@@ -22,7 +22,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { pendingNote, recalledMode, rememberMode } from "./recover.ts";
+import { pendingNote, type PendingNoteInput, recalledMode, rememberMode } from "./recover.ts";
 
 /** The modes the page offers, in the page's own order. */
 const MODES = ["streaming", "classic", "batch"] as const;
@@ -100,42 +100,106 @@ describe("recalledMode", () => {
 });
 
 describe("pendingNote", () => {
+  /**
+   * An upload that is MOVING, which is what the four recovery arms describe.
+   *
+   * Passed to every case below rather than `undefined`, so the four recovery
+   * arms are asserted against the state a reader is really in while the bar is
+   * filling. `undefined` would satisfy them too and would test nothing about
+   * the paused branch that now sits above them.
+   */
+  const MOVING: PendingNoteInput["upload"] = {
+    name: "standup.wav",
+    index: 0,
+    count: 1,
+    loaded: 4_000_000,
+    total: 12_000_000,
+    fraction: 1 / 3,
+    paused: false,
+  };
+
+  test("says the upload is PAUSED before it says anything about the reload", () => {
+    // The branch that had no sentence: `<UploadProgressBar>` offers pause in
+    // every mode, and until now a paused reader was told "reloading is safe"
+    // while nothing at all was arriving.
+    const note = pendingNote({
+      upload: { ...MOVING, paused: true },
+      recoverable: true,
+      startedHere: true,
+      found: true,
+    });
+    expect(note).toMatch(/paused/i);
+    expect(note).not.toMatch(/reloading is safe/i);
+  });
+
+  test("warns a paused STREAMING reader that the run is on a clock", () => {
+    // The one that costs something. That run is watching an upload it will give
+    // up on (`MAX_IDLE_POLLS` in `workflows/stream.ts`), so "resume whenever you
+    // are ready" would be false in the mode this desk opens in.
+    const note = pendingNote({
+      upload: { ...MOVING, paused: true },
+      recoverable: false,
+      startedHere: true,
+      found: true,
+    });
+    expect(note).toMatch(/paused/i);
+    expect(note).toMatch(/gives up/i);
+    expect(note).not.toMatch(/whenever you are ready/i);
+  });
+
+  test("says nothing about a pause while the bytes are still moving", () => {
+    const note = pendingNote({ upload: MOVING, recoverable: true, startedHere: true, found: true });
+    expect(note).not.toMatch(/paused/i);
+  });
+
   test("tells a streaming reader to keep the tab open, whoever started the run", () => {
     // First and unconditional: that run is reading the file from this page, so
     // a reload does not orphan it, it ends it. A page promising otherwise in
     // the mode it OPENS in would be the worst copy on the desk.
-    const started = pendingNote({ recoverable: false, startedHere: true, found: true });
+    const started = pendingNote({ upload: MOVING, recoverable: false, startedHere: true, found: true });
     expect(started).toMatch(/keep this tab open/i);
-    expect(pendingNote({ recoverable: false, startedHere: false, found: false })).toBe(started);
+    expect(pendingNote({ upload: MOVING, recoverable: false, startedHere: false, found: false })).toBe(started);
   });
 
   test("promises the reload back to whoever pressed the button", () => {
-    const note = pendingNote({ recoverable: true, startedHere: true, found: true });
+    const note = pendingNote({ upload: MOVING, recoverable: true, startedHere: true, found: true });
     expect(note).toMatch(/reloading is safe/i);
   });
 
   test("says it is LOOKING while the lookup is still out", () => {
-    const note = pendingNote({ recoverable: true, startedHere: false, found: false });
+    const note = pendingNote({ upload: MOVING, recoverable: true, startedHere: false, found: false });
     expect(note).toMatch(/looking for/i);
   });
 
   test("explains a run the reader did not start, and says not to send it again", () => {
     // The line that stops a second 600 MB upload of the same recording, which
     // is what the key is for.
-    const note = pendingNote({ recoverable: true, startedHere: false, found: true });
+    const note = pendingNote({ upload: MOVING, recoverable: true, startedHere: false, found: true });
     expect(note).toMatch(/earlier/i);
     expect(note).toMatch(/no need to send it again/i);
   });
 
-  test("says something different in each of its four situations", () => {
+  test("says something different in each of its six situations", () => {
     const notes = [
-      pendingNote({ recoverable: false, startedHere: true, found: true }),
-      pendingNote({ recoverable: true, startedHere: true, found: true }),
-      pendingNote({ recoverable: true, startedHere: false, found: false }),
-      pendingNote({ recoverable: true, startedHere: false, found: true }),
+      pendingNote({
+        upload: { ...MOVING, paused: true },
+        recoverable: false,
+        startedHere: true,
+        found: true,
+      }),
+      pendingNote({
+        upload: { ...MOVING, paused: true },
+        recoverable: true,
+        startedHere: true,
+        found: true,
+      }),
+      pendingNote({ upload: MOVING, recoverable: false, startedHere: true, found: true }),
+      pendingNote({ upload: MOVING, recoverable: true, startedHere: true, found: true }),
+      pendingNote({ upload: MOVING, recoverable: true, startedHere: false, found: false }),
+      pendingNote({ upload: MOVING, recoverable: true, startedHere: false, found: true }),
     ];
     // A branch that duplicates its neighbour's sentence is a branch nobody can
-    // see, and the four are the whole of what this page says about the wait.
+    // see, and the six are the whole of what this page says about the wait.
     expect(new Set(notes).size).toBe(notes.length);
   });
 });

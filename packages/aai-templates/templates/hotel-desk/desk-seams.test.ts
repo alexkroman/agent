@@ -1,21 +1,34 @@
 /**
- * The three things that are true when NO tool is running, plus the failure
- * vocabulary underneath every tool that is.
+ * The four seams a tool call does not run along.
  *
- * `agent.test.ts` drives the desk through its tools; this covers what the tools
- * cannot reach — the hang-up handler `agent({ events })` runs, the two states
- * that forbid a tool call outright, and the helpers whose refusals every tool
- * body forwards.
+ * `agent.test.ts` drives the desk through its tools — a call in, forty-one
+ * tools, what is on the slot afterwards. Everything here is a rule that holds
+ * BETWEEN those calls, and each one is invisible from inside a tool body:
+ *
+ * - the hang-up, which no tool can observe because the caller is gone —
+ *   `agent({ events })` and `events.ts`;
+ * - the turn where the model owes SPEECH, so the right number of tools is zero
+ *   — `toolChoice: "none"` on `offering` and `readBack`;
+ * - a refusal made once and passed along, rather than unpacked and rebuilt at
+ *   every hop — `requireVerified`, `requireConfirmedBooking`, `validateCard`,
+ *   and the `failable` writers that forward them;
+ * - a reference the caller SPOKE — an ordinal off a folio, a code with the word
+ *   "dash" in it, a room number with the word "room" — which is a fact about
+ *   phones rather than about any one tool.
+ *
+ * Split from `agent.test.ts` rather than added to it: that file is the tour of
+ * the desk, and these are the properties it would bury.
  */
 
 import agentDef from "virtual:aai/agent";
 import type { InferToolInput, ToolContext } from "@alexkroman1/aai";
-import { isToolFailure } from "@alexkroman1/aai";
+import { isToolFailure, resolveOne } from "@alexkroman1/aai";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { createToolContext, expectDialogOk, toolRunner } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { validateCard } from "./card.ts";
 import { deskFlow } from "./desk.ts";
+import { LINE_ITEM_PICK } from "./disputes.ts";
 import { DESK_EVENTS, recordAbandonedBooking } from "./events.ts";
 import {
   cancelBooking,
@@ -23,7 +36,7 @@ import {
   requireRoom,
   resolveRoomConflict,
 } from "./hotel.ts";
-import type { Ticket } from "./records.ts";
+import { PRICING, type Ticket } from "./records.ts";
 import { hotelSlot, requireVerified } from "./shared.ts";
 import type recordCard from "./tools/record_card.ts";
 
@@ -221,7 +234,39 @@ describe("a refusal is one object, made once and passed along", () => {
 
 // ─── One rule for reading a spoken reference ─────────────────────────────────
 
-describe("a RES code is read the way a caller says one", () => {
+describe("a spoken reference is resolved, never guessed", () => {
+  test("the disputed line is picked by ordinal off the folio just read out", async () => {
+    const ctx = createToolContext();
+    await run("verify_booking", { lastName: "Lee", confirmationCode: "HTL-GH78" }, ctx);
+    const lines = (await run("lookup_invoice", ctx)) as { lineItems: { label: string }[] };
+    expect(lines.lineItems[1]?.label).toBe("Late checkout");
+
+    const byOrdinal = await run(
+      "dispute_charge",
+      {
+        category: "late_checkout_fee",
+        lineItemLabel: "the second one",
+        callerNote: "Front desk said 1 PM was fine.",
+        acceptsOfferedResolution: true,
+      },
+      ctx,
+    );
+    expect(byOrdinal).toMatchObject({ outcome: "goodwill_waived", refund: PRICING.lateCheckout });
+  });
+
+  test("a word that names two lines is REFUSED rather than picked between", () => {
+    const folio = [
+      { label: "Room (2 nights)", amount: 56_000 },
+      { label: "Room service", amount: 4200 },
+    ];
+    const ambiguous = resolveOne(folio, "the room charge", LINE_ITEM_PICK);
+    expect(isToolFailure(ambiguous) && ambiguous.error).toMatch(
+      /matches 2 invoice lines.*Room \(2 nights\).*Room service/,
+    );
+    // The same scorer picks a single winner once a second word narrows it.
+    expect(resolveOne(folio, "the room service charge", LINE_ITEM_PICK)).toEqual(folio[1]);
+  });
+
   test('"R E S dash J K nine zero" finds RES-JK90, and so does res jk90', async () => {
     const ctx = createToolContext();
     for (const spoken of ["RES-JK90", "res jk90", "R E S dash J K 9 0"]) {
