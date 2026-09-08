@@ -213,6 +213,33 @@ answering both questions. Both fields are on the RESULT as well as in the log,
 for the reason `systemPrompt` is: `log` is silenced under `--json`, so a CI job
 that builds and then deploys could read neither.
 
+**A host build WARNS about a declared variable the host has no value for**, and
+that record is where the fix comes from (`TargetOutput.secret`, a command with
+`<NAME>` in it). `.env.example` DECLARES which variables become `ctx.env` and
+the host supplies the values — declarations ship, values do not — and nothing
+checked the second half, so a deployment whose credentials were never set built
+GREEN and failed at its first session as an opaque provider auth error. Measured
+on the `retail` demo: a Vercel project with zero environment variables, four
+green preview builds, and a dead agent. `missingDeployEnv` in `build.ts` is the
+check and `missingEnv` is on the result for the `--json` reader.
+
+**It reads the HOST environment, never `resolveServerEnv`**, and that is the
+whole subtlety. `.env` IS uploaded into a host's build workspace — Vercel
+filters uploads by `.vercelignore` and never by `.gitignore`'s contents, so the
+scaffold's `.env*` rule does not apply there — while being deliberately absent
+from the deployment artifact (`RUNTIME_FILES` in `_vercel-output.ts`, where
+shipping it was a credential leak). A resolver would therefore find a
+developer's own key sitting beside the build and stay quiet about the one
+deployment that needs the warning. Declarations come from
+`DEPLOY_ENV_DECLARATION_FILE` alone, values from the build's environment alone.
+
+It WARNS rather than gates because a build cannot interrogate its own host: a
+runtime-only variable (Vercel's sensitive kind) is reported though it will
+resolve, and a build run locally reads a shell that says nothing about what the
+platform has. `node` is exempt — it deploys nowhere, `aai start` reads `.env` at
+boot, and `withHostCredentialFallback` still fills a provider credential, so
+warning there would fire on every ordinary local build.
+
 **`--target vercel`'s routing table brackets `handle: filesystem` with two
 rules about `/assets/`**, which is Vite's content-addressed output directory and
 therefore the only prefix where a filename changes with its bytes. Before it, a

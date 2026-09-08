@@ -45,6 +45,15 @@ import { DENO_OUTPUT_DIR } from "./_deno-target.ts";
 import { MODAL_APP_FILE, MODAL_OUTPUT_DIR } from "./_modal-target.ts";
 import { VERCEL_OUTPUT_DIR } from "./_vercel-target.ts";
 
+/**
+ * What {@link TargetOutput.secret} puts where a variable NAME goes.
+ *
+ * Angle brackets rather than a `$NAME` or `%s`: the string is printed for a
+ * human to adapt as often as it is substituted into, and both of the other two
+ * are shell-significant enough to be mistaken for something to type literally.
+ */
+export const SECRET_NAME_PLACEHOLDER = "<NAME>";
+
 /** The targets `aai build --target` accepts. */
 export const BUILD_TARGETS = ["node", "vercel", "deno", "modal"] as const;
 
@@ -191,6 +200,26 @@ export interface TargetOutput {
   readonly preview?: string;
   /** Ship what was just emitted. */
   readonly deploy?: string;
+  /**
+   * How this host sets ONE secret's value, with {@link SECRET_NAME_PLACEHOLDER}
+   * standing in for the variable name.
+   *
+   * `.env.example` DECLARES which variables become `ctx.env` and the host
+   * supplies the values (see `DEPLOY_ENV_FILES` and the `RUNTIME_FILES` note in
+   * `_vercel-output.ts` — declarations ship, values do not). Nothing checked
+   * that the host actually had them, so a deployment whose credentials were
+   * never set built green and failed at its first session, which reads as a
+   * provider outage rather than as an unset variable. `missingDeployEnv` in
+   * `build.ts` is that check and this is the string it points the reader at.
+   *
+   * Absent where there is no honest answer, the same rule {@link preview} and
+   * {@link deploy} follow. `node` has no host to name — the deployment is a
+   * process someone runs, reading `.env` or whatever `-e` flags a container got.
+   * `deno` and `modal` are absent because their commands are unverified here,
+   * not because they have none; the warning still names the variables and says
+   * they must be set in the host's environment, which is the load-bearing half.
+   */
+  readonly secret?: string;
 }
 
 /**
@@ -207,7 +236,15 @@ export const TARGET_OUTPUTS: Readonly<Record<BuildTarget, TargetOutput>> = {
   // worker `aai build` already wrote, which is what the scaffold's own `start`
   // script runs and what a container platform is pointed at.
   node: { preview: "aai start" },
-  vercel: { dir: VERCEL_OUTPUT_DIR, deploy: "vercel deploy --prebuilt" },
+  vercel: {
+    dir: VERCEL_OUTPUT_DIR,
+    deploy: "vercel deploy --prebuilt",
+    // `production` is named explicitly because omitting it makes the CLI prompt
+    // for the environments interactively, which is not a command a reader can
+    // paste into CI — and because a build that emitted this target IS the
+    // deployment about to go out.
+    secret: `vercel env add ${SECRET_NAME_PLACEHOLDER} production`,
+  },
   deno: {
     dir: DENO_OUTPUT_DIR,
     // The `start` task {@link DENO_CONFIG_SOURCE} writes — which is the whole

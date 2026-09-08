@@ -5,7 +5,12 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
-import { executeBuild, WORKER_ARTIFACT_REL } from "./build.ts";
+import {
+  executeBuild,
+  missingDeployEnv,
+  missingEnvWarnings,
+  WORKER_ARTIFACT_REL,
+} from "./build.ts";
 
 /** Import a built worker and return its `__aaiConfig` self-description. */
 async function extractConfig(worker: string): Promise<Record<string, unknown>> {
@@ -272,5 +277,73 @@ describe("evalWorkerBundle", () => {
       `export default { name: "evaled", systemPrompt: "p", greeting: "g", tools: {} };`,
     );
     expect(agent.name).toBe("evaled");
+  });
+});
+
+describe("missingDeployEnv", () => {
+  test("reports a variable the declaration names and the host has no value for", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
+      expect(await missingDeployEnv(dir, "vercel", {})).toEqual(["ASSEMBLYAI_API_KEY"]);
+    });
+  });
+
+  test("a value in .env does NOT suppress it — .env never reaches the deployment", async () => {
+    // The case this check exists for, and the one a `resolveServerEnv`-based
+    // implementation gets wrong. `.env` IS uploaded into a host's build
+    // workspace (Vercel filters uploads by `.vercelignore`, not by
+    // `.gitignore`'s contents) and is deliberately absent from the deployment
+    // artifact — `RUNTIME_FILES` in `_vercel-output.ts`, where shipping it was
+    // a credential leak. So a resolver would find this key, report nothing,
+    // and the deployed function would still see no value.
+    await withTempDir(async (dir) => {
+      await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
+      await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=a-real-local-key\n");
+      expect(await missingDeployEnv(dir, "vercel", {})).toEqual(["ASSEMBLYAI_API_KEY"]);
+    });
+  });
+
+  test("stays quiet for the node target, which deploys nowhere", async () => {
+    // `aai start` reads `.env` at boot and a provider credential still arrives
+    // through `withHostCredentialFallback`, so a blank declaration is a
+    // developer mid-setup. Warning here would fire on every local build.
+    await withTempDir(async (dir) => {
+      await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
+      expect(await missingDeployEnv(dir, "node", {})).toEqual([]);
+    });
+  });
+
+  test("a value on the host clears it, and an empty string does not", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(path.join(dir, ".env.example"), "SET_KEY=\nBLANK_KEY=\n");
+      expect(await missingDeployEnv(dir, "vercel", { SET_KEY: "v", BLANK_KEY: "" })).toEqual([
+        "BLANK_KEY",
+      ]);
+    });
+  });
+
+  test("declares nothing when the project has no .env.example", async () => {
+    await withTempDir(async (dir) => {
+      expect(await missingDeployEnv(dir, "vercel", {})).toEqual([]);
+    });
+  });
+});
+
+describe("missingEnvWarnings", () => {
+  test("names the command that sets it, with the variable substituted", () => {
+    const [warning] = missingEnvWarnings(["ASSEMBLYAI_API_KEY"], "vercel");
+    expect(warning).toContain("vercel env add ASSEMBLYAI_API_KEY production");
+    // The redeploy half: a host captured its variable set for the deployment
+    // that already went out, so setting the value alone changes nothing.
+    expect(warning).toContain("deploy again");
+  });
+
+  test("names the environment instead where the target knows no command", () => {
+    const [warning] = missingEnvWarnings(["ASSEMBLYAI_API_KEY"], "modal");
+    expect(warning).toContain("modal environment");
+  });
+
+  test("one sentence per variable", () => {
+    expect(missingEnvWarnings(["A", "B"], "vercel")).toHaveLength(2);
   });
 });
