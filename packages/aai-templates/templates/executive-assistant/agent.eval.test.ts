@@ -116,7 +116,7 @@ describeEval(agentDef, (test) => {
     },
     {
       stubReply: [
-        { tool: "open_email", args: { id: "m2" } },
+        { tool: "open_email", args: { which: "m2" } },
         { tool: "draft_reply", args: { content: DRAFT } },
         "Here's the draft: Dana, it stays inside your VPC, models included. Send it?",
       ],
@@ -171,7 +171,7 @@ describeEval(agentDef, (test) => {
     },
     {
       stubReply: [
-        { tool: "open_email", args: { id: "m2" } },
+        { tool: "open_email", args: { which: "m2" } },
         { tool: "draft_reply", args: { content: DRAFT } },
         "Here's the draft — it stays inside your VPC. Send it?",
         { tool: "accept" },
@@ -196,7 +196,7 @@ describeEval(agentDef, (test) => {
     },
     {
       stubReply: [
-        { tool: "open_email", args: { id: "m3" } },
+        { tool: "open_email", args: { which: "m3" } },
         "Goodwin sent the office lease amendment to sign — it still needs your signature. Anything you want done with it?",
       ],
       stubGenerate: [verdict("notify")],

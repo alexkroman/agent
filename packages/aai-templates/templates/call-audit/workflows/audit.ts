@@ -49,7 +49,17 @@
 // a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
 // for `WorkflowOutputOf`.
 import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
-import { encodeWav, mapConcurrent, stepReadUpload, stepReport } from "@alexkroman1/aai/step";
+import {
+  encodeWav,
+  mapConcurrent,
+  type ReadUploadOptions,
+  stepInfo,
+  type StepInfo,
+  stepReadUpload,
+  stepReport,
+  type UploadSlice,
+} from "@alexkroman1/aai/step";
+import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { countWords, formatDuration } from "@alexkroman1/aai/utils";
 import type { audit } from "../agent.ts";
 import { ingestRecording } from "./ingest.ts";
@@ -110,6 +120,15 @@ export type CallAudit = {
   durationMs: number;
   /** How long the RUN took, wall clock. */
   elapsedMs: number;
+  /**
+   * How much of that was ffmpeg — the two levelling passes plus the mastering one.
+   *
+   * Rendered beside `elapsedMs` rather than folded into it, because the two
+   * answer different questions: the run is mostly the fan-out waiting on a
+   * provider, and this is what the DECODER cost. It is the number that says
+   * whether normalizing first paid for itself.
+   */
+  ffmpegMs: number;
   /** How many requests the transcript was assembled from. */
   segments: number;
   /**
@@ -217,6 +236,10 @@ export async function auditFlow(
     codec: ingested.codec,
     durationMs: ingested.durationMs,
     elapsedMs: finishedAt - startedAt,
+    // Both directions, summed in the body from two journaled step results — so a
+    // replay reports the time the passes really took rather than re-measuring
+    // work it did not redo.
+    ffmpegMs: ingested.ffmpegMs + spoken.ffmpegMs,
     segments: segments.length,
     blindCuts: segments.filter((segment) => segment.cutInSpeech).length,
     speechPercent: Math.round(
@@ -258,21 +281,76 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
   // ORDER is not guaranteed here and does not need to be — the calls go out
   // together, so their lines interleave by completion, and `segment.index` is what
   // puts the TRANSCRIPT back in order.
-  await stepReport(
-    `Transcribing ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}.`,
-  );
+  // Read ONCE, at the top, which is what `stepInfo` asks of a caller: the value
+  // is a snapshot of the attempt in flight and cannot change under an `await`.
+  const span = `${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}`;
+  await stepReport(`Transcribing ${span}.${attemptSuffix(stepInfo())}`);
 
-  // `[start, end)`, the same half-open pair `planSegments` produced — the store
-  // owns the conversion to HTTP's inclusive range, so there is no `- 1` here to get
-  // wrong.
-  const audio = await stepReadUpload(audioId, { start: segment.startByte, end: segment.endByte });
-  const text = await transcribeSpan(
-    encodeWav(audio.bytes, ANALYSIS_FORMAT),
-    `segment-${segment.index}.wav`,
-    `Segment ${segment.index} (${formatDuration(segment.startMs)})`,
-  );
+  const audio = await stepReadUpload(audioId, segmentWindow(segment));
+
+  // The store CLAMPS a window to what it holds, which is the property that made
+  // the twelve-byte planning bug `durationSeconds` documents silent: a plan
+  // describing audio past the end of the file produced a short slice, a shorter
+  // WAV, and a transcript nobody could tell was missing its tail. So the read is
+  // checked against what was asked for. Fatal, because the same plan against the
+  // same stored file is short on every attempt.
+  const missing = segmentShortfall(segment, audio);
+  if (missing > 0) {
+    throwFatalStepError(
+      `Segment ${segment.index} (${span}) came back ${missing} byte(s) short of the ` +
+        `${segment.endByte - segment.startByte} the plan asked for. The stored PCM is ` +
+        "smaller than the plan was built against, so the transcript would be missing " +
+        "audio and say nothing about it.",
+    );
+  }
+
+  const text = await transcribeSpan(encodeWav(audio.bytes, ANALYSIS_FORMAT), {
+    filename: `segment-${segment.index}.wav`,
+    label: `Segment ${segment.index} (${formatDuration(segment.startMs)})`,
+  });
 
   return { index: segment.index, text };
+}
+
+/**
+ * One segment's byte range, in the STORE's vocabulary.
+ *
+ * `[start, end)` — the same half-open pair `planSegments` produced, which is why
+ * this is a rename rather than arithmetic: the store owns the conversion to
+ * HTTP's inclusive range, so there is no `- 1` here to get wrong. The annotation
+ * is what says so, by naming the SDK's own {@link ReadUploadOptions} rather than
+ * an object literal that happens to have the right keys today.
+ */
+export function segmentWindow(segment: Segment): ReadUploadOptions {
+  return { start: segment.startByte, end: segment.endByte };
+}
+
+/**
+ * Bytes the store came back SHORT of what the plan asked for. `0` when whole.
+ *
+ * Measured against the bytes actually returned rather than against the slice's
+ * own `start`/`end`, because those are what the store CLAMPED to and would
+ * therefore agree with themselves.
+ */
+export function segmentShortfall(segment: Segment, slice: Pick<UploadSlice, "bytes">): number {
+  return Math.max(0, segment.endByte - segment.startByte - slice.bytes.byteLength);
+}
+
+/**
+ * ` (attempt 2 of 6)`, or nothing at all on a first attempt.
+ *
+ * The progress log is this desk's whole UI while a run is going, and a
+ * thirty-segment fan-out that meets a rate limit re-reports each retried segment
+ * under the line it already printed — so without this a run that is patiently
+ * riding out a 429 looks exactly like a run that has stalled.
+ *
+ * `undefined` is ORDINARY rather than an error and reads as "not retrying":
+ * {@link stepInfo} answers it outside a step, which is what a spec driving this
+ * function directly has and what the first attempt would have said anyway.
+ */
+export function attemptSuffix(info: StepInfo | undefined): string {
+  if (info === undefined || info.attempt <= 1) return "";
+  return ` (attempt ${info.attempt} of ${info.maxAttempts})`;
 }
 
 /**

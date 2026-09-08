@@ -64,7 +64,11 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { describeMedia, probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
 import { pcmDurationMs, stepReport, stepRequireCompleteUpload } from "@alexkroman1/aai/step";
-import { throwFatalStepError, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+import {
+  throwFatalStepError,
+  throwFfmpegStepError,
+  throwStepError,
+} from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, plural } from "@alexkroman1/aai/utils";
 import {
@@ -75,8 +79,11 @@ import {
   normalizeArgs,
   parseLoudness,
   parseSilences,
+  requireAudioStream,
   type Silence,
   speechFraction,
+  TEMP_DIR,
+  totalFfmpegMs,
 } from "./media.ts";
 
 /**
@@ -108,6 +115,13 @@ export type Ingested = {
   bytes: number;
   /** What the recording measured before it was levelled. */
   loudness: Loudness;
+  /**
+   * Wall clock the two `loudnorm` passes spent, in milliseconds.
+   *
+   * The decoder's own cost, which is what makes the run's `elapsedMs` readable —
+   * see {@link totalFfmpegMs}.
+   */
+  ffmpegMs: number;
   /** Every pause long enough to cut in. The fan-out's cut points come from these. */
   silences: Silence[];
 };
@@ -134,7 +148,15 @@ export type Ingested = {
 export async function ingestRecording(uploadId: string): Promise<Ingested> {
   // `stepRequireCompleteUpload`, not `stepUploadInfo`: `size` is the readable PREFIX, so
   // an upload still arriving would be copied short and levelled as the whole call.
-  const stored = await stepRequireCompleteUpload(uploadId);
+  // `.catch(throwStepError)` is not decoration: `stepRequireCompleteUpload`
+  // refuses a still-arriving upload with an `UploadIncompleteError` that already
+  // CARRIES `retryable: false`, and nothing reads a carried verdict unless a
+  // caller asks. Thrown raw it is a plain failure, so the engine's unclassified
+  // default applies and this call site's `maxAttempts: 6` re-asks the store six
+  // times inside a millisecond for bytes that arrive on their own schedule.
+  // `throwStepError` turns the carried verdict into the `FatalError` the SDK
+  // meant, with its own sentence — which names the remedy — intact.
+  const stored = await stepRequireCompleteUpload(uploadId).catch(throwStepError);
   await stepReport(`Reading ${stored.name || uploadId} (${formatBytes(stored.size)}).`);
 
   return await withTempDir(
@@ -161,7 +183,13 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
       const probed = await probeMedia(source, { timeoutMs: FFMPEG_TIMEOUT_MS }).catch(
         throwFfmpegStepError,
       );
-      const codec = probed.audio?.codec ?? "unknown";
+      // Terminal when the file carries no sound at all, BEFORE the measure pass
+      // decodes a gigabyte of it — see `requireAudioStream`. The codec then comes
+      // off the track itself rather than off an optional chain, so `unknown` here
+      // means "ffprobe named no codec" and no longer doubles as "there was
+      // nothing to name".
+      const track = analyse(() => requireAudioStream(probed));
+      const codec = track.codec ?? "unknown";
       await stepReport(
         `Levelling ${describeMedia(probed)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
       );
@@ -174,7 +202,7 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
       const loudness = analyse(() => parseLoudness(measured.stderr));
 
       // Pass two: apply the measurement, find the pauses, write the audio.
-      await runFfmpeg(normalizeArgs(source, loudness, normalized, silenceLog), {
+      const levelled = await runFfmpeg(normalizeArgs(source, loudness, normalized, silenceLog), {
         timeoutMs: FFMPEG_TIMEOUT_MS,
       }).catch(throwFfmpegStepError);
 
@@ -219,10 +247,11 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
         durationMs,
         bytes,
         loudness,
+        ffmpegMs: totalFfmpegMs(measured, levelled),
         silences,
       };
     },
-    { prefix: "aai-call-audit-" },
+    TEMP_DIR,
   );
 }
 

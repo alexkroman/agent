@@ -1,6 +1,11 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, expectDialogOk, expectToolOk } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  expectDialogOk,
+  expectDialogRefused,
+  expectToolOk,
+} from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import type { StagedResult } from "./pending.ts";
 import { retailSlot } from "./store.ts";
@@ -102,14 +107,14 @@ describe("confirming", () => {
 
   test("confirm_change with nothing staged is refused by the GATE, before its body", async () => {
     const ctx = await aaravCtx();
-    const result = await confirmChange.execute({}, ctx);
-    expect(isToolFailure(result)).toBe(true);
     // The SDK writes this refusal from `when` plus the state's instruction, so
     // it says where the call is rather than merely that this was not allowed —
     // and the body, which is the only thing in the template that mutates, never
-    // ran to find out.
-    expect(isToolFailure(result) && result.error).toContain("serving.helping");
-    expect(isToolFailure(result) && result.error).toContain("STAGES");
+    // ran to find out. `expectDialogRefused` pins the sentence's own shape and
+    // the state it names; what stays here is the half that is this template's,
+    // which is `helping`'s instruction being the thing quoted back.
+    const refusal = expectDialogRefused(await confirmChange.execute({}, ctx), "serving.helping");
+    expect(refusal.error).toContain("STAGES");
   });
 
   test("confirming twice is refused — the second call has nothing staged", async () => {
@@ -189,8 +194,11 @@ describe("what stays legal while a change waits", () => {
     expect(transferred.done).toBe(true);
 
     // Including the two settling tools: a call given away cannot be finished.
-    expect(isToolFailure(await confirmChange.execute({}, ctx))).toBe(true);
-    expect(isToolFailure(await cancelChange.execute({}, ctx))).toBe(true);
+    // Pinned to `transferred` rather than to "some failure", because both of
+    // these also fail with nothing staged — which is a different sentence and
+    // would have satisfied a bare `isToolFailure` here.
+    expectDialogRefused(await confirmChange.execute({}, ctx), "transferred");
+    expectDialogRefused(await cancelChange.execute({}, ctx), "transferred");
     expect(retailSlot.get(ctx).store.orders["#W9300146"]?.status).toBe("pending");
   });
 });

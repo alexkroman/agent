@@ -3,10 +3,10 @@ import {
   createToolContext,
   deployedAgent,
   expectDialogRefused,
+  runTool,
   type TestToolContext,
   toolInputIssues,
   toolOf,
-  runTool,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 /**
@@ -100,7 +100,12 @@ const SETTLING_TOOLS = new Set(["cancel_change", "confirm_change"]);
 async function bodyReachableCtx(name: string): Promise<TestToolContext> {
   if (!SETTLING_TOOLS.has(name)) return servingCtx();
   const ctx = createToolContext();
-  await runTool(retailAgent, "find_user_id_by_email", { email: "aarav.anderson9752@example.com" }, ctx);
+  await runTool(
+    retailAgent,
+    "find_user_id_by_email",
+    { email: "aarav.anderson9752@example.com" },
+    ctx,
+  );
   await runTool(
     retailAgent,
     "cancel_pending_order",

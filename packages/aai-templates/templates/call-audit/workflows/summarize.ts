@@ -40,7 +40,7 @@ import { stepGenerateJsonOrFail, throwFfmpegStepError } from "@alexkroman1/aai/s
 import { withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { masterArgs } from "./media.ts";
+import { masterArgs, TEMP_DIR, totalFfmpegMs } from "./media.ts";
 
 /** Risks the summary is reduced to. Enough to be useful, few enough to act on. */
 const MAX_RISKS = 4;
@@ -158,7 +158,7 @@ export async function summarize(
 export async function narrate(
   script: string,
   voice?: string,
-): Promise<{ audio: string; durationMs: number; bytes: number }> {
+): Promise<{ audio: string; durationMs: number; bytes: number; ffmpegMs: number }> {
   const spoken = await stepSpeak(script, omitUndefined({ voice }));
 
   return await withTempDir(
@@ -173,9 +173,9 @@ export async function narrate(
       // which the schema keeps under 150 words.
       await writeFile(wav, spoken.audio);
 
-      await runFfmpeg(masterArgs(wav, mp3), { timeoutMs: MASTER_TIMEOUT_MS }).catch(
-        throwFfmpegStepError,
-      );
+      const mastered = await runFfmpeg(masterArgs(wav, mp3), {
+        timeoutMs: MASTER_TIMEOUT_MS,
+      }).catch(throwFfmpegStepError);
       const bytes = (await stat(mp3)).size;
 
       const stored = await writeUploadFromFile(mp3, {
@@ -190,8 +190,15 @@ export async function narrate(
         `Recorded a ${Math.round(spoken.durationMs / 1000)}s audit in ${spoken.voice}'s voice — ` +
           `${formatBytes(bytes)} of MP3, from ${formatBytes(spoken.audio.byteLength)} of WAV.`,
       );
-      return { audio: stored.id, durationMs: spoken.durationMs, bytes };
+      return {
+        audio: stored.id,
+        durationMs: spoken.durationMs,
+        bytes,
+        // The pass on the way OUT, so the page's one ffmpeg number covers both
+        // directions rather than only the one the ingest paid for.
+        ffmpegMs: totalFfmpegMs(mastered),
+      };
     },
-    { prefix: "aai-call-audit-" },
+    TEMP_DIR,
   );
 }

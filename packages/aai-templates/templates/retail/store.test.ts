@@ -1,5 +1,10 @@
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
-import { createToolContext, expectDialogOk, expectToolOk } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  expectDialogOk,
+  expectDialogRefused,
+  expectToolOk,
+} from "@alexkroman1/aai/testing";
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
@@ -219,13 +224,14 @@ describe("retailTool", () => {
 
   test("a tool gated on serving refuses while the caller is unidentified", async () => {
     const ctx = createToolContext();
-    const result = await gated.execute({}, ctx);
-    expect(isToolFailure(result)).toBe(true);
     // The refusal is the SDK's, so it names the position and quotes the
     // state's own instruction — where `requiresAuth` answered one fixed
-    // sentence that could not say where the call was.
-    expect(isToolFailure(result) && result.error).toContain('"identifying"');
-    expect(isToolFailure(result) && result.error).toMatch(/user id/);
+    // sentence that could not say where the call was. `expectDialogRefused`
+    // matches that sentence from the SDK's own template rather than from a
+    // `'"identifying"'` substring spelled here, so rewording the model-facing
+    // half of the gate cannot break this spec without breaking the gate.
+    const refusal = expectDialogRefused(await gated.execute({}, ctx), "identifying");
+    expect(refusal.error).toMatch(/user id/);
   });
 
   test("a refused call touches nothing, callSeq included", async () => {
@@ -320,8 +326,6 @@ describe("the call flow", () => {
     expect(at.state).toBe("transferred");
     expect(at.done).toBe(true);
 
-    const refused = await anywhere.execute({}, ctx);
-    expect(isToolFailure(refused)).toBe(true);
-    expect(isToolFailure(refused) && refused.error).toContain('"transferred"');
+    expectDialogRefused(await anywhere.execute({}, ctx), "transferred");
   });
 });

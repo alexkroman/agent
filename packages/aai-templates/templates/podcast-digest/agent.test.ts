@@ -43,6 +43,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import {
   dailyDigestFlow,
+  type EpisodeDigest,
   formatScheduleInterval,
   POLL_DELAY_MS,
   pollTranscript,
@@ -95,7 +96,7 @@ const EPISODE = {
   durationMs: 3_849_000,
 };
 
-const slackInput = (webhookUrl: string, episodes = [EPISODE]) => ({
+const slackInput = (webhookUrl: string, episodes: EpisodeDigest[] = [EPISODE]) => ({
   destination: { webhookUrl, textParam: "text" },
   podcastChannels: "https://example.com/feed.xml",
   episodes,

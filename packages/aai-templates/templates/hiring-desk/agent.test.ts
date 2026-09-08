@@ -1,23 +1,29 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { GenerateFn, GenerateOptions, ToolContext } from "@alexkroman1/aai";
+import type { GenerateFn, GenerateOptions, GuardrailVerdict, ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
   expectDialogRefused,
+  parseSchemaInput,
   runGuardrail,
+  schemaInputIssues,
+  type SentEvent,
   type StubDelegateCall,
   type StubGenerateCall,
   scriptedToolContext,
+  type TestToolContext,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import {
+  candidateScoreSchema,
   COORDINATOR_NAME,
   crewAgentPrompt,
   crewExpectedOutput,
   EMAIL_FOLLOWUP_AGENT,
+  EMAIL_GUARDRAIL_RETRIES,
   EVALUATOR_SYSTEM,
   emailGuardrail,
   emailTask,
@@ -28,6 +34,7 @@ import {
   SCORING_CONCURRENCY,
 } from "./crews.ts";
 import {
+  type CandidateScore,
   DEFAULT_JOB,
   emptyHiring,
   hiringFlow,
@@ -38,6 +45,7 @@ import {
   MAX_FEEDBACK_ROUNDS,
   ranked,
   resolveCandidate,
+  SCREENING_PROGRESS,
   SHORTLIST_SIZE,
   stageLabel,
 } from "./shared.ts";
@@ -270,6 +278,36 @@ describe("screen_candidates (their load_leads + score_leads)", () => {
     expect(peak).toBe(SCORING_CONCURRENCY);
   });
 
+  test("a second screening in the same step waits: two fan-outs, never interleaved", async () => {
+    const { model } = scriptedDesk();
+    let inFlight = 0;
+    let peak = 0;
+    const generate = ((options: GenerateOptions) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      return model.generate(options).finally(() => {
+        inFlight -= 1;
+      });
+    }) as GenerateFn;
+    const ctx = createToolContext({ generate });
+
+    await Promise.all([
+      run("screen_candidates", {}, ctx),
+      run("screen_candidates", { jobTitle: "Another role" }, ctx),
+    ]);
+
+    // Both screenings really ran, and the window never held two fan-outs at
+    // once — which is what the screening lock buys. Without it the second reads
+    // and writes the table across the first's awaits, and the ranking the
+    // caller was just read is not the one the desk now holds.
+    expect(model.calls).toHaveLength(LEADS.length * 2);
+    expect(peak).toBe(SCORING_CONCURRENCY);
+    const state = stateOf(ctx);
+    expect(Object.keys(state.scores)).toHaveLength(LEADS.length);
+    expect(state.unscored).toEqual([]);
+    expect(at(ctx)).toBe("reviewing");
+  });
+
   test("one applicant the evaluator could not score does not sink the screening", async () => {
     const { ctx } = scriptedDesk({ failScoring: ["c07"] });
 
@@ -375,6 +413,31 @@ describe("rescore_with_feedback (their option 2)", () => {
       last.indexOf("- less weight on years of experience"),
     );
     expect(stateOf(ctx).rounds).toBe(2);
+  });
+
+  test("two re-scores in the same step count TWO rounds, and neither loses its feedback", async () => {
+    const { ctx, model } = await screened();
+
+    await Promise.all([
+      run("rescore_with_feedback", { feedback: "more TypeScript" }, ctx),
+      run("rescore_with_feedback", { feedback: "less weight on years of experience" }, ctx),
+    ]);
+
+    // Read-modify-write across a fan-out: without the lock both read
+    // `rounds: 0`, both write `rounds: 1`, and one round of twelve model calls
+    // the caller was charged for is uncounted — which also unbounds the bound.
+    const state = stateOf(ctx);
+    expect(state.rounds).toBe(2);
+    expect(state.feedback).toHaveLength(2);
+    expect(state.feedback).toEqual(
+      expect.arrayContaining(["more TypeScript", "less weight on years of experience"]),
+    );
+    expect(model.calls).toHaveLength(LEADS.length * 2);
+    // The second round's briefs carry BOTH pieces of feedback, which is only
+    // true if it read the trail the first round had already written.
+    const last = model.calls.at(-1)?.prompt ?? "";
+    expect(last).toContain("- more TypeScript");
+    expect(last).toContain("- less weight on years of experience");
   });
 
   test("says so when the same three people are still on top", async () => {
@@ -594,6 +657,48 @@ describe("proceed_to_emails (their option 3 → write_and_save_emails)", () => {
   });
 });
 
+// ─── The wait ────────────────────────────────────────────────────────────────
+
+/** What a tool sent the browser, filtered to the ticker's own event. */
+const progressIn = (ctx: TestToolContext): SentEvent[] =>
+  ctx.sent.filter((sent) => sent.event === SCREENING_PROGRESS);
+
+/** The ticks a fan-out over the roster should have produced, in order. */
+const everyTick = (phase: "scoring" | "writing") =>
+  LEADS.map((_, index) => ({ phase, done: index + 1, total: LEADS.length }));
+
+describe("the progress ticker", () => {
+  test("ticks once per applicant while the evaluator runs, ending on the total", async () => {
+    const { ctx } = scriptedDesk();
+
+    await run("screen_candidates", {}, ctx);
+
+    // A MOMENT rather than state: the slot is still written once, at the end,
+    // so nothing ever reads half a screening — see `shared.ts`.
+    expect(progressIn(ctx).map((tick) => tick.data)).toEqual(everyTick("scoring"));
+    expect(stateOf(ctx).candidates).toHaveLength(LEADS.length);
+  });
+
+  test("an applicant the evaluator refused ticks too, so the count reaches the total", async () => {
+    const { ctx } = scriptedDesk({ failScoring: ["c07"] });
+
+    await run("screen_candidates", {}, ctx);
+
+    // A ticker that stopped at eleven of twelve reads as a hang, and the wait
+    // for that applicant really is over.
+    expect(progressIn(ctx)).toHaveLength(LEADS.length);
+  });
+
+  test("the coordinator's fan-out ticks under its own phase", async () => {
+    const { ctx } = await screened();
+    ctx.sent.length = 0;
+
+    await run("proceed_to_emails", {}, ctx);
+
+    expect(progressIn(ctx).map((tick) => tick.data)).toEqual(everyTick("writing"));
+  });
+});
+
 // ─── The reads ───────────────────────────────────────────────────────────────
 
 describe("candidate_details", () => {
@@ -752,6 +857,13 @@ describe("screening_status", () => {
 /** The coordinator's guardrail, called the way the runtime calls it. */
 const check = (text: string) => runGuardrail(emailWriter, text);
 
+/** What a verdict COMPLAINED about, or `null` when it accepted.
+ *  `GuardrailVerdict` is `true | string`, and narrowing it here is what stops
+ *  an ACCEPTING verdict being matched against a complaint by accident — a
+ *  stringified `true` matches no pattern in this file and would read as a pass. */
+const complaint = (verdict: GuardrailVerdict): string | null =>
+  verdict === true ? null : verdict;
+
 describe("the crews", () => {
   test("render a CrewAI agent through CrewAI's own role_playing template", () => {
     expect(crewAgentPrompt(HR_EVALUATION_AGENT)).toBe(
@@ -777,22 +889,50 @@ describe("the crews", () => {
     expect(emailTask(candidate, DEFAULT_JOB, false)).toContain("PROCEEDING WITH CANDIDATE: False");
   });
 
-  test("the coordinator declares what a good email is, and a guardrail that holds it", () => {
+  test("the coordinator declares what a good email is, a guardrail, and its retry budget", () => {
     expect(emailWriter.expectedOutput).toMatch(/Subject:/);
     expect(emailWriter.expectedOutput).toContain(COORDINATOR_NAME);
     expect(emailWriter.guardrail).toBe(emailGuardrail);
     // No tools, one step: a writing pass, which is exactly what their agent is.
     expect(emailWriter.tools).toBeUndefined();
     expect(emailWriter.maxSteps).toBe(1);
+    // Their `guardrail` retries three times; this is one, written out at the
+    // declaration. Pinned to the NUMBER as well as to the constant, so an SDK
+    // default that moved is a decision this template makes again rather than
+    // one it inherits.
+    expect(emailWriter.maxRetries).toBe(EMAIL_GUARDRAIL_RETRIES);
+    expect(EMAIL_GUARDRAIL_RETRIES).toBe(1);
   });
 
   test("the guardrail accepts a subject line and a signature, and names what is missing", () => {
     expect(check("Subject: Hello\n\nHi,\n\nBest,\nSarah")).toBe(true);
     expect(check("  Subject: Hello\nHi — Sarah")).toBe(true);
-    expect(String(check("Hi,\n\nBest,\nSarah"))).toMatch(/Subject:/);
-    expect(String(check("Subject: Hello\n\nHi,\n\nBest,\nThe team"))).toMatch(
+    expect(complaint(check("Hi,\n\nBest,\nSarah"))).toMatch(/Subject:/);
+    expect(complaint(check("Subject: Hello\n\nHi,\n\nBest,\nThe team"))).toMatch(
       /Sign the email as Sarah/,
     );
+  });
+
+  test("the evaluator's schema IS their output_pydantic: a whole 1–100 score, a capped reason", async () => {
+    const verdict = await parseSchemaInput<CandidateScore>(
+      candidateScoreSchema,
+      { score: 87, reason: "Ships React daily and has taken an LLM feature end to end." },
+      "the evaluator's verdict",
+    );
+    expect(verdict).toEqual({
+      score: 87,
+      reason: "Ships React daily and has taken an LLM feature end to end.",
+    });
+    // The three a model really does return, each of which the desk could not
+    // read back: a zero, a half point, and the "detailed reasoning" theirs
+    // asked for where two spoken sentences were wanted.
+    expect(await schemaInputIssues(candidateScoreSchema, { score: 0, reason: "r" })).toBeDefined();
+    expect(
+      await schemaInputIssues(candidateScoreSchema, { score: 87.5, reason: "r" }),
+    ).toBeDefined();
+    expect(
+      await schemaInputIssues(candidateScoreSchema, { score: 87, reason: "x".repeat(501) }),
+    ).toBeDefined();
   });
 
   test("parseEmail splits the subject from the body, and copes with a draft that has none", () => {

@@ -103,16 +103,17 @@ export function filingChannel(): SlackChannel | undefined {
  * would post without a network and without knowing any channel's payload shape.
  */
 export function renderFiling(filing: Filing): ChannelMessage {
+  const sources = sourceCount(filing);
   return {
-    // The notification line, and on a workflow trigger the WHOLE message — so
-    // it leads with the answer rather than repeating the heading.
+    // The notification line — what a push alert and a screen reader read.
     text: `${filing.topic}: ${filing.summary}`,
     heading: `Research: ${filing.topic}`,
-    subtitle: `Requested by ${filing.requestedBy} · ${sourceCount(filing)} ${plural(
-      sourceCount(filing),
-      "source",
-    )} across ${filing.angles.length} ${plural(filing.angles.length, "angle")}`,
-    sections: angleSections(filing.angles),
+    subtitle: `Requested by ${filing.requestedBy} · ${sources} ${plural(sources, "source")} across ${filing.angles.length} ${plural(filing.angles.length, "angle")}`,
+    // The ANSWER is a section rather than only `text`, and a spec caught that:
+    // a plain-text destination renders `heading ?? text`, so a message whose
+    // summary lived only in `text` loses it in exactly the place the whole
+    // message is one string.
+    sections: [{ title: "In short", body: filing.summary }, ...angleSections(filing.angles)],
   };
 }
 

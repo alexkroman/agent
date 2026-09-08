@@ -227,6 +227,53 @@ export class MediaAnalysisError extends Error {
 }
 
 /**
+ * The audio track ffprobe found, or a terminal complaint naming what it found
+ * instead.
+ *
+ * **The one thing about the uploaded file this desk checks before it spends a
+ * decode on it.** The form accepts "any recording — a video's audio track
+ * included", which is honest and admits exactly one file that cannot work: a
+ * video with no sound, a still image, a PDF somebody dragged into the picker.
+ * Without this the run pays a whole `loudnorm` measure pass over that file — the
+ * expensive part, on a recording that can be gigabytes — and then fails with
+ * ffmpeg's own complaint about a filter graph, which names the filter rather
+ * than the file.
+ *
+ * A {@link MediaAnalysisError}, so `analyse` in `ingest.ts` makes it TERMINAL:
+ * the same file has no audio track on every attempt.
+ *
+ * The stream KINDS are listed rather than counted, because "found video" is what
+ * tells somebody they uploaded the wrong export of the right meeting.
+ */
+export function requireAudioStream(probed: MediaInfo): MediaStreamInfo {
+  if (probed.audio !== undefined) return probed.audio;
+  const found = probed.streams.map((stream) => stream.kind);
+  throw new MediaAnalysisError(
+    `That file has no audio track — ffprobe found ${found.length === 0 ? "no streams at all" : found.join(", ")}. ` +
+      "A video is fine, since the conversion drops the picture, but it has to carry sound.",
+  );
+}
+
+/**
+ * Wall clock the ffmpeg PASSES themselves spent, summed and rounded.
+ *
+ * `runFfmpeg` measures each invocation and hands the number back on its result;
+ * nothing else in a run can measure it, because the alternative is timing a
+ * promise that also covers the SDK's own spawn and drain. It is worth carrying
+ * out to the page for this template in particular: the run's `elapsedMs` is
+ * mostly the fan-out waiting on a provider, and this is the part the DECODER
+ * cost — which is the one number that says whether normalizing first was paid
+ * for.
+ *
+ * `ffprobe` is not one of these. It answers in milliseconds on any file, and
+ * `probeMedia` returns a {@link MediaInfo} rather than a run result, so there is
+ * no duration to add.
+ */
+export function totalFfmpegMs(...runs: readonly Pick<FfmpegRunResult, "durationMs">[]): number {
+  return Math.round(runs.reduce((total, run) => total + run.durationMs, 0));
+}
+
+/**
  * Pass one: measure the recording's loudness without writing any audio.
  *
  * `-f null -` is the whole trick — the filter graph runs, every frame is decoded
