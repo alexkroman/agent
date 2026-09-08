@@ -2,7 +2,15 @@ import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { AIRPORT_CAR } from "../catalogs.ts";
 import { requireRoom } from "../hotel.ts";
-import { isoDate, speakCode, speakUsd, spokenDate, spokenTime, TODAY } from "../records.ts";
+import {
+  clockTime,
+  isoDate,
+  speakCode,
+  speakUsd,
+  spokenDate,
+  spokenTime,
+  TODAY,
+} from "../records.ts";
 import { addTicket, hotelSlot } from "../shared.ts";
 
 /** Their `book_airport_car`: the hotel car, hotel-to-airport only, charged to the room. */
@@ -14,7 +22,7 @@ export default hotelSlot.updateTool({
   inputSchema: z.object({
     room: z.string(),
     pickupDate: isoDate("the pickup date"),
-    pickupTime: z.string().describe("24-hour HH:MM"),
+    pickupTime: clockTime("the pickup time"),
     passengers: z.number().int().min(1).max(AIRPORT_CAR.maxPassengers),
   }),
   execute({ room, pickupDate, pickupTime, passengers }, hotel) {
@@ -22,8 +30,6 @@ export default hotelSlot.updateTool({
     if ("error" in found) return toolFailure(found.error);
     if (pickupDate < TODAY)
       return toolFailure(`${spokenDate(pickupDate)} is in the past - re-confirm the date`);
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(pickupTime))
-      return toolFailure("the pickup time must be 24-hour HH:MM");
     const ticket = addTicket(
       hotel,
       "airport_car",

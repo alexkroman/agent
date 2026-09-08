@@ -212,7 +212,7 @@ export default tool({
   }),
   execute(args, ctx) {
     if (args.type === "yes_no") {
-      const roll = d(6);
+      const roll = d(6, ctx.random);
       const answer = roll <= 2 ? "No" : roll <= 4 ? "Yes, but with a complication" : "Yes";
       return { type: "yes_no", roll, answer };
     }
@@ -226,7 +226,7 @@ export default tool({
       // `update` rather than becoming `gameSlot.updateTool` — the other four
       // read nothing and store nothing.
       return gameSlot.update(ctx, (game) => {
-        const interrupt = checkChaosInterrupt(game);
+        const interrupt = checkChaosInterrupt(game, ctx.random);
         return {
           type: "chaos_check",
           chaosFactor: game.chaosFactor,
@@ -237,19 +237,19 @@ export default tool({
     }
 
     if (args.type === "npc_reaction") {
-      return { type: "npc_reaction", reaction: pick(REACTIONS) };
+      return { type: "npc_reaction", reaction: pick(REACTIONS, ctx.random) };
     }
 
     if (args.type === "scene_twist") {
-      return { type: "scene_twist", twist: pick(TWISTS) };
+      return { type: "scene_twist", twist: pick(TWISTS, ctx.random) };
     }
 
     // action_theme (default)
     return {
       type: "action_theme",
-      action: pick(ACTIONS),
-      theme: pick(THEMES),
-      seed: creativitySeed(),
+      action: pick(ACTIONS, ctx.random),
+      theme: pick(THEMES, ctx.random),
+      seed: creativitySeed(3, ctx.random),
     };
   },
 });

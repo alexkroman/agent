@@ -14,7 +14,13 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+export function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number;
+
+// @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
+export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
 
 // @public
 type DelegateFn = {
@@ -123,6 +129,12 @@ export type MultipartPart = {
 };
 
 // @public
+export function offsetToMs(format: WavFormat, offset: number): number;
+
+// @public
+export function parseWav(head: Uint8Array, totalBytes: number): WavFormat;
+
+// @public
 export function partitionSettled<T, R>(settled: readonly Settled<T, R>[]): {
     ok: Extract<Settled<T, R>, {
         ok: true;
@@ -149,6 +161,9 @@ interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+type RandomSource = () => number;
 
 // @public
 export type ReadUploadOptions = {
@@ -428,6 +443,7 @@ type ToolContext = {
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
+    random: RandomSource;
 };
 
 // @public
@@ -526,6 +542,11 @@ interface TypedSubagentDef<T> extends SubagentDef {
 }
 
 // @public
+export class UnsupportedRecordingError extends Error {
+    constructor(message: string);
+}
+
+// @public
 export class UploadIncompleteError extends Error {
     constructor(message: string, stored: number);
     readonly retryable = false;
@@ -574,6 +595,15 @@ type WakeUpOptions = {
 
 // @public
 export const WAV_HEADER_BYTES = 44;
+
+// @public
+export type WavFormat = {
+    sampleRate: number;
+    channels: number;
+    bitsPerSample: number;
+    dataStart: number;
+    dataEnd: number;
+};
 
 // @public
 export function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<ArrayBuffer>;

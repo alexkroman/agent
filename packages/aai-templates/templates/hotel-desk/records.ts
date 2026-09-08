@@ -7,9 +7,16 @@
  * `shared.ts` carries the attribution and the their-name → our-name table.
  */
 
-import { spokenAlphanumeric } from "@alexkroman1/aai";
+import {
+  addDays as addIsoDays,
+  daysBetween as daysBetweenIso,
+  mintCode as mintSpokenCode,
+  spokenAlphanumeric,
+  spokenTime as spokenClockTime,
+  spokenDate as spokenIsoDate,
+  spokenMoney,
+} from "@alexkroman1/aai";
 import { formatMoney } from "@alexkroman1/aai/utils";
-import { z } from "zod";
 
 // ─── Money, dates, codes ─────────────────────────────────────────────────────
 
@@ -46,12 +53,16 @@ export function usd(cents: number): string {
   return formatMoney(cents / 100);
 }
 
-/** `240 dollars` / `240 dollars and 50 cents` — for anything the model reads out. */
+/**
+ * `240 dollars` / `240 dollars and 50 cents` — for anything the model reads out.
+ *
+ * `spokenMoney`'s, over the same cents-to-dollars division {@link usd} makes, so
+ * the sidebar and the spoken total round identically. The hand-rolled version
+ * here said "1 dollars" for a one-dollar minibar item and dropped the sign on a
+ * refund.
+ */
 export function speakUsd(cents: number): string {
-  const abs = Math.abs(cents);
-  const dollars = Math.floor(abs / 100);
-  const change = abs % 100;
-  return change === 0 ? `${dollars} dollars` : `${dollars} dollars and ${change} cents`;
+  return spokenMoney(cents / 100);
 }
 
 /**
@@ -73,80 +84,53 @@ export function normalizeCode(code: string): string {
 }
 
 /**
- * Mint a `PREFIX-XXXX` reference. The alphabet drops 0/O and 1/I, because
- * every code this desk issues is read aloud and read back.
+ * Mint a `PREFIX-XXXX` reference for this desk.
+ *
+ * `mintCode`'s, which owns the alphabet — 0/O, 1/I and L are absent because
+ * every code this desk issues is read down a phone and read back, and those are
+ * the characters that come back wrong — and which bounds its retries, where the
+ * loop here was `for (;;)`.
+ *
+ * It takes no `random`: the four minting sites are reached through
+ * {@link addTicket} and the two booking builders, none of which carries a
+ * `ToolContext`, so threading `ctx.random` down to here would change fourteen
+ * signatures to make one code assertable. A desk that wants that passes
+ * `{ random }` to `mintCode` directly.
  */
 export function mintCode(prefix: string, taken: ReadonlySet<string> = new Set()): string {
-  // Chunked only so no one string reads as a high-entropy secret to the linter.
-  const alphabet = ["ABCDEFGH", "JKMNPQRS", "TUVWXYZ", "23456789"].join("");
-  for (;;) {
-    let suffix = "";
-    for (let i = 0; i < 4; i++) suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
-    const code = `${prefix}-${suffix}`;
-    if (!taken.has(code)) return code;
-  }
-}
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** `YYYY-MM-DD`, and a real calendar date — `2026-02-30` is refused. */
-export function isIsoDate(value: string): boolean {
-  if (!ISO_DATE.test(value)) return false;
-  const [y, m, d] = value.split("-").map(Number) as [number, number, number];
-  const at = new Date(Date.UTC(y, m - 1, d));
-  return at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d;
+  return mintSpokenCode(prefix, { taken });
 }
 
 /**
- * A date field, as a SCHEMA — the same rule, declared where the model can see it.
+ * The date and time fields ten tools used to declare by hand.
  *
- * Ten tools used to pair `z.string().describe("YYYY-MM-DD")` with an
- * `if (!isIsoDate(...)) return toolFailure(...)` in the body, which meant ten
- * hand-written sentences for one rule (already drifted across "the date", "the
- * pickup date", "the new date", "the arrival date") and a constraint the model
- * only ever learned by failing. Declared here it reaches the model as JSON
- * Schema and is rejected by `parseToolInput` before `execute` runs.
- *
- * `refine(isIsoDate)` rather than `z.iso.date()`: the predicate above stays the
- * one definition of what this desk accepts, so the two cannot disagree.
+ * Both are the SDK's, re-exported under this desk's names so the call sites
+ * read as they did. What they replaced is worth remembering: the pairing of
+ * `z.string().describe("YYYY-MM-DD")` with an `if (!isIsoDate(...)) return
+ * toolFailure(...)` in the body — one rule declared twice, drifted across four
+ * sentences, and learned by the model only through being refused. Six tools
+ * were still on the raw form, and five hand-rolled the `HH:MM` check in three
+ * wordings and two different failure shapes.
  */
-export const isoDate = (what: string) =>
-  z
-    .string()
-    .refine(isIsoDate, { message: `${what} must be a real date in YYYY-MM-DD form` })
-    .describe(`${what}, YYYY-MM-DD`);
+export { clockTime, isIsoDate, isoDate } from "@alexkroman1/aai";
 
-/** `iso` plus `days`, as ISO. Computed in UTC so no machine's zone can move it. */
-export function addDays(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
+/** `iso` plus `days`, as ISO — the SDK's, computed in UTC. */
+export const addDays = addIsoDays;
 
 /** Whole days from `from` to `to` — a stay's night count. */
-export function daysBetween(from: string, to: string): number {
-  const [fy, fm, fd] = from.split("-").map(Number) as [number, number, number];
-  const [ty, tm, td] = to.split("-").map(Number) as [number, number, number];
-  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000);
-}
+export const daysBetween = daysBetweenIso;
 
-/** `Monday, June 8` — a date as the receptionist says it. */
-export function spokenDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
+/**
+ * `Monday, June 8` — a date as the receptionist says it.
+ *
+ * `spokenDate`'s. The version here called `toLocaleDateString("en-US", …)`,
+ * which answers to the host's ICU build: correct on a laptop, and free to read
+ * differently inside a sandbox with no spec able to see it.
+ */
+export const spokenDate = spokenIsoDate;
 
 /** `7 PM` / `6:30 PM`, from `HH:MM`. */
-export function spokenTime(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number) as [number, number];
-  const hour = h % 12 || 12;
-  const suffix = h >= 12 ? "PM" : "AM";
-  return m === 0 ? `${hour} ${suffix}` : `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
-}
+export const spokenTime = spokenClockTime;
 
 /** Digits only: a spoken number transcribes with unpredictable punctuation. */
 export function digitsOf(value: string): string {

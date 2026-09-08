@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "calendar",
+  "epoch": 1,
+  "sha256": "ea8877cbd36a4933676e5abe0bdd300869f5b7b1eafe14b773b74fe04d4d9a51",
+  "exports": ["addDays", "clockTime", "daysBetween", "isClockTime", "isIsoDate", "isoDate"]
+}

@@ -27,7 +27,7 @@ export default gameFlow.tool({
       // standing here, surviving into the next round.
       const best = Math.max(game.best, score(game));
       Object.assign(game, newGame(), {
-        words: pickWords(WORDS_PER_GAME),
+        words: pickWords(WORDS_PER_GAME, ctx.random),
         startedAt: Date.now(),
         best,
       });

@@ -191,6 +191,10 @@ function buildToolContext(
     // notes are keyed by sessionId in a process-wide map, so sessionless
     // callers sharing the "" bucket would read each other's notes.
     sessionId: sessionId ?? crypto.randomUUID(),
+    // The global, which is what a tool body called directly before this field
+    // existed — the field buys testability, not different numbers. A spec
+    // substitutes it through `createToolContext({ random })`.
+    random: Math.random,
     send(event: string, data: unknown): void {
       send?.(event, data);
     },

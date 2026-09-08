@@ -1,5 +1,6 @@
 import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
 import { sessionSlot, spokenAlphanumeric } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 
 /**
  * The roadside desk's world: the rate cards, the fleet, the one session slot,
@@ -117,10 +118,14 @@ export function disclosureFor(coverage: FrozenRoadsideState["coverage"]): string
   );
 }
 
-/** Whole dollars, spoken the way a driver would say them. */
-export function money(dollars: number): string {
-  return `$${dollars}`;
-}
+/**
+ * A rate as the driver hears it.
+ *
+ * `formatMoney`'s, which is what the rest of the repo prints: this rendered
+ * `$150` where every other desk renders `$150.00`, so one caller quoted a
+ * call-out fee in a different format from the tow it was billed with.
+ */
+export const money = formatMoney;
 
 // ─── The fleet ───────────────────────────────────────────────────────────────
 

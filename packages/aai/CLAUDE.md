@@ -858,6 +858,20 @@ replaced; what follows is the index plus the rule and the adopters.**
   the one thing a caller named, or fail LISTING the candidates. See "Resolving
   what a caller SAID" below for the order it applies its readings in and why
   ambiguity is an ANSWER rather than a guess.
+- **`orFail(value)` / `failable(fn)`** (`sdk/tool-failure-flow.ts`, root and
+  `/utils`) — the FORWARDING half of the `T | ToolFailure` union: `orFail`
+  abandons the enclosing `failable` with the failure, so a chain of lookups
+  needs no guard statement per step. Reach for it on a NAMED HELPER, not an
+  inline `slot.update` mutator, and note that it throws.
+- **`ctx.random`** (`ToolContext.random`, with `randomInt`/`pickOne`/`shuffled`/
+  `createSeededRandom` in `sdk/random.ts` on the root) — a tool's randomness as
+  an ARGUMENT rather than the global, so what a tool drew is something a spec
+  can state. Not journaled (that is `WorkflowContext.random()`), not
+  cryptographic.
+
+  **[`AUTHORING-HELPERS-CLAUDE.md`](AUTHORING-HELPERS-CLAUDE.md) owns both**,
+  including when `failable` pays and when it does not, the `slot.update` draft
+  interaction, and why `createToolContext` seeds rather than uses `Math.random`.
 
 ## A session event hook WRITES state, and still cannot SPEAK
 
@@ -1080,42 +1094,24 @@ is only ever a file" true of this repo and of no user's project
 registry attaches through, which the studio's own coding agent needs — its tools
 close over one session's workspace directory.
 
-## Resolving what a caller SAID (`sdk/spoken.ts`)
+## The speech boundary, both directions (`sdk/spoken*.ts`)
 
-A voice agent's tool arguments do not arrive as ids: "cancel my second order",
-"the blue medium one", "eight six four two, one nine…". `resolveOne(candidates,
-spoken, { describe, label?, score? })` on the root barrel picks one, and the
-interesting part is what it does when the utterance picks NONE or MORE THAN ONE
-— a {@link ToolFailure} that LISTS the candidates, which is the one shape that
-lets the model recover on its own turn instead of acting and apologizing.
-`spokenDigits` and `spokenOrdinal` are the two readings it consults, exported
-because an agent narrowing by its own vocabulary needs them before the pick;
-`spokenAlphanumeric` is `spokenDigits` for an id that carries letters (a policy
-number, a `#W…` order id — upper-cased ASCII), which two templates had each
-normalized with a regex of their own.
+A voice agent's boundary is speech going IN and going OUT, and the SDK owns a
+helper for each direction. Inbound, `resolveOne` picks the one candidate an
+utterance named or fails LISTING them — ambiguity is an ANSWER, never a guess —
+over the `spokenDigits` / `spokenOrdinal` / `spokenAlphanumeric` readings.
+Outbound, `spokenMoney` / `spokenDate` / `spokenTime` / `mintCode` turn data
+into words a TTS voice reads correctly. Beside them sit the ARGUMENT shapes
+those two meet at: `sdk/calendar.ts`'s `isIsoDate` / `isClockTime` /
+`addDays` / `daysBetween`, and `sdk/tool-fields.ts`'s `isoDate(what)` /
+`clockTime(what)` zod fields.
 
-Three things the API is load-bearing about:
-
-- **The ORDER is the contract**, and it is why this is a function rather than a
-  pattern: no candidates → say so; a POSITION ("the second one", "the last one")
-  → take it, since a caller who counts is unambiguous even when nothing else is;
-  the scorer, whose tie FAILS rather than resolving; exactly one left → it;
-  anything else → ambiguous. The caller narrows first, by whatever its domain
-  understands.
-- **`spokenOrdinal` matches on word boundaries and cannot do better.** "firstly"
-  and "the 21st" are correctly not positions; "the first aid kit" IS one, because
-  it really does contain the word "first". That is the reason positions are
-  consulted after the caller's own narrowing rather than before, and
-  `spoken.test.ts` pins the limitation as a test rather than leaving it to be
-  rediscovered.
-- **It is on the ROOT and not `/utils`**, which every other tool-body helper
-  reaches through. `spoken.ts` imports `toolFailure` from `sdk/utils.ts` — the
-  `/utils` subpath module itself — so re-exporting it there would be a cycle.
-  The root is where an agent author works anyway.
-
-`retail`'s `resolve.ts` is the worked example, and the split there is the one to
-copy: the SDK owns never-guess, the template owns what an order id looks like
-when a caller reads it aloud and which words name a status.
+**[`AUTHORING-HELPERS-CLAUDE.md`](AUTHORING-HELPERS-CLAUDE.md) owns all of it**
+—
+`resolveOne`'s reading order and why it is on the root rather than `/utils`, the
+`spokenOrdinal` limitation that is pinned as a test, why nothing here touches
+`Intl`, why `mintCode`'s alphabet is its whole design, and the ten hand-written
+date rules the fields replaced. `retail`'s `resolve.ts` is the worked example.
 
 ## Persistence, and the three things that were removed
 

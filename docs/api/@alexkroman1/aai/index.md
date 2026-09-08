@@ -56,6 +56,51 @@ is `/step`.
 
 ## Functions
 
+### addDays()
+
+```ts
+function addDays(iso: string, days: number): string;
+```
+
+`iso` plus `days`, as another `YYYY-MM-DD`. Negative `days` goes backwards.
+
+Computed in UTC, so it adds calendar days and no machine's zone can move the
+answer. Month and year boundaries are the `Date.UTC` normalization's, so
+`addDays("2026-02-28", 1)` is March 1st in a common year and February 29th in
+a leap one without either case being written here.
+
+#### Parameters
+
+##### iso
+
+`string`
+
+##### days
+
+`number`
+
+#### Returns
+
+`string`
+
+#### Throws
+
+RangeError if `iso` is not a date [isIsoDate](#isisodate) accepts. Arithmetic
+on a value that is not a date has no right answer, and a silently wrong one
+becomes a booking — declare the argument with `isoDate()` and this cannot
+happen.
+
+#### Example
+
+```ts
+import { addDays } from "@alexkroman1/aai";
+
+addDays("2026-06-08", 3); // "2026-06-11"
+addDays("2026-01-01", -1); // "2025-12-31"
+```
+
+***
+
 ### agent()
 
 ```ts
@@ -208,6 +253,47 @@ voice rides on the descriptor, because the service synthesizes.
 
 ***
 
+### clockTime()
+
+```ts
+function clockTime(what?: string): ZodString;
+```
+
+A time-of-day argument: 24-hour `HH:MM`, zero-padded.
+
+The description states the padding with an example, because that is the half
+a model gets wrong — it produces `"4:45"` for "quarter to five in the
+morning" unless told, and an unpadded time sorts wrong against a padded one
+stored earlier.
+
+#### Parameters
+
+##### what?
+
+`string`
+
+The argument, named as the model and the caller should hear it
+(`"the pickup time"`).
+
+#### Returns
+
+`ZodString`
+
+#### Example
+
+```ts
+import { clockTime, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Schedule a wake-up call.",
+  inputSchema: z.object({ time: clockTime("the wake-up time") }),
+  execute: (args) => ({ at: args.time }),
+});
+```
+
+***
+
 ### createKeyedLock()
 
 ```ts
@@ -222,6 +308,95 @@ a bare `lock()` leaves to the caller's `finally`.
 #### Returns
 
 [`KeyedLock`](#keyedlock)
+
+***
+
+### createSeededRandom()
+
+```ts
+function createSeededRandom(seed: number): RandomSource;
+```
+
+A [RandomSource](#randomsource) that produces the same sequence every run, from a seed.
+
+The source `createToolContext` defaults to, and the reason a spec that FORGOT
+to stub randomness is still deterministic rather than flaky. It is also what
+a seed script or a demo wants: a catalog shuffled the same way on every boot
+is reviewable, where one shuffled by `Math.random` makes every diff of its
+output noise.
+
+**A constant function is not a substitute**, which is the trap this exists to
+remove. `() => 0.5` looks like the simplest deterministic source and is a
+degenerate one: every draw is identical, so [shuffled](#shuffled) returns a fixed
+non-random permutation and [mintCode](#mintcode) re-draws the same code until it
+gives up. Sequences that VARY reproducibly are what tests and seeds both
+want.
+
+mulberry32 — a 32-bit generator chosen for being short enough to read and
+having no state beyond one integer. Not cryptographic, and its period is far
+below what a simulation would need; it is here so that "deterministic" and
+"varied" can both be true of a spec.
+
+#### Parameters
+
+##### seed
+
+`number`
+
+#### Returns
+
+[`RandomSource`](#randomsource)
+
+#### Example
+
+```ts
+import { createSeededRandom, shuffled } from "@alexkroman1/aai";
+
+const random = createSeededRandom(42);
+shuffled(["a", "b", "c"], random); // the same order on every run
+```
+
+***
+
+### daysBetween()
+
+```ts
+function daysBetween(from: string, to: string): number;
+```
+
+Whole calendar days from `from` to `to` — a stay's night count.
+
+Signed: a `to` before `from` is negative. Same day is `0`, which is what
+makes it a NIGHT count rather than a day count, and is the reading a hotel,
+a car rental and a subscription all want.
+
+#### Parameters
+
+##### from
+
+`string`
+
+##### to
+
+`string`
+
+#### Returns
+
+`number`
+
+#### Throws
+
+RangeError if either argument is not a date [isIsoDate](#isisodate) accepts.
+
+#### Example
+
+```ts
+import { daysBetween } from "@alexkroman1/aai";
+
+daysBetween("2026-06-08", "2026-06-11"); // 3
+daysBetween("2026-06-08", "2026-06-08"); // 0
+daysBetween("2026-06-11", "2026-06-08"); // -3
+```
 
 ***
 
@@ -472,6 +647,239 @@ direct `fetch` in the SDK.
 
 ***
 
+### failable()
+
+The `T | ToolFailure` union's control flow, beside the guard and the
+constructor it belongs with: a tool body writes all three. Its own statement
+because `tool-failure-flow.ts` imports `sdk/utils.ts`, so re-exporting it
+from there would close a cycle.
+
+#### Call Signature
+
+```ts
+function failable<A extends readonly unknown[], R>(fn: (...args: A) => Promise<R>): (...args: A) => Promise<ToolFailure | R>;
+```
+
+Wrap a function whose body uses [orFail](#orfail), so a failure it hits becomes
+the function's return value.
+
+Works on a sync body and an async one, and answers in kind: a sync body gives
+`R | ToolFailure`, an async one `Promise<R | ToolFailure>`. A body that
+already returns a `ToolFailure` on some path is unaffected — the union simply
+absorbs it.
+
+##### Type Parameters
+
+###### A
+
+`A` *extends* readonly `unknown`[]
+
+###### R
+
+`R`
+
+##### Parameters
+
+###### fn
+
+(...`args`: `A`) => `Promise`\<`R`\>
+
+##### Returns
+
+(...`args`: `A`) => `Promise`\<[`ToolFailure`](#toolfailure) \| `R`\>
+
+##### Example
+
+**Two lookups in front of the work**
+
+```ts
+import { failable, orFail, type ToolFailure } from "@alexkroman1/aai";
+
+type Board = { incidents: Record<string, Incident> };
+type Incident = { id: string; timeline: string[]; resolved: boolean };
+
+declare function findIncident(board: Board, id: string): Incident | ToolFailure;
+declare function assertNotResolved(incident: Incident): ToolFailure | null;
+
+const addNote = failable((board: Board, id: string, note: string) => {
+  const incident = orFail(findIncident(board, id));
+  orFail(assertNotResolved(incident));
+  incident.timeline.push(note);
+  return { added: note, entries: incident.timeline.length };
+});
+```
+
+#### Call Signature
+
+```ts
+function failable<A extends readonly unknown[], R>(fn: (...args: A) => R): (...args: A) => ToolFailure | R;
+```
+
+Wrap a function whose body uses [orFail](#orfail), so a failure it hits becomes
+the function's return value.
+
+Works on a sync body and an async one, and answers in kind: a sync body gives
+`R | ToolFailure`, an async one `Promise<R | ToolFailure>`. A body that
+already returns a `ToolFailure` on some path is unaffected — the union simply
+absorbs it.
+
+##### Type Parameters
+
+###### A
+
+`A` *extends* readonly `unknown`[]
+
+###### R
+
+`R`
+
+##### Parameters
+
+###### fn
+
+(...`args`: `A`) => `R`
+
+##### Returns
+
+(...`args`: `A`) => [`ToolFailure`](#toolfailure) \| `R`
+
+##### Example
+
+**Two lookups in front of the work**
+
+```ts
+import { failable, orFail, type ToolFailure } from "@alexkroman1/aai";
+
+type Board = { incidents: Record<string, Incident> };
+type Incident = { id: string; timeline: string[]; resolved: boolean };
+
+declare function findIncident(board: Board, id: string): Incident | ToolFailure;
+declare function assertNotResolved(incident: Incident): ToolFailure | null;
+
+const addNote = failable((board: Board, id: string, note: string) => {
+  const incident = orFail(findIncident(board, id));
+  orFail(assertNotResolved(incident));
+  incident.timeline.push(note);
+  return { added: note, entries: incident.timeline.length };
+});
+```
+
+***
+
+### isClockTime()
+
+```ts
+function isClockTime(value: string): boolean;
+```
+
+24-hour `HH:MM`, zero-padded — `"09:05"` yes, `"9:05"` no.
+
+The padding requirement is deliberate rather than strict for its own sake:
+`"9:05"` and `"09:05"` sort differently as strings, and a desk that stores
+whichever the model produced cannot compare two of its own appointments.
+
+#### Parameters
+
+##### value
+
+`string`
+
+#### Returns
+
+`boolean`
+
+#### Example
+
+```ts
+import { isClockTime } from "@alexkroman1/aai";
+
+isClockTime("19:30"); // true
+isClockTime("04:45"); // true
+isClockTime("4:45"); // false — not zero-padded
+isClockTime("24:00"); // false — midnight is 00:00
+```
+
+***
+
+### isIsoDate()
+
+```ts
+function isIsoDate(value: string): boolean;
+```
+
+`YYYY-MM-DD`, and a real calendar date — `2026-02-30` is refused.
+
+Years are taken as written, so `0000-01-01` is a date. Nothing here decides
+whether a date is in a range an agent should accept; a stay in 1823 is the
+desk's question, not this one's.
+
+#### Parameters
+
+##### value
+
+`string`
+
+#### Returns
+
+`boolean`
+
+#### Example
+
+```ts
+import { isIsoDate } from "@alexkroman1/aai";
+
+isIsoDate("2026-06-08"); // true
+isIsoDate("2026-02-30"); // false — February has no 30th
+isIsoDate("6/8/2026"); // false
+```
+
+***
+
+### isoDate()
+
+```ts
+function isoDate(what?: string): ZodString;
+```
+
+A calendar date argument: `YYYY-MM-DD`, and a real date.
+
+`refine(isIsoDate)` rather than zod's own `z.iso.date()`, so that the
+predicate an agent's own code calls and the rule its schema enforces are one
+definition and cannot disagree — `z.iso.date()` accepts `2026-02-30`, which
+[isIsoDate](#isisodate) refuses.
+
+#### Parameters
+
+##### what?
+
+`string`
+
+The argument, named as the model and the caller should hear it
+(`"the arrival date"`). Reaches the model in the description and the caller
+in the rejection.
+
+#### Returns
+
+`ZodString`
+
+#### Example
+
+```ts
+import { isoDate, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Book a spa appointment.",
+  inputSchema: z.object({
+    date: isoDate("the appointment date"),
+    guest: z.string().min(1),
+  }),
+  execute: (args) => ({ booked: args.date }),
+});
+```
+
+***
+
 ### isRecord()
 
 ```ts
@@ -595,6 +1003,52 @@ rather than silently overwriting.
 
 ***
 
+### mintCode()
+
+```ts
+function mintCode(prefix: string, options?: MintCodeOptions): string;
+```
+
+A `PREFIX-XXXX` reference, on an alphabet a caller can read back.
+
+`0`/`O`, `1`/`I` and `L` are all absent, and that is the entire design. Every
+code a voice agent issues gets read down a phone and read back, and those are
+the characters that come back wrong — a caller says "oh" for a zero, an STT
+writes `1` for a spoken "el". Removing them from the alphabet is the fix that
+needs no correction logic anywhere downstream, and it is why this belongs
+beside `spokenAlphanumeric`, which is what parses the read-back.
+
+#### Parameters
+
+##### prefix
+
+`string`
+
+##### options?
+
+[`MintCodeOptions`](#mintcodeoptions)
+
+#### Returns
+
+`string`
+
+#### Throws
+
+Error if `taken` is dense enough that no free code is drawn in a
+bounded number of attempts. Unbounded retry is the version that turns a full
+code space into a hung call rather than an error someone can act on.
+
+#### Example
+
+```ts
+import { mintCode } from "@alexkroman1/aai";
+
+mintCode("HTL"); // e.g. "HTL-7K2M"
+mintCode("RES", { taken: new Set(["RES-7K2M"]) });
+```
+
+***
+
 ### omitUndefined()
 
 ```ts
@@ -648,6 +1102,97 @@ const config: { slug: string; name?: string; greeting?: string } = {
   slug: "demo",
   ...omitUndefined({ name, greeting }),
 };
+```
+
+***
+
+### orFail()
+
+```ts
+function orFail<T>(value: ToolFailure | T): T;
+```
+
+The value, or abandon the surrounding [failable](#failable) with the failure.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### value
+
+[`ToolFailure`](#toolfailure) \| `T`
+
+#### Returns
+
+`T`
+
+#### Throws
+
+A private sentinel, caught by the enclosing [failable](#failable). Calling
+it outside one is a programming error and behaves like one — the throw
+escapes and the tool executor reports it — rather than being silently
+swallowed.
+
+#### Example
+
+```ts
+import { failable, orFail, type ToolFailure } from "@alexkroman1/aai";
+
+type Order = { id: string; total: number };
+declare function findOrder(id: string): Order | ToolFailure;
+
+const orderTotal = failable((id: string) => orFail(findOrder(id)).total);
+// orderTotal("A1") is number | ToolFailure
+```
+
+***
+
+### pickOne()
+
+```ts
+function pickOne<T>(items: readonly T[], random?: RandomSource): T | undefined;
+```
+
+One item, uniformly.
+
+`undefined` for an empty list rather than a throw, so the empty case is
+narrowed by the type at the call site — which is where a caller knows
+whether "nothing to pick" is a failure or a legal answer. Under
+`noUncheckedIndexedAccess` the hand-written `items[Math.floor(...)]` this
+replaces was `T | undefined` anyway and was routinely asserted away with
+`as T`, which is the same reachable `undefined` with the check removed.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### items
+
+readonly `T`[]
+
+##### random?
+
+[`RandomSource`](#randomsource)
+
+#### Returns
+
+`T` \| `undefined`
+
+#### Example
+
+```ts
+import { pickOne } from "@alexkroman1/aai";
+
+pickOne(["north", "south"], () => 0); // "north"
+pickOne([]); // undefined
 ```
 
 ***
@@ -772,6 +1317,46 @@ import { pushCapped } from "@alexkroman1/aai";
 
 const log: string[] = ["a", "b", "c"];
 pushCapped(log, "d", 3); // ["b", "c", "d"]
+```
+
+***
+
+### randomInt()
+
+```ts
+function randomInt(maxExclusive: number, random?: RandomSource): number;
+```
+
+A whole number in `[0, maxExclusive)`.
+
+The floor-and-multiply that every call site would otherwise write, in the one
+place its two edges can be got right: a `maxExclusive` of `0` or less has no
+value to return and answers `0` rather than `-1` or `NaN`, and a source that
+returns exactly `1` — outside `Math.random`'s contract, but well inside what
+a hand-written stub does — is clamped rather than allowed to index one past
+the end.
+
+#### Parameters
+
+##### maxExclusive
+
+`number`
+
+##### random?
+
+[`RandomSource`](#randomsource)
+
+#### Returns
+
+`number`
+
+#### Example
+
+```ts
+import { randomInt } from "@alexkroman1/aai";
+
+randomInt(6); // 0..5
+randomInt(6, () => 0.5); // 3
 ```
 
 ***
@@ -1067,6 +1652,53 @@ export default cartSlot.updateTool({
 
 ***
 
+### shuffled()
+
+```ts
+function shuffled<T>(items: readonly T[], random?: RandomSource): T[];
+```
+
+A NEW array holding the same items in a random order.
+
+A Fisher-Yates walk, which is worth having in one place because the
+plausible-looking alternatives are subtly not uniform: `sort(() => Math.random() - 0.5)`
+produces a distribution that depends on the engine's sort algorithm, and a
+loop drawing `j` from the WHOLE range rather than `[0, i]` is the classic
+biased variant that still looks shuffled.
+
+Copies rather than mutating — the input is `readonly`, and a shuffle applied
+in place to a slot's frozen value is a `TypeError` at runtime.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### items
+
+readonly `T`[]
+
+##### random?
+
+[`RandomSource`](#randomsource)
+
+#### Returns
+
+`T`[]
+
+#### Example
+
+```ts
+import { shuffled } from "@alexkroman1/aai";
+
+shuffled([1, 2, 3], () => 0); // a new array; the input is untouched
+```
+
+***
+
 ### spokenAlphanumeric()
 
 ```ts
@@ -1107,6 +1739,46 @@ spokenAlphanumeric("#W 586 6402"); // "W5866402"
 
 ***
 
+### spokenDate()
+
+```ts
+function spokenDate(iso: string): string;
+```
+
+A `YYYY-MM-DD` as a receptionist says it — `"Monday, June 8"`.
+
+No year, because a date a caller is agreeing to on the phone is almost always
+within the year and saying it is four wasted syllables. A desk booking
+further out writes its own sentence around this one.
+
+The weekday is included on purpose: it is the half a caller actually checks.
+"The 8th" gets agreed to and then turns out to be a Tuesday.
+
+A value that is not a date [isIsoDate](#isisodate) accepts is returned UNCHANGED —
+degrade rather than throw, matching the formatters in `format.ts`. Declare
+the argument with `isoDate()` and a caller never reaches that path.
+
+#### Parameters
+
+##### iso
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { spokenDate } from "@alexkroman1/aai";
+
+spokenDate("2026-06-08"); // "Monday, June 8"
+spokenDate("not a date"); // "not a date"
+```
+
+***
+
 ### spokenDigits()
 
 ```ts
@@ -1135,6 +1807,56 @@ them have the same digits in the same order.
 import { spokenDigits } from "@alexkroman1/aai";
 
 spokenDigits("that's 864-219-75"); // "86421975"
+```
+
+***
+
+### spokenMoney()
+
+```ts
+function spokenMoney(amount: number): string;
+```
+
+An amount as a voice reads it — `"240 dollars and 50 cents"`.
+
+Takes DOLLARS, the same unit as `formatMoney` (`@alexkroman1/aai/utils`),
+and rounds the same way
+it does. That is not a coincidence to preserve by hand: both derive from one
+`toFixed(2)`, so the written total on a page and the spoken total on the call
+cannot disagree about a half-cent. A desk that counts in cents divides on the
+way in, exactly as it already does for `formatMoney`.
+
+Singular is respected on both halves (`"1 dollar and 1 cent"`), because "1
+dollars" is the kind of thing a caller hears and a transcript diff does not.
+A negative amount leads with the word `"minus"` — a `-` renders as silence or
+as "dash" depending on the engine, and a refund read as a charge is the worst
+available outcome. Non-finite degrades to `"0 dollars"`, matching
+`formatMoney`'s `$0.00`.
+
+The currency WORD is fixed. Symbols are pronounced inconsistently and a
+`symbol` parameter like `formatMoney`'s would be read out as a symbol; an
+agent billing in another currency writes its own sentence.
+
+#### Parameters
+
+##### amount
+
+`number`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { spokenMoney } from "@alexkroman1/aai";
+
+spokenMoney(240.5); // "240 dollars and 50 cents"
+spokenMoney(240); // "240 dollars"
+spokenMoney(1.01); // "1 dollar and 1 cent"
+spokenMoney(0.75); // "75 cents"
+spokenMoney(-4.99); // "minus 4 dollars and 99 cents"
 ```
 
 ***
@@ -1177,6 +1899,49 @@ import { spokenOrdinal } from "@alexkroman1/aai";
 spokenOrdinal("cancel the second one"); // 1
 spokenOrdinal("cancel the last one"); // -1
 spokenOrdinal("cancel my order"); // undefined
+```
+
+***
+
+### spokenTime()
+
+```ts
+function spokenTime(hhmm: string): string;
+```
+
+A 24-hour `HH:MM` as a voice reads it — `"7 PM"`, `"6:30 PM"`.
+
+On the hour, the minutes are dropped: `"7 PM"` rather than `"7:00 PM"`, which
+an engine reads as "seven zero zero PM". `AM`/`PM` are upper-cased because
+that is the spelling engines pronounce as letters most reliably; `"am"` is
+read as a word often enough to matter.
+
+Midnight is `"12 AM"` and noon is `"12 PM"`, the American convention that
+matches the 12-hour clock this renders into. A desk whose callers would
+rather hear "midnight" says so itself — this is the mechanical half.
+
+A value that is not a time [isClockTime](#isclocktime) accepts is returned unchanged,
+for the reason [spokenDate](#spokendate) gives.
+
+#### Parameters
+
+##### hhmm
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { spokenTime } from "@alexkroman1/aai";
+
+spokenTime("19:00"); // "7 PM"
+spokenTime("18:30"); // "6:30 PM"
+spokenTime("04:45"); // "4:45 AM"
+spokenTime("00:00"); // "12 AM"
 ```
 
 ***
@@ -3911,6 +4676,47 @@ readonly optional voice?: string;
 ```
 
 The TTS voice for this phase of the call.
+
+***
+
+### MintCodeOptions
+
+Options for [mintCode](#mintcode).
+
+#### Properties
+
+##### length?
+
+```ts
+optional length?: number;
+```
+
+The suffix length. Four characters over a 31-symbol alphabet is about
+923,000 codes — enough that a desk with a few thousand live references
+collides rarely and re-draws cheaply.
+
+##### random?
+
+```ts
+optional random?: () => number;
+```
+
+The randomness source, `[0, 1)`. Defaults to `Math.random`; pass
+`ctx.random` from a tool body to make the code a journaled, replayable
+value instead of a fresh one on every run.
+
+###### Returns
+
+`number`
+
+##### taken?
+
+```ts
+optional taken?: ReadonlySet<string>;
+```
+
+Codes already issued. A generated code that collides is discarded and
+another drawn, so the caller does not have to loop.
 
 ***
 
@@ -6697,6 +7503,21 @@ rule and what to do about it. Never pass one as a string.
 
 ***
 
+### RandomSource
+
+```ts
+type RandomSource = () => number;
+```
+
+A source of uniform floats in `[0, 1)` — `Math.random`'s contract, and the
+one a caller substitutes.
+
+#### Returns
+
+`number`
+
+***
+
 ### S2sAgentParams
 
 ```ts
@@ -7553,6 +8374,7 @@ type ToolContext = {
   env: Readonly<Partial<Record<string, string>>>;
   generate: GenerateFn;
   messages: readonly Message[];
+  random: RandomSource;
   sessionId: string;
   signal: AbortSignal;
   slots: SlotStore;
@@ -7753,6 +8575,46 @@ messages: readonly Message[];
 ```
 
 Read-only snapshot of conversation messages so far.
+
+##### random
+
+```ts
+random: RandomSource;
+```
+
+A uniform float in `[0, 1)` — the SEAM a tool reaches for instead of
+`Math.random`.
+
+In production it IS `Math.random`, so this buys nothing at run time. What
+it buys is a tool whose randomness a spec can state:
+`createToolContext({ random: () => 0.5 })` makes a dice roll, a shuffle, an
+ETA jitter or a minted reference code an exact assertion rather than a
+range check. Ten call sites across seven templates called the global
+directly and none of them could be pinned; the one template that could had
+hand-threaded a `random` parameter through its own helpers to get here.
+
+Pass it on rather than re-deriving: [randomInt](#randomint), [pickOne](#pickone),
+[shuffled](#shuffled) and [mintCode](#mintcode) all take a [RandomSource](#randomsource) as
+their last argument.
+
+**Not journaled, and not a replay seam.** A tool call happens once; a
+WORKFLOW body replays, and `WorkflowContext.random()` is the different
+mechanism that makes a run re-derive the same number. **Not
+cryptographic** either — anything an attacker gains by guessing wants
+`crypto.getRandomValues`.
+
+###### Example
+
+```ts
+import { pickOne, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Suggest somewhere to eat.",
+  inputSchema: z.object({}),
+  execute: (_args, ctx) => ({ pick: pickOne(["Luigi's", "The Anchor"], ctx.random) }),
+});
+```
 
 ##### sessionId
 

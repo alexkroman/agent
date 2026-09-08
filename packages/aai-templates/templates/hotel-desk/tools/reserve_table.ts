@@ -2,7 +2,15 @@ import { toolFailure } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { openDinnerSlots, reserveTable } from "../hotel.ts";
-import { DINNER_SLOTS, isoDate, speakCode, spokenDate, spokenTime, TODAY } from "../records.ts";
+import {
+  clockTime,
+  DINNER_SLOTS,
+  isoDate,
+  speakCode,
+  spokenDate,
+  spokenTime,
+  TODAY,
+} from "../records.ts";
 import { hotelSlot } from "../shared.ts";
 
 /**
@@ -22,7 +30,7 @@ export default hotelSlot.updateTool({
     "over six are private dining - transfer_call to the restaurant instead.",
   inputSchema: z.object({
     date: isoDate("the date"),
-    time: z.string().describe("24-hour HH:MM, e.g. 19:30"),
+    time: clockTime("the sitting time"),
     partySize: z.number().int().min(1),
     firstName: z.string().min(1),
     lastName: z.string().min(1),

@@ -18,10 +18,21 @@
  * `scripts/api-contracts.mjs`.
  */
 
+/**
+ * The OUTBOUND half, added to this capability rather than given one of its own
+ * for the reason above: it is the same promise about BEHAVIOUR seen from the
+ * other end. An agent relies on `spokenMoney(1)` saying "1 dollar" and on
+ * `mintCode` never drawing an `O`, and both are things a signature cannot say.
+ */
 export {
+  type MintCodeOptions,
+  mintCode,
   type ResolveOneOptions,
   resolveOne,
   spokenAlphanumeric,
+  spokenDate,
   spokenDigits,
+  spokenMoney,
   spokenOrdinal,
+  spokenTime,
 } from "../../index.ts";

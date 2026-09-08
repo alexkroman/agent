@@ -20,6 +20,12 @@ export function errorDetail(err: unknown): string;
 export function errorMessage(err: unknown): string;
 
 // @public
+export function failable<A extends readonly unknown[], R>(fn: (...args: A) => Promise<R>): (...args: A) => Promise<R | ToolFailure>;
+
+// @public (undocumented)
+export function failable<A extends readonly unknown[], R>(fn: (...args: A) => R): (...args: A) => R | ToolFailure;
+
+// @public
 export function formatBytes(bytes: number): string;
 
 // @public
@@ -57,6 +63,9 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
+export function orFail<T>(value: T | ToolFailure): T;
+
+// @public
 export function plural(n: number, one: string, many?: string): string;
 
 // @public
@@ -64,6 +73,9 @@ export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
 export function responseErrorMessage(response: Response, label?: string): Promise<string>;
+
+// @public
+export function roundMoney(amount: number): number;
 
 // @public
 export function safeJsonParse(text: string): unknown;

@@ -3,10 +3,13 @@
  * Shared utility functions (the `@alexkroman1/aai/utils` subpath).
  *
  * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
- * `toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`,
- * `decodeHtmlEntities`, and the five
+ * `toolFailure`/`isToolFailure` (the `orFail`/`failable` pair that forwards one
+ * out of a chain of lookups is in `tool-failure-flow.ts`, which imports this
+ * module — so the BARREL joins them rather than this file, which would be a
+ * cycle), `pushCapped`, `createKeyedLock`,
+ * `decodeHtmlEntities`, and the six
  * narration formatters (`formatBytes`, `formatDuration`, `formatMoney`,
- * `countWords`, `plural`). The remaining exports are framework
+ * `roundMoney`, `countWords`, `plural`). The remaining exports are framework
  * plumbing shared with the sibling packages. The module stays free of zod and
  * other heavy runtime dependencies so the CLI can import it on every
  * invocation without a startup cost.
@@ -43,15 +46,23 @@ import { safeJsonParse } from "./safe-json-parse.ts";
 import { formatSchemaIssues, type StandardSchemaIssue } from "./standard-schema.ts";
 
 /**
- * The narration formatters — a byte count, a clock reading, a word count, and
- * an English plural.
+ * The narration formatters — a byte count, a clock reading, a word count, an
+ * English plural, and the two money ones (a display form, and the rounding that
+ * keeps a total comparable to what it prints).
  *
  * Their own module because they are a set with one shared argument (see
  * `format.ts`), and re-exported from here rather than given a subpath of their
  * own because `/utils` is already the import a template's `client.tsx` and its
  * `workflows/*.ts` both reach for, and these four are used from both.
  */
-export { countWords, formatBytes, formatDuration, formatMoney, plural } from "./format.ts";
+export {
+  countWords,
+  formatBytes,
+  formatDuration,
+  formatMoney,
+  plural,
+  roundMoney,
+} from "./format.ts";
 /**
  * The one entity decoder, for a step reading text off somebody else's markup.
  *

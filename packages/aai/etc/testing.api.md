@@ -366,6 +366,9 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
+type RandomSource = () => number;
+
+// @public
 export type RecordedSleep = {
     label: string;
     until: number | Date;
@@ -1022,6 +1025,7 @@ type ToolContext = {
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
+    random: RandomSource;
 };
 
 // @public

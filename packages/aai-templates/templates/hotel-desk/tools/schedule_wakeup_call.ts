@@ -1,7 +1,7 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { requireRoom } from "../hotel.ts";
-import { isoDate, speakCode, spokenDate, spokenTime, TODAY } from "../records.ts";
+import { clockTime, isoDate, speakCode, spokenDate, spokenTime, TODAY } from "../records.ts";
 import { addTicket, hotelSlot } from "../shared.ts";
 
 /** Their `schedule_wakeup_call`: it actually sets the call — never a followup note instead. */
@@ -14,15 +14,13 @@ export default hotelSlot.updateTool({
     room: z.string().describe("The room number as the caller gave it, e.g. 304"),
     guestName: z.string().min(1),
     date: isoDate("the date").describe("YYYY-MM-DD; 'tomorrow morning' is tomorrow's date"),
-    time: z.string().describe("24-hour HH:MM; 4:45 a.m. is 04:45"),
+    time: clockTime("the wake-up time"),
   }),
   execute({ room, guestName, date, time }, hotel) {
     const found = requireRoom(hotel, room);
     if ("error" in found) return toolFailure(found.error);
     if (date < TODAY)
       return toolFailure(`${spokenDate(date)} is in the past - re-confirm the date`);
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
-      return toolFailure("the time must be 24-hour HH:MM");
     const ticket = addTicket(
       hotel,
       "wakeup_call",

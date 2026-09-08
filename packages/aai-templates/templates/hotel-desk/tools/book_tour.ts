@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TOURS } from "../catalogs.ts";
 import { catalogBookingTool } from "../concierge.ts";
-import { speakUsd, spokenDate, spokenTime } from "../records.ts";
+import { isoDate, speakUsd, spokenDate, spokenTime } from "../records.ts";
 
 /** Their `book_tour`, as one instance of the catalog factory. */
 export default catalogBookingTool({
@@ -13,7 +13,7 @@ export default catalogBookingTool({
   prefix: "TUR",
   inputSchema: z.object({
     tour: z.enum(Object.keys(TOURS) as [keyof typeof TOURS, ...(keyof typeof TOURS)[]]),
-    date: z.string().describe("YYYY-MM-DD"),
+    date: isoDate("the tour date"),
     partySize: z.number().int().min(1),
     guestName: z.string().min(1),
     guestPhone: z.string().min(1),

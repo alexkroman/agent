@@ -1,4 +1,4 @@
-import { tool } from "@alexkroman1/aai";
+import { randomInt, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   ARCHETYPES,
@@ -85,7 +85,7 @@ export default tool({
     state.kidMode = args.kidMode ?? false;
 
     // Generate stats: one at 3, two at 2, two at 1 (total = 7)
-    const statValues = shuffle([3, 2, 2, 1, 1]);
+    const statValues = shuffle([3, 2, 2, 1, 1], ctx.random);
     const archetypeBias: Record<string, number> = {
       outsider_loner: 0,
       investigator: 4,
@@ -97,7 +97,7 @@ export default tool({
       inventor: 4,
       artist: 1,
     };
-    const biasIdx = archetypeBias[args.archetype] ?? Math.floor(Math.random() * 5);
+    const biasIdx = archetypeBias[args.archetype] ?? randomInt(5, ctx.random);
     const highIdx = statValues.indexOf(3);
     if (highIdx !== biasIdx) {
       [statValues[highIdx], statValues[biasIdx]] = [statValues[biasIdx]!, statValues[highIdx]!];
@@ -135,7 +135,7 @@ export default tool({
     });
 
     // Story blueprint
-    const structure = chooseStoryStructure(args.tone);
+    const structure = chooseStoryStructure(args.tone, ctx.random);
     state.storyBlueprint = {
       structureType: structure,
       centralConflict: args.openingSituation,
@@ -218,7 +218,7 @@ export default tool({
       toneLabel: TONES[args.tone as keyof typeof TONES] || args.tone,
       archetypeLabel: ARCHETYPES[args.archetype as keyof typeof ARCHETYPES] || args.archetype,
       openingSituation: args.openingSituation,
-      creativitySeed: creativitySeed(),
+      creativitySeed: creativitySeed(3, ctx.random),
       // The position spread verbatim — the same keys every gated tool reports.
       ...at,
       // The real saved state — never hardcoded values

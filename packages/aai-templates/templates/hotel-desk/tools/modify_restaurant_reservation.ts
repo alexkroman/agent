@@ -3,6 +3,7 @@ import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { findReservation, modifyReservation, openDinnerSlots } from "../hotel.ts";
 import {
+  clockTime,
   DINNER_SLOTS,
   isoDate,
   MAX_PARTY_SIZE,
@@ -28,7 +29,7 @@ export default hotelSlot.updateTool({
     lastName: z.string().min(1),
     confirmationCode: z.string().min(1),
     newDate: isoDate("the new date"),
-    newTime: z.string().describe("24-hour HH:MM"),
+    newTime: clockTime("the new time"),
     newPartySize: z.number().int().min(1).max(MAX_PARTY_SIZE).optional(),
   }),
   execute({ lastName, confirmationCode, newDate, newTime, newPartySize }, hotel) {

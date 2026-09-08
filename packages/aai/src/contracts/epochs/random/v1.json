@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "random",
+  "epoch": 1,
+  "sha256": "f7adf2f90057b2116fa145e0baf292b2fdb9c46a14f05a9a27c4963bdd25fe62",
+  "exports": ["RandomSource", "createSeededRandom", "pickOne", "randomInt", "shuffled"]
+}

@@ -8,7 +8,14 @@
  * back in.
  */
 import { describe, expect, test } from "vitest";
-import { countWords, formatBytes, formatDuration, formatMoney, plural } from "./format.ts";
+import {
+  countWords,
+  formatBytes,
+  formatDuration,
+  formatMoney,
+  plural,
+  roundMoney,
+} from "./format.ts";
 
 describe("formatBytes", () => {
   test.each([
@@ -126,6 +133,45 @@ describe("plural", () => {
   test("it returns the word alone, so the caller formats the count", () => {
     const risks = 3;
     expect(`Found ${risks} ${plural(risks, "risk")}.`).toBe("Found 3 risks.");
+  });
+});
+
+describe("roundMoney", () => {
+  test("snaps float arithmetic to whole cents", () => {
+    expect(0.1 + 0.2).not.toBe(0.3);
+    expect(roundMoney(0.1 + 0.2)).toBe(0.3);
+  });
+
+  test("agrees with formatMoney on every half-cent", () => {
+    // The property, and the reason this is not `Math.round(n * 100) / 100`:
+    // that spelling answers 2.68 for 2.675 while formatMoney prints $2.67, so
+    // a total compares as one number and reads as another.
+    for (const amount of [19.995, 1.005, 0.005, 2.675, 1.115, -2.675, 12.344]) {
+      expect(formatMoney(roundMoney(amount))).toBe(formatMoney(amount));
+    }
+    // Spelled out for the two the multiply-and-round version gets differently.
+    expect(roundMoney(2.675)).toBe(2.67);
+    expect(roundMoney(1.115)).toBe(1.11);
+    expect(roundMoney(19.995)).toBe(20);
+  });
+
+  test("leaves a value already on a cent alone", () => {
+    expect(roundMoney(17.5)).toBe(17.5);
+    expect(roundMoney(0)).toBe(0);
+    expect(roundMoney(-4.99)).toBe(-4.99);
+  });
+
+  test("makes a sum of rounded parts comparable for equality", () => {
+    // The bug it exists for: a gift-card balance compared against a price
+    // difference is otherwise a coin toss.
+    const total = roundMoney(roundMoney(19.99 * 3) + roundMoney(0.07 * 19.99));
+    expect(total).toBe(61.37);
+  });
+
+  test("passes non-finite through rather than answering zero", () => {
+    // Quietly answering 0 would hide the arithmetic that produced it.
+    expect(roundMoney(Number.NaN)).toBeNaN();
+    expect(roundMoney(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY);
   });
 });
 

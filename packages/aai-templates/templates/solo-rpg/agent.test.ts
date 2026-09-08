@@ -395,17 +395,24 @@ describe("rollAction", () => {
 // private copy would pass every check on its own return value.
 
 describe("oracle", () => {
-  /** Force `d(sides)` to roll `value` on the next call. */
-  function mockRoll(value: number, sides: number) {
-    return vi.spyOn(Math, "random").mockReturnValue((value - 0.5) / sides);
+  /**
+   * A context whose `d(sides)` rolls `value`.
+   *
+   * This used to be `vi.spyOn(Math, "random")` — a GLOBAL patch, which every
+   * test in the file then had to be trusted not to depend on and which the
+   * teardown had to remember to restore. `ctx.random` is the seam now, so the
+   * dice a scene is resolved on are an argument to the tool rather than a
+   * property of the process.
+   */
+  function rolling(value: number, sides: number) {
+    return createToolContext({ random: () => (value - 0.5) / sides });
   }
 
   test("a chaos interrupt that LANDS lowers the stored chaos factor", async () => {
-    const ctx = createToolContext();
+    const ctx = rolling(1, 10);
     const state = playingState();
     state.chaosFactor = 9; // threshold 6 — a roll of 1 lands
     seedPlaying(ctx, state);
-    mockRoll(1, 10);
 
     const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
       interrupted: boolean;
@@ -435,11 +442,10 @@ describe("oracle", () => {
   });
 
   test("a chaos check that MISSES changes nothing", async () => {
-    const ctx = createToolContext();
+    const ctx = rolling(10, 10); // past the threshold
     const state = playingState();
     state.chaosFactor = 5; // threshold 2
     seedPlaying(ctx, state);
-    mockRoll(10, 10); // past the threshold
 
     const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
       interrupted: boolean;
@@ -451,15 +457,14 @@ describe("oracle", () => {
   });
 
   test("a chaos check on an untouched session starts from the default factor", async () => {
-    const ctx = createToolContext();
-    mockRoll(1, 10); // DEFAULT_STATE.chaosFactor is 5, so threshold 2 — lands
+    // DEFAULT_STATE.chaosFactor is 5, so threshold 2 — a roll of 1 lands.
+    const ctx = rolling(1, 10);
     const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as { chaosFactor: number };
     expect(result.chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
     expect(gameSlot.get(ctx).chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
   });
 
   test("yes_no maps the d6 onto its three answers", async () => {
-    const ctx = createToolContext();
     for (const [roll, answer] of [
       [1, "No"],
       [2, "No"],
@@ -468,8 +473,7 @@ describe("oracle", () => {
       [5, "Yes"],
       [6, "Yes"],
     ] as const) {
-      mockRoll(roll, 6);
-      const result = (await oracle.execute({ type: "yes_no" }, ctx)) as {
+      const result = (await oracle.execute({ type: "yes_no" }, rolling(roll, 6))) as {
         roll: number;
         answer: string;
       };

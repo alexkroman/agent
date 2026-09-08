@@ -26,6 +26,7 @@ describe("createToolContext", () => {
       "env",
       "generate",
       "messages",
+      "random",
       "send",
       "sent",
       "sessionId",
@@ -33,6 +34,21 @@ describe("createToolContext", () => {
       "slots",
       "workflows",
     ]);
+  });
+
+  test("ctx.random is SEEDED, so a spec that never mentions it is still deterministic", () => {
+    // The one default that deliberately differs from the runtime, which uses
+    // `Math.random`. Two contexts draw the same sequence, so a spec comparing
+    // two runs of a tool is comparing the tool.
+    const first = Array.from({ length: 5 }, createToolContext().random);
+    expect(Array.from({ length: 5 }, createToolContext().random)).toEqual(first);
+    // Varied, not constant — a constant source degenerates `shuffled` and
+    // makes `mintCode` re-draw one code until it gives up.
+    expect(new Set(first).size).toBe(5);
+    for (const v of first) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
   });
 
   test("defaults are inert: empty env, empty slots, no messages", () => {

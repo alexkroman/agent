@@ -46,6 +46,8 @@
  */
 
 export {
+  blockAlign,
+  bytesPerSecond,
   encodeWav,
   isTransientStatus,
   type MultipartBody,
@@ -53,7 +55,9 @@ export {
   mapConcurrent,
   mapSettled,
   multipartBody,
+  offsetToMs,
   type PcmFormat,
+  parseWav,
   partitionSettled,
   pcmDurationMs,
   requireStepEnv,
@@ -80,6 +84,8 @@ export {
   stepSpeak,
   stepWebhookUrl,
   stripJsonFence,
+  UnsupportedRecordingError,
   WAV_HEADER_BYTES,
+  type WavFormat,
   wavHeader,
 } from "../../sdk/step-barrel.ts";

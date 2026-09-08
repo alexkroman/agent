@@ -1,4 +1,4 @@
-import { isToolFailure } from "@alexkroman1/aai";
+import { isToolFailure, randomInt } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { Resource } from "../shared.ts";
 import {
@@ -73,7 +73,7 @@ export default callFlow.tool({
       const etaBase = args.priority === "emergency" ? 3 : args.priority === "priority" ? 6 : 10;
 
       for (const r of resourcesToDispatch) {
-        const eta = etaBase + Math.floor(Math.random() * 5);
+        const eta = etaBase + randomInt(5, ctx.random);
         r.status = "dispatched";
         r.assignedIncident = args.incidentId;
         r.eta = eta;

@@ -13,6 +13,7 @@
  */
 
 import type { GenerateFn } from "./generate.ts";
+import type { RandomSource } from "./random.ts";
 import type { SlotStore } from "./session-state.ts";
 import type { DelegateFn } from "./subagent.ts";
 import type { Message } from "./types.ts";
@@ -208,4 +209,39 @@ export type ToolContext = {
    * backend configured, naming which.
    */
   workflows: WorkflowClient;
+  /**
+   * A uniform float in `[0, 1)` — the SEAM a tool reaches for instead of
+   * `Math.random`.
+   *
+   * In production it IS `Math.random`, so this buys nothing at run time. What
+   * it buys is a tool whose randomness a spec can state:
+   * `createToolContext({ random: () => 0.5 })` makes a dice roll, a shuffle, an
+   * ETA jitter or a minted reference code an exact assertion rather than a
+   * range check. Ten call sites across seven templates called the global
+   * directly and none of them could be pinned; the one template that could had
+   * hand-threaded a `random` parameter through its own helpers to get here.
+   *
+   * Pass it on rather than re-deriving: {@link randomInt}, {@link pickOne},
+   * {@link shuffled} and {@link mintCode} all take a {@link RandomSource} as
+   * their last argument.
+   *
+   * **Not journaled, and not a replay seam.** A tool call happens once; a
+   * WORKFLOW body replays, and `WorkflowContext.random()` is the different
+   * mechanism that makes a run re-derive the same number. **Not
+   * cryptographic** either — anything an attacker gains by guessing wants
+   * `crypto.getRandomValues`.
+   *
+   * @example
+   * ```ts
+   * import { pickOne, tool } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * export default tool({
+   *   description: "Suggest somewhere to eat.",
+   *   inputSchema: z.object({}),
+   *   execute: (_args, ctx) => ({ pick: pickOne(["Luigi's", "The Anchor"], ctx.random) }),
+   * });
+   * ```
+   */
+  random: RandomSource;
 };

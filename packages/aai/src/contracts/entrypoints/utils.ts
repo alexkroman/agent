@@ -17,7 +17,7 @@
  *
  * The four NARRATION formatters joined it, and the reader is what puts them here
  * rather than on a subpath of their own: `formatBytes`, `formatDuration`,
- * `countWords`, `formatMoney` and `plural` are written from a `workflows/*.ts` step reporting
+ * `countWords`, `formatMoney`, `roundMoney` and `plural` are written from a `workflows/*.ts` step reporting
  * its own progress AND from the `client.tsx` rendering the same run, and
  * `/utils` is already the import both halves reach for. They are on this
  * contract because their OUTPUT is the promise — each returns one fixed ASCII
@@ -57,6 +57,7 @@ export {
   plural,
   pushCapped,
   responseErrorMessage,
+  roundMoney,
   safeJsonParse,
   withLock,
 } from "../../sdk/utils-barrel.ts";

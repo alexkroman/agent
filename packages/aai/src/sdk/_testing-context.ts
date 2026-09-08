@@ -15,6 +15,7 @@
 import { clientEventDropMessage, decideClientEvent } from "./client-event.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import { createSeededRandom } from "./random.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 import type { ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
@@ -106,6 +107,16 @@ export function createStubWorkflows(overrides: Partial<WorkflowClient> = {}): Wo
     ...overrides,
   };
 }
+
+/**
+ * The seed behind `createToolContext`'s default `ctx.random`.
+ *
+ * A fixed number rather than a per-call one: two contexts built by one spec
+ * draw the SAME sequence, so a test comparing two runs of a tool is comparing
+ * the tool rather than the draw. A spec that wants two different sequences
+ * passes `createSeededRandom(n)` itself.
+ */
+const TEST_RANDOM_SEED = 20_260_101;
 
 /** Distinct session ids across a file, so two contexts are two sessions. */
 let sessionCounter = 0;
@@ -213,6 +224,13 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
     // `ctx.deadlineAt` sees a realistic window rather than one already past,
     // and a spec that wants the tight case passes its own instant.
     deadlineAt: Date.now() + TOOL_EXECUTION_TIMEOUT_MS,
+    // SEEDED, where production is `Math.random` — the one default here that is
+    // deliberately not what the runtime does. A spec that never thinks about
+    // randomness is then still deterministic, which is the whole reason
+    // `ctx.random` exists; a spec that cares passes its own source. Seeded
+    // rather than constant because a constant source is degenerate: `shuffled`
+    // would return a fixed permutation and `mintCode` would re-draw one code.
+    random: createSeededRandom(TEST_RANDOM_SEED),
     /**
      * Records what the client would RECEIVE, which is not everything a tool
      * sends: `decideClientEvent` is the runtime's own rule, so an event over

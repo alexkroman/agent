@@ -232,7 +232,8 @@ reference, and the `typescript@6` pin — **and, because they answer three
 versions of one question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-Six files sit outside the table for a different reason:
+Seven files sit outside the table for a different reason:
+`packages/aai/AUTHORING-HELPERS-CLAUDE.md`,
 `packages/aai-server/MODAL-CLAUDE.md`, `packages/aai-server/SCHEMA-CLAUDE.md`,
 `packages/aai-runtime/JOURNAL-CLAUDE.md`, `packages/aai-ui/PLAYBACK-CLAUDE.md`,
 `packages/aai-templates/PORTS-CLAUDE.md` and
