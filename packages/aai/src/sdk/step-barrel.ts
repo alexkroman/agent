@@ -140,3 +140,11 @@ export { stepRequireCompleteUpload, UploadIncompleteError } from "./step-uploads
 export { stepWriteUpload, type WriteUploadOptions } from "./step-uploads-write.ts";
 export { stepWebhookUrl } from "./step-webhook.ts";
 export { encodeWav, type PcmFormat, pcmDurationMs, WAV_HEADER_BYTES, wavHeader } from "./wav.ts";
+export {
+  blockAlign,
+  bytesPerSecond,
+  offsetToMs,
+  parseWav,
+  UnsupportedRecordingError,
+  type WavFormat,
+} from "./wav-parse.ts";

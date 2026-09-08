@@ -80,6 +80,7 @@ import { normalizeRecording } from "./normalize.ts";
 import { stitchTranscript, TRANSCRIPT_STREAM, type TranscriptChunk } from "./stitch.ts";
 import { elapsed, timed, transcribeWav } from "./sync-api.ts";
 import {
+  assertCuttable,
   bytesPerSecond,
   HEADER_PROBE_BYTES,
   parseWav,
@@ -315,7 +316,7 @@ export async function splitRecording(uploadId: string): Promise<{
   // recording that is still landing; this one wants all of it.
   const stored = await stepRequireCompleteUpload(uploadId);
   const head = await stepReadUpload(uploadId, { end: HEADER_PROBE_BYTES });
-  const format = fatalOnUnsupported(() => parseWav(head.bytes, stored.size));
+  const format = fatalOnUnsupported(() => assertCuttable(parseWav(head.bytes, stored.size)));
   const segments = fatalOnUnsupported(() => planSegments(format));
   const durationMs = segments.at(-1)?.endMs ?? 0;
 

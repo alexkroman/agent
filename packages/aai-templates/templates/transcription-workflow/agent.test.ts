@@ -60,6 +60,7 @@ import {
   transcribeSegment,
 } from "./workflows/transcribe.ts";
 import {
+  assertCuttable,
   blockAlign,
   bytesPerSecond,
   MAX_BYTES_PER_SECOND,
@@ -291,17 +292,24 @@ describe("parseWav", () => {
     expect(() => parseWav(head, 44 + 320_000)).toThrow(/sample rate of 0/);
   });
 
-  test("refuses a rate so high the overlap alone exceeds the request cap", () => {
+  test("assertCuttable refuses a rate so high the overlap alone exceeds the cap", () => {
     // The same hang from the other end: the overlap is subtracted from
     // MAX_SEGMENT_BYTES, so past MAX_BYTES_PER_SECOND the stride goes NEGATIVE
     // and the loop walks backwards. `sampleRate` is a uint32, so a header can
     // ask for this.
+    //
+    // The check is `assertCuttable`'s rather than `parseWav`'s now: the parse
+    // is the SDK's and answers whether this is READABLE WAV, where the cap is a
+    // property of the sync ENDPOINT this desk calls. Splitting them is what
+    // lets `cuttable` and `heavierThanNormalized` ask the two questions apart —
+    // a file that fails only the second is one downsampling repairs.
     const perSecond = MAX_BYTES_PER_SECOND + blockAlign(MONO_16K);
     const head = wavFile(
       { ...MONO_16K, sampleRate: Math.ceil(perSecond / blockAlign(MONO_16K)) },
       320_000,
     );
-    expect(() => parseWav(head, 44 + 320_000)).toThrow(/bytes a second/);
+    expect(() => parseWav(head, 44 + 320_000)).not.toThrow();
+    expect(() => assertCuttable(parseWav(head, 44 + 320_000))).toThrow(/bytes a second/);
   });
 
   test("48 kHz 24-bit stereo — the realistic ceiling — is nowhere near the bound", () => {

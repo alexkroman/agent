@@ -185,6 +185,7 @@ import {
   transcribeSegment,
 } from "./transcribe.ts";
 import {
+  assertCuttable,
   HEADER_PROBE_BYTES,
   offsetToMs,
   parseWav,
@@ -637,7 +638,9 @@ export function segmentStored(segment: Segment, at: UploadProgressView): boolean
  */
 export async function planStreamed(id: string): Promise<StreamPlan> {
   const head = await stepReadUpload(id, { end: HEADER_PROBE_BYTES });
-  const format = fatalOnUnsupported(() => parseWav(head.bytes, Number.POSITIVE_INFINITY));
+  const format = fatalOnUnsupported(() =>
+    assertCuttable(parseWav(head.bytes, Number.POSITIVE_INFINITY)),
+  );
   if (!Number.isFinite(format.dataEnd)) {
     return throwFatalStepError(
       new UnsupportedRecordingError(

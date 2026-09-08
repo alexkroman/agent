@@ -9,7 +9,7 @@
  * sequence this gate exists to make impossible.
  */
 
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { failable, orFail, type ToolFailure } from "@alexkroman1/aai";
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { creditRefund, REFUND_DELAY_NOTE, REFUND_IMMEDIATE_NOTE } from "./refund.ts";
 import { resolveOrder } from "./resolve.ts";
@@ -38,51 +38,48 @@ export interface CancelPlan {
   total: number;
 }
 
-export function planCancel(
-  state: RetailState,
-  spokenOrderId: string,
-  reason: CancelReason,
-): CancelPlan | ToolFailure {
-  // No `authenticatedUser` gate here: `resolveOrder` opens with the identical
-  // call and returns the identical failure, so a second one is a second store
-  // lookup for a value this planner never reads.
-  const order = resolveOrder(state, spokenOrderId);
-  if (isToolFailure(order)) return order;
+export const planCancel = failable(
+  (state: RetailState, spokenOrderId: string, reason: CancelReason): CancelPlan | ToolFailure => {
+    // No `authenticatedUser` gate here: `resolveOrder` opens with the identical
+    // call and returns the identical failure, so a second one is a second store
+    // lookup for a value this planner never reads.
+    const order = orFail(resolveOrder(state, spokenOrderId));
 
-  // The enum makes this unreachable from a well-formed call; it stays because
-  // the reason is the one field a caller supplies in free speech, and an LLM
-  // tool call arrives untyped.
-  if (!CANCEL_REASONS.includes(reason)) {
+    // The enum makes this unreachable from a well-formed call; it stays because
+    // the reason is the one field a caller supplies in free speech, and an LLM
+    // tool call arrives untyped.
+    if (!CANCEL_REASONS.includes(reason)) {
+      return {
+        error: `'${reason}' is not an accepted cancellation reason. It must be 'no longer needed' or 'ordered by mistake'.`,
+      };
+    }
+
+    // Exactly 'pending'. A 'pending (item modified)' order has spent its one
+    // modification and is past cancelling.
+    if (order.status !== "pending") {
+      return {
+        error: `Order ${order.order_id} is ${order.status}, and only a pending order can be cancelled.`,
+      };
+    }
+
+    const refunds = order.payment_history
+      .filter((payment) => payment.transaction_type === "payment")
+      .map((payment) => ({ methodId: payment.payment_method_id, amount: payment.amount }));
+    const total = money(refunds.reduce((sum, refund) => sum + refund.amount, 0));
+
+    const items = order.items.map((item) => item.name).join(", ");
+    const destinations = [...new Set(refunds.map((refund) => refund.methodId))].join(" and ");
     return {
-      error: `'${reason}' is not an accepted cancellation reason. It must be 'no longer needed' or 'ordered by mistake'.`,
+      readBack:
+        `cancel order ${order.order_id} (${items}) as '${reason}' and refund ` +
+        `${formatMoney(total)} to ${destinations}`,
+      orderId: order.order_id,
+      reason,
+      refunds,
+      total,
     };
-  }
-
-  // Exactly 'pending'. A 'pending (item modified)' order has spent its one
-  // modification and is past cancelling.
-  if (order.status !== "pending") {
-    return {
-      error: `Order ${order.order_id} is ${order.status}, and only a pending order can be cancelled.`,
-    };
-  }
-
-  const refunds = order.payment_history
-    .filter((payment) => payment.transaction_type === "payment")
-    .map((payment) => ({ methodId: payment.payment_method_id, amount: payment.amount }));
-  const total = money(refunds.reduce((sum, refund) => sum + refund.amount, 0));
-
-  const items = order.items.map((item) => item.name).join(", ");
-  const destinations = [...new Set(refunds.map((refund) => refund.methodId))].join(" and ");
-  return {
-    readBack:
-      `cancel order ${order.order_id} (${items}) as '${reason}' and refund ` +
-      `${formatMoney(total)} to ${destinations}`,
-    orderId: order.order_id,
-    reason,
-    refunds,
-    total,
-  };
-}
+  },
+);
 
 /** The effect. Total by construction: every id in the plan was resolved from
  *  this same store, and nothing between staging and confirming can remove one. */

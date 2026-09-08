@@ -11,7 +11,7 @@
  */
 
 import type { ToolContext } from "@alexkroman1/aai";
-import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
+import { createSeededRandom, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
@@ -42,6 +42,9 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     // method — the laundering idiom the escape-hatch ratchet now counts.
     generate: () => Promise.reject(new Error("generate not mocked")),
     delegate: () => Promise.reject(new Error("delegate not mocked")),
+    // Seeded rather than `Math.random`, for the reason `createToolContext`
+    // gives: a spec that never mentions randomness stays deterministic.
+    random: createSeededRandom(20_260_101),
     messages: [],
     deadlineAt: Date.now() + TOOL_EXECUTION_TIMEOUT_MS,
     sessionId: "test-session",

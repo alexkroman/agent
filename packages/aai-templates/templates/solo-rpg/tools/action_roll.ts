@@ -38,7 +38,7 @@ export default storyFlow.tool({
   execute: (args, ctx) =>
     gameSlot.update(ctx, (state) => {
       const statValue = state[args.stat];
-      const roll = rollAction(args.stat, statValue, args.move);
+      const roll = rollAction(args.stat, statValue, args.move, ctx.random);
 
       // Apply consequences
       const { consequences, clockEvents, deltas } = applyConsequences(

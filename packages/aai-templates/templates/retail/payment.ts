@@ -3,7 +3,7 @@
  * apply (see `cancel.ts` for why every mutating action is split that way).
  */
 
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { failable, orFail, type ToolFailure } from "@alexkroman1/aai";
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { resolveOrder } from "./resolve.ts";
 import type { RetailState } from "./shared.ts";
@@ -19,55 +19,50 @@ export interface PaymentPlan {
   amount: number;
 }
 
-export function planPayment(
-  state: RetailState,
-  spokenOrderId: string,
-  newMethodId: string,
-): PaymentPlan | ToolFailure {
-  const user = authenticatedUser(state);
-  if (isToolFailure(user)) return user;
+export const planPayment = failable(
+  (state: RetailState, spokenOrderId: string, newMethodId: string): PaymentPlan | ToolFailure => {
+    const user = orFail(authenticatedUser(state));
 
-  const order = resolveOrder(state, spokenOrderId);
-  if (isToolFailure(order)) return order;
+    const order = orFail(resolveOrder(state, spokenOrderId));
 
-  if (!order.status.startsWith("pending")) {
+    if (!order.status.startsWith("pending")) {
+      return {
+        error: `Order ${order.order_id} is ${order.status}, and only a pending order's payment method can be changed.`,
+      };
+    }
+
+    const newMethod = orFail(findPaymentMethod(user, newMethodId));
+
+    const original = order.payment_history[0];
+    if (order.payment_history.length !== 1 || original?.transaction_type !== "payment") {
+      return {
+        error: `Order ${order.order_id} does not have exactly one payment on record, so its payment method cannot be changed.`,
+      };
+    }
+    if (original.payment_method_id === newMethodId) {
+      return {
+        error: `Order ${order.order_id} is already paid with ${newMethodId}. The new method must be different.`,
+      };
+    }
+
+    const amount = original.amount;
+    if (isGiftCard(newMethod) && newMethod.balance < amount) {
+      return {
+        error: `Gift card ${newMethodId}'s balance (${formatMoney(newMethod.balance)}) does not cover the ${formatMoney(amount)} order total.`,
+      };
+    }
+
     return {
-      error: `Order ${order.order_id} is ${order.status}, and only a pending order's payment method can be changed.`,
+      readBack:
+        `charge order ${order.order_id} — ${formatMoney(amount)} — to ${newMethodId} instead, ` +
+        `refunding ${original.payment_method_id}`,
+      orderId: order.order_id,
+      newMethodId,
+      oldMethodId: original.payment_method_id,
+      amount,
     };
-  }
-
-  const newMethod = findPaymentMethod(user, newMethodId);
-  if (isToolFailure(newMethod)) return newMethod;
-
-  const original = order.payment_history[0];
-  if (order.payment_history.length !== 1 || original?.transaction_type !== "payment") {
-    return {
-      error: `Order ${order.order_id} does not have exactly one payment on record, so its payment method cannot be changed.`,
-    };
-  }
-  if (original.payment_method_id === newMethodId) {
-    return {
-      error: `Order ${order.order_id} is already paid with ${newMethodId}. The new method must be different.`,
-    };
-  }
-
-  const amount = original.amount;
-  if (isGiftCard(newMethod) && newMethod.balance < amount) {
-    return {
-      error: `Gift card ${newMethodId}'s balance (${formatMoney(newMethod.balance)}) does not cover the ${formatMoney(amount)} order total.`,
-    };
-  }
-
-  return {
-    readBack:
-      `charge order ${order.order_id} — ${formatMoney(amount)} — to ${newMethodId} instead, ` +
-      `refunding ${original.payment_method_id}`,
-    orderId: order.order_id,
-    newMethodId,
-    oldMethodId: original.payment_method_id,
-    amount,
-  };
-}
+  },
+);
 
 export function applyPayment(state: RetailState, plan: PaymentPlan) {
   const order = state.store.orders[plan.orderId];

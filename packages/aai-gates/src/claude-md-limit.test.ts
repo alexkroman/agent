@@ -58,6 +58,13 @@ const BUDGET = 120_000;
 const guides: Record<string, string> = {
   ...import.meta.glob("../../../AGENTS.md", { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob("../../*/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
+  // The SIBLINGS — `*-CLAUDE.md` beside a package guide (`MODAL-CLAUDE.md`,
+  // `S2S-CLAUDE.md`, …). `check:claude-md`'s pathspec is `*CLAUDE.md`, so the
+  // script has always measured these; this spec globbed `*/CLAUDE.md` and did
+  // not, which made AGENTS.md's "both check it" half-true — and a sibling is
+  // exactly where a section pushed out of a full guide LANDS, so it is the
+  // file most likely to grow next.
+  ...import.meta.glob("../../*/*-CLAUDE.md", { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob("../../*/scaffold/CLAUDE.md", {
     query: "?raw",
     import: "default",

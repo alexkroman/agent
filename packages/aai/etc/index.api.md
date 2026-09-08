@@ -11,6 +11,9 @@ import { OutputFrom } from 'xstate';
 import { z } from 'zod';
 
 // @public
+export function addDays(iso: string, days: number): string;
+
+// @public
 export function agent(def: AgentParams): AgentDef;
 
 // @public
@@ -115,7 +118,16 @@ interface AssemblyAITtsVoiceInfo {
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
+export function clockTime(what?: string): z.ZodString;
+
+// @public
 export function createKeyedLock(): KeyedLock;
+
+// @public
+export function createSeededRandom(seed: number): RandomSource;
+
+// @public
+export function daysBetween(from: string, to: string): number;
 
 // @public
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer E)[] ? readonly DeepReadonly<E>[] : T extends object ? {
@@ -279,6 +291,12 @@ type EventOf<N> = N extends string ? {
 } : never;
 
 // @public
+export function failable<A extends readonly unknown[], R>(fn: (...args: A) => Promise<R>): (...args: A) => Promise<R | ToolFailure>;
+
+// @public (undocumented)
+export function failable<A extends readonly unknown[], R>(fn: (...args: A) => R): (...args: A) => R | ToolFailure;
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -336,6 +354,15 @@ type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `t
 
 // @public
 type IsAny<T> = 0 extends 1 & T ? true : false;
+
+// @public
+export function isClockTime(value: string): boolean;
+
+// @public
+export function isIsoDate(value: string): boolean;
+
+// @public
+export function isoDate(what?: string): z.ZodString;
 
 // @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
@@ -397,6 +424,16 @@ export type Message = {
 };
 
 // @public
+export function mintCode(prefix: string, options?: MintCodeOptions): string;
+
+// @public
+export interface MintCodeOptions {
+    length?: number;
+    random?: () => number;
+    taken?: ReadonlySet<string>;
+}
+
+// @public
 type NamesIn<S> = (S extends {
     on: infer O;
 } ? Extract<keyof O, string> : never) | (S extends {
@@ -410,6 +447,12 @@ type NamesInMap<M> = M extends Record<string, unknown> ? M[keyof M] extends infe
 export function omitUndefined<T extends object>(obj: T): {
     [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
 };
+
+// @public
+export function orFail<T>(value: T | ToolFailure): T;
+
+// @public
+export function pickOne<T>(items: readonly T[], random?: RandomSource): T | undefined;
 
 // @public
 export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
@@ -489,6 +532,12 @@ type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
+
+// @public
+export function randomInt(maxExclusive: number, random?: RandomSource): number;
+
+// @public
+export type RandomSource = () => number;
 
 // @public
 type RejectThenable<R> = IsAny<R> extends true ? unknown : [R] extends [never] ? unknown : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : unknown;
@@ -754,6 +803,9 @@ export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnl
 };
 
 // @public
+export function shuffled<T>(items: readonly T[], random?: RandomSource): T[];
+
+// @public
 type SilenceNudgeField = "silenceTimeoutMs" | "silencePrompt";
 
 // @public
@@ -801,10 +853,19 @@ export interface SlotToolDef<P extends ToolInputSchema, V, R> {
 export function spokenAlphanumeric(spoken: string): string;
 
 // @public
+export function spokenDate(iso: string): string;
+
+// @public
 export function spokenDigits(spoken: string): string;
 
 // @public
+export function spokenMoney(amount: number): string;
+
+// @public
 export function spokenOrdinal(spoken: string): number | undefined;
+
+// @public
+export function spokenTime(hhmm: string): string;
 
 // @public
 interface StandardSchemaIssue {
@@ -981,6 +1042,7 @@ export type ToolContext = {
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
+    random: RandomSource;
 };
 
 // @public

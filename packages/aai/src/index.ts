@@ -59,6 +59,11 @@
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
+/**
+ * Civil dates and clock times — the strings a tool argument carries, and the
+ * arithmetic on them that must not go through the host's time zone.
+ */
+export * from "./sdk/calendar.ts";
 // By NAME: that module also declares `MAX_DB_RESULT_ROWS` and
 // `STORAGE_DISABLED_MESSAGE`, two framework budgets on `@alexkroman1/aai/internal`
 // — a tool body reads `ctx.db`, never the cap the driver enforces around it.
@@ -138,6 +143,12 @@ export type {
   SttProvider,
   TtsProvider,
 } from "./sdk/providers.ts";
+/**
+ * Randomness over a SOURCE rather than the global — the shapes a tool body
+ * wants, taking `ctx.random` so that what a tool produced is something a spec
+ * can state rather than bound.
+ */
+export * from "./sdk/random.ts";
 /**
  * DECLARING a workflow, and the three types a DECLARATION is read back through.
  *
@@ -236,6 +247,13 @@ export type { SlotHolder, SlotStore, StateProjection } from "./sdk/session-state
 // beside `toolFailure`, which it returns.
 export * from "./sdk/spoken.ts";
 /**
+ * The OUTBOUND half of the same boundary: data as the words a TTS voice reads
+ * correctly. Beside `spoken.ts` rather than on `/utils` because the reason these
+ * exist is speech, not formatting — a caller mishearing a total is the failure,
+ * and `format.ts`'s four are for a page and a progress line.
+ */
+export * from "./sdk/spoken-render.ts";
+/**
  * `subagent()` and the `ctx.delegate` contract — the third machine, and the one
  * that spends a MODEL rather than a turn: a second tool loop with its own
  * context window, whose intermediate steps the caller never carries. Picking
@@ -246,6 +264,18 @@ export * from "./sdk/subagent.ts";
 // because `subagent.ts` holds the `ctx.delegate` contract and this holds the
 // other way of choosing one; see that file's "Two ways to choose a subagent".
 export { DELEGATE_TOOL_NAME, type SubagentRoster } from "./sdk/subagent-roster.ts";
+/**
+ * The `T | ToolFailure` union's control flow, beside the guard and the
+ * constructor it belongs with: a tool body writes all three. Its own statement
+ * because `tool-failure-flow.ts` imports `sdk/utils.ts`, so re-exporting it
+ * from there would close a cycle.
+ */
+export { failable, orFail } from "./sdk/tool-failure-flow.ts";
+/**
+ * The zod fields those two share: a rule declared where the MODEL reads it,
+ * rather than discovered by being refused after it has already committed.
+ */
+export * from "./sdk/tool-fields.ts";
 export * from "./sdk/types.ts";
 /**
  * The utilities written INSIDE a tool body — all fifteen of them, which is

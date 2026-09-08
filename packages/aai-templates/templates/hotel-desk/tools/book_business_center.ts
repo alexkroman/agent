@@ -2,7 +2,7 @@ import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { BUSINESS_CENTER_SERVICES } from "../catalogs.ts";
 import { catalogBookingTool } from "../concierge.ts";
-import { speakUsd, spokenDate, spokenTime } from "../records.ts";
+import { clockTime, isoDate, speakUsd, spokenDate, spokenTime } from "../records.ts";
 
 /** Their `book_business_center`, as one instance of the catalog factory. */
 export default catalogBookingTool({
@@ -18,16 +18,14 @@ export default catalogBookingTool({
         ...(keyof typeof BUSINESS_CENTER_SERVICES)[],
       ],
     ),
-    date: z.string().describe("YYYY-MM-DD"),
-    time: z.string().describe("24-hour HH:MM start"),
+    date: isoDate("the booking date"),
+    time: clockTime("the start time"),
     durationHours: z.number().int().min(1).describe("Printing is a flat one-hour job"),
     guestName: z.string().min(1),
     guestPhone: z.string().min(1),
   }),
   price({ service, date, time, durationHours }) {
     const s = BUSINESS_CENTER_SERVICES[service];
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
-      return { error: "the start time must be 24-hour HH:MM" };
     if (durationHours > s.maxHours)
       return {
         error: `${s.name} is booked for at most ${s.maxHours} ${plural(s.maxHours, "hour")}`,

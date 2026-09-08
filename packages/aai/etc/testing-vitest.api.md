@@ -124,6 +124,9 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
+type RandomSource = () => number;
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -401,6 +404,7 @@ type ToolContext = {
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
+    random: RandomSource;
 };
 
 // @public

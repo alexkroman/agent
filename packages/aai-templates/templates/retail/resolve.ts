@@ -9,7 +9,13 @@
  * aloud, and which words name a status.
  */
 
-import { isToolFailure, resolveOne, spokenAlphanumeric, type ToolFailure } from "@alexkroman1/aai";
+import {
+  failable,
+  orFail,
+  resolveOne,
+  spokenAlphanumeric,
+  type ToolFailure,
+} from "@alexkroman1/aai";
 import { z } from "zod";
 import type { Order, OrderStatus, RetailState } from "./shared.ts";
 import { authenticatedUser } from "./store.ts";
@@ -60,9 +66,8 @@ function describeOrder(order: Order): string {
  * Ambiguity is always an error listing the candidates, never a guess — the
  * consequence of guessing here is cancelling the wrong order.
  */
-export function resolveOrder(state: RetailState, spoken: string): Order | ToolFailure {
-  const user = authenticatedUser(state);
-  if (isToolFailure(user)) return user;
+export const resolveOrder = failable((state: RetailState, spoken: string): Order | ToolFailure => {
+  const user = orFail(authenticatedUser(state));
 
   const owned = user.orders
     .map((id) => state.store.orders[id])
@@ -91,4 +96,4 @@ export function resolveOrder(state: RetailState, spoken: string): Order | ToolFa
   // A position, then exactly-one, then an ambiguity that lists them — and never
   // a guess, because the consequence here is cancelling the wrong order.
   return resolveOne(candidates, spoken, { label: "order", describe: describeOrder });
-}
+});

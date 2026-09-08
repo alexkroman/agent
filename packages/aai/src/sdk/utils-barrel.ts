@@ -16,6 +16,10 @@
  * @module utils
  */
 
+// The forwarding half of the `T | ToolFailure` union above. Joined HERE rather
+// than re-exported from `utils.ts`: that module declares `isToolFailure`, which
+// `tool-failure-flow.ts` imports, so a re-export there would close a cycle.
+export { failable, orFail } from "./tool-failure-flow.ts";
 export {
   countWords,
   createKeyedLock,
@@ -34,6 +38,7 @@ export {
   plural,
   pushCapped,
   responseErrorMessage,
+  roundMoney,
   safeJsonParse,
   type ToolFailure,
   toolFailure,

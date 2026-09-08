@@ -1,4 +1,12 @@
-import { type DeepReadonly, dialog, sessionSlot } from "@alexkroman1/aai";
+import {
+  type DeepReadonly,
+  dialog,
+  pickOne,
+  type RandomSource,
+  randomInt,
+  sessionSlot,
+  shuffled,
+} from "@alexkroman1/aai";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
 export const MOMENTUM_RESET = 2;
@@ -45,18 +53,18 @@ const SEED_WORDS = [
   "coral",
 ];
 
-/** Unbiased Fisher-Yates shuffle. Returns a new array. */
-export function shuffle<T>(arr: readonly T[]): T[] {
-  const out = [...arr];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j]!, out[i]!];
-  }
-  return out;
-}
+/**
+ * Unbiased Fisher-Yates shuffle. Returns a new array.
+ *
+ * `shuffled`'s, which is where the unbiasedness argument now lives. What every
+ * randomizing helper in this file gained is the `random` parameter: a tool
+ * passes `ctx.random`, so a spec can state the dice a scene was resolved on
+ * instead of asserting that the result was one of three strings.
+ */
+export const shuffle = shuffled;
 
-export function creativitySeed(n = 3): string {
-  return shuffle(SEED_WORDS).slice(0, n).join(" ");
+export function creativitySeed(n = 3, random?: RandomSource): string {
+  return shuffle(SEED_WORDS, random).slice(0, n).join(" ");
 }
 
 // ── Genres, Tones, Archetypes ────────────────────────────────────────────────
@@ -513,12 +521,20 @@ export type FrozenGameState = DeepReadonly<GameState>;
 // supported pattern, just not one a shipped template can demonstrate.
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-export function d(sides: number): number {
-  return Math.floor(Math.random() * sides) + 1;
+/** One die of `sides`, 1-based. */
+export function d(sides: number, random?: RandomSource): number {
+  return randomInt(sides, random) + 1;
 }
 
-export function pick<T>(arr: readonly T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)] as T;
+/**
+ * One item of a NON-EMPTY list.
+ *
+ * `pickOne` answers `T | undefined` because a list can be empty; every list
+ * this game picks from is a module-level constant that is not, so the assertion
+ * is made once here rather than at ten call sites.
+ */
+export function pick<T>(arr: readonly T[], random?: RandomSource): T {
+  return pickOne(arr, random) as T;
 }
 
 /**
@@ -626,11 +642,16 @@ export function resolveRoll(score: number, c1: number, c2: number): RollOutcome 
 /** How good an outcome is, for comparing two of them. */
 const OUTCOME_RANK: Record<RollOutcome, number> = { MISS: 0, WEAK_HIT: 1, STRONG_HIT: 2 };
 
-export function rollAction(statName: string, statValue: number, move: string) {
-  const d1 = d(6),
-    d2 = d(6);
-  const c1 = d(10),
-    c2 = d(10);
+export function rollAction(
+  statName: string,
+  statValue: number,
+  move: string,
+  random?: RandomSource,
+) {
+  const d1 = d(6, random),
+    d2 = d(6, random);
+  const c1 = d(10, random),
+    c2 = d(10, random);
   const actionScore = Math.min(d1 + d2 + statValue, 10);
   const result = resolveRoll(actionScore, c1, c2);
   const match = c1 === c2;
@@ -645,13 +666,13 @@ export function updateChaosFactor(game: GameState, result: string) {
   else if (result === "STRONG_HIT") game.chaosFactor = Math.max(3, game.chaosFactor - 1);
 }
 
-export function checkChaosInterrupt(game: GameState): string | null {
+export function checkChaosInterrupt(game: GameState, random?: RandomSource): string | null {
   const threshold = game.chaosFactor - 3;
   if (threshold <= 0) return null;
-  const roll = d(10);
+  const roll = d(10, random);
   if (roll <= threshold) {
     game.chaosFactor = Math.max(3, game.chaosFactor - 1);
-    return pick(CHAOS_INTERRUPT_TYPES);
+    return pick(CHAOS_INTERRUPT_TYPES, random);
   }
   return null;
 }
@@ -870,9 +891,12 @@ const KISHOTENKETSU_PROB: Record<string, number> = {
   absurd_grotesque: 0.2,
 };
 
-export function chooseStoryStructure(tone: string): "3act" | "kishotenketsu" {
+export function chooseStoryStructure(
+  tone: string,
+  random: RandomSource = Math.random,
+): "3act" | "kishotenketsu" {
   const prob = KISHOTENKETSU_PROB[tone] ?? 0.1;
-  return Math.random() < prob ? "kishotenketsu" : "3act";
+  return random() < prob ? "kishotenketsu" : "3act";
 }
 
 export const RESULT_LABELS: Record<string, string> = {

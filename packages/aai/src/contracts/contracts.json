@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 24,
-    "supported": [18, 20, 23, 24],
+    "current": 25,
+    "supported": [18, 20, 23, 25],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -22,7 +22,8 @@
       "17": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "19": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
       "21": "Additive: AgentDef gains one OPTIONAL field, subagents — the roster agent() lowers into a delegate tool. No caller must set it and no existing declaration stops compiling, so epoch 21 would in fact still work. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ holds no agent template, matching every prior entry here.",
-      "22": "Additive: AgentDef gains one OPTIONAL field, dialogs, and the capability gains the AnyDialog its element type needs — no caller must set the field and no existing declaration stops compiling, so epoch 22 would in fact still work. Dropped rather than retained because the SDK has no external consumers, matching epoch 16's entry here for mcpServers, which was the same shape: one optional AgentDef field plus its declaration-shaped types."
+      "22": "Additive: AgentDef gains one OPTIONAL field, dialogs, and the capability gains the AnyDialog its element type needs — no caller must set the field and no existing declaration stops compiling, so epoch 22 would in fact still work. Dropped rather than retained because the SDK has no external consumers, matching epoch 16's entry here for mcpServers, which was the same shape: one optional AgentDef field plus its declaration-shaped types.",
+      "24": "Collateral: ToolContext gains a REQUIRED `random` field — the seam a tool reaches for instead of `Math.random`, so what a tool drew is something a spec can state. Reachable from this capability report, and required rather than optional because it is always present at run time and an optional one would push a `??` to every call site. Code that hand-builds a ToolContext therefore stops compiling, which is what `createToolContext` exists to prevent; dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "builtins": {
@@ -32,6 +33,11 @@
       "1": "`webSearch` takes ONE name for its cap, in ONE position: `maxResults`, in the options bag. It used to accept `max_results` too — the only snake_case identifier on this SDK's TypeScript surface — and `maxResults` again in the second parameter, so one option had three ways to arrive and two were undiscoverable from the third. `max_results` remains the WIRE name the model-facing builtin schema declares; only the TypeScript helper narrowed.",
       "2": "An untyped fetchJson/webSearch/visitWebpage no longer answers `any`, so an epoch-2 caller reading a field off an unnarrowed result stops compiling — which is the defect: the T | ToolFailure union was collapsing to any. Same class as epoch 1's drop. CallOptions also gained an optional signal, which is additive."
     }
+  },
+  "calendar": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "channels": {
     "current": 3,
@@ -47,8 +53,8 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 19,
-    "supported": [14, 17, 18, 19],
+    "current": 20,
+    "supported": [14, 17, 18, 20],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -64,7 +70,8 @@
       "12": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
       "13": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "15": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
-      "16": "Collateral: this capability's report names ToolContext.delegate, so DelegateResult's two new required fields (revisions, accepted) reach it. The change is the subagent guardrail, not this surface — a body READING a delegated run is unaffected, and only a hand-written DelegateFn double stops compiling."
+      "16": "Collateral: this capability's report names ToolContext.delegate, so DelegateResult's two new required fields (revisions, accepted) reach it. The change is the subagent guardrail, not this surface — a body READING a delegated run is unaffected, and only a hand-written DelegateFn double stops compiling.",
+      "19": "Collateral: ToolContext gains a REQUIRED `random` field — the seam a tool reaches for instead of `Math.random`, so what a tool drew is something a spec can state. Reachable from this capability report, and required rather than optional because it is always present at run time and an optional one would push a `??` to every call site. Code that hand-builds a ToolContext therefore stops compiling, which is what `createToolContext` exists to prevent; dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "ffmpeg": {
@@ -101,6 +108,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "random": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "s2s": {
     "current": 3,
     "supported": [3],
@@ -110,16 +122,17 @@
     }
   },
   "spoken": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
       "1": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
-      "2": "spokenAlphanumeric joins spokenDigits, the sibling reading STT gives an alphanumeric id. Additive only — no signature moved and nothing must be set, so the previous epoch would in fact still compile. Dropped rather than retained because no frozen example exists for it and the value of one is a promise to external consumers this package does not yet have; the addition is recorded in the changeset and the new epoch is the one authors write against."
+      "2": "spokenAlphanumeric joins spokenDigits, the sibling reading STT gives an alphanumeric id. Additive only — no signature moved and nothing must be set, so the previous epoch would in fact still compile. Dropped rather than retained because no frozen example exists for it and the value of one is a promise to external consumers this package does not yet have; the addition is recorded in the changeset and the new epoch is the one authors write against.",
+      "3": "The OUTBOUND half joins the inbound one: spokenMoney, spokenDate, spokenTime and mintCode, the data-to-speech renderers every voice template had grown a private copy of. Additive — no signature moved and nothing must be set, so the previous epoch would in fact still compile. Dropped rather than retained for the reason epoch 2's entry here gives: no frozen example exists and the value of one is a promise to external consumers this package does not yet have."
     }
   },
   "state": {
-    "current": 19,
-    "supported": [14, 17, 18, 19],
+    "current": 20,
+    "supported": [14, 17, 18, 20],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -135,12 +148,13 @@
       "12": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
       "13": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "15": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
-      "16": "Collateral: this capability's report names ToolContext.delegate, so DelegateResult's two new required fields (revisions, accepted) reach it. The change is the subagent guardrail, not this surface — a body READING a delegated run is unaffected, and only a hand-written DelegateFn double stops compiling."
+      "16": "Collateral: this capability's report names ToolContext.delegate, so DelegateResult's two new required fields (revisions, accepted) reach it. The change is the subagent guardrail, not this surface — a body READING a delegated run is unaffected, and only a hand-written DelegateFn double stops compiling.",
+      "19": "Collateral: ToolContext gains a REQUIRED `random` field — the seam a tool reaches for instead of `Math.random`, so what a tool drew is something a spec can state. Reachable from this capability report, and required rather than optional because it is always present at run time and an optional one would push a `??` to every call site. Code that hand-builds a ToolContext therefore stops compiling, which is what `createToolContext` exists to prevent; dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "step": {
-    "current": 12,
-    "supported": [11, 12],
+    "current": 13,
+    "supported": [11, 13],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -151,7 +165,8 @@
       "7": "Renamed for naming consistency (API naming review): the two bare English verbs on this subpath took the module's own step prefix (emit -> stepEmit, report -> stepReport). mapConcurrent, isTransientStatus, retryAfter, encodeWav and wavHeader stay bare deliberately.",
       "8": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
       "9": "Additive: the step vocabulary gains `stepDelegate`, the LOOP beside `stepGenerate`'s one-shot — a published slot a host fills with the same `createSubagentRunner` `ctx.delegate` runs on. No existing step signature moved and nothing must be set, so epoch 9 would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "10": "mapSettled/partitionSettled and the Settled union join mapConcurrent: the same bounded fan-out with per-item failure isolated into a value, which two templates had composed by hand. Additive only — no signature moved and nothing must be set, so the previous epoch would in fact still compile. Dropped rather than retained because no frozen example exists for it and the value of one is a promise to external consumers this package does not yet have; the addition is recorded in the changeset and the new epoch is the one authors write against."
+      "10": "mapSettled/partitionSettled and the Settled union join mapConcurrent: the same bounded fan-out with per-item failure isolated into a value, which two templates had composed by hand. Additive only — no signature moved and nothing must be set, so the previous epoch would in fact still compile. Dropped rather than retained because no frozen example exists for it and the value of one is a promise to external consumers this package does not yet have; the addition is recorded in the changeset and the new epoch is the one authors write against.",
+      "12": "The WAV READ side joins the write side: parseWav plus WavFormat, UnsupportedRecordingError and the three derived helpers (blockAlign, bytesPerSecond, offsetToMs). Additive — encodeWav/wavHeader/pcmDurationMs are untouched, so the previous epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "step-errors": {
@@ -181,8 +196,8 @@
     }
   },
   "subagent": {
-    "current": 18,
-    "supported": [13, 16, 17, 18],
+    "current": 19,
+    "supported": [13, 16, 17, 19],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
@@ -197,12 +212,13 @@
       "11": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
       "12": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "14": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
-      "15": "SubagentDef gains four OPTIONAL fields (description, expectedOutput, guardrail, maxRetries) and DelegateResult gains two REQUIRED ones (revisions, accepted) plus an optional complaint, alongside the roster's DELEGATE_TOOL_NAME/SubagentRoster and the guardrail vocabulary. A caller that only READS a delegated run still compiles; one that CONSTRUCTS a DelegateResult — which is what a hand-written DelegateFn test double does — does not, and that is the change being made rather than an accident of it. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "15": "SubagentDef gains four OPTIONAL fields (description, expectedOutput, guardrail, maxRetries) and DelegateResult gains two REQUIRED ones (revisions, accepted) plus an optional complaint, alongside the roster's DELEGATE_TOOL_NAME/SubagentRoster and the guardrail vocabulary. A caller that only READS a delegated run still compiles; one that CONSTRUCTS a DelegateResult — which is what a hand-written DelegateFn test double does — does not, and that is the change being made rather than an accident of it. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "18": "Collateral: ToolContext gains a REQUIRED `random` field — the seam a tool reaches for instead of `Math.random`, so what a tool drew is something a spec can state. Reachable from this capability report, and required rather than optional because it is always present at run time and an optional one would push a `??` to every call site. Code that hand-builds a ToolContext therefore stops compiling, which is what `createToolContext` exists to prevent; dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "testing": {
-    "current": 31,
-    "supported": [27, 28, 29, 30, 31],
+    "current": 32,
+    "supported": [27, 28, 29, 30, 32],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -229,12 +245,13 @@
       "23": "Collateral, and the same shape as the epoch 18 drop above: this report names AgentDef through deployedAgent's ToolBearingAgent, and AgentDef gained one OPTIONAL field, telephony — the carrier allow-list that decides whether an agent serves WS /phone. Additive: no caller must set it, no test helper's signature reads it, and nothing written at epoch 23 stops compiling. Dropped rather than retained because this surface has no external consumers and freezing 78 stub helpers to record a field none of them touches would be an example written for the gate rather than for a reader. The field itself IS frozen, at aai:agent, which is the capability that owns it.",
       "24": "stubDelegate's envelope follows DelegateResult: a staged reply may now carry revisions and a complaint (whose presence IS the rejection), and every route answers accepted/revisions. A spec that only asserts on text is unaffected; one that toEqual()s a whole delegated result is not, which is the same drop aai:subagent records one surface over.",
       "25": "Collateral: this capability's report names AgentDef, which gained one OPTIONAL field (dialogs) plus the AnyDialog its element type needs. The testing surface itself did not move and epoch 25 would in fact still compile. Dropped rather than retained because the SDK has no external consumers, and because a frozen example proving it would have to import every name the epoch promises — a coverage dump rather than a representative authoring example.",
-      "26": "Additive: stubStepDelegate and installStubStepDelegate publish a fake runner into the stepDelegate slot, so an exported step that delegates is drivable — the slot THROWS unpublished, deliberately, which makes this the only way to test one. No existing helper's signature moved, so epoch 26 would in fact still compile. Dropped rather than retained for the reason every prior entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+      "26": "Additive: stubStepDelegate and installStubStepDelegate publish a fake runner into the stepDelegate slot, so an exported step that delegates is drivable — the slot THROWS unpublished, deliberately, which makes this the only way to test one. No existing helper's signature moved, so epoch 26 would in fact still compile. Dropped rather than retained for the reason every prior entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
+      "31": "createToolContext supplies the new required ToolContext.random, defaulting to a SEEDED source rather than Math.random so a spec that never mentions randomness is still deterministic. ToolContext gains a REQUIRED `random` field — the seam a tool reaches for instead of `Math.random`, so what a tool drew is something a spec can state. Reachable from this capability report, and required rather than optional because it is always present at run time and an optional one would push a `??` to every call site. Code that hand-builds a ToolContext therefore stops compiling, which is what `createToolContext` exists to prevent; dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "tool": {
-    "current": 18,
-    "supported": [14, 17, 18],
+    "current": 19,
+    "supported": [14, 17, 19],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
@@ -250,7 +267,8 @@
       "12": "Collateral: this report names ToolContext.workflows, whose WorkflowDef/WorkflowCtx parameter types moved. Additive: the schema options and WorkflowDef.output are all optional, so the superseded epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty, matching every prior epoch entry here.",
       "13": "Pre-release: StandardSchemaIssue gains a second OPTIONAL vendor field, `issues` (the nested cause formatSchemaIssues reads to recover a record key’s own message, which zod hides one level down), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "15": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
-      "16": "Collateral: this capability's report names ToolContext.delegate, so DelegateResult's two new required fields (revisions, accepted) reach it. The change is the subagent guardrail, not this surface — a body READING a delegated run is unaffected, and only a hand-written DelegateFn double stops compiling."
+      "16": "Collateral: this capability's report names ToolContext.delegate, so DelegateResult's two new required fields (revisions, accepted) reach it. The change is the subagent guardrail, not this surface — a body READING a delegated run is unaffected, and only a hand-written DelegateFn double stops compiling.",
+      "18": "orFail/failable join toolFailure and isToolFailure: the forwarding half of the T | ToolFailure union, so a chain of lookups is written once rather than guarded per step. Additive on its own. ToolContext gains a REQUIRED `random` field — the seam a tool reaches for instead of `Math.random`, so what a tool drew is something a spec can state. Reachable from this capability report, and required rather than optional because it is always present at run time and an optional one would push a `??` to every call site. Code that hand-builds a ToolContext therefore stops compiling, which is what `createToolContext` exists to prevent; dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "transcribe": {
@@ -279,10 +297,11 @@
     }
   },
   "utils": {
-    "current": 3,
-    "supported": [1, 3],
+    "current": 4,
+    "supported": [1, 4],
     "dropped": {
-      "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds."
+      "2": "Parameter names only (API parameter naming review, part 2): the options bag is `options` everywhere it was `opts`, plus the per-signature fixes that review found — `WorkflowClient.get` and `EvalWorkflows.settle` take `workflow` rather than the preposition `of`, `LogFn` takes `message`, `RuntimeOptions.onToolResult` takes `message`, `ServerSession.command` takes `command`, `ClientSink.event` takes `event`, `registerChannelHandler` takes `handler` rather than `kind` (its argument is the whole handler, not a tag), `responseErrorMessage` takes `response`, `createRunSnapshot` takes `overrides`, `mapConcurrent` takes `width` (the module doc distinguishes the window from the concurrency), `stepTranscribePoll` takes `transcriptId` (it is not the `uploadId` its neighbour takes), `slugifyName` takes `(name, maxLength)`, `decodeWorkspaceText` takes `bytes`, and the eval mode gates take `hostEnv` like the credential readers they delegate to. No export, signature type or behaviour moved, and TypeScript parameters are positional, so the superseded epoch compiles unchanged — but the names are in the report, so the hash moves. Dropped rather than retained for the reason every such entry here gives: with no external consumers a frozen example would be evidence for a promise nobody holds.",
+      "3": "roundMoney joins the narration formatters: the cent-safe rounding that shares formatMoney's toFixed(2) basis, so a total cannot compare as one number and print as another. Additive only. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "workflow": {

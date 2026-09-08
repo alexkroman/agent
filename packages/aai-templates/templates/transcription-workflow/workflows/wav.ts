@@ -43,6 +43,14 @@
  *   so they keep naming the `ffmpeg` line that fixes the file.
  */
 
+import {
+  blockAlign,
+  bytesPerSecond,
+  offsetToMs,
+  UnsupportedRecordingError,
+  type WavFormat,
+} from "@alexkroman1/aai/step";
+
 /**
  * What the sync endpoint will accept in one request.
  *
@@ -125,16 +133,29 @@ export const HEADER_PROBE_BYTES = 64 * 1024;
  */
 export const MAX_BYTES_PER_SECOND = MAX_SEGMENT_BYTES / (SEGMENT_OVERLAP_SECONDS + 1);
 
-/** A parsed linear-PCM WAV header, plus where its samples live. */
-export type WavFormat = {
-  sampleRate: number;
-  channels: number;
-  bitsPerSample: number;
-  /** Byte offset of the first sample. */
-  dataStart: number;
-  /** Byte offset one past the last sample. */
-  dataEnd: number;
-};
+/**
+ * The WAV reading is the SDK's — `@alexkroman1/aai/step` publishes `parseWav`,
+ * the chunk walk behind it, `WavFormat`, `UnsupportedRecordingError` and the
+ * three derived arithmetic helpers.
+ *
+ * ~110 lines lived here, and none of it was ever about transcription: it is the
+ * RIFF container, which is the same everywhere and is got wrong the same way
+ * everywhere. Re-exported under the same names so the rest of this template and
+ * its spec read unchanged.
+ *
+ * What stayed is this desk's POLICY, which the SDK deliberately has no opinion
+ * about: {@link MAX_BYTES_PER_SECOND} (a cap that exists because of the sync
+ * endpoint's request size, checked in {@link assertCuttable} below) and
+ * {@link planSegments}.
+ */
+export {
+  blockAlign,
+  bytesPerSecond,
+  offsetToMs,
+  parseWav,
+  UnsupportedRecordingError,
+  type WavFormat,
+} from "@alexkroman1/aai/step";
 
 /** One request's worth of audio, addressed as a byte range of the source. */
 export type Segment = {
@@ -150,119 +171,23 @@ export type Segment = {
   endMs: number;
 };
 
-/** Raised for a recording this template cannot cut. Always terminal. */
-export class UnsupportedRecordingError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "UnsupportedRecordingError";
-  }
-}
-
-/** Bytes one sample frame occupies — all channels of one instant. */
-export function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number {
-  return (format.channels * format.bitsPerSample) / 8;
-}
-
-/** Bytes of audio per second of wall clock. */
-export function bytesPerSecond(
-  format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">,
-): number {
-  return blockAlign(format) * format.sampleRate;
-}
-
-/** Where a byte offset falls in the recording. */
-export function offsetToMs(format: WavFormat, offset: number): number {
-  return Math.round(((offset - format.dataStart) / bytesPerSecond(format)) * 1000);
-}
-
-/** Four bytes read as ASCII — a RIFF chunk id. */
-function chunkId(bytes: Uint8Array, at: number): string {
-  return String.fromCharCode(...bytes.subarray(at, at + 4));
-}
-
 /**
- * Read a WAV header out of the first bytes of a recording.
+ * Refuse a recording this desk cannot cut into requests the sync endpoint takes.
  *
- * `totalBytes` is the size of the whole file, which the header cannot be trusted
- * for: a WAV written by a streaming encoder declares `0` or `0xFFFFFFFF` for its
- * data length because the length was not known when the header went out, and a
- * truncated download declares more than it holds. So the sample range is the
- * intersection of what the header claims and what the file actually has.
- *
- * @param head - The start of the file. Must reach past the `data` chunk's
- *   header — {@link parseWav} walks the chunk list, and a file with a large
- *   `LIST` or `bext` chunk in front of its samples pushes that further than the
- *   canonical 44 bytes.
- * @param totalBytes - The size of the whole file, from `Content-Range` or
- *   `Content-Length`.
+ * The SDK's {@link parseWav} refuses what is not readable WAV; this refuses what
+ * is readable and still too heavy, which is a property of the ENDPOINT rather
+ * than of the container — see {@link MAX_BYTES_PER_SECOND}. Kept as a separate
+ * pass so `normalize.ts` can ask the two questions independently: a file that
+ * only fails HERE is one downsampling fixes.
  */
-export function parseWav(head: Uint8Array, totalBytes: number): WavFormat {
-  if (head.length < 12 || chunkId(head, 0) !== "RIFF" || chunkId(head, 8) !== "WAVE") {
+export function assertCuttable(format: WavFormat): WavFormat {
+  const perSecond = bytesPerSecond(format);
+  if (perSecond > MAX_BYTES_PER_SECOND) {
     throw new UnsupportedRecordingError(
-      "That is not a WAV file. This desk cuts linear-PCM WAV by byte offset, so a compressed " +
-        "recording has to be converted first (`ffmpeg -i in.m4a -c:a pcm_s16le out.wav`).",
+      `That WAV declares ${format.sampleRate} Hz across ${format.channels} channels at ${format.bitsPerSample} bits — ${perSecond} bytes a second, past the ${MAX_BYTES_PER_SECOND} this desk can cut into ${MAX_SEGMENT_BYTES}-byte requests.`,
     );
   }
-  const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
-  let fmt: Pick<WavFormat, "sampleRate" | "channels" | "bitsPerSample"> | undefined;
-
-  // The chunk list. Each entry is a 4-byte id, a 4-byte little-endian length,
-  // and a payload padded to an even length — the padding byte is not counted by
-  // the length, which is the off-by-one this loop exists to get right once.
-  for (let at = 12; at + 8 <= head.length; ) {
-    const id = chunkId(head, at);
-    const size = view.getUint32(at + 4, true);
-    const payload = at + 8;
-
-    if (id === "fmt " && payload + 16 <= head.length) {
-      const encoding = view.getUint16(payload, true);
-      // 1 is WAVE_FORMAT_PCM. 0xFFFE is WAVE_FORMAT_EXTENSIBLE, whose real
-      // encoding lives in a GUID further in; refused rather than guessed,
-      // because guessing wrong produces noise that transcribes as words.
-      if (encoding !== 1) {
-        throw new UnsupportedRecordingError(
-          `That WAV holds encoding ${encoding}, not linear PCM — re-encode it with \`-c:a pcm_s16le\`.`,
-        );
-      }
-      fmt = {
-        channels: view.getUint16(payload + 2, true),
-        sampleRate: view.getUint32(payload + 4, true),
-        bitsPerSample: view.getUint16(payload + 14, true),
-      };
-    } else if (id === "data") {
-      if (!fmt)
-        throw new UnsupportedRecordingError("That WAV has no `fmt ` chunk before its data.");
-      if (blockAlign(fmt) <= 0) {
-        throw new UnsupportedRecordingError(
-          `That WAV declares ${fmt.channels} channels at ${fmt.bitsPerSample} bits — nothing to cut.`,
-        );
-      }
-      // The rate is validated HERE, beside the encoding and the block align,
-      // because everything downstream divides by it — see
-      // {@link MAX_BYTES_PER_SECOND} for the two loops a bad one hangs.
-      if (fmt.sampleRate <= 0) {
-        throw new UnsupportedRecordingError(
-          "That WAV declares a sample rate of 0, so nothing in it can be given a timestamp.",
-        );
-      }
-      const perSecond = bytesPerSecond(fmt);
-      if (perSecond > MAX_BYTES_PER_SECOND) {
-        throw new UnsupportedRecordingError(
-          `That WAV declares ${fmt.sampleRate} Hz across ${fmt.channels} channels at ${fmt.bitsPerSample} bits — ${perSecond} bytes a second, past the ${MAX_BYTES_PER_SECOND} this desk can cut into ${MAX_SEGMENT_BYTES}-byte requests.`,
-        );
-      }
-      // See the doc above: `0` and `0xFFFFFFFF` both mean "unknown", and any
-      // declared length is capped by what was actually served.
-      const declared = size === 0 || size === 0xff_ff_ff_ff ? Number.POSITIVE_INFINITY : size;
-      return { ...fmt, dataStart: payload, dataEnd: Math.min(payload + declared, totalBytes) };
-    }
-
-    at = payload + size + (size % 2);
-  }
-
-  throw new UnsupportedRecordingError(
-    `No \`data\` chunk in the first ${head.length} bytes of that WAV — its header is longer than this desk probes.`,
-  );
+  return format;
 }
 
 /** Round an offset down to a frame boundary, so a cut never lands mid-sample. */

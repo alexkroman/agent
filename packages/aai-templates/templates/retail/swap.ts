@@ -6,7 +6,7 @@
  * See `cancel.ts` for why every mutating action is split that way.
  */
 
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { failable, isToolFailure, orFail, type ToolFailure } from "@alexkroman1/aai";
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { resolveOrder } from "./resolve.ts";
 import type { Order, OrderItem, RetailState, User, Variant } from "./shared.ts";
@@ -155,16 +155,17 @@ export function toSwapLines(plan: SwapPlan): SwapLine[] {
  * Gate the price difference on the chosen payment method. Only a gift card has
  * a balance to run out of; a negative difference is a refund and never gated.
  */
-export function assertCanCoverDiff(user: User, methodId: string, diff: number): ToolFailure | null {
-  const method = findPaymentMethod(user, methodId);
-  if (isToolFailure(method)) return method;
-  if (isGiftCard(method) && method.balance < diff) {
-    return {
-      error: `Gift card ${methodId}'s balance (${formatMoney(method.balance)}) does not cover the ${formatMoney(diff)} difference. Ask for another payment method.`,
-    };
-  }
-  return null;
-}
+export const assertCanCoverDiff = failable(
+  (user: User, methodId: string, diff: number): ToolFailure | null => {
+    const method = orFail(findPaymentMethod(user, methodId));
+    if (isGiftCard(method) && method.balance < diff) {
+      return {
+        error: `Gift card ${methodId}'s balance (${formatMoney(method.balance)}) does not cover the ${formatMoney(diff)} difference. Ask for another payment method.`,
+      };
+    }
+    return null;
+  },
+);
 
 /** Apply validated lines. Each takes its OWN new option's price and options —
  *  see the module note on tau2's leaked loop variable. */
@@ -202,45 +203,43 @@ export interface ModifyItemsPlan {
   paymentMethodId: string;
 }
 
-export function planModifyItems(
-  state: RetailState,
-  spokenOrderId: string,
-  itemIds: string[],
-  newItemIds: string[],
-  paymentMethodId: string,
-): ModifyItemsPlan | ToolFailure {
-  const user = authenticatedUser(state);
-  if (isToolFailure(user)) return user;
+export const planModifyItems = failable(
+  (
+    state: RetailState,
+    spokenOrderId: string,
+    itemIds: string[],
+    newItemIds: string[],
+    paymentMethodId: string,
+  ): ModifyItemsPlan | ToolFailure => {
+    const user = orFail(authenticatedUser(state));
+    const order = orFail(resolveOrder(state, spokenOrderId));
 
-  const order = resolveOrder(state, spokenOrderId);
-  if (isToolFailure(order)) return order;
+    // Exactly 'pending'. A 'pending (item modified)' order has already used its
+    // one modification, which is what makes this action terminal.
+    if (order.status !== "pending") {
+      return {
+        error: `Order ${order.order_id} is ${order.status}. Items can only be changed while an order is exactly 'pending', and only once.`,
+      };
+    }
 
-  // Exactly 'pending'. A 'pending (item modified)' order has already used its
-  // one modification, which is what makes this action terminal.
-  if (order.status !== "pending") {
+    const plan = orFail(
+      planItemSwap(state, order, itemIds, newItemIds, { requireDifferent: true }),
+    );
+    orFail(assertCanCoverDiff(user, paymentMethodId, plan.diff));
+
+    const lines = toSwapLines(plan);
     return {
-      error: `Order ${order.order_id} is ${order.status}. Items can only be changed while an order is exactly 'pending', and only once.`,
+      readBack:
+        `swap ${lines.map(describeLine).join(", and ")} on order ${order.order_id}, ` +
+        `with ${describeDiff(plan.diff, paymentMethodId)} — and this is the ONE change that order ` +
+        "allows: after it, it can no longer be cancelled or modified by anyone",
+      orderId: order.order_id,
+      lines,
+      diff: plan.diff,
+      paymentMethodId,
     };
-  }
-
-  const plan = planItemSwap(state, order, itemIds, newItemIds, { requireDifferent: true });
-  if (isToolFailure(plan)) return plan;
-
-  const blocked = assertCanCoverDiff(user, paymentMethodId, plan.diff);
-  if (blocked) return blocked;
-
-  const lines = toSwapLines(plan);
-  return {
-    readBack:
-      `swap ${lines.map(describeLine).join(", and ")} on order ${order.order_id}, ` +
-      `with ${describeDiff(plan.diff, paymentMethodId)} — and this is the ONE change that order ` +
-      "allows: after it, it can no longer be cancelled or modified by anyone",
-    orderId: order.order_id,
-    lines,
-    diff: plan.diff,
-    paymentMethodId,
-  };
-}
+  },
+);
 
 export function applyModifyItems(state: RetailState, plan: ModifyItemsPlan) {
   const order = state.store.orders[plan.orderId];
@@ -287,45 +286,43 @@ export interface ExchangePlan {
   paymentMethodId: string;
 }
 
-export function planExchange(
-  state: RetailState,
-  spokenOrderId: string,
-  itemIds: string[],
-  newItemIds: string[],
-  paymentMethodId: string,
-): ExchangePlan | ToolFailure {
-  const user = authenticatedUser(state);
-  if (isToolFailure(user)) return user;
+export const planExchange = failable(
+  (
+    state: RetailState,
+    spokenOrderId: string,
+    itemIds: string[],
+    newItemIds: string[],
+    paymentMethodId: string,
+  ): ExchangePlan | ToolFailure => {
+    const user = orFail(authenticatedUser(state));
+    const order = orFail(resolveOrder(state, spokenOrderId));
 
-  const order = resolveOrder(state, spokenOrderId);
-  if (isToolFailure(order)) return order;
+    if (order.status !== "delivered") {
+      return {
+        error: `Order ${order.order_id} is ${order.status}. Only a delivered order can be exchanged, and only once.`,
+      };
+    }
 
-  if (order.status !== "delivered") {
+    // requireDifferent is false: a zero-difference line is harmless on a
+    // delivered order, and refusing one would reject a caller who listed every
+    // item and changed their mind about only some.
+    const plan = orFail(
+      planItemSwap(state, order, itemIds, newItemIds, { requireDifferent: false }),
+    );
+    orFail(assertCanCoverDiff(user, paymentMethodId, plan.diff));
+
+    const lines = toSwapLines(plan);
     return {
-      error: `Order ${order.order_id} is ${order.status}. Only a delivered order can be exchanged, and only once.`,
+      readBack:
+        `exchange ${lines.map(describeLine).join(", and ")} on order ${order.order_id}, ` +
+        `with ${describeDiff(plan.diff, paymentMethodId)}`,
+      orderId: order.order_id,
+      lines,
+      diff: plan.diff,
+      paymentMethodId,
     };
-  }
-
-  // requireDifferent is false: a zero-difference line is harmless on a
-  // delivered order, and refusing one would reject a caller who listed every
-  // item and changed their mind about only some.
-  const plan = planItemSwap(state, order, itemIds, newItemIds, { requireDifferent: false });
-  if (isToolFailure(plan)) return plan;
-
-  const blocked = assertCanCoverDiff(user, paymentMethodId, plan.diff);
-  if (blocked) return blocked;
-
-  const lines = toSwapLines(plan);
-  return {
-    readBack:
-      `exchange ${lines.map(describeLine).join(", and ")} on order ${order.order_id}, ` +
-      `with ${describeDiff(plan.diff, paymentMethodId)}`,
-    orderId: order.order_id,
-    lines,
-    diff: plan.diff,
-    paymentMethodId,
-  };
-}
+  },
+);
 
 export function applyExchange(state: RetailState, plan: ExchangePlan) {
   const order = state.store.orders[plan.orderId];

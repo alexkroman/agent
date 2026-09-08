@@ -147,6 +147,48 @@ const nearlyFull = guides
 const pct = (size) => Math.round((size / MAX_CHARS) * 100);
 const num = (n) => n.toLocaleString("en-US");
 
+/**
+ * How many of a guide's biggest sections to name when it is nearly full.
+ *
+ * Enough to see where the budget actually went, few enough to read at a glance.
+ * Five covers the majority of every guide measured here — `scaffold/CLAUDE.md`'s
+ * top section alone is a third of it.
+ */
+const TOP_SECTIONS = 5;
+
+/**
+ * A guide's `##` sections, largest first.
+ *
+ * The remedy this gate prints is "move a section" or "cut", and both are
+ * decisions about WHICH section — so a report that gives only a total leaves
+ * the author to measure by hand, which is what happened: one session shaved
+ * prose across four passes to recover a few hundred characters, having never
+ * seen that a single section held 33% of the file. `check-file-length.mjs`
+ * already made this argument one level down ("plan the split now rather than at
+ * the cap") and prints headroom per file for it; this is the same move per
+ * section.
+ *
+ * Split on `\n## ` rather than any heading level: `###` is a subsection of a
+ * decision already made, and naming those would bury the one that matters.
+ */
+function topSections(text, limit = TOP_SECTIONS) {
+  const sections = text.split(/\n(?=## )/).map((body) => ({
+    title: (body.split("\n", 1)[0] ?? "").replace(/^#+ /, "").trim() || "(preamble)",
+    size: body.length,
+  }));
+  return sections.sort((a, b) => b.size - a.size).slice(0, limit);
+}
+
+/** The biggest sections of one guide, as report lines. */
+function sectionReport(path) {
+  const text = readFileSync(join(ROOT, path), "utf8");
+  const lines = [`    where ${path}'s characters are:`];
+  for (const { title, size } of topSections(text)) {
+    lines.push(`      ${num(size).padStart(7)}  ${pct(size).toString().padStart(3)}%  ${title}`);
+  }
+  return lines.join("\n");
+}
+
 const REMEDY =
   "Move a section into the owning package's CLAUDE.md and leave a pointer;\n" +
   'see the root AGENTS.md\'s "Package guides" table and "Updating AGENTS.md".\n' +
@@ -160,6 +202,7 @@ if (violations.length > 0) {
   );
   for (const { path, size } of violations) {
     console.error(`  ${path} — ${num(size)} chars (${pct(size)}% of cap)`);
+    console.error(sectionReport(path));
   }
   console.error(`\n${REMEDY}`);
   process.exit(1);
@@ -184,6 +227,7 @@ if (nearlyFull.length > 0) {
   );
   for (const { path, size, remaining } of nearlyFull) {
     console.warn(`  ${path} — ${num(size)} chars, only ${num(remaining)} left (${pct(size)}%)`);
+    console.warn(sectionReport(path));
   }
   console.warn(`\n${REMEDY}`);
 }

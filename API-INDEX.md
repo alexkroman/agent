@@ -253,6 +253,7 @@ each is for.
 | `Message` | `@alexkroman1/aai` |
 | `MessageList` | `@alexkroman1/aai-ui` |
 | `MessageListProps` | `@alexkroman1/aai-ui` |
+| `MintCodeOptions` | `@alexkroman1/aai` |
 | `MistralLlmOptions` | `@alexkroman1/aai/llm` |
 | `ModelOptions` | `@alexkroman1/aai/llm` |
 | `MultipartBody` | `@alexkroman1/aai/step` |
@@ -285,6 +286,7 @@ each is for.
 | `ProviderDescriptorSchema` | `@alexkroman1/aai/manifest` |
 | `ProviderEnv` | `@alexkroman1/aai-runtime` |
 | `RIME_DEFAULT_VOICE` | `@alexkroman1/aai/tts` |
+| `RandomSource` | `@alexkroman1/aai` |
 | `ReadUploadOptions` | `@alexkroman1/aai/step` |
 | `ReadUploadToFileOptions` | `@alexkroman1/aai/step-files` |
 | `ReadyConfig` | `@alexkroman1/aai/protocol` |
@@ -523,6 +525,7 @@ each is for.
 | `UPLOAD_STORAGE_KEY_ENV` | `@alexkroman1/aai-runtime` |
 | `UPLOAD_STORAGE_URL_ENV` | `@alexkroman1/aai-runtime` |
 | `Unsubscribe` | `@alexkroman1/aai-runtime` |
+| `UnsupportedRecordingError` | `@alexkroman1/aai/step` |
 | `UntypedJsonBody` | `@alexkroman1/aai/tools` |
 | `UploadBackend` | `@alexkroman1/aai-runtime` |
 | `UploadBody` | `@alexkroman1/aai/workflow-api` |
@@ -568,6 +571,7 @@ each is for.
 | `WaitForSchemaOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
 | `WakeUpOptions` | `@alexkroman1/aai/workflow-api` |
 | `WavEncodeOptions` | `@alexkroman1/aai/ffmpeg` |
+| `WavFormat` | `@alexkroman1/aai/step` |
 | `WdkAdapter` | `@alexkroman1/aai-runtime` |
 | `WdkRunRecord` | `@alexkroman1/aai-runtime` |
 | `WdkStreamOptions` | `@alexkroman1/aai-runtime` |
@@ -613,6 +617,7 @@ each is for.
 | `WriteUploadOptions` | `@alexkroman1/aai/step` |
 | `XAILlmOptions` | `@alexkroman1/aai/llm` |
 | `aaiAgentPlugin` | `@alexkroman1/aai/testing/vite` |
+| `addDays` | `@alexkroman1/aai` |
 | `agent` | `@alexkroman1/aai` |
 | `agentConfigWarnings` | `@alexkroman1/aai/manifest` |
 | `agentToolsToSchemas` | `@alexkroman1/aai/manifest` |
@@ -624,12 +629,15 @@ each is for.
 | `assemblyAITts` | `@alexkroman1/aai/tts` |
 | `assertPipelineTuning` | `@alexkroman1/aai/manifest` |
 | `assertSilencePolicy` | `@alexkroman1/aai/manifest` |
+| `blockAlign` | `@alexkroman1/aai/step` |
 | `buildClient` | `@alexkroman1/aai-cli/client-bundler` |
 | `buildClientConfig` | `@alexkroman1/aai/protocol` |
 | `buildReadyConfig` | `@alexkroman1/aai/protocol` |
 | `buildWorker` | `@alexkroman1/aai-cli/worker-bundler` |
+| `bytesPerSecond` | `@alexkroman1/aai/step` |
 | `carrierByName` | `@alexkroman1/aai-runtime` |
 | `cartesiaTts` | `@alexkroman1/aai/tts` |
+| `clockTime` | `@alexkroman1/aai` |
 | `commandedBuiltins` | `@alexkroman1/aai/testing` |
 | `completedOutput` | `@alexkroman1/aai-runtime/eval` |
 | `countWords` | `@alexkroman1/aai/utils` |
@@ -649,6 +657,7 @@ each is for.
 | `createRunSnapshot` | `@alexkroman1/aai/testing` |
 | `createRuntime` | `@alexkroman1/aai-runtime` |
 | `createRuntimeServer` | `@alexkroman1/aai-runtime` |
+| `createSeededRandom` | `@alexkroman1/aai` |
 | `createStubSttOpener` | `@alexkroman1/aai-runtime/eval` |
 | `createStubTtsOpener` | `@alexkroman1/aai-runtime/eval` |
 | `createStubWorkflows` | `@alexkroman1/aai/testing` |
@@ -661,6 +670,7 @@ each is for.
 | `createWorkflowApiClient` | `@alexkroman1/aai/workflow-api` |
 | `createWorkflowContext` | `@alexkroman1/aai/testing` |
 | `customEventsIn` | `@alexkroman1/aai-runtime/eval` |
+| `daysBetween` | `@alexkroman1/aai` |
 | `decodeHtmlEntities` | `@alexkroman1/aai/utils` |
 | `decodeWorkspaceText` | `@alexkroman1/aai/workspace-files` |
 | `deepgramStt` | `@alexkroman1/aai/stt` |
@@ -693,6 +703,7 @@ each is for.
 | `expectToolOk` | `@alexkroman1/aai/testing` |
 | `explainChannelFailure` | `@alexkroman1/aai/channels` |
 | `explainSlackChannelFailure` | `@alexkroman1/aai/channels` |
+| `failable` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `fetchClientConfig` | `@alexkroman1/aai-ui` |
 | `fetchJson` | `@alexkroman1/aai/tools` |
 | `ffmpegBaseArgs` | `@alexkroman1/aai/ffmpeg` |
@@ -714,7 +725,9 @@ each is for.
 | `installStubTranscribe` | `@alexkroman1/aai/testing/vitest` |
 | `installStubUploads` | `@alexkroman1/aai/testing/vitest` |
 | `installStubWorkflows` | `@alexkroman1/aai/testing/vitest` |
+| `isClockTime` | `@alexkroman1/aai` |
 | `isFfmpegError` | `@alexkroman1/aai/ffmpeg` |
+| `isIsoDate` | `@alexkroman1/aai` |
 | `isLocalOnlyFile` | `@alexkroman1/aai/workspace-files` |
 | `isLockfile` | `@alexkroman1/aai/workspace-files` |
 | `isRecord` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
@@ -723,16 +736,19 @@ each is for.
 | `isTerminal` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
 | `isToolFailure` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `isTransientStatus` | `@alexkroman1/aai/step` |
+| `isoDate` | `@alexkroman1/aai` |
 | `lastStateIn` | `@alexkroman1/aai-runtime/eval` |
 | `lenientParse` | `@alexkroman1/aai/protocol` |
 | `loadBuiltAgent` | `@alexkroman1/aai-cli/start` |
 | `mapConcurrent` | `@alexkroman1/aai/step` |
 | `mapSettled` | `@alexkroman1/aai/step` |
 | `mcpToolName` | `@alexkroman1/aai` |
+| `mintCode` | `@alexkroman1/aai` |
 | `mistralLlm` | `@alexkroman1/aai/llm` |
 | `mountClient` | `@alexkroman1/aai-ui` |
 | `mountPage` | `@alexkroman1/aai-ui` |
 | `multipartBody` | `@alexkroman1/aai/step` |
+| `offsetToMs` | `@alexkroman1/aai/step` |
 | `omitUndefined` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `openAILlm` | `@alexkroman1/aai/llm` |
 | `openAIS2s` | `@alexkroman1/aai/s2s` |
@@ -740,18 +756,22 @@ each is for.
 | `openEvalTextAgent` | `@alexkroman1/aai-runtime/eval` |
 | `openEvalWorkflows` | `@alexkroman1/aai-runtime/eval` |
 | `openRouterLlm` | `@alexkroman1/aai/llm` |
+| `orFail` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `pageMetadata` | `@alexkroman1/aai/html` |
 | `parseFeed` | `@alexkroman1/aai/html` |
 | `parseSchemaInput` | `@alexkroman1/aai/testing` |
 | `parseToolInput` | `@alexkroman1/aai/testing` |
+| `parseWav` | `@alexkroman1/aai/step` |
 | `partKey` | `@alexkroman1/aai-runtime` |
 | `partitionSettled` | `@alexkroman1/aai/step` |
 | `partsOf` | `@alexkroman1/aai-runtime` |
 | `pcmDurationMs` | `@alexkroman1/aai/step` |
+| `pickOne` | `@alexkroman1/aai` |
 | `plural` | `@alexkroman1/aai/utils` |
 | `probeMedia` | `@alexkroman1/aai/ffmpeg` |
 | `procedure` | `@alexkroman1/aai` |
 | `pushCapped` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
+| `randomInt` | `@alexkroman1/aai` |
 | `readEventStream` | `@alexkroman1/aai/workflow-api` |
 | `readUploadToFile` | `@alexkroman1/aai/step-files` |
 | `registerChannelHandler` | `@alexkroman1/aai/channels` |
@@ -774,6 +794,7 @@ each is for.
 | `responseErrorMessage` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `retryAfter` | `@alexkroman1/aai/step` |
 | `rimeTts` | `@alexkroman1/aai/tts` |
+| `roundMoney` | `@alexkroman1/aai/utils` |
 | `routeStepFetch` | `@alexkroman1/aai/testing` |
 | `runCodeIn` | `@alexkroman1/aai-runtime/eval` |
 | `runCodeOutput` | `@alexkroman1/aai-runtime/eval` |
@@ -791,13 +812,17 @@ each is for.
 | `sendToChannel` | `@alexkroman1/aai/channels` |
 | `sendToChannelOrFail` | `@alexkroman1/aai/step-errors` |
 | `sessionSlot` | `@alexkroman1/aai` |
+| `shuffled` | `@alexkroman1/aai` |
 | `slackChannel` | `@alexkroman1/aai/channels` |
 | `slugifyName` | `@alexkroman1/aai/slugify` |
 | `snapshotWorkspaceFiles` | `@alexkroman1/aai/workspace-files` |
 | `sonioxStt` | `@alexkroman1/aai/stt` |
 | `spokenAlphanumeric` | `@alexkroman1/aai` |
+| `spokenDate` | `@alexkroman1/aai` |
 | `spokenDigits` | `@alexkroman1/aai` |
+| `spokenMoney` | `@alexkroman1/aai` |
 | `spokenOrdinal` | `@alexkroman1/aai` |
+| `spokenTime` | `@alexkroman1/aai` |
 | `startTelephonySession` | `@alexkroman1/aai-runtime` |
 | `startTracing` | `@alexkroman1/aai-runtime/tracing` |
 | `startTracingDetached` | `@alexkroman1/aai-runtime/tracing` |

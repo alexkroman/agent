@@ -350,6 +350,9 @@ export const ProviderDescriptorSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+type RandomSource = () => number;
+
+// @public
 type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "s2s";
 };
@@ -692,6 +695,7 @@ type ToolContext = {
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
+    random: RandomSource;
 };
 
 // @public

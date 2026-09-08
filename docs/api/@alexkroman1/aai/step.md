@@ -64,6 +64,64 @@ owns what is INSIDE a step and never the steps.
 
 ## Functions
 
+### blockAlign()
+
+```ts
+function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number;
+```
+
+Bytes one sample frame occupies — every channel of one instant.
+
+#### Parameters
+
+##### format
+
+`Pick`\<[`WavFormat`](#wavformat), `"channels"` \| `"bitsPerSample"`\>
+
+#### Returns
+
+`number`
+
+#### Example
+
+```ts
+import { blockAlign } from "@alexkroman1/aai/step";
+
+blockAlign({ channels: 1, bitsPerSample: 16 }); // 2
+blockAlign({ channels: 2, bitsPerSample: 16 }); // 4
+```
+
+***
+
+### bytesPerSecond()
+
+```ts
+function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
+```
+
+Bytes of audio per second of wall clock — the constant that converts a byte
+offset into a timestamp, and a duration into a request size.
+
+#### Parameters
+
+##### format
+
+`Pick`\<[`WavFormat`](#wavformat), `"channels"` \| `"bitsPerSample"` \| `"sampleRate"`\>
+
+#### Returns
+
+`number`
+
+#### Example
+
+```ts
+import { bytesPerSecond } from "@alexkroman1/aai/step";
+
+bytesPerSecond({ sampleRate: 16_000, channels: 1, bitsPerSample: 16 }); // 32000
+```
+
+***
+
 ### encodeWav()
 
 ```ts
@@ -325,6 +383,85 @@ which is what the `FormData` this replaces would have applied: `"` becomes
 #### Returns
 
 [`MultipartBody`](#multipartbody)
+
+***
+
+### offsetToMs()
+
+```ts
+function offsetToMs(format: WavFormat, offset: number): number;
+```
+
+Where a byte offset in the FILE falls in the recording, in milliseconds.
+
+Takes a file offset rather than a sample offset, because that is what a
+ranged read deals in — `dataStart` is subtracted here so no caller has to
+remember to.
+
+#### Parameters
+
+##### format
+
+[`WavFormat`](#wavformat)
+
+##### offset
+
+`number`
+
+#### Returns
+
+`number`
+
+***
+
+### parseWav()
+
+```ts
+function parseWav(head: Uint8Array, totalBytes: number): WavFormat;
+```
+
+Read a WAV header out of the first bytes of a recording.
+
+#### Parameters
+
+##### head
+
+`Uint8Array`
+
+The start of the file. Must reach past the `data` chunk's own
+  header: this walks the chunk list, and a file with a large `LIST` or `bext`
+  chunk ahead of its samples pushes that well past 44 bytes. 64 KiB is a
+  comfortable probe; the failure for too little is an error naming the
+  shortfall, never a wrong answer.
+
+##### totalBytes
+
+`number`
+
+The size of the whole file, from `Content-Range` or
+  `Content-Length`. Bounds `dataEnd`, because the header cannot be trusted for
+  it — see this module's doc.
+
+#### Returns
+
+[`WavFormat`](#wavformat)
+
+#### Throws
+
+for anything that is not linear-PCM WAV,
+  for a format nothing can be cut on (a zero rate, or zero bytes per frame),
+  and for a header longer than `head`.
+
+#### Example
+
+```ts
+import { blockAlign, bytesPerSecond, parseWav } from "@alexkroman1/aai/step";
+
+declare const head: Uint8Array;
+const format = parseWav(head, 1_000_000);
+const seconds = (format.dataEnd - format.dataStart) / bytesPerSecond(format);
+const frame = blockAlign(format);
+```
 
 ***
 
@@ -1884,6 +2021,45 @@ HTTP status the endpoint answered, when it answered one.
 
 ***
 
+### UnsupportedRecordingError
+
+A recording [parseWav](#parsewav) will not read.
+
+Its own class rather than a `RangeError` because every caller has to decide
+one thing about it — this is TERMINAL, no retry helps, and the recording
+needs converting — and a caller distinguishing that from a transient read
+failure needs to be able to name it.
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new UnsupportedRecordingError(message: string): UnsupportedRecordingError;
+```
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### Returns
+
+[`UnsupportedRecordingError`](#unsupportedrecordingerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+***
+
 ### UploadIncompleteError
 
 An upload that is still arriving, where the whole file was needed.
@@ -2951,6 +3127,67 @@ start: number;
 ```
 
 First byte offset returned, after clamping.
+
+***
+
+### WavFormat
+
+```ts
+type WavFormat = {
+  bitsPerSample: number;
+  channels: number;
+  dataEnd: number;
+  dataStart: number;
+  sampleRate: number;
+};
+```
+
+A WAV's `fmt ` chunk plus where its samples actually live.
+
+#### Properties
+
+##### bitsPerSample
+
+```ts
+bitsPerSample: number;
+```
+
+Bits per sample.
+
+##### channels
+
+```ts
+channels: number;
+```
+
+Interleaved channel count.
+
+##### dataEnd
+
+```ts
+dataEnd: number;
+```
+
+Byte offset one past the last readable sample: the declared data length and
+the file's real length, whichever is smaller.
+
+##### dataStart
+
+```ts
+dataStart: number;
+```
+
+Byte offset of the first sample — the END of the `data` chunk's own header,
+NOT [WAV\_HEADER\_BYTES](#wav_header_bytes). See this module's doc for what assuming 44
+costs.
+
+##### sampleRate
+
+```ts
+sampleRate: number;
+```
+
+Samples per second, as the file declares it.
 
 ***
 

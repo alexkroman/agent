@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { FLORIST_ARRANGEMENTS } from "../catalogs.ts";
 import { catalogBookingTool } from "../concierge.ts";
-import { speakUsd, spokenDate } from "../records.ts";
+import { isoDate, speakUsd, spokenDate } from "../records.ts";
 
 /** Their `order_flowers`, as one instance of the catalog factory. */
 export default catalogBookingTool({
@@ -17,7 +17,7 @@ export default catalogBookingTool({
         ...(keyof typeof FLORIST_ARRANGEMENTS)[],
       ],
     ),
-    date: z.string().describe("Delivery date, YYYY-MM-DD"),
+    date: isoDate("the delivery date"),
     deliverTo: z
       .string()
       .min(1)

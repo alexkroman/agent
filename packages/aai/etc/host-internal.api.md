@@ -816,6 +816,9 @@ export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void
 export function publishUploadReader(reader: UploadAccess | undefined): void;
 
 // @public
+type RandomSource = () => number;
+
+// @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
 // @public
@@ -1192,6 +1195,7 @@ type ToolContext = {
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
+    random: RandomSource;
 };
 
 // @public

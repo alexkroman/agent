@@ -86,7 +86,7 @@ import {
   NORMALIZED_CHANNELS,
   NORMALIZED_SAMPLE_RATE,
 } from "./downsample.ts";
-import { HEADER_PROBE_BYTES, parseWav, UnsupportedRecordingError } from "./wav.ts";
+import { assertCuttable, HEADER_PROBE_BYTES, parseWav, UnsupportedRecordingError } from "./wav.ts";
 
 // Re-exported rather than re-declared: they are still this module's vocabulary —
 // the `runFfmpeg` call below converts TO them — and they live in `downsample.ts`
@@ -236,7 +236,12 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
  */
 export function cuttable(head: Uint8Array, totalBytes: number): boolean {
   try {
-    parseWav(head, totalBytes);
+    // `assertCuttable` as well as the parse: the SDK's parser answers whether
+    // this is READABLE WAV, and this desk additionally refuses a rate dense
+    // enough that its segments would blow the sync endpoint's request cap.
+    // That second half is exactly what downsampling repairs, which is why this
+    // question has to include it.
+    assertCuttable(parseWav(head, totalBytes));
     return true;
   } catch (err: unknown) {
     if (err instanceof UnsupportedRecordingError) return false;

@@ -72,7 +72,7 @@
     "scripts/with-test-pg.mjs": 1
   },
   "rule24_toolContextField": {
-    "packages/aai/src/sdk/tool-context.ts": 10
+    "packages/aai/src/sdk/tool-context.ts": 11
   },
   "rule25_channelMessageField": {
     "packages/aai/src/sdk/channels/shared/channel-types.ts": 29

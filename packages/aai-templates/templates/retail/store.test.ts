@@ -1,5 +1,6 @@
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
 import { createToolContext, expectDialogOk, expectToolOk } from "@alexkroman1/aai/testing";
+import { formatMoney } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {
@@ -49,9 +50,19 @@ describe("session state", () => {
 
 describe("money", () => {
   test("rounds to two decimals", () => {
-    expect(money(3.005)).toBe(3.01);
     expect(money(0.1 + 0.2)).toBe(0.3);
     expect(money(-40.860_000_000_000_014)).toBe(-40.86);
+  });
+
+  test("rounds a half-cent the same way the desk PRINTS it", () => {
+    // This used to be `Math.round(n * 100) / 100`, and asserted `money(3.005)
+    // === 3.01`. The double stored for 3.005 is just under it, so `formatMoney`
+    // printed `$3.00` for the same value: the desk compared one number and read
+    // out another. `roundMoney` shares `formatMoney`'s basis, so it cannot.
+    for (const amount of [3.005, 2.675, 1.115, 19.995]) {
+      expect(formatMoney(money(amount))).toBe(formatMoney(amount));
+    }
+    expect(money(3.005)).toBe(3);
   });
 });
 

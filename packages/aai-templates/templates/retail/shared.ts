@@ -36,6 +36,21 @@ export interface Variant {
   item_id: string;
   options: Record<string, string>;
   available: boolean;
+  /**
+   * DOLLARS, as a float — this desk's money unit, stated once here because
+   * `price: number` says nothing and the two conventions in the template corpus
+   * differ: `hotel-desk` counts integer CENTS and divides on the way into
+   * `formatMoney`/`spokenMoney`, while this one counts dollars and rounds with
+   * {@link money} at each step that will be compared or stored.
+   *
+   * Integer cents is the stricter choice and what a ledger should do. Float
+   * dollars is what a catalog arrives as, and is safe here for one reason: no
+   * result of arithmetic on these is compared for equality without going
+   * through `money` first. Note where it deliberately does NOT — `planItemSwap`
+   * accumulates a raw `diff` across the loop and rounds once at the end, which
+   * is more accurate than rounding per item, and `swapOptions` sorts on a raw
+   * subtraction, where only the ORDER matters.
+   */
   price: number;
 }
 
@@ -49,6 +64,7 @@ export interface OrderItem {
   name: string;
   product_id: string;
   item_id: string;
+  /** Dollars, as a float — see {@link Variant.price} for this desk's unit. */
   price: number;
   options: Record<string, string>;
 }

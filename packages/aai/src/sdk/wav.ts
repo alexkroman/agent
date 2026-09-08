@@ -55,10 +55,18 @@
  * Resample, mix down, or convert between bit depths. It writes a header over
  * bytes it takes on trust, so `bitsPerSample` describes the samples rather
  * than requesting a conversion — the SDK ships no codec and would have to
- * grow one to honour anything else. The parse direction is likewise absent:
- * reading an arbitrary WAV means walking a chunk list with `LIST`/`bext`
- * chunks in it, which is a template's business (`transcription-workflow`'s
- * `workflows/wav.ts`) rather than a promise this makes.
+ * grow one to honour anything else.
+ *
+ * ## The parse direction is `wav-parse.ts`
+ *
+ * This module doc used to disclaim it — "reading an arbitrary WAV means walking
+ * a chunk list with `LIST`/`bext` chunks in it, which is a template's business
+ * rather than a promise this makes" — and the template that owned it is exactly
+ * why that was wrong. The chunk walk is not recording-specific knowledge; it is
+ * the RIFF container, and the failure it prevents is silent. Note especially
+ * that {@link WAV_HEADER_BYTES} is what THIS module writes and is not what a
+ * reader may assume: ffmpeg's own WAV output carries a `LIST`/`INFO` chunk and
+ * a 78-byte header. `wav-parse.ts` owns the rest.
  *
  * @module wav
  */

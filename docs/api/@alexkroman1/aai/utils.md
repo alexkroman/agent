@@ -300,6 +300,60 @@ const risks = 3;
 `Read ${1} ${plural(1, "entry", "entries")}.`; // "Read 1 entry."
 ```
 
+***
+
+### roundMoney()
+
+```ts
+function roundMoney(amount: number): number;
+```
+
+An amount snapped to whole cents — `roundMoney(0.1 + 0.2)` is `0.3`.
+
+Money in a float is money in a type that cannot represent a cent: `0.1 + 0.2`
+is `0.30000000000000004`, and a gift-card balance compared for equality
+against a price difference is then a coin toss. Every arithmetic result that
+is going to be COMPARED, summed into a running total, or stored goes through
+here.
+
+The alternative is counting in integer cents end to end, which is stricter
+and is what a ledger should do. This is for the common case a template
+actually has — dollars in a float, arriving that way from a catalog — where
+the fix is to round at each step rather than to re-unit the whole domain.
+[formatMoney](#formatmoney) rounds for DISPLAY and does not change the value, so a
+total assembled without this can print `$0.30` and still fail `=== 0.3`.
+
+**It rounds through `toFixed(2)`, not `Math.round(n * 100) / 100`**, and the
+two are not the same function. `2.675 * 100` is `267.49999999999994`, so the
+multiply-and-round spelling — the one three templates each wrote — answers
+`2.68` where `toFixed` answers `2.67`. Either is a defensible rounding of a
+value that is not really 2.675; what is not defensible is a total that
+compares as `2.68` and PRINTS as `$2.67`, which is what you get when the
+rounding here and [formatMoney](#formatmoney)'s disagree. One basis, so they cannot.
+
+Non-finite passes through unchanged: there is no nearest cent to `NaN`, and
+quietly answering `0` would hide the arithmetic that produced it.
+
+#### Parameters
+
+##### amount
+
+`number`
+
+#### Returns
+
+`number`
+
+#### Example
+
+```ts
+import { roundMoney } from "@alexkroman1/aai/utils";
+
+0.1 + 0.2; // 0.30000000000000004
+roundMoney(0.1 + 0.2); // 0.3
+roundMoney(19.995); // 20
+```
+
 ## References
 
 ### createKeyedLock
@@ -317,6 +371,12 @@ Re-exports [errorDetail](index.md#errordetail)
 ### errorMessage
 
 Re-exports [errorMessage](index.md#errormessage)
+
+***
+
+### failable
+
+Re-exports [failable](index.md#failable)
 
 ***
 
@@ -353,6 +413,12 @@ Re-exports [KeyedLockTimeoutError](index.md#keyedlocktimeouterror)
 ### omitUndefined
 
 Re-exports [omitUndefined](index.md#omitundefined)
+
+***
+
+### orFail
+
+Re-exports [orFail](index.md#orfail)
 
 ***
 

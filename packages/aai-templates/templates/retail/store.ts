@@ -1,5 +1,6 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
 import { dialog, isToolFailure, omitUndefined, sessionSlot } from "@alexkroman1/aai";
+import { roundMoney } from "@alexkroman1/aai/utils";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -22,11 +23,15 @@ import { emptyRetailState, MAX_ACTIVITY } from "./shared.ts";
  */
 const SEED = seedJson as unknown as Store;
 
-/** Round to cents. Gift-card balances and price differences are compared for
- *  equality, and raw float arithmetic makes that a coin toss. */
-export function money(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+/**
+ * Round to cents. Gift-card balances and price differences are compared for
+ * equality, and raw float arithmetic makes that a coin toss.
+ *
+ * `roundMoney`'s now. The `Math.round(n * 100) / 100` this was disagrees with
+ * `formatMoney` on a half-cent — 2.675 rounds to 2.68 here and prints as
+ * `$2.67` — so a total could compare as one number and read as another.
+ */
+export const money = roundMoney;
 
 export function isGiftCard(method: PaymentMethod): method is GiftCard {
   return method.source === "gift_card";

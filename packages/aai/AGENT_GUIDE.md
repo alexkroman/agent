@@ -2468,16 +2468,30 @@ Never hardcode secrets in agent code.
 - Keep answers to 1-3 sentences
 - No exclamation points — calm, conversational tone
 - No hedging ("It seems that", "I believe")
-- Define personality, tone, and specialty
-- Include when and how to use each tool
 
-**Three helpers for the other direction — what the caller SAID.** Speech
-arrives as words, so `@alexkroman1/aai` publishes the conversions a tool
-otherwise re-derives: `spokenDigits("four one five")` gives `"415"` for an
-order number or a phone number, `spokenOrdinal("the third one")` gives `3`, and
-`resolveOne(candidates, spoken, opts)` picks the one item a phrase meant —
-answering a `ToolFailure` the model can act on when nothing matches or several
-do, which is the case a hand-written `.find()` gets wrong.
+**Speech goes both ways, and `@alexkroman1/aai` publishes both conversions.**
+Inbound: `spokenDigits("four one five")` is `"415"`, `spokenOrdinal("the third
+one")` is `3`, and `resolveOne(candidates, spoken, opts)` picks the one item a
+phrase meant — answering a `ToolFailure` when nothing matches or several do, the
+case a hand-written `.find()` gets wrong.
+
+Outbound: an engine handed `$240.50` may read "dollar sign two hundred forty
+point five zero", and `19:30` as "nineteen thirty" — right text, wrong call.
+Render the words first: `spokenMoney(240.5)` is `"240 dollars and 50 cents"`,
+`spokenDate("2026-06-08")` is `"Monday, June 8"`, `spokenTime("18:30")` is
+`"6:30 PM"`. `mintCode("HTL")` mints a reference with no `0`/`O`, `1`/`I` or
+`L` in it — what comes back wrong read aloud.
+
+**Declare a date or a time on the SCHEMA.** `isoDate("the arrival date")` and
+`clockTime("the pickup time")` are zod fields, so the rule reaches the model
+before it calls rather than as a refusal after. `isIsoDate` refuses
+`2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a
+`YYYY-MM-DD` into a `Date` in local time.
+
+**Never call `Math.random()` in a tool** — use `ctx.random`, which a test can
+substitute, so a dice roll or a minted code is something a spec can assert.
+`randomInt`, `pickOne` and `shuffled` take it last. A WORKFLOW body wants its
+own journaled `ctx.random()` instead.
 
 Patterns by agent type:
 
