@@ -111,6 +111,7 @@ export default planFlow.tool({
             finished: true,
             step,
             result: outcome.result,
+            settled: outcome.settled,
             searches: outcome.searches,
             response: act.response,
             message: "The plan is done — give the caller the answer.",
@@ -124,9 +125,12 @@ export default planFlow.tool({
           finished: false,
           step,
           result: outcome.result,
+          settled: outcome.settled,
           searches: outcome.searches,
           remaining: act.steps,
-          message: "Report what this step found, then ask whether to carry on.",
+          message:
+            "Report what this step found — say so plainly if it is not settled — " +
+            "then ask whether to carry on.",
         };
       });
     } catch (err: unknown) {

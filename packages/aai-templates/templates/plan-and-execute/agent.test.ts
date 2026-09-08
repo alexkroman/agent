@@ -4,18 +4,34 @@ import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
+  runGuardrail,
+  type ScriptedToolContext,
   scriptedToolContext,
   stubDelegate,
+  type StubDelegateRoute,
+  type StubGenerateRoute,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { describe, expect, test, vi } from "vitest";
 
-import { executeStep, MAX_STEP_TURNS, normalizeAct, planNode } from "./procedure.ts";
-import { PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
+import {
+  executeStep,
+  executorGuardrail,
+  MAX_STEP_TURNS,
+  normalizeAct,
+  planNode,
+} from "./procedure.ts";
+import {
+  PLANNER_SYSTEM,
+  REPLANNER_SYSTEM,
+  REVISE_SYSTEM,
+  type StepAnswer,
+} from "./prompts.ts";
 import {
   MAX_PAGE_CHARS,
   MAX_PAST_STEPS,
+  MAX_REVISIONS,
   planFlow,
   planProjection,
   planSlot,

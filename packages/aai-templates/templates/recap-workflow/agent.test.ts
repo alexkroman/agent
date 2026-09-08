@@ -347,13 +347,26 @@ describe("recap_progress", () => {
 });
 
 describe("keep_transcript — the signal", () => {
+  /**
+   * A `ctx.workflows` where `signal` is the ONLY method that answers.
+   *
+   * `createStubWorkflows` (`@alexkroman1/aai/testing`) rather than the
+   * `installStubWorkflows` the rest of this file uses, and the difference is the
+   * assertion: every method it is not given REJECTS, so these three tests fail
+   * if `keep_transcript` ever reaches for a run — a `find` to locate one, a
+   * `get` to check it is still open. It needs neither, because a hook is
+   * addressed by a token both sides derive from the session, and that is the
+   * whole claim of this tool. Spread over the general stub, a stray lookup would
+   * have been answered and nothing would have said so.
+   */
+  const signalOnly = (signal: WorkflowClient["signal"]) => createStubWorkflows({ signal });
+
   test("signals the run's retention hook on the token BOTH sides derive", async () => {
     // The token is the contract. `workflows/tokens.ts` is the one place it is
     // spelled, which is what stops the body waiting on a string the tool never
     // sends — a drift whose only symptom is `signal` answering false.
-    const workflows = stubWorkflows();
     const signal = vi.fn(async () => true);
-    const ctx = createToolContext({ workflows: { ...workflows, signal } });
+    const ctx = createToolContext({ workflows: signalOnly(signal) });
     const result = await run("keep_transcript", { keep: true }, ctx);
 
     expect(signal).toHaveBeenCalledWith(retentionToken(ctx.sessionId), { keep: true });
@@ -365,7 +378,7 @@ describe("keep_transcript — the signal", () => {
     // ever signals on yes: "delete it" has to reach the run before the window
     // closes, or the caller waits two minutes for something they already said.
     const signal = vi.fn(async () => true);
-    const ctx = createToolContext({ workflows: { ...stubWorkflows(), signal } });
+    const ctx = createToolContext({ workflows: signalOnly(signal) });
     await run("keep_transcript", { keep: false }, ctx);
     expect(signal).toHaveBeenCalledWith(expect.any(String), { keep: false });
   });
@@ -374,7 +387,7 @@ describe("keep_transcript — the signal", () => {
     // The ordinary case: the window closed, or the caller answered a question
     // nobody asked.
     const signal = vi.fn(async () => false);
-    const ctx = createToolContext({ workflows: { ...stubWorkflows(), signal } });
+    const ctx = createToolContext({ workflows: signalOnly(signal) });
     const result = await run("keep_transcript", { keep: true }, ctx);
     expect(result).toMatchObject({ answered: false, note: expect.stringContaining("settled") });
   });
@@ -722,8 +735,12 @@ describe("summarize", () => {
     });
     await recapFlow({ url: "https://x/a.mp3", requestedBy: "Ada" }, ctx);
 
-    const step = ctx.steps.find((entry) => entry.name === "summarize");
-    expect(step?.maxAttempts).toBeGreaterThan(3);
+    // Against the SDK's own default rather than the literal 3 this restated:
+    // what the assertion means is "more patience than an ordinary step gets",
+    // and a repo that ever retunes the default should not have to find this
+    // line to keep the sentence true.
+    const [step] = recordedSteps(ctx, "summarize");
+    expect(step?.maxAttempts).toBeGreaterThan(DEFAULT_STEP_MAX_ATTEMPTS);
   });
 });
 
@@ -790,7 +807,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
 
     await awaitTranscript("t_1", ctx);
 
-    expect(ctx.steps.filter((entry) => entry.name === "noteSlow")).toEqual([]);
+    expect(recordedSteps(ctx, "noteSlow")).toEqual([]);
     // Eight sleeps of the declared interval — the two minutes, exactly.
     expect(ctx.slept.map((one) => one.until)).toEqual(Array.from({ length: 8 }, () => 15_000));
   });
@@ -805,7 +822,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
 
     await awaitTranscript("t_1", ctx);
 
-    expect(ctx.steps.filter((entry) => entry.name === "noteSlow")).toHaveLength(1);
+    expect(recordedSteps(ctx, "noteSlow")).toHaveLength(1);
   });
 
   // ---- The callback arm -----------------------------------------------------
@@ -917,7 +934,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
 
     await awaitTranscript("t_1", ctx, NUDGE);
 
-    const notes = ctx.steps.filter((entry) => entry.name === "noteSlow");
+    const notes = recordedSteps(ctx, "noteSlow");
     expect(notes).toHaveLength(1);
     // Attempt 2, which is one `checkTranscript` and one closed window in.
     expect(ctx.steps.slice(0, 3).map((entry) => entry.name)).toEqual([
@@ -936,7 +953,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
 
     await awaitTranscript("t_1", ctx, NUDGE);
 
-    expect(ctx.steps.filter((entry) => entry.name === "noteSlow")).toEqual([]);
+    expect(recordedSteps(ctx, "noteSlow")).toEqual([]);
   });
 });
 
@@ -1140,6 +1157,45 @@ describe("the run is DURABLE", () => {
     audio_duration: 600,
   };
 
+  /**
+   * One run of this desk's declaration, on the real engine, under the name the
+   * agent registers it by.
+   *
+   * Six tests started it with the same three arguments, and the `name` is the
+   * one that has to be right: it is what `ctx.workflow` reads and what a run
+   * record carries, so a spec that let it default would be driving a workflow
+   * called `workflow`. `WorkflowTestHandle` is what comes back — the run PLUS
+   * the four things only a test may do to it (advance a sleep, signal, expire a
+   * window, restart a dead worker) — and naming it is what lets the crash case
+   * below hand one to a helper.
+   */
+  function startRecap(
+    options: RunWorkflowOptions = {},
+  ): Promise<WorkflowTestHandle<WorkflowOutputOf<typeof recap>>> {
+    return runWorkflow(recap, INPUT, { name: "recap", ...options });
+  }
+
+  /**
+   * The journal entry one step left behind, or `undefined` when the run never
+   * reached it.
+   *
+   * `WorkflowTestRun` rather than the handle, deliberately: what these
+   * assertions read is the RUN's journaled shape, and taking the narrower type
+   * says a reader cannot restart anything from in here. `WorkflowTestStep`
+   * carries `attempts`, which is the field the crash case is about.
+   */
+  function journaledStep(
+    run: WorkflowTestRun<unknown>,
+    name: string,
+  ): WorkflowTestStep | undefined {
+    return run.steps.find((step) => step.name === name);
+  }
+
+  /** What each of a run's parks IS — an ordinary sleep, or a window's deadline. */
+  function parkKinds(sleeps: readonly SleepRecord[]): SleepRecord["kind"][] {
+    return sleeps.map((sleep) => sleep.kind);
+  }
+
   beforeEach(() => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
@@ -1147,7 +1203,7 @@ describe("the run is DURABLE", () => {
   test("submits once, then parks on the poll cadence rather than blocking", async () => {
     stubWorld([PROCESSING, DONE]);
     const started = Date.now();
-    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    const run = await startRecap();
 
     expect(run.status).toBe("running");
     // The 15s poll interval, journaled — the run is in progress and not
@@ -1160,7 +1216,7 @@ describe("the run is DURABLE", () => {
     // The claim `summarize` is a separate step for: twenty minutes of provider
     // time is already paid for, and a resume must not spend it again.
     const world = stubWorld([PROCESSING, DONE]);
-    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    const run = await startRecap();
     await run.advanceSleep();
 
     // Parked again, now on the retention gate — a hook with a deadline.
@@ -1183,13 +1239,13 @@ describe("the run is DURABLE", () => {
 
   test("an answer of KEEP leaves the transcript on the account", async () => {
     const world = stubWorld([DONE]);
-    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    const run = await startRecap();
     await run.signal(retentionToken("sess_1"), { keep: true });
 
     expect(run.status).toBe("completed");
     expect(run.output).toMatchObject({ kept: true, answered: true, requestedBy: "sess_1" });
     // No discard step reached at all, and nothing deleted.
-    expect(run.steps.map((step) => step.name)).not.toContain("discardOnDecline");
+    expect(journaledStep(run, "discardOnDecline")).toBeUndefined();
     expect(world.deletes).toEqual([]);
   });
 
@@ -1198,7 +1254,7 @@ describe("the run is DURABLE", () => {
     // an approval window, and the deadline carries no correlation id, so the
     // only public route to this outcome is to wait out two real minutes.
     const world = stubWorld([DONE]);
-    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    const run = await startRecap();
     expect(run.status).toBe("running");
 
     await run.expireWaits();
@@ -1206,7 +1262,7 @@ describe("the run is DURABLE", () => {
     // `answered: false` is the distinction the type carries: the caller did not
     // decline, they said nothing, and the desk deleted anyway.
     expect(run.output).toMatchObject({ kept: false, answered: false });
-    expect(run.steps.map((step) => step.name)).toContain("discardOnDecline");
+    expect(journaledStep(run, "discardOnDecline")).toBeDefined();
     expect(world.deletes).toHaveLength(1);
     expect(world.deletes[0]).toContain("t_1");
   });
@@ -1216,7 +1272,7 @@ describe("the run is DURABLE", () => {
     // later replay read the same branch — the divergence `HookRecord.closed`
     // exists to prevent.
     stubWorld([DONE]);
-    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    const run = await startRecap();
     await run.expireWaits();
     expect(run.output).toMatchObject({ kept: false });
 
@@ -1242,12 +1298,12 @@ describe("the run is DURABLE", () => {
       return { status: 200, body: DONE };
     });
 
-    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    const run = await startRecap();
     expect(run.status).toBe("failed");
     expect(run.error).toMatch(/JSON/i);
     // The undo ran, as a STEP — which is what makes a crash during the unwind
     // resume with the finished ones replayed rather than run twice.
-    expect(run.steps.map((step) => step.name)).toContain("discardTranscript");
+    expect(journaledStep(run, "discardTranscript")).toBeDefined();
     expect(deletes).toHaveLength(1);
   });
 });

@@ -1,30 +1,81 @@
-import type { ToolContext, ToolDef, ToolInputSchema } from "@alexkroman1/aai";
-import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, expectToolOk } from "@alexkroman1/aai/testing";
-import { describe, expect, test, vi } from "vitest";
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
+import type { InferToolInput, RandomSource, SlotHolder } from "@alexkroman1/aai";
+import { createSeededRandom, isToolFailure } from "@alexkroman1/aai";
+import {
+  createToolContext,
+  expectDialogRefused,
+  expectToolOk,
+  parseToolInput,
+  toolInputIssues,
+  toolRunner,
+} from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
 import {
   applyConsequences,
   DEFAULT_STATE,
+  findClock,
   type GameState,
   gameSlot,
   gameView,
   inCrisis,
   isGameOver,
+  MAX_LOG_ENTRIES,
   MAX_NPCS,
   MIN_MOMENTUM,
   makeNpc,
   rollAction,
   storyFlow,
 } from "./shared.ts";
-import actionRoll from "./tools/action_roll.ts";
-import burnMomentum from "./tools/burn_momentum.ts";
-import checkState from "./tools/check_state.ts";
-import oracle from "./tools/oracle.ts";
-import setupCharacter from "./tools/setup_character.ts";
-import updateState from "./tools/update_state.ts";
+import type setupCharacter from "./tools/setup_character.ts";
 
-// ── Test doubles ─────────────────────────────────────────────────────────────
+// ── Harness ──────────────────────────────────────────────────────────────────
 
+/**
+ * A tool by the NAME the model calls it by, bound to this agent.
+ *
+ * The lookup, its "no such tool" message and the args-or-context shape are all
+ * `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which agent
+ * it runs against. It replaces both the direct `tools/*.ts` imports and a local
+ * `callNoArgs<R>(def, ctx)` that cast its way past `ToolDef["execute"]`'s first
+ * parameter — a tool declaring no `inputSchema` types that as a shape no object
+ * literal satisfies, and `runTool` takes the context in the arguments' place for
+ * exactly that case. Driving by name is also the half a direct `.execute` call
+ * cannot check: a renamed `tools/` file is what the MODEL would stop finding.
+ */
+const run = toolRunner(agentDef);
+
+/**
+ * The dice `rollAction` draws, in the order it draws them: d1, d2 (d6), then
+ * c1, c2 (d10).
+ *
+ * `randomInt(sides, random)` is `Math.floor(random() * sides)`, so a face is
+ * produced by returning `(face - 0.5) / sides`. This used to be
+ * `vi.spyOn(Math, "random")` — a GLOBAL patch every other test in the file then
+ * had to be trusted not to depend on, and one the teardown had to remember to
+ * restore. The dice are a PARAMETER (`rollAction`'s fourth), which is the same
+ * seam `ctx.random` gives a tool, so nothing here touches the process.
+ */
+function dice(...faces: readonly [number, number, number, number]): RandomSource {
+  const sides = [6, 6, 10, 10] as const;
+  let draw = 0;
+  return () => {
+    const face = faces[draw] ?? 1;
+    const side = sides[draw] ?? 6;
+    draw++;
+    return (face - 0.5) / side;
+  };
+}
+
+/**
+ * Every field `setup_character` requires, pinned to the tool's OWN schema.
+ *
+ * `satisfies InferToolInput<typeof setupCharacter>` rather than a bare literal:
+ * a required field added to that schema, or an enum member renamed under one of
+ * these values, is a compile error HERE — where the alternative is a spec that
+ * still passes while the shape it seeds no longer exists. The import is
+ * type-only, so nothing about the runner's by-name lookup is undone by it.
+ */
 const SETUP_ARGS = {
   genre: "dark_fantasy",
   tone: "dark_gritty",
@@ -34,14 +85,43 @@ const SETUP_ARGS = {
   settingDescription: "A city of fog and iron.",
   startingLocation: "The Docks",
   locationDesc: "Rotting piers under gaslight.",
-  timeOfDay: "night" as const,
+  timeOfDay: "night",
   openingSituation: "A body washes ashore bearing your family crest.",
   npc1Name: "Mira",
   npc1Desc: "A wary informant",
-  npc1Disposition: "distrustful" as const,
+  npc1Disposition: "distrustful",
   npc1Agenda: "Pay off her debts",
   threatClockName: "The Syndicate Closes In",
   threatClockDesc: "Assassins find the player",
+} satisfies InferToolInput<typeof setupCharacter>;
+
+const SWING = {
+  move: "clash",
+  stat: "iron",
+  position: "risky",
+  effect: "standard",
+  purpose: "swing",
+} as const;
+
+/**
+ * What the two ungated tools answer with.
+ *
+ * A plain `tool()` returns its own value, so there is no envelope to unwrap and
+ * `expectToolOk` would (correctly) refuse one. The by-name lookup is a STRING,
+ * so the author's return type cannot be recovered from it — the SDK says so in
+ * `expectToolOk`'s own doc — and naming the fields a spec reads is the honest
+ * substitute. Only what is asserted below is listed.
+ */
+type Answered = {
+  state: string;
+  instruction?: string;
+  done: boolean;
+  initialized: boolean;
+  playerName: string;
+  gameOver: boolean;
+  health: number;
+  momentum: number;
+  chaosFactor: number;
 };
 
 function playingState(): GameState {
@@ -61,36 +141,22 @@ function playingState(): GameState {
 }
 
 /**
- * Seed a context with a mid-game campaign AND the matching flow position.
+ * Seed a session with a mid-game campaign AND the matching flow position.
  *
- * Writing the slot alone is no longer enough: `action_roll`, `update_state`,
- * `burn_momentum` and `save_game` gate on `storyFlow`, so a campaign installed
- * behind the machine's back leaves every one of them refusing. That is the point
- * of the gate, and it is what this helper exists to satisfy honestly — through
- * the flow's own event, not by writing its snapshot.
+ * Writing the slot alone is not enough: `action_roll`, `update_state` and
+ * `burn_momentum` gate on `storyFlow`, so a campaign installed behind the
+ * machine's back leaves every one of them refusing. That is the point of the
+ * gate, and it is what this helper exists to satisfy honestly — through the
+ * flow's own event, not by writing its snapshot.
+ *
+ * Typed `SlotHolder` rather than `ToolContext`, which is what both calls below
+ * really take: this seeds a session's SLOTS, and needs nothing else a tool body
+ * is handed.
  */
-function seedPlaying(ctx: ToolContext, state: GameState = playingState()): GameState {
+function seedPlaying(ctx: SlotHolder, state: GameState = playingState()): GameState {
   gameSlot.set(ctx, state);
   storyFlow.send(ctx, { type: "SETUP" });
   return state;
-}
-
-/**
- * Call a tool that declares no `inputSchema`.
- *
- * `ToolDef["execute"]`'s first parameter is derived from the schema, so a tool
- * with none types it as a shape no object literal satisfies — and nine call
- * sites here had each cast their way past it. This is the one narrowing they all
- * wanted: `check_state` and `burn_momentum` really do take no arguments, and a
- * helper says that once where a cast per call site said nothing.
- *
- * It is generic in `R` because the three tool builders thread their result type
- * out now, so the ARGUMENT is the only thing here that needs laundering — where
- * every call site used to follow this one with a second cast of its own to
- * recover a return type the erasure had thrown away.
- */
-function callNoArgs<R>(def: ToolDef<ToolInputSchema, R>, ctx: ToolContext): Promise<Awaited<R>> {
-  return Promise.resolve((def.execute as (args: unknown, c: ToolContext) => R)({}, ctx));
 }
 
 // ── setup_character ──────────────────────────────────────────────────────────
@@ -99,7 +165,7 @@ describe("setup_character", () => {
   test("running setup twice starts fresh: no duplicate ids, no stale resources, truthful return", async () => {
     const ctx = createToolContext();
 
-    await setupCharacter.execute(SETUP_ARGS, ctx);
+    await run("setup_character", SETUP_ARGS, ctx);
 
     // Simulate a played, damaged game between setups.
     gameSlot.update(ctx, (played) => {
@@ -109,10 +175,11 @@ describe("setup_character", () => {
       played.sceneCount = 42;
     });
 
-    const result = (await setupCharacter.execute(
+    const result = (await run(
+      "setup_character",
       { ...SETUP_ARGS, playerName: "Luna" },
       ctx,
-    )) as Record<string, unknown>;
+    )) as Answered;
 
     const state = gameSlot.get(ctx);
     expect(state.npcs).toHaveLength(1);
@@ -135,7 +202,7 @@ describe("setup_character", () => {
 
   test("stats are a permutation of [3,2,2,1,1] with the archetype's stat at 3", async () => {
     const ctx = createToolContext();
-    await setupCharacter.execute(SETUP_ARGS, ctx);
+    await run("setup_character", SETUP_ARGS, ctx);
     const state = gameSlot.get(ctx);
     const stats = [state.edge, state.heart, state.iron, state.shadow, state.wits];
     expect([...stats].sort()).toEqual([1, 1, 2, 2, 3]);
@@ -149,8 +216,8 @@ describe("setup_character", () => {
     // detached slot store, so the isolation is per CONTEXT — two distinct
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
-    await setupCharacter.execute(SETUP_ARGS, createToolContext());
-    const other = await callNoArgs(checkState, createToolContext());
+    await run("setup_character", SETUP_ARGS, createToolContext());
+    const other = (await run("check_state", createToolContext())) as Answered;
     expect(other.initialized).toBe(false);
   });
 });
@@ -237,7 +304,7 @@ describe("applyConsequences MISS matrix", () => {
 // ── burn_momentum ────────────────────────────────────────────────────────────
 
 describe("burn_momentum", () => {
-  function seedRolledState(momentum: number, ctx: ToolContext) {
+  function seedRolledState(momentum: number, ctx: SlotHolder) {
     const state = playingState();
     // A MISS was applied: health -2, momentum -2, clock +1.
     state.health = 3;
@@ -282,7 +349,9 @@ describe("burn_momentum", () => {
     const ctx = createToolContext();
     seedRolledState(8, ctx); // 8 beats both dice (3, 5)
 
-    const result = expectToolOk<Record<string, unknown>>(await callNoArgs(burnMomentum, ctx));
+    const result = expectToolOk<{ burned: boolean; newResultCode: string }>(
+      await run("burn_momentum", ctx),
+    );
     expect(result.burned).toBe(true);
     expect(result.newResultCode).toBe("STRONG_HIT");
 
@@ -296,46 +365,48 @@ describe("burn_momentum", () => {
   test("momentum beating only one die upgrades a MISS to WEAK_HIT", async () => {
     const ctx = createToolContext();
     seedRolledState(4, ctx); // beats 3, not 5
-    const result = expectToolOk<{ newResultCode: string }>(await callNoArgs(burnMomentum, ctx));
+    const result = expectToolOk<{ newResultCode: string }>(await run("burn_momentum", ctx));
     expect(result.newResultCode).toBe("WEAK_HIT");
   });
 
   test("burn is refused with no roll standing, insufficient momentum, or a strong hit", async () => {
     const ctx = createToolContext();
 
-    // No roll yet — and this refusal is now the FLOW's rather than a null check
+    // No roll yet — and this refusal is the FLOW's rather than a null check
     // inside the body: nothing has rolled, so the game is in
-    // `playing.awaitingRoll` and this tool is not available there. The message
-    // names the position and quotes what that state expects.
+    // `playing.awaitingRoll` and this tool is not available there.
+    // `expectDialogRefused` is the SDK's reader for that: it pins the STATE the
+    // refusal names against the sentence `dialog()` writes, and throws naming
+    // where the dialog actually landed if the call SUCCEEDED — where an
+    // `isToolFailure(...) && ...` expression let a success through as a `false`
+    // that merely failed the next matcher.
     seedPlaying(ctx);
-    // The flow's refusal, so it arrives as a `ToolFailure` rather than under
-    // the position envelope — which the narrowing now says out loud.
-    let result = await callNoArgs(burnMomentum, ctx);
-    expect(isToolFailure(result) && result.error).toMatch(/awaitingRoll/);
-    expect(isToolFailure(result) && result.error).toMatch(/action_roll/);
+    const outOfState = expectDialogRefused(await run("burn_momentum", ctx), "playing.awaitingRoll");
+    // The state's own instruction rides in the refusal, which is what the model
+    // recovers from.
+    expect(outOfState.error).toContain("action_roll");
 
-    // Momentum too low to beat either die — a DATA rule, so it stays in the
-    // body and the tool still runs.
+    // The two below are DATA rules — the momentum is too low, the roll was
+    // already a strong hit — so they stay in the body, the tool really runs,
+    // and what comes back is the body's own `toolFailure(...)` rather than the
+    // gate's sentence. `isToolFailure` is the right reader for exactly that
+    // difference.
     seedRolledState(2, ctx);
-    result = await callNoArgs(burnMomentum, ctx);
-    expect(isToolFailure(result) && result.error).toMatch(/not high enough/);
+    let refused = await run("burn_momentum", ctx);
+    expect(isToolFailure(refused) && refused.error).toMatch(/not high enough/);
 
-    // Strong hits cannot be upgraded
     seedRolledState(8, ctx);
     gameSlot.update(ctx, (state) => {
       state.lastRoll!.result = "STRONG_HIT";
     });
-    result = await callNoArgs(burnMomentum, ctx);
-    expect(isToolFailure(result) && result.error).toMatch(/already a Strong Hit/);
+    refused = await run("burn_momentum", ctx);
+    expect(isToolFailure(refused) && refused.error).toMatch(/already a Strong Hit/);
   });
 
   test("action_roll persists the roll so burn needs no dice arguments", async () => {
     const ctx = createToolContext();
     seedPlaying(ctx);
-    await actionRoll.execute(
-      { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "attack" },
-      ctx,
-    );
+    await run("action_roll", SWING, ctx);
     const state = gameSlot.get(ctx);
     expect(state.lastRoll).not.toBeNull();
     expect(state.lastRoll?.move).toBe("clash");
@@ -346,40 +417,55 @@ describe("burn_momentum", () => {
 // ── rollAction dice boundaries ───────────────────────────────────────────────
 
 describe("rollAction", () => {
-  // Math.random call order inside rollAction: d1, d2, c1, c2.
-  function mockDice(d1: number, d2: number, c1: number, c2: number) {
-    const spy = vi.spyOn(Math, "random");
-    for (const [value, sides] of [
-      [d1, 6],
-      [d2, 6],
-      [c1, 10],
-      [c2, 10],
-    ] as const) {
-      spy.mockReturnValueOnce((value - 0.5) / sides);
-    }
-    return spy;
-  }
-
   test("tying a challenge die is NOT a beat — equal on both dice is a MISS with match", () => {
-    mockDice(3, 3, 8, 8); // action score 3+3+2 = 8 vs 8, 8
-    const roll = rollAction("wits", 2, "face_danger");
+    // action score 3+3+2 = 8 vs 8, 8
+    const roll = rollAction("wits", 2, "face_danger", dice(3, 3, 8, 8));
     expect(roll.actionScore).toBe(8);
     expect(roll.result).toBe("MISS");
     expect(roll.match).toBe(true);
   });
 
   test("action score caps at 10 even when dice + stat exceed it", () => {
-    mockDice(6, 6, 1, 1); // 6+6+4 = 16 → capped to 10
-    const roll = rollAction("iron", 4, "clash");
+    const roll = rollAction("iron", 4, "clash", dice(6, 6, 1, 1)); // 6+6+4 = 16 → 10
     expect(roll.actionScore).toBe(10);
     expect(roll.result).toBe("STRONG_HIT");
   });
 
   test("beating exactly one die is a WEAK_HIT", () => {
-    mockDice(4, 2, 5, 9); // 4+2+2 = 8: beats 5, not 9
-    const roll = rollAction("edge", 2, "face_danger");
+    const roll = rollAction("edge", 2, "face_danger", dice(4, 2, 5, 9)); // 8: beats 5, not 9
     expect(roll.result).toBe("WEAK_HIT");
     expect(roll.match).toBe(false);
+  });
+});
+
+// ── a scene is a function of its random source ───────────────────────────────
+
+describe("action_roll draws everything from ctx.random", () => {
+  /** One roll from a fresh session whose randomness is `createSeededRandom(seed)`. */
+  async function playOneScene(seed: number) {
+    const ctx = createToolContext({ random: createSeededRandom(seed) });
+    seedPlaying(ctx);
+    return expectToolOk<Record<string, unknown>>(await run("action_roll", SWING, ctx));
+  }
+
+  test("the same seed replays the same scene, chaos interrupt included", async () => {
+    // The WHOLE result, not just the dice: a roll draws five times — d1, d2,
+    // c1, c2, and then the chaos-interrupt d10 — and the fifth used to reach
+    // `Math.random` because `checkChaosInterrupt`'s source parameter was
+    // omitted. With a threshold of 2 that lands about one roll in five, so this
+    // comparison failed intermittently and only ever on the field that matters
+    // least to look at. A seeded campaign is reproducible or it is not.
+    expect(await playOneScene(2026)).toEqual(await playOneScene(2026));
+  });
+
+  test("a different seed is a different scene", async () => {
+    // The other half, and the reason `createSeededRandom` rather than a
+    // constant source: `() => 0.5` is deterministic and degenerate, and every
+    // roll under it would be identical. Compared on the dice alone, since two
+    // seeds may legitimately agree on a derived label.
+    const a = await playOneScene(1);
+    const b = await playOneScene(99);
+    expect([a.actionDice, a.challengeDice]).not.toEqual([b.actionDice, b.challengeDice]);
   });
 });
 
@@ -398,11 +484,8 @@ describe("oracle", () => {
   /**
    * A context whose `d(sides)` rolls `value`.
    *
-   * This used to be `vi.spyOn(Math, "random")` — a GLOBAL patch, which every
-   * test in the file then had to be trusted not to depend on and which the
-   * teardown had to remember to restore. `ctx.random` is the seam now, so the
-   * dice a scene is resolved on are an argument to the tool rather than a
-   * property of the process.
+   * `ctx.random` is the seam, so the dice a scene is resolved on are an
+   * argument to the tool rather than a property of the process.
    */
   function rolling(value: number, sides: number) {
     return createToolContext({ random: () => (value - 0.5) / sides });
@@ -414,7 +497,7 @@ describe("oracle", () => {
     state.chaosFactor = 9; // threshold 6 — a roll of 1 lands
     seedPlaying(ctx, state);
 
-    const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
+    const result = (await run("oracle", { type: "chaos_check" }, ctx)) as {
       interrupted: boolean;
       interruptType: string | null;
       chaosFactor: number;
@@ -433,7 +516,7 @@ describe("oracle", () => {
     state.chaosFactor = 3; // threshold 0 — `checkChaosInterrupt` returns early
     seedPlaying(ctx, state);
 
-    const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
+    const result = (await run("oracle", { type: "chaos_check" }, ctx)) as {
       interrupted: boolean;
       chaosFactor: number;
     };
@@ -447,7 +530,7 @@ describe("oracle", () => {
     state.chaosFactor = 5; // threshold 2
     seedPlaying(ctx, state);
 
-    const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
+    const result = (await run("oracle", { type: "chaos_check" }, ctx)) as {
       interrupted: boolean;
       chaosFactor: number;
     };
@@ -459,7 +542,7 @@ describe("oracle", () => {
   test("a chaos check on an untouched session starts from the default factor", async () => {
     // DEFAULT_STATE.chaosFactor is 5, so threshold 2 — a roll of 1 lands.
     const ctx = rolling(1, 10);
-    const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as { chaosFactor: number };
+    const result = (await run("oracle", { type: "chaos_check" }, ctx)) as { chaosFactor: number };
     expect(result.chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
     expect(gameSlot.get(ctx).chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
   });
@@ -473,7 +556,7 @@ describe("oracle", () => {
       [5, "Yes"],
       [6, "Yes"],
     ] as const) {
-      const result = (await oracle.execute({ type: "yes_no" }, rolling(roll, 6))) as {
+      const result = (await run("oracle", { type: "yes_no" }, rolling(roll, 6))) as {
         roll: number;
         answer: string;
       };
@@ -486,9 +569,9 @@ describe("oracle", () => {
     seedPlaying(ctx);
     const before = structuredClone(gameSlot.get(ctx));
 
-    const reaction = (await oracle.execute({ type: "npc_reaction" }, ctx)) as { reaction: string };
-    const twist = (await oracle.execute({ type: "scene_twist" }, ctx)) as { twist: string };
-    const theme = (await oracle.execute({ type: "action_theme" }, ctx)) as {
+    const reaction = (await run("oracle", { type: "npc_reaction" }, ctx)) as { reaction: string };
+    const twist = (await run("oracle", { type: "scene_twist" }, ctx)) as { twist: string };
+    const theme = (await run("oracle", { type: "action_theme" }, ctx)) as {
       action: string;
       theme: string;
       seed: string;
@@ -503,6 +586,35 @@ describe("oracle", () => {
   });
 });
 
+// ── which clock the player meant ─────────────────────────────────────────────
+
+describe("findClock", () => {
+  // Deliberately ordered so the two rules disagree: "The First Light" contains
+  // an ordinal word and sits SECOND.
+  const clocks = [
+    { id: "clock_1", name: "The Syndicate Closes In" },
+    { id: "clock_2", name: "The First Light" },
+  ];
+
+  test("an exact name wins over the ordinal it happens to contain", () => {
+    // Resolving the ordinal first would answer `clock_1` here, silently
+    // retargeting a clock the player named outright.
+    expect(findClock(clocks, "The First Light")?.id).toBe("clock_2");
+    expect(findClock(clocks, "  the first light ")?.id).toBe("clock_2");
+  });
+
+  test("an ordinal picks by the position the sidebar renders", () => {
+    expect(findClock(clocks, "the second clock")?.id).toBe("clock_2");
+    expect(findClock(clocks, "the 1st one")?.id).toBe("clock_1");
+  });
+
+  test("neither a name nor an ordinal resolves to nothing", () => {
+    expect(findClock(clocks, "The Reckoning")).toBeUndefined();
+    // An ordinal past the end is not a wrap-around.
+    expect(findClock(clocks, "the ninth clock")).toBeUndefined();
+  });
+});
+
 // ── update_state: clocks, caps, validation ───────────────────────────────────
 
 describe("update_state", () => {
@@ -510,9 +622,9 @@ describe("update_state", () => {
     const ctx = createToolContext();
     seedPlaying(ctx); // has clock_1
 
-    await updateState.execute({ addClockName: "Second" }, ctx); // clock_2
-    await updateState.execute({ removeClockName: "Doom" }, ctx); // removes clock_1
-    await updateState.execute({ addClockName: "Third" }, ctx);
+    await run("update_state", { addClockName: "Second" }, ctx); // clock_2
+    await run("update_state", { removeClockName: "Doom" }, ctx); // removes clock_1
+    await run("update_state", { addClockName: "Third" }, ctx);
 
     const state = gameSlot.get(ctx);
     const ids = state.clocks.map((c) => c.id);
@@ -527,9 +639,55 @@ describe("update_state", () => {
     seedPlaying(ctx, state);
 
     const result = expectToolOk<{ clockEvents: { clock: string; trigger: string }[] }>(
-      await updateState.execute({ advanceClockName: "Doom" }, ctx),
+      await run("update_state", { advanceClockName: "Doom" }, ctx),
     );
     expect(result.clockEvents).toEqual([{ clock: "Doom", trigger: "The doom arrives" }]);
+  });
+
+  test("a clock can be advanced by the ordinal the player used", async () => {
+    const ctx = createToolContext();
+    const state = playingState();
+    state.clocks.push({
+      id: "clock_2",
+      name: "The Long Night",
+      clockType: "progress",
+      segments: 2,
+      filled: 1,
+      triggerDescription: "Dawn breaks",
+    });
+    seedPlaying(ctx, state);
+
+    const result = expectToolOk<{ clockEvents: { clock: string; trigger: string }[] }>(
+      await run("update_state", { advanceClockName: "the second one" }, ctx),
+    );
+    expect(result.clockEvents).toEqual([{ clock: "The Long Night", trigger: "Dawn breaks" }]);
+    expect(gameSlot.get(ctx).clocks[1]?.filled).toBe(2);
+  });
+
+  test("removing by ordinal drops exactly that clock", async () => {
+    const ctx = createToolContext();
+    const state = playingState();
+    state.clocks.push({
+      id: "clock_2",
+      name: "The Long Night",
+      clockType: "progress",
+      segments: 2,
+      filled: 0,
+      triggerDescription: "Dawn breaks",
+    });
+    seedPlaying(ctx, state);
+
+    expectToolOk(await run("update_state", { removeClockName: "the first clock" }, ctx));
+    expect(gameSlot.get(ctx).clocks.map((c) => c.id)).toEqual(["clock_2"]);
+  });
+
+  test("a clock nobody has warns instead of silently doing nothing", async () => {
+    const ctx = createToolContext();
+    seedPlaying(ctx);
+    const result = expectToolOk<{ warnings?: string[] }>(
+      await run("update_state", { advanceClockName: "The Reckoning" }, ctx),
+    );
+    expect(result.warnings?.[0]).toMatch(/No clock matching/);
   });
 
   test("NPC count is capped at MAX_NPCS with a warning", async () => {
@@ -541,24 +699,56 @@ describe("update_state", () => {
     seedPlaying(ctx, state);
 
     const result = expectToolOk<{ warnings?: string[] }>(
-      await updateState.execute({ addNpcName: "One Too Many" }, ctx),
+      await run("update_state", { addNpcName: "One Too Many" }, ctx),
     );
     expect(result.warnings?.[0]).toMatch(/NPC limit/);
     const after = gameSlot.get(ctx);
     expect(after.npcs).toHaveLength(MAX_NPCS);
   });
 
-  test("zod schemas reject out-of-range and malformed inputs", () => {
-    const params = updateState.inputSchema!;
-    expect(() => params.parse({ addClockSegments: 1 })).toThrow(); // below min
-    expect(() => params.parse({ addClockSegments: 13 })).toThrow(); // above max
-    expect(() => params.parse({ addClockSegments: 2.5 })).toThrow(); // non-integer
-    expect(() => params.parse({ updateNpcBond: 5 })).toThrow(); // above MAX_BOND
-    expect(() => params.parse({ updateNpcBond: -1 })).toThrow();
-    expect(() => params.parse({ timeOfDay: "noonish" })).toThrow(); // not a phase
-    expect(
-      params.parse({ addClockSegments: 6, updateNpcBond: 4, timeOfDay: "night" }),
-    ).toBeTruthy();
+  test("the chronicle is capped by the SLOT, keeping the newest entries", async () => {
+    // The bound is declared as `caps` on `gameSlot` and enforced by nothing in
+    // this tool, which is exactly why it is worth a test: `update_state` pushes
+    // unconditionally, so a dropped `caps` key would leave the log growing into
+    // every `syncState` frame with nothing red.
+    const ctx = createToolContext();
+    seedPlaying(ctx);
+    for (let i = 1; i <= MAX_LOG_ENTRIES + 5; i++) {
+      await run("update_state", { logEntry: `scene ${i}` }, ctx);
+    }
+
+    const log = gameSlot.get(ctx).sessionLog;
+    expect(log).toHaveLength(MAX_LOG_ENTRIES);
+    expect(log[0]?.summary).toBe("scene 6");
+    expect(log.at(-1)?.summary).toBe(`scene ${MAX_LOG_ENTRIES + 5}`);
+  });
+
+  test("the input schema rejects out-of-range and malformed values", async () => {
+    // `toolInputIssues` / `parseToolInput` (`@alexkroman1/aai/testing`) rather
+    // than reaching for `inputSchema!["~standard"]` — the reach eighteen sites
+    // across ten templates had re-derived. They also take the tool by NAME, so
+    // this asks the agent's own registry the same question the runner above
+    // does, and the rejection reports WHICH field failed instead of "it threw".
+    for (const bad of [
+      { addClockSegments: 1 }, // below min
+      { addClockSegments: 13 }, // above max
+      { addClockSegments: 2.5 }, // non-integer
+      { updateNpcBond: 5 }, // above MAX_BOND
+      { updateNpcBond: -1 },
+      { timeOfDay: "noonish" }, // not a phase
+    ]) {
+      expect
+        .soft(await toolInputIssues(agentDef, "update_state", bad), JSON.stringify(bad))
+        .toBeDefined();
+    }
+
+    await expect(
+      parseToolInput(agentDef, "update_state", {
+        addClockSegments: 6,
+        updateNpcBond: 4,
+        timeOfDay: "night",
+      }),
+    ).resolves.toMatchObject({ addClockSegments: 6, timeOfDay: "night" });
   });
 });
 
@@ -576,21 +766,14 @@ describe("the story flow", () => {
 
     // All of these used to RUN before a character existed: `action_roll` rolled
     // 2d6 against the stats of nobody and applied consequences to a game that was
-    // not there. (`save_game` was in this list too, writing an empty campaign to a
-    // slot `load_game` would later restore over a real one — both are gone with
-    // `ctx.db`.)
+    // not there.
     for (const call of [
-      actionRoll.execute(
-        { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "swing" },
-        ctx,
-      ),
-      updateState.execute({ location: "Nowhere" }, ctx),
-      callNoArgs(burnMomentum, ctx),
+      run("action_roll", SWING, ctx),
+      run("update_state", { location: "Nowhere" }, ctx),
+      run("burn_momentum", ctx),
     ]) {
-      const refusal = await call;
-      expect(isToolFailure(refusal)).toBe(true);
-      expect(isToolFailure(refusal) && refusal.error).toMatch(/awaitingSetup/);
-      expect(isToolFailure(refusal) && refusal.error).toMatch(/setup_character/);
+      const refusal = expectDialogRefused(await call, "awaitingSetup");
+      expect(refusal.error).toContain("setup_character");
     }
 
     // And nothing ran.
@@ -603,27 +786,22 @@ describe("the story flow", () => {
     // `DialogPosition` verbatim now, so they report their position under the
     // same keys every gated tool's result carries — which is what the system
     // prompt already claimed.
-    const created = await setupCharacter.execute(SETUP_ARGS, ctx);
+    const created = (await run("setup_character", SETUP_ARGS, ctx)) as Answered;
     expect(created.state).toBe("playing.awaitingRoll");
     expect(created.instruction).toMatch(/action_roll/);
 
-    expectToolOk(
-      await actionRoll.execute(
-        { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "swing" },
-        ctx,
-      ),
-    );
+    expectToolOk(await run("action_roll", SWING, ctx));
     expect(storyFlow.position(ctx).state).toBe("playing.rollResolved");
 
     // Moving the scene on SPENDS the roll: the burn window is closed.
-    expectToolOk(await updateState.execute({ location: "The Bridge" }, ctx));
+    expectToolOk(await run("update_state", { location: "The Bridge" }, ctx));
     expect(storyFlow.position(ctx).state).toBe("playing.awaitingRoll");
-    expect(isToolFailure(await callNoArgs(burnMomentum, ctx))).toBe(true);
+    expectDialogRefused(await run("burn_momentum", ctx), "playing.awaitingRoll");
   });
 
   test("check_state reports the position and is legal before setup", async () => {
     const ctx = createToolContext();
-    const before = await callNoArgs(checkState, ctx);
+    const before = (await run("check_state", ctx)) as Answered;
     expect(before.state).toBe("awaitingSetup");
     expect(before.instruction).toMatch(/setup_character/);
     expect(before.done).toBe(false);
@@ -642,20 +820,15 @@ describe("the story flow", () => {
     // act on it, so a player could keep rolling after both tracks emptied. The
     // WRITE is `gameSlot`'s `after` hook; this tool no longer calls it, which
     // is the point of moving it there.
-    expectToolOk(await updateState.execute({ health: 0, spirit: 0 }, ctx));
+    expectToolOk(await run("update_state", { health: 0, spirit: 0 }, ctx));
     const at = storyFlow.position(ctx);
     expect(at.state).toBe("gameOver");
     expect(at.done).toBe(true);
 
-    const refused = await actionRoll.execute(
-      { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "swing" },
-      ctx,
-    );
-    expect(isToolFailure(refused)).toBe(true);
-    expect(isToolFailure(refused) && refused.error).toMatch(/gameOver/);
+    expectDialogRefused(await run("action_roll", SWING, ctx), "gameOver");
 
     // Starting over is legal from anywhere, the ending included.
-    const restarted = await setupCharacter.execute(SETUP_ARGS, ctx);
+    const restarted = (await run("setup_character", SETUP_ARGS, ctx)) as Answered;
     expect(restarted.state).toBe("playing.awaitingRoll");
   });
 

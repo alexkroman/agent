@@ -655,6 +655,19 @@ export function describeStaged(action: DeepReadonly<PendingAction>): string {
 }
 
 /**
+ * What a sensitive tool answers with: the sentence to read aloud, and the fact
+ * that nothing has happened yet.
+ *
+ * Named because {@link deskUpdateTool} pins every writing desk tool to it — see
+ * there for why that is the gate rather than a convenience.
+ */
+export type StagedReadBack = {
+  awaitingConfirmation: true;
+  readBack: string;
+  expires: "on the caller's next answer";
+};
+
+/**
  * Stage a sensitive action and return what a sensitive tool answers with.
  *
  * Every sensitive tool ends in this call and none of them mutate anything —
@@ -829,9 +842,10 @@ export function tripView(state: FrozenTripState): TripView {
           }
         : null,
     bookings: state.bookings,
-    // The running total the sidebar prints and a spec compares — rounded for
-    // the reason `roundMoney` exists, since a sum of floats is where the cents
-    // that survived each booking come back.
+    // The running total the sidebar prints and a spec compares. Each booking's
+    // price was already rounded where it was STORED — which is where today's
+    // catalog actually produces dust — and the sum goes through the same rule
+    // rather than through a rate table that happens not to need it.
     total: roundMoney(state.bookings.reduce((sum, b) => sum + b.price, 0)),
     pending: described,
     log: state.log,
