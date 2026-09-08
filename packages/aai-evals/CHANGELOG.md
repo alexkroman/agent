@@ -1,5 +1,11 @@
 # aai-evals
 
+## 0.2.2
+
+### Patch Changes
+
+- @alexkroman1/aai@16.1.0
+
 ## 0.2.1
 
 ### Patch Changes
