@@ -1,6 +1,19 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import { createToolContext, stubGenerate, toolRunner } from "@alexkroman1/aai/testing";
+import type {
+  InferToolInput,
+  InferToolOutput,
+  TelephonyAccess,
+  TelephonyCarrier,
+} from "@alexkroman1/aai";
+import {
+  createToolContext,
+  type StubGenerateRoute,
+  stubGenerate,
+  type TestToolContext,
+  toolRunner,
+} from "@alexkroman1/aai/testing";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 
 import { MAX_ATTEMPTS, runCorrectiveRag } from "./procedure.ts";
@@ -11,7 +24,11 @@ import {
   GROUNDED_SYSTEM,
   REWRITE_SYSTEM,
 } from "./prompts.ts";
-import { retrieve, supportProjection, supportSlot, supportView } from "./shared.ts";
+import { ASKED_CAP, retrieve, supportProjection, supportSlot, supportView } from "./shared.ts";
+/** TYPE-only, so nothing here re-registers a tool module: the defs under test
+ *  still come from `agentDef`, which is what a deploy resolves. */
+import type AnswerQuestion from "./tools/answer_question.ts";
+import type LogTicket from "./tools/log_ticket.ts";
 
 // ─── A scripted model ────────────────────────────────────────────────────────
 //
@@ -44,6 +61,24 @@ function scriptedModel(script: Script = {}) {
   const grounded = [...(script.grounded ?? [])];
   const useful = [...(script.useful ?? [])];
 
+  /**
+   * One of the two GENERATION graders, which differ only in their queue and the
+   * node they record.
+   *
+   * `StubGenerateRoute` is what one entry of the table below is, and naming it
+   * is the check worth having here: a route may answer a bare string — right
+   * for the free-text nodes, and for a grader it would leave the schema
+   * overload with no `object` to read, which is the one failure a stub of a
+   * `ctx.generate({ schema })` can produce.
+   */
+  const verdictRoute =
+    (node: string, queue: ("yes" | "no")[], reason: string): StubGenerateRoute =>
+    () => {
+      const verdict = queue.shift() ?? "yes";
+      calls.push(`${node}:${verdict}`);
+      return { object: { score: verdict, reason } };
+    };
+
   const { generate } = stubGenerate({
     [DOC_GRADER_SYSTEM]: (call) => {
       const id = /\[(D\d+)\]/.exec(call.prompt)?.[1] ?? "?";
@@ -60,16 +95,12 @@ function scriptedModel(script: Script = {}) {
       calls.push("generate");
       return answers.shift() ?? "The documented answer.";
     },
-    [GROUNDED_SYSTEM]: () => {
-      const verdict = grounded.shift() ?? "yes";
-      calls.push(`grade_generation_v_documents:${verdict}`);
-      return { object: { score: verdict, reason: "grounded verdict" } };
-    },
-    [ANSWERS_SYSTEM]: () => {
-      const verdict = useful.shift() ?? "yes";
-      calls.push(`grade_generation_v_question:${verdict}`);
-      return { object: { score: verdict, reason: "usefulness verdict" } };
-    },
+    [GROUNDED_SYSTEM]: verdictRoute(
+      "grade_generation_v_documents",
+      grounded,
+      "not in the documents",
+    ),
+    [ANSWERS_SYSTEM]: verdictRoute("grade_generation_v_question", useful, "answers something else"),
   });
 
   return { generate, calls };
@@ -80,6 +111,49 @@ function scriptedModel(script: Script = {}) {
  *  `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which
  *  agent it runs against. */
 const run = toolRunner(agentDef);
+
+/**
+ * A tool context wired to a scripted model — the pair every tool case needs.
+ *
+ * `TestToolContext` is the SDK's `ToolContext` plus the `sent` log, and naming
+ * it is what lets this hand one value back where a case was destructuring a
+ * `{ generate }` only to feed it straight into `createToolContext`. The
+ * isolation case below deliberately does NOT use it: its claim is two contexts
+ * over ONE model, which is the pair this collapses.
+ */
+function supportContext(script: Script): TestToolContext {
+  return createToolContext({ generate: scriptedModel(script).generate });
+}
+
+/**
+ * What `answer_question` really answers, from the tool's OWN return type.
+ *
+ * `run` is typed `unknown` — the registry lookup is by string — so reading a
+ * field off an answer needs an assertion either way. `InferToolOutput` makes it
+ * an assertion about the TOOL rather than a shape retyped beside it, so
+ * renaming `answersTheQuestion` reddens here instead of quietly comparing
+ * `undefined`. The tool has three legal outcomes, so each case `Extract`s the
+ * arm it is about.
+ *
+ * The SDK's `expectToolOk` is deliberately not used: it unwraps a `dialog()`
+ * envelope and throws for a plain `tool()`, which all three of these are.
+ */
+type Lookup = Exclude<InferToolOutput<typeof AnswerQuestion>, ToolFailure>;
+type Graded = Extract<Lookup, { answer: string }>;
+type Withheld = Extract<Lookup, { answer: null }>;
+
+/**
+ * The value a tool answered, or a failure at the CALL.
+ *
+ * A plain tool answers its own value or a `ToolFailure`, so a bare cast hands a
+ * refusal's `{ error }` to the assertions and dies a few lines later reading
+ * `undefined` off it. `isToolFailure` is the SDK's own predicate for that
+ * envelope; what is local is only the sentence.
+ */
+function answered<T>(result: unknown): T {
+  if (isToolFailure(result)) throw new Error(`the tool refused: ${result.error}`);
+  return result as T;
+}
 
 /** Node names without the per-call suffix, for sequence assertions. */
 function nodes(calls: string[]): string[] {
@@ -224,20 +298,23 @@ describe("corrective-RAG graph", () => {
 
 // ─── 3. The tools ────────────────────────────────────────────────────────────
 
+/**
+ * The tool's OWN input type, so a field renamed in `tools/answer_question.ts`
+ * reddens here — `toolRunner` looks a tool up by string and takes a bare
+ * record, which is exactly enough freedom to pass `{ questoin }` and watch the
+ * graph retrieve nothing.
+ */
+function asks(question: string): InferToolInput<typeof AnswerQuestion> {
+  return { question };
+}
+
 describe("answer_question", () => {
   test("hands back the answer, its sources and its verdicts, and records the trace", async () => {
-    const { generate } = scriptedModel({
+    const ctx = supportContext({
       relevant: (id) => id === "D8",
       answers: ["Area outages are on the status page, and rebooting will not help."],
     });
-    const ctx = createToolContext({ generate });
-    const result = (await run("answer_question", { question: "is there an outage" }, ctx)) as {
-      answer: string;
-      sources: string[];
-      grounded: boolean;
-      answersTheQuestion: boolean;
-      guidance?: string;
-    };
+    const result = answered<Graded>(await run("answer_question", asks("is there an outage"), ctx));
 
     expect(result.answer).toContain("status page");
     expect(result.sources).toEqual(["Checking for an outage in your area"]);
@@ -251,12 +328,10 @@ describe("answer_question", () => {
   });
 
   test("with nothing grounded it returns no answer and points at the ticket", async () => {
-    const { generate } = scriptedModel({ relevant: () => false });
-    const ctx = createToolContext({ generate });
-    const result = (await run("answer_question", { question: "do you sell phones" }, ctx)) as {
-      answer: null;
-      guidance: string;
-    };
+    const ctx = supportContext({ relevant: () => false });
+    const result = answered<Withheld>(
+      await run("answer_question", asks("do you sell phones"), ctx),
+    );
     expect(result.answer).toBeNull();
     expect(result.guidance).toContain("log_ticket");
   });
@@ -265,9 +340,12 @@ describe("answer_question", () => {
     // ctx.generate rejecting is the default `createToolContext` gives — a bad
     // key in production looks the same from here.
     const ctx = createToolContext({});
-    const result = (await run("answer_question", { question: "anything" }, ctx)) as {
-      error: string;
-    };
+    const result = await run("answer_question", asks("anything"), ctx);
+    // The failure envelope is the SDK's, so the spec asks the SDK whether this
+    // is one rather than casting to `{ error }` — a cast reads `undefined` off
+    // a SUCCESS and fails three lines later on something else.
+    if (!isToolFailure(result))
+      throw new Error(`expected a refusal, got ${JSON.stringify(result)}`);
     expect(result.error).toContain("knowledge base lookup failed");
   });
 
@@ -281,20 +359,41 @@ describe("answer_question", () => {
     const first = createToolContext({ generate });
     const second = createToolContext({ generate });
 
-    await run("answer_question", { question: "how do I reboot" }, first);
+    await run("answer_question", asks("how do I reboot"), first);
     expect(supportSlot.get(second).trace).toBeNull();
     expect(supportSlot.get(first).trace).not.toBeNull();
+  });
+});
+
+describe("the support slot", () => {
+  test("bounds the asked list at the cap it declares, dropping the oldest", () => {
+    // The bound is `caps` on the SLOT rather than a `pushCapped` inside the
+    // tool, so it holds for whatever path wrote — which is what this drives:
+    // plain `update` windows, no tool call. `asked` rides in every `syncState`
+    // frame, so an unbounded one is a call that grows its own state forever.
+    const ctx = createToolContext({});
+    for (let n = 1; n <= ASKED_CAP + 3; n++) {
+      supportSlot.update(ctx, (state) => {
+        state.asked.push(`question ${n}`);
+      });
+    }
+    const { asked } = supportSlot.get(ctx);
+    expect(asked).toHaveLength(ASKED_CAP);
+    expect(asked[0]).toBe("question 4");
+    expect(asked.at(-1)).toBe(`question ${ASKED_CAP + 3}`);
   });
 });
 
 describe("log_ticket", () => {
   test("logs a reference and keeps the callback number off the wire", async () => {
     const ctx = createToolContext({});
-    const logged = (await run(
-      "log_ticket",
-      { question: "landline install", callback: "07700 900123" },
-      ctx,
-    )) as { reference: string };
+    const args: InferToolInput<typeof LogTicket> = {
+      question: "landline install",
+      callback: "07700 900123",
+    };
+    const logged = answered<Exclude<InferToolOutput<typeof LogTicket>, ToolFailure>>(
+      await run("log_ticket", args, ctx),
+    );
     expect(logged.reference).toBe("TCK4001");
 
     const state = supportSlot.get(ctx);
@@ -303,6 +402,38 @@ describe("log_ticket", () => {
     const view = supportView(state);
     expect(view.ticket).toBe("TCK4001");
     expect(JSON.stringify(view)).not.toContain("900123");
+  });
+});
+
+// ─── 4. The front door ───────────────────────────────────────────────────────
+
+/**
+ * Does this agent admit a call from `carrier`?
+ *
+ * `TelephonyAccess` is `true` (every carrier the runtime ships a codec for) OR
+ * an allow-list, and only the second is a claim about a PARTICULAR one — so a
+ * spec asserting "twilio reaches this line" has to handle both arms rather than
+ * compare the field to an array. `undefined` is the third state and the one
+ * that matters most: `WS /phone` is an allow-list, so an agent that says
+ * nothing about carriers answers no calls at all.
+ */
+function admits(access: TelephonyAccess | undefined, carrier: TelephonyCarrier): boolean {
+  if (access === undefined) return false;
+  // `true` admits every carrier the runtime ships a codec for and `false` is
+  // the explicit refusal; only an allow-list is a claim about one carrier.
+  if (typeof access === "boolean") return access;
+  return access.includes(carrier);
+}
+
+describe("the phone route", () => {
+  test("is armed, and named narrowly", () => {
+    // A support line is a PHONE line — the premise of the whole template — and
+    // nothing else here would notice the day `telephony` came off the def.
+    expect(admits(agentDef.telephony, "twilio")).toBe(true);
+    // `["twilio"]` rather than `true`: the narrower statement is the one to
+    // copy, and it is only a statement if a carrier this agent did not name is
+    // actually refused.
+    expect(admits(agentDef.telephony, "telnyx")).toBe(false);
   });
 });
 

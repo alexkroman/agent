@@ -7,12 +7,14 @@ import {
   stubDelegate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
+import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 import type { AngleWork, Finding } from "./shared.ts";
 import {
   angleBrief,
   briefingSlot,
+  CHEAP_MODEL,
   counterpoint,
   countWork,
   explainer,
@@ -24,6 +26,7 @@ import {
   researcher,
   VerdictSchema,
 } from "./shared.ts";
+import { briefingChannel, briefingMessage, DESTINATION_ENV } from "./slack.ts";
 
 /** A finding whose cost is irrelevant to the case at hand. */
 const NO_WORK: AngleWork = { searches: 0, reads: 0 };
@@ -83,6 +86,17 @@ describe("the desk itself", () => {
 
   test("gives the checker a tighter budget than the researcher", () => {
     expect(factChecker.maxSteps).toBeLessThan(MAX_RESEARCH_STEPS);
+  });
+
+  test("runs the three NARROW specialists somewhere cheaper, and the researcher on the default", () => {
+    // The other half of the budget split, and the reason `CHEAP_MODEL` is one
+    // constant: three specialists that were each meant to be cheap, one of
+    // which quietly is not, is a bill nobody can read.
+    for (const specialist of [factChecker, explainer, counterpoint]) {
+      expect(specialist.llm, specialist.name).toMatchObject({ options: { model: CHEAP_MODEL } });
+    }
+    // The researcher reads whole pages and stays on the agent's own model.
+    expect(researcher.llm).toBeUndefined();
   });
 
   test("declares what every subagent's final message has to be", () => {
@@ -456,5 +470,165 @@ describe("the board", () => {
     expect(isToolFailure(missing) && missing.error).toContain("install lead times");
     const blank = findByAngle(board, "  ");
     expect(isToolFailure(blank) && blank.error).toContain("which angle");
+  });
+});
+
+// ---- Sending it on ----------------------------------------------------------
+
+/** A destination that really is Slack's, which is what the guard checks. */
+const WEBHOOK = "https://hooks.slack.com/services/T00/B00/xxxxxxxx";
+
+/** A context with a board on it and a channel configured. */
+function deskWithBoard(env: Record<string, string> = { [DESTINATION_ENV]: WEBHOOK }) {
+  const ctx = createToolContext({ env });
+  briefingSlot.update(ctx, (board) => {
+    board.topic = "home batteries";
+    board.findings.push({
+      angle: "price trend",
+      summary: "Pack prices fell 14% year on year.",
+      work: { searches: 2, reads: 1 },
+    });
+    board.findings.push({
+      angle: "install lead times",
+      summary: "Installers quote eight weeks.",
+      work: { searches: 3, reads: 0 },
+    });
+  });
+  return ctx;
+}
+
+describe("the briefing as a channel message", () => {
+  /**
+   * What is left to assert here once the channel owns the wire: the MESSAGE,
+   * not the payload. Slack's two webhook shapes, the Block Kit assembly and the
+   * mrkdwn escaping are `@alexkroman1/aai/channels`' and are covered by its own
+   * specs — a template asserting them again would pin the SDK's rendering from
+   * the outside.
+   */
+  test("carries every angle as its own section, in the order they were researched", () => {
+    const message = briefingMessage(briefingSlot.get(deskWithBoard()));
+
+    expect(message.heading).toBe("Briefing: home batteries");
+    expect(message.sections).toEqual([
+      { title: "price trend", body: "Pack prices fell 14% year on year." },
+      { title: "install lead times", body: "Installers quote eight weeks." },
+    ]);
+  });
+
+  test("says how many angles in the notification line and what they cost in the subtitle", () => {
+    const message = briefingMessage(briefingSlot.get(deskWithBoard()));
+
+    // The notification line is the WHOLE message on a Slack workflow trigger,
+    // so it has to stand on its own.
+    expect(message.text).toBe("Briefing on home batteries: 2 angles");
+    // The same two numbers `briefing_so_far` reads back, from the same helper.
+    expect(message.subtitle).toBe("5 searches, 1 page read");
+  });
+
+  test("still names something when the board carries findings and no topic", () => {
+    // Reachable: a tool can push to the board without setting `topic`, and a
+    // heading reading "Briefing: null" is the kind of thing a channel keeps
+    // forever.
+    const ctx = createToolContext();
+    briefingSlot.update(ctx, (board) => {
+      board.findings.push({ angle: "a", summary: "A.", work: NO_WORK });
+    });
+
+    const message = briefingMessage(briefingSlot.get(ctx));
+
+    expect(message.heading).toBe("Briefing: an unnamed subject");
+    expect(message.text).toBe("Briefing on an unnamed subject: 1 angle");
+    expect(message.subtitle).toBe("0 searches, 0 pages read");
+  });
+
+  test("refuses a destination that is not Slack, before anything is posted", () => {
+    // A security boundary rather than a typo check: the value is the target of
+    // a POST carrying everything the desk was told.
+    const refused = briefingChannel("https://example.test/collect");
+    expect(isToolFailure(refused) && refused.error).toContain(DESTINATION_ENV);
+    expect(briefingChannel(WEBHOOK)).toMatchObject({ kind: "slack" });
+  });
+});
+
+describe("send_briefing", () => {
+  test("posts the board to the configured channel and reports what went", async () => {
+    // `installStubStepFetch`, not a stubbed global: a channel posts through the
+    // SDK's own `stepFetch` slot, and stubbing the global would test a path
+    // production does not take.
+    const posted = installStubStepFetch(() => ({ body: "ok" }));
+
+    const result = (await run("send_briefing", {}, deskWithBoard())) as {
+      sent: number;
+      topic: string | null;
+      message: string;
+    };
+
+    expect(posted.calls).toHaveLength(1);
+    expect(posted.calls[0]?.url).toBe(WEBHOOK);
+    expect(posted.calls[0]?.method).toBe("POST");
+    expect(result).toMatchObject({ sent: 2, topic: "home batteries" });
+    expect(result.message).toMatch(/in writing/);
+  });
+
+  test("spends no request on an empty board", async () => {
+    const posted = installStubStepFetch(() => ({ body: "ok" }));
+    const ctx = createToolContext({ env: { [DESTINATION_ENV]: WEBHOOK } });
+
+    const result = await run("send_briefing", {}, ctx);
+
+    expect(result).toEqual({ error: expect.stringContaining("nothing to send") });
+    expect(posted.calls).toEqual([]);
+  });
+
+  test("offers to try again when Slack is having a bad minute", async () => {
+    installStubStepFetch(() => ({ status: 503, body: { error: "server_error" } }));
+
+    const result = await run("send_briefing", {}, deskWithBoard());
+
+    expect(isToolFailure(result) && result.error).toMatch(/try again/);
+  });
+
+  test("does NOT offer a retry for a refusal that will answer the same way forever", async () => {
+    // The 4xx/5xx split is the whole reason this goes through a channel: a
+    // revoked webhook answers identically on every attempt, and promising the
+    // caller another go is a promise the desk cannot keep.
+    installStubStepFetch(() => ({ status: 403, body: { error: "invalid_token" } }));
+
+    const result = await run("send_briefing", {}, deskWithBoard());
+
+    expect(isToolFailure(result) && result.error).toMatch(/will not help/);
+    expect(isToolFailure(result) && result.error).not.toMatch(/try again/);
+  });
+
+  test("reports a connection that never got there as itself", async () => {
+    // Not a `ChannelDeliveryError`: there was no response to classify. The
+    // channel cannot say whether a retry would help, so neither does the desk.
+    installStubStepFetch(() => {
+      throw new Error("connection reset");
+    });
+
+    const result = await run("send_briefing", {}, deskWithBoard());
+
+    expect(isToolFailure(result) && result.error).toMatch(/did not send/);
+    expect(isToolFailure(result) && result.error).toContain("connection reset");
+  });
+
+  test("names the missing variable when no channel is configured", async () => {
+    // The one deliberate throw in this template: a missing credential is not
+    // something the call can recover from, and the message is the fix.
+    const posted = installStubStepFetch(() => ({ body: "ok" }));
+
+    await expect(run("send_briefing", {}, deskWithBoard({}))).rejects.toThrow(DESTINATION_ENV);
+    expect(posted.calls).toEqual([]);
+  });
+
+  test("refuses a configured destination that is not Slack, without posting", async () => {
+    const posted = installStubStepFetch(() => ({ body: "ok" }));
+    const ctx = deskWithBoard({ [DESTINATION_ENV]: "https://example.test/collect" });
+
+    const result = await run("send_briefing", {}, ctx);
+
+    expect(isToolFailure(result) && result.error).toContain(DESTINATION_ENV);
+    expect(posted.calls).toEqual([]);
   });
 });

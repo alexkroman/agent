@@ -417,6 +417,11 @@ describeWorkflowEvalWithFfmpeg(
       // The RUN's own clock, from two journaled steps rather than a body-level
       // `Date.now()` a replay would re-read.
       expect(output.elapsedMs).toBeGreaterThanOrEqual(0);
+      // And the DECODER's share of it. Only a case that really spawns ffmpeg can
+      // claim this is a measurement rather than a zero: `runFfmpeg` times each
+      // invocation, and three of them ran here.
+      expect(output.ffmpegMs).toBeGreaterThan(0);
+      expect(output.ffmpegMs).toBeLessThanOrEqual(output.elapsedMs);
     });
 
     test(

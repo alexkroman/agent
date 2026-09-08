@@ -1,6 +1,6 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, expectToolOk } from "@alexkroman1/aai/testing";
+import { createToolContext, expectDialogRefused, expectToolOk } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
 import type { StagedResult } from "./pending.ts";
@@ -463,11 +463,20 @@ describe("modify_user_address", () => {
   });
 
   test("requires authentication", async () => {
-    const result = await modifyUserAddress.execute(
-      { user_id: "emma_smith_8564", ...NEW_ADDRESS },
-      createToolContext(),
+    // The GATE, not the body: `requireOwnUser` also refuses a stranger's user
+    // id, and its sentence names no tool at all, so the single `toContain` this
+    // was could not tell the two apart. `expectDialogRefused` pins the state,
+    // and the `toContain` that survives is the claim worth keeping — the
+    // refusal quotes `identifying`'s instruction, which is the model's route
+    // out of it.
+    const refusal = expectDialogRefused(
+      await modifyUserAddress.execute(
+        { user_id: "emma_smith_8564", ...NEW_ADDRESS },
+        createToolContext(),
+      ),
+      "identifying",
     );
-    expect(isToolFailure(result) && result.error).toContain("find_user_id_by_email");
+    expect(refusal.error).toContain("find_user_id_by_email");
   });
 });
 
@@ -1168,9 +1177,16 @@ describe("transfer_to_human_agents", () => {
     // The policy's "say nothing else after that" used to be enforced by
     // nothing: every tool stayed callable, so a model that kept going kept
     // acting on a call it had given away.
-    const refused = await getUserDetails.execute({ user_id: "olivia_ito_3591" }, ctx);
-    expect(isToolFailure(refused)).toBe(true);
-    expect(isToolFailure(refused) && refused.error).toContain('"transferred"');
+    //
+    // `expectDialogRefused` is the SDK's reader for "a GATE held", pinned to
+    // the state. It matters that this is not the same claim as
+    // `isToolFailure(…) === true`: `get_user_details` also refuses a user id
+    // that is not the caller's, from its own body, and that failure would have
+    // satisfied the two assertions this replaces just as well.
+    expectDialogRefused(
+      await getUserDetails.execute({ user_id: "olivia_ito_3591" }, ctx),
+      "transferred",
+    );
   });
 });
 
@@ -1210,9 +1226,11 @@ describe("a caller who hangs up", () => {
 
     // The whole point of the state. `confirm_change` is what applies a staged
     // change to the store, and a caller who is gone has agreed to nothing.
-    const refused = await confirmChange.execute({}, ctx);
-    expect(isToolFailure(refused)).toBe(true);
-    expect(isToolFailure(refused) && refused.error).toContain('"abandoned"');
+    expectDialogRefused(await confirmChange.execute({}, ctx), "abandoned");
+    // And the refusal did not move the call off the terminal state, which is
+    // the other half of "nothing runnable": a gate that refused once and then
+    // reopened would satisfy the line above and still be wrong.
+    expect(callFlow.position(ctx).state).toBe("abandoned");
   });
 
   test("an event no state declares still writes nothing", () => {

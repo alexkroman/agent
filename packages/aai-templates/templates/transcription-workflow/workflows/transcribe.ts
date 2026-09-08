@@ -69,14 +69,13 @@ import {
   stepEmit,
   stepReadUpload,
   stepReport,
-  stepRequireCompleteUpload,
   stepUploadInfo,
   wavHeader,
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
 import { downsampleSegment, requestFormat } from "./downsample.ts";
-import { normalizeRecording } from "./normalize.ts";
+import { normalizeRecording, requireWholeRecording } from "./normalize.ts";
 import { stitchTranscript, TRANSCRIPT_STREAM, type TranscriptChunk } from "./stitch.ts";
 import { elapsed, timed, transcribeWav } from "./sync-api.ts";
 import {
@@ -313,8 +312,10 @@ export async function splitRecording(uploadId: string): Promise<{
   // PREFIX, and it is what the segment plan's width is derived from — so against a
   // half-arrived recording this planned a fan-out over the first half and the run
   // returned a transcript of it, reporting success. `stream.ts` is the flow for a
-  // recording that is still landing; this one wants all of it.
-  const stored = await stepRequireCompleteUpload(uploadId);
+  // recording that is still landing; this one wants all of it, and
+  // `requireWholeRecording` is what SAYS so — the same refusal `normalizeRecording`
+  // raises one step earlier, written once so the two cannot explain it differently.
+  const stored = await requireWholeRecording(uploadId);
   const head = await stepReadUpload(uploadId, { end: HEADER_PROBE_BYTES });
   const format = fatalOnUnsupported(() => assertCuttable(parseWav(head.bytes, stored.size)));
   const segments = fatalOnUnsupported(() => planSegments(format));

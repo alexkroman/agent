@@ -58,8 +58,14 @@
  * longer than the cap gets the blind cut, and says so.
  */
 
-import { ffmpegBaseArgs } from "@alexkroman1/aai/ffmpeg";
+import {
+  type FfmpegRunResult,
+  ffmpegBaseArgs,
+  type MediaInfo,
+  type MediaStreamInfo,
+} from "@alexkroman1/aai/ffmpeg";
 import type { PcmFormat } from "@alexkroman1/aai/step";
+import type { WithTempDirOptions } from "@alexkroman1/aai/step-files";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 
@@ -94,6 +100,21 @@ export const ANALYSIS_FORMAT = {
 /** Bytes of {@link ANALYSIS_FORMAT} audio per second of wall clock. */
 export const BYTES_PER_SECOND =
   (ANALYSIS_FORMAT.sampleRate * ANALYSIS_FORMAT.channels * ANALYSIS_FORMAT.bitsPerSample) / 8;
+
+/**
+ * Where every step of this desk materializes, as ONE value.
+ *
+ * Both steps that touch a file call `withTempDir` — the ingest to hold the
+ * recording and the levelled PCM, the narration to hold the WAV and the MP3 —
+ * and each had written the prefix itself. That is a string two files have to
+ * agree on and nothing checked: the spec that proves nothing is LEAKED matches
+ * directories by this prefix, so renaming it in one file would leave the other's
+ * leaks unwatched while the test still passed.
+ *
+ * Typed as the SDK's own options rather than inferred, because the annotation is
+ * what says the rest of the bag exists and is deliberately left at its default.
+ */
+export const TEMP_DIR: WithTempDirOptions = { prefix: "aai-call-audit-" };
 
 /**
  * Integrated loudness everything is normalized to, in LUFS.
@@ -197,12 +218,65 @@ export type Segment = {
   cutInSpeech: boolean;
 };
 
-/** Raised when an analysis pass produced something this module cannot read. Always terminal. */
+/**
+ * Raised when a probe or an analysis pass produced something this module cannot
+ * USE — a `loudnorm` block with a renamed key, a silence log cut off mid-write,
+ * a file ffprobe found no audio track in. Always terminal: `analyse` in
+ * `ingest.ts` is what turns one into a `FatalError`, on the argument that every
+ * retry runs the same binary over the same file and reads the same answer.
+ */
 export class MediaAnalysisError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "MediaAnalysisError";
   }
+}
+
+/**
+ * The audio track ffprobe found, or a terminal complaint naming what it found
+ * instead.
+ *
+ * **The one thing about the uploaded file this desk checks before it spends a
+ * decode on it.** The form accepts "any recording — a video's audio track
+ * included", which is honest and admits exactly one file that cannot work: a
+ * video with no sound, a still image, a PDF somebody dragged into the picker.
+ * Without this the run pays a whole `loudnorm` measure pass over that file — the
+ * expensive part, on a recording that can be gigabytes — and then fails with
+ * ffmpeg's own complaint about a filter graph, which names the filter rather
+ * than the file.
+ *
+ * A {@link MediaAnalysisError}, so `analyse` in `ingest.ts` makes it TERMINAL:
+ * the same file has no audio track on every attempt.
+ *
+ * The stream KINDS are listed rather than counted, because "found video" is what
+ * tells somebody they uploaded the wrong export of the right meeting.
+ */
+export function requireAudioStream(probed: MediaInfo): MediaStreamInfo {
+  if (probed.audio !== undefined) return probed.audio;
+  const found = probed.streams.map((stream) => stream.kind);
+  throw new MediaAnalysisError(
+    `That file has no audio track — ffprobe found ${found.length === 0 ? "no streams at all" : found.join(", ")}. ` +
+      "A video is fine, since the conversion drops the picture, but it has to carry sound.",
+  );
+}
+
+/**
+ * Wall clock the ffmpeg PASSES themselves spent, summed and rounded.
+ *
+ * `runFfmpeg` measures each invocation and hands the number back on its result;
+ * nothing else in a run can measure it, because the alternative is timing a
+ * promise that also covers the SDK's own spawn and drain. It is worth carrying
+ * out to the page for this template in particular: the run's `elapsedMs` is
+ * mostly the fan-out waiting on a provider, and this is the part the DECODER
+ * cost — which is the one number that says whether normalizing first was paid
+ * for.
+ *
+ * `ffprobe` is not one of these. It answers in milliseconds on any file, and
+ * `probeMedia` returns a {@link MediaInfo} rather than a run result, so there is
+ * no duration to add.
+ */
+export function totalFfmpegMs(...runs: readonly Pick<FfmpegRunResult, "durationMs">[]): number {
+  return Math.round(runs.reduce((total, run) => total + run.durationMs, 0));
 }
 
 /**

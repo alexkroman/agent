@@ -1,3 +1,4 @@
+import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { roadsideCall } from "../call.ts";
 import { findPolicy, quoteFee, rateFor, roadsideSlot } from "../shared.ts";
@@ -42,12 +43,11 @@ export default roadsideCall.tool({
       if (args.policyNumber !== undefined) {
         const found = findPolicy(args.policyNumber);
         if (!found) {
-          return {
-            error:
-              `No plan is on file under ${args.policyNumber}. Read it back to them digit by ` +
+          return toolFailure(
+            `No plan is on file under ${args.policyNumber}. Read it back to them digit by ` +
               "digit and try once more. If they cannot find the card, call this again with no " +
               "policy number and we will price it as a non-member.",
-          };
+          );
         }
         state.coverage = { ...found };
       } else {

@@ -76,23 +76,40 @@
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
-import { ttsVoiceIds } from "@alexkroman1/aai/tts";
+import { type AssemblyAITtsLanguage, ttsVoiceIds } from "@alexkroman1/aai/tts";
 import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
 import { type SpokenSummary, spokenSummaryFlow } from "./workflows/summarize.ts";
+
+/**
+ * The one language this app speaks, stated once.
+ *
+ * The voice list below is filtered by it, and the prompt in
+ * `workflows/summarize.ts` writes the summary in the transcript's own language
+ * rather than translating — so this is a claim about the VOICES, which is why
+ * it lives next to them. Typed as the catalog's own union rather than the
+ * literal `"en"`, so a fork changing it can only name a language the voices
+ * actually cover — `ttsVoiceIds` answers the SDK's default voice ALONE when a
+ * filter matches nothing, and a select with one entry in it is not a failure
+ * anybody would look at twice.
+ */
+export const SUMMARY_LANGUAGE: AssemblyAITtsLanguage = "en";
 
 /**
  * The voices the form offers, as the tuple `z.enum` takes.
  *
  * READ from the SDK's catalog rather than listed, because a wrong voice id is a
  * SILENT failure — it is a free-form string the service rejects in band after
- * the socket is open, so the synthesis simply produces nothing. Narrowed to the
- * English ones because the summary is written in the transcript's language and
- * the prompt does not translate; every voice in the catalog speaks exactly one.
- * `ttsVoiceIds` owns the derivation, including the fallback to the SDK's own
- * default voice should the filter ever match nothing.
+ * the socket is open, so the synthesis simply produces nothing. Narrowed to
+ * {@link SUMMARY_LANGUAGE} because the summary is written in the transcript's
+ * language and the prompt does not translate; every voice in the catalog speaks
+ * exactly one. `ttsVoiceIds` owns the derivation, including the fallback to the
+ * SDK's own default voice should the filter ever match nothing.
+ *
+ * Exported so `agent.test.ts` can hold the list to the catalog it came from —
+ * in particular that the voice the SDK fills in for an unchosen one is on it.
  */
-const VOICES = ttsVoiceIds("en");
+export const VOICES = ttsVoiceIds(SUMMARY_LANGUAGE);
 
 /**
  * The run input, as its own const.

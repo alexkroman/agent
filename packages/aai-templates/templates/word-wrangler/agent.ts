@@ -1,6 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { DIALOGS } from "./game.ts";
-import { gameProjection } from "./shared.ts";
+import { GAME_EVENTS, gameProjection } from "./shared.ts";
 
 /**
  * Word Wrangler — Pipecat's three-way phone word game as one voice agent.
@@ -22,6 +22,13 @@ export default agent({
    * this line the round would never end on its own.
    */
   dialogs: DIALOGS,
+  /**
+   * Records what the describer was HEARD to say, so the foul check is not
+   * limited to the one turn the runtime hands a tool. It costs no model call
+   * and the host cannot forget it — which is the whole reason the rule the game
+   * turns on does not live in the prompt.
+   */
+  events: GAME_EVENTS,
   greeting:
     "Welcome to Word Wrangler. I'll give you words to describe, and my A.I. player will try to " +
     "guess them - two minutes on the clock. Say ready when you are.",

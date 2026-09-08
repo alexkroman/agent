@@ -85,19 +85,23 @@
  * honest display is the count plus the run's own newest line.
  */
 
+import "@alexkroman1/aai-ui/styles.css";
+import { formatDuration } from "@alexkroman1/aai/utils";
 import {
   BulletList,
   Form,
   mountPage,
   SubmitButton,
+  type SubmitInputOf,
   useRunKey,
   useWorkflowSubmit,
   WorkflowFields,
+  type WorkflowOutputOf,
   WorkflowPendingNote,
   WorkflowProgress,
   WorkflowRunError,
+  type WorkflowSubmission,
 } from "@alexkroman1/aai-ui";
-import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
 // digest.ts` already declares.
@@ -105,6 +109,23 @@ import type { dailyDigest } from "./agent.ts";
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "dailyDigest";
+
+/**
+ * What `useWorkflowSubmit` hands back for THIS workflow, named so a component
+ * can take one as a prop.
+ *
+ * The hook's own return is inferred, so a page that renders everything in one
+ * function never needs this. A page that splits does, and there is no way to
+ * write it from the outside without these three: `WorkflowSubmission` is the
+ * shape, and its two parameters are the run's OUTPUT and what `submit()`
+ * accepts — which is what `<WorkflowPendingNote submission={…}>` already asks
+ * for one of, and what a `ReturnType<typeof useWorkflowSubmit>` cannot say
+ * because the hook is generic.
+ */
+type DigestSubmission = WorkflowSubmission<
+  WorkflowOutputOf<typeof dailyDigest>,
+  SubmitInputOf<typeof dailyDigest>
+>;
 
 export function App() {
   // This BROWSER's handle on its schedules — minted once and kept for as long
@@ -121,7 +142,7 @@ export function App() {
   // The key REPLACES the tab-scoped one the hook would mint; the lookup that
   // reads it back on the next load happens either way.
   const submission = useWorkflowSubmit<typeof dailyDigest>(WORKFLOW, { key });
-  const { submitForm, run, pending, error, wake, cancel } = submission;
+  const { submitForm, run, pending, error } = submission;
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
@@ -151,53 +172,87 @@ export function App() {
           component. */}
       <WorkflowProgress runId={run?.runId} lines={1} className="text-sm opacity-70" />
 
-      {pending && (
-        <div className="flex gap-2">
-          {/* The counterpart of the `sleep` in `workflows/digest.ts` — see the
-              module doc on why a scheduled run needs this AND cancel. */}
-          <button
-            type="button"
-            onClick={() => void wake()}
-            className="rounded-md border px-3 py-1 text-sm"
-          >
-            Send the next digest now
-          </button>
-          <button
-            type="button"
-            onClick={() => void cancel()}
-            className="rounded-md border px-3 py-1 text-sm text-red-600"
-          >
-            Stop the schedule
-          </button>
-        </div>
-      )}
+      <ScheduleControls submission={submission} />
 
       {/* Announced, the same contract `<Form>` gives the submit error above: a
           digest that fails does so days later, with nobody watching. */}
       <WorkflowRunError run={run} />
       {run?.status === "cancelled" && <p>Cancelled — no further digests will be posted.</p>}
 
-      {run?.status === "completed" && (
-        <article className="flex flex-col gap-4">
-          <p className="text-sm opacity-70">
-            Posted {run.output.digestsSent} of {run.output.digestsScheduled} digests to{" "}
-            {run.output.deliveryTarget}, every {run.output.scheduleInterval}.
-          </p>
-          {run.output.lastDigest?.episodes.map((episode) => (
-            <section key={episode.id} className="flex flex-col gap-1 border-t pt-3">
-              <p className="text-sm opacity-70">{episode.podcastTitle}</p>
-              <h2 className="text-lg">
-                <a href={episode.url} className="underline">
-                  {episode.title}
-                </a>
-              </h2>
-              <p>{episode.summary}</p>
-              <BulletList items={episode.keyPoints} size="sm" />
-            </section>
-          ))}
-        </article>
-      )}
+      {run?.status === "completed" && <LastDigest output={run.output} />}
     </main>
+  );
+}
+
+/**
+ * Wake and Stop, bound to the run the page is following.
+ *
+ * It takes the whole SUBMISSION rather than the two callbacks, which is the
+ * same shape `<WorkflowPendingNote>` asks for and the reason
+ * {@link DigestSubmission} is written down: the pair is only meaningful for the
+ * run this page is following, and passing them loose invites a caller to bind
+ * them to something else.
+ */
+function ScheduleControls({ submission }: { submission: DigestSubmission }) {
+  const { pending, wake, cancel } = submission;
+  if (!pending) return null;
+
+  return (
+    <div className="flex gap-2">
+      {/* The counterpart of the `sleep` in `workflows/digest.ts` — see the
+          module doc on why a scheduled run needs this AND cancel. */}
+      <button
+        type="button"
+        onClick={() => void wake()}
+        className="rounded-md border px-3 py-1 text-sm"
+      >
+        Send the next digest now
+      </button>
+      <button
+        type="button"
+        onClick={() => void cancel()}
+        className="rounded-md border px-3 py-1 text-sm text-red-600"
+      >
+        Stop the schedule
+      </button>
+    </div>
+  );
+}
+
+/**
+ * What the finished run posted, last digest first.
+ *
+ * The prop is `WorkflowOutputOf<typeof dailyDigest>` — the workflow's own
+ * output type, which is what the `completed` branch narrows `run.output` to.
+ * Naming it is what keeps this component and `workflows/digest.ts` from
+ * drifting: a field renamed there is a compile error here rather than
+ * `undefined` on the page.
+ */
+function LastDigest({ output }: { output: WorkflowOutputOf<typeof dailyDigest> }) {
+  return (
+    <article className="flex flex-col gap-4">
+      <p className="text-sm opacity-70">
+        Posted {output.digestsSent} of {output.digestsScheduled} digests to {output.deliveryTarget},
+        every {output.scheduleInterval}.
+      </p>
+      {output.lastDigest?.episodes.map((episode) => (
+        <section key={episode.id} className="flex flex-col gap-1 border-t pt-3">
+          {/* The same line the Slack message carries, from the same formatter —
+              the run and the page cannot print one episode's length two ways. */}
+          <p className="text-sm opacity-70">
+            {episode.podcastTitle}
+            {episode.durationMs === undefined ? "" : ` · ${formatDuration(episode.durationMs)}`}
+          </p>
+          <h2 className="text-lg">
+            <a href={episode.url} className="underline">
+              {episode.title}
+            </a>
+          </h2>
+          <p>{episode.summary}</p>
+          <BulletList items={episode.keyPoints} size="sm" />
+        </section>
+      ))}
+    </article>
   );
 }
 

@@ -1,3 +1,4 @@
+import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { TOURS } from "../catalogs.ts";
 import { catalogBookingTool } from "../concierge.ts";
@@ -20,7 +21,7 @@ export default catalogBookingTool({
   }),
   price({ tour, date, partySize }) {
     const t = TOURS[tour];
-    if (partySize > t.maxParty) return { error: `${t.name} takes at most ${t.maxParty} guests` };
+    if (partySize > t.maxParty) return toolFailure(`${t.name} takes at most ${t.maxParty} guests`);
     const total = t.flatPrice ?? (t.pricePerPerson ?? 0) * partySize;
     return {
       total,

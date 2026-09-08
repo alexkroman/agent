@@ -1,7 +1,8 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { draftForModification } from "../booking.ts";
 import { deskFlow } from "../desk.ts";
+import { requireFloorPlanRoom } from "../hotel.ts";
 import { speakUsd, spokenDate, TODAY } from "../records.ts";
 import { hotelSlot, requireVerified } from "../shared.ts";
 
@@ -27,13 +28,13 @@ export default deskFlow.tool({
   execute: (_args, ctx) =>
     hotelSlot.update(ctx, (hotel) => {
       const booking = requireVerified(hotel);
-      if ("error" in booking) return toolFailure(booking.error);
+      if (isToolFailure(booking)) return booking;
       if (booking.status !== "confirmed")
         return toolFailure("that booking was cancelled - nothing to modify");
       if (booking.checkOut < TODAY)
         return toolFailure("that stay already ended - can't modify a past booking");
-      const room = hotel.rooms.find((r) => r.id === booking.roomId);
-      if (room === undefined) return toolFailure(`room ${booking.roomId} is not on the floor plan`);
+      const room = requireFloorPlanRoom(hotel, booking.roomId);
+      if (isToolFailure(room)) return room;
       hotel.draft = draftForModification(booking, room);
       const extras = booking.extras.length > 0 ? booking.extras.join(", ") : "none";
       return {

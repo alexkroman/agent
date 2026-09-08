@@ -13,17 +13,31 @@
  * rounds spinner exist here because of what the schema says, and adding a fourth
  * scalar adds a fourth control with no edit to this file.
  *
- * It renders nothing for `mustCover`, deliberately: that property is an ARRAY,
- * and there is no honest generic control for one. So this page writes that field
- * itself — a plain `<TextAreaField>` in the same `<Form>`, one point per line —
- * and maps it on submit. Every field in `@alexkroman1/aai-ui` is a plain named
- * control, which is what lets the declared and the hand-written ones sit
- * together and arrive as one object.
+ * It renders nothing for `mustCover` or `source`, deliberately: one is an ARRAY
+ * and the other an OBJECT, and there is no honest generic control for either. So
+ * this page writes those two itself — a `<TextAreaField>` taking one required
+ * point per line, and a `<FileField read="text">` taking a draft to mark up —
+ * in the same `<Form>`, and maps them on submit. Every field in
+ * `@alexkroman1/aai-ui` is a plain named control, which is what lets the declared
+ * and the hand-written ones sit together and arrive as one object.
  *
  * The mapping is the other half of that: `<Form>` collects what the DOM holds,
- * and a textarea holds a string where the workflow's schema wants `string[]`.
- * `toInput` is where the two meet — and it is the only place, so the split lives
- * in one function rather than in the field, the submit handler and the workflow.
+ * and a textarea holds a string where the workflow's schema wants `string[]`,
+ * while a file input holds a `FileValue` where it wants `{ name, text }`.
+ * `toInput` is where all of that meets — and it is the only place, so the split
+ * lives in one function rather than in the field, the submit handler and the
+ * workflow. It sits in `form.ts` rather than here for one reason: this module
+ * MOUNTS on import, so nothing declared in it can be reached by a spec, and the
+ * mapping is the half of this page worth pinning.
+ *
+ * **A `<FileField>` does not imply an upload, and choosing wrong is the trap.**
+ * `read="text"` reads the chosen file in the browser and contributes its text
+ * with the rest of the form, so a draft is journaled with the run's input and
+ * there is nothing to fetch, nothing to expire and nothing to clean up. The
+ * upload path (`uploads: [...]` on the declaration, a `File` contributed unread,
+ * `stepReadUpload` at the far end) exists because a two-hour recording cannot go
+ * in a run's input at all — see `transcription-workflow`. A few kilobytes of
+ * prose is the case that does not need it.
  *
  * ## A reload used to lose the loop, which is minutes of model calls
  *
@@ -57,12 +71,13 @@
 
 import "@alexkroman1/aai-ui/styles.css";
 import { plural } from "@alexkroman1/aai/utils";
-import type { WorkflowInputOf, WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   BulletList,
   Facts,
+  FileField,
   Form,
-  type FormValues,
+  Markdown,
   mountPage,
   SubmitButton,
   TextAreaField,
@@ -72,6 +87,7 @@ import {
   WorkflowRunPanel,
 } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
+import { toInput } from "./form.ts";
 
 /**
  * What a finished run reports.
@@ -84,29 +100,6 @@ type Redline = WorkflowOutputOf<typeof redline>;
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "redline";
-
-/**
- * The submitted form as the workflow's input schema wants it.
- *
- * One function, because the textarea-to-array split is exactly the kind of
- * thing that otherwise gets half-done in three places. Blank lines go, so a
- * trailing newline is not a requirement to cover "".
- */
-export function toInput(values: FormValues): WorkflowInputOf<typeof redline> {
-  const raw = typeof values.mustCover === "string" ? values.mustCover : "";
-  // The scalars ride through as the form collected them — strings from the DOM,
-  // which the WORKFLOW's schema coerces and validates server-side. Only
-  // `mustCover` is reshaped here, because no control renders a `string[]`.
-  // The assertion is on the scalars alone and is what `submitForm` exists to
-  // avoid needing anywhere a page is not doing this reshaping deliberately.
-  return {
-    ...(values as Omit<WorkflowInputOf<typeof redline>, "mustCover">),
-    mustCover: raw
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0),
-  };
-}
 
 function RedlineDesk() {
   // The reload is covered by the hook's own key — see the module doc for why
@@ -127,12 +120,24 @@ function RedlineDesk() {
       <Form onSubmit={(values) => submit(toInput(values))} error={error}>
         {/* The scalars: brief, audience, rounds. Declared, not written. */}
         <WorkflowFields workflow={WORKFLOW} />
-        {/* The array the schema declares and no generic control can render. */}
+        {/* The two the schema declares and no generic control can render: an
+            array, and an object. Written here, mapped in `toInput`. */}
         <TextAreaField
           name="mustCover"
           label="Must cover"
           hint="One point per line. Leave empty if nothing is required."
           rows={3}
+        />
+        {/* `read="text"` reads the file in the BROWSER and contributes its text
+            with the rest of the form — no upload, no id, nothing for the run to
+            fetch. That is the right trade for a draft and the wrong one for a
+            recording; `transcription-workflow` is the other case. */}
+        <FileField
+          name="source"
+          label="Start from a draft"
+          hint="Optional. A .md or .txt file to redline instead of writing one from the brief."
+          read="text"
+          accept=".md,.markdown,.txt,text/plain,text/markdown"
         />
         <SubmitButton pending={pending}>Write it</SubmitButton>
       </Form>
@@ -173,12 +178,18 @@ function RedlineDesk() {
                   `${output.words} words`,
                   `${output.roundsRun} ${plural(output.roundsRun, "round")}`,
                   output.shipped ? "the critic stopped it" : "the round budget stopped it",
+                  // A false entry is dropped, so this row says which way in the
+                  // run took only when there is something to say.
+                  output.source !== undefined && `redlined from ${output.source}`,
                 ]}
               />
               <Rounds rounds={output.rounds} />
-              <article className="whitespace-pre-wrap text-sm leading-relaxed">
-                {output.draft}
-              </article>
+              {/* `<Markdown>` rather than a `whitespace-pre-wrap` block, which is
+                  what stood here and rendered a `**` as two asterisks. The writer
+                  is told to return prose and no headings unless the brief asks
+                  for them — "unless" is the operative word, and an attached draft
+                  is somebody's own file and obeys nothing at all. */}
+              <Markdown text={output.draft} />
             </>
           )}
         </WorkflowRunPanel>

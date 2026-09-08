@@ -192,6 +192,11 @@ export function App() {
               value={output.blindCuts === 0 ? "none" : String(output.blindCuts)}
             />
             <Stat label="Run time" value={formatDuration(output.elapsedMs)} />
+            {/* Beside the run time rather than inside it: the run is mostly the
+                fan-out waiting on a provider, and this is what the DECODER cost.
+                It is the one number that says whether normalizing first paid for
+                itself, which is this template's whole argument. */}
+            <Stat label="ffmpeg time" value={formatDuration(output.ffmpegMs)} />
           </dl>
 
           {/* Either list can come back empty — see `risks` in the schema — and

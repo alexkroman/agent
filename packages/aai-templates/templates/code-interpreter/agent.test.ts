@@ -67,4 +67,25 @@ describe("code-interpreter template", () => {
     // schema.
     expect(expectPromptBuiltinsDeclared(agentDef)).toContain("run_code");
   });
+
+  test("the prompt tells Coda to PRINT, which is the only output run_code returns", () => {
+    // The one rule in `system-prompt.md` that is a fact about the BUILTIN
+    // rather than about Coda, and the only one whose loss is silent.
+    //
+    // `run_code` runs the model's snippet inside a worker in the guest sandbox
+    // (`runCode` in `aai-guest`'s `trial.ts`), and that worker posts back the
+    // lines an injected `console` collected — the async wrapper's completion
+    // value is awaited and DISCARDED. So a snippet ending in a bare expression
+    // comes back as "Code ran successfully (no output)", and a model that was
+    // told the last expression is captured writes exactly that snippet, reads
+    // a sentence with no number in it, and then reports a number anyway. That
+    // is the failure the CRITICAL RULES exist to prevent, arrived at by
+    // following them. The prompt said the opposite until this test existed.
+    //
+    // Asserted on the RESOLVED config rather than on the file, because a rule
+    // that never reaches the deploy is the same as a rule nobody wrote; and as
+    // a substring rather than a sentence, so rewording the instruction is a
+    // free edit and dropping the mechanism is not.
+    expect(expectDeployable(agentDef).systemPrompt ?? "").toContain("console.log");
+  });
 });

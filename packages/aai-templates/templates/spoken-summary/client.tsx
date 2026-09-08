@@ -77,9 +77,11 @@ import {
   mountPage,
   SubmitButton,
   UploadProgressBar,
+  type UseDownloadUrlResult,
   useDownloadUrl,
   useWorkflowSubmit,
   WorkflowFields,
+  type WorkflowOutputOf,
   WorkflowPendingNote,
   WorkflowProgress,
   WorkflowRunError,
@@ -102,6 +104,67 @@ const WORKFLOW = "spokenSummary";
  * closure every time and reads as though it were free.
  */
 const api = createWorkflowApi();
+
+/**
+ * What a finished run looks like: the words, the player, and the transcript.
+ *
+ * Its own component, so the two things it is handed have to be NAMED — and
+ * both names are the SDK's rather than a restatement of them.
+ * `WorkflowOutputOf<typeof spokenSummary>` is the run's declared output read
+ * off the def in `agent.ts` (a type-only import, erased at build), which is
+ * what stops this file writing out a shape `workflows/summarize.ts` already
+ * owns; `UseDownloadUrlResult` is the `{ url, error, pending }` triple the
+ * hook answers, and it belongs to the hook rather than to this page — a page
+ * that spelled it out by hand would be the place the fourth field goes
+ * missing.
+ *
+ * The hook itself stays in {@link App}, called unconditionally with an
+ * `undefined` id until there is a run: a hook inside a conditionally rendered
+ * child would be mounted and unmounted per run, which is a fresh fetch of
+ * bytes the page already had.
+ */
+function Summary({
+  output,
+  audio,
+}: {
+  output: WorkflowOutputOf<typeof spokenSummary>;
+  audio: UseDownloadUrlResult;
+}) {
+  return (
+    <article className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-xl">{output.headline}</h2>
+        <Facts
+          items={[output.source, formatDuration(output.durationMs), `${output.words} words`]}
+        />
+      </div>
+
+      <BulletList items={output.points} />
+
+      {/* The SDK's player over the hook's result — the pending line, the
+          announced error, the `<audio>`, the download link. A real caption
+          track, not a suppression: the summary was written before it was
+          spoken, so the words are already here and one cue spanning the clip
+          is an honest transcript of it. `captions` is that cue; the
+          component serves it as a WebVTT data URL rather than a second
+          stored file. */}
+      <AudioResult
+        download={audio}
+        filename="summary.wav"
+        label="Summary read aloud"
+        heading={`Read aloud · ${formatDuration(output.audioDurationMs)}`}
+        captions={{ text: output.spoken, durationMs: output.audioDurationMs, label: "Summary" }}
+      >
+        <p className="text-sm opacity-70">{output.spoken}</p>
+      </AudioResult>
+
+      <details className="text-sm">
+        <summary className="cursor-pointer opacity-70">Transcript</summary>
+        <p className="mt-2 whitespace-pre-wrap">{output.transcript}</p>
+      </details>
+    </article>
+  );
+}
 
 export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
@@ -149,40 +212,7 @@ export function App() {
           the outcome the reader waited minutes for. */}
       <WorkflowRunError run={run} />
 
-      {output !== undefined && (
-        <article className="flex flex-col gap-5">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-xl">{output.headline}</h2>
-            <Facts
-              items={[output.source, formatDuration(output.durationMs), `${output.words} words`]}
-            />
-          </div>
-
-          <BulletList items={output.points} />
-
-          {/* The SDK's player over the hook's result — the pending line, the
-              announced error, the `<audio>`, the download link. A real caption
-              track, not a suppression: the summary was written before it was
-              spoken, so the words are already here and one cue spanning the clip
-              is an honest transcript of it. `captions` is that cue; the
-              component serves it as a WebVTT data URL rather than a second
-              stored file. */}
-          <AudioResult
-            download={audio}
-            filename="summary.wav"
-            label="Summary read aloud"
-            heading={`Read aloud · ${formatDuration(output.audioDurationMs)}`}
-            captions={{ text: output.spoken, durationMs: output.audioDurationMs, label: "Summary" }}
-          >
-            <p className="text-sm opacity-70">{output.spoken}</p>
-          </AudioResult>
-
-          <details className="text-sm">
-            <summary className="cursor-pointer opacity-70">Transcript</summary>
-            <p className="mt-2 whitespace-pre-wrap">{output.transcript}</p>
-          </details>
-        </article>
-      )}
+      {output !== undefined && <Summary output={output} audio={audio} />}
     </main>
   );
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   DEFAULT_CLOCK_SEGMENTS,
   DISPOSITIONS,
+  findClock,
   gameSlot,
   MAX_BOND,
   MAX_CLOCK_SEGMENTS,
@@ -56,8 +57,16 @@ export default storyFlow.tool({
       .describe(`Number of segments, default ${DEFAULT_CLOCK_SEGMENTS}`)
       .optional(),
     addClockTrigger: z.string().max(300).describe("What happens when clock fills").optional(),
-    advanceClockName: z.string().max(100).describe("Clock name to advance by 1").optional(),
-    removeClockName: z.string().max(100).describe("Clock name to remove").optional(),
+    advanceClockName: z
+      .string()
+      .max(100)
+      .describe('Clock to advance by 1, by name or by what the player called it ("the second")')
+      .optional(),
+    removeClockName: z
+      .string()
+      .max(100)
+      .describe('Clock to remove, by name or by what the player called it ("the first clock")')
+      .optional(),
     advanceAct: z.boolean().describe("Move to next story act").optional(),
     storyComplete: z.boolean().describe("Mark story as complete").optional(),
     logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
@@ -129,10 +138,14 @@ export default storyFlow.tool({
         }
       }
 
-      // Advance clock
+      // Advance clock. `findClock` accepts the ORDINAL the player can see in
+      // the sidebar as well as the name, which is what a spoken reference to a
+      // clock called "The Syndicate Closes In" usually is.
       if (args.advanceClockName) {
-        const clock = state.clocks.find((c) => c.name === args.advanceClockName);
-        if (clock && clock.filled < clock.segments) {
+        const clock = findClock(state.clocks, args.advanceClockName);
+        if (!clock) {
+          warnings.push(`No clock matching "${args.advanceClockName}".`);
+        } else if (clock.filled < clock.segments) {
           clock.filled = Math.min(clock.segments, clock.filled + 1);
           if (clock.filled >= clock.segments) {
             clockEvents.push({ clock: clock.name, trigger: clock.triggerDescription });
@@ -140,9 +153,13 @@ export default storyFlow.tool({
         }
       }
 
-      // Remove clock
+      // Remove clock. Resolved to ONE clock and dropped by id: filtering on the
+      // spoken string would delete every clock sharing a name, and would delete
+      // nothing at all when the player used an ordinal.
       if (args.removeClockName) {
-        state.clocks = state.clocks.filter((c) => c.name !== args.removeClockName);
+        const clock = findClock(state.clocks, args.removeClockName);
+        if (clock) state.clocks = state.clocks.filter((c) => c.id !== clock.id);
+        else warnings.push(`No clock matching "${args.removeClockName}".`);
       }
 
       // Story arc

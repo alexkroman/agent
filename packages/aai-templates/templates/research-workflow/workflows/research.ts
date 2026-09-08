@@ -16,8 +16,24 @@
  *   findGaps        1 step    →  the supervisor's second look
  *   investigate     M steps   →  the second wave, when there is one
  *   writeReport     1 step    →  the report, then the sentence for the phone
- *   sleep + file    1 step    →  the review wait, then filing
+ *   sleep + file    1 step    →  the review wait, then filing (`filing.ts`)
  * ```
+ *
+ * ## The last step really files it
+ *
+ * `file` used to return the string `"filed"` and write nothing, which made the
+ * review wait a delay before nothing and `file_it_now` a button that skipped
+ * one. It posts the findings to a channel now (`filing.ts`), and the channel is
+ * optional — a desk with none still researches and still says so.
+ *
+ * ## Three modules beside this one, and what each is for
+ *
+ * `notes.ts` is the leaf: the four shapes the stages pass between them and the
+ * pure functions that read them, imported by this file and by `filing.ts`.
+ * `review.ts` holds the two constants the review wait needs, because
+ * `file_it_now` has to name the same one. `prompts.ts` is the prompts. What is
+ * left here is the FLOW — which stages exist, in what order, and what each one
+ * is allowed to cost.
  *
  * ## A step can do what a TOOL can do, and `stepDelegate` is where that lands
  *
@@ -72,12 +88,30 @@
  * see `sdk/step-delegate.ts`.
  */
 
-import type { SubagentDef, SubagentToolCall, ToolDef, WorkflowContext } from "@alexkroman1/aai";
+import type {
+  SleepOptions,
+  StepOptions,
+  SubagentDef,
+  SubagentToolCall,
+  ToolDef,
+  WorkflowContext,
+} from "@alexkroman1/aai";
 import { subagent, tool } from "@alexkroman1/aai";
 import { mapConcurrent, stepDelegate, stepReport } from "@alexkroman1/aai/step";
 import { stepGenerateJsonOrFail, stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
 import { isRecord, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
+import { file } from "./filing.ts";
+import {
+  type Brief,
+  briefText,
+  countSources,
+  dedupe,
+  type Findings,
+  type Note,
+  noteText,
+  type Source,
+} from "./notes.ts";
 import {
   BRIEF_SUMMARY_SYSTEM,
   BRIEF_SYSTEM,
@@ -87,6 +121,7 @@ import {
   RESEARCH_OUTPUT,
   RESEARCH_SYSTEM,
 } from "./prompts.ts";
+import { REVIEW_DELAY_MS, REVIEW_SLEEP_ID } from "./review.ts";
 
 /**
  * Angles investigated at once. The far side of every one is a rate limit.
@@ -96,18 +131,19 @@ import {
  */
 const ANGLE_CONCURRENCY = 2;
 
-/**
- * How long the desk sits on a finished report before filing it.
- *
- * Short enough to watch in `aai dev`. Nothing about this file changes if it is
- * `"6 hours"` — which is the interesting version, and the one a real desk would
- * use; what makes either affordable is that the run is SUSPENDED rather than
- * blocked, so the sandbox is free to exit and the run resumes when it comes due.
- */
-export const REVIEW_DELAY_MS = 30_000;
-
 /** Most angles a wave may carry, whatever the supervisor asks for. */
 const MAX_ANGLES = 4;
+
+/**
+ * What a `ctx.step("investigate", …)` costs before the run gives up on it.
+ *
+ * More attempts than `DEFAULT_STEP_MAX_ATTEMPTS` because an angle is the
+ * expensive thing to lose: it is a whole delegated research pass, and the run
+ * has already paid for its siblings. Named and shared rather than written at
+ * each wave, because the two waves differing by a digit is a difference nobody
+ * would ever mean. It was `investigate.maxRetries = 4`.
+ */
+const ANGLE_STEP = { maxAttempts: 5 } satisfies StepOptions;
 
 /**
  * Tool-calling steps one researcher may take before it must answer.
@@ -125,9 +161,6 @@ const MAX_ANGLES = 4;
  * it.
  */
 const RESEARCH_BUDGET = 6;
-
-/** One source a researcher actually used. */
-export type Source = { title: string; url: string };
 
 // ---- What each stage's model call has to come back as ------------------------
 //
@@ -157,33 +190,6 @@ const BriefReply = z.object({ brief: z.string().trim().optional(), criteria: Str
 /** What `planAngles` and `findGaps` ask for. */
 const AnglesReply = z.object({ angles: StringList });
 
-/** What one researcher concluded about one angle. */
-export type Note = {
-  angle: string;
-  /** The compressed findings — kept long on purpose; a later step summarizes. */
-  findings: string;
-  sources: Source[];
-};
-
-/** The research brief, as `writeBrief` settles it. */
-export type Brief = {
-  brief: string;
-  /** What a complete answer has to contain — what `findGaps` measures against. */
-  criteria: string[];
-};
-
-/** What one research pass produces. */
-export type Findings = {
-  topic: string;
-  /** Two sentences, for an agent to read down a phone. */
-  summary: string;
-  /** The written report — markdown, cited. What a page renders. */
-  report: string;
-  /** How many distinct sources were used, which is what the voice agent quotes. */
-  sources: number;
-  angles: string[];
-};
-
 /**
  * Research `topic` properly and return something worth reading back.
  *
@@ -208,9 +214,9 @@ export async function researchFlow(
   // `investigate#N`. A failed angle fails the RUN: its finished siblings are
   // already journaled, so the resume replays them for free and re-issues only
   // what is missing, where catching here would file a report with a silent hole
-  // in it. `maxAttempts: 5` was `investigate.maxRetries = 4`.
+  // in it. `ANGLE_STEP` is the retry policy both waves share.
   const first = await mapConcurrent(angles, ANGLE_CONCURRENCY, (angle) =>
-    ctx.step("investigate", () => investigate(brief, angle), { maxAttempts: 5 }),
+    ctx.step("investigate", () => investigate(brief, angle), ANGLE_STEP),
   );
 
   // The supervisor's second look. Usually empty — a second wave costs the caller
@@ -222,7 +228,7 @@ export async function researchFlow(
   // terribly in a run's history: `investigate#7` would be the second wave's
   // first angle with nothing saying so. The name is what an operator reads.
   const second = await mapConcurrent(gaps, ANGLE_CONCURRENCY, (angle) =>
-    ctx.step("investigateGap", () => investigate(brief, angle), { maxAttempts: 5 }),
+    ctx.step("investigateGap", () => investigate(brief, angle), ANGLE_STEP),
   );
 
   const notes = [...first, ...second];
@@ -231,7 +237,12 @@ export async function researchFlow(
   // Suspended, not blocked. On resume the body re-runs from the top and every
   // step above returns its journaled result rather than researching again —
   // which is also what `file_it_now` ends early, through `ctx.workflows.wakeUp`.
-  await ctx.sleep("reviewWindow", REVIEW_DELAY_MS);
+  //
+  // The wait is NAMED, and the name is the whole reason `file_it_now` cannot
+  // end a suspension it was not asked about; `review.ts` carries the argument.
+  await ctx.sleep("reviewWindow", REVIEW_DELAY_MS, {
+    correlationId: REVIEW_SLEEP_ID,
+  } satisfies SleepOptions);
 
   // Whatever this returns is what `ctx.workflows.get(runId)` reports as `output`
   // on a completed run — so it is what the agent reads back, and what the
@@ -242,7 +253,18 @@ export async function researchFlow(
     report: written.report,
     sources: countSources(notes),
     angles: notes.map((note) => note.angle),
-    filedAt: await ctx.step("file", () => file(input.requestedBy, input.topic)),
+    // The step's ARGUMENT is serialized, so what crosses is data rather than
+    // the `notes` array itself — which is also why the report does not travel:
+    // a filed message says what was found and where to read it, not the whole
+    // of it. See `filing.ts`.
+    filedAt: await ctx.step("file", () =>
+      file({
+        topic: input.topic,
+        requestedBy: input.requestedBy,
+        summary: written.summary,
+        angles: notes.map(({ angle, sources }) => ({ angle, sources })),
+      }),
+    ),
   } satisfies Findings & { filedAt: string };
 }
 
@@ -453,18 +475,6 @@ export async function writeReport(
   return { report: written, summary };
 }
 
-/**
- * File the finished research.
- *
- * `ctx.db` is the one half of a tool context a step still does not get, so this
- * writes nothing and says so rather than naming a call it cannot make. The
- * parameters carry `_` for the same reason.
- */
-export async function file(_requestedBy: string, _topic: string): Promise<string> {
-  await stepReport("Filing the findings.");
-  return "filed";
-}
-
 // ---- Model plumbing ---------------------------------------------------------
 //
 // There is none left, and its absence is the point. This desk carried an `ask()`
@@ -477,31 +487,3 @@ export async function file(_requestedBy: string, _topic: string): Promise<string
 // to re-derive — unwrap the fence, parse, reject a non-object, check the shape —
 // and throws PLAINLY when any of them misses, which is what makes a malformed
 // reply a retry rather than a failure.
-
-// ---- Pure helpers -----------------------------------------------------------
-
-/** The brief as the models are shown it. */
-function briefText(brief: Brief): string {
-  const criteria = brief.criteria.map((one) => `- ${one}`).join("\n");
-  return criteria
-    ? `Brief: ${brief.brief}\n\nA complete answer covers:\n${criteria}`
-    : `Brief: ${brief.brief}`;
-}
-
-/** One note, as a later stage reads it. */
-function noteText(note: Note): string {
-  const cited = note.sources.map((one, at) => `[${at + 1}] ${one.title} — ${one.url}`).join("\n");
-  return `## ${note.angle}\n${note.findings}\n${cited}`;
-}
-
-/** Distinct sources by URL, first occurrence winning. */
-export function dedupe(sources: readonly Source[]): Source[] {
-  const byUrl = new Map<string, Source>();
-  for (const one of sources) if (!byUrl.has(one.url)) byUrl.set(one.url, one);
-  return [...byUrl.values()];
-}
-
-/** How many distinct sources the whole pass rests on — what the agent quotes. */
-export function countSources(notes: readonly Note[]): number {
-  return dedupe(notes.flatMap((note) => note.sources)).length;
-}

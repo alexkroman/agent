@@ -50,18 +50,19 @@
  */
 
 import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
-import { mapConcurrent, stepReport, TRANSCRIBE_API } from "@alexkroman1/aai/step";
+import type { SlackChannelOptions } from "@alexkroman1/aai/channels";
+import { mapConcurrent, stepReport, TRANSCRIBE_API, type Transcript } from "@alexkroman1/aai/step";
 import {
   FatalError,
   stepGenerateJsonOrFail,
   stepTranscribePollOrFail,
   stepTranscribeSubmitOrFail,
 } from "@alexkroman1/aai/step-errors";
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import type { dailyDigest } from "../agent.ts";
 import { discoverEpisodes, type Episode } from "./feeds.ts";
-import { sendDigestToSlack } from "./slack.ts";
+import { describeDestination, sendDigestToSlack } from "./slack.ts";
 
 /**
  * Between polling rounds. Transcription is minutes, so this is not a busy wait.
@@ -133,9 +134,18 @@ type TranscriptJob = Episode &
     | { transcriptStatus: "unavailable"; reason: string }
   );
 
+/**
+ * The `done` arm carries the SDK's own {@link Transcript} — the id, the words
+ * and the provider's duration measurement as ONE value, which is how
+ * `stepTranscribePoll` answers.
+ *
+ * It used to flatten that into `transcriptId`/`transcript`/`durationMs`, and
+ * the flattening is what let the duration go nowhere: it was copied out of the
+ * poll's result, stored on every finished episode, and read by nothing.
+ */
 type TranscriptState = Episode &
   (
-    | { transcriptStatus: "done"; transcriptId: string; transcript: string; durationMs: number }
+    | { transcriptStatus: "done"; transcript: Transcript }
     | { transcriptStatus: "unavailable"; reason: string }
   );
 
@@ -144,6 +154,8 @@ export type EpisodeDigest = Episode & {
   transcriptSource: "assemblyai" | "unavailable";
   summary: string;
   keyPoints: string[];
+  /** How long the episode runs — absent when nobody could transcribe it. */
+  durationMs?: number;
 };
 
 export type DailyDigestOutput = {
@@ -186,6 +198,12 @@ export async function dailyDigestFlow(
   const { daysToRun: totalDigests, maxEpisodesPerDigest: maxEpisodes } = input;
   const { intervalEvery, intervalUnit } = input;
   const intervalMs = scheduleIntervalMs(intervalEvery, intervalUnit);
+  // Built once, from the input, and handed to the step as the SDK's own
+  // options pair rather than as two strings the step would have to rename.
+  const destination: SlackChannelOptions = {
+    webhookUrl: input.slackWebhookUrl,
+    textParam: input.slackWorkflowTextParam,
+  };
 
   let lastDigest: DailyDigestOutput["lastDigest"] = null;
   let digestsSent = 0;
@@ -217,8 +235,7 @@ export async function dailyDigestFlow(
     const [slackStatus, sentAt] = await Promise.all([
       ctx.step("postDigest", () =>
         sendDigestToSlack({
-          slackWebhookUrl: input.slackWebhookUrl,
-          slackWorkflowTextParam: input.slackWorkflowTextParam,
+          destination,
           podcastChannels: input.podcastChannels,
           episodes: digests,
           digestNumber,
@@ -247,7 +264,8 @@ export async function dailyDigestFlow(
 
   return {
     podcastChannels: input.podcastChannels,
-    deliveryTarget: "Slack webhook",
+    // Which SHAPE it posted to, not a constant: see `describeDestination`.
+    deliveryTarget: describeDestination(destination),
     scheduleInterval: formatScheduleInterval(intervalEvery, intervalUnit),
     digestsScheduled: totalDigests,
     digestsSent,
@@ -379,13 +397,10 @@ export async function pollTranscript(job: TranscriptJob): Promise<TranscriptStat
     if (!progress.done) return job;
 
     await stepReport(`Transcribed ${job.title}.`);
-    return {
-      ...job,
-      transcriptStatus: "done",
-      transcriptId: job.transcriptId,
-      transcript: progress.transcript.text,
-      durationMs: progress.transcript.durationMs,
-    };
+    // The whole `Transcript`, not three fields peeled off it: the poll's own
+    // answer is what gets journaled, and the id it carries is the one the
+    // provider minted rather than a copy this line kept in step with by hand.
+    return { ...job, transcriptStatus: "done", transcript: progress.transcript };
   } catch (err) {
     // Same policy as {@link submitTranscript}: the SDK classified it, a
     // retryable verdict goes back to the DevKit, a terminal one degrades.
@@ -416,7 +431,7 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
       `Published: ${state.published}`,
       "",
       "Transcript:",
-      state.transcript.slice(0, MAX_TRANSCRIPT_CHARS),
+      state.transcript.text.slice(0, MAX_TRANSCRIPT_CHARS),
     ].join("\n"),
     {
       schema: SummaryReply,
@@ -433,6 +448,9 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
     transcriptSource: "assemblyai",
     summary: parsed.summary,
     keyPoints: parsed.keyPoints,
+    // The provider decoded the file; nothing here did. It reaches the digest
+    // entry, so the message and the page can say how long the episode runs.
+    durationMs: state.transcript.durationMs,
   };
 }
 
@@ -451,9 +469,17 @@ function episodeOf(state: Episode): Episode {
   };
 }
 
-/** "1 hour", "15 minutes" — the schedule as the page prints it. */
+/**
+ * "1 hour", "15 minutes" — the schedule as the page prints it.
+ *
+ * `plural` decides which word, and the arguments are the way round they are
+ * because {@link IntervalUnit} is already the PLURAL: the singular is the
+ * derived one. The `every === 1 ? … : …` this replaces is the idiom that
+ * helper exists for — it reads as noise, so the count it tests is easy to get
+ * wrong, and there is a second one of it in `workflows/slack.ts`.
+ */
 export function formatScheduleInterval(every: number, unit: IntervalUnit): string {
-  return `${every} ${every === 1 ? unit.slice(0, -1) : unit}`;
+  return `${every} ${plural(every, unit.slice(0, -1), unit)}`;
 }
 
 /**

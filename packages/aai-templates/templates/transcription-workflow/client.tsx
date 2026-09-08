@@ -133,6 +133,12 @@
  *   (`MAX_IDLE_POLLS`) before it calls the uploader gone and fails the run, so a
  *   pause longer than a coffee ends the run rather than the upload.
  *
+ * That difference reaches the reader rather than only this comment: the note
+ * under the form takes the hook's `UploadStatus`, so a paused upload gets its
+ * own sentence and the streaming one says the run is on a clock. Without it the
+ * desk answered a pause with "reloading is safe" — true about the reload, and
+ * beside the point.
+ *
  * ## Two waits, ONE number
  *
  * The two bars describe the two stretches separately, and neither answers the
@@ -191,6 +197,7 @@
 
 import "@alexkroman1/aai-ui/styles.css";
 import {
+  CheckboxField,
   Form,
   isTerminal,
   mountPage,
@@ -385,6 +392,10 @@ function TranscriptionDesk() {
             recoverable: mode !== "streaming",
             startedHere,
             found: run !== undefined,
+            // The hook's own `UploadStatus`, so a PAUSED upload gets a sentence
+            // rather than the recovery copy — which in streaming mode is a
+            // promise the run cannot keep. See `recover.ts`.
+            upload,
           })}
         </p>
       )}
@@ -404,8 +415,7 @@ function TranscriptionDesk() {
       )}
 
       <History
-        runs={history.runs}
-        error={history.error}
+        history={history}
         openId={openId}
         onOpen={(runId) => setOpenId((current) => (current === runId ? undefined : runId))}
       />
@@ -480,23 +490,20 @@ function UploadPicker({
   return (
     <fieldset className="flex flex-col gap-3" disabled={disabled}>
       <legend className="text-sm font-medium uppercase tracking-[1.2px]">Upload</legend>
-      <label className="flex items-start gap-3 text-sm">
-        <input
-          type="checkbox"
-          className="mt-1"
-          name="parallel"
-          checked={parallel}
-          onChange={(event) => onPick(event.target.checked)}
-        />
-        <span className="flex flex-col gap-0.5">
-          <span>Split the file across connections</span>
-          <span className="text-xs opacity-70">
-            Sends the recording as several parts at once instead of in one request, which is most of
-            the wait on a long file — and is the only upload a dropped connection can resume. Falls
-            back to the single request on a small one.
-          </span>
-        </span>
-      </label>
+      {/* `<CheckboxField>` is what `<WorkflowFields>` renders for a declared
+          boolean, so the one control this page writes itself now matches the
+          ones its schema declares — the hand-written box, label and hint here
+          had drifted on all three (size, colour, and no theme at all). It sits
+          OUTSIDE `<Form>` deliberately: `parallel` describes how the recording
+          travels rather than what the workflow is asked for, so it is page state
+          and the `name` is for the DOM, not for `FormValues`. */}
+      <CheckboxField
+        name="parallel"
+        label="Split the file across connections"
+        hint="Sends the recording as several parts at once instead of in one request, which is most of the wait on a long file — and is the only upload a dropped connection can resume. Falls back to the single request on a small one."
+        checked={parallel}
+        onChange={(event) => onPick(event.target.checked)}
+      />
     </fieldset>
   );
 }

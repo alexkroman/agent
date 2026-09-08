@@ -4,8 +4,10 @@ import {
   pickOne,
   type RandomSource,
   randomInt,
+  type SlotCaps,
   sessionSlot,
   shuffled,
+  spokenOrdinal,
 } from "@alexkroman1/aai";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
@@ -15,6 +17,8 @@ export const MIN_MOMENTUM = -6;
 export const MAX_BOND = 4;
 export const MAX_NPCS = 12;
 export const MAX_CLOCKS = 8;
+/** How many chronicle entries the slot keeps. See {@link GAME_CAPS}. */
+export const MAX_LOG_ENTRIES = 50;
 export const MIN_CLOCK_SEGMENTS = 2;
 export const MAX_CLOCK_SEGMENTS = 12;
 export const DEFAULT_CLOCK_SEGMENTS = 6;
@@ -339,6 +343,19 @@ export const DEFAULT_STATE: GameState = {
 // `DEFAULT_STATE` is one module-level object shared by every session in the
 // process, so a factory without it would let one player's game show up in
 // another's.
+/**
+ * The bounds the slot enforces, hoisted so the number is a named constant like
+ * every other limit in this file.
+ *
+ * `SlotCaps<GameState>` is what says only an ARRAY field may appear here — the
+ * mapped type drops every scalar key, so `chaosFactor: 5` (a plausible typo for
+ * a limit that is enforced in `updateChaosFactor` instead) is a compile error
+ * rather than a cap on nothing. The session log rides in every `syncState` frame
+ * and the client renders its tail, so the slot holds the bound and
+ * `update_state` need not.
+ */
+const GAME_CAPS: SlotCaps<GameState> = { sessionLog: MAX_LOG_ENTRIES };
+
 export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE), {
   // The derived-field recalculation every mutating tool used to have to
   // remember. It was written out by hand in `applyConsequences`,
@@ -347,9 +364,7 @@ export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE)
   // `gameOver`, and `gameOver` is what the story flow's `DOWNED` transition
   // reads. `dispatch-center`'s board is the same pattern one template over.
   after: updateCrisisFlags,
-  // The session log rides in every `syncState` frame and the client renders
-  // its tail; the slot holds the bound so `update_state` need not.
-  caps: { sessionLog: 50 },
+  caps: GAME_CAPS,
 });
 
 /**
@@ -568,6 +583,36 @@ export function makeNpc(opts: {
     agenda: opts.agenda ?? "",
     status: "active",
   };
+}
+
+/**
+ * The clock the player meant, by name or by the POSITION they can see.
+ *
+ * Clocks are a rendered LIST — `client.tsx` draws them in order — so "advance
+ * the second clock" is a referent the player has in front of them, and it is
+ * the one a phone call produces most often: a clock is named things like "The
+ * Syndicate Closes In", and reading that back word-perfect is exactly what
+ * speech is worst at. `spokenOrdinal` is the SDK's reader for that ("the second
+ * one", "the 2nd clock" → index 1), which replaces the exact `c.name === arg`
+ * equality both branches of `update_state` used to do.
+ *
+ * **Name first, ordinal second, and the order is the safety property.** A clock
+ * genuinely called "The First Light" contains an ordinal word, so resolving the
+ * ordinal first would silently retarget it at whatever is at index 0. An exact
+ * name always wins; the ordinal is only consulted when nothing was named.
+ *
+ * Generic over the clock's own type — as `dispatch-center`'s `findIncident` is —
+ * so one lookup serves an `updateTool` draft and a frozen read alike.
+ */
+export function findClock<C extends { id: string; name: string }>(
+  clocks: readonly C[],
+  spoken: string,
+): C | undefined {
+  const wanted = spoken.trim().toLowerCase();
+  const named = clocks.find((c) => c.name.trim().toLowerCase() === wanted);
+  if (named) return named;
+  const index = spokenOrdinal(spoken);
+  return index === undefined ? undefined : clocks[index];
 }
 
 export function clockSummary(c: DeepReadonly<Clock>) {

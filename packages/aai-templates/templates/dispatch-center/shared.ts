@@ -263,7 +263,7 @@ export const dashboardProjection = dispatchSlot.projection(dashboardView);
  * `as const` is what keeps the `on` keys literal, so `DialogEvent` synthesizes
  * the event union from them and a misspelled `send` is a compile error.
  */
-const callSpec = {
+export const callSpec = {
   initial: "standby",
   states: {
     standby: {
@@ -310,6 +310,13 @@ const callSpec = {
  * about the conversation and the board is many facts about the world. One tool
  * call moves both — every converted tool opens `dispatchSlot.update` inside its
  * `execute` and lets the flow's own `send` follow it.
+ *
+ * **It is DECLARED on the agent** (`dialogs: [callFlow]`), which is what puts
+ * the active state's `instruction` in front of the model on every turn rather
+ * than only on the turns that happen to call a gated tool. Every sentence in
+ * the states below is written to be read that way; without the declaration the
+ * gate still holds and the instruction reaches nobody on a turn the dispatcher
+ * spends talking.
  */
 export const callFlow = dialog("call", callSpec);
 
@@ -368,6 +375,40 @@ export function findIncident<I extends DeepReadonly<Incident>>(
   incidentId: string,
 ): I | ToolFailure {
   return state.incidents[incidentId] ?? { error: `Incident ${incidentId} not found` };
+}
+
+/**
+ * The incident the dispatcher is working, or `undefined` on a shift with
+ * nothing open.
+ *
+ * This is {@link callFlow}'s own reading of the board, expressed over the data:
+ * `working.monitoring` means "the incident this dispatcher LAST TOUCHED has
+ * units on it", and every write goes through {@link logEvent}, which touches
+ * `updatedAt`. So the most recently updated OPEN incident is the one the
+ * position is about. A resolved incident is never it — its caller is off the
+ * line and its units have been released.
+ *
+ * Why a function rather than an `Incident.id` field on the board: a stored
+ * "current" pointer is a second copy of a fact `updatedAt` already carries, and
+ * the two disagree the first time a tool forgets to update it.
+ *
+ * Generic for the same reason {@link findIncident} is — one lookup serves a
+ * mutable draft and a frozen read alike.
+ *
+ * `updatedAt` is `Date.now()`, so two incidents touched inside one millisecond
+ * tie; `>=` breaks that toward the one enumerated LAST, which for an insertion-
+ * ordered record is the most recently logged. Real calls are seconds apart and
+ * the tie only shows up in a test that logs two incidents in a row.
+ */
+export function callInHand<I extends DeepReadonly<Incident>>(state: {
+  readonly incidents: { readonly [id: string]: I };
+}): I | undefined {
+  let latest: I | undefined;
+  for (const inc of Object.values(state.incidents)) {
+    if (inc.status === "resolved") continue;
+    if (latest === undefined || inc.updatedAt >= latest.updatedAt) latest = inc;
+  }
+  return latest;
 }
 
 /** Append a timeline entry and touch `updatedAt`, holding

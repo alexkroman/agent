@@ -30,8 +30,15 @@
  * rather than loops.
  */
 
-import type { DelegateFn, GenerateFn } from "@alexkroman1/aai";
-import { type DeepReadonly, isRecord, subagent } from "@alexkroman1/aai";
+import type {
+  DelegateFn,
+  GenerateFn,
+  GuardrailVerdict,
+  SubagentAnswer,
+  TypedDelegateResult,
+  TypedSubagentDef,
+} from "@alexkroman1/aai";
+import { type DeepReadonly, isRecord, safeJsonParse, subagent } from "@alexkroman1/aai";
 import {
   actSchema,
   EXECUTOR_OUTPUT,
@@ -39,6 +46,8 @@ import {
   PLANNER_SYSTEM,
   planSchema,
   REPLANNER_SYSTEM,
+  type StepAnswer,
+  stepAnswerSchema,
 } from "./prompts.ts";
 import type { FrozenPlanState, PastStep } from "./shared.ts";
 import { readTool, searchTool } from "./shared.ts";
@@ -69,6 +78,39 @@ export async function planNode(generate: GenerateFn, objective: string): Promise
 export const MAX_STEP_TURNS = 3;
 
 /**
+ * "The steps do real work" is this template's headline claim, and until this
+ * function existed nothing held the executor to it.
+ *
+ * A model asked to work a step it cannot settle has two honest moves — look, or
+ * say it could not — and one dishonest one that is cheaper than both: report
+ * `settled: false` from memory, having searched for nothing. That is the shape a
+ * `SubagentGuardrail` is for. It sees the {@link SubagentAnswer} the run
+ * produced, including the TOOL CALLS it made, which is the fact no wording of
+ * the prompt could establish.
+ *
+ * It fires narrowly on purpose. A SETTLED step needs no search — plenty of steps
+ * are summaries of what earlier ones found — so the verdict is `true` unless the
+ * run both gave up and never looked. And a rejection costs a whole extra
+ * executor run on a line somebody is holding, which is why it is not a general
+ * "did you search enough".
+ *
+ * The answer is re-READ here rather than handed over parsed: the runtime checks
+ * the shape before it asks for a judgement, so `answer.text` at this point is
+ * JSON that already validated, and re-parsing it is cheaper than a second
+ * channel for the same value.
+ */
+export function executorGuardrail(answer: SubagentAnswer): GuardrailVerdict {
+  const parsed = stepAnswerSchema.safeParse(safeJsonParse(answer.text));
+  if (!parsed.success || parsed.data.settled) return true;
+  if (answer.toolCalls.length > 0) return true;
+  return (
+    "You reported the step as unsettled without searching for anything. Use the " +
+    "search tool — and read a result that looks like it answers the step — before " +
+    "concluding it cannot be settled."
+  );
+}
+
+/**
  * Their `execute_step` — a ReAct agent with a search tool.
  *
  * **It IS one now, rather than a loop that stands in for one.** This was fifty
@@ -90,25 +132,44 @@ export const MAX_STEP_TURNS = 3;
  * in, one layer down. `read` is NEW, and it closes a gap the loop had left open:
  * the prompt said "search once, read what comes back" while the only actions
  * were search and answer, so the executor answered from lists of titles.
+ *
+ * **Annotated as a {@link TypedSubagentDef}, because that is what the desk
+ * depends on**: `subagent()` with a `schema` answers one, and that is the
+ * overload of `ctx.delegate` that hands back a parsed `object` rather than a
+ * string for {@link executeStep} to interpret. The `guardrail` beside it is
+ * {@link executorGuardrail}.
  */
-export const executor = subagent({
+export const executor: TypedSubagentDef<StepAnswer> = subagent({
   name: "executor",
   systemPrompt: EXECUTOR_SYSTEM,
   expectedOutput: EXECUTOR_OUTPUT,
+  schema: stepAnswerSchema,
+  guardrail: executorGuardrail,
   tools: { search: searchTool, read: readTool },
   maxSteps: MAX_STEP_TURNS,
 });
 
 export interface StepOutcome {
   result: string;
+  /** The executor's own `settled` — see `stepAnswerSchema`. */
+  settled: boolean;
   searches: string[];
 }
 
-/** Completed steps as the executor and the replanner both read them. */
+/**
+ * Completed steps as the executor and the replanner both read them.
+ *
+ * An UNSETTLED step is marked, which is the whole point of carrying the field:
+ * the replanner is told to plan only what still needs doing, and a step that
+ * came back empty is exactly that.
+ */
 function historyOf(pastSteps: readonly DeepReadonly<PastStep>[]): string {
   if (pastSteps.length === 0) return "Nothing done yet.";
   return pastSteps
-    .map((past, index) => `${index + 1}. ${past.step}\n   → ${past.result}`)
+    .map(
+      (past, index) =>
+        `${index + 1}. ${past.step}\n   → ${past.result}${past.settled ? "" : " (NOT settled)"}`,
+    )
     .join("\n");
 }
 
@@ -125,7 +186,11 @@ export async function executeStep(
   step: string,
   pastSteps: readonly DeepReadonly<PastStep>[],
 ): Promise<StepOutcome> {
-  const result = await delegate(executor, {
+  // Annotated so the TYPED overload is the one that has to resolve: `object` is
+  // the schema's own output, and a delegation that quietly fell back to the
+  // untyped overload — a schema dropped from the def, say — fails here rather
+  // than at the property read below.
+  const result: TypedDelegateResult<StepAnswer> = await delegate(executor, {
     task: step,
     // The executor has not heard the call and cannot see the plan, so what it
     // needs to do this step in context rides here — the objective it serves and
@@ -135,7 +200,11 @@ export async function executeStep(
     ),
   });
   return {
-    result: result.text,
+    result: result.object.finding,
+    // An answer the guardrail never accepted is not a settled step, whatever it
+    // says about itself: the run had its revision and still reported a step it
+    // never looked into. `accepted` is the runtime's own verdict on that.
+    settled: result.object.settled && result.accepted,
     // What the wait bought, read off the calls the run made — the desk renders
     // these, and `toolCalls` is the only honest source for them: a search's
     // RESULTS stayed inside the executor's context, which is the point.

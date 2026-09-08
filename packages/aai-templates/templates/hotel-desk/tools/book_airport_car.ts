@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { AIRPORT_CAR } from "../catalogs.ts";
 import { requireRoom } from "../hotel.ts";
@@ -27,7 +27,7 @@ export default hotelSlot.updateTool({
   }),
   execute({ room, pickupDate, pickupTime, passengers }, hotel) {
     const found = requireRoom(hotel, room);
-    if ("error" in found) return toolFailure(found.error);
+    if (isToolFailure(found)) return found;
     if (pickupDate < TODAY)
       return toolFailure(`${spokenDate(pickupDate)} is in the past - re-confirm the date`);
     const ticket = addTicket(

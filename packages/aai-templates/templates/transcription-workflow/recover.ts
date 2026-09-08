@@ -37,6 +37,8 @@
  * open the desk on a flow with nothing behind it.
  */
 
+import type { UploadStatus } from "@alexkroman1/aai-ui";
+
 /** Where the mode that last submitted lives between loads. */
 const MODE_STORAGE = "transcription-workflow:mode";
 
@@ -99,18 +101,36 @@ export type PendingNoteInput = {
   startedHere: boolean;
   /** Whether a run has arrived yet, which on a reload means the lookup landed. */
   found: boolean;
+  /**
+   * The submission's own upload status, or `undefined` when no bytes are moving.
+   *
+   * The SDK's {@link UploadStatus} rather than the one boolean read below,
+   * because this is a page-state type and what a later sentence will want is
+   * the rest of it — which part, how many, how far. It is REQUIRED rather than
+   * optional: every one of the three hooks reports one, so a caller that leaves
+   * it out has silently dropped a branch rather than declined a feature.
+   */
+  upload: UploadStatus | undefined;
 };
 
 /**
- * What the desk says while something is in flight — four situations, one line
+ * What the desk says while something is in flight — six situations, one line
  * each.
  *
- * The one that earns this function is the first: the streaming flow's run reads
+ * The one that earns this function is the streaming arm: that flow's run reads
  * the recording as this page sends it, so a reload does not orphan that run, it
- * ENDS it — `workflows/stream.ts` gives an upload that stops growing five
- * minutes (`MAX_IDLE_POLLS`) before it calls the uploader gone and fails the
+ * ENDS it — `workflows/stream.ts` gives an upload that stops growing
+ * `MAX_IDLE_POLLS` before it calls the uploader gone and fails the
  * run. A page telling a reader they can close the tab would be wrong in the
  * mode this desk opens in.
+ *
+ * **A PAUSE is that same fact arriving through a button**, which is why it is
+ * tested first and why the two paused sentences differ. `<UploadProgressBar>`
+ * offers pause on every mode, and the module doc of `client.tsx` says what it
+ * costs: with no run yet it costs nothing at all, and in streaming mode the run
+ * is already watching an upload it will give up on. The desk knew that and said
+ * it nowhere — a reader who paused was told "reloading is safe" while the clock
+ * on their run ran down.
  *
  * The other three are the ordinary recovery copy, and the reload case gets its
  * own words deliberately: somebody who did not press the button is owed an
@@ -121,7 +141,11 @@ export type PendingNoteInput = {
  * @returns One sentence, always.
  */
 export function pendingNote(input: PendingNoteInput): string {
-  const { recoverable, startedHere, found } = input;
+  const { recoverable, startedHere, found, upload } = input;
+  if (upload?.paused === true)
+    return recoverable
+      ? "Upload paused — nothing has started yet, so resume whenever you are ready."
+      : "Upload paused — resume within a few minutes: the run has already started and gives up on a recording that stops arriving.";
   if (!recoverable)
     return "Keep this tab open — the run is reading the recording as this page sends it, so a reload ends the run.";
   if (startedHere) return "Reloading is safe — this page will find the run again.";

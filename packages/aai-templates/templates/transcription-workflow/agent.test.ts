@@ -20,8 +20,8 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { stepReadUpload, type UploadRange } from "@alexkroman1/aai/step";
-import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
+import { stepReadUpload, type UploadRange, WAV_HEADER_BYTES } from "@alexkroman1/aai/step";
+import { DEFAULT_RETRY_DELAY_MS, FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { createWorkflowContext } from "@alexkroman1/aai/testing";
 import {
   installStubReporter,
@@ -40,7 +40,14 @@ import {
   NORMALIZED_SAMPLE_RATE,
   requestFormat,
 } from "./workflows/downsample.ts";
-import { cuttable, heavierThanNormalized, normalizeRecording } from "./workflows/normalize.ts";
+import {
+  audioTrack,
+  cuttable,
+  encodeTargets,
+  heavierThanNormalized,
+  normalizeRecording,
+  requireWholeRecording,
+} from "./workflows/normalize.ts";
 import { stitchChunks, stitchTranscript, TRANSCRIPT_STREAM } from "./workflows/stitch.ts";
 import {
   expectedSegments,
@@ -103,7 +110,14 @@ function publishRecording(bytes: Uint8Array, name = "standup.wav") {
 /** 16 kHz mono 16-bit — one second of audio is 32,000 bytes. */
 const MONO_16K = { sampleRate: 16_000, channels: 1, bitsPerSample: 16 } as const;
 
-/** A canonical WAV header in front of `dataBytes` of (absent) samples. */
+/**
+ * A canonical WAV header in front of `dataBytes` of (absent) samples.
+ *
+ * `WAV_HEADER_BYTES` (`@alexkroman1/aai/step`) is the length rather than a `44`
+ * typed here, because it is the same 44 the SDK's own `wavHeader` writes and
+ * `transcribeSegment` sends — this fixture and the code under test would
+ * otherwise agree by coincidence.
+ */
 function wavFile(
   fmt: { sampleRate: number; channels: number; bitsPerSample: number },
   dataBytes: number,
@@ -111,7 +125,7 @@ function wavFile(
 ): Uint8Array {
   const extra = overrides.extraChunk;
   const extraLength = extra === undefined ? 0 : 8 + extra.length + (extra.length % 2);
-  const head = new Uint8Array(44 + extraLength);
+  const head = new Uint8Array(WAV_HEADER_BYTES + extraLength);
   const view = new DataView(head.buffer);
   const write = (at: number, text: string) => {
     for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i));
@@ -795,14 +809,14 @@ describe("transcribeSegment", () => {
     expect(decoded).toContain("RIFF");
     // And the header is CONTIGUOUS with its samples, which is what the two-chunk
     // form (`[wavHeader(…), window]`) has to preserve and the only thing it could
-    // plausibly lose: the part's payload is exactly the 44 bytes plus the window,
+    // plausibly lose: the part's payload is exactly the header plus the window,
     // with nothing between them and nothing appended. A body that grew or shrank
     // here is a file the endpoint decodes into confident nonsense rather than
     // refusing.
     const latin = new TextDecoder("latin1").decode(sent);
     const from = latin.indexOf("RIFF");
     const to = latin.lastIndexOf("\r\n--");
-    expect(to - from).toBe(44 + (SEGMENT.end - SEGMENT.start));
+    expect(to - from).toBe(WAV_HEADER_BYTES + (SEGMENT.end - SEGMENT.start));
   });
 
   test("sends the DOWNSAMPLED window when the recording is heavier than 16 kHz mono", async () => {
@@ -836,7 +850,7 @@ describe("transcribeSegment", () => {
     // still declaring 48 kHz stereo is the one failure a byte count cannot see,
     // and it plays back at a third speed rather than failing.
     const at = new TextDecoder("latin1").decode(sent).indexOf("RIFF");
-    const header = new DataView(sent.buffer, sent.byteOffset + at, 44);
+    const header = new DataView(sent.buffer, sent.byteOffset + at, WAV_HEADER_BYTES);
     expect(header.getUint16(22, true)).toBe(1);
     expect(header.getUint32(24, true)).toBe(16_000);
     expect(header.getUint32(40, true)).toBe(32_000);
@@ -946,11 +960,24 @@ describe("transcribeSegment", () => {
     expect(at).toBeLessThanOrEqual(30_000);
   });
 
-  test("retries a rate limit that named no delay", async () => {
+  test("retries a rate limit that named no delay, after the class's own second", async () => {
+    // The OTHER half of the pair above, and the half `sync-api.ts`'s doc claims
+    // ("a bare `RetryableError` retries in ONE SECOND — that class's own
+    // default") while nothing pinned it. `DEFAULT_RETRY_DELAY_MS`
+    // (`@alexkroman1/aai/step-errors`) is that second, read from the SDK rather
+    // than typed here: a class that quietly changed its default would otherwise
+    // leave the sentence in the template's doc false with every test green.
     stubProvider({ status: 429, message: "slow down" });
-    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT)).rejects.toBeInstanceOf(
-      RetryableError,
+    const before = Date.now();
+    const failure = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT).catch(
+      (err: unknown) => err,
     );
+    expect(failure).toBeInstanceOf(RetryableError);
+    const at = (failure as RetryableError).retryAfter.getTime();
+    expect(at).toBeGreaterThanOrEqual(before + DEFAULT_RETRY_DELAY_MS);
+    // Generous on the far side: the only thing between the two clock reads is
+    // the throw, so anything past a second of slack would be a different bug.
+    expect(at).toBeLessThanOrEqual(Date.now() + DEFAULT_RETRY_DELAY_MS);
   });
 
   test("fails FATALLY on a rejected request, naming what the endpoint said", async () => {
@@ -1472,6 +1499,93 @@ describe("normalizing the recording", () => {
       converted: false,
     });
     expect(reporter.lines.join(" ")).toContain("already linear-PCM WAV");
+  });
+
+  test("a recording still arriving is refused, naming the flow that CAN take it", async () => {
+    // `complete: false` is what an upload looks like while its bytes are on the
+    // way, which is the state the STREAMING flow exists for and the one this
+    // flow cannot serve: it cuts the whole file. `stepRequireCompleteUpload`
+    // already refuses (its `UploadIncompleteError` carries `retryable = false`),
+    // so what is asserted here is the desk's own SENTENCE — the mirror of
+    // `planStreamed` refusing a length-less WAV and naming `transcribe`.
+    installStubUploads({
+      [UPLOAD_ID]: {
+        bytes: wavFile(MONO_16K, 32_000),
+        name: "standup.wav",
+        type: "audio/wav",
+        complete: false,
+      },
+    });
+    const failure = await requireWholeRecording(UPLOAD_ID).catch((err: unknown) => err);
+    // Fatal, not retryable: three more attempts find the same partial file, and
+    // the remedy is a different workflow rather than a wait.
+    expect(failure).toBeInstanceOf(FatalError);
+    expect(String(failure)).toMatch(/still uploading/);
+    expect(String(failure)).toMatch(/transcribeStream/);
+  });
+
+  test("a complete recording passes through with its record intact", async () => {
+    publishRecording(wavFile(MONO_16K, 32_000), "standup.wav");
+    await expect(requireWholeRecording(UPLOAD_ID)).resolves.toMatchObject({
+      id: UPLOAD_ID,
+      name: "standup.wav",
+      complete: true,
+    });
+  });
+
+  test("a failure that is not an incomplete upload is re-raised UNCHANGED", async () => {
+    // The half a `catch` gets wrong: dressing every failure up as "still
+    // uploading" would answer a missing id with advice about a flow that would
+    // fail the same way.
+    publishRecording(wavFile(MONO_16K, 32_000));
+    await expect(requireWholeRecording("upl_gone")).rejects.toThrow(/No upload with id/);
+  });
+
+  test("audioTrack refuses a file with no audio in it, terminally", () => {
+    // A screen recording with the microphone off: real video, nothing to
+    // transcribe. Without this the desk copies the whole file to disk and lets
+    // ffmpeg refuse it, which is a true message about an argv rather than about
+    // the file the person chose.
+    const silent = { streams: [{ index: 0, kind: "video", codec: "h264" }], raw: null };
+    expect(() => audioTrack(silent)).toThrow(FatalError);
+    expect(() => audioTrack(silent)).toThrow(/no audio track/);
+  });
+
+  test("audioTrack answers the stream ffmpeg will read", () => {
+    const audio = { index: 1, kind: "audio", codec: "aac", sampleRate: 44_100, channels: 2 };
+    expect(audioTrack({ streams: [{ index: 0, kind: "video" }, audio], audio, raw: null })).toBe(
+      audio,
+    );
+  });
+
+  test("encodeTargets caps the rate at the normalize target", () => {
+    expect(encodeTargets({ sampleRate: 48_000 })).toEqual({
+      sampleRate: NORMALIZED_SAMPLE_RATE,
+      channels: NORMALIZED_CHANNELS,
+    });
+  });
+
+  test("encodeTargets never UPSAMPLES — 8 kHz telephony is re-encoded at 8 kHz", () => {
+    // The bug this function exists for: a fixed `sampleRate: 16000` doubled the
+    // bytes of every request made from a phone recording, for information the
+    // source does not contain, against an endpoint whose budget is wall clock.
+    expect(encodeTargets({ sampleRate: 8000 }).sampleRate).toBe(8000);
+  });
+
+  test("encodeTargets falls back to the ceiling when ffprobe named no rate", () => {
+    expect(encodeTargets({}).sampleRate).toBe(NORMALIZED_SAMPLE_RATE);
+  });
+
+  test("encodeTargets agrees with requestFormat, which prices the same audio", () => {
+    // The two are one decision — what a request should be encoded at — asked of
+    // a whole file here and of one segment there. They disagreed for exactly the
+    // sub-16 kHz sources, which is the case a fan-out cannot see because the
+    // conversion happens first.
+    for (const sampleRate of [8000, 16_000, 44_100, 48_000]) {
+      expect(encodeTargets({ sampleRate }).sampleRate).toBe(
+        requestFormat({ sampleRate, channels: 1, bitsPerSample: 16 }).sampleRate,
+      );
+    }
   });
 
   // The ffmpeg VERDICT is no longer tested here, and its absence is the change

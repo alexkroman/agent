@@ -2,12 +2,15 @@ import { toolFailure } from "@alexkroman1/aai";
 import { partitionSettled } from "@alexkroman1/aai/step";
 import { z } from "zod";
 import { scoreRoster } from "../crews.ts";
+import { withScreening } from "../screening-lock.ts";
 import {
   describeRanked,
   hiringFlow,
   hiringSlot,
   MAX_FEEDBACK_ROUNDS,
+  progressTicker,
   ranked,
+  SCORED,
   topCandidates,
 } from "../shared.ts";
 
@@ -31,6 +34,11 @@ import {
  * **Feedback ACCUMULATES.** Their `input()` overwrote the previous round's
  * feedback, so "more weight on TypeScript" followed by "and less on years of
  * experience" lost the first. A caller means both.
+ *
+ * **The round counter is read and written under the screening lock**, because
+ * the bound above is a read-modify-write across a fan-out: two re-scores in one
+ * step both read `rounds: 0`, both write `rounds: 1`, and a round the caller
+ * spent twelve model calls on is not counted. See `screening-lock.ts`.
  */
 export default hiringFlow.tool({
   description:
@@ -44,77 +52,89 @@ export default hiringFlow.tool({
       .describe("What the caller wants weighted differently, as they said it"),
   }),
   when: "reviewing",
-  send: { type: "SCORED" },
+  send: SCORED,
   async execute(args, ctx) {
     const feedback = args.feedback.trim();
     if (feedback === "") return toolFailure("Say what the caller wants changed about the ranking.");
 
-    const before = hiringSlot.get(ctx);
-    if (before.rounds >= MAX_FEEDBACK_ROUNDS) {
-      return toolFailure(
-        `That would be round ${before.rounds + 1} of feedback and the limit is ` +
-          `${MAX_FEEDBACK_ROUNDS}. Offer to proceed to emails with the current shortlist, ` +
-          "or to stop here.",
+    return withScreening(ctx, async () => {
+      const before = hiringSlot.get(ctx);
+      if (before.rounds >= MAX_FEEDBACK_ROUNDS) {
+        return toolFailure(
+          `That would be round ${before.rounds + 1} of feedback and the limit is ` +
+            `${MAX_FEEDBACK_ROUNDS}. Offer to proceed to emails with the current shortlist, ` +
+            "or to stop here.",
+        );
+      }
+      // `when: "reviewing"` guarantees a screening ran, so this arm is
+      // unreachable by the flow's own guarantee — kept because the slot and the
+      // flow are two values, and a job cleared by something else should refuse
+      // rather than score twelve people against nothing.
+      if (!before.job) return toolFailure("Nothing has been screened yet — use screen_candidates.");
+
+      const previousTop = topCandidates(before).map((candidate) => candidate.id);
+      const trail = [...before.feedback, feedback];
+      const scored = await scoreRoster(
+        ctx.generate,
+        before.candidates,
+        before.job,
+        trail,
+        progressTicker(ctx, "scoring", before.candidates.length),
       );
-    }
-    // `when: "reviewing"` guarantees a screening ran, so this arm is unreachable
-    // by the flow's own guarantee — kept because the slot and the flow are two
-    // values, and a job cleared by something else should refuse rather than
-    // score twelve people against nothing.
-    if (!before.job) return toolFailure("Nothing has been screened yet — use screen_candidates.");
 
-    const previousTop = topCandidates(before).map((candidate) => candidate.id);
-    const trail = [...before.feedback, feedback];
-    const scored = await scoreRoster(ctx.generate, before.candidates, before.job, trail);
-
-    const { failed } = partitionSettled(scored);
-    if (failed.length === scored.length) {
-      return toolFailure(
-        "No candidate could be re-scored, so the ranking is unchanged. The first failure " +
-          `said: ${failed[0]?.error ?? "no reason given"}`,
-      );
-    }
-
-    return hiringSlot.update(ctx, (state) => {
-      state.feedback.push(feedback);
-      state.rounds += 1;
-      state.scores = {};
-      state.unscored = [];
-      for (const one of scored) {
-        if (one.ok) state.scores[one.item.id] = one.value;
-        else state.unscored.push(one.item.id);
+      const { failed } = partitionSettled(scored);
+      if (failed.length === scored.length) {
+        return toolFailure(
+          "No candidate could be re-scored, so the ranking is unchanged. The first failure " +
+            `said: ${failed[0]?.error ?? "no reason given"}`,
+        );
       }
 
-      const top = topCandidates(state);
-      const topIds = top.map((candidate) => candidate.id);
-      const nameOf = new Map(state.candidates.map((candidate) => [candidate.id, candidate.name]));
-      const promoted = topIds.filter((id) => !previousTop.includes(id)).map((id) => nameOf.get(id));
-      const dropped = previousTop.filter((id) => !topIds.includes(id)).map((id) => nameOf.get(id));
-      const roundsLeft = MAX_FEEDBACK_ROUNDS - state.rounds;
+      return hiringSlot.update(ctx, (state) => {
+        state.feedback.push(feedback);
+        state.rounds += 1;
+        state.scores = {};
+        state.unscored = [];
+        for (const one of scored) {
+          if (one.ok) state.scores[one.item.id] = one.value;
+          else state.unscored.push(one.item.id);
+        }
 
-      return {
-        round: state.rounds,
-        roundsLeft,
-        feedbackApplied: state.feedback,
-        top: top.map((candidate) => ({
-          rank: candidate.rank,
-          name: candidate.name,
-          score: candidate.score,
-          reason: candidate.reason,
-        })),
-        promoted,
-        dropped,
-        ranked: ranked(state).length,
-        message:
-          (promoted.length === 0
-            ? "The top three are the same people, possibly in a different order — say so. "
-            : `Say who moved in (${promoted.join(", ")}) and who moved out (${dropped.join(", ")}). `) +
-          `Then read the top three — ${top.map(describeRanked).join("; ")} — and offer the ` +
-          "same three choices" +
-          (roundsLeft === 0
-            ? ", noting this was the last round of feedback; from here it is proceed or stop."
-            : "."),
-      };
+        const top = topCandidates(state);
+        const topIds = top.map((candidate) => candidate.id);
+        const nameOf = new Map(state.candidates.map((candidate) => [candidate.id, candidate.name]));
+        const promoted = topIds
+          .filter((id) => !previousTop.includes(id))
+          .map((id) => nameOf.get(id));
+        const dropped = previousTop
+          .filter((id) => !topIds.includes(id))
+          .map((id) => nameOf.get(id));
+        const roundsLeft = MAX_FEEDBACK_ROUNDS - state.rounds;
+
+        return {
+          round: state.rounds,
+          roundsLeft,
+          feedbackApplied: state.feedback,
+          top: top.map((candidate) => ({
+            rank: candidate.rank,
+            name: candidate.name,
+            score: candidate.score,
+            reason: candidate.reason,
+          })),
+          promoted,
+          dropped,
+          ranked: ranked(state).length,
+          message:
+            (promoted.length === 0
+              ? "The top three are the same people, possibly in a different order — say so. "
+              : `Say who moved in (${promoted.join(", ")}) and who moved out (${dropped.join(", ")}). `) +
+            `Then read the top three — ${top.map(describeRanked).join("; ")} — and offer the ` +
+            "same three choices" +
+            (roundsLeft === 0
+              ? ", noting this was the last round of feedback; from here it is proceed or stop."
+              : "."),
+        };
+      });
     });
   },
 });

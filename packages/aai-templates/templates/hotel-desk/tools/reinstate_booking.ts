@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { reinstateBooking } from "../hotel.ts";
 import { normalizeCode, speakCode, speakUsd, spokenDate, TODAY } from "../records.ts";
@@ -44,7 +44,7 @@ export default hotelSlot.updateTool({
       );
     }
     const result = reinstateBooking(hotel, booking.code);
-    if ("error" in result) {
+    if (isToolFailure(result)) {
       return toolFailure(
         "that room has been taken for those dates since the cancellation - tell the caller honestly and " +
           "offer to check other rooms or dates (start_room_booking); do NOT claim it was reinstated",

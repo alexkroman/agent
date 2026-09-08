@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { bookingStatus, nextStep } from "../booking.ts";
 import { validateCard } from "../card.ts";
@@ -34,7 +34,7 @@ export default deskFlow.tool({
       if (d === null)
         return toolFailure("No booking flow is open - call start_room_booking first.");
       const card = validateCard(args);
-      if ("error" in card) return toolFailure(card.error);
+      if (isToolFailure(card)) return card;
       d.cardLast4 = card.last4;
       return {
         recorded: `card ending ${card.last4}, ${card.issuer}`,

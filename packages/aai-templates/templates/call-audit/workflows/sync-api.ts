@@ -11,6 +11,7 @@
  * the DevKit, and that belongs somewhere a spec can reach it.
  */
 
+import type { TranscribeSyncOptions } from "@alexkroman1/aai/step";
 import { stepTranscribeSyncOrFail } from "@alexkroman1/aai/step-errors";
 
 /**
@@ -30,15 +31,23 @@ import { stepTranscribeSyncOrFail } from "@alexkroman1/aai/step-errors";
  * hits a rate limit together — a second later all of them ask again, where on the
  * server's number they drain.
  *
- * @param label - How this piece is named in a failure. The CALLER's vocabulary (a
- *   segment's timestamp), because it is what a reader of the log has in front of
- *   them.
+ * **The two strings are an OPTIONS bag rather than two parameters, and they are
+ * the SDK's own.** `filename` and `label` are both strings, both describe the
+ * same piece of audio, and swapping them is silent — the request still succeeds,
+ * and the only symptom is a failure message naming `segment-3.wav` and a
+ * multipart part named `Segment 3 (1:50)`. Naming them at the call site removes
+ * the hazard, and taking the SDK's own {@link TranscribeSyncOptions} rather than
+ * a shape of this template's own means the day this desk wants a `timeoutMs` or
+ * a `model` it widens the `Pick` instead of re-declaring the bag.
+ *
+ * @param options.label - How this piece is named in a failure. The CALLER's
+ *   vocabulary (a segment's timestamp), because it is what a reader of the log
+ *   has in front of them.
  */
 export async function transcribeSpan(
   bytes: Uint8Array,
-  filename: string,
-  label: string,
+  options: Required<Pick<TranscribeSyncOptions, "filename" | "label">>,
 ): Promise<string> {
-  const { text } = await stepTranscribeSyncOrFail(bytes, { filename, label });
+  const { text } = await stepTranscribeSyncOrFail(bytes, options);
   return text;
 }

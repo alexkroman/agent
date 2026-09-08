@@ -884,10 +884,11 @@ describe("the body's step policy", () => {
           bytes: 60 * BYTES_PER_SECOND,
           silences: pauses(10, 20, 30),
           loudness: MEASURED,
+          ffmpegMs: 1200,
         },
         transcribeSegment: { index: 0, text: "hello" },
         summarize: { headline: "H", risks: [], actions: [], spoken: "S." },
-        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32 },
+        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32, ffmpegMs: 300 },
       },
     });
 
@@ -928,6 +929,10 @@ describe("the body's step policy", () => {
     const output = await auditFlow({ recording: UPLOAD_ID }, ctx);
 
     expect(output.elapsedMs).toBe(3000);
+    // And the ffmpeg time is SUMMED from the two journaled step results rather
+    // than measured again — which is what makes a replay report what the passes
+    // really cost instead of zero for work it did not redo.
+    expect(output.ffmpegMs).toBe(1500);
     // And the clock is no longer a step, which is the other half of the claim: a
     // name here would mean the migration left one behind.
     expect(ctx.steps.map((step) => step.name)).not.toContain("clockStart");

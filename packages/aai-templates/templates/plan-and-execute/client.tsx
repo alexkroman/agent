@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
+import { AutoScroll, Facts, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import { planProjection } from "./shared.ts";
 
 /**
@@ -36,9 +36,10 @@ function PlanSidebar() {
             style={{ width: `${Math.round(plan.progress * 100)}%` }}
           />
         </div>
-        <p className="text-xs opacity-50">
-          {plan.done.length} done · {plan.plan.length} to go
-        </p>
+        {/* The `·` line, its separator and the space either side of it are
+            `Facts`' rather than this file's — the one place a hand-written
+            version reliably gets wrong is the spacing around the separator. */}
+        <Facts size="xs" items={[`${plan.done.length} done`, `${plan.plan.length} to go`]} />
       </div>
 
       <AutoScroll
@@ -51,9 +52,19 @@ function PlanSidebar() {
               <span className="text-aai-primary">✓</span> {past.step}
             </p>
             <p className="mt-1 text-xs opacity-70">{past.result}</p>
-            {past.searches.length > 0 && (
-              <p className="mt-1 text-[11px] opacity-40">searched: {past.searches.join(" · ")}</p>
-            )}
+            {/* Every fact here is conditional — an unsettled step may have
+                searched, a settled one may not have — and `Facts` drops the
+                falsy ones AND renders nothing at all when none survive, which
+                is the branch this line used to carry. */}
+            <Facts
+              size="xs"
+              className="mt-1"
+              items={[
+                !past.settled && "not settled",
+                past.searches.length > 0 && "searched",
+                ...past.searches,
+              ]}
+            />
           </div>
         ))}
         {plan.plan.map((step, index) => (

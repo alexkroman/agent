@@ -1,10 +1,11 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { ToolContext } from "@alexkroman1/aai";
-import { isToolFailure } from "@alexkroman1/aai";
+import type { SessionEventHandler, ToolContext } from "@alexkroman1/aai";
+import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import {
   createToolContext,
   expectDialogOk,
+  expectDialogRefused,
   expectToolOk,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -12,8 +13,11 @@ import { describe, expect, test } from "vitest";
 
 import {
   activeAssistant,
+  departureClock,
   FLIGHTS,
+  type Flight,
   gateFlow,
+  LOG_CAP,
   type SpecialistId,
   tripProjection,
   tripSlot,
@@ -218,9 +222,14 @@ describe("sensitive tools stage rather than act", () => {
 
     // The gate re-arms, and now REFUSES rather than reporting an empty apply —
     // `when: "awaitingConfirmation"` is what a second confirm meets.
-    expect(await run("confirm_action", ctx)).toMatchObject({
-      error: expect.stringContaining('this conversation is at "browsing"'),
-    });
+    //
+    // `expectDialogRefused` rather than a regex for the sentence: the refusal is
+    // the SDK's, written in one place and matched from another, and it throws on
+    // a call that SUCCEEDED — where a `toMatchObject` on a success reads
+    // `undefined` for `error` and passes nothing worth reading. The state is
+    // pinned too, because "refused" and "refused where the spec thinks the
+    // conversation is" are two claims.
+    expectDialogRefused(await run("confirm_action", ctx), "browsing");
   });
 
   test("cancel_action drops the staged change and leaves the booking alone", async () => {
@@ -234,9 +243,7 @@ describe("sensitive tools stage rather than act", () => {
     const state = stateOf(ctx);
     expect(state.pending).toBeNull();
     expect(state.ticket?.flightId).toBe("LX40");
-    expect(await run("cancel_action", ctx)).toMatchObject({
-      error: expect.stringContaining('this conversation is at "browsing"'),
-    });
+    expectDialogRefused(await run("cancel_action", ctx), "browsing");
   });
 
   test("a staged action naming something that does not exist is refused at staging time", async () => {
@@ -336,9 +343,7 @@ describe("sensitive tools stage rather than act", () => {
     expect(stateOf(second).bookings).toEqual([]);
     // The GATE is per-session too, not just the trip.
     expect(gateFlow.position(second).state).toBe("browsing");
-    expect(await run("confirm_action", second)).toMatchObject({
-      error: expect.stringContaining('this conversation is at "browsing"'),
-    });
+    expectDialogRefused(await run("confirm_action", second), "browsing");
     expect(stateOf(first).bookings).toHaveLength(1);
   });
 });
@@ -364,6 +369,36 @@ describe("search tools", () => {
     expect(miss.flights).toHaveLength(FLIGHTS.length);
   });
 
+  test("a departure-time floor filters the schedule, and a bad clock is left out", async () => {
+    const ctx = createToolContext();
+    await atDesk("flight", ctx);
+    // 17:40 and 21:15 and 19:55 are at or after 17:00; the two morning
+    // departures are not. Compared as STRINGS, which is only legal because
+    // every reading is zero-padded — the property `isClockTime` is asked for.
+    const evening = (await run("search_flights", { departsAfter: "17:00" }, ctx)) as {
+      widened: boolean;
+      flights: { flight: string }[];
+    };
+    expect(evening.widened).toBe(false);
+    expect(evening.flights.map((f) => f.flight)).toEqual(["LX54", "LX15", "LX17"]);
+
+    // Nothing that late, so the desk widens to the whole schedule rather than
+    // telling the caller there is nothing — the same "be generous" arm the
+    // route filter has.
+    const midnight = (await run("search_flights", { departsAfter: "23:30" }, ctx)) as {
+      widened: boolean;
+      flights: unknown[];
+    };
+    expect(midnight.widened).toBe(true);
+    expect(midnight.flights).toHaveLength(FLIGHTS.length);
+
+    // The schedule's own half of the same rule: a row whose departure is not a
+    // clock reading has nothing to compare, and `departureClock` says so rather
+    // than ordering the caller's request against "Tue".
+    expect(departureClock(FLIGHTS[0] as Flight)).toBe("13:05");
+    expect(departureClock({ ...(FLIGHTS[0] as Flight), departs: "Tuesday" })).toBeUndefined();
+  });
+
   test("hotels come back cheapest first, and a ceiling filters them", async () => {
     const ctx = createToolContext();
     await atDesk("hotel", ctx);
@@ -373,7 +408,7 @@ describe("search tools", () => {
     // Always to the cent: `formatMoney` is one shape at every desk, where
     // this template's own `toLocaleString` copy dropped `.00` on a round
     // number and kept it on a price with change.
-    expect(all.hotels.map((h) => h.perNight)).toEqual(["$180.00", "$265.00", "$340.00"]);
+    expect(all.hotels.map((h) => h.perNight)).toEqual(["$179.95", "$265.00", "$340.00"]);
 
     const cheap = (await run("search_hotels", { city: "Boston", maxPerNight: 200 }, ctx)) as {
       hotels: { name: string }[];
@@ -438,25 +473,69 @@ describe("tripView projection", () => {
     expect(view.log.at(-1)).toContain("Awaiting confirmation");
   });
 
-  test("totals every confirmed booking", async () => {
+  test("totals every confirmed booking, to the cent", async () => {
     const ctx = createToolContext();
     await atDesk("hotel", ctx);
-    await run("book_hotel", { hotelId: "H3", nights: 2 }, ctx); // 2 × 180
+    await run("book_hotel", { hotelId: "H3", nights: 3 }, ctx); // 3 × 179.95
     await run("confirm_action", ctx);
     await atDesk("excursion", ctx);
     await run("book_excursion", { excursionId: "E1" }, ctx); // 35
     await run("confirm_action", ctx);
 
     const view = tripView(stateOf(ctx));
-    expect(view.total).toBe(395);
+    // `179.95 * 3` is `539.8499999999999`, so this is the assertion `roundMoney`
+    // is there for: the price is what gets STORED and then summed, and a
+    // booking that carries the dust makes every later comparison a coin toss.
+    // It would print as $539.85 either way, which is what hides it.
+    expect(view.bookings[0]?.price).toBe(539.85);
+    expect(view.total).toBe(574.85);
     expect(view.bookings.map((b) => b.kind)).toEqual(["hotel", "excursion"]);
     expect(view.pending).toBeNull();
+  });
+});
+
+describe("the call log", () => {
+  test("is capped by the slot, so a long call cannot grow the frame without bound", async () => {
+    // The log rides in every `syncState` frame, and it now has writers that are
+    // not tool calls at all (`call-events.ts` appends on a reported error), so
+    // "how long can this get" is a question with no answer in the tools. The
+    // slot's `caps` is the answer, and this is the assertion that it is real.
+    const ctx = createToolContext();
+    for (let i = 0; i < LOG_CAP + 5; i++) {
+      await run("to_flight_assistant", { request: `ask ${i}` }, ctx);
+    }
+    const log = stateOf(ctx).log;
+    expect(log).toHaveLength(LOG_CAP);
+    // Capped at the FRONT: what a desk reading the sidebar wants is the end of
+    // the call, so the oldest lines are the ones that go.
+    expect(log[0]).toContain("ask 5");
+    expect(log.at(-1)).toContain(`ask ${LOG_CAP + 4}`);
   });
 });
 
 describe("a caller who hangs up", () => {
   /** The frame the runtime offers a declared dialog when a session times out. */
   const CALLER_GONE = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } } as const;
+
+  /**
+   * The same event, delivered to the AGENT'S hooks the way the runtime delivers
+   * it: the handler declared for the event's own type.
+   *
+   * The cast is the runtime's own (`session-emitter.ts` makes it once, at the
+   * lookup): `events` is typed per key, so a dispatch driven by an event reads
+   * its handler back as the union's `SessionEventHandler`. A `ToolContext`
+   * stands in for the hook context — a handler is handed `slots` and
+   * `sessionId`, which is all `tripSlot.update` needs and deliberately much less
+   * than a tool gets.
+   */
+  const deliver = (event: SessionEvent, ctx: ToolContext): void => {
+    const handler = agentDef.events?.[event.type] as SessionEventHandler | undefined;
+    // A throw rather than an `expect`: this runs from a helper, and the failure
+    // it reports — the agent declares no hook for this event — is a fact about
+    // the declaration rather than about the case that called it.
+    if (!handler) throw new Error(`no handler is declared for ${event.type}`);
+    handler(event, ctx);
+  };
 
   test("ends the call, from a gate that is holding a staged booking", async () => {
     const ctx = createToolContext();
@@ -477,9 +556,13 @@ describe("a caller who hangs up", () => {
 
     // The property the state exists for: `confirm_action` is what turns a
     // staged booking into a real one, and nobody is on the call to agree to it.
-    const refused = await run("confirm_action", {}, ctx);
-    expect(isToolFailure(refused)).toBe(true);
-    expect(isToolFailure(refused) && refused.error).toContain('"abandoned"');
+    //
+    // The shape this replaces — `isToolFailure(…)` then a `toContain` guarded by
+    // it — lets a SUCCESS through as an assertion that never runs.
+    expectDialogRefused(await run("confirm_action", {}, ctx), "abandoned");
+    // Still abandoned afterwards: refusing once and reopening would satisfy the
+    // line above while losing the property the state exists for.
+    expect(gateFlow.position(ctx).state).toBe("abandoned");
   });
 
   test("the staged action is still THERE — the state is final so nothing reads it", async () => {
@@ -494,5 +577,51 @@ describe("a caller who hangs up", () => {
     // timeout returning to `browsing` would strand a staged change in a call
     // that carries on.
     expect(tripSlot.get(ctx).pending).not.toBeNull();
+  });
+
+  test("the call log says the caller went, and names what was never applied", () => {
+    // The other route the same event takes: the dialog moves the POSITION, and
+    // `agent({ events })` writes the LINE. Neither covers the other — a
+    // position is not something a desk can read afterwards, and a hook cannot
+    // stop `confirm_action` running.
+    const ctx = createToolContext();
+    tripSlot.update(ctx, (trip) => {
+      trip.pending = { kind: "book_hotel", hotelId: "H1", nights: 3 };
+    });
+
+    deliver(CALLER_GONE, ctx);
+
+    expect(tripSlot.get(ctx).log.at(-1)).toContain("Caller gone");
+    expect(tripSlot.get(ctx).log.at(-1)).toContain("Harborview Suites");
+    // A hook records; it does not settle. The staged change is still there,
+    // which is the whole reason the line names it.
+    expect(tripSlot.get(ctx).pending).not.toBeNull();
+  });
+
+  test("with nothing staged it says so, rather than naming an empty change", () => {
+    const ctx = createToolContext();
+    deliver(CALLER_GONE, ctx);
+    expect(tripSlot.get(ctx).log).toEqual(["Caller gone — nothing was waiting."]);
+  });
+
+  test("an error on the call is recorded too, fatal or not", () => {
+    const ctx = createToolContext();
+    const meta = { id: "evt_2", at: 0 };
+    // Declared under its own key, so the handler reads `code`, `message` and
+    // `fatal` off the event with no narrowing — which is what the map's typed
+    // half buys and the reason these are two handlers rather than one `"*"`.
+    deliver(
+      { type: "error.reported", meta, code: "tts", message: "voice down", fatal: false },
+      ctx,
+    );
+    deliver(
+      { type: "error.reported", meta, code: "llm", message: "gateway 503", fatal: true },
+      ctx,
+    );
+
+    expect(tripSlot.get(ctx).log).toEqual([
+      "Trouble on the call (tts): voice down",
+      "Call failed (llm): gateway 503",
+    ]);
   });
 });

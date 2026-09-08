@@ -6,6 +6,8 @@
  * returned, so no caller of this function can store what it should not.
  */
 
+import type { ToolFailure } from "@alexkroman1/aai";
+import { toolFailure } from "@alexkroman1/aai";
 import { digitsOf, TODAY } from "./records.ts";
 
 const ISSUERS: Record<string, string> = {
@@ -44,35 +46,42 @@ export function luhnOk(digits: string): boolean {
   return total % 10 === 0;
 }
 
-export function validateCard(input: CardInput): ValidCard | { error: string } {
+/**
+ * The card, or the ONE field to re-ask for.
+ *
+ * A {@link ToolFailure} rather than the `{ error: string }` this used to
+ * declare — the same object, named by the SDK, so `record_card` and
+ * `update_card` forward it with `isToolFailure` instead of unpacking the
+ * sentence and building a second failure out of it.
+ */
+export function validateCard(input: CardInput): ValidCard | ToolFailure {
   const digits = digitsOf(input.cardNumber);
   if (digits.length < 13 || digits.length > 19) {
-    return {
-      error: "that card number has the wrong number of digits - ask the caller to read it again",
-    };
+    return toolFailure(
+      "that card number has the wrong number of digits - ask the caller to read it again",
+    );
   }
   if (!luhnOk(digits)) {
-    return {
-      error:
-        "that number fails the card check, one digit is likely off - ask the caller to read it again slowly",
-    };
+    return toolFailure(
+      "that number fails the card check, one digit is likely off - ask the caller to read it again slowly",
+    );
   }
   const month = input.expiryMonth;
   if (!Number.isInteger(month) || month < 1 || month > 12) {
-    return { error: "that expiration month is invalid - ask the caller to repeat it" };
+    return toolFailure("that expiration month is invalid - ask the caller to repeat it");
   }
   const year = input.expiryYear < 100 ? 2000 + input.expiryYear : input.expiryYear;
   const [todayYear, todayMonth] = TODAY.split("-").map(Number) as [number, number];
   if (year < todayYear || (year === todayYear && month < todayMonth)) {
-    return { error: "that date is in the past, the card is expired - ask for another card" };
+    return toolFailure("that date is in the past, the card is expired - ask for another card");
   }
   const code = input.securityCode.trim();
   if (!/^\d{3,4}$/.test(code)) {
-    return { error: "the security code should be 3 or 4 digits - ask the caller to repeat it" };
+    return toolFailure("the security code should be 3 or 4 digits - ask the caller to repeat it");
   }
   const cardholder = input.cardholderName.trim();
   if (!/[a-z]/i.test(cardholder)) {
-    return { error: `"${input.cardholderName}" doesn't look like a name - ask again` };
+    return toolFailure(`"${input.cardholderName}" doesn't look like a name - ask again`);
   }
   return {
     last4: digits.slice(-4),

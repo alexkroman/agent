@@ -17,7 +17,12 @@
  * "evening slowdown congestion peak time" and finds D10.
  */
 
-import { type DeepReadonly, sessionSlot } from "@alexkroman1/aai";
+import {
+  type DeepReadonly,
+  type SlotCaps,
+  type StateProjection,
+  sessionSlot,
+} from "@alexkroman1/aai";
 import knowledge from "./knowledge.json" with { type: "json" };
 
 export interface Doc {
@@ -207,10 +212,26 @@ export function emptySupportState(): SupportState {
   return { trace: null, asked: [], ticket: null, ticketCounter: 0 };
 }
 
-export const supportSlot = sessionSlot("support", emptySupportState, {
-  // `asked` rides in every `syncState` frame; the slot holds the bound.
-  caps: { asked: 20 },
-});
+/**
+ * How many of this call's questions the slot keeps.
+ *
+ * Exported because a spec reads it — the bound is declared once, here, and the
+ * test that the twenty-first question drops the first must not restate the
+ * number.
+ */
+export const ASKED_CAP = 20;
+
+/**
+ * The growth bound, named and TYPED.
+ *
+ * `SlotCaps<SupportState>` admits only the state's array-valued keys, so a cap
+ * on `ticketCounter` or a mistyped `askedd` is a compile error at the
+ * declaration rather than a bound that silently caps nothing. `asked` rides in
+ * every `syncState` frame, which is why it is the field that needs one.
+ */
+const caps: SlotCaps<SupportState> = { asked: ASKED_CAP };
+
+export const supportSlot = sessionSlot("support", emptySupportState, { caps });
 
 /**
  * The call as a READ hands it out: deep-frozen, and typed to say so.
@@ -247,5 +268,14 @@ export function supportView(state: FrozenSupportState): SupportView {
   };
 }
 
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const supportProjection = supportSlot.projection(supportView);
+/**
+ * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in
+ * the client.
+ *
+ * Annotated with `StateProjection<SupportView>` because this export IS the
+ * contract between the two — it is the only thing `agent.ts` and `client.tsx`
+ * share, and naming what a projection is (a callable carrying the slot's `key`
+ * and `create`) is what tells a reader why passing it to `useAgentState`
+ * derives the pre-first-frame value for free.
+ */
+export const supportProjection: StateProjection<SupportView> = supportSlot.projection(supportView);

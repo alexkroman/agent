@@ -701,7 +701,11 @@ describe("disputes", () => {
       },
       ctx,
     );
-    expect(isToolFailure(refused) && refused.error).toMatch(/Room \(2 nights\); Late checkout/);
+    // `resolveOne`'s refusal, and it carries the AMOUNTS as well as the labels —
+    // which is what the desk has to read back for the caller to pick one.
+    expect(isToolFailure(refused) && refused.error).toMatch(
+      /Room \(2 nights\) \(560 dollars\); Late checkout \(40 dollars\)/,
+    );
   });
 
   test("the outcome table, branch by branch", () => {

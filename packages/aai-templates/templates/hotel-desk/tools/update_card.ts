@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { validateCard } from "../card.ts";
 import { hotelSlot, note, requireVerified } from "../shared.ts";
@@ -23,14 +23,14 @@ export default hotelSlot.updateTool({
   }),
   execute(args, hotel) {
     const booking = requireVerified(hotel);
-    if ("error" in booking) return toolFailure(booking.error);
+    if (isToolFailure(booking)) return booking;
     if (booking.status !== "confirmed") {
       return toolFailure(
         `booking ${booking.code} is ${booking.status} - there's no active booking to update`,
       );
     }
     const card = validateCard(args);
-    if ("error" in card) return toolFailure(card.error);
+    if (isToolFailure(card)) return card;
     booking.cardLast4 = card.last4;
     note(hotel, `Card on ${booking.code} replaced: ending ${card.last4}`);
     return {

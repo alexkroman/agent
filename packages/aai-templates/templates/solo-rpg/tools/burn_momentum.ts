@@ -1,3 +1,4 @@
+import { toolFailure } from "@alexkroman1/aai/utils";
 import {
   applyConsequences,
   canBurnMomentum,
@@ -23,6 +24,14 @@ import {
  * the roll was already a Strong Hit, and whether the momentum beats the
  * challenge dice. Those are the rules of the game; the gate is the shape of the
  * turn.
+ *
+ * Each of them answers `toolFailure(…)` (`@alexkroman1/aai/utils` — the subpath
+ * that owns the failure vocabulary, and the one that stays free of zod). A bare
+ * `{ error: "…" }` literal is structurally the same value, which is exactly why
+ * it was worth replacing: it made "this arm is a FAILURE" a coincidence of
+ * spelling rather than a call, and `sendFrom` below is typed
+ * `Exclude<R, ToolFailure>` — so what subtracts these three arms from the
+ * transition's argument now has a name at the site that produces them.
  */
 export default storyFlow.tool({
   description:
@@ -35,19 +44,18 @@ export default storyFlow.tool({
       // a roll is standing and nothing recorded one — which no code path
       // produces: `action_roll` writes `lastRoll` and sends `ROLLED` in the same
       // call. Reported rather than thrown, mid-game.
-      if (!last) return { error: "No recent action roll to upgrade. Roll first." };
+      if (!last) return toolFailure("No recent action roll to upgrade. Roll first.");
       if (last.result === "STRONG_HIT") {
-        return { error: "The last roll was already a Strong Hit. Nothing to upgrade." };
+        return toolFailure("The last roll was already a Strong Hit. Nothing to upgrade.");
       }
 
       const upgrade = canBurnMomentum(state, last);
       if (!upgrade) {
-        return {
-          error:
-            state.momentum <= 0
-              ? "Momentum is 0 or negative. Cannot burn."
-              : "Momentum not high enough to improve the result.",
-        };
+        return toolFailure(
+          state.momentum <= 0
+            ? "Momentum is 0 or negative. Cannot burn."
+            : "Momentum not high enough to improve the result.",
+        );
       }
 
       const previousMomentum = state.momentum;

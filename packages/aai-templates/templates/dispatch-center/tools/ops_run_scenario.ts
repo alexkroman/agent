@@ -114,7 +114,9 @@ const scenarios = {
 } satisfies Record<string, ScenarioDef>;
 
 type ScenarioName = keyof typeof scenarios;
-const SCENARIO_NAMES = Object.keys(scenarios) as [ScenarioName, ...ScenarioName[]];
+/** Exported so `agent.test.ts` can drive every drill the table declares through
+ *  the schema below rather than restating the list. */
+export const SCENARIO_NAMES = Object.keys(scenarios) as [ScenarioName, ...ScenarioName[]];
 
 /** Logs incidents like a real call does, so it sends `LOGGED` for the same
  *  reason `incident_create` does — and is ungated for the same reason too: a

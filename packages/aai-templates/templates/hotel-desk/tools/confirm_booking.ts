@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { bookingStatus, changedFields, nextStep } from "../booking.ts";
 import { deskFlow } from "../desk.ts";
@@ -82,7 +82,7 @@ export default deskFlow.tool({
           checkOut: d.checkOut,
           extras: d.extras,
         });
-        if ("error" in updated) {
+        if (isToolFailure(updated)) {
           d.roomType = null;
           d.view = null;
           return {
@@ -120,7 +120,7 @@ export default deskFlow.tool({
         cardLast4: d.cardLast4,
         extras: d.extras,
       });
-      if ("error" in booking) {
+      if (isToolFailure(booking)) {
         d.roomType = null;
         d.view = null;
         return {

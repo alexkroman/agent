@@ -86,7 +86,11 @@ const UNINTERRUPTIBLE: DialogBargeIn = "off";
 /**
  * `as const` is load-bearing: the event union is synthesized from the `on` keys,
  * so widening them to `string` gives every `send` below nothing to check
- * against.
+ * against. It is also why this is not annotated `DialogSpec` — an annotation
+ * would widen those keys to `string` and take the union with it. A spec that
+ * wants the shape reads it the other way, walking the exported literal AS
+ * `DialogStateSpec`; `agent.test.ts` does exactly that, which is how the knob
+ * audit below reaches `abandoned` and any state added after it.
  *
  * **The hang-up is declared ONCE, on the parent.** Being in a state is being in
  * all of them, so `@session.timed-out` on `onCall` reaches all five phases —
@@ -96,7 +100,7 @@ const UNINTERRUPTIBLE: DialogBargeIn = "off";
  * cares that the caller said something, and hoisting it would silently turn the
  * verification deadline into one a talkative caller can extend forever.
  */
-const callSpec = {
+export const CALL_SPEC = {
   initial: "onCall",
   states: {
     onCall: {
@@ -196,7 +200,7 @@ const callSpec = {
  * cannot be dispatched to a caller who hung up two minutes ago. Starting over
  * is `roadsideCall.reset`, not an event.
  */
-export const roadsideCall = dialog("call", callSpec);
+export const roadsideCall = dialog("call", CALL_SPEC);
 
 /**
  * What `agent({ dialogs })` is handed.

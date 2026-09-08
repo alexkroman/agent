@@ -1,7 +1,7 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { findReservation } from "../hotel.ts";
 import { spokenDate, spokenTime } from "../records.ts";
+import { findReservation } from "../restaurant.ts";
 import { hotelSlot } from "../shared.ts";
 
 /** Their `lookup_restaurant_reservation`: restaurants verify with last name + RES code. */

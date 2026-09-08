@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { openDinnerSlots } from "../hotel.ts";
 import { isoDate, MAX_PARTY_SIZE, spokenDate, spokenTime } from "../records.ts";
+import { openDinnerSlots } from "../restaurant.ts";
 import { hotelSlot } from "../shared.ts";
 
 /** Their `check_restaurant_availability`: the open slots for a date and party. */

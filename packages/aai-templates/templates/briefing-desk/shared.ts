@@ -49,10 +49,28 @@ import {
   sessionSlot,
   subagent,
   type ToolFailure,
+  type TypedSubagentDef,
   toolFailure,
 } from "@alexkroman1/aai";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { type AssemblyAIGatewayModel, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { z } from "zod";
+
+/**
+ * The model the three NARROW specialists share.
+ *
+ * Named once because it is a fact about the DESK — checking one sentence,
+ * defining one word and finding one objection are not the job `researcher`
+ * does, so all three run somewhere cheaper — and each subagent still declares
+ * its own `llm`, because which model a specialist runs on is part of what
+ * declaring a specialist means.
+ *
+ * Annotated as {@link AssemblyAIGatewayModel} rather than left as three string
+ * literals: `AssemblyAILlmOptions.model` widens to `string` so the gateway
+ * accepts a name it has never heard of, and a typo in one of three copies is a
+ * refusal from ONE specialist while the other two answer — the hardest shape of
+ * failure to notice on a live call. Here it is a compile error.
+ */
+export const CHEAP_MODEL: AssemblyAIGatewayModel = "gemini-2.5-flash-lite";
 
 /**
  * Steps one angle may take. A budget, not a limit to be raised when an answer
@@ -129,8 +147,14 @@ export type Verdict = z.infer<typeof VerdictSchema>;
  * The `guardrail` is gone with it, and that is the split worth remembering: a
  * guardrail is for the judgement a shape cannot express — a missing citation,
  * sources that are all one publisher — and this was never that.
+ *
+ * **The annotation is what the schema BUYS, said out loud.** `subagent()`
+ * answers a {@link TypedSubagentDef} for a def that declares one, and that is
+ * the overload `ctx.delegate` reads to hand `tools/verify_claim.ts` a parsed
+ * `object` instead of a string. Writing it down means dropping the schema fails
+ * HERE, naming the type, rather than three files away at the `.object` read.
  */
-export const factChecker = subagent({
+export const factChecker: TypedSubagentDef<Verdict> = subagent({
   name: "fact-checker",
   systemPrompt: [
     "You check ONE claim against what you can find on the web.",
@@ -141,7 +165,7 @@ export const factChecker = subagent({
   // that `detail` is one sentence and names the evidence.
   expectedOutput: "`detail` is one sentence naming what you found and where.",
   schema: VerdictSchema,
-  llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
+  llm: assemblyAILlm({ model: CHEAP_MODEL }),
   builtinTools: ["web_search"],
   maxSteps: 2,
 });
@@ -169,7 +193,7 @@ export const explainer = subagent({
     "definition is worse than an admitted gap.",
   ].join("\n"),
   expectedOutput: "Two sentences, spoken plainly. No preamble and no list.",
-  llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
+  llm: assemblyAILlm({ model: CHEAP_MODEL }),
   maxSteps: 1,
 });
 
@@ -193,7 +217,7 @@ export const counterpoint = subagent({
   ].join("\n"),
   expectedOutput:
     "Two or three sentences: the objection, who makes it, and how seriously to take it.",
-  llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
+  llm: assemblyAILlm({ model: CHEAP_MODEL }),
   builtinTools: ["web_search"],
   maxSteps: 3,
 });
@@ -254,6 +278,25 @@ export function countWork(toolCalls: readonly SubagentToolCall[]): AngleWork {
   for (const call of toolCalls) {
     if (call.name === "web_search") searches += 1;
     else if (call.name === "visit_webpage") reads += 1;
+  }
+  return { searches, reads };
+}
+
+/**
+ * What the whole board cost, added up.
+ *
+ * Here rather than in `tools/briefing_so_far.ts`, where the two `reduce`s used
+ * to live, because `slack.ts` says the same number in writing: a recap that
+ * counts one way and a Slack post that counts another is the drift a shared
+ * helper exists to prevent, and it is the same argument the SDK's own
+ * `formatDuration` settles one layer up.
+ */
+export function totalWork(findings: readonly DeepReadonly<Finding>[]): AngleWork {
+  let searches = 0;
+  let reads = 0;
+  for (const finding of findings) {
+    searches += finding.work.searches;
+    reads += finding.work.reads;
   }
   return { searches, reads };
 }

@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import { resolveRoomConflict } from "../hotel.ts";
 import { spokenDate } from "../records.ts";
 import { hotelSlot, requireVerified } from "../shared.ts";
@@ -17,9 +17,9 @@ export default hotelSlot.updateTool({
     'room back from the return date). Deliver the result per lookup_policy "guest_walks".',
   execute(_args, hotel) {
     const booking = requireVerified(hotel);
-    if ("error" in booking) return toolFailure(booking.error);
+    if (isToolFailure(booking)) return booking;
     const resolution = resolveRoomConflict(hotel, booking.code);
-    if ("error" in resolution) return toolFailure(resolution.error);
+    if (isToolFailure(resolution)) return resolution;
     if (resolution.kind === "moved") {
       return {
         resolved: "moved" as const,

@@ -22,6 +22,7 @@ import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   Facts,
+  type UseWorkflowRunsResult,
   useWorkflowProgress,
   WORKFLOW_STATUS_LABELS,
   type WorkflowRun,
@@ -69,22 +70,28 @@ const STATUS_LINE = {
  * information behind a worse door.
  */
 export function History({
-  runs,
-  error,
+  history,
   openId,
   onOpen,
 }: {
-  runs: WorkflowRun<Transcript>[];
-  error: string | undefined;
+  history: UseWorkflowRunsResult<Transcript>;
   openId: string | undefined;
   onOpen: (runId: string) => void;
 }) {
+  // The whole hook RESULT rather than two of its four fields, and `loading` is
+  // what the third one buys: an empty list is the hook's initial state as well
+  // as its answer, so a page reading only `runs` told every first visitor
+  // "Nothing transcribed yet" while the listing was still in flight — a
+  // confident false statement about a desk that has transcribed for days.
+  const { runs, error, loading } = history;
   return (
     <section className="flex flex-col gap-3 border-t pt-6">
       <h2 className="text-sm font-medium uppercase tracking-[1.2px]">Previous runs</h2>
       {error !== undefined && <p className="text-sm text-red-600">{error}</p>}
       {runs.length === 0 && error === undefined && (
-        <p className="text-sm opacity-60">Nothing transcribed yet.</p>
+        <p className="text-sm opacity-60">
+          {loading ? "Looking for previous runs…" : "Nothing transcribed yet."}
+        </p>
       )}
       <ul className="flex flex-col">
         {runs.map((entry) => (

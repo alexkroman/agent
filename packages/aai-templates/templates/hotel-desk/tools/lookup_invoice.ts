@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { invoiceFor } from "../hotel.ts";
 import { speakUsd } from "../records.ts";
 import { hotelSlot, requireVerified } from "../shared.ts";
@@ -10,7 +10,7 @@ export default hotelSlot.tool({
     "so the dispute names a line exactly as it appears. Verify first.",
   execute(_args, hotel) {
     const booking = requireVerified(hotel);
-    if ("error" in booking) return toolFailure(booking.error);
+    if (isToolFailure(booking)) return booking;
     const invoice = invoiceFor(hotel, booking.code);
     if (invoice === undefined) return toolFailure(`no invoice on file for ${booking.code}`);
     return {

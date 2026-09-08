@@ -153,6 +153,39 @@ describeEval(
     );
 
     test(
+      "reads an earlier pick back out of the LOG rather than out of the transcript",
+      async ({ session }) => {
+        await session.say("I want something cozy to watch tonight.");
+        await session.say("Now give me something spooky to read.");
+        const turn = await session.say("What was that first one you gave me again?");
+
+        // The regression this case exists for is a companion that answers from
+        // the conversation it can still see: it sounds right, and it is wrong
+        // the moment the night is long enough for the early turns to fall out
+        // of the context window. `revisit` is a lookup in the slot.
+        expect(toolNames(turn.toolCalls), describeTurn(turn)).toEqual(["revisit"]);
+        const rec = toolResultIn(turn.toolCalls, "revisit", RecSchema);
+        expect(rec).toMatchObject({ category: "movie", mood: "cozy" });
+        // And what came back is the shelf's, read out — the same claim the
+        // first case makes about a fresh recommendation.
+        expect(rec.picks.some((pick) => turn.text.includes(pick))).toBe(true);
+
+        // Reading it back is not recommending it again: the log still has two.
+        expect(pushedRecs(session.events())).toHaveLength(2);
+      },
+      {
+        stubReply: [
+          { tool: "recommend", args: { category: "movie", mood: "cozy" } },
+          "Paddington 2 it is.",
+          { tool: "recommend", args: { category: "book", mood: "spooky" } },
+          "Mexican Gothic, then.",
+          { tool: "revisit", args: { which: "that first one you gave me" } },
+          "The first was Paddington 2 — cozy as it gets.",
+        ],
+      },
+    );
+
+    test(
       "the wind-down nudge arrives once, on the third pick",
       async ({ session }) => {
         const first = await session.say("I want something cozy to watch tonight.");

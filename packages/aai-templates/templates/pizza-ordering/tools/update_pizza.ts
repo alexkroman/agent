@@ -1,7 +1,6 @@
-import { toolFailure } from "@alexkroman1/aai";
-import { formatMoney } from "@alexkroman1/aai/utils";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { CRUSTS, calculateTotal, orderSlot, type Pizza, SIZES } from "../shared.ts";
+import { CRUSTS, cartSummary, findPizza, orderSlot, SIZES } from "../shared.ts";
 
 export default orderSlot.updateTool({
   description: "Update an existing pizza in the order. Only provided fields are changed.",
@@ -13,17 +12,17 @@ export default orderSlot.updateTool({
     quantity: z.number().int().min(1).optional(),
   }),
   execute(args, order) {
-    const idx = order.pizzas.findIndex((p) => p.id === args.pizza_id);
-    if (idx === -1) return toolFailure("Pizza not found in the order.");
+    // The DRAFT's own pizza, so the four assignments below edit the cart:
+    // `updateTool` hands the body a MUTABLE draft, which is what makes the
+    // spread-into-a-copy and the write-back it then needed unnecessary.
+    const pizza = findPizza(order, args.pizza_id);
+    if (isToolFailure(pizza)) return pizza;
 
-    const pizza: Pizza = { ...order.pizzas[idx]! };
     if (args.size !== undefined) pizza.size = args.size;
     if (args.crust !== undefined) pizza.crust = args.crust;
     if (args.toppings !== undefined) pizza.toppings = args.toppings;
     if (args.quantity !== undefined) pizza.quantity = args.quantity;
 
-    order.pizzas[idx] = pizza;
-
-    return { updated: pizza, orderTotal: formatMoney(calculateTotal(order.pizzas)) };
+    return { updated: pizza, ...cartSummary(order.pizzas) };
   },
 });

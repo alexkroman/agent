@@ -52,7 +52,15 @@
  * not charged for the remaining seven.
  */
 
-import { type GenerateFn, omitUndefined, procedure } from "@alexkroman1/aai";
+import {
+  DEFAULT_GUARDRAIL_MAX_RETRIES,
+  type GenerateFn,
+  type GuardrailVerdict,
+  omitUndefined,
+  type Procedure,
+  type ProcedureRunOptions,
+  procedure,
+} from "@alexkroman1/aai";
 import { assign, fromPromise, setup } from "xstate";
 import {
   generateAnswer,
@@ -60,15 +68,22 @@ import {
   gradeGrounded,
   gradeUseful,
   transformQuery,
-  type Verdict,
 } from "./nodes.ts";
 import type { AnswerTrace, Doc, GradedDoc, TraceStep } from "./shared.ts";
 import { retrieve } from "./shared.ts";
 
 /** Retrieve-and-answer attempts, i.e. one query rewrite. */
 export const MAX_ATTEMPTS = 2;
-/** Regenerations after a "not grounded" verdict, within one attempt. */
-export const MAX_REGENERATIONS = 1;
+/**
+ * Regenerations after a "not grounded" verdict, within one attempt.
+ *
+ * The SDK's own number, not a coincidence: `DEFAULT_GUARDRAIL_MAX_RETRIES` is
+ * how many times `subagent({ guardrail })` re-asks after a verdict rejects an
+ * answer, and that is exactly what this counter bounds — the same judge, the
+ * same retry, one layer down. Taking it from the SDK is how the two stay one
+ * decision instead of two constants that drift.
+ */
+export const MAX_REGENERATIONS = DEFAULT_GUARDRAIL_MAX_RETRIES;
 
 /**
  * What the machine carries: the trace it is building, plus the two counters the
@@ -114,6 +129,24 @@ function noteFrom(node: string, detail: (context: Ctx) => string) {
   };
 }
 
+/**
+ * The same again, for a grader's own words.
+ *
+ * A rejecting {@link GuardrailVerdict} IS the complaint, so the trace says what
+ * the grader objected to rather than a constant. It reads the DONE event, and
+ * the parameter is typed to the one field it needs — a done event is assignable
+ * to `{ output }`, so the narrowing xstate gives the transition survives.
+ */
+function noteVerdict(node: string, prefix: string) {
+  return {
+    type: "note" as const,
+    params: ({ event }: { event: { output: GuardrailVerdict } }): NoteParams => ({
+      node,
+      detail: event.output === true ? prefix : `${prefix}: ${event.output}`,
+    }),
+  };
+}
+
 interface NoteParams {
   node: string;
   detail: string;
@@ -135,11 +168,11 @@ const machine = setup({
         await generateAnswer(input.ctx.generate, input.ctx.question, input.ctx.relevant),
     ),
     gradeGrounded: fromPromise(
-      async ({ input }: { input: { ctx: Ctx } }): Promise<Verdict> =>
+      async ({ input }: { input: { ctx: Ctx } }): Promise<GuardrailVerdict> =>
         await gradeGrounded(input.ctx.generate, input.ctx.relevant, input.ctx.answer ?? ""),
     ),
     gradeUseful: fromPromise(
-      async ({ input }: { input: { ctx: Ctx } }): Promise<Verdict> =>
+      async ({ input }: { input: { ctx: Ctx } }): Promise<GuardrailVerdict> =>
         await gradeUseful(input.ctx.generate, input.ctx.question, input.ctx.answer ?? ""),
     ),
     transformQuery: fromPromise(
@@ -277,7 +310,7 @@ const machine = setup({
         input: ({ context }) => ({ ctx: context }),
         onDone: [
           {
-            guard: ({ event }) => event.output.pass,
+            guard: ({ event }) => event.output === true,
             target: "gradeUseful",
             actions: [
               assign({ grounded: () => true }),
@@ -288,7 +321,7 @@ const machine = setup({
             guard: "canRegenerate",
             target: "generate",
             actions: [
-              noteAt("grade_generation_v_documents", "not grounded"),
+              noteVerdict("grade_generation_v_documents", "not grounded"),
               assign({ regenerations: ({ context }) => context.regenerations + 1 }),
             ],
           },
@@ -296,7 +329,7 @@ const machine = setup({
             target: "ungrounded",
             actions: [
               assign({ grounded: () => false, answer: () => null, exhausted: () => true }),
-              noteAt("grade_generation_v_documents", "still not grounded"),
+              noteVerdict("grade_generation_v_documents", "still not grounded"),
             ],
           },
         ],
@@ -314,7 +347,7 @@ const machine = setup({
         input: ({ context }) => ({ ctx: context }),
         onDone: [
           {
-            guard: ({ event }) => event.output.pass,
+            guard: ({ event }) => event.output === true,
             target: "done",
             actions: [
               assign({ useful: () => true }),
@@ -326,14 +359,14 @@ const machine = setup({
             target: "transformQuery",
             actions: [
               assign({ useful: () => false }),
-              noteAt("grade_generation_v_question", "not useful"),
+              noteVerdict("grade_generation_v_question", "not useful"),
             ],
           },
           {
             target: "exhausted",
             actions: [
               assign({ useful: () => false, exhausted: () => true }),
-              noteAt("grade_generation_v_question", "not useful, and no attempts left"),
+              noteVerdict("grade_generation_v_question", "not useful, and no attempts left"),
             ],
           },
         ],
@@ -383,7 +416,15 @@ const machine = setup({
   }),
 });
 
-const rag = procedure(machine);
+/**
+ * The graph, ready to run.
+ *
+ * Annotated with the SDK's own `Procedure<M>` because that interface is what
+ * `procedure()` adds to a machine and the only reason this template reaches for
+ * it: `run(input, options)` awaits a final state and answers the machine's
+ * `output`, and `machine` is kept so a caller can still inspect what it drives.
+ */
+const rag: Procedure<typeof machine> = procedure(machine);
 
 /**
  * Run the procedure for one caller question.
@@ -403,6 +444,9 @@ export async function runCorrectiveRag(
 ): Promise<AnswerTrace> {
   // `omitUndefined` rather than a conditional spread: `ProcedureRunOptions.signal`
   // is optional, and under `exactOptionalPropertyTypes` a present-and-undefined
-  // key is not the same as an absent one.
-  return await rag.run({ generate, question }, omitUndefined({ signal }));
+  // key is not the same as an absent one. The annotation is what makes that
+  // sentence checked rather than asserted — drop the `omitUndefined` and this
+  // line stops compiling.
+  const options: ProcedureRunOptions = omitUndefined({ signal });
+  return await rag.run({ generate, question }, options);
 }

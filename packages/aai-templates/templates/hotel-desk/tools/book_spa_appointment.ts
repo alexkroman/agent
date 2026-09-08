@@ -1,3 +1,4 @@
+import { toolFailure } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { SPA_SERVICES } from "../catalogs.ts";
@@ -24,7 +25,7 @@ export default catalogBookingTool({
   price({ service, date, time, partySize }) {
     const s = SPA_SERVICES[service];
     if (partySize > s.maxParty)
-      return { error: `${s.name} takes at most ${s.maxParty} ${plural(s.maxParty, "guest")}` };
+      return toolFailure(`${s.name} takes at most ${s.maxParty} ${plural(s.maxParty, "guest")}`);
     const total = s.price * partySize;
     return {
       total,

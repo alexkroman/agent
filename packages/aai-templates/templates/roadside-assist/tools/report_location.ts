@@ -1,3 +1,4 @@
+import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { LOCATING, roadsideCall } from "../call.ts";
 import { roadsideSlot, SITUATIONS } from "../shared.ts";
@@ -47,11 +48,10 @@ export default roadsideCall.tool({
   execute: (args, ctx) =>
     roadsideSlot.update(ctx, (state) => {
       if (args.where.trim() === "") {
-        return {
-          error:
-            "That location is empty. Ask again — a road name and the nearest exit or cross " +
+        return toolFailure(
+          "That location is empty. Ask again — a road name and the nearest exit or cross " +
             "street is enough for a driver to find them.",
-        };
+        );
       }
       state.where = {
         described: args.where.trim(),

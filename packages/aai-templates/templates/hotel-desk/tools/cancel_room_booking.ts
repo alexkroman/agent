@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { cancelBooking } from "../hotel.ts";
 import { daysBetween, PRICING, speakUsd, TODAY } from "../records.ts";
 import { callerTurns, hotelSlot, requireVerified } from "../shared.ts";
@@ -34,14 +34,14 @@ export default hotelSlot.updateTool({
       };
     }
     const booking = requireVerified(hotel);
-    if ("error" in booking) return toolFailure(booking.error);
+    if (isToolFailure(booking)) return booking;
     if (booking.checkIn < TODAY)
       return toolFailure("this booking's check-in has already passed; can't cancel a past stay");
     const room = hotel.rooms.find((r) => r.id === booking.roomId);
     const within = daysBetween(TODAY, booking.checkIn) * 24 < PRICING.cancellationWindowHours;
     const forfeit = within ? (room?.nightlyRate ?? 0) : 0;
     const cancelled = cancelBooking(hotel, booking.code);
-    if ("error" in cancelled) return toolFailure(cancelled.error);
+    if (isToolFailure(cancelled)) return cancelled;
     // The booking is no longer confirmed: the next tool needing a verified
     // booking should re-ask (a different reservation, or they are done).
     hotel.verifiedCode = null;

@@ -1,6 +1,12 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
-import { hiringProjection, MAX_FEEDBACK_ROUNDS } from "./shared.ts";
+import { AutoScroll, mountClient, useAgentState, useEvent } from "@alexkroman1/aai-ui";
+import { useState } from "react";
+import {
+  hiringProjection,
+  MAX_FEEDBACK_ROUNDS,
+  SCREENING_PROGRESS,
+  type ScreeningProgress,
+} from "./shared.ts";
 
 /**
  * The leaderboard, the feedback trail, and the drafts.
@@ -11,6 +17,13 @@ import { hiringProjection, MAX_FEEDBACK_ROUNDS } from "./shared.ts";
  * came from, and — once the coordinator has run — a subject line per draft
  * with whether it invites or declines. Their flow printed the top three and
  * wrote thirty files; this is both, on one screen, while the call goes on.
+ *
+ * **Both mechanisms are on this one screen, which is the other thing it
+ * teaches.** The ranking is STATE — a reload should show it again — so it rides
+ * a slot through `useAgentState`. The ticker below is a MOMENT: re-rendering
+ * "scoring seven of twelve" after a reload would describe a fan-out that
+ * finished long ago, so it is a `ctx.send` read by `useEvent` and it lives in a
+ * `useState` that a reconnect empties.
  */
 function HiringSidebar() {
   const view = useAgentState(hiringProjection);
@@ -22,6 +35,7 @@ function HiringSidebar() {
         <p className="text-sm opacity-60 text-aai-text">
           Confirm the role and the ranking appears here once the applicants are scored.
         </p>
+        <ScreeningTicker />
       </div>
     );
   }
@@ -38,6 +52,7 @@ function HiringSidebar() {
           {view.drafts.length > 0 &&
             ` · ${invited} invited, ${view.drafts.length - invited} declined`}
         </p>
+        <ScreeningTicker />
       </div>
 
       <AutoScroll
@@ -101,6 +116,20 @@ function HiringSidebar() {
         </details>
       )}
     </div>
+  );
+}
+
+/** The wait, while twelve model calls run: the last tick of a fan-out that has
+ *  not reached its total yet, and nothing once it has. */
+function ScreeningTicker() {
+  const [progress, setProgress] = useState<ScreeningProgress | null>(null);
+  useEvent<ScreeningProgress>(SCREENING_PROGRESS, setProgress);
+  if (!progress || progress.done >= progress.total) return null;
+  const verb = progress.phase === "scoring" ? "Scoring" : "Writing";
+  return (
+    <p className="text-xs opacity-60 text-aai-text">
+      {verb} {progress.done} of {progress.total}…
+    </p>
   );
 }
 

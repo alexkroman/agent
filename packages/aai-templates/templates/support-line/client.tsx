@@ -1,6 +1,6 @@
 import { plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
+import { AutoScroll, Facts, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import { PRODUCT, supportProjection } from "./shared.ts";
 
 /**
@@ -19,10 +19,17 @@ function TraceSidebar() {
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 text-aai-text">
       <div>
         <h3 className="text-sm font-bold uppercase tracking-wide opacity-60">{support.product}</h3>
-        <p className="text-xs opacity-50">
-          {support.asked.length} {plural(support.asked.length, "question")} this call
-          {support.ticket ? ` · ticket ${support.ticket}` : ""}
-        </p>
+        {/* A conditional segment is an ITEM, not a ` · ` spliced into a
+            template string: `Facts` drops anything false and owns the
+            separator, which is the join both of this sidebar's muted lines
+            were writing by hand. */}
+        <Facts
+          size="xs"
+          items={[
+            `${support.asked.length} ${plural(support.asked.length, "question")} this call`,
+            support.ticket !== null && `ticket ${support.ticket}`,
+          ]}
+        />
       </div>
 
       {!trace && (
@@ -87,10 +94,15 @@ function TraceSidebar() {
             ) : (
               <p className="text-sm opacity-60">No answer could be grounded.</p>
             )}
-            <p className="mt-2 text-xs opacity-60">
-              grounded: {String(trace.grounded)} · answers the question: {String(trace.useful)}
-              {trace.exhausted ? " · budget exhausted" : ""}
-            </p>
+            <Facts
+              size="xs"
+              className="mt-2"
+              items={[
+                `grounded: ${String(trace.grounded)}`,
+                `answers the question: ${String(trace.useful)}`,
+                trace.exhausted && "budget exhausted",
+              ]}
+            />
           </div>
         </AutoScroll>
       )}

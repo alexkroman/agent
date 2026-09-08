@@ -53,9 +53,16 @@
 // a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
 // for `WorkflowOutputOf`.
 import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
-import { stepReport, stepSpeak, stepWriteUpload, TRANSCRIBE_API } from "@alexkroman1/aai/step";
+import {
+  type SpeakOptions,
+  type SpokenAudio,
+  stepReport,
+  stepSpeak,
+  stepWriteUpload,
+  TRANSCRIBE_API,
+} from "@alexkroman1/aai/step";
 import { stepGenerateJsonOrFail } from "@alexkroman1/aai/step-errors";
-import { countWords, omitUndefined } from "@alexkroman1/aai/utils";
+import { countWords } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import type { spokenSummary } from "../agent.ts";
 import {
@@ -131,7 +138,10 @@ export async function spokenSummaryFlow(
 ): Promise<SpokenSummary> {
   const transcript = await transcribe(input.recording, ctx);
   const summary = await ctx.step("summarize", () => summarize(transcript.text));
-  const spoken = await ctx.step("speak", () => speak(summary.spoken, input.voice));
+  // The form's choice reaches the synthesizer as the SDK's OWN option bag, so
+  // an app that later wants a different `sampleRate` (a phone line is 8 kHz)
+  // adds a key here rather than a parameter to {@link speak}.
+  const spoken = await ctx.step("speak", () => speak(summary.spoken, { voice: input.voice }));
 
   return {
     source: transcript.source,
@@ -219,12 +229,21 @@ export async function summarize(
  * not. Split in two, the audio would have to cross the queue between them —
  * megabytes of it, on every resume. Together, a resumed run replays the id and
  * re-reads a file that is already there.
+ *
+ * It takes `SpeakOptions` WHOLE rather than the one field this app sets. An
+ * omitted `voice` is already the SDK's default — the option is declared
+ * `string | undefined`, so there is nothing to strip on the way in — and every
+ * other knob (`language`, `sampleRate`, `apiKeyEnv`) then costs a fork zero
+ * edits here.
  */
 export async function speak(
   script: string,
-  voice?: string,
+  options: SpeakOptions = {},
 ): Promise<{ audio: string; durationMs: number }> {
-  const spoken = await stepSpeak(script, omitUndefined({ voice }));
+  // Annotated because the two `audio`s in this function are NOT the same thing
+  // and the contrast is the whole lesson: `SpokenAudio.audio` is the WAV's
+  // bytes, and what this returns under that name is an upload id.
+  const spoken: SpokenAudio = await stepSpeak(script, options);
   const stored = await stepWriteUpload(spoken.audio, {
     // Named, because this is what a person sees on the download link rather
     // than an opaque id — and typed, because the byte route serves the type it

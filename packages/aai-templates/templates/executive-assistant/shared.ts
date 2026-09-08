@@ -35,7 +35,15 @@
  * in the SDK guide.
  */
 
-import { type DeepReadonly, dialog, sessionSlot } from "@alexkroman1/aai";
+import {
+  type DeepReadonly,
+  dialog,
+  type SessionEventType,
+  type SlotCaps,
+  sessionSlot,
+  spokenDate,
+  spokenTime,
+} from "@alexkroman1/aai";
 import { DEFAULT_MEMORY, INBOX, type Memory, type SeedEmail } from "./inbox.ts";
 import type { TriageExample, TriageVerdict } from "./prompts.ts";
 
@@ -74,7 +82,15 @@ export function findEmail<E extends { id: string }>(
 export type Proposal =
   | { kind: "reply"; content: string; newRecipients: string[]; toneLogic: string }
   | { kind: "new_email"; content: string; recipients: string[]; toneLogic: string }
-  | { kind: "invite"; emails: string[]; title: string; startTime: string; endTime: string }
+  | {
+      kind: "invite";
+      emails: string[];
+      title: string;
+      /** `YYYY-MM-DD`, and `startTime`/`endTime` are `HH:MM` — civil, not instants. */
+      date: string;
+      startTime: string;
+      endTime: string;
+    }
   | { kind: "question"; content: string }
   | { kind: "notify" };
 
@@ -116,7 +132,11 @@ export function describeProposal(proposal: DeepReadonly<Proposal>): {
     case "invite":
       return {
         title: `Calendar invite: ${proposal.title}`,
-        body: `${proposal.startTime} to ${proposal.endTime}, with ${proposal.emails.join(", ")}`,
+        // Rendered for the EAR: the body is what the assistant reads back, and
+        // a TTS engine handed `2026-03-17T14:00:00` spells the digits.
+        body: `${spokenDate(proposal.date)}, ${spokenTime(proposal.startTime)} to ${spokenTime(
+          proposal.endTime,
+        )}, with ${proposal.emails.join(", ")}`,
       };
     case "question":
       return { title: "A question for you", body: proposal.content };
@@ -183,17 +203,30 @@ export function seedAssistant(): AssistantState {
 }
 
 /**
+ * The growth bounds, as one table.
+ *
+ * Every one of these lists rides in a `syncState` frame or a prompt, and a
+ * `note()` wrapper around `pushCapped` used to bound two of them — `log` and
+ * `exchange` — while `reflections`, `sent` and `triageExamples` were pushed to
+ * directly and grew for the length of the call. A cap on the slot holds
+ * whatever path wrote. `SlotCaps` is what says these five keys are the ARRAYS
+ * of {@link AssistantState}: a bound named for a field that is not one, or is
+ * not there at all, stops compiling here rather than silently capping nothing.
+ */
+const CAPS: SlotCaps<AssistantState> = {
+  log: 40,
+  exchange: 30,
+  reflections: 20,
+  sent: 40,
+  triageExamples: 40,
+};
+
+/**
  * The call's state, as one typed slot.
  *
  * `after` holds the one invariant nothing else should have to remember: a
  * closed email is never the open one, so a tool that closed the thread cannot
  * leave `openId` pointing at it.
- *
- * `caps` holds the growth bounds the same way. Every one of these lists rides
- * in a `syncState` frame or a prompt, and a `note()` wrapper around
- * `pushCapped` used to bound two of them — `log` and `exchange` — while
- * `reflections`, `sent` and `triageExamples` were pushed to directly and grew
- * for the length of the call. A cap on the slot holds whatever path wrote.
  */
 export const assistantSlot = sessionSlot("assistant", seedAssistant, {
   after: (state) => {
@@ -203,7 +236,7 @@ export const assistantSlot = sessionSlot("assistant", seedAssistant, {
       state.proposal = null;
     }
   },
-  caps: { log: 40, exchange: 30, reflections: 20, sent: 40, triageExamples: 40 },
+  caps: CAPS,
 });
 
 /**
@@ -318,6 +351,18 @@ export const DRAFTING = "onCall.drafting";
 export const AWAITING = "onCall.awaitingDecision";
 
 /**
+ * The hang-up, as the runtime delivers it.
+ *
+ * An `@`-prefixed key is a SESSION event rather than one a tool sends, and it
+ * is a plain string in the spec — so a misspelling declares a transition
+ * nothing will ever take, silently, and the gate this template exists for stays
+ * open after the caller is gone. `satisfies` is what makes the spelling a
+ * compile error: `SessionEventType` is the union of what the runtime actually
+ * delivers, and the literal type survives it, which the `as const` below needs.
+ */
+const HUNG_UP = "@session.timed-out" satisfies `@${SessionEventType}`;
+
+/**
  * `as const` is load-bearing: the event union is synthesized from the `on` keys.
  *
  * The hang-up is declared ONCE, on the parent (see `roadside-assist`), and it
@@ -330,7 +375,7 @@ const reviewSpec = {
   states: {
     onCall: {
       initial: "inbox",
-      on: { "@session.timed-out": "abandoned" },
+      on: { [HUNG_UP]: "abandoned" },
       states: {
         inbox: {
           instruction:

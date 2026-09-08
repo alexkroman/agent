@@ -34,7 +34,7 @@ import { type EvalTurn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
-import { DEFAULT_GAME_STATE } from "./shared.ts";
+import { DEFAULT_GAME_STATE, rankFor } from "./shared.ts";
 
 /**
  * What each of the three tools this file drives answers, off the wire.
@@ -47,9 +47,11 @@ import { DEFAULT_GAME_STATE } from "./shared.ts";
  */
 const Carried = z.object({ inventory: z.array(z.string()) });
 const Restarted = z.object({ restarted: z.boolean() });
+const Scored = z.object({ score: z.number(), rank: z.string() });
 const Status = z.object({
   inventory: z.array(z.string()),
   score: z.number(),
+  rank: z.string(),
   moves: z.number(),
   currentRoom: z.string(),
 });
@@ -126,6 +128,36 @@ describeEval(agentDef, (test) => {
         "Very well. We begin again at the mouth of the cave.",
         { tool: "game_state_get" },
         "You carry nothing. Your score is zero, and you stand at the cave mouth.",
+      ],
+    },
+  );
+
+  test(
+    "the rank the score earned is still the player's rank a turn later",
+    async ({ session }) => {
+      const scored = await session.say(
+        "I set the golden chalice down on the stone pedestal. That must be worth something.",
+      );
+      const earned = answerOf(scored, "game_state_score", Scored);
+      // Whatever the model awarded — a live run picks its own number — the rank
+      // that came back is the one the ladder says that score earns. The tool
+      // computes it from `rankFor` because the slot's `after` hook has not run
+      // when its result is built; if it read `game.rank` instead, this is the
+      // assertion that would catch the promotion arriving one call late.
+      expect(earned.rank).toBe(rankFor(earned.score));
+
+      // And the SECOND turn is the only place the hook's write can be seen: the
+      // field nothing assigns is read back off a later turn's state.
+      const later = answerOf(await session.say("What is my score?"), "game_state_get", Status);
+      expect(later.score).toBe(earned.score);
+      expect(later.rank).toBe(earned.rank);
+    },
+    {
+      stubReply: [
+        { tool: "game_state_score", args: { value: 30 } },
+        "The chalice settles onto the pedestal with a satisfying weight.",
+        { tool: "game_state_get" },
+        "Thirty points, which makes you an Amateur Adventurer.",
       ],
     },
   );

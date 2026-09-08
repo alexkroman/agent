@@ -112,7 +112,13 @@
  */
 
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { requireStepEnv, stepFetch, stepReport, stepWebhookUrl } from "@alexkroman1/aai/step";
+import {
+  requireStepEnv,
+  type StepFetchInit,
+  stepFetch,
+  stepReport,
+  stepWebhookUrl,
+} from "@alexkroman1/aai/step";
 import {
   FatalError,
   stepFetchOrFail,
@@ -732,12 +738,9 @@ export async function checkTranscript(id: string): Promise<TranscriptState> {
 export async function discardTranscript(id: string): Promise<void> {
   await stepReport(`Discarding transcript ${id}.`);
   // Not through `request` above, because a 404 is a SUCCESS here — see below.
-  // `stepFetch` for the same reason it does; only the status handling differs.
-  const response = await stepFetch(`${TRANSCRIPT_ENDPOINT}/${id}`, {
-    method: "DELETE",
-    headers: { authorization: requireStepEnv(API_KEY_ENV) },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+  // `stepFetch` for the same reason it does; only the status handling differs,
+  // which is exactly what `apiInit` is shaped to allow.
+  const response = await stepFetch(`${TRANSCRIPT_ENDPOINT}/${id}`, apiInit({ method: "DELETE" }));
   if (response.status === 404) return;
   if (!response.ok) {
     throw toStepError(
@@ -792,11 +795,34 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
 // ---- HTTP -------------------------------------------------------------------
 
 /**
+ * The credential and the deadline every call to the pre-recorded API carries.
+ *
+ * Two call sites wrote both by hand — {@link request} and
+ * {@link discardTranscript} — and a credential written twice is a credential
+ * that gets rotated once. Note it is a bare key, AssemblyAI's `authorization`
+ * taking the key itself with no `Bearer` prefix, and that it is read HERE
+ * rather than at module scope, because `requireStepEnv` must run inside the
+ * step that needs it.
+ *
+ * **`StepFetchInit` is what makes one builder serve both**, and that is the
+ * reason it is worth naming: `stepFetch` and `stepFetchOrFail` take the same
+ * init, so the two calls differ only in how they CLASSIFY the answer — a 404 is
+ * a success for one and a failure for the other — and nothing about the request
+ * itself. Spreading `extra` first is what keeps that true: a caller may add a
+ * method or a content type, and may not quietly drop the credential or the
+ * deadline.
+ */
+function apiInit(extra: StepFetchInit = {}): StepFetchInit {
+  return {
+    ...extra,
+    headers: { authorization: requireStepEnv(API_KEY_ENV), ...extra.headers },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  };
+}
+
+/**
  * One authenticated request to the pre-recorded API, with this desk's retry
  * policy on it.
- *
- * Note the header is a bare key: AssemblyAI's `authorization` takes the key
- * itself, with no `Bearer` prefix.
  */
 async function request(url: string): Promise<Response> {
   // Through `stepFetch`, not `fetch`: it pins HTTP/1.1, so several concurrent
@@ -812,8 +838,5 @@ async function request(url: string): Promise<Response> {
   // than replaced by the DevKit's one-second default — which matters here more
   // than usual, because a fan-out of segments hits a rate limit together. The
   // DELETE below stays on plain `stepFetch`, because there a 404 is a SUCCESS.
-  return await stepFetchOrFail(url, {
-    headers: { authorization: requireStepEnv(API_KEY_ENV), "content-type": "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+  return await stepFetchOrFail(url, apiInit({ headers: { "content-type": "application/json" } }));
 }

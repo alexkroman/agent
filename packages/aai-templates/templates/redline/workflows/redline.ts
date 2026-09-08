@@ -21,6 +21,16 @@
  * branch that takes a different path on replay reads a journal entry that was
  * written for a different call, rather than producing a slightly different essay.
  *
+ * ## Two ways in, and only one of them needs a journal to be safe
+ *
+ * A run either writes its first draft or is handed one — `redline` is a word
+ * about marking up prose somebody already has, and the loop under it is
+ * critique-and-revise either way. The branch is on the INPUT, which is journaled
+ * once at `start()` and identical on every walk, so it costs nothing to make it
+ * replay-stable. Contrast the loop's exit, above: that one is decided at run
+ * time and therefore has to be decided on a STEP'S RESULT. The two sit ten lines
+ * apart in {@link redlineFlow} as the cheap case and the paid one.
+ *
  * ## Why durability earns its keep here, specifically
  *
  * A three-round redline is up to seven model calls in sequence, each of them
@@ -46,8 +56,24 @@ import { CRITIC_SYSTEM, REVISER_SYSTEM, WRITER_SYSTEM } from "./prompts.ts";
 /** Shortest brief worth writing from. Below this the piece would be invention. */
 export const MIN_BRIEF_CHARS = 20;
 
+/** Shortest attached draft worth redlining. Below this there is nothing to grade
+ *  — the critic would be writing the piece, which is the one thing its prompt
+ *  says not to do. */
+export const MIN_DRAFT_CHARS = 200;
+
+/** Longest attached draft the desk will take. Past this the critique stops being
+ *  about the piece and starts being about what fitted in the context window. */
+export const MAX_DRAFT_CHARS = 20_000;
+
 /** Notes one critique may return — their prompt asks for three at most. */
 export const MAX_NOTES = 3;
+
+/** A draft the author already had, as the page reads it off the file they chose. */
+export interface AttachedDraft {
+  /** What the file was called. The run narrates it, and the output carries it. */
+  name: string;
+  text: string;
+}
 
 /** What the form collects, once the page has mapped its fields. */
 export interface RedlineInput {
@@ -58,6 +84,11 @@ export interface RedlineInput {
   /** Points the piece must cover. An ARRAY, which is why the page writes that
    *  field by hand — `<WorkflowFields>` renders scalars only. */
   mustCover: string[];
+  /** A draft to mark up instead of writing one. Absent for the ordinary run.
+   *  An OBJECT for the same reason `mustCover` is an array: it is the other
+   *  property `<WorkflowFields>` renders nothing for, so the page owns its
+   *  control — a `<FileField read="text">` — and maps it on submit. */
+  source?: AttachedDraft | undefined;
 }
 
 export interface Critique {
@@ -91,19 +122,30 @@ export interface Round {
 }
 
 /**
- * Write, then critique and revise until the critic ships it or the rounds run
- * out.
+ * Write a first draft — or take the one that came attached — then critique and
+ * revise until the critic ships it or the rounds run out.
  *
  * Whatever this returns is what a completed run reports as `output`, so it is
  * the page's render model — and `WorkflowOutputOf<typeof redline>` in
  * `client.tsx` is that type, derived rather than restated.
  */
 export async function redlineFlow(input: RedlineInput, ctx: WorkflowContext) {
-  // The three `maxAttempts` below were `maxRetries` properties on the functions
+  // The `maxAttempts` below were `maxRetries` properties on the functions
   // (3, 5, 3 — retries AFTER the first attempt, so 4, 6, 4 in all). The policy
   // is an argument to the CALL now, which is where it belongs: the same function
   // called from two places may deserve different patience.
-  let draft = await ctx.step("writeDraft", () => writeDraft(input), { maxAttempts: 4 });
+  //
+  // Which of the two ways in this run took is a branch on the INPUT, which is
+  // replay-stable for free: the input is journaled once at `start()` and is the
+  // same object on every walk. That is the cheap end of the rule the loop below
+  // spends properly — a branch on anything that is not already durable has to
+  // read a STEP'S RESULT, which is what the critic's verdict is.
+  const source = input.source;
+  let draft = source
+    ? // One attempt: this step performs no I/O and its only failure is fatal, so
+      // a second walk through it would throw the identical error.
+      await ctx.step("acceptDraft", () => acceptDraft(source), { maxAttempts: 1 })
+    : await ctx.step("writeDraft", () => writeDraft(input), { maxAttempts: 4 });
   const rounds: Round[] = [];
   let shipped = false;
 
@@ -135,8 +177,35 @@ export async function redlineFlow(input: RedlineInput, ctx: WorkflowContext) {
     roundsRun: rounds.length,
     /** True when the CRITIC stopped the loop, false when the budget did. */
     shipped,
+    /** The attached file this run marked up, or `undefined` when the desk wrote
+     *  the first draft itself. The page says which, because "three rounds" reads
+     *  very differently over somebody's own prose. */
+    source: source?.name,
     rounds,
   };
+}
+
+/**
+ * The other way in: a draft the author already had.
+ *
+ * Not a model call and not a fetch — the text arrived in the run's input, read
+ * off the chosen file by `<FileField read="text">` in the browser. It is still a
+ * STEP, for the two things a step is: its result is journaled, so every walk
+ * starts the loop from the same prose, and its failure is CLASSIFIED. A file of
+ * twenty thousand spaces passes the schema's `.min()`, which counts characters,
+ * and arrives here as nothing to grade — the same gap `writeDraft` guards, and
+ * fatal for the same reason.
+ */
+export async function acceptDraft(source: AttachedDraft): Promise<string> {
+  const text = source.text.trim();
+  if (text.length < MIN_DRAFT_CHARS) {
+    throw new FatalError(
+      `${source.name} holds ${text.length} characters of prose — too little to redline. ` +
+        `Attach at least ${MIN_DRAFT_CHARS}, or leave the file off and let the desk write it.`,
+    );
+  }
+  await stepReport(`Redlining ${source.name} rather than writing a first draft.`);
+  return text;
 }
 
 /** Their `generation_node`, first pass. */

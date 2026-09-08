@@ -1,13 +1,38 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { ToolContext } from "@alexkroman1/aai";
-import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
+import { createSeededRandom, type RandomSource, type SessionEventContext } from "@alexkroman1/aai";
+import { createToolContext, parseToolInput, toolOf, toolRunner } from "@alexkroman1/aai/testing";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 
-import { DEFAULT_GAME_STATE, gameSlot, MAX_HISTORY, REPORTED_HISTORY } from "./shared.ts";
+import {
+  DEFAULT_GAME_STATE,
+  gameSlot,
+  gameStatus,
+  MAX_HISTORY,
+  REPORTED_HISTORY,
+  rankFor,
+  SCAVENGER_FLAG,
+  statusLine,
+} from "./shared.ts";
 
 /** A tool by the name the model calls it by, bound to this agent. */
 const run = toolRunner(agentDef);
+
+/**
+ * What a tool answered, or a throw naming the refusal.
+ *
+ * NOT `expectToolOk`: that one unwraps a `dialog()` envelope (`{ result, state,
+ * done }`) and throws on a plain tool's own return value, so it does not fit an
+ * agent with no dialog. What carries over is the reason it exists — a cast
+ * reads `undefined` off a `ToolFailure` and dies three assertions later, with
+ * the sentence the tool wrote thrown away. `game_state_drop` can refuse now, so
+ * every unwrap in this file goes through the guard rather than through `as`.
+ */
+const ok = <T>(result: unknown): T => {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  return result as T;
+};
 
 /**
  * What the player said, delivered the way the RUNTIME delivers it.
@@ -17,8 +42,13 @@ const run = toolRunner(agentDef);
  * than trusting the wiring: `moves` and `history` are now maintained by
  * something the model never calls, so nothing else in this file would notice if
  * the hook stopped running.
+ *
+ * `SessionEventContext`, not `ToolContext`, because that is what the runtime
+ * hands a hook: the session id, the env and the slots, and nothing that could
+ * speak. A `TestToolContext` satisfies it, so the same `ctx` drives the tools
+ * below.
  */
-const say = (text: string, ctx: ToolContext) =>
+const say = (text: string, ctx: SessionEventContext) =>
   agentDef.events?.["user-transcript.committed"]?.(
     { type: "user-transcript.committed", text, meta: { id: "evt_1", at: 0 } },
     ctx,
@@ -37,18 +67,18 @@ describe("the mutating tools actually mutate", () => {
   test("game_state_take adds to the inventory and does not double an item", async () => {
     const ctx = createToolContext();
 
-    const first = (await run("game_state_take", { value: "lantern" }, ctx)) as {
-      inventory: string[];
-    };
+    const first = ok<{ inventory: string[] }>(
+      await run("game_state_take", { value: "lantern" }, ctx),
+    );
     expect(first.inventory).toEqual(["lantern"]);
     // The stored value, not the one the body returned — a body handed a frozen
     // value would have thrown, and a body handed a copy nothing stores would
     // report success here and leave the slot empty.
     expect(gameSlot.get(ctx).inventory).toEqual(["lantern"]);
 
-    const again = (await run("game_state_take", { value: "lantern" }, ctx)) as {
-      inventory: string[];
-    };
+    const again = ok<{ inventory: string[] }>(
+      await run("game_state_take", { value: "lantern" }, ctx),
+    );
     expect(again.inventory).toEqual(["lantern"]);
   });
 
@@ -56,9 +86,9 @@ describe("the mutating tools actually mutate", () => {
     const ctx = createToolContext();
 
     await run("game_state_flag", { value: "gate_opened" }, ctx);
-    const both = (await run("game_state_flag", { value: "rope_cut" }, ctx)) as {
-      flags: Record<string, boolean>;
-    };
+    const both = ok<{ flags: Record<string, boolean> }>(
+      await run("game_state_flag", { value: "rope_cut" }, ctx),
+    );
 
     expect(both.flags).toEqual({ gate_opened: true, rope_cut: true });
     expect(gameSlot.get(ctx).flags).toEqual({ gate_opened: true, rope_cut: true });
@@ -79,28 +109,28 @@ describe("the mutating tools actually mutate", () => {
 // ─── The rest of the eight ───────────────────────────────────────────────────
 
 describe("the adventure's tools", () => {
-  test("drop removes an item and is a no-op for one the player never took", async () => {
+  test("drop removes an item, and refuses one the player never took", async () => {
     const ctx = createToolContext();
     await run("game_state_take", { value: "lantern" }, ctx);
     await run("game_state_take", { value: "rope" }, ctx);
 
-    const dropped = (await run("game_state_drop", { value: "lantern" }, ctx)) as {
-      inventory: string[];
-    };
+    const dropped = ok<{ inventory: string[] }>(
+      await run("game_state_drop", { value: "lantern" }, ctx),
+    );
     expect(dropped.inventory).toEqual(["rope"]);
 
-    const nothing = (await run("game_state_drop", { value: "sword" }, ctx)) as {
-      inventory: string[];
-    };
-    expect(nothing.inventory).toEqual(["rope"]);
+    // A `ToolFailure`, not a silent no-op reporting the unchanged inventory:
+    // the narrator is told the sentence rather than being left to diff a list.
+    const refused = await run("game_state_drop", { value: "sword" }, ctx);
+    expect(isToolFailure(refused) && refused.error).toMatch(/not carrying sword/);
+    expect(gameSlot.get(ctx).inventory).toEqual(["rope"]);
   });
 
   test("move sets the room and reports the turn count without touching it", async () => {
     const ctx = createToolContext();
-    const moved = (await run("game_state_move", { value: "Echo Chamber" }, ctx)) as {
-      currentRoom: string;
-      moves: number;
-    };
+    const moved = ok<{ currentRoom: string; moves: number }>(
+      await run("game_state_move", { value: "Echo Chamber" }, ctx),
+    );
     // `moves` is 0 because nobody has SAID anything — see `recordTurn`. It is
     // still reported, because it is what the narrator wants back.
     expect(moved).toEqual({ currentRoom: "Echo Chamber", moves: 0 });
@@ -110,7 +140,7 @@ describe("the adventure's tools", () => {
   test("score accumulates rather than replacing", async () => {
     const ctx = createToolContext();
     await run("game_state_score", { value: 10 }, ctx);
-    const total = (await run("game_state_score", { value: 5 }, ctx)) as { score: number };
+    const total = ok<{ score: number }>(await run("game_state_score", { value: 5 }, ctx));
     expect(total.score).toBe(15);
   });
 
@@ -125,10 +155,9 @@ describe("the adventure's tools", () => {
 
     // And the narrator reads it back through the ordinary state tool — the hook
     // writes, the model reads, and the two never have to agree about who counts.
-    const read = (await run("game_state_get", {}, ctx)) as {
-      moves: number;
-      recentHistory: string[];
-    };
+    const read = ok<{ moves: number; recentHistory: string[] }>(
+      await run("game_state_get", {}, ctx),
+    );
     expect(read.moves).toBe(REPORTED_HISTORY + 3);
     expect(read.recentHistory).toHaveLength(REPORTED_HISTORY);
   });
@@ -167,9 +196,10 @@ describe("the adventure's tools", () => {
 
     expect(await run("game_state_get", ctx)).toEqual({
       currentRoom: "Echo Chamber",
-      inventory: ["lantern"],
       score: 7,
+      rank: "Beginner",
       moves: REPORTED_HISTORY + 3,
+      inventory: ["lantern"],
       flags: { gate_opened: true },
       recentHistory: Array.from({ length: REPORTED_HISTORY }, (_, i) => `command ${i + 3}`),
     });
@@ -181,12 +211,140 @@ describe("the adventure's tools", () => {
     await run("game_state_score", { value: 30 }, ctx);
     await run("game_state_move", { value: "Echo Chamber" }, ctx);
 
-    const restarted = (await run("game_state_restart", ctx)) as {
-      restarted: boolean;
-      currentRoom: string;
-    };
+    const restarted = ok<{ restarted: boolean; currentRoom: string }>(
+      await run("game_state_restart", ctx),
+    );
     expect(restarted).toEqual({ restarted: true, currentRoom: DEFAULT_GAME_STATE.currentRoom });
     expect(gameSlot.get(ctx)).toEqual(DEFAULT_GAME_STATE);
+  });
+
+  test("the schemas say what a spoken argument has to be turned into", async () => {
+    // Points are a NUMBER: the model has to turn what it heard into one, and a
+    // schema that took a string would let "ten" reach `game.score +=`.
+    expect(await parseToolInput(agentDef, "game_state_score", { value: 10 })).toEqual({
+      value: 10,
+    });
+    await expect(parseToolInput(agentDef, "game_state_score", { value: "ten" })).rejects.toThrow();
+
+    // And the read takes nothing at all, which is what makes the two-argument
+    // `run("game_state_get", ctx)` form above legal.
+    expect(toolOf(agentDef, "game_state_get").inputSchema).toBeUndefined();
+  });
+});
+
+// ─── The rank is DERIVED, and the scavenger is a DIE ROLL ────────────────────
+
+describe("what the game works out for itself", () => {
+  test("the rank follows the score, and no tool writes it", async () => {
+    const ctx = createToolContext();
+    expect(gameSlot.get(ctx).rank).toBe("Beginner");
+
+    // The tool that carried the player over the threshold reports the rank it
+    // EARNED, not the one it had. `after` runs after the body, so a result
+    // built from `game.rank` would announce this promotion one call late — the
+    // whole reason `rankFor` is a predicate the writer can call.
+    const scored = ok<{ score: number; rank: string }>(
+      await run("game_state_score", { value: 30 }, ctx),
+    );
+    expect(scored).toEqual({ score: 30, rank: "Amateur Adventurer" });
+    expect(gameSlot.get(ctx).rank).toBe("Amateur Adventurer");
+
+    // And the hook owns the write, so any later mutation leaves it consistent —
+    // including one that has nothing to do with the score.
+    await run("game_state_take", { value: "chalice" }, ctx);
+    expect(gameSlot.get(ctx).rank).toBe(rankFor(gameSlot.get(ctx).score));
+  });
+
+  test("rankFor is a ladder, and the bottom rung is what a fresh game starts on", () => {
+    expect(rankFor(0)).toBe("Beginner");
+    expect(rankFor(24)).toBe("Beginner");
+    expect(rankFor(25)).toBe("Amateur Adventurer");
+    expect(rankFor(999)).toBe("Wizard");
+    expect(DEFAULT_GAME_STATE.rank).toBe(rankFor(DEFAULT_GAME_STATE.score));
+  });
+
+  test("the scavenger's threshold is a number the spec can state", async () => {
+    const always = createToolContext({ random: () => 0 });
+    await run("game_state_take", { value: "scarab" }, always);
+    const taken = ok<{ takenByScavenger: boolean }>(
+      await run("game_state_drop", { value: "scarab" }, always),
+    );
+    expect(taken.takenByScavenger).toBe(true);
+    expect(gameSlot.get(always).flags[SCAVENGER_FLAG]).toBe(true);
+
+    // A source that returns exactly 1 is outside `Math.random`'s contract and
+    // well inside what a stub does — the comparison has to leave it out.
+    const never = createToolContext({ random: () => 1 });
+    await run("game_state_take", { value: "scarab" }, never);
+    const kept = ok<{ takenByScavenger: boolean }>(
+      await run("game_state_drop", { value: "scarab" }, never),
+    );
+    expect(kept.takenByScavenger).toBe(false);
+    expect(gameSlot.get(never).flags[SCAVENGER_FLAG]).toBeUndefined();
+  });
+
+  test("one seed is one adventure: the same stream robs the player the same way", async () => {
+    // A SEEDED source rather than a constant one. `() => 0.5` looks like the
+    // simplest deterministic stub and is degenerate — every draw identical, so
+    // the scavenger either never appears or always does, and nothing about the
+    // mechanic is under test. `createSeededRandom` is a real stream that
+    // repeats, which is what makes "the same seed plays the same game" an
+    // assertion rather than a hope.
+    const drops = 12;
+    const playthrough = async (random: RandomSource): Promise<boolean[]> => {
+      const ctx = createToolContext({ random });
+      const struck: boolean[] = [];
+      for (let i = 0; i < drops; i++) {
+        await run("game_state_take", { value: `treasure ${i}` }, ctx);
+        const dropped = ok<{ takenByScavenger: boolean }>(
+          await run("game_state_drop", { value: `treasure ${i}` }, ctx),
+        );
+        struck.push(dropped.takenByScavenger);
+      }
+      return struck;
+    };
+
+    const first = await playthrough(createSeededRandom(7));
+    expect(await playthrough(createSeededRandom(7))).toEqual(first);
+    // Both outcomes really occur, so the assertion above is about a stream and
+    // not about a constant that never trips the threshold.
+    expect([...new Set(first)].sort()).toEqual([false, true]);
+    expect(await playthrough(createSeededRandom(8))).not.toEqual(first);
+  });
+});
+
+// ─── One status line, two readers ────────────────────────────────────────────
+
+describe("the status line", () => {
+  test("the opening frame agrees with the greeting, before anything is stored", () => {
+    // What a client renders on a session that has not touched the slot: the
+    // projection calls the slot's own `create()`, so the CRT's top bar shows
+    // the cave mouth the greeting describes rather than an empty frame.
+    expect(gameStatus()).toEqual({
+      currentRoom: DEFAULT_GAME_STATE.currentRoom,
+      score: 0,
+      rank: "Beginner",
+      moves: 0,
+    });
+  });
+
+  test("the narrator and the screen are told the same four things", async () => {
+    const ctx = createToolContext();
+    say("go down to the hall", ctx);
+    await run("game_state_move", { value: "Echoing Hall" }, ctx);
+    await run("game_state_score", { value: 60 }, ctx);
+
+    const board = ok<Record<string, unknown>>(await run("game_state_get", ctx));
+    const bar = statusLine(gameSlot.get(ctx));
+
+    expect(bar).toEqual({
+      currentRoom: "Echoing Hall",
+      score: 60,
+      rank: "Novice Adventurer",
+      moves: 1,
+    });
+    // `game_state_get` spreads the same helper, so the two cannot drift.
+    expect(board).toMatchObject(bar);
   });
 });
 

@@ -1,3 +1,4 @@
+import { agent, assemblyAIPipeline, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { expectDeployable } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
@@ -29,5 +30,45 @@ describe("simple template", () => {
     // `not.toThrow()` because the helper's throw IS the finding: vitest quotes
     // the thrown message, which names the invariant that went.
     expect(() => expectDeployable(agentDef)).not.toThrow();
+  });
+
+  test("what gets filled in is exactly `assemblyAIPipeline()` — the default, spelled out", () => {
+    const config = expectDeployable(agentDef);
+    if (config.mode !== "pipeline") {
+      // Switched the def to `s2s`? Then there is no cascade to fill — S2S
+      // REPLACES the pipeline rather than joining it.
+      expect(config.mode).toBe("s2s");
+      return;
+    }
+    // Not "some AssemblyAI descriptor" but THE one: `defaultProviders` calls
+    // this preset for every stage left unset, so the two are the same three
+    // values. Knowing that is what makes the preset useful — spread it into
+    // `agent()` when you want the stages visible in the config, or reach for
+    // `assemblyAIPipeline({ region: "eu" })` to move STT and the LLM gateway
+    // together. Each stage is read off the DEF first, so a stage you declare
+    // (or a `voice:`, which desugars to a `tts` descriptor) is compared
+    // against your own value rather than the preset's.
+    const preset = assemblyAIPipeline();
+    for (const stage of ["stt", "llm", "tts"] as const) {
+      expect(config[stage], stage).toEqual(agentDef[stage] ?? preset[stage]);
+    }
+  });
+
+  test("write no prompt and you already have one: the SDK's voice core", () => {
+    // The other half of "declares nothing and still runs", and the one an
+    // author meets first. Built here rather than read off `agentDef`, so
+    // writing your own prompt — or dropping a `system-prompt.md` beside
+    // `agent.ts`, which the BUILD folds in — does not redden a claim about
+    // the SDK's default.
+    expect(expectDeployable(agent({ name: "Simple Assistant" })).systemPrompt).toBe(
+      DEFAULT_SYSTEM_PROMPT,
+    );
+    // And what a prompt of your own resolves to is your text ALONE. That is
+    // not the voice core being thrown away: the runtime emits it every
+    // session and appends yours under a header saying yours wins where they
+    // conflict. So write only your own rules — `DEFAULT_SYSTEM_PROMPT` is
+    // exported to be READ (print it, diff it across releases), not pasted in.
+    const own = agent({ name: "Simple Assistant", systemPrompt: "Only discuss the weather." });
+    expect(expectDeployable(own).systemPrompt).toBe("Only discuss the weather.");
   });
 });

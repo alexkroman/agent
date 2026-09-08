@@ -18,17 +18,27 @@ import {
   type DialogPosition,
   type DialogSpec,
   dialog,
-  isToolFailure,
+  failable,
+  orFail,
+  type SlotCaps,
+  type StateProjection,
   sessionSlot,
+  type ToolFailure,
   tool,
 } from "@alexkroman1/aai";
-import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+import { type CallOptions, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { z } from "zod";
 
 /** One completed step — their `past_steps`, as a pair rather than a tuple. */
 export interface PastStep {
   step: string;
   result: string;
+  /**
+   * Whether the executor could actually settle the step — its own
+   * `stepAnswerSchema.settled`, carried through rather than re-derived from the
+   * wording of {@link PastStep.result}.
+   */
+  settled: boolean;
   /** Searches this step ran, so the sidebar can show what the wait bought. */
   searches: string[];
 }
@@ -61,13 +71,25 @@ export interface PlanState {
  */
 export const MAX_PAST_STEPS = 20;
 
+/** Growth cap on the revision trail, which rides in every `syncState` frame. */
+export const MAX_REVISIONS = 20;
+
 export function emptyPlan(): PlanState {
   return { objective: null, plan: [], pastSteps: [], response: null, revisions: [] };
 }
 
-export const planSlot = sessionSlot("plan", emptyPlan, {
-  caps: { pastSteps: MAX_PAST_STEPS, revisions: 20 },
-});
+/**
+ * Both bounds, in one annotated value.
+ *
+ * `SlotCaps<PlanState>` is what makes a typo here a compile error rather than a
+ * cap that silently does nothing: the mapped type keeps only the keys whose
+ * value is an array, so `response: 20` — a cap on a string — is refused where
+ * an inline object literal would have been checked against the same type but
+ * read as a free-standing option bag by anyone skimming.
+ */
+const planCaps: SlotCaps<PlanState> = { pastSteps: MAX_PAST_STEPS, revisions: MAX_REVISIONS };
+
+export const planSlot = sessionSlot("plan", emptyPlan, { caps: planCaps });
 
 /**
  * The plan's LIFECYCLE, as a declared machine rather than a guard per tool.
@@ -156,29 +178,55 @@ export interface SearchHit {
  * live web. That seam is gone with the loop it served — the executor is a
  * subagent now, and a spec fakes the whole delegation with `stubDelegate` — so
  * what is left is the type {@link searchTool} is written against.
+ *
+ * **A refusal is a RETURN, not a throw**, which is the `@alexkroman1/aai/tools`
+ * contract read straight through: `webSearch` answers `{ error }` and so does
+ * this, so a caller either narrows it or `orFail`s it and cannot ignore it.
+ * `CallOptions` is that module's own options pair, taken whole rather than
+ * restated, and the half that matters here is `signal`.
  */
-export type SearchFn = (query: string) => Promise<SearchHit[]>;
+export type SearchFn = (query: string, options?: CallOptions) => Promise<SearchHit[] | ToolFailure>;
 
 /** How many results one search reads. Enough to compare, short enough to hear. */
 export const SEARCH_RESULTS = 4;
 
-export const liveSearch: SearchFn = async (query) => {
-  const results = await webSearch<{ results?: { title?: string; url?: string }[] }>({
-    query,
-    maxResults: SEARCH_RESULTS,
-  });
-  // A REFUSED search is not an empty web, and `webSearch` answers with
-  // `{ error }` rather than throwing — so an unnarrowed `?? []` below would tell
-  // the executor there is nothing out there. Measured: DuckDuckGo answers `403`
-  // often enough that this is the ordinary case, not an edge one.
-  if (isToolFailure(results)) throw new Error(`Search failed: ${results.error}`);
-  return (results.results ?? [])
-    .filter(
-      (one): one is { title?: string; url: string } =>
-        typeof one.url === "string" && one.url.length > 0,
-    )
-    .map((one) => ({ title: one.title || one.url, url: one.url }));
-};
+/**
+ * A REFUSED search is not an empty web, and `webSearch` answers with `{ error }`
+ * rather than throwing — so an unnarrowed `?? []` below would tell the executor
+ * there is nothing out there. Measured: DuckDuckGo answers `403` often enough
+ * that this is the ordinary case, not an edge one.
+ *
+ * `failable` + `orFail` is that narrowing: the refusal becomes this function's
+ * return value with the provider's own words intact. What it replaced was an
+ * `isToolFailure` check throwing a re-worded `Error`, and the rewording was the
+ * smaller half of the cost — a thrown tool error is logged by the runtime as an
+ * UNCAUGHT tool bug on its way to the model, which a 403 from a free search
+ * endpoint is not.
+ */
+export const liveSearch: SearchFn = failable(
+  async (query: string, options: CallOptions = {}): Promise<SearchHit[]> => {
+    const results = orFail(
+      await webSearch<{ results?: { title?: string; url?: string }[] }>({
+        query,
+        maxResults: SEARCH_RESULTS,
+        ...options,
+      }),
+    );
+    return (results.results ?? [])
+      .filter(
+        (one): one is { title?: string; url: string } =>
+          typeof one.url === "string" && one.url.length > 0,
+      )
+      .map((one) => ({ title: one.title || one.url, url: one.url }));
+  },
+);
+
+/** {@link liveSearch}, rendered for a model to reason over. */
+const runSearch = failable(async (query: string, options: CallOptions = {}): Promise<string> => {
+  const hits = orFail(await liveSearch(query, options));
+  if (hits.length === 0) return "No results.";
+  return hits.map((hit) => `- ${hit.title} (${hit.url})`).join("\n");
+});
 
 /**
  * `search` — {@link liveSearch} as a tool the EXECUTOR may call.
@@ -190,10 +238,11 @@ export const liveSearch: SearchFn = async (query) => {
  * — a subagent's `tools` are ordinary `ToolDef`s, so an agent's own code is as
  * reachable from one as a framework builtin is.
  *
- * A failed search THROWS rather than returning an empty list, and the runtime
- * turns that into a tool result the executor reads: told nothing, a model reads
- * silence as "there is nothing out there" and spends the rest of its budget
- * asking the same question differently.
+ * **`ctx.signal` goes down to the fetch.** A tool body gets one, `CallOptions`
+ * takes one, and until they were joined a caller who hung up mid-step left a
+ * search running against a third party — the runtime settles the tool's await
+ * on barge-in or reset, but the underlying request keeps going unless the body
+ * hands the signal on.
  */
 export const searchTool = tool({
   description:
@@ -202,16 +251,19 @@ export const searchTool = tool({
   inputSchema: z.object({
     query: z.string().max(120).describe("What to search for"),
   }),
-  execute: async ({ query }) => {
-    const hits = await liveSearch(query);
-    if (hits.length === 0) return "No results.";
-    return hits.map((hit) => `- ${hit.title} (${hit.url})`).join("\n");
-  },
+  execute: ({ query }, ctx) => runSearch(query, { signal: ctx.signal }),
 });
 
 /** Characters of a page the executor is given. A step is answered from a page's
  *  substance, not from its whole text, and the rest is context it pays for. */
 export const MAX_PAGE_CHARS = 4000;
+
+/** One page's substance, or the refusal that stopped it being read. */
+const readPage = failable(async (url: string, options: CallOptions = {}): Promise<string> => {
+  const page = orFail(await visitWebpage<{ content?: string; text?: string }>(url, options));
+  const body = String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
+  return body.length > 0 ? body : "That page had no readable text.";
+});
 
 /**
  * `read` — open one page the search turned up.
@@ -222,8 +274,9 @@ export const MAX_PAGE_CHARS = 4000;
  * every step from a list of titles. A subagent can hold both tools, so the
  * instruction and the capability finally agree.
  *
- * Throws on a refusal for the same reason {@link searchTool} does — a page that
- * would not load is not a page that said nothing.
+ * Answers a `ToolFailure` on a refusal for the same reason {@link searchTool}
+ * does — a page that would not load is not a page that said nothing — and takes
+ * the same `CallOptions`, so a hung-up caller cancels the fetch.
  */
 export const readTool = tool({
   description:
@@ -232,12 +285,7 @@ export const readTool = tool({
   inputSchema: z.object({
     url: z.url().describe("The page to open, from a search result"),
   }),
-  execute: async ({ url }) => {
-    const page = await visitWebpage<{ content?: string; text?: string }>(url);
-    if (isToolFailure(page)) throw new Error(`Could not read that page: ${page.error}`);
-    const body = String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
-    return body.length > 0 ? body : "That page had no readable text.";
-  },
+  execute: ({ url }, ctx) => readPage(url, { signal: ctx.signal }),
 });
 
 // ─── The projection ──────────────────────────────────────────────────────────
@@ -279,5 +327,13 @@ export function planView(state: FrozenPlanState): PlanView {
   };
 }
 
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const planProjection = planSlot.projection(planView);
+/**
+ * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the
+ * client.
+ *
+ * Annotated rather than inferred, because the annotation is the CONTRACT: a
+ * `StateProjection<PlanView>` is what `agent({ syncState })` accepts and what
+ * `useAgentState` reads a `PlanView` back out of, and naming it here is what
+ * stops the two ends from being written against a shape neither one states.
+ */
+export const planProjection: StateProjection<PlanView> = planSlot.projection(planView);

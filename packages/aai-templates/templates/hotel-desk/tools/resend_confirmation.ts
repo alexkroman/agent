@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { addTicket, hotelSlot, requireVerified } from "../shared.ts";
 
@@ -17,7 +17,7 @@ export default hotelSlot.updateTool({
   inputSchema: z.object({ kind: z.enum(["booking_confirmation", "folio"]) }),
   execute({ kind }, hotel) {
     const booking = requireVerified(hotel);
-    if ("error" in booking) return toolFailure(booking.error);
+    if (isToolFailure(booking)) return booking;
     const ticket = addTicket(
       hotel,
       "email",

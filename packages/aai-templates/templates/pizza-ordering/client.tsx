@@ -1,6 +1,6 @@
 import { formatMoney } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
-import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
+import { Facts, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import { orderProjection, pizzaPrice } from "./shared.ts";
 
 function PizzaIcon({ size }: { size: string }) {
@@ -32,11 +32,16 @@ function OrderSidebar() {
       <div className="flex flex-col items-center gap-4 p-6 text-center text-aai-text">
         <div className="text-5xl">&#10003;</div>
         <h2 className="text-lg font-bold">Order Placed</h2>
-        {order.orderNumber && <p className="opacity-70">Order #{order.orderNumber}</p>}
         <p className="font-bold text-xl text-aai-primary">{order.total}</p>
-        {order.estimatedMinutes && (
-          <p className="opacity-60 text-sm">Ready in ~{order.estimatedMinutes} minutes</p>
-        )}
+        {/* Two conditional `<p>`s with two hand-picked mutings, replaced by the
+            SDK's own run-facts line: it owns the separator and DROPS a fact the
+            projection did not carry, so neither absence leaves a stray `·`. */}
+        <Facts
+          items={[
+            order.orderNumber && `Order #${order.orderNumber}`,
+            order.estimatedMinutes && `Ready in ~${order.estimatedMinutes} minutes`,
+          ]}
+        />
       </div>
     );
   }

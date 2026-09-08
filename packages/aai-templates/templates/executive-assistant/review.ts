@@ -24,8 +24,16 @@
  */
 
 import {
+  clockTime,
   type DeepReadonly,
+  failable,
+  type InferSchemaOutput,
+  isoDate,
   isToolFailure,
+  orFail,
+  spokenDate,
+  spokenTime,
+  type ToolContext,
   type ToolDef,
   type ToolFailure,
   toolFailure,
@@ -155,7 +163,7 @@ export function applyProposal(
       closeEmail(state, email.id, "invited");
       state.log.push(`Sent ${title}`);
       state.exchange.push(`Sent ${title}: ${body}`);
-      return `Calendar invite "${proposal.title}" sent for ${proposal.startTime}.`;
+      return `Calendar invite "${proposal.title}" sent for ${spokenDate(proposal.date)} at ${spokenTime(proposal.startTime)}.`;
     }
     default:
       // Unreachable: `requireAllowed` refuses `accept`/`edit` on the other two.
@@ -214,15 +222,26 @@ export function acceptTool(): ToolDef {
   });
 }
 
+/**
+ * What `edit` may change, declared once so {@link editProposal} reads its
+ * argument type off the schema rather than restating it.
+ *
+ * The invite's three fields are the SDK's civil ones, so the model is told the
+ * shape as JSON Schema and a bad value is refused before `execute` runs — the
+ * same rule `send_calendar_invite` declares, in the tool that can change it.
+ */
+const EDIT_ARGS = z.object({
+  content: z.string().max(4000).describe("The full corrected email text").optional(),
+  title: z.string().max(120).describe("Invite: the new title").optional(),
+  date: isoDate("Invite: the new day").optional(),
+  startTime: clockTime("Invite: the new start").optional(),
+  endTime: clockTime("Invite: the new end").optional(),
+});
+
 /** The edited proposal, or why the edit does not fit what is waiting. */
 function editProposal(
   proposal: DeepReadonly<Proposal>,
-  args: {
-    content?: string | undefined;
-    title?: string | undefined;
-    startTime?: string | undefined;
-    endTime?: string | undefined;
-  },
+  args: InferSchemaOutput<typeof EDIT_ARGS>,
 ): Proposal | ToolFailure {
   switch (proposal.kind) {
     case "reply":
@@ -233,21 +252,63 @@ function editProposal(
       if (!args.content)
         return toolFailure("An edited email needs the full new text in `content`.");
       return { ...proposal, content: args.content, recipients: [...proposal.recipients] };
-    case "invite":
-      if (!(args.title || args.startTime || args.endTime)) {
-        return toolFailure("An edited invite needs a new title, startTime or endTime.");
+    case "invite": {
+      if (!(args.title || args.date || args.startTime || args.endTime)) {
+        return toolFailure("An edited invite needs a new title, date, startTime or endTime.");
       }
-      return {
-        kind: "invite",
+      const edited = {
+        kind: "invite" as const,
         emails: [...proposal.emails],
         title: args.title ?? proposal.title,
+        date: args.date ?? proposal.date,
         startTime: args.startTime ?? proposal.startTime,
         endTime: args.endTime ?? proposal.endTime,
       };
+      // The ordering, but NOT the calendar clash `send_calendar_invite` refuses:
+      // these words are the executive's own, and they may double-book themselves.
+      return edited.endTime <= edited.startTime
+        ? toolFailure("That ends before it starts — check the times.")
+        : edited;
+    }
     default:
       return toolFailure(`${describeProposal(proposal).title} cannot be edited.`);
   }
 }
+
+/**
+ * The `edit` path, as one function that answers with the thing or a sentence.
+ *
+ * Three guards run before anything is written, and `failable` is what lets each
+ * be the lookup it is rather than the lookup plus a line forwarding its
+ * failure. Not extended over the write window below: a mutator that RETURNS a
+ * failure keeps what it wrote, where `orFail` throws and would discard the
+ * draft — which is why the re-check inside it stays an `isToolFailure`.
+ */
+const applyEdit = failable(async (args: InferSchemaOutput<typeof EDIT_ARGS>, ctx: ToolContext) => {
+  const before = assistantSlot.get(ctx);
+  const it = orFail(waiting(before));
+  orFail(requireAllowed(it.proposal, "edit"));
+  const edited = orFail(editProposal(it.proposal, args));
+  const feedback =
+    edited.kind === "invite"
+      ? `${name} interrupted and gave these instructions: ${describeProposal(edited).body}`
+      : `A better response would have been: ${describeProposal(edited).body}`;
+  const updates = await reflect(ctx.generate, {
+    memory: before.memory,
+    trajectory: trajectoryOf(before),
+    feedback,
+    promptTypes: REFLECTION_SCOPE[it.proposal.kind].edit,
+  });
+  return assistantSlot.update(ctx, (state) => {
+    const now = waiting(state);
+    if (isToolFailure(now)) return now;
+    const sent = applyProposal(state, now.email, edited);
+    if (isToolFailure(sent)) return sent;
+    rememberExample(state, now.email, "email");
+    applyReflection(state, updates);
+    return { sent, learned: describeUpdates(updates) };
+  });
+});
 
 /**
  * `edit` — their `edit`: send the executive's own version, and learn from the
@@ -261,40 +322,8 @@ export function editTool(): ToolDef {
       "Use respond instead when they want you to redraft it yourself.",
     when: AWAITING,
     send: { type: "SETTLED" },
-    inputSchema: z.object({
-      content: z.string().max(4000).describe("The full corrected email text").optional(),
-      title: z.string().max(120).describe("Invite: the new title").optional(),
-      startTime: z.string().max(40).describe("Invite: new start, 2026-03-17T14:00:00").optional(),
-      endTime: z.string().max(40).describe("Invite: new end, 2026-03-17T14:30:00").optional(),
-    }),
-    async execute(args, ctx) {
-      const before = assistantSlot.get(ctx);
-      const it = waiting(before);
-      if (isToolFailure(it)) return it;
-      const denied = requireAllowed(it.proposal, "edit");
-      if (denied) return denied;
-      const edited = editProposal(it.proposal, args);
-      if (isToolFailure(edited)) return edited;
-      const feedback =
-        edited.kind === "invite"
-          ? `${name} interrupted and gave these instructions: ${describeProposal(edited).body}`
-          : `A better response would have been: ${describeProposal(edited).body}`;
-      const updates = await reflect(ctx.generate, {
-        memory: before.memory,
-        trajectory: trajectoryOf(before),
-        feedback,
-        promptTypes: REFLECTION_SCOPE[it.proposal.kind].edit,
-      });
-      return assistantSlot.update(ctx, (state) => {
-        const now = waiting(state);
-        if (isToolFailure(now)) return now;
-        const sent = applyProposal(state, now.email, edited);
-        if (isToolFailure(sent)) return sent;
-        rememberExample(state, now.email, "email");
-        applyReflection(state, updates);
-        return { sent, learned: describeUpdates(updates) };
-      });
-    },
+    inputSchema: EDIT_ARGS,
+    execute: (args, ctx) => applyEdit(args, ctx),
   });
 }
 
@@ -348,6 +377,34 @@ function respondPlan(proposal: DeepReadonly<Proposal>, feedback: string) {
   }
 }
 
+/** The `respond` path — {@link applyEdit}'s shape, with two guards instead of three. */
+const applyResponse = failable(async (feedback: string, ctx: ToolContext) => {
+  const before = assistantSlot.get(ctx);
+  const it = orFail(waiting(before));
+  orFail(requireAllowed(it.proposal, "respond"));
+  const plan = respondPlan(it.proposal, feedback);
+  const updates = await reflect(ctx.generate, {
+    memory: before.memory,
+    trajectory: trajectoryOf(before),
+    feedback: plan.line,
+    promptTypes: REFLECTION_SCOPE[it.proposal.kind].respond,
+  });
+  return assistantSlot.update(ctx, (state) => {
+    const now = waiting(state);
+    if (isToolFailure(now)) return now;
+    state.proposal = null;
+    state.exchange.push(plan.line);
+    rememberExample(state, now.email, "email");
+    applyReflection(state, updates);
+    state.log.push(`${name}: ${feedback}`);
+    return {
+      feedback: plan.line,
+      instructions: plan.instructions,
+      learned: describeUpdates(updates),
+    };
+  });
+});
+
 /**
  * `respond` — their `response`: words for the drafting model, not a decision.
  * The answer to a question, or feedback that sends a draft back for another go.
@@ -363,33 +420,6 @@ export function respondTool(): ToolDef {
     inputSchema: z.object({
       feedback: z.string().min(1).max(1000).describe(`What ${name} said, in their words`),
     }),
-    async execute(args, ctx) {
-      const before = assistantSlot.get(ctx);
-      const it = waiting(before);
-      if (isToolFailure(it)) return it;
-      const denied = requireAllowed(it.proposal, "respond");
-      if (denied) return denied;
-      const plan = respondPlan(it.proposal, args.feedback);
-      const updates = await reflect(ctx.generate, {
-        memory: before.memory,
-        trajectory: trajectoryOf(before),
-        feedback: plan.line,
-        promptTypes: REFLECTION_SCOPE[it.proposal.kind].respond,
-      });
-      return assistantSlot.update(ctx, (state) => {
-        const now = waiting(state);
-        if (isToolFailure(now)) return now;
-        state.proposal = null;
-        state.exchange.push(plan.line);
-        rememberExample(state, now.email, "email");
-        applyReflection(state, updates);
-        state.log.push(`${name}: ${args.feedback}`);
-        return {
-          feedback: plan.line,
-          instructions: plan.instructions,
-          learned: describeUpdates(updates),
-        };
-      });
-    },
+    execute: (args, ctx) => applyResponse(args.feedback, ctx),
   });
 }

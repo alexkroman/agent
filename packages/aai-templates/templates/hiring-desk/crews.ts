@@ -51,6 +51,7 @@
  */
 
 import {
+  DEFAULT_GUARDRAIL_MAX_RETRIES,
   type DelegateFn,
   type DelegateResult,
   type GenerateFn,
@@ -236,10 +237,18 @@ export function scoreRoster(
   candidates: readonly Candidate[],
   job: JobDescription,
   feedback: readonly string[],
+  onSettled: () => void = () => {},
 ): Promise<Scored[]> {
-  return mapSettled(candidates, SCORING_CONCURRENCY, (candidate) =>
-    scoreCandidate(generate, candidate, job, feedback),
-  );
+  return mapSettled(candidates, SCORING_CONCURRENCY, async (candidate) => {
+    // In a `finally`, so a candidate the evaluator refused ticks too: the wait
+    // is over for that one either way, and a ticker that never reaches the
+    // total reads to whoever is watching as a hang.
+    try {
+      return await scoreCandidate(generate, candidate, job, feedback);
+    } finally {
+      onSettled();
+    }
+  });
 }
 
 // ─── Crew B: LeadResponseCrew ────────────────────────────────────────────────
@@ -299,6 +308,23 @@ export const emailGuardrail: SubagentGuardrail = ({ text }) => {
 };
 
 /**
+ * What a complaint buys the coordinator: one more run, and no more.
+ *
+ * CrewAI's task `guardrail` retries three times; the SDK's default is
+ * {@link DEFAULT_GUARDRAIL_MAX_RETRIES}, which is one, and one is the right
+ * budget on a phone. A retry is another run of the coordinator inside a
+ * twelve-email fan-out the caller is holding the line through, and the two
+ * things this guardrail checks — a subject line, a signature — are ones a model
+ * that missed them twice is not about to produce on a third pass. What the budget buys instead is the flag:
+ * an exhausted draft still comes back, marked `accepted: false`, and the desk
+ * says it needs a look.
+ *
+ * Written out rather than inherited, because a retry budget nobody can see at
+ * the declaration is a budget nobody decided.
+ */
+export const EMAIL_GUARDRAIL_RETRIES = DEFAULT_GUARDRAIL_MAX_RETRIES;
+
+/**
  * Their `LeadResponseCrew`: `email_followup_agent` running
  * `send_followup_email`.
  *
@@ -311,6 +337,7 @@ export const emailWriter = subagent({
   systemPrompt: crewAgentPrompt(EMAIL_FOLLOWUP_AGENT),
   expectedOutput: EMAIL_EXPECTED_OUTPUT,
   guardrail: emailGuardrail,
+  maxRetries: EMAIL_GUARDRAIL_RETRIES,
   maxSteps: 1,
 });
 
@@ -393,8 +420,13 @@ export function draftEmails(
   candidates: readonly Candidate[],
   job: JobDescription,
   shortlist: ReadonlySet<string>,
+  onSettled: () => void = () => {},
 ): Promise<Drafted[]> {
-  return mapSettled(candidates, EMAIL_CONCURRENCY, (candidate) =>
-    writeEmail(delegate, candidate, job, shortlist.has(candidate.id)),
-  );
+  return mapSettled(candidates, EMAIL_CONCURRENCY, async (candidate) => {
+    try {
+      return await writeEmail(delegate, candidate, job, shortlist.has(candidate.id));
+    } finally {
+      onSettled();
+    }
+  });
 }

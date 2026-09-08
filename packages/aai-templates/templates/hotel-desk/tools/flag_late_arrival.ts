@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { hotelSlot, note, requireVerified } from "../shared.ts";
 
@@ -12,7 +12,7 @@ export default hotelSlot.updateTool({
   }),
   execute({ note: arrival }, hotel) {
     const booking = requireVerified(hotel);
-    if ("error" in booking) return toolFailure(booking.error);
+    if (isToolFailure(booking)) return booking;
     if (booking.status !== "confirmed")
       return toolFailure("that booking is cancelled - nothing to flag");
     booking.lateArrivalNote = arrival;

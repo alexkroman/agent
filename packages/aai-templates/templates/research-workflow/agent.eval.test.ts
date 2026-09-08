@@ -48,7 +48,7 @@ import { research } from "./shared.ts";
  * The glob is written here rather than reached for from a shared helper because
  * this file SHIPS — see `agent.test.ts`.
  */
-import { REVIEW_DELAY_MS } from "./workflows/research.ts";
+import { REVIEW_DELAY_MS } from "./workflows/review.ts";
 
 /** The one angle the scripted planner comes back with. */
 const ANGLE = "What second-hand cargo bikes actually sell for";
@@ -241,7 +241,10 @@ describeEval(agentDef, (test) => {
       expect(run?.output?.report).toBe(REPORT_BODY);
       expect(run?.output?.summary).toBe(SPOKEN_SUMMARY);
       expect(run?.output?.angles).toEqual([ANGLE]);
-      expect(run?.output?.filedAt).toBe("filed");
+      // A real timestamp: the filing step posts to a channel when one is
+      // configured (none is here) and answers with when it filed, where it
+      // used to answer with the literal string "filed".
+      expect(Number.isNaN(Date.parse(run?.output?.filedAt ?? ""))).toBe(false);
 
       // The five stages, in order, off the run's own narration — which is
       // also what `research_progress` reads back down the phone. A stage that
@@ -252,7 +255,10 @@ describeEval(agentDef, (test) => {
       expect(narration).toMatch(new RegExp(`Looking into: ${ANGLE}`));
       expect(narration).toMatch(/writing it up/);
       expect(narration).toMatch(/Writing up 1 angle/);
-      expect(run?.reported.at(-1)).toBe("Filing the findings.");
+      // No `RESEARCH_SLACK_WEBHOOK_URL` in an eval, so the last line is the
+      // arm that says the report stayed on the run — which is a filing that
+      // happened, not one that was skipped.
+      expect(run?.reported.at(-1)).toMatch(/^Filing the findings/);
 
       // The review wait, ASKED FOR and not taken: this engine records a
       // durable `sleep` rather than suspending, so what a case can honestly

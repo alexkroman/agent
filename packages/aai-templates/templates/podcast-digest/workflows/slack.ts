@@ -24,17 +24,37 @@
  * stays here is what a step DOES: the digest rendered as a `ChannelMessage` and
  * one `sendToChannelOrFail` call. Deciding which steps exist is the
  * template's job; what happens inside one is the SDK's.
+ *
+ * The one thing this file still ASKS Slack is which of its two webhook shapes
+ * a run is posting to — {@link describeDestination}, over the SDK's own
+ * `isSlackWorkflowTriggerUrl` — because the run's output says so and the page
+ * prints it. That is a question about this run rather than a rule about Slack,
+ * which is the line the rest of this module was moved across.
  */
 
-import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
+import {
+  type ChannelMessage,
+  type ChannelSection,
+  isSlackWorkflowTriggerUrl,
+  type SlackChannelOptions,
+  slackChannel,
+} from "@alexkroman1/aai/channels";
 import { stepReport } from "@alexkroman1/aai/step";
 import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+import { formatDuration, plural } from "@alexkroman1/aai/utils";
 import type { EpisodeDigest } from "./digest.ts";
 
-/** Everything the message needs, so rendering can stay a pure function. */
+/**
+ * Everything the message needs, so rendering can stay a pure function.
+ *
+ * The destination is `SlackChannelOptions` — the SDK's own pair — rather than
+ * the two loose strings this used to carry. They were `webhookUrl` and
+ * `textParam` under other names, restated so that `sendDigestToSlack` could
+ * rename them BACK on the way into `slackChannel()`; the run now carries the
+ * value the channel takes.
+ */
 export type SlackDigestInput = {
-  slackWebhookUrl: string;
-  slackWorkflowTextParam: string;
+  destination: SlackChannelOptions;
   podcastChannels: string;
   episodes: EpisodeDigest[];
   digestNumber: number;
@@ -53,10 +73,26 @@ export type SlackDigestInput = {
  */
 export async function sendDigestToSlack(input: SlackDigestInput): Promise<string> {
   await stepReport("Posting the digest to Slack.");
-  return await sendToChannelOrFail(
-    slackChannel({ webhookUrl: input.slackWebhookUrl, textParam: input.slackWorkflowTextParam }),
-    renderDigestMessage(input),
-  );
+  return await sendToChannelOrFail(slackChannel(input.destination), renderDigestMessage(input));
+}
+
+/**
+ * Which of Slack's two webhook shapes this run posts to, as the run's output
+ * reports it and the page prints it.
+ *
+ * It used to be the constant `"Slack webhook"`, which is the one thing about
+ * this destination a reader cannot check for themselves — the two URLs take
+ * DIFFERENT bodies (Block Kit against flat workflow variables), so which one a
+ * run used decides whether `slackWorkflowTextParam` mattered at all and which
+ * half of a refusal's advice applies. `isSlackWorkflowTriggerUrl` is the SDK's
+ * own answer to that question, and it is the same predicate
+ * `renderSlackChannelPayload` branches on, so the page cannot report one shape
+ * while the post used the other.
+ */
+export function describeDestination(destination: SlackChannelOptions): string {
+  return isSlackWorkflowTriggerUrl(destination.webhookUrl)
+    ? "a Slack workflow trigger"
+    : "a Slack incoming webhook";
 }
 
 /**
@@ -65,21 +101,50 @@ export async function sendDigestToSlack(input: SlackDigestInput): Promise<string
  *
  * `text` is the notification line and, on a Slack workflow trigger, the whole
  * message: the SDK folds the rest into it when the destination has no rich
- * format. So it says how many episodes rather than repeating the headline.
+ * format. So it says how many episodes rather than repeating the headline —
+ * through `plural`, because this line read "1 episode summaries" for every
+ * single-episode digest, which is the exact mistake that helper exists for.
  */
 export function renderDigestMessage(input: SlackDigestInput): ChannelMessage {
+  const count = input.episodes.length;
   return {
-    text: `${digestHeadline(input)}: ${input.episodes.length} episode summaries`,
+    text: `${digestHeadline(input)}: ${count} episode ${plural(count, "summary", "summaries")}`,
     heading: digestHeadline(input),
     subtitle: `Feeds: ${input.podcastChannels}`,
-    sections: input.episodes.map((episode) => ({
-      title: episode.title,
-      url: episode.url,
-      subtitle: episode.podcastTitle,
-      body: episode.summary,
-      bullets: episode.keyPoints,
-    })),
+    sections: input.episodes.map(episodeSection),
   };
+}
+
+/**
+ * One episode as a section of the message.
+ *
+ * Annotated with the SDK's `ChannelSection` rather than left to inference: it
+ * is what says a section may carry a `url`, a `subtitle` and `bullets` at all,
+ * so an author adding a field to a digest entry gets a compile error instead of
+ * a key Slack silently drops.
+ */
+export function episodeSection(episode: EpisodeDigest): ChannelSection {
+  return {
+    title: episode.title,
+    url: episode.url,
+    subtitle: episodeSubtitle(episode),
+    body: episode.summary,
+    bullets: episode.keyPoints,
+  };
+}
+
+/**
+ * The show, and how long the episode runs when the provider measured it.
+ *
+ * The duration is the PROVIDER's own — it decoded the file and nothing here
+ * did — and it is the one fact a reader deciding whether to listen wants that a
+ * summary cannot supply. `formatDuration` rather than a `m:ss` of our own: an
+ * hour-long episode is exactly where every hand-written one prints `64:09`.
+ */
+function episodeSubtitle(episode: EpisodeDigest): string {
+  return episode.durationMs === undefined
+    ? episode.podcastTitle
+    : `${episode.podcastTitle} · ${formatDuration(episode.durationMs)}`;
 }
 
 function digestHeadline(input: SlackDigestInput): string {

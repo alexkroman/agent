@@ -35,13 +35,19 @@ import {
   installStubStepFetch,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import {
+  type RunWorkflowOptions,
+  runWorkflow,
+  type WorkflowTestStep,
+} from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
+import { connect, digestLink, pastDigests } from "./api-client.ts";
 import {
+  articlePrompt,
   digestFlow,
+  extractMetadata,
   extractText,
-  extractTitle,
   fetchArticle,
   SETTLE_MS,
   summarize,
@@ -116,15 +122,54 @@ describe("extractText", () => {
   });
 });
 
-describe("extractTitle", () => {
+describe("extractMetadata", () => {
   test("reads the document title", () => {
-    expect(extractTitle("<html><title>  Otters &amp; tools </title></html>")).toBe(
+    expect(extractMetadata("<html><title>  Otters &amp; tools </title></html>").title).toBe(
       "Otters & tools",
     );
   });
 
   test("answers undefined when there is none, so the caller can fall back", () => {
-    expect(extractTitle("<html><body>hi</body></html>")).toBeUndefined();
+    expect(extractMetadata("<html><body>hi</body></html>").title).toBeUndefined();
+  });
+
+  test("reads the page's own summary, preferring what OpenGraph declares", () => {
+    // `pageMetadata` is the SDK's reader and this template's whole use of it —
+    // `og:description` over the bare meta tag, the same precedence it applies
+    // to the title.
+    const html = `<html><head>
+      <meta name="description" content="A stub for search engines.">
+      <meta property="og:description" content="How sea otters
+        use stones as anvils.">
+    </head></html>`;
+    expect(extractMetadata(html).description).toBe("How sea otters use stones as anvils.");
+  });
+
+  test("answers undefined for a page that describes itself with whitespace", () => {
+    // The `|| undefined` rather than `?? undefined`: a head field indented onto
+    // its own line collapses to `""`, and an empty summary in the prompt is
+    // worse than none — see `articlePrompt`.
+    expect(
+      extractMetadata('<html><head><meta name="description" content="  ">').description,
+    ).toBeUndefined();
+  });
+});
+
+describe("articlePrompt", () => {
+  const ARTICLE = { url: "https://example.com/a", title: "Otters", text: "Otters use tools." };
+
+  test("labels the page's own summary rather than pasting it in front of the text", () => {
+    const prompt = articlePrompt({ ...ARTICLE, description: "Otters are clever." });
+    expect(prompt).toContain("The page's own summary: Otters are clever.");
+    // The body still arrives last and whole; the abstract is context, not a
+    // replacement for what the page said.
+    expect(prompt.endsWith("Otters use tools.")).toBe(true);
+  });
+
+  test("omits the label entirely when the page declares no summary", () => {
+    // A bare `Summary:` reads to a model as an empty summary rather than an
+    // absent one, which is the only reason this is a branch at all.
+    expect(articlePrompt(ARTICLE)).not.toContain("own summary");
   });
 });
 
@@ -156,6 +201,25 @@ describe("fetchArticle", () => {
     expect(article.title).toBe("Otters");
     expect(article.text).toContain("Otters use tools.");
     expect(article.url).toBe("https://example.com/otters");
+  });
+
+  test("carries the page's own summary across the queue, and omits the key when there is none", async () => {
+    // The property that makes it safe to put on a step RESULT: an absent
+    // description is an absent KEY, not a `"description": undefined` the JSON
+    // between the two steps has no way to spell.
+    stubPage(
+      `<html><head><title>Otters</title>
+      <meta property="og:description" content="Otters use stones as anvils."></head>
+      <body><p>${"Otters use tools. ".repeat(20)}</p></body></html>`,
+    );
+    expect((await fetchArticle("https://example.com/otters")).description).toBe(
+      "Otters use stones as anvils.",
+    );
+
+    stubPage(
+      `<html><title>Otters</title><body><p>${"Otters use tools. ".repeat(20)}</p></body></html>`,
+    );
+    expect(await fetchArticle("https://example.com/otters")).not.toHaveProperty("description");
   });
 
   test("falls back to the hostname when the page has no title", async () => {
@@ -317,8 +381,8 @@ describe("the run is DURABLE", () => {
    *
    * Both call logs come back, which is what makes a replay countable.
    */
-  function stubWorld() {
-    const model = stubGatewayRoute(REPLY);
+  function stubWorld(replies: string | readonly string[] = REPLY) {
+    const model = stubGatewayRoute(replies);
     const page = vi.fn(() => ({
       status: 200,
       body: PAGE,
@@ -328,16 +392,34 @@ describe("the run is DURABLE", () => {
     return { page, model: model.calls };
   }
 
+  /**
+   * Start the declared digest on the engine, with whatever the case needs of
+   * the driver.
+   *
+   * `RunWorkflowOptions` rather than an inline shape: `name` is the journal's
+   * key for this workflow and belongs in ONE place, and the annotation is what
+   * lets a case add `crashAt` without restating it.
+   */
+  function start(options?: RunWorkflowOptions) {
+    return runWorkflow(
+      digest,
+      { url: "https://example.com/otters" },
+      { name: "digest", ...options },
+    );
+  }
+
+  /** One journal entry, by NAME — the position of a step in the list is not one. */
+  function stepNamed(
+    steps: readonly WorkflowTestStep[],
+    name: string,
+  ): WorkflowTestStep | undefined {
+    return steps.find((step) => step.name === name);
+  }
+
   test("suspends on the settle window instead of blocking, with its work already journaled", async () => {
     stubWorld();
     const started = Date.now();
-    const run = await runWorkflow(
-      digest,
-      { url: "https://example.com/otters" },
-      {
-        name: "digest",
-      },
-    );
+    const run = await start();
 
     // `running` is the PARKED state — the run is in progress, it is just not
     // executing, which is what a page polling it sees.
@@ -349,13 +431,7 @@ describe("the run is DURABLE", () => {
 
   test("resumes past the wait without re-reading the page or paying the model again", async () => {
     const { page, model } = stubWorld();
-    const run = await runWorkflow(
-      digest,
-      { url: "https://example.com/otters" },
-      {
-        name: "digest",
-      },
-    );
+    const run = await start();
     await run.advanceSleep();
 
     expect(run.status).toBe("completed");
@@ -375,14 +451,7 @@ describe("the run is DURABLE", () => {
     // Killed on the way into `summarize`: the fetch is journaled, the model call
     // is not. This is the failure a body cannot be written against without being
     // able to produce it.
-    const run = await runWorkflow(
-      digest,
-      { url: "https://example.com/otters" },
-      {
-        name: "digest",
-        crashAt: "summarize",
-      },
-    );
+    const run = await start({ crashAt: "summarize" });
     expect(run.crashed).toBe(true);
     expect(run.steps.map((step) => step.name)).toEqual(["fetchArticle"]);
     expect(model).toHaveLength(0);
@@ -393,4 +462,191 @@ describe("the run is DURABLE", () => {
     expect(page).toHaveBeenCalledTimes(1);
     expect(model).toHaveLength(1);
   });
+
+  test("retries the model in place when it answers with prose, and does NOT read the page again", async () => {
+    // What `maxAttempts: 6` at the `ctx.step` call site actually buys, asserted
+    // against the engine rather than against the declaration. The `summarize`
+    // block above proves the step THROWS plainly on prose; only a real journal
+    // can show that the throw is retried, that the retry is charged to that step
+    // alone, and that the expensive-to-a-stranger half is replayed rather than
+    // re-issued. A first draft asserts `run.status` and misses all three.
+    const { page, model } = stubWorld(["Here is a summary of the article about otters.", REPLY]);
+    const run = await start();
+    await run.advanceSleep();
+
+    expect(run.status).toBe("completed");
+    expect(model).toHaveLength(2);
+    // Two attempts against ONE journal entry — a retry is not a second step, so
+    // `attempts` is the only place it shows.
+    expect(stepNamed(run.steps, "summarize")?.attempts).toBe(2);
+    // And the retry stayed inside the step it belongs to: the body is not
+    // re-walked from the top, so a stranger's server sees one request however
+    // many times the model has to be asked.
+    expect(stepNamed(run.steps, "fetchArticle")?.attempts).toBe(1);
+    expect(page).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Specs for the script-side client — the half of a workflow app that is an HTTP
+ * API rather than a page.
+ *
+ * `agent.test.ts` drives the run; this drives what a CALLER sees of it, and the
+ * seam is different in a way worth stating once. A step's HTTP goes through the
+ * published `stepFetch` slot, which is why every spec in the file next door
+ * reaches for `installStubStepFetch`. Nothing here is inside a step: the
+ * workflow API client is ordinary browser-and-Node code over the global
+ * `fetch`, so this file stubs THAT — and stubbing the wrong one of the two is
+ * the mistake, in either direction, since each passes while exercising a path
+ * the code under test never takes.
+ *
+ * The fake below answers routes rather than call counts: `apiRoot` joins
+ * `/workflows` onto the base URL, so the paths here are the ones a deployed
+ * agent really serves and a typo in either half fails rather than matching
+ * whatever came next.
+ */
+const BASE = "https://agents.example/link-digest";
+const RUN_ID = "wrun_otters";
+
+/** A completed run as the API serves it — the shape `WorkflowRunOf` describes. */
+const COMPLETED = {
+  runId: RUN_ID,
+  workflow: "digest",
+  status: "completed",
+  createdAt: 1,
+  output: {
+    url: "https://example.com/otters",
+    headline: "Otters use stones",
+    points: ["They do."],
+    filedAt: "2026-01-01T00:00:00.000Z",
+  },
+};
+
+/** One SSE frame, in the wire format `readEventStream` parses inside `follow`. */
+function frame(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+/**
+ * A deployed Link Digest, as far as `fetch` is concerned.
+ *
+ * `page` is a parameter because the one thing {@link connect} exists to catch is
+ * a base URL pointing at a VOICE agent, and that case is only reachable by
+ * answering `client-config` differently.
+ */
+function stubAgent(options: { page?: string; runs?: unknown[]; events?: string } = {}) {
+  const calls: { method: string; url: string; body?: unknown }[] = [];
+  const fetchStub = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    calls.push({
+      method,
+      url,
+      ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
+    });
+    if (url === `${BASE}/client-config`) {
+      return Response.json({ name: "Link Digest", page: options.page ?? "static" });
+    }
+    if (url === `${BASE}/workflows/runs` && method === "POST") {
+      return Response.json({ runId: RUN_ID });
+    }
+    if (url === `${BASE}/workflows/runs/${RUN_ID}/events`) {
+      return new Response(options.events ?? frame("run", COMPLETED), {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+    if (url.startsWith(`${BASE}/workflows/runs?`)) {
+      return Response.json({ runs: options.runs ?? [] });
+    }
+    return Response.json({ error: `no route for ${method} ${url}` }, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchStub);
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
+  return calls;
+}
+
+test("connect reads the agent's own description before anything else", async () => {
+  const calls = stubAgent();
+  const agent = await connect({ baseUrl: BASE });
+
+  expect(calls[0]).toMatchObject({ method: "GET", url: `${BASE}/client-config` });
+  // The normalized base is on the client, which is what the error messages quote
+  // — a caller should never have to keep the string it was built from.
+  expect(agent.baseUrl).toBe(BASE);
+});
+
+test("connect refuses a base URL pointing at a VOICE agent, naming it", async () => {
+  // The mistake a script actually makes. Without this read it surfaces three
+  // calls later as a 404 from a route that was never going to exist.
+  stubAgent({ page: "voice" });
+  await expect(connect({ baseUrl: `${BASE}/` })).rejects.toThrow(
+    /agents\.example\/link-digest answers as a voice agent/,
+  );
+});
+
+test("connect drops a trailing slash rather than asking for //client-config", async () => {
+  // A platform routing `/:slug/client-config` answers the doubled path with a
+  // 404, so the normalization is load-bearing rather than cosmetic.
+  const calls = stubAgent();
+  await connect({ baseUrl: `${BASE}/` });
+  expect(calls[0]?.url).toBe(`${BASE}/client-config`);
+});
+
+test("digestLink starts the run under the caller's key and follows it to the end", async () => {
+  const calls = stubAgent();
+  const agent = await connect({ baseUrl: BASE });
+
+  const run = await digestLink(agent, "https://example.com/otters", "nightly-job");
+
+  expect(run.status).toBe("completed");
+  // The whole reason the return type is `TerminalWorkflowRun`: `output` is
+  // reachable off a completed run with no second narrowing, and it is TYPED by
+  // the declaration rather than `unknown`.
+  if (run.status !== "completed") expect.fail("a completed run must narrow to its output");
+  expect(run.output.headline).toBe("Otters use stones");
+  expect(run.output.filedAt).toBeTruthy();
+
+  const started = calls.find((call) => call.method === "POST");
+  expect(started?.body).toEqual({
+    workflow: "digest",
+    input: { url: "https://example.com/otters" },
+    key: "nightly-job",
+  });
+});
+
+test("digestLink sends NO key when the caller named none", async () => {
+  // `omitUndefined` rather than `{ key: undefined }`: the request body is what
+  // the agent indexes the run under, and a null key is not the same as no key.
+  const calls = stubAgent();
+  const agent = await connect({ baseUrl: BASE });
+  await digestLink(agent, "https://example.com/otters");
+
+  const started = calls.find((call) => call.method === "POST");
+  expect(started?.body).not.toHaveProperty("key");
+});
+
+test("digestLink refuses to answer for a run the agent never knew", async () => {
+  // `follow` ends having yielded nothing rather than throwing, so without this
+  // check the function would resolve `undefined` typed as a settled run — the
+  // one failure a caller would act on wrongly.
+  stubAgent({ events: frame("missing", {}) });
+  const agent = await connect({ baseUrl: BASE });
+  await expect(digestLink(agent, "https://example.com/otters")).rejects.toThrow(/knows no run/);
+});
+
+test("pastDigests asks for this caller's runs by KEY, with the limit it was given", async () => {
+  const calls = stubAgent({ runs: [COMPLETED] });
+  const agent = await connect({ baseUrl: BASE });
+
+  const runs = await pastDigests(agent, "nightly-job", { limit: 5 });
+
+  expect(runs).toHaveLength(1);
+  expect(runs[0]?.status).toBe("completed");
+  const listed = calls.find((call) => call.url.includes("/runs?"));
+  const query = new URL(listed?.url ?? "").searchParams;
+  expect(query.get("workflow")).toBe("digest");
+  expect(query.get("key")).toBe("nightly-job");
+  expect(query.get("limit")).toBe("5");
 });
