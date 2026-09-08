@@ -36,8 +36,29 @@
  * eight children without re-entering the parent.
  */
 
-import type { AnyDialog } from "@alexkroman1/aai";
+import type { AnyDialog, ToolChoice } from "@alexkroman1/aai";
 import { dialog } from "@alexkroman1/aai";
+
+/**
+ * The two owed-SPEECH states forbid a tool call outright.
+ *
+ * `offering` and `readBack` exist because something has to be SAID before the
+ * next tool is legal — the options offered, the booking read back — and each
+ * one's `when` gate already refuses the tool that would jump the queue. What
+ * the gate cannot do is stop the model reaching for a DIFFERENT tool instead of
+ * speaking: `lookup_policy` on a cancellation question, a second
+ * `record_guest_details` "to be sure". Either way the turn ends with a tool
+ * result rather than a sentence, the caller has nothing to answer, and the
+ * transition out of the state — `@user-transcript.committed` — never fires.
+ *
+ * `toolChoice: "none"` is the rule stated instead of asked for: for that turn
+ * the model has no tools at all, so the only thing it can produce is the
+ * sentence the state's `instruction` describes. Named once because both states
+ * carry the same rule for the same reason; typed {@link ToolChoice} because a
+ * standalone `"none"` would widen to `string` and stop being checked against
+ * the four the field admits.
+ */
+const SPEAK_ONLY: ToolChoice = "none";
 
 const deskSpec = {
   initial: "desk",
@@ -77,6 +98,7 @@ const deskSpec = {
             "options; OFFER them, never pick one.",
         },
         offering: {
+          toolChoice: SPEAK_ONLY,
           instruction:
             "The dates changed and the room the caller had picked is no longer available for them. " +
             "Tell them, offer the room types set_stay just returned, and ask which they want. " +
@@ -113,6 +135,7 @@ const deskSpec = {
           // Reading dates, a total and a card's last four back is transcription,
           // and the failure it has is a model smoothing one number into another.
           temperature: 0.2,
+          toolChoice: SPEAK_ONLY,
           instruction:
             "Every detail is captured. Read the booking back in ONE sentence - dates, guests, " +
             "room and extras, the total the tool quoted, the card's last four - and ask if that " +

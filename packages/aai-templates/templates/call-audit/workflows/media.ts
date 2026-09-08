@@ -58,8 +58,14 @@
  * longer than the cap gets the blind cut, and says so.
  */
 
-import { ffmpegBaseArgs } from "@alexkroman1/aai/ffmpeg";
+import {
+  type FfmpegRunResult,
+  ffmpegBaseArgs,
+  type MediaInfo,
+  type MediaStreamInfo,
+} from "@alexkroman1/aai/ffmpeg";
 import type { PcmFormat } from "@alexkroman1/aai/step";
+import type { WithTempDirOptions } from "@alexkroman1/aai/step-files";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 
@@ -94,6 +100,21 @@ export const ANALYSIS_FORMAT = {
 /** Bytes of {@link ANALYSIS_FORMAT} audio per second of wall clock. */
 export const BYTES_PER_SECOND =
   (ANALYSIS_FORMAT.sampleRate * ANALYSIS_FORMAT.channels * ANALYSIS_FORMAT.bitsPerSample) / 8;
+
+/**
+ * Where every step of this desk materializes, as ONE value.
+ *
+ * Both steps that touch a file call `withTempDir` — the ingest to hold the
+ * recording and the levelled PCM, the narration to hold the WAV and the MP3 —
+ * and each had written the prefix itself. That is a string two files have to
+ * agree on and nothing checked: the spec that proves nothing is LEAKED matches
+ * directories by this prefix, so renaming it in one file would leave the other's
+ * leaks unwatched while the test still passed.
+ *
+ * Typed as the SDK's own options rather than inferred, because the annotation is
+ * what says the rest of the bag exists and is deliberately left at its default.
+ */
+export const TEMP_DIR: WithTempDirOptions = { prefix: "aai-call-audit-" };
 
 /**
  * Integrated loudness everything is normalized to, in LUFS.

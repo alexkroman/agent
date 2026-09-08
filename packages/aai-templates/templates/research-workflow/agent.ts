@@ -77,6 +77,16 @@
  * Runs are DURABLE on the platform with nothing to configure — they live on the
  * platform's own database and survive a restart, a redeploy and an idle sandbox.
  *
+ * ## And the finished report goes SOMEWHERE
+ *
+ * The run's last step files it (`workflows/filing.ts`), which is what makes the
+ * review wait a wait for something and `file_it_now` a button that reaches it.
+ * Set `RESEARCH_SLACK_WEBHOOK_URL` (a secret when deployed, `.env` under
+ * `aai dev`) and a finished pass posts its summary, its angles and its sources
+ * there. It is deliberately OPTIONAL — with none, the desk still researches,
+ * still announces, and says the report stayed on the run — because a required
+ * credential would fail the LAST step of a five-minute pass.
+ *
  * A `DATABASE_URL` you supply (a secret when deployed, `.env` under `aai dev`)
  * buys the key index, which is what lets `find()` resolve a run by key across a
  * restart. Under `aai dev` with none, the runs go with the process too —

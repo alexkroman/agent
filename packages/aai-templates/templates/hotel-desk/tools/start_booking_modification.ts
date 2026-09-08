@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { draftForModification } from "../booking.ts";
 import { deskFlow } from "../desk.ts";
@@ -27,7 +27,7 @@ export default deskFlow.tool({
   execute: (_args, ctx) =>
     hotelSlot.update(ctx, (hotel) => {
       const booking = requireVerified(hotel);
-      if ("error" in booking) return toolFailure(booking.error);
+      if (isToolFailure(booking)) return booking;
       if (booking.status !== "confirmed")
         return toolFailure("that booking was cancelled - nothing to modify");
       if (booking.checkOut < TODAY)

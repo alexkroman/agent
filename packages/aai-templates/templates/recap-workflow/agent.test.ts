@@ -64,8 +64,8 @@ import {
 import type { WorkflowOutputOf, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import {
   type JournalStore,
-  runWorkflow,
   type RunWorkflowOptions,
+  runWorkflow,
   type SleepRecord,
   type WorkflowTestHandle,
   type WorkflowTestRun,
@@ -583,6 +583,20 @@ describe("checkTranscript", () => {
     });
   });
 
+  test("carries the credential and asks for JSON, both of which `apiInit` owns", async () => {
+    // The shared init, from the reading side. `apiInit` puts the desk's own
+    // header and deadline on every call to the pre-recorded API and merges what
+    // the caller adds on top — so what this pins is that neither call site can
+    // lose the credential while adding something of its own. AssemblyAI takes
+    // the key RAW: a `Bearer` prefix is a 401 that reads like a wrong key.
+    const calls = stubProvider({ status: "processing" });
+    await checkTranscript("t_1");
+    expect(calls[0]?.headers).toMatchObject({
+      authorization: "sk-test",
+      "content-type": "application/json",
+    });
+  });
+
   test("carries the provider's own failure message through", async () => {
     stubProvider({ status: "error", error: "Transcoding failed" });
     expect(await checkTranscript("t_1")).toMatchObject({
@@ -644,6 +658,9 @@ describe("discardTranscript — the compensation", () => {
     await expect(discardTranscript("t_1")).resolves.toBeUndefined();
     expect(calls[0]?.method).toBe("DELETE");
     expect(calls[0]?.url).toContain("/t_1");
+    // The other half of `apiInit`: the method is this call site's own addition
+    // and the credential is still the shared one underneath it.
+    expect(calls[0]?.headers).toMatchObject({ authorization: "sk-test" });
   });
 
   test("treats a 404 as success, because an undo must be safe to run twice", async () => {
@@ -1267,6 +1284,34 @@ describe("the run is DURABLE", () => {
     expect(world.deletes[0]).toContain("t_1");
   });
 
+  test("journals the gate as a hook DEADLINE and the poll as a sleep", async () => {
+    // The distinction the whole retention pattern rests on, read off the
+    // journal rather than inferred from behaviour. A run parks twice for two
+    // different reasons, and `SleepRecord.kind` is what keeps them apart:
+    // `wakeUp` (with no correlation ids) reaches only `sleep`, which is why
+    // `expireWaits` exists at all and why "send it now" cannot be made to
+    // answer an approval window it was never told the answer to.
+    stubWorld([PROCESSING, DONE]);
+    const run = await startRecap();
+    await run.advanceSleep();
+
+    // `JournalStore` is the store the run really lives in — the same interface
+    // the platform's Postgres backend implements — so this is the durable
+    // record and not the driver's view of it.
+    const journal: JournalStore = run.journal;
+    // One of each, without a claim about the order: the journal answers by KEY
+    // rather than by when the run reached each park.
+    const kinds = parkKinds(await journal.readSleeps(run.runId));
+    expect(kinds).toHaveLength(2);
+    expect(kinds).toContain("sleep");
+    expect(kinds).toContain("hookTimeout");
+
+    // And the proof it matters: another `wakeUp` finds nothing to wake, so the
+    // gate is still open and the run is still waiting on a person.
+    await run.advanceSleep();
+    expect(run.status).toBe("running");
+  });
+
   test("a signal that arrives after the window closed cannot reopen it", async () => {
     // `closeHook` is a compare-and-set, so the walk that timed out and every
     // later replay read the same branch — the divergence `HookRecord.closed`
@@ -1281,10 +1326,14 @@ describe("the run is DURABLE", () => {
     expect(run.output).toMatchObject({ kept: false });
   });
 
-  test("a failure after the transcript exists UNWINDS it, and the run still fails", async () => {
-    // The saga. `summarize` is given prose instead of JSON on every attempt, so
-    // the step exhausts its patience and the body's catch runs the compensation
-    // stack — which must delete the transcript the run acquired.
+  /**
+   * A world where the model never produces JSON, so `summarize` exhausts its
+   * attempts and the body's `catch` unwinds the compensation stack.
+   *
+   * The `deletes` list is what the unwind is measured by — every `DELETE` the
+   * provider was really sent.
+   */
+  function stubDoomedWorld(): { deletes: string[] } {
     const model = stubGatewayRoute("Here is a recap, in prose, as you did not ask.");
     const deletes: string[] = [];
     installStubStepFetch((request) => {
@@ -1297,6 +1346,14 @@ describe("the run is DURABLE", () => {
       if (request.method === "POST") return { status: 200, body: { id: "t_1", status: "queued" } };
       return { status: 200, body: DONE };
     });
+    return { deletes };
+  }
+
+  test("a failure after the transcript exists UNWINDS it, and the run still fails", async () => {
+    // The saga. `summarize` is given prose instead of JSON on every attempt, so
+    // the step exhausts its patience and the body's catch runs the compensation
+    // stack — which must delete the transcript the run acquired.
+    const { deletes } = stubDoomedWorld();
 
     const run = await startRecap();
     expect(run.status).toBe("failed");
@@ -1305,5 +1362,48 @@ describe("the run is DURABLE", () => {
     // resume with the finished ones replayed rather than run twice.
     expect(journaledStep(run, "discardTranscript")).toBeDefined();
     expect(deletes).toHaveLength(1);
+  });
+
+  test("a worker that dies MID-UNWIND resumes it rather than starting it over", async () => {
+    // The saga's headline claim, and the one the module doc makes in prose:
+    // "a crash part-way through the unwind resumes with the already-run
+    // compensations replayed from the journal and re-issues only what is left —
+    // which is the property a `finally` cannot have". A `try`/`finally` in a
+    // tool body would have narrated the unwind again and re-issued every undo
+    // behind it; nothing short of really killing a worker can show the
+    // difference.
+    //
+    // `crashAt` kills the first delivery that reaches `discardTranscript`,
+    // AFTER the attempt has been charged and before the body runs — which is
+    // where a real death lands, and which puts the crash between the narration
+    // and the undo it announced.
+    const { deletes } = stubDoomedWorld();
+    const run = await startRecap({ crashAt: "discardTranscript" });
+
+    expect(run.crashed).toBe(true);
+    // The transcript is still on the account: the undo was announced and never
+    // performed, which is exactly the state a `finally` loses.
+    expect(deletes).toEqual([]);
+
+    await run.restart();
+
+    expect(run.status).toBe("failed");
+    // Deleted ONCE, by the resumed unwind rather than by a second one.
+    expect(deletes).toHaveLength(1);
+    // The narration came out of the journal on the second walk, so the caller
+    // reading progress is not told the desk is undoing two steps.
+    expect(journaledStep(run, "noteUnwind")?.attempts).toBe(1);
+    // And the undo that DID die is charged for both tries, which is how a
+    // resume tells an abandoned attempt from one that never started.
+    // ONE of each: no second `noteUnwind#1` and no second `discardTranscript#1`
+    // from an unwind that started over. That is the whole difference between a
+    // compensation stack of STEPS and a `finally`.
+    expect(run.steps.map((step) => step.key)).toEqual([
+      "checkTranscript#0",
+      "discardTranscript#0",
+      "noteUnwind#0",
+      "submitRecording#0",
+      "summarize#0",
+    ]);
   });
 });

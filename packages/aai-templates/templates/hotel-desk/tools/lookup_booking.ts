@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import { roomConflict } from "../hotel.ts";
 import { daysBetween, speakUsd, spokenDate } from "../records.ts";
 import { hotelSlot, requireVerified } from "../shared.ts";
@@ -15,7 +15,7 @@ export default hotelSlot.tool({
     "nothing. Verify first with verify_booking.",
   execute(_args, hotel) {
     const b = requireVerified(hotel);
-    if ("error" in b) return toolFailure(b.error);
+    if (isToolFailure(b)) return b;
     const room = hotel.rooms.find((r) => r.id === b.roomId);
     const nights = daysBetween(b.checkIn, b.checkOut);
     const conflict = roomConflict(hotel, b.code);

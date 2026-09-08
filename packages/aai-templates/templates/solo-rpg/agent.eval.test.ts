@@ -33,11 +33,13 @@ import agentDef from "virtual:aai/agent";
  * eval run against the framework default prompt would measure an agent nobody
  * deployed.
  */
+import type { InferToolInput } from "@alexkroman1/aai";
 import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import { type EvalTurn, toolResultIn, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
+import type setupCharacter from "./tools/setup_character.ts";
 
 /**
  * What each tool this file drives answers, off the wire.
@@ -87,6 +89,13 @@ const answerOf = <T>(turn: EvalTurn, name: string, schema: z.ZodType<T>): T =>
  * A live model generates these itself from one sentence — that is the
  * template's one-turn setup — so this exists only so a keyless run reaches
  * `playing` and the later turns have a campaign to be about.
+ *
+ * `satisfies InferToolInput<typeof setupCharacter>` is what keeps that true.
+ * A scripted call reaches the tool's `execute` without passing through the
+ * schema, so a field added to `setup_character` — or an enum member renamed
+ * under one of these values — would otherwise leave every keyless run here
+ * seeding a campaign the tool no longer accepts, silently and only in the mode
+ * that costs nothing to run. The import is type-only and erased.
  */
 const SERA = {
   genre: "dark_fantasy",
@@ -106,7 +115,7 @@ const SERA = {
   npc1Agenda: "Keep the shed's oil ledger balanced, whatever it costs",
   threatClockName: "The Dark Road",
   threatClockDesc: "The hollow goes fully dark and the road is lost",
-} as const;
+} as const satisfies InferToolInput<typeof setupCharacter>;
 
 describeEval(agentDef, (test) => {
   test(

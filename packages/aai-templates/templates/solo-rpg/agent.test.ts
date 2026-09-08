@@ -448,13 +448,32 @@ describe("action_roll draws everything from ctx.random", () => {
     return expectToolOk<Record<string, unknown>>(await run("action_roll", SWING, ctx));
   }
 
+  test("every draw a roll makes comes off the context's source", async () => {
+    // The DETERMINISTIC half, and the one that names the defect: a roll draws
+    // five times — d1, d2, c1, c2, and then the chaos check's own d10 (a sixth
+    // when the interrupt lands and its type is picked). The fifth used to reach
+    // `Math.random`, because `checkChaosInterrupt`'s source parameter was simply
+    // omitted at the call, so the count was four.
+    let draws = 0;
+    const seeded = createSeededRandom(2026);
+    const ctx = createToolContext({
+      random: () => {
+        draws++;
+        return seeded();
+      },
+    });
+    seedPlaying(ctx);
+
+    expectToolOk(await run("action_roll", SWING, ctx));
+    expect(draws).toBeGreaterThanOrEqual(5);
+  });
+
   test("the same seed replays the same scene, chaos interrupt included", async () => {
-    // The WHOLE result, not just the dice: a roll draws five times — d1, d2,
-    // c1, c2, and then the chaos-interrupt d10 — and the fifth used to reach
-    // `Math.random` because `checkChaosInterrupt`'s source parameter was
-    // omitted. With a threshold of 2 that lands about one roll in five, so this
-    // comparison failed intermittently and only ever on the field that matters
-    // least to look at. A seeded campaign is reproducible or it is not.
+    // The property a player would notice, over the WHOLE result rather than the
+    // dice: with the missing source above, this comparison disagreed on
+    // `chaosInterrupt` for roughly three runs in five — intermittently, and only
+    // ever on the field nobody looks at. A seeded campaign replays or it does
+    // not.
     expect(await playOneScene(2026)).toEqual(await playOneScene(2026));
   });
 

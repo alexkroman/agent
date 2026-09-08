@@ -60,12 +60,12 @@ export default storyFlow.tool({
     advanceClockName: z
       .string()
       .max(100)
-      .describe("Clock to advance by 1, by name or by what the player called it (\"the second\")")
+      .describe('Clock to advance by 1, by name or by what the player called it ("the second")')
       .optional(),
     removeClockName: z
       .string()
       .max(100)
-      .describe("Clock to remove, by name or by what the player called it (\"the first clock\")")
+      .describe('Clock to remove, by name or by what the player called it ("the first clock")')
       .optional(),
     advanceAct: z.boolean().describe("Move to next story act").optional(),
     storyComplete: z.boolean().describe("Mark story as complete").optional(),

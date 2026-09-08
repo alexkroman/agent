@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { requireRoom } from "../hotel.ts";
 import { EMERGENCY_KINDS, type EmergencyKind } from "../records.ts";
@@ -35,7 +35,7 @@ export default hotelSlot.updateTool({
   }),
   execute({ room, kind, situation }, hotel) {
     const found = requireRoom(hotel, room);
-    if ("error" in found) return toolFailure(`${found.error}, calmly, right now`);
+    if (isToolFailure(found)) return toolFailure(`${found.error}, calmly, right now`);
     const ticket = addTicket(
       hotel,
       "emergency",

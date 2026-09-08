@@ -393,8 +393,12 @@ export function findIncident<I extends DeepReadonly<Incident>>(
  * the two disagree the first time a tool forgets to update it.
  *
  * Generic for the same reason {@link findIncident} is — one lookup serves a
- * mutable draft and a frozen read alike. `>=` so a tie on the millisecond
- * resolves to the LAST one written rather than the first one enumerated.
+ * mutable draft and a frozen read alike.
+ *
+ * `updatedAt` is `Date.now()`, so two incidents touched inside one millisecond
+ * tie; `>=` breaks that toward the one enumerated LAST, which for an insertion-
+ * ordered record is the most recently logged. Real calls are seconds apart and
+ * the tie only shows up in a test that logs two incidents in a row.
  */
 export function callInHand<I extends DeepReadonly<Incident>>(state: {
   readonly incidents: { readonly [id: string]: I };

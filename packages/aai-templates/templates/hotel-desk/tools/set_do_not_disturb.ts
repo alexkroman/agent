@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { requireRoom } from "../hotel.ts";
 import { speakCode } from "../records.ts";
@@ -12,7 +12,7 @@ export default hotelSlot.updateTool({
   inputSchema: z.object({ room: z.string() }),
   execute({ room }, hotel) {
     const found = requireRoom(hotel, room);
-    if ("error" in found) return toolFailure(found.error);
+    if (isToolFailure(found)) return found;
     const ticket = addTicket(hotel, "do_not_disturb", "DND", `room ${found.id}`, {
       room: found.id,
       status: "active",

@@ -14,10 +14,21 @@
  * keeps its own room when that room still fits; a conflicted guest is moved to
  * the same category or better, never down; a table shift prefers the table the
  * party already has.
+ *
+ * **Every writer here answers `T | ToolFailure`, and the three that open with a
+ * lookup are `failable`.** `updateBooking`, `cancelBooking` and
+ * `resolveRoomConflict` each began by re-deriving `find(b => b.code === code &&
+ * b.status === "confirmed")` and the same `booking not found` sentence, and
+ * `resolveRoomConflict` re-derived the floor-plan lookup on top. Those are
+ * {@link requireConfirmedBooking} and `requireFloorPlanRoom` now, and the
+ * forwarding is `orFail` — `failable` replaces the `function` keyword, so it
+ * costs nothing and each guard statement it removes is a line. A lookup that
+ * ends in a REFUSAL still returns one plainly: `failable` absorbs it, and the
+ * spelling stays the one a reader can see the sentence in.
  */
 
 import type { ToolFailure } from "@alexkroman1/aai";
-import { toolFailure } from "@alexkroman1/aai";
+import { failable, orFail, toolFailure } from "@alexkroman1/aai";
 import {
   addDays,
   computeInvoice,
@@ -163,6 +174,33 @@ export function peekStayTotal(
   return computeInvoice(room.nightlyRate, daysBetween(q.checkIn, q.checkOut), extras).total;
 }
 
+/**
+ * The CONFIRMED booking a code names, or the refusal.
+ *
+ * Three writers below opened with the same `find(b => b.code === code &&
+ * b.status === "confirmed")` and the same `booking not found: ${code}`
+ * sentence, and `resolveRoomConflict` then re-derived the floor-plan lookup on
+ * top of it. One helper answering `RoomBooking | ToolFailure` is what lets each
+ * of them start with a single `orFail` line instead — the forwarding is written
+ * once, in the SDK, rather than as a guard statement per lookup.
+ */
+export function requireConfirmedBooking<S extends FrozenHotelState | HotelState>(
+  state: S,
+  code: string,
+): S["bookings"][number] | ToolFailure {
+  const booking = state.bookings.find((b) => b.code === code && b.status === "confirmed");
+  return booking ?? toolFailure(`booking not found: ${code}`);
+}
+
+/** The room a booking sits in, or the refusal — a booking always has one. */
+function requireFloorPlanRoom<S extends FrozenHotelState | HotelState>(
+  state: S,
+  roomId: string,
+): S["rooms"][number] | ToolFailure {
+  const room = state.rooms.find((r) => r.id === roomId);
+  return room ?? toolFailure(`room ${roomId} is not on the floor plan`);
+}
+
 export interface BookRoomInput {
   roomType: RoomType;
   smoking: boolean;
@@ -227,41 +265,37 @@ export interface UpdateBookingInput {
  * its own stay), preferring the room the guest already has. A requested `view`
  * filters to rooms with that view — which is how an unhappy guest gets MOVED.
  */
-export function updateBooking(
-  state: HotelState,
-  code: string,
-  input: UpdateBookingInput,
-): RoomBooking | ToolFailure {
-  const booking = state.bookings.find((b) => b.code === code && b.status === "confirmed");
-  if (booking === undefined) return toolFailure(`booking not found: ${code}`);
-  const room = freeRoom(state, { ...input, excludeCode: code, prefer: booking.roomId });
-  if (room === undefined) {
-    const what = input.view ? `${input.view}-view ${input.roomType}` : input.roomType;
-    return toolFailure(`sold out: no ${what.replaceAll("_", " ")} is free for those dates`);
-  }
-  const nights = daysBetween(input.checkIn, input.checkOut);
-  const extras = [...input.extras].sort();
-  const priced = computeInvoice(room.nightlyRate, nights, extras);
-  booking.roomId = room.id;
-  booking.checkIn = input.checkIn;
-  booking.checkOut = input.checkOut;
-  booking.guests = input.guests;
-  booking.extras = extras;
-  booking.total = priced.total;
-  const invoice = state.invoices.find((i) => i.bookingCode === code);
-  if (invoice) Object.assign(invoice, priced);
-  note(state, `Updated ${code}: room ${room.id}, ${input.checkIn} → ${input.checkOut}`);
-  return booking;
-}
+export const updateBooking = failable(
+  (state: HotelState, code: string, input: UpdateBookingInput): RoomBooking | ToolFailure => {
+    const booking = orFail(requireConfirmedBooking(state, code));
+    const room = freeRoom(state, { ...input, excludeCode: code, prefer: booking.roomId });
+    if (room === undefined) {
+      const what = input.view ? `${input.view}-view ${input.roomType}` : input.roomType;
+      return toolFailure(`sold out: no ${what.replaceAll("_", " ")} is free for those dates`);
+    }
+    const nights = daysBetween(input.checkIn, input.checkOut);
+    const extras = [...input.extras].sort();
+    const priced = computeInvoice(room.nightlyRate, nights, extras);
+    booking.roomId = room.id;
+    booking.checkIn = input.checkIn;
+    booking.checkOut = input.checkOut;
+    booking.guests = input.guests;
+    booking.extras = extras;
+    booking.total = priced.total;
+    const invoice = state.invoices.find((i) => i.bookingCode === code);
+    if (invoice) Object.assign(invoice, priced);
+    note(state, `Updated ${code}: room ${room.id}, ${input.checkIn} → ${input.checkOut}`);
+    return booking;
+  },
+);
 
 /** Their `cancel_room_booking` — the status flip only; the refund maths is the tool's. */
-export function cancelBooking(state: HotelState, code: string): RoomBooking | ToolFailure {
-  const booking = state.bookings.find((b) => b.code === code && b.status === "confirmed");
-  if (booking === undefined) return toolFailure(`booking not found: ${code}`);
+export const cancelBooking = failable((state: HotelState, code: string): RoomBooking => {
+  const booking = orFail(requireConfirmedBooking(state, code));
   booking.status = "cancelled";
   note(state, `Cancelled ${code}`);
   return booking;
-}
+});
 
 /**
  * Their `reinstate_booking`: reactivate a cancelled booking, but only if its
@@ -314,52 +348,49 @@ export type ConflictResolution =
  * The rate on the booking never changes: a forced move is never the guest's
  * cost, so an upgrade rides at the original total.
  */
-export function resolveRoomConflict(
-  state: HotelState,
-  code: string,
-): ConflictResolution | ToolFailure {
-  const booking = state.bookings.find((b) => b.code === code && b.status === "confirmed");
-  if (booking === undefined) return toolFailure(`booking not found: ${code}`);
-  if (roomConflict(state, code) === null) {
-    return toolFailure("no room conflict on this booking - nothing to resolve");
-  }
-  const original = state.rooms.find((r) => r.id === booking.roomId);
-  if (original === undefined) return toolFailure(`room ${booking.roomId} is not on the floor plan`);
-  const start = booking.checkIn > TODAY ? booking.checkIn : TODAY;
+export const resolveRoomConflict = failable(
+  (state: HotelState, code: string): ConflictResolution | ToolFailure => {
+    const booking = orFail(requireConfirmedBooking(state, code));
+    if (roomConflict(state, code) === null) {
+      return toolFailure("no room conflict on this booking - nothing to resolve");
+    }
+    const original = orFail(requireFloorPlanRoom(state, booking.roomId));
+    const start = booking.checkIn > TODAY ? booking.checkIn : TODAY;
 
-  // Their `_SQL_FREE_BETTER_ROOM`: fits the party, matches smoking, same or
-  // higher rate, free for the whole remaining stay, cheapest first.
-  const candidate = state.rooms
-    .filter(
-      (r) =>
-        r.id !== original.id &&
-        r.maxOccupancy >= booking.guests &&
-        r.smoking === original.smoking &&
-        r.nightlyRate >= original.nightlyRate &&
-        roomFree(state, r.id, start, booking.checkOut, code),
-    )
-    .sort((a, b) => a.nightlyRate - b.nightlyRate || a.id.localeCompare(b.id))[0];
+    // Their `_SQL_FREE_BETTER_ROOM`: fits the party, matches smoking, same or
+    // higher rate, free for the whole remaining stay, cheapest first.
+    const candidate = state.rooms
+      .filter(
+        (r) =>
+          r.id !== original.id &&
+          r.maxOccupancy >= booking.guests &&
+          r.smoking === original.smoking &&
+          r.nightlyRate >= original.nightlyRate &&
+          roomFree(state, r.id, start, booking.checkOut, code),
+      )
+      .sort((a, b) => a.nightlyRate - b.nightlyRate || a.id.localeCompare(b.id))[0];
 
-  if (candidate !== undefined) {
-    booking.roomId = candidate.id;
-    note(state, `Conflict on ${code}: moved to ${candidate.id}`);
-    return {
-      kind: "moved",
-      roomId: candidate.id,
-      type: candidate.type,
-      view: candidate.view,
-      upgraded: candidate.nightlyRate > original.nightlyRate,
-    };
-  }
+    if (candidate !== undefined) {
+      booking.roomId = candidate.id;
+      note(state, `Conflict on ${code}: moved to ${candidate.id}`);
+      return {
+        kind: "moved",
+        roomId: candidate.id,
+        type: candidate.type,
+        view: candidate.view,
+        upgraded: candidate.nightlyRate > original.nightlyRate,
+      };
+    }
 
-  const returnDate = addDays(start, 1);
-  addTicket(state, "walk", "WLK", `${code} walked to ${WALK_PARTNER_HOTEL}, back ${returnDate}`, {
-    bookingCode: code,
-    partnerHotel: WALK_PARTNER_HOTEL,
-    returnDate,
-  });
-  return { kind: "walked", partner: WALK_PARTNER_HOTEL, returnDate };
-}
+    const returnDate = addDays(start, 1);
+    addTicket(state, "walk", "WLK", `${code} walked to ${WALK_PARTNER_HOTEL}, back ${returnDate}`, {
+      bookingCode: code,
+      partnerHotel: WALK_PARTNER_HOTEL,
+      returnDate,
+    });
+    return { kind: "walked", partner: WALK_PARTNER_HOTEL, returnDate };
+  },
+);
 
 /** A spoken room number ("304", "room 304", "ph") as the floor plan spells it. */
 export function requireRoom(state: FrozenHotelState, spoken: string): Room | ToolFailure {

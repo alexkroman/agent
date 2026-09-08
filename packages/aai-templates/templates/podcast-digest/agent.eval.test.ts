@@ -114,12 +114,14 @@ type EpisodeScript = {
  *
  * **The transcription legs are hand-routed here rather than handed to
  * `installStubTranscribe`, and that is a gap rather than a preference.** That
- * fake counts `pendingPolls` GLOBALLY and stages a `failure` per LEG, so
- * neither "these two episodes finish on different rounds" nor "this ONE episode
- * is broken" is expressible through it — and both are this template's subject,
- * it being the only one that has a BATCH of jobs in flight. The URLs are built
- * from the SDK's own `TRANSCRIBE_API` constant, so a case still cannot pass
- * because the fake and the step agree on a typo.
+ * fake takes ONE `pendingPolls` for every job it mints and stages a `failure`
+ * per LEG, so neither "these two episodes finish on different rounds" nor "this
+ * ONE episode is broken" is expressible through it — and both are this
+ * template's subject, it being the only one that has a BATCH of jobs in flight.
+ * `agent.test.ts` DOES use the fake, for the cases that are one episode at a
+ * time, which is the shape it fits. The URLs here are built from the SDK's own
+ * `TRANSCRIBE_API` constant, so a case still cannot pass because the fake and
+ * the step agree on a typo.
  */
 function scriptWorld(
   scripts: Readonly<Record<string, EpisodeScript>> = {},
@@ -259,7 +261,10 @@ describeWorkflowEval(agentDef, (test) => {
     expect(output.digestsScheduled).toBe(3);
     expect(output.digestsSent).toBe(3);
     expect(output.scheduleInterval).toBe("2 hours");
-    expect(output.deliveryTarget).toBe("Slack webhook");
+    // WHICH of Slack's two webhook shapes, not a constant: `SLACK_WEBHOOK` is
+    // an incoming webhook, so the posts below are Block Kit and the
+    // `slackWorkflowTextParam` this run carries was never read.
+    expect(output.deliveryTarget).toBe("a Slack incoming webhook");
 
     // Three posts, numbered, each a Block Kit payload with the notification
     // line an incoming webhook needs.

@@ -50,8 +50,8 @@
  * for the same reason.
  */
 
-import type { DeepReadonly } from "@alexkroman1/aai";
-import { sessionSlot } from "@alexkroman1/aai";
+import type { DeepReadonly, Message, ToolFailure } from "@alexkroman1/aai";
+import { sessionSlot, toolFailure } from "@alexkroman1/aai";
 import {
   type Dispute,
   type GuestHistory,
@@ -218,8 +218,15 @@ export function addTicket(
   return ticket;
 }
 
-/** How many times the caller has spoken — their `_count_caller_turns`. */
-export function callerTurns(messages: readonly { role: string }[]): number {
+/**
+ * How many times the caller has spoken — their `_count_caller_turns`.
+ *
+ * Typed `readonly Message[]` rather than the structural `{ role: string }[]` it
+ * used to take: the argument is always `ctx.messages`, and naming the SDK's own
+ * shape is what makes a spec's hand-built history fail HERE (a bad `role`, a
+ * missing `content`) rather than compile against a stand-in this file invented.
+ */
+export function callerTurns(messages: readonly Message[]): number {
   return messages.filter((m) => m.role === "user").length;
 }
 
@@ -246,13 +253,21 @@ export function bookingByCode<S extends FrozenHotelState | HotelState>(
  * the check is a gate: the tool refuses with the sentence that says what to do,
  * and `verify_booking` is what fills the slot. Generic over the state so a
  * mutating tool gets a draft's booking back and a read gets the frozen one.
+ *
+ * It answers a {@link ToolFailure}, not a `{ error: string }` of its own. The
+ * two are the same object, and that was the problem: eleven tools narrowed with
+ * `"error" in booking` and then RE-WRAPPED the sentence with
+ * `toolFailure(booking.error)`, building a second failure out of a perfectly
+ * good one. A failure PROPAGATES — `if (isToolFailure(b)) return b;` — and the
+ * SDK's guard is what makes the narrowing safe on a value that could be
+ * anything.
  */
 export function requireVerified<S extends FrozenHotelState | HotelState>(
   state: S,
-): S["bookings"][number] | { error: string } {
-  if (state.verifiedCode === null) return { error: `Not verified yet. ${VERIFY_HINT}` };
+): S["bookings"][number] | ToolFailure {
+  if (state.verifiedCode === null) return toolFailure(`Not verified yet. ${VERIFY_HINT}`);
   const booking = bookingByCode(state, state.verifiedCode);
-  if (booking === undefined) return { error: `Not verified yet. ${VERIFY_HINT}` };
+  if (booking === undefined) return toolFailure(`Not verified yet. ${VERIFY_HINT}`);
   return booking;
 }
 

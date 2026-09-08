@@ -114,8 +114,8 @@
 import type { WorkflowContext } from "@alexkroman1/aai";
 import {
   requireStepEnv,
-  stepFetch,
   type StepFetchInit,
+  stepFetch,
   stepReport,
   stepWebhookUrl,
 } from "@alexkroman1/aai/step";
@@ -798,11 +798,11 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
  * The credential and the deadline every call to the pre-recorded API carries.
  *
  * Two call sites wrote both by hand — {@link request} and
- * {@link discardTranscript} — which is one copy short of the number that hides
- * a drift: a header written twice is a header that gets fixed once. Note it is
- * a bare key, AssemblyAI's `authorization` taking the key itself with no
- * `Bearer` prefix, and that the key is read HERE rather than at module scope,
- * because `requireStepEnv` must run inside the step that needs it.
+ * {@link discardTranscript} — and a credential written twice is a credential
+ * that gets rotated once. Note it is a bare key, AssemblyAI's `authorization`
+ * taking the key itself with no `Bearer` prefix, and that it is read HERE
+ * rather than at module scope, because `requireStepEnv` must run inside the
+ * step that needs it.
  *
  * **`StepFetchInit` is what makes one builder serve both**, and that is the
  * reason it is worth naming: `stepFetch` and `stepFetchOrFail` take the same

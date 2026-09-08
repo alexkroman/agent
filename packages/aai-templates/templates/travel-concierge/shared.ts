@@ -14,7 +14,7 @@
  * | `ToFlightBookingAssistant` & friends (delegation tools) | the four tools {@link SPECIALISTS} generates in `routing.ts` |
  * | `CompleteOrEscalate` | `complete_or_escalate`, which pops the same stack |
  * | `interrupt_before=["…_sensitive_tools"]` | {@link stageAction} + `confirm_action` |
- * | a specialist node's BOUND tool set | {@link requireDesk}, checked by every desk tool |
+ * | a specialist node's BOUND tool set | {@link deskTool} / {@link deskUpdateTool}, which every desk tool is declared through |
  * | `fetch_user_flight_information` (sqlite) | `lookup_booking` over {@link seedTrip} |
  *
  * **The dialog stack is what keeps a long call on the rails.** Their insight is
@@ -33,7 +33,7 @@
  * the desks as states, which is the port's own design question rather than a
  * fix. The stack itself is real state either way, which is what
  * `complete_or_escalate` pops and what the sidebar renders — and what
- * {@link requireDesk} makes binding, so the position is never merely a label on
+ * {@link deskTool} makes binding, so the position is never merely a label on
  * work that happened somewhere else.
  *
  * **`interrupt_before` becomes a spoken confirmation, and that is not a
@@ -384,6 +384,9 @@ export function seedTrip(): TripState {
   };
 }
 
+/** How many call-log lines survive in the projection the browser is pushed. */
+export const LOG_CAP = 40;
+
 /**
  * The call's state, as one typed slot.
  *
@@ -395,8 +398,11 @@ export const tripSlot = sessionSlot("trip", seedTrip, {
   after: (state) => {
     if (state.dialogState.length === 0) state.dialogState.push("primary");
   },
-  // The call log rides in every `syncState` frame.
-  caps: { log: 40 },
+  // The call log rides in every `syncState` frame, and its writers are no longer
+  // only tools — `call-events.ts` appends on a hang-up and on a reported error.
+  // The bound is declared here rather than at each push, and `LOG_CAP` is
+  // exported because a spec reads it.
+  caps: { log: LOG_CAP },
 });
 
 /**
@@ -441,6 +447,9 @@ export function activeAssistant(state: FrozenTripState): DialogState {
  * It costs one wasted round trip the first time the model reaches past the
  * stack, which is the right price: the alternative is a desk whose position is
  * decoration.
+ *
+ * Not exported: {@link deskTool} and {@link deskUpdateTool} are the only callers,
+ * which is what makes a desk tool unable to skip it.
  */
 function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailure | undefined {
   const at = activeAssistant(state);
@@ -454,6 +463,19 @@ function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailure | un
       "Do not tell the caller about any of this; they should hear one continuous conversation.",
   };
 }
+
+/**
+ * What a desk tool declares: the slot's own {@link SlotToolDef}, with the schema
+ * REQUIRED — `cancel_ticket` takes no arguments and passes `z.object({})`.
+ *
+ * One code path in the wrapper is worth more than a line saved at one call
+ * site: `exactOptionalPropertyTypes` is on, so an `inputSchema` forwarded
+ * through a spread arrives as `P | undefined`, which is not what "this tool
+ * takes no arguments" means to the slot.
+ */
+type DeskToolDef<P extends ToolInputSchema, V, R> = Omit<SlotToolDef<P, V, R>, "inputSchema"> & {
+  inputSchema: P;
+};
 
 /**
  * A desk's own tool: {@link requireDesk} first, then the body — declared once.
@@ -471,19 +493,6 @@ function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailure | un
  * draft. `requireDesk` short-circuits before either body runs, so a refused call
  * really searches, stages and books nothing.
  */
-/**
- * What a desk tool declares: the slot's own {@link SlotToolDef}, with the schema
- * REQUIRED — `cancel_ticket` takes no arguments and passes `z.object({})`.
- *
- * One code path in the wrapper is worth more than a line saved at one call
- * site: `exactOptionalPropertyTypes` is on, so an `inputSchema` forwarded
- * through a spread arrives as `P | undefined`, which is not what "this tool
- * takes no arguments" means to the slot.
- */
-type DeskToolDef<P extends ToolInputSchema, V, R> = Omit<SlotToolDef<P, V, R>, "inputSchema"> & {
-  inputSchema: P;
-};
-
 export function deskTool<P extends ToolInputSchema, R>(
   id: SpecialistId,
   def: DeskToolDef<P, FrozenTripState, R>,

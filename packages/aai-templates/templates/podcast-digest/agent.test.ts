@@ -31,9 +31,11 @@ import {
   routeStepFetch,
   schemaInputIssues,
   stubGatewayRoute,
+  type WorkflowContextRecorder,
 } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
+  installStubTranscribe,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
@@ -60,7 +62,7 @@ import {
   stableEpisodeId,
   titleMatchesSpotify,
 } from "./workflows/feeds.ts";
-import { renderDigestMessage, sendDigestToSlack } from "./workflows/slack.ts";
+import { describeDestination, renderDigestMessage, sendDigestToSlack } from "./workflows/slack.ts";
 
 /**
  * Validate through the SDK's reader, as `start()` does.
@@ -90,13 +92,13 @@ const EPISODE = {
   transcriptSource: "assemblyai" as const,
   summary: "A concise episode summary.",
   keyPoints: ["First point", "Second point"],
+  durationMs: 3_849_000,
 };
 
-const slackInput = (slackWebhookUrl: string) => ({
-  slackWebhookUrl,
-  slackWorkflowTextParam: "text",
+const slackInput = (webhookUrl: string, episodes = [EPISODE]) => ({
+  destination: { webhookUrl, textParam: "text" },
   podcastChannels: "https://example.com/feed.xml",
-  episodes: [EPISODE],
+  episodes,
   digestNumber: 1,
   totalDigests: 2,
 });
@@ -361,11 +363,33 @@ describe("the digest as a channel message", () => {
     expect(message.sections).toHaveLength(1);
     expect(message.sections?.[0]).toMatchObject({
       title: "Example Episode",
-      subtitle: "Example Podcast",
       body: "A concise episode summary.",
       bullets: ["First point", "Second point"],
     });
     expect(message.sections?.[0]?.url).toContain("http");
+  });
+
+  /**
+   * The provider's own duration, printed by the SDK's formatter — an hour-long
+   * episode is exactly where a hand-written `m:ss` reads `64:09`.
+   */
+  test("attributes the episode to its show, with how long it runs", () => {
+    const message = renderDigestMessage(slackInput("https://hooks.slack.com/services/T/B/a"));
+
+    expect(message.sections?.[0]?.subtitle).toBe("Example Podcast · 1:04:09");
+  });
+
+  test("says only the show when nobody could transcribe the episode", () => {
+    // No transcript is no duration, and an entry that invented one would be
+    // reporting a measurement nothing made.
+    const { durationMs: _dropped, ...unavailable } = EPISODE;
+    const message = renderDigestMessage(
+      slackInput("https://hooks.slack.com/services/T/B/a", [
+        { ...unavailable, transcriptSource: "unavailable" as const },
+      ]),
+    );
+
+    expect(message.sections?.[0]?.subtitle).toBe("Example Podcast");
   });
 
   /**
@@ -376,7 +400,30 @@ describe("the digest as a channel message", () => {
   test("says how much arrived in the notification line", () => {
     const message = renderDigestMessage(slackInput("https://hooks.slack.com/triggers/T/B/a"));
 
-    expect(message.text).toBe("Podcast digest 1/2: 1 episode summaries");
+    // SINGULAR at one. This line read "1 episode summaries" until `plural`.
+    expect(message.text).toBe("Podcast digest 1/2: 1 episode summary");
+    expect(
+      renderDigestMessage(slackInput("https://hooks.slack.com/triggers/T/B/a", [EPISODE, EPISODE]))
+        .text,
+    ).toBe("Podcast digest 1/2: 2 episode summaries");
+  });
+});
+
+/**
+ * Which of Slack's two webhook shapes a run posted to — the run's own output
+ * says so, and the page prints it.
+ *
+ * It is worth pinning because the two take DIFFERENT bodies, so a run that
+ * reported the wrong one would be telling a reader that
+ * `slackWorkflowTextParam` mattered when it did not, or the reverse.
+ */
+describe("the delivery target", () => {
+  test.each([
+    ["https://hooks.slack.com/triggers/T/B/a", "a Slack workflow trigger"],
+    ["https://hooks.slack.com/services/T/B/a", "a Slack incoming webhook"],
+    ["https://hooks.slack-gov.com/services/T/B/a", "a Slack incoming webhook"],
+  ])("describes %s as %s", (webhookUrl, expected) => {
+    expect(describeDestination({ webhookUrl })).toBe(expected);
   });
 });
 
@@ -709,10 +756,23 @@ describe("discoverEpisodes", () => {
   });
 });
 
+/**
+ * The two transcription steps, against the SDK's own fake for the provider.
+ *
+ * `installStubTranscribe` answers all four transcription endpoints, so nothing
+ * below names `{ id }`, `status: "completed"`, `text` or `audio_duration` —
+ * that is AssemblyAI's wire vocabulary, and these steps exist so this template
+ * never has to know it. A refusal is staged as an HTTP STATUS for the same
+ * reason: the retryable/terminal verdict is the SDK's to compute from it, and a
+ * fake that minted the error would be asserting the classification under test.
+ *
+ * The EVAL still routes the provider by hand, and says why in place: it drives
+ * a BATCH of jobs finishing on different rounds, which one `pendingPolls` and
+ * one per-leg `failure` cannot express. One episode at a time, which is what
+ * these cases are, is exactly what the fake is shaped for.
+ */
 describe("transcribing one episode", () => {
   beforeEach(() => vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key"));
-
-  const stub = stubRoutes;
 
   const EPISODE_IN = {
     id: "episode-1",
@@ -724,8 +784,17 @@ describe("transcribing one episode", () => {
     published: "Thu, 03 Jan 2030 00:00:00 GMT",
   };
 
+  /** A submitted job, as `waitForTranscripts` holds one. */
+  const submitted = (transcriptId: string) => ({
+    ...EPISODE_IN,
+    transcriptStatus: "submitted" as const,
+    transcriptId,
+  });
+
   test("submits the audio and keeps the id the rest of the run polls", async () => {
-    stub({ "/v2/transcript": { body: { id: "t-1" } } });
+    // The id is MINTED by the fake, so a spec asserting a run polled the job it
+    // submitted has a value to write down.
+    installStubTranscribe({ jobIdPrefix: "t-" });
 
     expect(await submitTranscript(EPISODE_IN)).toMatchObject({
       transcriptStatus: "submitted",
@@ -735,7 +804,9 @@ describe("transcribing one episode", () => {
 
   /** The partial-failure policy: this-episode-is-broken degrades, it does not throw. */
   test("degrades a terminal submit failure to an unavailable episode", async () => {
-    stub({ "/v2/transcript": { status: 400, body: { error: "audio_url is not reachable" } } });
+    installStubTranscribe({
+      failure: { leg: "submit", status: 400, message: "audio_url is not reachable" },
+    });
 
     const job = await submitTranscript(EPISODE_IN);
 
@@ -745,13 +816,13 @@ describe("transcribing one episode", () => {
 
   /** The other half: a transport problem is the DevKit's to retry. */
   test("re-throws a retryable submit failure instead of degrading it", async () => {
-    stub({ "/v2/transcript": { status: 503, body: "busy" } });
+    installStubTranscribe({ failure: { leg: "submit", status: 503 } });
     await expect(submitTranscript(EPISODE_IN)).rejects.toThrow();
   });
 
   test("returns the job unchanged while the provider is still working", async () => {
-    stub({ "/v2/transcript/t-1": { body: { status: "processing" } } });
-    const job = { ...EPISODE_IN, transcriptStatus: "submitted" as const, transcriptId: "t-1" };
+    installStubTranscribe({ pendingPolls: 1 });
+    const job = submitted("t-1");
 
     // Unchanged, so `waitForTranscripts` can keep it in `pending` without a
     // second vocabulary for "still going".
@@ -759,34 +830,33 @@ describe("transcribing one episode", () => {
   });
 
   test("reads the transcript once the provider is done", async () => {
-    stub({
-      "/v2/transcript/t-1": {
-        body: { status: "completed", text: "Otters use tools.", audio_duration: 61 },
-      },
-    });
+    installStubTranscribe({ text: "Otters use tools.", durationSec: 61 });
 
-    expect(
-      await pollTranscript({ ...EPISODE_IN, transcriptStatus: "submitted", transcriptId: "t-1" }),
-    ).toMatchObject({ transcriptStatus: "done", transcript: "Otters use tools." });
+    // The whole `Transcript`, the provider's own duration included — which is
+    // what the digest entry reports and the page prints.
+    expect(await pollTranscript(submitted("t-1"))).toMatchObject({
+      transcriptStatus: "done",
+      transcript: { id: "t-1", text: "Otters use tools.", durationMs: 61_000 },
+    });
   });
 
   test("degrades a job the provider gave up on", async () => {
-    stub({ "/v2/transcript/t-1": { body: { status: "error", error: "corrupt media" } } });
+    // A 200 with `status: "error"` — the provider ANSWERED, and the answer is
+    // no, which is terminal however long you poll.
+    installStubTranscribe({ jobError: "corrupt media" });
 
-    expect(
-      await pollTranscript({ ...EPISODE_IN, transcriptStatus: "submitted", transcriptId: "t-1" }),
-    ).toMatchObject({
+    expect(await pollTranscript(submitted("t-1"))).toMatchObject({
       transcriptStatus: "unavailable",
       reason: expect.stringContaining("corrupt"),
     });
   });
 
   test("passes an already-unavailable episode straight through without a request", async () => {
-    const stubbed = stub({});
+    const provider = installStubTranscribe();
     const job = { ...EPISODE_IN, transcriptStatus: "unavailable" as const, reason: "no audio" };
 
     expect(await pollTranscript(job)).toBe(job);
-    expect(stubbed.calls).toHaveLength(0);
+    expect(provider.calls).toHaveLength(0);
   });
 
   test("summarizes a finished transcript into the digest entry", async () => {
@@ -796,14 +866,14 @@ describe("transcribing one episode", () => {
       await summarizeTranscript({
         ...EPISODE_IN,
         transcriptStatus: "done",
-        transcriptId: "t-1",
-        transcript: "Otters use tools.",
-        durationMs: 61_000,
+        transcript: { id: "t-1", text: "Otters use tools.", durationMs: 61_000 },
       }),
     ).toMatchObject({
       transcriptSource: "assemblyai",
       summary: "Otters are clever.",
       keyPoints: ["They use tools", "They float"],
+      // Carried through from the poll rather than measured again here.
+      durationMs: 61_000,
     });
   });
 
@@ -819,6 +889,8 @@ describe("transcribing one episode", () => {
     // The reason reaches the reader, rather than the episode vanishing.
     expect(digest.summary).toContain("corrupt media");
     expect(digest.keyPoints).toHaveLength(1);
+    // And no duration is invented for a recording nothing decoded.
+    expect(digest.durationMs).toBeUndefined();
   });
 });
 
@@ -878,9 +950,15 @@ describe("the body — the run that IS the schedule", () => {
    * own logic — the digest loop, the shrinking pending set in
    * `waitForTranscripts`, and the sleep between digests — none of which any
    * per-step spec can see, and all of which is the template's actual subject.
+   *
+   * `WorkflowContextRecorder` is the RETURN type, and it is why this hands the
+   * context back bare rather than in a `{ ctx }` wrapper: it is a
+   * `WorkflowContext` the body can take PLUS the `steps`/`slept` lists every
+   * case below reads, so nothing has to be destructured out of a holder to say
+   * so.
    */
-  function driveTwoDigests(pollResults: unknown) {
-    const ctx = createWorkflowContext({
+  function digestContext(pollResults: unknown): WorkflowContextRecorder {
+    return createWorkflowContext({
       runSteps: false,
       results: {
         discoverEpisodes: [EPISODE],
@@ -893,13 +971,12 @@ describe("the body — the run that IS the schedule", () => {
       // scripted here instead of in `results`.
       now: Date.parse("2026-08-21T00:00:00.000Z"),
     });
-    return { ctx };
   }
 
   test("sends one digest per interval and sleeps BETWEEN them, never after the last", async () => {
     // A run that has delivered everything it owes should end, not sleep for a
     // day and then end.
-    const { ctx } = driveTwoDigests({
+    const ctx = digestContext({
       id: EPISODE.id,
       transcriptStatus: "completed",
       transcript: "words",
@@ -926,7 +1003,7 @@ describe("the body — the run that IS the schedule", () => {
   });
 
   test("reports the last digest it actually sent", async () => {
-    const { ctx } = driveTwoDigests({
+    const ctx = digestContext({
       id: EPISODE.id,
       transcriptStatus: "completed",
       transcript: "words",
@@ -955,7 +1032,7 @@ describe("the body — the run that IS the schedule", () => {
     // Running out of poll rounds is NOT an error: a partial digest beats none,
     // and the reason is printed where a reader will see it. The poll answers
     // `submitted` forever, so the loop exhausts its rounds.
-    const { ctx } = driveTwoDigests({ id: EPISODE.id, transcriptStatus: "submitted" });
+    const ctx = digestContext({ id: EPISODE.id, transcriptStatus: "submitted" });
 
     const output = await dailyDigestFlow(
       {

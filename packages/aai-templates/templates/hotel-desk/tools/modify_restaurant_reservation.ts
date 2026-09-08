@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { findReservation, modifyReservation, openDinnerSlots } from "../hotel.ts";
@@ -50,7 +50,7 @@ export default hotelSlot.updateTool({
       newTime,
       newPartySize ?? null,
     );
-    if ("error" in updated) {
+    if (isToolFailure(updated)) {
       const party = newPartySize ?? reservation.partySize;
       const open = openDinnerSlots(hotel, newDate, party).filter((slot) => slot !== newTime);
       return toolFailure(

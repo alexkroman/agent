@@ -1,6 +1,11 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure, resolveOne, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { DISPUTE_POLICIES, resolveDisputeOutcome, sayDisputeOutcome } from "../disputes.ts";
+import {
+  DISPUTE_POLICIES,
+  LINE_ITEM_PICK,
+  resolveDisputeOutcome,
+  sayDisputeOutcome,
+} from "../disputes.ts";
 import { invoiceFor } from "../hotel.ts";
 import { DISPUTE_CATEGORIES, mintCode } from "../records.ts";
 import { hotelSlot, note, requireVerified, takenCodes } from "../shared.ts";
@@ -10,8 +15,14 @@ import { hotelSlot, note, requireVerified, takenCodes } from "../shared.ts";
  *
  * The model supplies the CATEGORY and whether the caller accepted the policy's
  * offer; the amount is read off the stored line item, the outcome comes from
- * `disputes.ts`, and a refund decrements the invoice where it is filed. Labels
- * are matched case-insensitively, so "late checkout" still finds "Late checkout".
+ * `disputes.ts`, and a refund decrements the invoice where it is filed.
+ *
+ * **Which line is `resolveOne`'s**, on `LINE_ITEM_PICK` — an ordinal ("the
+ * second one", off a folio the desk has just read out), then the label's own
+ * words, then a refusal listing the lines with their amounts. What this file
+ * had was an exact case-folded `===` and a hand-written listing beside it, so
+ * "the minibar charge" missed `Minibar - still water` and came back asking the
+ * caller to pick from a list they had already picked from.
  */
 export default hotelSlot.updateTool({
   description:
@@ -23,7 +34,9 @@ export default hotelSlot.updateTool({
     category: z
       .enum(DISPUTE_CATEGORIES)
       .describe("The category that best matches what is disputed"),
-    lineItemLabel: z.string().describe("The invoice line, as it appears"),
+    lineItemLabel: z
+      .string()
+      .describe('The invoice line as the caller referred to it - a label, or "the second one"'),
     callerNote: z
       .string()
       .max(300)
@@ -32,17 +45,11 @@ export default hotelSlot.updateTool({
   }),
   execute({ category, lineItemLabel, callerNote, acceptsOfferedResolution }, hotel) {
     const booking = requireVerified(hotel);
-    if ("error" in booking) return toolFailure(booking.error);
+    if (isToolFailure(booking)) return booking;
     const invoice = invoiceFor(hotel, booking.code);
     if (invoice === undefined) return toolFailure(`no invoice on file for ${booking.code}`);
-    const target = lineItemLabel.trim().toLowerCase();
-    const item = invoice.lineItems.find((li) => li.label.toLowerCase() === target);
-    if (item === undefined) {
-      return toolFailure(
-        `No line item labelled "${lineItemLabel}" on that invoice. The lines are: ` +
-          `${invoice.lineItems.map((li) => li.label).join("; ")}. Read them back and ask the caller to pick one.`,
-      );
-    }
+    const item = resolveOne(invoice.lineItems, lineItemLabel, LINE_ITEM_PICK);
+    if (isToolFailure(item)) return item;
     const policy = DISPUTE_POLICIES[category];
     const verdict = resolveDisputeOutcome(
       policy,

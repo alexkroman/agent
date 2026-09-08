@@ -1,3 +1,4 @@
+import { toolFailure } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { BUSINESS_CENTER_SERVICES } from "../catalogs.ts";
@@ -27,9 +28,9 @@ export default catalogBookingTool({
   price({ service, date, time, durationHours }) {
     const s = BUSINESS_CENTER_SERVICES[service];
     if (durationHours > s.maxHours)
-      return {
-        error: `${s.name} is booked for at most ${s.maxHours} ${plural(s.maxHours, "hour")}`,
-      };
+      return toolFailure(
+        `${s.name} is booked for at most ${s.maxHours} ${plural(s.maxHours, "hour")}`,
+      );
     const total = s.flatPrice ?? (s.pricePerHour ?? 0) * durationHours;
     return {
       total,

@@ -11,6 +11,7 @@
  * `PRICING.minibarAutoRefundThreshold` the only number that matters.
  */
 
+import type { ResolveOneOptions } from "@alexkroman1/aai";
 import {
   type DisputeCategory,
   type DisputeOutcome,
@@ -20,6 +21,39 @@ import {
   speakUsd,
   usd,
 } from "./records.ts";
+
+/**
+ * How a SPOKEN reference to an invoice line is read — handed to `resolveOne`
+ * by `dispute_charge`.
+ *
+ * The tool used to match the model's `lineItemLabel` against `li.label` with
+ * `===` on a lower-cased copy, and refuse by listing every label back. Which is
+ * `resolveOne` minus the two readings that actually happen on a phone: a caller
+ * who says "the second one" after hearing the folio read out, and one who says
+ * "the minibar" for `Minibar - still water`. The never-guess contract is the
+ * SDK's — an ordinal, then the score below, then a REFUSAL listing the
+ * candidates, and an ambiguous match is an answer rather than a pick.
+ *
+ * Annotated rather than inferred because it is a standalone literal: the
+ * annotation is what types `candidate` in both members and what would catch a
+ * `describe` that returned something other than a string.
+ *
+ * The scorer is this desk's own vocabulary, and it is deliberately not a fuzzy
+ * distance: a whole word of the label, matched in the caller's words, is one
+ * point — so "late checkout fee" finds `Late checkout` and "room" alone ties
+ * `Room (3 nights)` with `Room service` and is refused as ambiguous, which is
+ * the outcome a receptionist wants.
+ */
+export const LINE_ITEM_PICK: ResolveOneOptions<LineItem> = {
+  label: "invoice line",
+  describe: (item) => `${item.label} (${speakUsd(item.amount)})`,
+  score: (item, text) =>
+    item.label
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 2)
+      .filter((word) => text.includes(word)).length,
+};
 
 export type DisputeAction =
   | "auto_refund_if_under_threshold"

@@ -1,4 +1,4 @@
-import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
+import type { DialogEvent, ToolContext, ToolFailure } from "@alexkroman1/aai";
 import { dialog, isToolFailure, omitUndefined, sessionSlot } from "@alexkroman1/aai";
 import { roundMoney } from "@alexkroman1/aai/utils";
 import type { z } from "zod";
@@ -194,6 +194,19 @@ const callSpec = {
  */
 export const callFlow = dialog("call", callSpec);
 
+/**
+ * Every event {@link callSpec} declares, as the union a `send` takes.
+ *
+ * `DialogEvent<typeof callSpec>` — synthesized from the `on` keys of the spec
+ * above, which is why that spec is `as const`. It replaces the four-arm union
+ * this file wrote out by hand (`{ type: "IDENTIFIED" } | …`), and the
+ * duplication was the live kind: an event added to the spec was legal for
+ * `callFlow.send` and rejected by {@link RetailToolSpec}, so the wrapper's
+ * `send` field could only ever be a stale copy of the machine. Session events
+ * (`@session.timed-out`) are excluded by the SDK — a tool cannot send one.
+ */
+type CallEvent = DialogEvent<typeof callSpec>;
+
 /** Every state a tool may run in before the call is handed to a human — i.e.
  *  everything but `transferred`. What the two finders, the three catalog reads
  *  and the transfer itself declare, so the terminal state gates them without an
@@ -350,12 +363,11 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
    *  `TRANSFERRED`, the seven staging tools send `STAGED`, and `confirm_change`
    *  and `cancel_change` send `SETTLED`. Nothing is sent when the body answers
    *  a `ToolFailure` — which is what stops a refused stage from moving the call
-   *  into a confirmation with nothing behind it. */
-  send?:
-    | { type: "IDENTIFIED" }
-    | { type: "TRANSFERRED" }
-    | { type: "STAGED" }
-    | { type: "SETTLED" };
+   *  into a confirmation with nothing behind it.
+   *
+   *  Typed {@link CallEvent}, which is the machine's own event union rather
+   *  than a copy of it. */
+  send?: CallEvent;
   /**
    * One line for the activity feed, from the call that SUCCEEDED.
    *

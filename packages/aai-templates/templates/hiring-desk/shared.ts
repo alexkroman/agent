@@ -25,11 +25,15 @@
 
 import {
   type DeepReadonly,
+  type DialogEvent,
   type DialogPosition,
   type DialogSpec,
   dialog,
+  type ResolveOneOptions,
   resolveOne,
+  type StateProjection,
   sessionSlot,
+  type ToolContext,
   type ToolFailure,
 } from "@alexkroman1/aai";
 import leads from "./leads.json" with { type: "json" };
@@ -243,6 +247,25 @@ const hiringSpec = {
  */
 export const hiringFlow = dialog("hiringFlow", hiringSpec);
 
+/**
+ * The flow's alphabet — the events its tools send, which is the whole of what
+ * can move this conversation.
+ *
+ * Named once because the two of them are sent two different ways, and reading
+ * the same event in both spellings is what makes the pair legible: a
+ * `hiringFlow.tool` declares `send: SCORED` and lets the dialog move it after a
+ * successful body, while `screen_candidates` — an ordinary `tool()`, because
+ * `SCORED` is legal in every state — calls `hiringFlow.send(ctx, SCORED)`
+ * itself.
+ */
+export type HiringEvent = DialogEvent<typeof hiringSpec>;
+
+/** Their `score_leads` finished: a ranking exists to review. */
+export const SCORED: HiringEvent = { type: "SCORED" };
+
+/** Their option 3 was taken: the emails are written. */
+export const PROCEEDED: HiringEvent = { type: "PROCEEDED" };
+
 /** How the stage reads to a caller, from the flow's own position. */
 export function stageLabel(at: DialogPosition): string {
   if (at.state === "idle") return "nothing screened yet";
@@ -301,6 +324,27 @@ export function describeRanked(candidate: RankedCandidate): string {
 }
 
 /**
+ * How a caller names one of twelve applicants — the desk's own vocabulary,
+ * which is the half {@link resolveOne} does not own.
+ *
+ * A name matches on WHOLE parts: every part of the candidate's name the
+ * utterance contains scores one, so "Priya" and "Raman" each resolve and
+ * "Priya Raman" outscores both — a substring test would let "an" match Raman,
+ * Tanaka and Kowalski at once. Declared as a constant rather than inline
+ * because the annotation is what types `candidate` and `text` here; the three
+ * tools that resolve a candidate all reach it through the one function below.
+ */
+const CANDIDATE_MATCH: ResolveOneOptions<RankedCandidate> = {
+  label: "candidate",
+  describe: describeRanked,
+  score: (candidate, text) =>
+    candidate.name
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((part) => part.length > 1 && text.includes(part)).length,
+};
+
+/**
  * The candidate a caller MEANT.
  *
  * Over the RANKING rather than the roster, because that is the list the caller
@@ -313,15 +357,7 @@ export function resolveCandidate(
   state: FrozenHiringState,
   spoken: string,
 ): RankedCandidate | ToolFailure {
-  return resolveOne(ranked(state), spoken, {
-    label: "candidate",
-    describe: describeRanked,
-    score: (candidate, text) =>
-      candidate.name
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((part) => part.length > 1 && text.includes(part)).length,
-  });
+  return resolveOne(ranked(state), spoken, CANDIDATE_MATCH);
 }
 
 /** The draft written for one candidate, if `proceed_to_emails` has run. */
@@ -391,5 +427,54 @@ export function hiringView(state: FrozenHiringState): HiringView {
   };
 }
 
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const hiringProjection = hiringSlot.projection(hiringView);
+/**
+ * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in
+ * the client. Annotated, because it is the contract between the two halves —
+ * a `hiringView` whose return type drifted should fail here, at the export the
+ * browser imports, rather than inside a component.
+ */
+export const hiringProjection: StateProjection<HiringView> = hiringSlot.projection(hiringView);
+
+// ─── Progress, which is a MOMENT and not state ───────────────────────────────
+
+/**
+ * The event a fan-out ticks while the caller holds the line.
+ *
+ * Twelve model calls is a real wait — the desk is told to say so before it
+ * calls the tool — and until now the browser had nothing to show for it: the
+ * leaderboard is written once, at the end, deliberately (see
+ * `tools/screen_candidates.ts`, "the await comes first, then the mutation").
+ * Progress is the case for the OTHER mechanism a tool has for telling a page
+ * something: re-rendering "scoring seven of twelve" after a reload would be a
+ * lie, so it is a moment (`ctx.send` → `useEvent`) rather than state in the
+ * slot, and putting it in the slot would also undo the one thing that write is
+ * careful about — the whole table landing at once, so nothing ever reads half
+ * a screening.
+ */
+export const SCREENING_PROGRESS = "screening-progress";
+
+export interface ScreeningProgress {
+  /** Which fan-out is running: the evaluator's, or the coordinator's. */
+  phase: "scoring" | "writing";
+  /** How many have settled — failures counted, since the waiting is over for
+   *  those too and a ticker that stops short of `total` reads as a hang. */
+  done: number;
+  total: number;
+}
+
+/**
+ * A tick to hand a fan-out: one {@link SCREENING_PROGRESS} event per item that
+ * settles. `Pick<ToolContext, "send">` because the ticker wants the one channel
+ * and nothing else the tool was handed.
+ */
+export function progressTicker(
+  ctx: Pick<ToolContext, "send">,
+  phase: ScreeningProgress["phase"],
+  total: number,
+): () => void {
+  let done = 0;
+  return () => {
+    done += 1;
+    ctx.send(SCREENING_PROGRESS, { phase, done, total } satisfies ScreeningProgress);
+  };
+}

@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { requireRoom } from "../hotel.ts";
 import { isoDate, speakCode } from "../records.ts";
@@ -22,7 +22,7 @@ export default hotelSlot.updateTool({
   }),
   execute(args, hotel) {
     const found = requireRoom(hotel, args.room);
-    if ("error" in found) return toolFailure(found.error);
+    if (isToolFailure(found)) return found;
     // Spoken codes arrive with unpredictable spaces and dashes.
     const flightNumber = args.flightNumber.replaceAll(/[^a-z0-9]/gi, "").toUpperCase();
     const bookingReference = args.bookingReference.replaceAll(/[^a-z0-9]/gi, "").toUpperCase();

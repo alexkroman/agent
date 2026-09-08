@@ -1,4 +1,5 @@
 import type { DeepReadonly } from "@alexkroman1/aai";
+import { roundMoney } from "@alexkroman1/aai/utils";
 import type { PendingAction } from "./pending.ts";
 
 // ─── Store types ─────────────────────────────────────────────────────────────
@@ -346,15 +347,30 @@ function paymentMethodView(method: DeepReadonly<PaymentMethod>): PaymentMethodVi
   };
 }
 
-/** Net of payments minus refunds — what the customer has actually paid. Items
- *  can't be summed instead: a modified order's items no longer match what was
- *  charged. */
+/**
+ * Net of payments minus refunds — what the customer has actually paid. Items
+ * can't be summed instead: a modified order's items no longer match what was
+ * charged.
+ *
+ * `roundMoney` rather than the `Math.round(net * 100) / 100` this was, which is
+ * the same swap `store.ts`'s `money` already made and the last site in the
+ * template still doing it by hand. The two are not the same function:
+ * `2.675 * 100` is `267.49999999999994`, so the multiply-and-round spelling
+ * answers `2.68` where `formatMoney` — which is what `client.tsx` renders this
+ * number through, and which rounds via `toFixed` — prints `$2.67`. One basis on
+ * both sides is the only way an order's total cannot compare as one number and
+ * read as another.
+ *
+ * Imported from `@alexkroman1/aai/utils` directly rather than through
+ * `store.ts`'s `money` alias: this module must not import that one, because it
+ * pulls the 107 KB `seed.json` and `client.tsx` imports this.
+ */
 export function orderTotal(order: DeepReadonly<Order>): number {
   const net = order.payment_history.reduce(
     (sum, p) => sum + (p.transaction_type === "payment" ? p.amount : -p.amount),
     0,
   );
-  return Math.round(net * 100) / 100;
+  return roundMoney(net);
 }
 
 function orderView(order: DeepReadonly<Order>): OrderView {

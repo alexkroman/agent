@@ -17,13 +17,13 @@ import {
   type DeepReadonly,
   type DialogPosition,
   type DialogSpec,
-  type SlotCaps,
-  type StateProjection,
-  type ToolFailure,
   dialog,
   failable,
   orFail,
+  type SlotCaps,
+  type StateProjection,
   sessionSlot,
+  type ToolFailure,
   tool,
 } from "@alexkroman1/aai";
 import { type CallOptions, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
@@ -258,6 +258,13 @@ export const searchTool = tool({
  *  substance, not from its whole text, and the rest is context it pays for. */
 export const MAX_PAGE_CHARS = 4000;
 
+/** One page's substance, or the refusal that stopped it being read. */
+const readPage = failable(async (url: string, options: CallOptions = {}): Promise<string> => {
+  const page = orFail(await visitWebpage<{ content?: string; text?: string }>(url, options));
+  const body = String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
+  return body.length > 0 ? body : "That page had no readable text.";
+});
+
 /**
  * `read` — open one page the search turned up.
  *
@@ -271,12 +278,6 @@ export const MAX_PAGE_CHARS = 4000;
  * does — a page that would not load is not a page that said nothing — and takes
  * the same `CallOptions`, so a hung-up caller cancels the fetch.
  */
-const readPage = failable(async (url: string, options: CallOptions = {}): Promise<string> => {
-  const page = orFail(await visitWebpage<{ content?: string; text?: string }>(url, options));
-  const body = String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
-  return body.length > 0 ? body : "That page had no readable text.";
-});
-
 export const readTool = tool({
   description:
     "Open one page from a search result and read it. Prefer this over a second " +

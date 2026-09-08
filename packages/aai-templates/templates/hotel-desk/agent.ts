@@ -1,5 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { DIALOGS } from "./desk.ts";
+import { DESK_EVENTS } from "./events.ts";
 import { PRICING, spokenDate, TODAY, usd } from "./records.ts";
 import { deskProjection } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
@@ -29,6 +30,14 @@ export default agent({
    * and a caller who hung up mid-booking would leave the flow open.
    */
   dialogs: DIALOGS,
+  /**
+   * The other half of the hang-up, and the pairing is the point: the dialog
+   * above MOVES to `hungUp` so nothing more is said, and this WRITES the
+   * `abandoned_booking` followup a dropped booking leaves behind. A transition
+   * stores nothing and a handler cannot speak, so a call that ends badly needs
+   * both. See `events.ts`.
+   */
+  events: DESK_EVENTS,
   // The prose is the document; the numbers are the price list, rendered from
   // `PRICING` so the receptionist can never quote a fee the tools don't charge.
   systemPrompt: `${systemPrompt}\n${quickFacts()}`,

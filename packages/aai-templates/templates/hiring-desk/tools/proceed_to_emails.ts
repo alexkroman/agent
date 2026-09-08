@@ -2,10 +2,13 @@ import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { partitionSettled } from "@alexkroman1/aai/step";
 import { z } from "zod";
 import { draftEmails } from "../crews.ts";
+import { withScreening } from "../screening-lock.ts";
 import {
   describeRanked,
   hiringFlow,
   hiringSlot,
+  PROCEEDED,
+  progressTicker,
   type RankedCandidate,
   resolveCandidate,
   SHORTLIST_SIZE,
@@ -33,6 +36,12 @@ import {
  * `accepted: false`, and the desk is told to say it needs a look. There IS an
  * email; the caller is on the phone; what must not happen is presenting an
  * unsigned draft as finished.
+ *
+ * **Under the screening lock**, like the two scoring tools: this reads the
+ * ranking, spends twelve subagent runs and writes the drafts back, so a
+ * re-score running beside it would have it invite the top three of a ranking
+ * that no longer exists. Its twelve runs tick the same progress event, phased
+ * `writing`.
  */
 export default hiringFlow.tool({
   description:
@@ -50,61 +59,69 @@ export default hiringFlow.tool({
       ),
   }),
   when: "reviewing",
-  send: { type: "PROCEEDED" },
+  send: PROCEEDED,
   async execute(args, ctx) {
-    const state = hiringSlot.get(ctx);
-    if (!state.job) return toolFailure("Nothing has been screened yet — use screen_candidates.");
+    return withScreening(ctx, async () => {
+      const state = hiringSlot.get(ctx);
+      if (!state.job) return toolFailure("Nothing has been screened yet — use screen_candidates.");
 
-    let chosen: RankedCandidate[];
-    if (args.shortlist && args.shortlist.length > 0) {
-      chosen = [];
-      for (const spoken of args.shortlist) {
-        const picked = resolveCandidate(state, spoken);
-        if (isToolFailure(picked)) return picked;
-        if (!chosen.some((one) => one.id === picked.id)) chosen.push(picked);
+      let chosen: RankedCandidate[];
+      if (args.shortlist && args.shortlist.length > 0) {
+        chosen = [];
+        for (const spoken of args.shortlist) {
+          const picked = resolveCandidate(state, spoken);
+          if (isToolFailure(picked)) return picked;
+          if (!chosen.some((one) => one.id === picked.id)) chosen.push(picked);
+        }
+      } else {
+        chosen = topCandidates(state);
       }
-    } else {
-      chosen = topCandidates(state);
-    }
-    if (chosen.length === 0) {
-      return toolFailure("Nobody is on the shortlist — there is no ranking to invite from.");
-    }
+      if (chosen.length === 0) {
+        return toolFailure("Nobody is on the shortlist — there is no ranking to invite from.");
+      }
 
-    const shortlist = new Set(chosen.map((candidate) => candidate.id));
-    const drafted = await draftEmails(ctx.delegate, state.candidates, state.job, shortlist);
-
-    const { failed } = partitionSettled(drafted);
-    if (failed.length === drafted.length) {
-      return toolFailure(
-        `No email could be written. The first failure said: ${failed[0]?.error ?? "no reason given"}`,
+      const shortlist = new Set(chosen.map((candidate) => candidate.id));
+      const drafted = await draftEmails(
+        ctx.delegate,
+        state.candidates,
+        state.job,
+        shortlist,
+        progressTicker(ctx, "writing", state.candidates.length),
       );
-    }
 
-    return hiringSlot.update(ctx, (current) => {
-      current.shortlist = [...shortlist];
-      current.drafts = [];
-      for (const one of drafted) if (one.ok) current.drafts.push(one.value);
+      const { failed } = partitionSettled(drafted);
+      if (failed.length === drafted.length) {
+        return toolFailure(
+          `No email could be written. The first failure said: ${failed[0]?.error ?? "no reason given"}`,
+        );
+      }
 
-      const needsLook = current.drafts
-        .filter((draft) => !draft.accepted)
-        .map((draft) => current.candidates.find((c) => c.id === draft.candidateId)?.name);
-      const invited = chosen.map(describeRanked);
-      return {
-        invited,
-        declined: current.drafts.filter((draft) => !draft.proceed).length,
-        drafted: current.drafts.length,
-        failed: failed.map((one) => one.item.name),
-        needsLook,
-        message:
-          `Say the invitations went to ${invited.join(", ")} and how many polite declines ` +
-          "were written, then offer to read any one of them back with read_email." +
-          (needsLook.length > 0
-            ? ` The drafts for ${needsLook.join(", ")} did not pass the coordinator's own check — say they need a look before sending.`
-            : "") +
-          (failed.length > 0
-            ? ` No email could be written for ${failed.map((one) => one.item.name).join(", ")} — say so.`
-            : ""),
-      };
+      return hiringSlot.update(ctx, (current) => {
+        current.shortlist = [...shortlist];
+        current.drafts = [];
+        for (const one of drafted) if (one.ok) current.drafts.push(one.value);
+
+        const needsLook = current.drafts
+          .filter((draft) => !draft.accepted)
+          .map((draft) => current.candidates.find((c) => c.id === draft.candidateId)?.name);
+        const invited = chosen.map(describeRanked);
+        return {
+          invited,
+          declined: current.drafts.filter((draft) => !draft.proceed).length,
+          drafted: current.drafts.length,
+          failed: failed.map((one) => one.item.name),
+          needsLook,
+          message:
+            `Say the invitations went to ${invited.join(", ")} and how many polite declines ` +
+            "were written, then offer to read any one of them back with read_email." +
+            (needsLook.length > 0
+              ? ` The drafts for ${needsLook.join(", ")} did not pass the coordinator's own check — say they need a look before sending.`
+              : "") +
+            (failed.length > 0
+              ? ` No email could be written for ${failed.map((one) => one.item.name).join(", ")} — say so.`
+              : ""),
+        };
+      });
     });
   },
 });

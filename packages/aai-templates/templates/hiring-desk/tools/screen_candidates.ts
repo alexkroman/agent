@@ -2,6 +2,7 @@ import { omitUndefined, tool, toolFailure } from "@alexkroman1/aai";
 import { partitionSettled } from "@alexkroman1/aai/step";
 import { z } from "zod";
 import { scoreRoster } from "../crews.ts";
+import { withScreening } from "../screening-lock.ts";
 import {
   DEFAULT_JOB,
   describeRanked,
@@ -9,6 +10,8 @@ import {
   hiringSlot,
   type JobDescription,
   LEADS,
+  progressTicker,
+  SCORED,
   topCandidates,
 } from "../shared.ts";
 
@@ -25,7 +28,13 @@ import {
  * **The await comes first, then the mutation.** Twelve model calls run outside
  * the slot's synchronous window and the whole table lands at once, so a
  * `screening_status` read mid-fan-out sees the previous screening rather than
- * half of this one.
+ * half of this one. What the caller gets in the meantime is the progress
+ * ticker, which is an EVENT rather than state for the reason `shared.ts` gives
+ * at {@link progressTicker}.
+ *
+ * **And the whole body is under the screening lock**, because "the await comes
+ * first" is also what lets a SECOND screening in the same step interleave with
+ * this one; `screening-lock.ts` has the two ways that goes wrong.
  */
 export default tool({
   description:
@@ -53,59 +62,67 @@ export default tool({
       description: args.jobDescription?.trim() || DEFAULT_JOB.description,
     };
 
-    // A fresh screening: the roster is re-read (their `load_leads`), and the
-    // feedback trail starts over — feedback was about a ranking for a role, and
-    // this may be a different role.
-    const scored = await scoreRoster(ctx.generate, LEADS, job, []);
-
-    const { failed } = partitionSettled(scored);
-    if (failed.length === scored.length) {
-      return toolFailure(
-        `No candidate could be scored. The first failure said: ${failed[0]?.error ?? "no reason given"}`,
+    return withScreening(ctx, async () => {
+      // A fresh screening: the roster is re-read (their `load_leads`), and the
+      // feedback trail starts over — feedback was about a ranking for a role,
+      // and this may be a different role.
+      const scored = await scoreRoster(
+        ctx.generate,
+        LEADS,
+        job,
+        [],
+        progressTicker(ctx, "scoring", LEADS.length),
       );
-    }
 
-    // The flow moves first: `rescore_with_feedback` and `proceed_to_emails`
-    // gate on `reviewing`, and a table written while the flow still said `idle`
-    // would be refused by its own next tool call.
-    const at = hiringFlow.send(ctx, { type: "SCORED" });
-
-    return hiringSlot.update(ctx, (state) => {
-      state.job = job;
-      state.candidates = [...LEADS];
-      state.scores = {};
-      state.unscored = [];
-      state.feedback = [];
-      state.rounds = 0;
-      state.shortlist = [];
-      state.drafts = [];
-      for (const one of scored) {
-        if (one.ok) state.scores[one.item.id] = one.value;
-        else state.unscored.push(one.item.id);
+      const { failed } = partitionSettled(scored);
+      if (failed.length === scored.length) {
+        return toolFailure(
+          `No candidate could be scored. The first failure said: ${failed[0]?.error ?? "no reason given"}`,
+        );
       }
 
-      const top = topCandidates(state);
-      return {
-        job: job.title,
-        screened: scored.length - failed.length,
-        top: top.map((candidate) => ({
-          rank: candidate.rank,
-          name: candidate.name,
-          score: candidate.score,
-          reason: candidate.reason,
-        })),
-        ...omitUndefined({
-          unscored: failed.length > 0 ? failed.map((one) => one.item.name).join(", ") : undefined,
-        }),
-        message:
-          `Read the top three back — ${top.map(describeRanked).join("; ")} — with one sentence ` +
-          "of reasoning each, then offer the three choices: score again with feedback, proceed " +
-          "to emails, or stop here." +
-          (failed.length > 0
-            ? " Mention who could not be scored and offer to run the screening again."
-            : ""),
-        ...at,
-      };
+      // The flow moves first: `rescore_with_feedback` and `proceed_to_emails`
+      // gate on `reviewing`, and a table written while the flow still said
+      // `idle` would be refused by its own next tool call.
+      const at = hiringFlow.send(ctx, SCORED);
+
+      return hiringSlot.update(ctx, (state) => {
+        state.job = job;
+        state.candidates = [...LEADS];
+        state.scores = {};
+        state.unscored = [];
+        state.feedback = [];
+        state.rounds = 0;
+        state.shortlist = [];
+        state.drafts = [];
+        for (const one of scored) {
+          if (one.ok) state.scores[one.item.id] = one.value;
+          else state.unscored.push(one.item.id);
+        }
+
+        const top = topCandidates(state);
+        return {
+          job: job.title,
+          screened: scored.length - failed.length,
+          top: top.map((candidate) => ({
+            rank: candidate.rank,
+            name: candidate.name,
+            score: candidate.score,
+            reason: candidate.reason,
+          })),
+          ...omitUndefined({
+            unscored: failed.length > 0 ? failed.map((one) => one.item.name).join(", ") : undefined,
+          }),
+          message:
+            `Read the top three back — ${top.map(describeRanked).join("; ")} — with one sentence ` +
+            "of reasoning each, then offer the three choices: score again with feedback, proceed " +
+            "to emails, or stop here." +
+            (failed.length > 0
+              ? " Mention who could not be scored and offer to run the screening again."
+              : ""),
+          ...at,
+        };
+      });
     });
   },
 });

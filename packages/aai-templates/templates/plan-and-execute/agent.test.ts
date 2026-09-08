@@ -6,28 +6,17 @@ import {
   expectDialogOk,
   runGuardrail,
   type ScriptedToolContext,
-  scriptedToolContext,
-  stubDelegate,
   type StubDelegateRoute,
   type StubGenerateRoute,
+  scriptedToolContext,
+  stubDelegate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { describe, expect, test, vi } from "vitest";
 
-import {
-  executeStep,
-  executorGuardrail,
-  MAX_STEP_TURNS,
-  normalizeAct,
-  planNode,
-} from "./procedure.ts";
-import {
-  PLANNER_SYSTEM,
-  REPLANNER_SYSTEM,
-  REVISE_SYSTEM,
-  type StepAnswer,
-} from "./prompts.ts";
+import { executeStep, executor, MAX_STEP_TURNS, normalizeAct, planNode } from "./procedure.ts";
+import { PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM, type StepAnswer } from "./prompts.ts";
 import {
   MAX_PAGE_CHARS,
   MAX_PAST_STEPS,
@@ -65,19 +54,41 @@ vi.mock("@alexkroman1/aai/tools", () => ({ webSearch: vi.fn(), visitWebpage: vi.
 interface Script {
   steps?: string[];
   /** One entry per executed step: what the executor concluded. */
-  answers?: string[];
+  answers?: (string | StepAnswer)[];
   /** Searches to report on each executed step, as the run's tool calls. */
   searches?: string[];
   /** One entry per replan/revise call. */
   acts?: { kind: "respond" | "plan"; response?: string; steps?: string[] }[];
 }
 
-function scriptedDesk(script: Script = {}) {
+/**
+ * One executor run's final message.
+ *
+ * The executor declares a `schema`, so its reply really is JSON on the wire and
+ * `stubDelegate` really parses it against that schema — a script that drifted
+ * from the shape fails HERE naming the subagent, rather than handing
+ * `executeStep` an `object` it never had. A bare string is the settled case,
+ * which is what most of these tests want to say.
+ */
+function stepReply(answer: string | StepAnswer): string {
+  return JSON.stringify(typeof answer === "string" ? { finding: answer, settled: true } : answer);
+}
+
+function scriptedDesk(script: Script = {}): ScriptedToolContext {
   const answers = [...(script.answers ?? [])];
   const acts = [...(script.acts ?? [])];
   // The replanner and the reviser are the same node with a different brief, so
   // they share one queue — which is what the "revise then carry on" test rests on.
-  const act = () => ({ object: acts.shift() ?? { kind: "respond", response: "All done." } });
+  // Annotated as the SDK's own route type: a route is a reply or a function of
+  // the call, and naming it is what keeps this queue honest about being the
+  // second form rather than a value computed once.
+  const act: StubGenerateRoute = () => ({
+    object: acts.shift() ?? { kind: "respond", response: "All done." },
+  });
+  const worksTheStep: StubDelegateRoute = () => ({
+    text: stepReply(answers.shift() ?? "Settled it."),
+    toolCalls: (script.searches ?? []).map((query) => ({ name: "search", input: { query } })),
+  });
 
   return scriptedToolContext({
     generate: {
@@ -85,12 +96,7 @@ function scriptedDesk(script: Script = {}) {
       [REPLANNER_SYSTEM]: act,
       [REVISE_SYSTEM]: act,
     },
-    delegate: {
-      executor: () => ({
-        text: answers.shift() ?? "Settled it.",
-        toolCalls: (script.searches ?? []).map((query) => ({ name: "search", input: { query } })),
-      }),
-    },
+    delegate: { executor: worksTheStep },
   });
 }
 
@@ -119,13 +125,16 @@ describe("planNode", () => {
 
 describe("executeStep", () => {
   test("hands the step to the executor, with the objective and the history as context", async () => {
-    const desk = stubDelegate({ executor: "Flights are around 180 return." });
+    const desk = stubDelegate({ executor: stepReply("Flights are around 180 return.") });
 
     const outcome = await executeStep(desk.delegate, "get to Lisbon", "Check prices", [
-      { step: "Pick dates", result: "Mid-May", searches: [] },
+      { step: "Pick dates", result: "Mid-May", settled: true, searches: [] },
     ]);
 
+    // `finding` off the schema's own output, not the raw final message: the
+    // executor is a TYPED subagent, so what crosses back is a parsed object.
     expect(outcome.result).toBe("Flights are around 180 return.");
+    expect(outcome.settled).toBe(true);
     // The STEP is the task; everything the executor needs to do it in context
     // rides in `context`, because a subagent has not heard the call.
     expect(desk.calls[0]?.task).toBe("Check prices");
@@ -139,7 +148,7 @@ describe("executeStep", () => {
     // "what the wait bought" line.
     const desk = stubDelegate({
       executor: {
-        text: "Flights are around 180 return.",
+        text: stepReply("Flights are around 180 return."),
         toolCalls: [
           { name: "search", input: { query: "lisbon flights may" } },
           { name: "search", input: { query: "lisbon flights june" } },
@@ -155,7 +164,7 @@ describe("executeStep", () => {
   test("the executor is given its two tools and a bounded budget", async () => {
     // What this template still OWNS now that the loop is the runtime's: which
     // capabilities the step is worth, and how long it may spend.
-    const desk = stubDelegate({ executor: "done" });
+    const desk = stubDelegate({ executor: stepReply("done") });
     await executeStep(desk.delegate, "objective", "step", []);
 
     const executor = desk.calls[0]?.subagent;
@@ -164,6 +173,72 @@ describe("executeStep", () => {
     // No `builtinTools`: both are this template's own tools over
     // `@alexkroman1/aai/tools`, which is the example that outlived the loop.
     expect(executor?.builtinTools).toBeUndefined();
+  });
+
+  test("an unsettled step is carried as a FIELD, not inferred from the wording", async () => {
+    // `settled` is what a prompt could not hold: "say plainly rather than
+    // inventing a result" was in `EXECUTOR_OUTPUT` from the start, and the desk
+    // read one string, so a step that found nothing and a step that answered
+    // arrived in the same shape.
+    const desk = stubDelegate({
+      executor: stepReply({ finding: "Nothing current on that route.", settled: false }),
+    });
+
+    const outcome = await executeStep(desk.delegate, "get to Lisbon", "Check prices", []);
+
+    expect(outcome.settled).toBe(false);
+    expect(outcome.result).toBe("Nothing current on that route.");
+  });
+
+  test("an answer the guardrail never accepted is not a settled step", async () => {
+    // The run had its revision and still reported a step it never looked into,
+    // so `accepted` is false — and a `settled: true` from an answer the runtime
+    // refused is exactly the claim not to take at face value.
+    const desk = stubDelegate({
+      executor: {
+        text: stepReply({ finding: "Flights are cheap in May.", settled: true }),
+        complaint: "You reported the step as unsettled without searching for anything.",
+      },
+    });
+
+    const outcome = await executeStep(desk.delegate, "get to Lisbon", "Check prices", []);
+
+    expect(outcome.settled).toBe(false);
+    expect(outcome.result).toBe("Flights are cheap in May.");
+  });
+});
+
+describe("the executor's guardrail", () => {
+  // Driven through `runGuardrail` rather than by calling the function, so what
+  // is under test is the DEF: a guardrail dropped from `subagent()` fails here.
+  const verdict = (answer: StepAnswer, searched: number) =>
+    runGuardrail(executor, JSON.stringify(answer), {
+      toolCalls: Array.from({ length: searched }, () => ({
+        name: "search",
+        input: { query: "anything" },
+      })),
+    });
+
+  test("a settled step needs no search", () => {
+    // Plenty of steps are summaries of what earlier ones found. A general "did
+    // you search enough" would reject those and cost a whole extra run.
+    expect(verdict({ finding: "Two of the three are already booked.", settled: true }, 0)).toBe(
+      true,
+    );
+  });
+
+  test("an unsettled step that really looked is accepted", () => {
+    expect(verdict({ finding: "Could not find a fare for that date.", settled: false }, 2)).toBe(
+      true,
+    );
+  });
+
+  test("giving up without looking is sent back", () => {
+    // The failure this template's headline claim is exposed to: reporting a
+    // step unsettled from memory is cheaper than either honest move.
+    expect(verdict({ finding: "I do not know what that costs.", settled: false }, 0)).toMatch(
+      /without searching/,
+    );
   });
 });
 
@@ -179,16 +254,29 @@ describe("the executor's search tool", () => {
     expect(rendered).toContain("https://example.test/fares");
   });
 
-  test("a REFUSED search throws rather than reading as an empty web", async () => {
+  test("a REFUSED search comes back as a failure, not as an empty web", async () => {
     // `webSearch` answers with `{ error }` rather than throwing, and measured,
-    // DuckDuckGo answers 403 often enough to be the ordinary case. The runtime
-    // turns this throw into a tool result the executor can recover from; an
-    // empty list would tell it there is nothing out there.
+    // DuckDuckGo answers 403 often enough to be the ordinary case. `orFail`
+    // carries the refusal out as the tool's own `ToolFailure` — an empty list
+    // would tell the executor there is nothing out there, and a thrown `Error`
+    // would have the runtime log an ordinary 403 as an uncaught tool bug.
     vi.mocked(webSearch).mockResolvedValueOnce({ error: "403 Forbidden" });
 
-    await expect(searchTool.execute({ query: "anything" }, createToolContext())).rejects.toThrow(
-      /403 Forbidden/,
-    );
+    expect(await searchTool.execute({ query: "anything" }, createToolContext())).toEqual({
+      error: "403 Forbidden",
+    });
+  });
+
+  test("the caller's signal reaches the fetch", async () => {
+    // A tool body gets a signal and `CallOptions` takes one; until they were
+    // joined, a caller who hung up mid-step left a search running against a
+    // third party.
+    vi.mocked(webSearch).mockResolvedValueOnce({ results: [] });
+    const ctx = createToolContext();
+
+    await searchTool.execute({ query: "anything" }, ctx);
+
+    expect(vi.mocked(webSearch).mock.calls[0]?.[0]).toMatchObject({ signal: ctx.signal });
   });
 
   test("says so when the web really had nothing", async () => {
@@ -213,9 +301,18 @@ describe("the executor's read tool", () => {
   test("a page that would not load is not a page that said nothing", async () => {
     vi.mocked(visitWebpage).mockResolvedValueOnce({ error: "404 Not Found" });
 
-    await expect(
-      readTool.execute({ url: "https://example.test/gone" }, createToolContext()),
-    ).rejects.toThrow(/404 Not Found/);
+    expect(
+      await readTool.execute({ url: "https://example.test/gone" }, createToolContext()),
+    ).toEqual({ error: "404 Not Found" });
+  });
+
+  test("the caller's signal reaches the fetch here too", async () => {
+    vi.mocked(visitWebpage).mockResolvedValueOnce({ content: "anything" });
+    const ctx = createToolContext();
+
+    await readTool.execute({ url: "https://example.test/fares" }, ctx);
+
+    expect(vi.mocked(visitWebpage).mock.calls[0]?.[1]).toMatchObject({ signal: ctx.signal });
   });
 });
 
@@ -432,6 +529,25 @@ describe("revise_plan", () => {
     expect(await run("revise_plan", { instruction: "change it" }, ctx)).toMatchObject({
       error: expect.stringContaining('this conversation is at "idle"'),
     });
+  });
+
+  test("the revision trail is capped, because it rides in every syncState frame", async () => {
+    // The other cap `planSlot` declares, and the one nothing used to exercise:
+    // `revisions` is pushed to by every tool that changes the plan and is sent
+    // to the browser on each of them, so an uncapped trail is a frame that grows
+    // for the whole call.
+    const { ctx } = scriptedDesk({ steps: ["Only step"] });
+    await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
+    for (let index = 0; index < MAX_REVISIONS; index++) {
+      await run("revise_plan", { instruction: `change ${index}` }, ctx);
+    }
+
+    const state = stateOf(ctx);
+    expect(state.revisions).toHaveLength(MAX_REVISIONS);
+    // The OLDEST goes, so `start_plan`'s own entry is the one pushed out — the
+    // trail a caller wants read back is what has happened lately.
+    expect(state.revisions[0]).toContain("change 0");
+    expect(state.revisions.at(-1)).toContain(`change ${MAX_REVISIONS - 1}`);
   });
 
   test("a revision that answers outright lands in `answered`", async () => {
