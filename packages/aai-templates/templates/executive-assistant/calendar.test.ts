@@ -12,8 +12,8 @@ import {
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { CALENDAR, TODAY } from "./inbox.ts";
-import { TRIAGE_SYSTEM } from "./prompts.ts";
 import { calendarTool, clashOn, meetingAssistant, statesAvailability } from "./meeting.ts";
+import { CHOOSE_MEMORY_SYSTEM, TRIAGE_SYSTEM } from "./prompts.ts";
 
 /**
  * The calendar half: the days the meeting assistant reads, the slot an invite
@@ -27,10 +27,17 @@ import { calendarTool, clashOn, meetingAssistant, statesAvailability } from "./m
 
 const run = toolRunner(agentDef);
 
-/** The scripted seams `open_email` needs to get an email open. */
+/**
+ * The scripted seams this file's tools reach: a triage on the way in, and a
+ * reflection that decides nothing (`edit` runs one, and what it learned is
+ * `agent.test.ts`'s subject rather than this one's).
+ */
 const desk = () =>
   scriptedToolContext({
-    generate: { [TRIAGE_SYSTEM]: { object: { logic: "scripted", response: "email" } } },
+    generate: {
+      [TRIAGE_SYSTEM]: { object: { logic: "scripted", response: "email" } },
+      [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: [] } },
+    },
     delegate: { "meeting-assistant": "Maya is free Wednesday 1pm-3pm." },
   });
 
@@ -162,8 +169,23 @@ describe("send_calendar_invite", () => {
     );
     expect(isToolFailure(refused) && refused.error).toContain("Design review");
     expect(isToolFailure(refused) && refused.error).toContain("10 AM to 11:30 AM");
-    // Nothing staged, so nothing to accept.
-    expect(expectToolOk<{ open: string | null }>(await run("inbox_status", ctx)).open).toBe("m4");
+    // Nothing staged, so nothing to accept: `inbox_status` is a plain read
+    // whose value needs no unwrapping, and the thread is still open.
+    expect(await run("inbox_status", ctx)).toMatchObject({ open: "m4", sent: [] });
+  });
+
+  test("edit changes one end of the slot, and is refused when that inverts it", async () => {
+    const ctx = await openM4();
+    await run("send_calendar_invite", INVITE, ctx);
+    // The executive's own words, so the calendar clash is NOT re-checked —
+    // they may double-book themselves. The ordering still is.
+    expect(await run("edit", { startTime: "14:00" }, ctx)).toMatchObject({
+      error: expect.stringContaining("ends before it starts"),
+    });
+    const sent = expectToolOk<{ sent: string }>(
+      await run("edit", { date: "2026-03-19", startTime: "09:00", endTime: "09:30" }, ctx),
+    );
+    expect(sent.sent).toContain("Thursday, March 19 at 9 AM");
   });
 
   test("clashOn takes the ends as touching, not overlapping", () => {

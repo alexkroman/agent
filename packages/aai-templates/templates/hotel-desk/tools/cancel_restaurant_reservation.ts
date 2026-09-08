@@ -1,7 +1,7 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { findReservation } from "../hotel.ts";
 import { spokenDate, spokenTime } from "../records.ts";
+import { findReservation } from "../restaurant.ts";
 import { hotelSlot, note } from "../shared.ts";
 
 /** Their `cancel_restaurant_reservation`: last name + RES code, no card, no email. */

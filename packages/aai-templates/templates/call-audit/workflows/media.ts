@@ -218,7 +218,13 @@ export type Segment = {
   cutInSpeech: boolean;
 };
 
-/** Raised when an analysis pass produced something this module cannot read. Always terminal. */
+/**
+ * Raised when a probe or an analysis pass produced something this module cannot
+ * USE — a `loudnorm` block with a renamed key, a silence log cut off mid-write,
+ * a file ffprobe found no audio track in. Always terminal: `analyse` in
+ * `ingest.ts` is what turns one into a `FatalError`, on the argument that every
+ * retry runs the same binary over the same file and reads the same answer.
+ */
 export class MediaAnalysisError extends Error {
   constructor(message: string) {
     super(message);

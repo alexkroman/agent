@@ -281,8 +281,10 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
   // ORDER is not guaranteed here and does not need to be — the calls go out
   // together, so their lines interleave by completion, and `segment.index` is what
   // puts the TRANSCRIPT back in order.
-  // Read ONCE, at the top, which is what `stepInfo` asks of a caller: the value
-  // is a snapshot of the attempt in flight and cannot change under an `await`.
+  //
+  // `stepInfo()` is read ONCE, at the top, which is what that function asks of a
+  // caller: its answer is a snapshot of the attempt in flight, so reading it again
+  // after an `await` asks a question whose answer cannot have changed.
   const span = `${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}`;
   await stepReport(`Transcribing ${span}.${attemptSuffix(stepInfo())}`);
 

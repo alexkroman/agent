@@ -32,13 +32,10 @@ import { failable, orFail, spokenAlphanumeric, toolFailure } from "@alexkroman1/
 import {
   addDays,
   computeInvoice,
-  DINNER_SLOTS,
   daysBetween,
   digitsOf,
   type Invoice,
   mintCode,
-  normalizeCode,
-  type Reservation,
   type Room,
   type RoomBooking,
   type RoomExtra,
@@ -412,134 +409,4 @@ export function requireRoom(state: FrozenHotelState, spoken: string): Room | Too
 
 export function invoiceFor(state: FrozenHotelState, code: string): Invoice | undefined {
   return state.invoices.find((i) => i.bookingCode === code) as Invoice | undefined;
-}
-
-// ─── The restaurant ──────────────────────────────────────────────────────────
-
-/** Their `list_restaurant_availability`: the open slots for a date and party. */
-export function openDinnerSlots(
-  state: FrozenHotelState,
-  date: string,
-  partySize: number,
-): string[] {
-  return DINNER_SLOTS.filter((slot) => freeTable(state, date, slot, partySize) !== undefined);
-}
-
-/** The smallest free table that seats the party at that slot. */
-export function freeTable(
-  state: FrozenHotelState,
-  date: string,
-  time: string,
-  partySize: number,
-  options: { exclude?: string; prefer?: number } = {},
-) {
-  const taken = new Set(
-    state.reservations
-      .filter(
-        (r) =>
-          r.status === "confirmed" &&
-          r.date === date &&
-          r.time === time &&
-          r.code !== options.exclude,
-      )
-      .map((r) => r.tableId),
-  );
-  // The ordering picks a single winner, so this is a MINIMUM, not a sort: the
-  // filtered copy and the O(t log t) that followed it both went to read `[0]`.
-  // Same comparator, one pass, no intermediate array.
-  type Seat = (typeof state.tables)[number];
-  const order = (a: Seat, b: Seat) =>
-    Number(b.id === options.prefer) - Number(a.id === options.prefer) ||
-    a.capacity - b.capacity ||
-    a.id - b.id;
-  let best: Seat | undefined;
-  for (const table of state.tables) {
-    if (table.capacity < partySize || taken.has(table.id)) continue;
-    if (best === undefined || order(table, best) < 0) best = table;
-  }
-  return best;
-}
-
-export interface ReserveTableInput {
-  firstName: string;
-  lastName: string;
-  phone: string;
-  partySize: number;
-  date: string;
-  time: string;
-  notes: string | null;
-}
-
-export function reserveTable(
-  state: HotelState,
-  input: ReserveTableInput,
-): Reservation | ToolFailure {
-  const table = freeTable(state, input.date, input.time, input.partySize);
-  if (table === undefined) return toolFailure(`restaurant full: ${input.date} ${input.time}`);
-  const reservation: Reservation = {
-    code: mintCode("RES", takenCodes(state)),
-    tableId: table.id,
-    firstName: input.firstName,
-    lastName: input.lastName,
-    phone: digitsOf(input.phone) || input.phone,
-    partySize: input.partySize,
-    date: input.date,
-    time: input.time,
-    notes: input.notes,
-    status: "confirmed",
-  };
-  state.reservations.push(reservation);
-  note(
-    state,
-    `Reserved ${reservation.code}: ${input.date} ${input.time}, party of ${input.partySize}`,
-  );
-  return reservation;
-}
-
-/**
- * Their `modify_restaurant_reservation`: a new date and time (and optionally a
- * new party size), keeping the code. Prefers the reservation's CURRENT table
- * when it is still free and big enough, so a same-evening shift keeps the seat.
- */
-export function modifyReservation(
-  state: HotelState,
-  code: string,
-  date: string,
-  time: string,
-  partySize: number | null,
-): Reservation | ToolFailure {
-  const reservation = state.reservations.find((r) => r.code === code && r.status === "confirmed");
-  if (reservation === undefined) return toolFailure(`reservation not found: ${code}`);
-  const party = partySize ?? reservation.partySize;
-  const table = freeTable(state, date, time, party, { exclude: code, prefer: reservation.tableId });
-  if (table === undefined) return toolFailure(`restaurant full: ${date} ${time}`);
-  reservation.tableId = table.id;
-  reservation.partySize = party;
-  reservation.date = date;
-  reservation.time = time;
-  note(state, `Moved ${code} to ${date} ${time}, party of ${party}`);
-  return reservation;
-}
-
-/**
- * A reservation by last name and code, whatever its status.
- *
- * Both sides go through {@link normalizeCode}, which is what `verify_booking`
- * uses on a room booking. The two halves here used to differ — the caller's
- * code was stripped of punctuation and folded, the STORED one only of its dash
- * — so `RES-AB12` compared as `RESAB12` against a `res ab12` that had already
- * become `RESAB12` and matched, while "R E S dash A B one two", which is how a
- * caller reads a code down a phone, kept the word `dash` and never did.
- */
-export function findReservation<S extends FrozenHotelState | HotelState>(
-  state: S,
-  lastName: string,
-  code: string,
-): S["reservations"][number] | undefined {
-  const wanted = normalizeCode(code);
-  return state.reservations.find(
-    (r) =>
-      r.lastName.toLowerCase() === lastName.trim().toLowerCase() &&
-      normalizeCode(r.code) === wanted,
-  );
 }

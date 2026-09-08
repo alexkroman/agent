@@ -43,6 +43,7 @@ import {
 import type {
   JournalStore,
   ResumableRun,
+  RunWorkflowOptions,
   SleepRecord,
   StepEntry,
   WorkflowTestHandle,
@@ -59,9 +60,8 @@ import {
   filingChannel,
   renderFiling,
 } from "./workflows/filing.ts";
+import { countSources, dedupe } from "./workflows/notes.ts";
 import {
-  countSources,
-  dedupe,
   findGaps,
   investigate,
   planAngles,
@@ -517,6 +517,16 @@ describe("the run is DURABLE", () => {
   ];
   const INPUT = { topic: "otters", requestedBy: "sess_1" };
 
+  /**
+   * How every case here starts the run.
+   *
+   * `name` is the key the engine registers the run under and has to match the
+   * one `agent.ts` declares — a string five call sites repeated, which is the
+   * kind that drifts in four of them. The annotation is what says what else
+   * belongs in this bag (`crashAt` below, and a `journal` of your own).
+   */
+  const RUN = { name: "research" } satisfies RunWorkflowOptions;
+
   beforeEach(() => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     // No `RESEARCH_SLACK_WEBHOOK_URL`, so the filing step posts nothing — which
@@ -556,7 +566,7 @@ describe("the run is DURABLE", () => {
   test("suspends on the review wait with the whole report already journaled", async () => {
     const started = Date.now();
     const model = stubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, { name: "research" });
+    const run = await runWorkflow(research, INPUT, RUN);
 
     // Not blocked — suspended. The sandbox is free here, which is the whole
     // reason a caller can hang up.
@@ -578,7 +588,7 @@ describe("the run is DURABLE", () => {
 
   test("the open wait is the REVIEW wait, by the name the tool wakes", async () => {
     stubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, { name: "research" });
+    const run = await runWorkflow(research, INPUT, RUN);
 
     const sleep = await reviewSleep(run);
     expect(sleep, "the run holds no sleep under the review correlation id").toBeDefined();
@@ -592,14 +602,14 @@ describe("the run is DURABLE", () => {
     // the filing timestamp is a step RESULT. An empty list is the determinism
     // rule this template's doc states, asserted rather than described.
     stubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, { name: "research" });
+    const run = await runWorkflow(research, INPUT, RUN);
 
     expect(run.reads).toEqual([]);
   });
 
   test("resumes past the review wait and files, without researching again", async () => {
     const model = stubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, { name: "research" });
+    const run = await runWorkflow(research, INPUT, RUN);
     // `advanceSleep` is `ctx.workflows.wakeUp`'s own mechanism, which is what
     // the `file_it_now` tool calls to cut the review short — and it is given the
     // SAME correlation id that tool passes, so what this drives is that tool's
@@ -625,10 +635,7 @@ describe("the run is DURABLE", () => {
     // The expensive claim. A deep-research pass is five to twelve model calls
     // and as many searches; a resume that redid them would cost the run twice.
     const model = stubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, {
-      name: "research",
-      crashAt: "writeReport",
-    });
+    const run = await runWorkflow(research, INPUT, { ...RUN, crashAt: "writeReport" });
 
     expect(run.crashed).toBe(true);
     expect(stepKeys(run)).toEqual(["findGaps#0", "investigate#0", "planAngles#0", "writeBrief#0"]);

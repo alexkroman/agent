@@ -649,10 +649,11 @@ describe("proceed_to_emails (their option 3 → write_and_save_emails)", () => {
     await run("proceed_to_emails", {}, ctx);
     desk.calls.length = 0;
 
-    const again = await run("proceed_to_emails", {}, ctx);
-
-    expect(isToolFailure(again)).toBe(true);
-    if (isToolFailure(again)) expect(again.error).toMatch(/emailed/);
+    // `emailed` accepts no PROCEEDED, so the gate — not the body — is what
+    // refuses. Asserted through the SDK's own unwrap, which fails HERE if the
+    // call succeeded instead of skipping every assertion after it.
+    const refused = expectDialogRefused(await run("proceed_to_emails", {}, ctx), "emailed");
+    expect(refused.error).toMatch(/read_email/);
     expect(desk.calls).toEqual([]);
   });
 });

@@ -355,9 +355,7 @@ describe("the drafting tools (their drafting model's tool list)", () => {
     const { ctx } = scriptedDesk();
     await openById("m4", ctx);
     const invite = DRAFTERS[3][1];
-    expect(
-      await run("send_calendar_invite", { ...invite, endTime: "12:00" }, ctx),
-    ).toMatchObject({
+    expect(await run("send_calendar_invite", { ...invite, endTime: "12:00" }, ctx)).toMatchObject({
       error: expect.stringContaining("ends before it starts"),
     });
     expect(at(ctx)).toBe(DRAFTING);

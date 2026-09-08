@@ -27,7 +27,8 @@ import { hotelSlot, note, requireVerified, takenCodes } from "../shared.ts";
 export default hotelSlot.updateTool({
   description:
     "File a dispute on one invoice line item for the verified caller and apply the policy outcome. " +
-    "Call lookup_invoice FIRST so the line item label is exact. Set acceptsOfferedResolution true " +
+    "Call lookup_invoice FIRST and read the lines back; then pass the line the CALLER named, in " +
+    'their words - a label, part of one, or "the second one". Set acceptsOfferedResolution true ' +
     "ONLY after the caller has actually accepted what you offered (a waiver, a credit); false if they " +
     "pushed back, asked for a manager, or haven't been offered anything yet.",
   inputSchema: z.object({

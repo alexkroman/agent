@@ -25,7 +25,6 @@ import {
  * finished long ago, so it is a `ctx.send` read by `useEvent` and it lives in a
  * `useState` that a reconnect empties.
  */
-
 function HiringSidebar() {
   const view = useAgentState(hiringProjection);
 

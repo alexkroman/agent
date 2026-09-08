@@ -1,7 +1,6 @@
 import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { findReservation, modifyReservation, openDinnerSlots } from "../hotel.ts";
 import {
   clockTime,
   DINNER_SLOTS,
@@ -12,6 +11,7 @@ import {
   spokenTime,
   TODAY,
 } from "../records.ts";
+import { findReservation, modifyReservation, openDinnerSlots } from "../restaurant.ts";
 import { hotelSlot } from "../shared.ts";
 
 /**

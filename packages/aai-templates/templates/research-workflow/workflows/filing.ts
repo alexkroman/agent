@@ -49,6 +49,7 @@ import {
 import { stepEnv, stepReport } from "@alexkroman1/aai/step";
 import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 import { plural } from "@alexkroman1/aai/utils";
+import type { Note } from "./notes.ts";
 
 /** The webhook a finished report is posted to. Absent means "file nowhere". */
 export const FILING_WEBHOOK_ENV = "RESEARCH_SLACK_WEBHOOK_URL";
@@ -59,14 +60,13 @@ export const FILING_TEXT_PARAM_ENV = "RESEARCH_SLACK_TEXT_PARAM";
 /**
  * One angle, as a filed report names it.
  *
- * Structural rather than an import of `Note` from `research.ts`: that module
- * imports {@link file} from this one, and a type-only edge back would still be
- * a cycle a reader has to hold in their head. A `Note` satisfies this.
+ * A `Pick` of `Note` rather than a restatement of its fields: `notes.ts` is a
+ * leaf both this module and `research.ts` import, so naming the real type costs
+ * no cycle — and what this says is that a filed message reads the two halves of
+ * a note that are about the SOURCES, never the findings themselves. Those are
+ * what the report is for.
  */
-export type FiledAngle = {
-  readonly angle: string;
-  readonly sources: readonly { readonly title: string; readonly url: string }[];
-};
+export type FiledAngle = Pick<Note, "angle" | "sources">;
 
 /** Everything a filed report says. */
 export type Filing = {
@@ -85,9 +85,9 @@ export type Filing = {
  * variable, so it means something on a trigger URL and quietly nothing on an
  * incoming webhook — and a setting that does nothing is worse than an absent
  * one, because it looks configured. `isSlackWorkflowTriggerUrl` is what tells
- * the two apart, and the SDK folds a rich message down to `text` for the
- * trigger case anyway, which is why {@link renderFiling}'s `text` has to stand
- * on its own.
+ * the two apart. The variable holds ONE string, so the SDK flattens the whole
+ * message into it — which is the constraint {@link renderFiling} is shaped
+ * against.
  */
 export function filingChannel(): SlackChannel | undefined {
   const webhookUrl = stepEnv(FILING_WEBHOOK_ENV);

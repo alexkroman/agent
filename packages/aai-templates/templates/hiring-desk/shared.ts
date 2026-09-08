@@ -441,8 +441,8 @@ export const hiringProjection: StateProjection<HiringView> = hiringSlot.projecti
  * The event a fan-out ticks while the caller holds the line.
  *
  * Twelve model calls is a real wait — the desk is told to say so before it
- * calls the tool — and until now the browser had nothing to show for it: the
- * leaderboard is written once, at the end, deliberately (see
+ * calls the tool — and the leaderboard has nothing to show through it: that
+ * table is written once, at the end, deliberately (see
  * `tools/screen_candidates.ts`, "the await comes first, then the mutation").
  * Progress is the case for the OTHER mechanism a tool has for telling a page
  * something: re-rendering "scoring seven of twelve" after a reload would be a

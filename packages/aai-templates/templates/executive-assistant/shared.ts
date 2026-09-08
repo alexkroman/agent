@@ -39,8 +39,8 @@ import {
   type DeepReadonly,
   dialog,
   type SessionEventType,
-  sessionSlot,
   type SlotCaps,
+  sessionSlot,
   spokenDate,
   spokenTime,
 } from "@alexkroman1/aai";

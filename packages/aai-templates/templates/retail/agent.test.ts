@@ -463,11 +463,20 @@ describe("modify_user_address", () => {
   });
 
   test("requires authentication", async () => {
-    const result = await modifyUserAddress.execute(
-      { user_id: "emma_smith_8564", ...NEW_ADDRESS },
-      createToolContext(),
+    // The GATE, not the body: `requireOwnUser` also refuses a stranger's user
+    // id, and its sentence names no tool at all, so the single `toContain` this
+    // was could not tell the two apart. `expectDialogRefused` pins the state,
+    // and the `toContain` that survives is the claim worth keeping — the
+    // refusal quotes `identifying`'s instruction, which is the model's route
+    // out of it.
+    const refusal = expectDialogRefused(
+      await modifyUserAddress.execute(
+        { user_id: "emma_smith_8564", ...NEW_ADDRESS },
+        createToolContext(),
+      ),
+      "identifying",
     );
-    expect(isToolFailure(result) && result.error).toContain("find_user_id_by_email");
+    expect(refusal.error).toContain("find_user_id_by_email");
   });
 });
 

@@ -1,8 +1,8 @@
 import {
   type DeepReadonly,
   isToolFailure,
-  resolveOne,
   type ResolveOneOptions,
+  resolveOne,
   toolFailure,
 } from "@alexkroman1/aai";
 import { z } from "zod";
@@ -14,8 +14,8 @@ import {
   ALLOWED,
   AT_INBOX,
   assistantSlot,
-  findEmail,
   type FrozenAssistantState,
+  findEmail,
   type InboxEmail,
   nextToOpen,
   reviewFlow,

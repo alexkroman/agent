@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The four things this desk REFUSES, and the two numbers it reports.
+ * The three things this desk REFUSES, and what it reports while it works.
  *
  * `agent.test.ts` covers what the desk decides — every ffmpeg argv, both
  * analysis parsers, and where `planSegments` cuts. This file covers the checks
@@ -19,8 +19,8 @@
  * the engine act on it.
  *
  * Its own file rather than more of `agent.test.ts`, which is already the longest
- * spec in `templates/` — the split is by subject, and `health-assistant/fda.ts`
- * and `pipeline-simple/stages.ts` have their own for the same reason. It sits
+ * spec in `templates/` — the split is by subject, and `health-assistant` and
+ * `pipeline-simple` each carry a second spec for the same reason. It sits
  * beside `agent.ts` rather than under `workflows/` because the package's vitest
  * `include` reaches one level into `templates/`, so a spec any deeper would
  * never run.
@@ -31,7 +31,12 @@ import type { StepInfo, UploadSlice } from "@alexkroman1/aai/step";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { installStubReporter, installStubUploads } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { attemptSuffix, segmentShortfall, segmentWindow } from "./workflows/audit.ts";
+import {
+  attemptSuffix,
+  segmentShortfall,
+  segmentWindow,
+  transcribeSegment,
+} from "./workflows/audit.ts";
 import { ingestRecording } from "./workflows/ingest.ts";
 import {
   BYTES_PER_SECOND,
@@ -62,12 +67,12 @@ function slice(byteLength: number): Pick<UploadSlice, "bytes"> {
 /** What ffprobe made of a file, as `probeMedia` reports it. */
 function probed(...kinds: string[]): MediaInfo {
   const streams = kinds.map((kind, index) => ({ index, kind, codec: `${kind}-codec` }));
-  return {
-    format: "mov,mp4,m4a",
-    streams,
-    audio: streams.find((stream) => stream.kind === "audio"),
-    raw: {},
-  };
+  const audio = streams.find((stream) => stream.kind === "audio");
+  // Spread rather than `audio: …`: the repo compiles with
+  // `exactOptionalPropertyTypes`, so an OPTIONAL property may be absent but may
+  // not be present-and-undefined — which is exactly the shape `probeMedia`
+  // returns for a file with no audio track.
+  return { format: "mov,mp4,m4a", streams, ...(audio === undefined ? {} : { audio }), raw: {} };
 }
 
 beforeEach(() => {
@@ -145,6 +150,27 @@ describe("a stored file smaller than the plan", () => {
     // Cannot happen through the store, and clamping at zero is what keeps the
     // caller's `> 0` test honest if it ever did.
     expect(segmentShortfall(SEGMENT, slice(BYTES_PER_SECOND + 12))).toBe(0);
+  });
+
+  test("the STEP refuses rather than transcribing a hole", async () => {
+    // The check driven where it lives: the store holds one second of PCM and the
+    // plan asks for one second and twelve bytes, exactly as the rounding bug
+    // produced. `stepReadUpload` clamps, so nothing throws on its own — the run
+    // used to transcribe the short slice and report success.
+    installStubUploads({
+      [UPLOAD_ID]: {
+        bytes: new Uint8Array(BYTES_PER_SECOND),
+        name: "call.pcm",
+        type: "application/octet-stream",
+      },
+    });
+    installStubReporter();
+    // No transcription stub, which is the other half of the claim: the step must
+    // fail BEFORE it spends a request on audio it knows is incomplete.
+    const overrun = { ...SEGMENT, endByte: BYTES_PER_SECOND + 12 };
+
+    await expect(transcribeSegment(UPLOAD_ID, overrun)).rejects.toBeInstanceOf(FatalError);
+    await expect(transcribeSegment(UPLOAD_ID, overrun)).rejects.toThrow(/12 byte\(s\) short/);
   });
 
   test("the window is the plan's own half-open pair, unmodified", () => {

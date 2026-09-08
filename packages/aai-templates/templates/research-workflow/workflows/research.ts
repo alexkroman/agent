@@ -94,6 +94,15 @@ import { isRecord, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { file } from "./filing.ts";
 import {
+  type Brief,
+  briefText,
+  countSources,
+  type Findings,
+  type Note,
+  noteText,
+  type Source,
+} from "./notes.ts";
+import {
   BRIEF_SUMMARY_SYSTEM,
   BRIEF_SYSTEM,
   GAPS_SYSTEM,
@@ -143,9 +152,6 @@ const ANGLE_STEP = { maxAttempts: 5 } satisfies StepOptions;
  */
 const RESEARCH_BUDGET = 6;
 
-/** One source a researcher actually used. */
-export type Source = { title: string; url: string };
-
 // ---- What each stage's model call has to come back as ------------------------
 //
 // `stepGenerateJsonOrFail` validates against these, so a reply that missed
@@ -173,33 +179,6 @@ const BriefReply = z.object({ brief: z.string().trim().optional(), criteria: Str
 
 /** What `planAngles` and `findGaps` ask for. */
 const AnglesReply = z.object({ angles: StringList });
-
-/** What one researcher concluded about one angle. */
-export type Note = {
-  angle: string;
-  /** The compressed findings — kept long on purpose; a later step summarizes. */
-  findings: string;
-  sources: Source[];
-};
-
-/** The research brief, as `writeBrief` settles it. */
-export type Brief = {
-  brief: string;
-  /** What a complete answer has to contain — what `findGaps` measures against. */
-  criteria: string[];
-};
-
-/** What one research pass produces. */
-export type Findings = {
-  topic: string;
-  /** Two sentences, for an agent to read down a phone. */
-  summary: string;
-  /** The written report — markdown, cited. What a page renders. */
-  report: string;
-  /** How many distinct sources were used, which is what the voice agent quotes. */
-  sources: number;
-  angles: string[];
-};
 
 /**
  * Research `topic` properly and return something worth reading back.
@@ -498,31 +477,3 @@ export async function writeReport(
 // to re-derive — unwrap the fence, parse, reject a non-object, check the shape —
 // and throws PLAINLY when any of them misses, which is what makes a malformed
 // reply a retry rather than a failure.
-
-// ---- Pure helpers -----------------------------------------------------------
-
-/** The brief as the models are shown it. */
-function briefText(brief: Brief): string {
-  const criteria = brief.criteria.map((one) => `- ${one}`).join("\n");
-  return criteria
-    ? `Brief: ${brief.brief}\n\nA complete answer covers:\n${criteria}`
-    : `Brief: ${brief.brief}`;
-}
-
-/** One note, as a later stage reads it. */
-function noteText(note: Note): string {
-  const cited = note.sources.map((one, at) => `[${at + 1}] ${one.title} — ${one.url}`).join("\n");
-  return `## ${note.angle}\n${note.findings}\n${cited}`;
-}
-
-/** Distinct sources by URL, first occurrence winning. */
-export function dedupe(sources: readonly Source[]): Source[] {
-  const byUrl = new Map<string, Source>();
-  for (const one of sources) if (!byUrl.has(one.url)) byUrl.set(one.url, one);
-  return [...byUrl.values()];
-}
-
-/** How many distinct sources the whole pass rests on — what the agent quotes. */
-export function countSources(notes: readonly Note[]): number {
-  return dedupe(notes.flatMap((note) => note.sources)).length;
-}

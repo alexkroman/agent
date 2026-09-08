@@ -312,10 +312,10 @@ export const emailGuardrail: SubagentGuardrail = ({ text }) => {
  *
  * CrewAI's task `guardrail` retries three times; the SDK's default is
  * {@link DEFAULT_GUARDRAIL_MAX_RETRIES}, which is one, and one is the right
- * budget on a phone. Every retry is another twelfth of a fan-out a caller is
- * holding the line through, and the two things this guardrail checks — a
- * subject line, a signature — are ones a model that missed them twice is not
- * about to produce on a third pass. What the budget buys instead is the flag:
+ * budget on a phone. A retry is another run of the coordinator inside a
+ * twelve-email fan-out the caller is holding the line through, and the two
+ * things this guardrail checks — a subject line, a signature — are ones a model
+ * that missed them twice is not about to produce on a third pass. What the budget buys instead is the flag:
  * an exhausted draft still comes back, marked `accepted: false`, and the desk
  * says it needs a look.
  *

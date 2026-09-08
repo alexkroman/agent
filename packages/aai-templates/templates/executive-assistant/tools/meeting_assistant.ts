@@ -14,6 +14,10 @@ import { assistantSlot, DRAFTING, openEmail, reviewFlow } from "../shared.ts";
  *
  * No `send`: the call stays in `drafting`, because knowing the free slots is
  * not yet a proposal. `draft_reply` or `send_calendar_invite` comes next.
+ *
+ * A report the specialist's guardrail never accepted is handed on anyway, with
+ * `usable: false` and a different `next` — the desk is on a live call and there
+ * IS an answer, so a `ToolFailure` would throw away the one thing it learned.
  */
 export default reviewFlow.tool({
   description:
@@ -37,9 +41,11 @@ export default reviewFlow.tool({
       state.log.push(`Checked the calendar (${found.lookups} lookups)`);
       return {
         ...found,
-        next:
-          "Offer these times in draft_reply, or send_calendar_invite if the meeting should be " +
-          "booked outright.",
+        next: found.usable
+          ? "Offer these times in draft_reply, or send_calendar_invite if the meeting should be " +
+            "booked outright."
+          : `The assistant did not name a time, so there is nothing to offer. Ask ${EXECUTIVE.name} ` +
+            "what to do, or ask again with the days the sender suggested. Do not invent a slot.",
       };
     });
   },
