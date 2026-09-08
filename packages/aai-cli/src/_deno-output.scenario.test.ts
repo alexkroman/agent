@@ -137,6 +137,26 @@ describe("the bundled Deno entry", () => {
       }),
     );
   }, 120_000);
+
+  test("carries no JSDoc, because a commented import() is a real dependency", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await builtProject(dir);
+        const code = await bundleTargetEntry(dir, DENO_ENTRY_SOURCE, "deno");
+
+        // A text assertion beside the graph one below, and it earns its place
+        // by being the one that runs with no `deno` on PATH — this is the
+        // cheap half of `JSDOC_FREE_COMMENTS`.
+        expect(code).not.toContain("/**");
+
+        // The two classes that STAY, asserted because dropping either is a
+        // behaviour change rather than a cosmetic one: `@__PURE__` is an
+        // instruction to the tree-shaker, and a legal comment is a licensing
+        // obligation to the packages inlined here.
+        expect(code).toContain("@__PURE__");
+      }),
+    );
+  }, 120_000);
 });
 
 /**
@@ -156,6 +176,58 @@ async function deployedCopy(dir: string): Promise<string> {
 }
 
 describeWithDeno("the emitted Deno output, run under Deno", () => {
+  /**
+   * The graph gate: the emit really has nothing left to resolve.
+   *
+   * The two tests below cannot make this claim, and the gap is not a matter of
+   * coverage. `deno run` resolves a module when it EVALUATES it, so a specifier
+   * sitting in a comment is never looked at — the emitted directory booted and
+   * served all three routes while `deno info` on the same file reported nine
+   * unresolvable dependencies. Boot-and-serve is blind to a dangling edge by
+   * construction; only a graph walk sees one.
+   *
+   * Deno Deploy currently tolerates those edges (a bundle carrying all of them
+   * deployed and served a voice session), so this gate is about the property
+   * `app.py` advertises — a bundle with no imports left to resolve — rather
+   * than about a host that is failing today. `@vercel/nft` walks a graph too.
+   *
+   * `--json` and the MODULES rather than the exit code, deliberately:
+   * `deno info` reports an unresolvable dependency and still exits 0 (verified
+   * against a three-line file whose only `import()` was inside a `@type`), so a
+   * gate written as "the command succeeded" would assert nothing at all.
+   */
+  test("has a module graph with nothing left to resolve", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await builtProject(dir);
+        await emitDenoOutput(dir);
+        const deployed = await deployedCopy(dir);
+
+        const { stdout } = await run("deno", ["info", "--json", DENO_ENTRY_FILE], {
+          cwd: deployed,
+          // 12MB of bundle, and the graph is the whole point of the call.
+          maxBuffer: 64 * 1024 * 1024,
+        });
+        const graph = JSON.parse(stdout) as {
+          modules: { specifier: string; error?: string }[];
+        };
+
+        // Named rather than counted: the failure this exists for arrived as
+        // nine specifiers from three sources (undici's JSDoc, html-to-text's,
+        // and our OWN workflow docs' `{@link import("./step-generate-json.ts")}`),
+        // and a bare `toBe(0)` would have said none of that.
+        const unresolved = graph.modules
+          .filter((m) => m.error !== undefined)
+          .map((m) => `${m.specifier}: ${m.error}`);
+        expect(unresolved).toEqual([]);
+
+        // The graph was really walked, so an empty `modules` cannot pass as a
+        // clean one.
+        expect(graph.modules.length).toBeGreaterThan(1);
+      }),
+    );
+  }, 120_000);
+
   test("boots from a directory with no node_modules", async () => {
     await withTempDir(
       silenced(async (dir) => {

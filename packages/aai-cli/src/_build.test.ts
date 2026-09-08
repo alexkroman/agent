@@ -331,19 +331,45 @@ describe("missingDeployEnv", () => {
 
 describe("missingEnvWarnings", () => {
   test("names the command that sets it, with the variable substituted", () => {
-    const [warning] = missingEnvWarnings(["ASSEMBLYAI_API_KEY"], "vercel");
+    const [warning] = missingEnvWarnings(["ASSEMBLYAI_API_KEY"], "vercel", "Agent");
     expect(warning).toContain("vercel env add ASSEMBLYAI_API_KEY production");
     // The redeploy half: a host captured its variable set for the deployment
     // that already went out, so setting the value alone changes nothing.
     expect(warning).toContain("deploy again");
   });
 
-  test("names the environment instead where the target knows no command", () => {
-    const [warning] = missingEnvWarnings(["ASSEMBLYAI_API_KEY"], "modal");
-    expect(warning).toContain("modal environment");
+  test("names deno's and modal's commands too, which it could not before", () => {
+    // This test asserted the OPPOSITE: that `modal` "knows no command", so the
+    // warning named the environment and nothing to run. That was true of
+    // `TargetOutput.secret`, absent for both of these hosts on the grounds
+    // that their commands were unverified — and they are the two whose secret
+    // command a reader is least likely to guess. Both are verified now.
+    const [deno] = missingEnvWarnings(["ASSEMBLYAI_API_KEY"], "deno", "Agent");
+    expect(deno).toContain("deno deploy env add ASSEMBLYAI_API_KEY");
+
+    const [modal] = missingEnvWarnings(["ASSEMBLYAI_API_KEY"], "modal", "Quickstart Assistant");
+    expect(modal).toContain("modal secret create quickstart-assistant-env ASSEMBLYAI_API_KEY=");
+  });
+
+  test("resolves Modal's secret name from the AGENT, not a placeholder", () => {
+    // The warning reads off the resolved sequence, so it cannot print a
+    // literal `<secret>` beside a step showing the real name.
+    const [warning] = missingEnvWarnings(["ASSEMBLYAI_API_KEY"], "modal", "Retail Support Bot");
+    expect(warning).toContain("retail-support-bot-env");
+    expect(warning).not.toContain("<secret>");
+  });
+
+  test("names the environment where the target really knows no command", () => {
+    // `node` is the one that genuinely has none: the deployment is a process
+    // someone starts, which reads `.env` at boot. In practice it never reaches
+    // here — `missingDeployEnv` returns nothing for a target with no output
+    // directory — so this pins the FALLBACK branch, which is the only thing
+    // standing between a future target with no secret command and a crash.
+    const [warning] = missingEnvWarnings(["A"], "node", "Agent");
+    expect(warning).toContain("Set it in the node environment");
   });
 
   test("one sentence per variable", () => {
-    expect(missingEnvWarnings(["A", "B"], "vercel")).toHaveLength(2);
+    expect(missingEnvWarnings(["A", "B"], "vercel", "Agent")).toHaveLength(2);
   });
 });
