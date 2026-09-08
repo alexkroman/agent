@@ -1,5 +1,100 @@
 # aai-studio-server
 
+## 0.11.13
+
+### Patch Changes
+
+- c36a3c0: Make two gate corpora directory-derived instead of hand-listed.
+  
+  The studio's prompt modules move to `packages/aai-studio-server/src/prompts/`, so `check-doc-examples` reads that directory rather than four paths written out in the script. That list carried the cost in its own comment — a module with no code fence was listed anyway "so the first example added is checked rather than discovered by a user" — and unlike its `MARKDOWN_FILES` neighbour, which two gate specs floor at eight, nothing floored it: a fifth prompt module would have compiled under no gate. The script floors the count now.
+  
+  In the SDK, the LLM stage's three non-vendor modules move to `providers/llm/shared/` and the channel shape and dispatcher to `channels/shared/`, which lets `konsistent.json` drop five `!` exclusions. A file directly under `providers/llm/` or `channels/` is a vendor or a channel because of where it sits, rather than because nobody forgot to exclude it.
+  
+  No published symbol moves: every one of these modules is reached through a barrel, and the subpath exports are unchanged.
+- 083662f: Remove three templates that were near-duplicates of ones that stay, taking `aai init`'s catalog from 31 to 28. The picker lists bare directory names with no hints, so four indistinguishable spellings of one starter cost an author real attention at the moment of choice.
+  
+  - **`embedded-assets`** — its whole subject was a knowledge base bundled as a JSON asset import, which `support-line` does with the identical `with { type: "json" }` import over a real IDF-weighted retriever with graders on top (and `hiring-desk` and `retail` import JSON assets too). It exercised no SDK export nothing else does.
+  - **`math-buddy`** — `code-interpreter` (the same `run_code`, the same never-do-mental-arithmetic prompt) plus the one-line LLM stage swap that `pipeline-simple` exists for. Its one distinct claim, that a declared stage's `options` survive the conversion and not just its `kind`, moves to `pipeline-simple`'s spec, where the swap lives.
+  - **`personal-finance`** — `code-interpreter`'s prompt with the `fetch_json` builtin added and no code of its own. That builtin lands on `health-assistant` instead, with a job the two `tools/` files cannot do: they read openFDA's LABEL endpoint, so what people actually REPORT (`/drug/event.json`, a counting query) is the model's to compose. Its spec gains the starter invariants it never had — `expectDeployable`, the builtins surviving into the config, and the prompt↔`builtinTools` pairing.
+  
+  The studio's hero catalog drops the three matching starter buttons, so `aai-studio-server` is named alongside it: the starters are front-end source a DEPLOY carries, and a bump to a carrier is what arms one.
+  
+  `commandedBuiltins` (`@alexkroman1/aai/testing`) loses its only exerciser and becomes a template-API allowlist entry: `expectPromptBuiltinsDeclared` already returns the commanded list, so a second call would be the contrived use the allowlist exists to avoid.
+- 0666785: `aai init` no longer copies the 120KB authoring guide into the project. A scaffolded `CLAUDE.md` is now a ~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` — the version-matched copy that ships in the SDK tarball, which the SDK's own skill has always named as the authoritative one.
+  
+  The copy it replaces could not be right. It froze at the moment `aai init` ran and went stale on the project's next `pnpm update @alexkroman1/aai`, which is what `AGENT_GUIDE.md` exists to fix; and Claude Code loads a project-root `CLAUDE.md` in full at launch against a documented 200-line target, so every session in a user's agent project paid ~30k tokens for 2,533 lines of guidance whose own publisher told agents to prefer the other file. Splitting it behind an `@import` would not have helped — imports are expanded at launch too — so the pointer names the path in a fence, the documented spelling for "mention, do not import", and an agent reads it on demand out of the tarball the project actually resolved.
+  
+  A scaffolded project is 21KB across 12 files instead of 136KB. Nothing else in `scaffold/` changed, a project's own `CLAUDE.md` still wins, and a template that ships one still has it copied — only the scaffold's guide is filtered.
+- 8345b19: Close the type-checking gaps: 15 source files were in no `tsc` program at all.
+  
+  The repo's four type gates reported green with a deliberate `const x: number =
+  "s"` sitting in ten different files. Each `include` glob was correct on its own
+  and the seams between them were not:
+  
+  - **`packages/aai-studio-client/tsconfig.json`** named `vite.config.ts` one by
+    one and had fallen behind — `vitest.config.ts` beside it was checked by
+    nothing. It is `["src", "*.ts"]` now, which is what every other package uses.
+  - **Root-level `*.mjs`** belonged to neither root program: `tsconfig.tools.json`
+    takes root `*.ts`, `tsconfig.scripts.json` takes `scripts/**` and
+    `examples/**`. That left both Stryker configs unchecked — and
+    `stryker.sdk.config.mjs` carried a `@type` annotation naming
+    `@stryker-mutator/api`, a package the repo never installed, so the annotation
+    had never constrained anything. Declared now, and the annotation is live.
+  - **`scripts/**/*.ts`** was the same seam one file type over: five agent sources
+    under `loadtest-stub-agent/` and `loadtest-workflow-agent/` that import the SDK
+    and the runtime exactly as a user's `agent.ts` does. Now in
+    `tsconfig.tools.json` at full strictness, which found an unsound cast and two
+    workflow bodies whose input types disagreed with their zod schemas.
+  - **The scaffold's `vite.config.ts` and `vitest.config.ts`** ship to every `aai
+    init` user and were checked by nothing. `check:template-types` covers them now,
+    beside `server.mjs` and for the same reason. The `vitest.config.ts` one matters
+    most: it imports `@alexkroman1/aai/testing/vite`, so a rename on our side of
+    that subpath breaks every scaffolded project's test run.
+  - **`aai-server` declared `@types/react` and `@types/react-dom`** and nothing
+    read them: it has no `.tsx`, no `jsx` setting, and no `react` dependency, and
+    the two scripts that DO read those declarations read them from other packages
+    (`sync-guest-toolchain.mjs` from `aai-guest`, `sync-scaffold-versions.mjs`
+    from `aai-ui`). Removed. Verified by disabling every `@types` package in the
+    workspace one at a time and re-running its own `tsc` — the only other pair
+    that survives removal is `aai-guest`'s, which is load-bearing for the guest
+    toolchain lockfile rather than for the compiler.
+  - **The raw Voice Agent API browser example** — 2,200 lines of the reference
+    client users read to learn the wire protocol — needs `lib: DOM`, which neither
+    root program can offer a Node file. A third program, `tsconfig.browser.json`,
+    now checks it; it found 15 unchecked-null DOM reads, a `JSON.parse(null)` on a
+    `localStorage` race, and a lost tuple inference.
+- Updated dependencies [b890150]
+- Updated dependencies [4986d01]
+- Updated dependencies [b890150]
+- Updated dependencies [66568a5]
+- Updated dependencies [8bd5841]
+- Updated dependencies [bbd1a47]
+- Updated dependencies [1ecf911]
+- Updated dependencies [b463bb5]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [c94f702]
+- Updated dependencies [b890150]
+- Updated dependencies [b463bb5]
+- Updated dependencies [07f0a3e]
+- Updated dependencies [4986d01]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [c36a3c0]
+- Updated dependencies [ffb795f]
+- Updated dependencies [8bd5841]
+- Updated dependencies [31bec98]
+- Updated dependencies [b890150]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [0b81685]
+- Updated dependencies [083662f]
+- Updated dependencies [0666785]
+- Updated dependencies [b463bb5]
+- Updated dependencies [ffb795f]
+- Updated dependencies [55ddb0a]
+  - @alexkroman1/aai-runtime@16.0.0
+  - aai-server@5.3.3
+  - @alexkroman1/aai@16.0.0
+  - aai-studio-client@0.7.0
+
 ## 0.11.12
 
 ### Patch Changes

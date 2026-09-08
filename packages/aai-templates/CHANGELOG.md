@@ -1,5 +1,98 @@
 # aai-templates
 
+## 0.4.0
+
+### Minor Changes
+
+- 14e70ea: Add `hiring-desk`, a port of CrewAI's `lead-score-flow` — the most complex example in `crewAI-examples` — as a voice agent: one crew scores a stack of applicants against a role (`ctx.generate` with a schema, fanned out through `mapConcurrent`), the human-in-the-loop router becomes a `dialog()` whose `reviewing` state offers the caller the same three choices, the feedback cycle gains the bound their flow lacks, and the other crew writes every applicant an email as a `subagent()` with `expectedOutput` and a `guardrail`. `crews.ts` carries the attribution and the their-name → our-name table.
+  
+  The CLI is named alongside it because that is what actually ships a template — `bundle-templates.mjs` copies `templates/` into the CLI's dist at build time, so a changeset naming `aai-templates` alone bumps a version nobody resolves and delivers the template to no one.
+- b463bb5: Add `roadside-assist`, the template for a dialog that describes a CALL rather than a form: a silence ladder, an abandonment deadline, an uninterruptible disclosure, and per-state LLM knobs.
+  
+  The CLI is named alongside it because that is what actually ships a template — `bundle-templates.mjs` copies `templates/` and the scaffold into the CLI's dist at build time, so a changeset naming `aai-templates` alone bumps a version nobody resolves and delivers the template to no one.
+- ffb795f: Publish `dialogRefusalPattern` and `expectDialogRefused` from `@alexkroman1/aai/testing`. A `dialog()` gate refuses an out-of-state call with one sentence, and seven templates' specs had pinned that sentence by hand — two of them re-deriving the JSON escaping an eval reads it through — so rewording the model-facing half of the gate would have broken eight suites that never imported it. The sentence is built in one module now, the pattern is derived from it, and `expectDialogRefused` is the mirror of `expectDialogOk`: it throws when the gate did NOT hold, naming where the dialog landed, where the `isToolFailure` + `if` shape it replaces let a success through with every assertion after the guard skipped.
+  
+  The templates also stop re-deriving five helpers the SDK already exports: `formatMoney` (travel-concierge's page), `spokenDigits` (retail's zip lookup), `plural` (dispatch-center's "protocol(s)"), `countWords` (pipeline-simple's eval) and `toolNames` (a starter's eval).
+- 3b55bab: Add two templates ported from the other two voice-agent frameworks' largest samples.
+  
+  `hotel-desk` is LiveKit Agents' `hotel_receptionist` — the biggest example in that repository — as a voice agent: a boutique hotel's whole front desk over one seeded `sessionSlot`, verification the TOOLS run (three strikes and a human takes over), a room-booking flow as a `dialog()` whose step is derived from what has been captured and whose read-back is OWED until the caller's next committed turn, a dispute engine that reads the disputed amount off the stored line item, the re-accommodation procedure that moves a double-booked guest up or walks them, a guest-privacy tool whose result cannot leak whether anyone is in house, and a twenty-topic policy book rendered partly from the concierge catalogs. Forty-one tools; `shared.ts` carries the attribution and the their-name → our-name table.
+  
+  `word-wrangler` is Pipecat's `word-wrangler-gemini-live` phone game — a three-way word game whose upstream is a parallel pipeline running two Gemini Live sessions — as one voice agent: the host is the agent, the AI player is `ctx.generate` on its own prompt with only the current word's context, the referee is a function, the describer's own transcript is what rules a foul, and the two-minute game clock is the `playing` state's `timeout`.
+  
+  The CLI is named alongside because that is what actually ships a template — `bundle-templates.mjs` copies `templates/` into the CLI's dist at build time, so a changeset naming `aai-templates` alone bumps a version nobody resolves and delivers the template to no one.
+- 9f78b85: Re-express every template through the SDK surface it had been hand-rolling.
+  
+  The templates are the SDK's reference consumers, so a primitive with no worked
+  example is one nobody is shown — and the sweep's finding is that those are
+  exactly the primitives templates got wrong by hand. `createKeyedLock` had no
+  exerciser at all, and both templates needing mutual exclusion had written
+  something broken: `roadside-assist` handed every concurrent caller the same
+  truck (nothing marked one taken), and `hiring-desk` lost updates on the counter
+  bounding its own feedback loop, silently unbounding `MAX_FEEDBACK_ROUNDS`. Both
+  now go through the primitive, and both bugs are pinned by tests that fail
+  against a passthrough lock.
+  
+  Around twenty defects came out with them. A shipped `"1 episode summaries"`
+  whose spec pinned the typo (`plural`); float drift in two carts, one rate with
+  cents making it visible (`roundMoney`); a grader's `reason` read by nobody
+  (`GuardrailVerdict`); a clamped upload read that produced a transcript missing
+  its tail and reported it complete; `solo-rpg` and `dispatch-center` each
+  declaring a dialog, gating tools with it, and never passing it to `agent()`, so
+  per-state instructions reached the model only on turns that happened to run a
+  gated tool; a weekday named by `toLocaleDateString`, which answers to the host's
+  ICU build rather than the guest's; a reservation lookup that normalized one side
+  of its comparison and so never matched a spoken code; and four tools declared as
+  a plain `tool()` over `slot.get(ctx)`, which the package guide describes as a
+  compile error and is not.
+  
+  `web-researcher` gains the first `mcpServers` example in the repository, gated
+  on an env var so the starter still deploys with no credential. `pipeline-simple`
+  becomes the worked example for the provider surface — the option types, model
+  and voice constants, and both presets — which had none.
+  
+  The CLI is named alongside it for the reason every template changeset names it:
+  `bundle-templates.mjs` copies `templates/` into the CLI's dist at build time, so
+  a changeset naming `aai-templates` alone bumps a version nobody resolves.
+- a09acd2: Publish `WorkflowPendingNote` and `WorkflowRunError` from `@alexkroman1/aai-ui` — the pending-run sentence and the announced failed-run line six workflow-app templates had each written by hand — and migrate the templates onto them and onto the existing `SessionErrorBanner`, `AGENT_STATE_LABELS` and `useSessionStatus` where a page still carried its own copy.
+- 083662f: Remove three templates that were near-duplicates of ones that stay, taking `aai init`'s catalog from 31 to 28. The picker lists bare directory names with no hints, so four indistinguishable spellings of one starter cost an author real attention at the moment of choice.
+  
+  - **`embedded-assets`** — its whole subject was a knowledge base bundled as a JSON asset import, which `support-line` does with the identical `with { type: "json" }` import over a real IDF-weighted retriever with graders on top (and `hiring-desk` and `retail` import JSON assets too). It exercised no SDK export nothing else does.
+  - **`math-buddy`** — `code-interpreter` (the same `run_code`, the same never-do-mental-arithmetic prompt) plus the one-line LLM stage swap that `pipeline-simple` exists for. Its one distinct claim, that a declared stage's `options` survive the conversion and not just its `kind`, moves to `pipeline-simple`'s spec, where the swap lives.
+  - **`personal-finance`** — `code-interpreter`'s prompt with the `fetch_json` builtin added and no code of its own. That builtin lands on `health-assistant` instead, with a job the two `tools/` files cannot do: they read openFDA's LABEL endpoint, so what people actually REPORT (`/drug/event.json`, a counting query) is the model's to compose. Its spec gains the starter invariants it never had — `expectDeployable`, the builtins surviving into the config, and the prompt↔`builtinTools` pairing.
+  
+  The studio's hero catalog drops the three matching starter buttons, so `aai-studio-server` is named alongside it: the starters are front-end source a DEPLOY carries, and a bump to a carrier is what arms one.
+  
+  `commandedBuiltins` (`@alexkroman1/aai/testing`) loses its only exerciser and becomes a template-API allowlist entry: `expectPromptBuiltinsDeclared` already returns the commanded list, so a second call would be the contrived use the allowlist exists to avoid.
+- ffb795f: The second half of the template audit: five families of code the templates kept rebuilding move into the SDK, and the templates become their worked examples.
+  
+  **`@alexkroman1/aai-ui` — the session chrome kit.** `SessionStateDot`, `SessionControls` (with the headless `useSessionControls`), `ConversationView` (which `MessageList` is now built on, DOM unchanged), plus `AudioResult` and `WorkflowRunPanel` for workflow-app pages, and an `.aai-scroll` utility in `styles.css`. Three custom chromes (`dispatch-center`, `retail`, `infocom-adventure`) each rebuilt the dot, the Start/Pause/New/End row with the same twelve-line comment on `end()` vs `reset()`, and the conversation skeleton; two pages each rendered the audio block and the run panel by hand.
+  
+  **`@alexkroman1/aai` — `sessionSlot({ caps })`.** A per-array growth cap the slot enforces after every write (after the author's `after` hook), typed so only array-valued keys are accepted (`SlotCaps<T>`). Ten templates paired a `MAX_*` constant with a wrapper whose whole body was `pushCapped`, and a wrapper caps only the paths that call it: `executive-assistant` had three uncapped arrays riding every `syncState` frame. `pushCapped` stays for nested lists.
+  
+  **`@alexkroman1/aai/step` `mapSettled` / `partitionSettled` / `Settled`** — bounded fan-out with per-item failure isolated into a value, which `hiring-desk` and `briefing-desk` had composed over `mapConcurrent` and `Promise.allSettled`. **`@alexkroman1/aai/tts` `ttsVoiceIds(language?)`** — the `z.enum` tuple of catalog voices two templates derived by hand. **`spokenAlphanumeric`** beside `spokenDigits`.
+  
+  **`@alexkroman1/aai/testing`** — `expectDeployable` (the three starter invariants six specs wrote out), `expectPromptBuiltinsDeclared` / `commandedBuiltins` (the prompt↔`builtinTools` scan two specs had byte-identically), `runGuardrail`, and `scriptedToolContext` (both model seams scripted, answering `{ ctx, model, desk }`).
+  
+  **`@alexkroman1/aai-runtime/eval`** — `runCodeIn` / `runCodeOutput` (the second throws on the executor's refusal, importing the sentence from the executor rather than letting a spec re-type it), `expectToolBeforeSpeech`, and `EvalTurn.errors` with `errorsIn`.
+  
+  Epochs: `aai:state` 18, `aai:testing` 29 and `aai-runtime:eval` 9 retain their predecessors with frozen examples; `aai:spoken`, `aai:step`, `aai:tts` and the three `aai-ui` capabilities are bumped with the additive-drop reason this repo records for a package that keeps no example of the superseded epoch.
+
+### Patch Changes
+
+- 66568a5: Templates: remove dead code, adopt the SDK helpers three of them still re-implemented, and cut wasted work on the voice and workflow paths.
+  
+  User-visible in the templates `aai init` copies: hotel-desk prints money with thousands separators (its own formatter had none, so a multi-night bill read $1240.00) and validates every date field through its schema, so a bad date is refused before the tool body runs and the model is told why; podcast-digest bounds its feed-read fan-out instead of opening one request per link at once; solo-rpg's projection no longer sends the browser the goal and mood of acts the player has not reached; night-owl's spinner clears when the tool settles rather than when the list happens to grow.
+- b463bb5: Give `retail` and `travel-concierge` an abandonment state, and `retail`'s confirmation read-back a low temperature.
+  
+  Both templates hold a staged change in a confirmation gate that nothing settles if the caller hangs up, leaving every sensitive tool legal for the rest of the session. `"@session.timed-out"` now carries each into a `final` state where nothing runs. `retail`'s `awaitingConfirmation` also declares `temperature: 0.2`: reading an order number and a dollar amount back is transcription, and the template already guards the same problem on the way in through `resolve.ts`.
+- 7062ab9: Add the `executive-assistant` template: LangChain's Executive AI Assistant (EAIA) as a voice agent. Triage, drafting in the executive's voice, a meeting-assistant subagent over the calendar, the Agent Inbox's four answers (accept, edit, ignore, respond) as tools gated on a review dialog so nothing is sent before a spoken yes, and the reflection graphs that rewrite the assistant's own prompts from each correction.
+- 66568a5: Pin three template layout conventions that were carried by habit, and correct two docs that described the wrong one.
+- 0666785: `aai init` no longer copies the 120KB authoring guide into the project. A scaffolded `CLAUDE.md` is now a ~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` — the version-matched copy that ships in the SDK tarball, which the SDK's own skill has always named as the authoritative one.
+  
+  The copy it replaces could not be right. It froze at the moment `aai init` ran and went stale on the project's next `pnpm update @alexkroman1/aai`, which is what `AGENT_GUIDE.md` exists to fix; and Claude Code loads a project-root `CLAUDE.md` in full at launch against a documented 200-line target, so every session in a user's agent project paid ~30k tokens for 2,533 lines of guidance whose own publisher told agents to prefer the other file. Splitting it behind an `@import` would not have helped — imports are expanded at launch too — so the pointer names the path in a fence, the documented spelling for "mention, do not import", and an agent reads it on demand out of the tarball the project actually resolved.
+  
+  A scaffolded project is 21KB across 12 files instead of 136KB. Nothing else in `scaffold/` changed, a project's own `CLAUDE.md` still wins, and a template that ships one still has it copied — only the scaffold's guide is filtered.
+
 ## 0.3.10
 
 ### Patch Changes

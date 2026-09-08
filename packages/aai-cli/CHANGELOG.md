@@ -1,5 +1,130 @@
 # @alexkroman1/aai-cli
 
+## 16.0.0
+
+### Minor Changes
+
+- e845c19: Improve the Deno Deploy target. `aai build --target deno` now emits a `deno.json` with a `start` task, so the output directory describes how to run itself and no command against it has to re-supply `--entrypoint`. Auto-detection also reads `DENO_DEPLOYMENT_ID` alongside `DENO_DEPLOY`: neither marker covers both generations of the platform, since Deno Deploy Classic sets only the former, so reading just `DENO_DEPLOY` left Classic undetectable.
+- e845c19: Add `aai build --target modal` for Modal deploys: emits a self-contained `.aai/modal/` directory plus a generated `app.py` that runs the bundled server behind `@modal.web_server`
+- 3b33de3: Deploy targets: adopt four properties from Nitro's presets.
+  
+  - **`aai build` now prints the deploy command for every target**, and returns it
+    (plus the output directory) on the result so `--json` sees both. `--target
+    vercel` printed the directory it wrote and no command at all.
+  - **The Vercel routing table brackets `handle: filesystem`** with an
+    `immutable` cache-control header for the content-hashed `/assets/` prefix and
+    a CDN-level `404` for a miss under it, so hashed assets stop re-validating on
+    every load and a stale bundle request stops costing a function invocation.
+  - **The function's Node major rounds UP** to the smallest version Vercel offers
+    that is at least the one running the build, clamping at the newest. It
+    rounded down, so a build on Node 23 deployed onto `nodejs22.x`.
+  - **The Deno entry drains on `SIGINT`/`SIGTERM`**, which only the Modal entry
+    did — Deno Deploy stops a deployment on the same events, so a live call lost
+    its socket rather than its session. Both entries now share one drain.
+  
+  Vercel build-environment detection also reads `VERCEL_ENV` and `NOW_BUILDER`
+  alongside `VERCEL`.
+- dae6658: Add `aai build --target deno`, which emits a self-contained `.aai/deno/` for Deno Deploy: a bundled server, the built worker, the browser client and `.env.example`, with no install step. Voice works there unchanged — Deno runs `node:http` and the `ws` server path, so the session reaches the same AgentServer `aai dev` runs; verified against a live deployment with real speech. Also fixes the CLI's `enableCompileCache` import, a NAMED import of a Node-only export that made `bin.mjs` unusable on any runtime lacking it.
+- 083662f: Remove three templates that were near-duplicates of ones that stay, taking `aai init`'s catalog from 31 to 28. The picker lists bare directory names with no hints, so four indistinguishable spellings of one starter cost an author real attention at the moment of choice.
+  
+  - **`embedded-assets`** — its whole subject was a knowledge base bundled as a JSON asset import, which `support-line` does with the identical `with { type: "json" }` import over a real IDF-weighted retriever with graders on top (and `hiring-desk` and `retail` import JSON assets too). It exercised no SDK export nothing else does.
+  - **`math-buddy`** — `code-interpreter` (the same `run_code`, the same never-do-mental-arithmetic prompt) plus the one-line LLM stage swap that `pipeline-simple` exists for. Its one distinct claim, that a declared stage's `options` survive the conversion and not just its `kind`, moves to `pipeline-simple`'s spec, where the swap lives.
+  - **`personal-finance`** — `code-interpreter`'s prompt with the `fetch_json` builtin added and no code of its own. That builtin lands on `health-assistant` instead, with a job the two `tools/` files cannot do: they read openFDA's LABEL endpoint, so what people actually REPORT (`/drug/event.json`, a counting query) is the model's to compose. Its spec gains the starter invariants it never had — `expectDeployable`, the builtins surviving into the config, and the prompt↔`builtinTools` pairing.
+  
+  The studio's hero catalog drops the three matching starter buttons, so `aai-studio-server` is named alongside it: the starters are front-end source a DEPLOY carries, and a bump to a carrier is what arms one.
+  
+  `commandedBuiltins` (`@alexkroman1/aai/testing`) loses its only exerciser and becomes a template-API allowlist entry: `expectPromptBuiltinsDeclared` already returns the commanded list, so a second call would be the contrived use the allowlist exists to avoid.
+
+### Patch Changes
+
+- 14e70ea: Add `hiring-desk`, a port of CrewAI's `lead-score-flow` — the most complex example in `crewAI-examples` — as a voice agent: one crew scores a stack of applicants against a role (`ctx.generate` with a schema, fanned out through `mapConcurrent`), the human-in-the-loop router becomes a `dialog()` whose `reviewing` state offers the caller the same three choices, the feedback cycle gains the bound their flow lacks, and the other crew writes every applicant an email as a `subagent()` with `expectedOutput` and a `guardrail`. `crews.ts` carries the attribution and the their-name → our-name table.
+  
+  The CLI is named alongside it because that is what actually ships a template — `bundle-templates.mjs` copies `templates/` into the CLI's dist at build time, so a changeset naming `aai-templates` alone bumps a version nobody resolves and delivers the template to no one.
+- b463bb5: Add `roadside-assist`, the template for a dialog that describes a CALL rather than a form: a silence ladder, an abandonment deadline, an uninterruptible disclosure, and per-state LLM knobs.
+  
+  The CLI is named alongside it because that is what actually ships a template — `bundle-templates.mjs` copies `templates/` and the scaffold into the CLI's dist at build time, so a changeset naming `aai-templates` alone bumps a version nobody resolves and delivers the template to no one.
+- 66568a5: Templates: remove dead code, adopt the SDK helpers three of them still re-implemented, and cut wasted work on the voice and workflow paths.
+  
+  User-visible in the templates `aai init` copies: hotel-desk prints money with thousands separators (its own formatter had none, so a multi-night bill read $1240.00) and validates every date field through its schema, so a bad date is refused before the tool body runs and the model is told why; podcast-digest bounds its feed-read fan-out instead of opening one request per link at once; solo-rpg's projection no longer sends the browser the goal and mood of acts the player has not reached; night-owl's spinner clears when the tool settles rather than when the list happens to grow.
+- b463bb5: Give `retail` and `travel-concierge` an abandonment state, and `retail`'s confirmation read-back a low temperature.
+  
+  Both templates hold a staged change in a confirmation gate that nothing settles if the caller hangs up, leaving every sensitive tool legal for the rest of the session. `"@session.timed-out"` now carries each into a `final` state where nothing runs. `retail`'s `awaitingConfirmation` also declares `temperature: 0.2`: reading an order number and a dollar amount back is transcription, and the template already guards the same problem on the way in through `resolve.ts`.
+- 7062ab9: Add the `executive-assistant` template: LangChain's Executive AI Assistant (EAIA) as a voice agent. Triage, drafting in the executive's voice, a meeting-assistant subagent over the calendar, the Agent Inbox's four answers (accept, edit, ignore, respond) as tools gated on a review dialog so nothing is sent before a spoken yes, and the reflection graphs that rewrite the assistant's own prompts from each correction.
+- 3b55bab: Add two templates ported from the other two voice-agent frameworks' largest samples.
+  
+  `hotel-desk` is LiveKit Agents' `hotel_receptionist` — the biggest example in that repository — as a voice agent: a boutique hotel's whole front desk over one seeded `sessionSlot`, verification the TOOLS run (three strikes and a human takes over), a room-booking flow as a `dialog()` whose step is derived from what has been captured and whose read-back is OWED until the caller's next committed turn, a dispute engine that reads the disputed amount off the stored line item, the re-accommodation procedure that moves a double-booked guest up or walks them, a guest-privacy tool whose result cannot leak whether anyone is in house, and a twenty-topic policy book rendered partly from the concierge catalogs. Forty-one tools; `shared.ts` carries the attribution and the their-name → our-name table.
+  
+  `word-wrangler` is Pipecat's `word-wrangler-gemini-live` phone game — a three-way word game whose upstream is a parallel pipeline running two Gemini Live sessions — as one voice agent: the host is the agent, the AI player is `ctx.generate` on its own prompt with only the current word's context, the referee is a function, the describer's own transcript is what rules a foul, and the two-minute game clock is the `playing` state's `timeout`.
+  
+  The CLI is named alongside because that is what actually ships a template — `bundle-templates.mjs` copies `templates/` into the CLI's dist at build time, so a changeset naming `aai-templates` alone bumps a version nobody resolves and delivers the template to no one.
+- 9f78b85: Re-express every template through the SDK surface it had been hand-rolling.
+  
+  The templates are the SDK's reference consumers, so a primitive with no worked
+  example is one nobody is shown — and the sweep's finding is that those are
+  exactly the primitives templates got wrong by hand. `createKeyedLock` had no
+  exerciser at all, and both templates needing mutual exclusion had written
+  something broken: `roadside-assist` handed every concurrent caller the same
+  truck (nothing marked one taken), and `hiring-desk` lost updates on the counter
+  bounding its own feedback loop, silently unbounding `MAX_FEEDBACK_ROUNDS`. Both
+  now go through the primitive, and both bugs are pinned by tests that fail
+  against a passthrough lock.
+  
+  Around twenty defects came out with them. A shipped `"1 episode summaries"`
+  whose spec pinned the typo (`plural`); float drift in two carts, one rate with
+  cents making it visible (`roundMoney`); a grader's `reason` read by nobody
+  (`GuardrailVerdict`); a clamped upload read that produced a transcript missing
+  its tail and reported it complete; `solo-rpg` and `dispatch-center` each
+  declaring a dialog, gating tools with it, and never passing it to `agent()`, so
+  per-state instructions reached the model only on turns that happened to run a
+  gated tool; a weekday named by `toLocaleDateString`, which answers to the host's
+  ICU build rather than the guest's; a reservation lookup that normalized one side
+  of its comparison and so never matched a spoken code; and four tools declared as
+  a plain `tool()` over `slot.get(ctx)`, which the package guide describes as a
+  compile error and is not.
+  
+  `web-researcher` gains the first `mcpServers` example in the repository, gated
+  on an env var so the starter still deploys with no credential. `pipeline-simple`
+  becomes the worked example for the provider surface — the option types, model
+  and voice constants, and both presets — which had none.
+  
+  The CLI is named alongside it for the reason every template changeset names it:
+  `bundle-templates.mjs` copies `templates/` into the CLI's dist at build time, so
+  a changeset naming `aai-templates` alone bumps a version nobody resolves.
+- aa105a4: Move the vitest launcher `aai test`, `aai eval` and `aai build`'s pre-build gate share out of `test.ts` into `_vitest-runner.ts` — binary resolution, which spec files a run covers, which it does not, and the unrun-spec notice. The two commands are disjoint by construction (a positional argument to `vitest run` is a substring filter, not an include glob), and an import edge from `eval.ts` into the file named after the other command was the one thing that could quietly grow the coupling that design prevents; each tier's filenames now stay with the command that owns them, `TEST_FILES` beside `EVAL_FILES`. Internal module boundaries only — no command, result shape, CLI argument or published export changed.
+- 66568a5: Pin three template layout conventions that were carried by habit, and correct two docs that described the wrong one.
+- 0666785: `aai init` no longer copies the 120KB authoring guide into the project. A scaffolded `CLAUDE.md` is now a ~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` — the version-matched copy that ships in the SDK tarball, which the SDK's own skill has always named as the authoritative one.
+  
+  The copy it replaces could not be right. It froze at the moment `aai init` ran and went stale on the project's next `pnpm update @alexkroman1/aai`, which is what `AGENT_GUIDE.md` exists to fix; and Claude Code loads a project-root `CLAUDE.md` in full at launch against a documented 200-line target, so every session in a user's agent project paid ~30k tokens for 2,533 lines of guidance whose own publisher told agents to prefer the other file. Splitting it behind an `@import` would not have helped — imports are expanded at launch too — so the pointer names the path in a fence, the documented spelling for "mention, do not import", and an agent reads it on demand out of the tarball the project actually resolved.
+  
+  A scaffolded project is 21KB across 12 files instead of 136KB. Nothing else in `scaffold/` changed, a project's own `CLAUDE.md` still wins, and a template that ships one still has it copied — only the scaffold's guide is filtered.
+- Updated dependencies [b890150]
+- Updated dependencies [66568a5]
+- Updated dependencies [8bd5841]
+- Updated dependencies [bbd1a47]
+- Updated dependencies [1ecf911]
+- Updated dependencies [b463bb5]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [c94f702]
+- Updated dependencies [b890150]
+- Updated dependencies [b463bb5]
+- Updated dependencies [07f0a3e]
+- Updated dependencies [4986d01]
+- Updated dependencies [55ddb0a]
+- Updated dependencies [c36a3c0]
+- Updated dependencies [ffb795f]
+- Updated dependencies [8bd5841]
+- Updated dependencies [31bec98]
+- Updated dependencies [b890150]
+- Updated dependencies [0b81685]
+- Updated dependencies [a09acd2]
+- Updated dependencies [0666785]
+- Updated dependencies [b463bb5]
+- Updated dependencies [ffb795f]
+- Updated dependencies [55ddb0a]
+  - @alexkroman1/aai-runtime@16.0.0
+  - @alexkroman1/aai@16.0.0
+  - @alexkroman1/aai-ui@16.0.0
+
 ## 15.1.0
 
 ### Minor Changes

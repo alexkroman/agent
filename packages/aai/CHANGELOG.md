@@ -1,5 +1,136 @@
 # @alexkroman1/aai
 
+## 16.0.0
+
+### Major Changes
+
+- 8bd5841: Move six things the templates kept rebuilding into the SDK.
+  
+  - **The OUTBOUND half of `spoken.ts`.** `spokenMoney`, `spokenDate`,
+    `spokenTime` and `mintCode` — data as the words a TTS voice reads correctly,
+    which is the same problem `resolveOne` solves from the other end. Fixed ASCII
+    shapes and no `Intl`: the `toLocaleDateString("en-US", …)` this replaces
+    answers to the host's ICU build, so a desk could read dates correctly on a
+    laptop and differently in a sandbox.
+  - **`ctx.random`.** `ToolContext` gains a required `random`, with `randomInt` /
+    `pickOne` / `shuffled` / `createSeededRandom` beside it. Ten sites across
+    seven templates called `Math.random()` directly and could not be pinned by a
+    spec. `createToolContext` defaults it to a SEEDED source, so a spec that never
+    mentions randomness is still deterministic.
+  - **`isoDate(what)` / `clockTime(what)`**, plus the `calendar.ts` predicates and
+    UTC arithmetic behind them. A tool-argument rule declared where the model
+    READS it rather than discovered by being refused after it has committed.
+  - **`orFail` / `failable`.** The forwarding half of the `T | ToolFailure` union,
+    so a chain of lookups is written once rather than guarded per step. The union
+    and how a tool returns it are unchanged.
+  - **`parseWav`** and the RIFF chunk walk, the read side matching `encodeWav`.
+    A reader that assumes 44 bytes transcribes ffmpeg's own `LIST`/`INFO` chunk as
+    audio.
+  - **`roundMoney`**, sharing `formatMoney`'s `toFixed(2)` basis so a total cannot
+    compare as one number and print as another.
+  
+  Breaking: `ToolContext.random` is required, so code that hand-builds a
+  `ToolContext` rather than using `createToolContext` no longer compiles.
+
+### Minor Changes
+
+- 66568a5: Four SDK gaps the templates had been working around.
+  
+  `ToolContext.deadlineAt` — this call's own deadline, so a tool that can answer partially budgets under it instead of being cut off with `Tool "x" timed out after 30000ms`. Per call, because a host may pass its own `timeoutMs`.
+  
+  `stepGenerateJson` now constrains the request as well as validating the reply: the schema is rendered as JSON Schema and appended to `system`, so a prompt can no longer ask for a field the schema has since renamed. Stays zero-zod — Zod v4 and ArkType both expose an instance converter.
+  
+  `SubagentDef.schema` — the shape a subagent's final message must have. The runtime parses it and sends a mis-shaped answer back on the same retry budget a guardrail uses, and `ctx.delegate` answers with the parsed `object` through an overload, so a subagent without a schema is untouched.
+  
+  Plus a documentation fix: `useAgentState`'s projection overload cannot be used when the slot's module is expensive to import, which is a fact about the static import graph rather than about the call.
+- bbd1a47: Three things the templates kept rebuilding move into the SDK.
+  
+  `describeMedia(info)` on `@alexkroman1/aai/ffmpeg` turns a `probeMedia` result into the `41:20 of aac` a progress line wants, degrading a field at a time (`41:20`, `aac`, `the recording`) when ffprobe did not report one. `call-audit` and `transcription-workflow` each carried the same function.
+  
+  `dialogResultSchema(result)` on `@alexkroman1/aai/testing` is the envelope a `dialog.tool` answers with — `{ result, state, done, instruction? }` — as a zod schema around the tool's own, for an eval reading a serialized result back through `toolResultIn`. Three template evals had written it out under a comment saying the shape was the SDK's.
+  
+  `describeEval` now gives the workflow engine it opens beside a voice agent the same env `describeWorkflowEval` gives a workflow app: in stub mode a declared key nobody has is a placeholder, so a step's `requireStepEnv` reaches the scripted provider instead of throwing over a credential the case was never going to use. The two templates that hand off to a run drop the `EVAL_ENV` they each carried for exactly this.
+- 1ecf911: Publish `WorkflowInputOf` and `WorkflowRunOf` from the package root, and lead each module's reference page with what is in it.
+  
+  Both were reachable only from `@alexkroman1/aai/workflow-api`, documented as the surface for a caller OUTSIDE the agent — while a `workflows/*.ts` body annotating its parameter and a `*_status` tool holding a run snapshot are exactly what the root barrel's membership test names. They stay on `/workflow-api` too, which still owns the capability. `WorkflowOutputOf` did not move: its reader really is a `client.tsx`.
+  
+  The scaffold guide now carries the convention that makes them reachable at all: `workflow()` infers its output from `run`, so the obvious spelling is a `TS7022` circularity, and the way out is to name the input schema in a const and annotate the def.
+  
+  Also: `@alexkroman1/aai-ui`'s root had no module doc, so its reference page opened on an alphabetically-first component; the module docs that led with why-this-exists now lead with what-is-here; and `API-INDEX.md` is a new generated reverse index of every published name against the subpath to import it from.
+- 55ddb0a: zod is a peerDependency of @alexkroman1/aai and @alexkroman1/aai-runtime rather than a plain dependency. Both packages expose zod types in their published .d.ts, so a consumer's schema has to be the same type the SDK accepts — which only a peer can promise. Install zod alongside them (the scaffold already does); npm 7+ and pnpm 8+ install peers automatically.
+- c94f702: Subagents gain `expectedOutput`, a `guardrail` that can send an answer back, and `agent({ subagents })` — a roster the model routes over.
+  
+  `SubagentDef.expectedOutput` declares what a good final message is and the runtime appends it as its own section, making structural the "tell it to summarize" rule that was previously a sentence every author had to remember. `SubagentDef.guardrail` checks an attempt and may return a complaint, in which case the subagent is re-run with its own rejected answer and that complaint appended to the conversation it already has — so the retry keeps the tool results the first attempt paid for. Exhausting `maxRetries` (default 1) returns the last attempt with `accepted: false` and the `complaint` rather than throwing, because a caller on a live call still has to say something.
+  
+  `agent({ subagents: [a, b] })` publishes a roster as one `delegate` tool whose `coworker` argument is an enum over the names, described by each subagent's new `description`. It is the other way to choose a subagent: a tool body naming one is the author routing in code, a roster is the model routing per turn. `briefing-desk` demonstrates both side by side.
+- b463bb5: Give `dialog()` the three things a voice call has and a form-filling flow does not: session events, time, and per-phase voice settings.
+  
+  A state's `on` map accepts `"@<session-event>"` keys (`"@session.timed-out"`, `"@speech.started"`, …), validated against the real event union at declaration and excluded from the event type an author may send by hand; `Dialog.receive()` feeds one in. `DialogStateSpec.timeout` declares a per-state deadline, and `after` is now refused in both the spec and machine forms — a dialog's actor lives for one synchronous window, so a delayed transition could never fire, and the reachability check used to green-light one. A state may also carry `voice`, `bargeIn`, `keyterms`, `toolChoice` and `temperature`, read back through `Dialog.voiceConfig()`. Declaring a dialog in `agent({ dialogs })` is what wires any of it to the runtime; an undeclared dialog gates tools exactly as before.
+- 07f0a3e: `stepDelegate` — a whole tool loop from inside a workflow step, and two templates stop hand-rolling one.
+  
+  `stepGenerate` was the one-shot a step already had; the gap beside it was the loop. A step is handed no `ToolContext`, so `ctx.delegate` was unreachable there and a workflow that needed a model to search-read-search hand-rolled it: an action schema for the model to pick from, a counter for the budget, a sentence telling it to answer once the budget was spent, and a branch for the turn where it named an action and filled in none of its fields. `stepDelegate(subagent, { task })` is the same `createSubagentRunner` `ctx.delegate` runs on, bound to a sessionless parent bag — a published `Symbol.for` slot rather than an import, because `ToolLoopAgent` may not ride into the agent bundle. `stubStepDelegate` and `installStubStepDelegate` drive one in a spec; an unpublished slot throws rather than answering emptily, since there is no degraded version of running a model loop.
+  
+  `research-workflow`'s `investigate` deletes 82 lines of loop and helpers for it, and its second model call went too — `expectedOutput` compresses where the raw material already is (the file nets 44 code lines lighter; the rest is the researcher, its `cite` tool, and reading the run's cost off `toolCalls`). `plan-and-execute`'s `executeStep` is the same conversion through `ctx.delegate`, which its tool had all along; its executor gained a `read` tool, closing a gap its own prompt had left open ("search once, read what comes back", with no way to read).
+- ffb795f: Publish `dialogRefusalPattern` and `expectDialogRefused` from `@alexkroman1/aai/testing`. A `dialog()` gate refuses an out-of-state call with one sentence, and seven templates' specs had pinned that sentence by hand — two of them re-deriving the JSON escaping an eval reads it through — so rewording the model-facing half of the gate would have broken eight suites that never imported it. The sentence is built in one module now, the pattern is derived from it, and `expectDialogRefused` is the mirror of `expectDialogOk`: it throws when the gate did NOT hold, naming where the dialog landed, where the `isToolFailure` + `if` shape it replaces let a success through with every assertion after the guard skipped.
+  
+  The templates also stop re-deriving five helpers the SDK already exports: `formatMoney` (travel-concierge's page), `spokenDigits` (retail's zip lookup), `plural` (dispatch-center's "protocol(s)"), `countWords` (pipeline-simple's eval) and `toolNames` (a starter's eval).
+- ffb795f: The second half of the template audit: five families of code the templates kept rebuilding move into the SDK, and the templates become their worked examples.
+  
+  **`@alexkroman1/aai-ui` — the session chrome kit.** `SessionStateDot`, `SessionControls` (with the headless `useSessionControls`), `ConversationView` (which `MessageList` is now built on, DOM unchanged), plus `AudioResult` and `WorkflowRunPanel` for workflow-app pages, and an `.aai-scroll` utility in `styles.css`. Three custom chromes (`dispatch-center`, `retail`, `infocom-adventure`) each rebuilt the dot, the Start/Pause/New/End row with the same twelve-line comment on `end()` vs `reset()`, and the conversation skeleton; two pages each rendered the audio block and the run panel by hand.
+  
+  **`@alexkroman1/aai` — `sessionSlot({ caps })`.** A per-array growth cap the slot enforces after every write (after the author's `after` hook), typed so only array-valued keys are accepted (`SlotCaps<T>`). Ten templates paired a `MAX_*` constant with a wrapper whose whole body was `pushCapped`, and a wrapper caps only the paths that call it: `executive-assistant` had three uncapped arrays riding every `syncState` frame. `pushCapped` stays for nested lists.
+  
+  **`@alexkroman1/aai/step` `mapSettled` / `partitionSettled` / `Settled`** — bounded fan-out with per-item failure isolated into a value, which `hiring-desk` and `briefing-desk` had composed over `mapConcurrent` and `Promise.allSettled`. **`@alexkroman1/aai/tts` `ttsVoiceIds(language?)`** — the `z.enum` tuple of catalog voices two templates derived by hand. **`spokenAlphanumeric`** beside `spokenDigits`.
+  
+  **`@alexkroman1/aai/testing`** — `expectDeployable` (the three starter invariants six specs wrote out), `expectPromptBuiltinsDeclared` / `commandedBuiltins` (the prompt↔`builtinTools` scan two specs had byte-identically), `runGuardrail`, and `scriptedToolContext` (both model seams scripted, answering `{ ctx, model, desk }`).
+  
+  **`@alexkroman1/aai-runtime/eval`** — `runCodeIn` / `runCodeOutput` (the second throws on the executor's refusal, importing the sentence from the executor rather than letting a spec re-type it), `expectToolBeforeSpeech`, and `EvalTurn.errors` with `errorsIn`.
+  
+  Epochs: `aai:state` 18, `aai:testing` 29 and `aai-runtime:eval` 9 retain their predecessors with frozen examples; `aai:spoken`, `aai:step`, `aai:tts` and the three `aai-ui` capabilities are bumped with the additive-drop reason this repo records for a package that keeps no example of the superseded epoch.
+
+### Patch Changes
+
+- 8bd5841: Four fixes the new property tests found, all in code that shipped an hour ago.
+  
+  - **`addDays`, `daysBetween` and `spokenDate` answered in the 1900s for any year
+    under 100.** `Date.UTC(1, 0, 1)` is 1901 — legacy two-digit-year behaviour —
+    and the correction had landed in `isoDateParts` alone, so `isIsoDate` accepted
+    `0001-01-01` while every function that did arithmetic on it built its own
+    uncorrected `Date.UTC`. All four now share one `utcDate(y, m, d)`, which also
+    fixes the ordering trap in the first version of that helper: correcting the
+    year AFTER a day overflow has rolled it turns `utcDate(99, 12, 32)` into
+    `0099-01-01`, a full year wrong.
+  - **`addDays` returned a non-date past year 9999.** `toISOString` switches to
+    the expanded form (`+010000-01-01T…`) there, so a 10-character slice answered
+    `"+010000-01"`. It throws a `RangeError` naming the range instead.
+  - **`roundMoney` was not idempotent on `-0`.** `(-5e-324).toFixed(2)` is
+    `"-0.00"` while `(-0).toFixed(2)` is `"0.00"`, so rounding twice differed from
+    rounding once — the property a caller relies on when rounding at every step of
+    a total. It normalizes `-0` to `0`.
+  
+  `resolveOne` also gains a template adopter: `briefing-desk`'s `findByAngle` took
+  the FIRST board angle whose text overlapped the caller's phrase in either
+  direction, so "lead times" picked between "install lead times" and "battery lead
+  times" by board order and answered `undefined` for both "nothing matches" and
+  "several do". It lists the candidates now.
+- b890150: Declare @types/json-schema as a runtime dependency of aai and aai-runtime, and drop ten dependencies no package imports.
+- 55ddb0a: Shrink the aai/host-internal seam: move the session-event and app-db budgets to their only consumer in aai-runtime, drop twelve unimported value exports, and stop double-publishing eighteen names that already sit on the zod-free /internal subpath.
+- c36a3c0: Make two gate corpora directory-derived instead of hand-listed.
+  
+  The studio's prompt modules move to `packages/aai-studio-server/src/prompts/`, so `check-doc-examples` reads that directory rather than four paths written out in the script. That list carried the cost in its own comment — a module with no code fence was listed anyway "so the first example added is checked rather than discovered by a user" — and unlike its `MARKDOWN_FILES` neighbour, which two gate specs floor at eight, nothing floored it: a fifth prompt module would have compiled under no gate. The script floors the count now.
+  
+  In the SDK, the LLM stage's three non-vendor modules move to `providers/llm/shared/` and the channel shape and dispatcher to `channels/shared/`, which lets `konsistent.json` drop five `!` exclusions. A file directly under `providers/llm/` or `channels/` is a vendor or a channel because of where it sits, rather than because nobody forgot to exclude it.
+  
+  No published symbol moves: every one of these modules is reached through a barrel, and the subpath exports are unchanged.
+- 31bec98: Docs: install the CLI globally with npm rather than invoking it through npx, and correct stale CLI/storage references.
+- b890150: Correct the ffmpeg capability contract's account of where ffmpegVersion lives.
+- 0666785: `aai init` no longer copies the 120KB authoring guide into the project. A scaffolded `CLAUDE.md` is now a ~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` — the version-matched copy that ships in the SDK tarball, which the SDK's own skill has always named as the authoritative one.
+  
+  The copy it replaces could not be right. It froze at the moment `aai init` ran and went stale on the project's next `pnpm update @alexkroman1/aai`, which is what `AGENT_GUIDE.md` exists to fix; and Claude Code loads a project-root `CLAUDE.md` in full at launch against a documented 200-line target, so every session in a user's agent project paid ~30k tokens for 2,533 lines of guidance whose own publisher told agents to prefer the other file. Splitting it behind an `@import` would not have helped — imports are expanded at launch too — so the pointer names the path in a fence, the documented spelling for "mention, do not import", and an agent reads it on demand out of the tarball the project actually resolved.
+  
+  A scaffolded project is 21KB across 12 files instead of 136KB. Nothing else in `scaffold/` changed, a project's own `CLAUDE.md` still wins, and a template that ships one still has it copied — only the scaffold's guide is filtered.
+- 55ddb0a: Every published subpath of @alexkroman1/aai now resolves to an explicit re-export facade rather than to an implementation file, so an implementation module can be split without moving a published entry point and a new export joins the public surface only deliberately. No published name or signature changes.
+
 ## 15.1.0
 
 ## 15.0.0
