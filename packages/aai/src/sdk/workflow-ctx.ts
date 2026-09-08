@@ -106,7 +106,7 @@
  * {@link WorkflowContext.uuid}. Each reads its source ONCE, journals the value, and
  * answers every later walk from the journal — which is exactly what an author
  * was already hand-rolling. Two shipped templates had written the clock half of
- * it (`transcription-workflow`'s `startClock`, `call-audit`'s two `now` reads),
+ * it (`transcription-workflow`'s `startClock`, `call-audit-workflow`'s two `now` reads),
  * each as an exported one-line function reached through a `ctx.step` and each
  * carrying its own paragraph explaining why. A hazard that needs the same
  * comment at every call site is a missing affordance.
@@ -166,8 +166,8 @@
  * failure" — describing a duplicate-literal check that has never existed and has
  * no scan left to live in. Until one does, give two call sites two names; a single
  * site in a loop or a fan-out is exactly what the scheme is for and needs none.
- * The shipped templates follow that (`research-workflow` names its two
- * `investigate` waves separately, `call-audit` its two clock reads), which is the
+ * The shipped templates follow that (`research-handoff-agent` names its two
+ * `investigate` waves separately, `call-audit-workflow` its two clock reads), which is the
  * pattern to copy.
  *
  * @module

@@ -103,7 +103,7 @@ export type EvalCaseOptions = {
    *
    * It is not a symmetry for its own sake — three cases needed it. A gate can
    * only be observed refusing if something CALLS the gated tool, and a competent
-   * model declines to (measured: `solo-rpg`'s game-over route is a tool its own
+   * model declines to (measured: `tabletop-rpg-agent`'s game-over route is a tool its own
    * prompt forbids unprompted; a dispatcher calls `resources_get_available`
    * first and never trips the busy-unit refusal; a `visit_webpage` at a private
    * address is the SSRF screen's own case and a live model sensibly refuses to
@@ -205,7 +205,7 @@ export function resolveEvalMode(
    * `describeEval(def, define, { llm: assemblyAILlm() })` on an agent declaring
    * `anthropic()` announced "SCRIPTED — ANTHROPIC_API_KEY is not set" while
    * holding the key the run would actually have used. Measured on
-   * `pipeline-simple`: the override was honoured by the session and ignored by
+   * `custom-pipeline-agent`: the override was honoured by the session and ignored by
    * the gate, so a case could not be run live at all.
    */
   overrides?: { readonly llm?: LlmProvider },

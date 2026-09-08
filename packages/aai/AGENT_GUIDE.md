@@ -26,8 +26,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    and wrong while something is driving the agent for twenty minutes;
    `AAI_DEV_WATCH=1` is the same switch for a process supervisor.
 2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
-   `agent.test.ts` (see `pipeline-simple` template for a reference).
-   **When the project has an `agent.test.ts` (the default `simple`
+   `agent.test.ts` (see `custom-pipeline-agent` template for a reference).
+   **When the project has an `agent.test.ts` (the default `quickstart-agent`
    template and several others ship one), it is yours to maintain.** It
    asserts the agent's shape — name, providers, tool names —
    so rewriting the agent without updating it leaves a test asserting an
@@ -50,7 +50,7 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    thing written out.
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
    the agent's shape; an eval drives a real session and asserts what it did.
-   Cases live in `agent.eval.test.ts` (the `simple` template ships one):
+   Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one):
 
    ```ts no-check
    import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -96,19 +96,19 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 6. **Look at templates before writing custom code** — the CLI ships working
    examples inside its own package, at
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
-   `aai init --template <name>` scaffolds a fresh project from one. Closest
-   matches: `simple`, `pipeline-simple`, `web-researcher`, `solo-rpg`,
-   `pizza-ordering`, `retail` (the most complex — 15 tools over a
-   relational store, with a `syncState`-driven UI). Four are ports of agents you
-   may already know from LangChain/LangGraph, and each says in its own source
-   what had to change: `travel-concierge` (their customer-support bot —
-   specialist desks, and every booking staged for a spoken confirmation before
-   it applies), `support-line` (self-RAG/CRAG — retrieve, grade what came back,
+   `aai init --template <name>` scaffolds a fresh project from one. Closest:
+   `quickstart-agent`, `custom-pipeline-agent`, `web-research-agent`,
+   `tabletop-rpg-agent`, `pizza-ordering-agent`, `retail-orders-agent` (the most
+   complex — 15 tools over a relational store with a `syncState` UI). Four are
+   LangChain/LangGraph ports, and each says in its own source what had to change:
+   `travel-concierge-agent` (their customer-support bot — specialist desks, every
+   booking staged for a spoken confirmation before it applies),
+   `technical-support-agent` (self-RAG/CRAG — retrieve, grade what came back,
    rewrite the question, and refuse to speak an answer it cannot ground),
-   `plan-and-execute` (plan then work the plan — one step per tool call, so the
-   caller can redirect between them), and `redline` (the reflection agent — write,
-   critique, revise, which is too slow for a phone and so is a PAGE over a
-   durable run rather than a voice agent). When reading SDK
+   `research-planner-agent` (plan then work the plan — one step per tool call, so
+   the caller can redirect between them), and `document-redline-workflow` (the
+   reflection agent — write, critique, revise; too slow for a phone, so a PAGE
+   over a durable run rather than a voice agent). When reading SDK
    types under
    `node_modules/@alexkroman1/aai*/dist/`, note the built entry points
    re-export with source specifiers (`"./sdk/constants.ts"`,
@@ -807,10 +807,10 @@ Five things worth knowing:
 #### A third-party callback is an OPTIMIZATION over a reconciling read
 
 The webhook route is how a payment provider, a transcription service or an
-approval mailer resumes a run, and `recap-workflow` is the worked example — it
-hands AssemblyAI a `webhook_url` and parks on the delivery instead of polling
-for twenty minutes. Five things about that shape, and every one of them is a
-trap somebody has already paid for:
+approval mailer resumes a run, and `meeting-recap-agent` is the worked example —
+it hands AssemblyAI a `webhook_url` and parks on the delivery instead of polling
+for twenty minutes. Five things about that shape, every one a trap somebody has
+already paid for:
 
 - **Mint it with `stepWebhookUrl(token)`, from inside the step that hands it
   over.** That is the step-side half of `ctx.workflows.publicWebhookUrl` — the
@@ -1037,7 +1037,7 @@ export async function measure(uploadId: string) {
 }
 ```
 
-`call-audit` is the worked example for all three at once.
+`call-audit-workflow` is the worked example for all three at once.
 
 ### Posting somewhere — `@alexkroman1/aai/channels`
 
@@ -1061,11 +1061,11 @@ export async function announce(headline: string, points: string[]) {
 
 The webhook URL is a secret like any other — declare it in `requiredEnv` and set
 it with `aai secret put`. A channel's credential is its DESTINATION and is
-passed in, which is why no channel reads an env var of its own. `ChannelMessage`
-is rendered per platform, so the same message is legal on a channel kind added
+passed in, so no channel reads an env var of its own. `ChannelMessage` is
+rendered per platform, so the same message is legal on a channel kind added
 later; `isSlackWebhookUrl` / `isSlackWorkflowTriggerUrl` validate a pasted URL
-before a run depends on it, and `explainChannelFailure` turns a refusal into a sentence
-a person can act on. `podcast-digest` is the worked example.
+before a run depends on it, and `explainChannelFailure` turns a refusal into a
+sentence a person can act on. `podcast-digest-workflow` is the worked example.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
 
@@ -1138,9 +1138,9 @@ it for free.
 ### A step can SPEAK, and store the file it made
 
 A workflow whose answer is a FILE — a summary read aloud, a rendered image, a
-generated PDF — needs two things a first draft reaches for and does not find.
-Both are on `@alexkroman1/aai/step`, and `spoken-summary` is the template that
-shows the whole round trip.
+generated PDF — needs two things a first draft reaches for and misses.
+Both are on `@alexkroman1/aai/step`, and `spoken-summary-workflow` shows the
+whole round trip.
 
 ```ts
 import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
@@ -1800,10 +1800,10 @@ export const checkout = dialog("checkout", {
 
 A tool declared with `checkout.tool({...})` is REFUSED unless the dialog is in a
 state that allows it, and the refusal reaches the model as a `ToolFailure` it
-can recover from — the point being that the gate is enforced at EXECUTION
-rather than hoped for in a prompt. The states and events are inferred from the
-spec, so a misspelled `send` is a compile error. `dispatch-center` and
-`solo-rpg` are the worked examples.
+can recover from — the gate is enforced at EXECUTION rather than hoped for in a
+prompt. The states and events are inferred from the spec, so a misspelled `send`
+is a compile error. `emergency-dispatch-agent` and `tabletop-rpg-agent` are the
+worked examples.
 
 **`procedure()` runs a flow YOU drive, with no model in the loop.** Where a
 dialog constrains a conversation, a procedure is an algorithm with branches,
@@ -1818,10 +1818,10 @@ const result = await answer.run({ question }, { signal: ctx.signal });
 ```
 
 `run` resolves with the machine's output, or throws `ProcedureNotFinishedError`
-if it stops without reaching a final state — which is what makes "we ran out of
+if it stops without reaching a final state — which makes "we ran out of
 attempts" a state you declare and handle rather than an error. Options are
 `ProcedureRunOptions`; the machine is an XState machine, and `xstate` is already
-an SDK dependency. `support-line` is the worked example.
+an SDK dependency. `technical-support-agent` is the worked example.
 
 ### Subagents (`ctx.delegate`)
 
@@ -2125,7 +2125,7 @@ wrong in ways that only show up on real pages: `<[^>]+>` cuts a tag whose
 attribute contains a `>`, `<script[^>]*>[\s\S]*?<\/script>` leaves the whole
 script in your prompt when the page was truncated mid-tag, and
 `indexOf("<title>")` finds an entry's title rather than a channel's. The
-`link-digest` and `podcast-digest` templates each shipped a version of those
+`link-digest-workflow` and `podcast-digest-workflow` templates each shipped one
 before this subpath existed.
 
 ## Persisting data — bring your own client
@@ -2389,8 +2389,8 @@ import { Form, WorkflowFields } from "@alexkroman1/aai-ui";
 </Form>;
 ```
 
-`transcription-workflow` is the all-declared version; `link-digest` writes its
-form by hand, which is what the two are for.
+`transcription-workflow` is the all-declared version; `link-digest-workflow`
+writes its form by hand, which is what the two are for.
 
 The usual shape — note `StartScreen` **wraps** the app rather than sitting
 beside it; writing `<StartScreen ... />` self-closing is a `TS2741:

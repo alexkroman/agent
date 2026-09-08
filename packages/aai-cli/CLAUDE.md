@@ -68,10 +68,10 @@ verdict it printed over the difference. It answered
 `{"ok":true,"data":{"passed":true}}` with **exit 0** while naming the files it
 had skipped in a warning printed *after* the green summary — so the scaffold's
 `"test": "aai test"`, which is what users wire into CI, could report a passing
-suite over 211 unrun tests. Measured: one tool added to the `retail` template
-broke its `registry.test.ts` in 17 assertions with `pnpm test` and `pnpm build`
-green throughout, and one user concatenated a 25-test suite into `agent.test.ts`
-to get it gated at all.
+suite over 211 unrun tests. Measured: one tool added to the
+`retail-orders-agent` template broke its `registry.test.ts` in 17 assertions
+with `pnpm test` and `pnpm build` green throughout, and one user concatenated a
+25-test suite into `agent.test.ts` to get it gated at all.
 
 It is the same defect `defineExec`'s `cwd` policy exists for — "a green result
 for a project that is not there reads, in CI, exactly like a passing suite" —
@@ -562,14 +562,14 @@ calling the command bodies cannot reach the auto-detection.
 reachable without a human.** `promptTemplate` (`init.ts`) is a `p.select` over
 `listTemplates()` — the same function that backs `aai templates` and the
 unknown-template error, so a template added to `aai-templates` appears in the
-picker with no second roster to update, and `simple` is hoisted to the top and
-pre-selected so a bare `aai init` is still one Enter away from the project it
-produced before there was a picker. What is load-bearing is the guard around it:
-`--yes` AND `silent` (which is how JSON mode arrives, and JSON mode is
-AUTO-DETECTED on a pipe) resolve `DEFAULT_TEMPLATE` without prompting. Either one
-missing hangs a scripted `aai init | jq` on a terminal read nobody is watching —
-which is why the two specs asserting `select` was NOT called are the point of
-that group, not the one asserting it was.
+picker with no second roster to update, and `quickstart-agent` is hoisted to the
+top and pre-selected so a bare `aai init` is still one Enter away from the
+project it produced before there was a picker. What is load-bearing is the guard
+around it: `--yes` AND `silent` (which is how JSON mode arrives, and JSON mode
+is AUTO-DETECTED on a pipe) resolve `DEFAULT_TEMPLATE` without prompting. Either
+one missing hangs a scripted `aai init | jq` on a terminal read nobody is
+watching — which is why the two specs asserting `select` was NOT called are the
+point of that group, not the one asserting it was.
 
 **A dev-mode `aai init` must link EVERY workspace package the scaffold names,
 and the list is derived, not written down.** `WORKSPACE_PKG_DIRS` in `_init.ts`
@@ -1053,13 +1053,13 @@ Three properties are decisions:
   non-deterministic READS themselves and pays for the breadth with seven
   baselined occurrences here. Measured before deciding: a faithful port reports
   all seven and nothing else, and all seven are correct code — a read inside a
-  step-called helper, which `link-digest`'s own comment explains ("the `ctx.step`
-  callback boundary is not decidable from a line"). A user's project has no
-  baseline, so that port is a 100% false-positive rate on the only measurable
-  corpus, and a checker that is always wrong is one an author scrolls past. The
-  boundary needs a real parse; the repo does that with `oxc-parser`, and a native
-  parser cannot join a published CLI's runtime dependencies — a new one fails the
-  artifact-size budget on its own, regardless of bytes.
+  step-called helper, which `link-digest-workflow`'s own comment explains ("the
+  `ctx.step` callback boundary is not decidable from a line"). A user's project
+  has no baseline, so that port is a 100% false-positive rate on the only
+  measurable corpus, and a checker that is always wrong is one an author scrolls
+  past. The boundary needs a real parse; the repo does that with `oxc-parser`,
+  and a native parser cannot join a published CLI's runtime dependencies — a new
+  one fails the artifact-size budget on its own, regardless of bytes.
 - **A FALSE-POSITIVE FLOOR is a test.** `_workflow-determinism.test.ts` runs the
   scan over all fourteen shipped templates and requires ZERO findings, because
   every template is a project somebody scaffolds and then builds. It holds by
@@ -1307,7 +1307,7 @@ Four things follow, and they are what to preserve:
   the time and `retail/store.ts` imports `./seed.json` bare, so before the shim
   `npm start` worked for four templates out of fourteen — and Vite inlines both,
   so there is nothing left to teach. The `?raw` count is now ONE
-  (`pizza-ordering`, which composes): the generated entry writes that import
+  (`pizza-ordering-agent`, which composes): the generated entry writes that import
   itself, so the convention no longer costs an author a bundler feature. The
   argument is unchanged either way — Vite inlines it wherever it is written.
   The DYNAMIC import survives it: the path is computed at run time, and it is a
@@ -1334,11 +1334,11 @@ supported shape, and `prestart` skips only the TESTS: `npm test` is where a suit
 belongs, and a failing test must not be what stops a container from starting.
 
 `packages/aai-cli/src/e2e.test.ts` boots `npm start` against a real installed
-project — **`pizza-ordering`, chosen for its `tools/` directory**, which is what
-this leg is now about (it keeps the coverage of the starter it replaced anyway,
-whose prompt is a discovered `system-prompt.md`). It probes `/health`,
-`/client-config` and `/`, and then
-reads the six tool names out of the artifact the server booted, because nothing
-over HTTP exposes a tool list. That tier is the only one that can prove any of
-it: the project's own `aai build` runs from a real INSTALL, and
-`defaultClientDir()` resolves out of the installed `@alexkroman1/aai-ui`.
+project — **`pizza-ordering-agent`, chosen for its `tools/` directory**, which
+is what this leg is now about (it keeps the coverage of the starter it replaced
+anyway, whose prompt is a discovered `system-prompt.md`). It probes `/health`,
+`/client-config` and `/`, and then reads the six tool names out of the artifact
+the server booted, because nothing over HTTP exposes a tool list. That tier is
+the only one that can prove any of it: the project's own `aai build` runs from a
+real INSTALL, and `defaultClientDir()` resolves out of the installed
+`@alexkroman1/aai-ui`.

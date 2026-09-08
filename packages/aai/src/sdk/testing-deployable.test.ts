@@ -78,7 +78,7 @@ describe("expectDeployable", () => {
 
   test("s2s beside a pipeline stage is refused — by the conversion, named as validation", () => {
     // The type forbids `agent({ s2s, tts })` outright, so the runtime rule is
-    // reached by spreading, exactly as `pipeline-simple`'s spec does.
+    // reached by spreading, exactly as `custom-pipeline-agent`'s spec does.
     expect(() =>
       expectDeployable({
         ...agent({ name: "Line", s2s: assemblyAIS2s() }),

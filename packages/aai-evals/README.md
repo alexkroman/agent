@@ -36,8 +36,8 @@ template evals against a SCRIPTED model and printed `25 passed (25)`.
 | `--stub` | scripted model — the wiring check CI gates on |
 | `--allow-scripted` | let a template missing its provider key degrade rather than fail |
 
-`templates/pipeline-simple` names an Anthropic LLM stage, so a live run of it
-also wants `ANTHROPIC_API_KEY`; without it, use `--allow-scripted`.
+`templates/custom-pipeline-agent` names an Anthropic LLM stage, so a live run of
+it also wants `ANTHROPIC_API_KEY`; without it, use `--allow-scripted`.
 
 ## What is in here
 

@@ -1,7 +1,7 @@
 // Deploy an agent template to your own Node process — no managed platform, no
 // `aai` CLI.
 //
-// `agent.ts` next to this file is the `simple` template verbatim, untouched.
+// `agent.ts` next to this file is the `quickstart-agent` template verbatim, untouched.
 // This file is the deployment.
 //
 // The agent's tools are the files in `tools/` next to this one, and they run

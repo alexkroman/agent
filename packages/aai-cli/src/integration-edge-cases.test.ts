@@ -147,11 +147,11 @@ describe("init creates working project", () => {
           "scaffold/shared.txt": "from shared",
           "scaffold/.env.example": "MY_KEY=",
           "scaffold/package.json": '{"name":"test"}',
-          "templates/simple/agent.json": JSON.stringify({ name: "Default Name" }),
+          "templates/quickstart-agent/agent.json": JSON.stringify({ name: "Default Name" }),
         });
         vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
         const target = path.join(dir, "my-project");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
 
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
         const agentContent = await fs.readFile(path.join(target, "agent.json"), "utf-8");

@@ -151,7 +151,7 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
  * a hundred lines of `Type 'AnyActorLogic' is not assignable to type
  * 'AnyActorLogic'` with two absolute paths in it.
  *
- * Measured: `aai init --template support-line` produced exactly that. The
+ * Measured: `aai init --template technical-support-agent` produced exactly that. The
  * workspace lockfile pinned `xstate@5.32.5`, the fresh project resolved
  * `^5.32.5` to `5.32.6`, the CLI's typecheck gate failed, and the deploy was
  * REFUSED — `"deployed": false` with the whole error as a warning. One

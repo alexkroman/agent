@@ -142,7 +142,7 @@ export async function executeBuild(opts: {
       // slow or wants credentials is not dragged into every iteration. A build
       // is the opposite situation: it previews the deploy artifact, it is run
       // deliberately, and a gate that reads one file out of eight is the false
-      // green this whole change is about. Measured on the retail template:
+      // green this whole change is about. Measured on the retail-orders-agent template:
       // adding one tool broke `registry.test.ts` and `aai build` stayed green
       // through all of it. `--skipTests` remains the way to opt out.
       runVitest(cwd, { candidates: TEST_FILES, all: true });

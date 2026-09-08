@@ -259,7 +259,7 @@ export async function setStatus(
   // long as its run might still be answered; the memory backend gives it back the
   // moment the run goes terminal and this did not, so a DERIVED token — which is
   // what the SDK tells authors to use — served exactly one run ever.
-  // `recap-workflow` derives `retention:<sessionId>`, so a second recap in one
+  // `meeting-recap-agent` derives `retention:<sessionId>`, so a second recap in one
   // session hit `claimHook`'s conflict, which is not a suspend, so the saga
   // compensated and deleted that transcript too.
   //

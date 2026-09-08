@@ -113,7 +113,7 @@ const KIND_COPY: Record<ProjectKind, KindCopy> = {
     label: "Voice agent",
     heading: "What should your voice agent do?",
     blurb: "Describe it in a sentence. I'll create a project and build the first version.",
-    placeholder: "A pizza-ordering agent with a live cart…",
+    placeholder: "A pizza counter that keeps a live cart…",
   },
   workflow: {
     label: "Workflow",

@@ -184,7 +184,7 @@ export type ToolContext = {
    * a different one. And it was unreachable because the default lives on
    * `@alexkroman1/aai/internal`, a subpath an agent may not import, while the
    * per-call override was visible nowhere at all. What an author wrote instead
-   * was the number, by hand: `support-line` carried
+   * was the number, by hand: `technical-support-agent` carried
    * `const LOOKUP_BUDGET_MS = 28_000` under a comment saying where the real
    * constant lived and that this copy would have to be moved with it.
    *

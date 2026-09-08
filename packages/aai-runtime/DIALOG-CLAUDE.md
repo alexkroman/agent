@@ -183,7 +183,7 @@ session takes one of those branches with knobs declared.
 - **A transition cannot run a TOOL, so a state whose exit must also mutate a
   slot cannot safely be timed out.** A deadline and a session event both SEND AN
   EVENT: the dialog moves, and nothing else does. That is fine when the target
-  is terminal — `retail` and `travel-concierge` both carry `"@session.timed-out"`
+  is terminal — `retail-orders-agent` and `travel-concierge-agent` both carry `"@session.timed-out"`
   into a `final` state, where the point is that nothing acts again and nobody
   reads the staged change either. It is NOT fine for the shape it most looks
   like: a `timeout` on a confirmation gate that returns to the browsing state

@@ -118,7 +118,9 @@ describe("unknown flags, resolved against the real command tree", () => {
     expect(
       await unknownFlagsForArgv(mainCommand, ["publish", "--skipTypecheck", "--json"]),
     ).toEqual([]);
-    expect(await unknownFlagsForArgv(mainCommand, ["init", "-t", "simple", "-y"])).toEqual([]);
+    expect(
+      await unknownFlagsForArgv(mainCommand, ["init", "-t", "quickstart-agent", "-y"]),
+    ).toEqual([]);
   });
 
   test("descends into nested subcommands", async () => {

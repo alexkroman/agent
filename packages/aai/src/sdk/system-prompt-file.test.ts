@@ -36,7 +36,7 @@ describe("withSystemPrompt", () => {
   });
 
   test("a COMPOSED prompt containing the file is left exactly as built", () => {
-    // `pizza-ordering`'s shape: the file plus a computed menu. The value
+    // `pizza-ordering-agent`'s shape: the file plus a computed menu. The value
     // comparison is what makes this need no special case — and what makes the
     // "is the file referenced?" question answerable at all, since the entry is
     // generated before the build and has no module graph to ask.

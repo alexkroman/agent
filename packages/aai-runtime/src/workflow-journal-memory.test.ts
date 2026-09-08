@@ -17,7 +17,7 @@
  *   process.
  * - **A token goes back the moment its run goes terminal**, which is the same
  *   release the two Postgres stores get from `setStatus`'s `delete` CTE. The
- *   three backends agreeing on this is what makes a second `recap-workflow`
+ *   three backends agreeing on this is what makes a second `meeting-recap-agent`
  *   recap in one session possible at all.
  * - **The refusals.** A duplicate `runId`, and the four methods that throw for
  *   a run nothing created.
@@ -110,7 +110,7 @@ describe("the terminal-run sweep", () => {
 describe("a token is held only while its run might still be answered", () => {
   test("a TERMINAL move releases it, so a derived token serves a second run", async () => {
     // The same release `setStatus`'s `delete` CTE gives the two Postgres stores.
-    // Without it `recap-workflow`'s `retention:<sessionId>` served exactly one
+    // Without it `meeting-recap-agent`'s `retention:<sessionId>` served exactly one
     // run ever: a second recap in one session hit `claimHook`'s conflict, which
     // is not a suspend, so the saga compensated and deleted that transcript too.
     const journal = createMemoryJournal();

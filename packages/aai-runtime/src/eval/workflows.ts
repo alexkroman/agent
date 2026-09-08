@@ -111,7 +111,7 @@ export const DEFAULT_RUN_TIMEOUT_MS = 300_000;
  * keyless run live, and every case then fails on a 401 inside a step.
  *
  * What names a workflow app's credentials is `requiredEnv`, which is exactly why
- * `link-digest`'s own doc calls that field load-bearing in a way it is not for a
+ * `link-digest-workflow`'s own doc calls that field load-bearing in a way it is not for a
  * voice agent. So this is the union of the two, checked against the host
  * environment.
  *
@@ -227,7 +227,7 @@ export type EvalWorkflows = {
    *
    * Hand it to `openEvalSession({ workflows })` and a voice agent's tool that
    * starts, finds or cancels a run works in an eval — which is what
-   * `research-workflow` and `recap-workflow` need and could not have.
+   * `research-handoff-agent` and `meeting-recap-agent` need and could not have.
    */
   readonly client: WorkflowClient;
   /** Start a run and wait for it to settle. */
@@ -259,7 +259,7 @@ export type EvalWorkflows = {
    * Wait for every run this app has started, oldest first, and read them all.
    *
    * **Not tidiness — a LEAK.** Two shipped templates hand-rolled this loop
-   * verbatim, and `recap-workflow`'s doc says why: the scripted provider a case
+   * verbatim, and `meeting-recap-agent`'s doc says why: the scripted provider a case
    * installs is unpublished when that case finishes, so a body still mid-flight
    * makes its next request "against whatever the next case publishes — or
    * against the real provider, with a real key".

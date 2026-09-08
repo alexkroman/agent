@@ -52,7 +52,7 @@ export type FactsProps = {
  * 1,840 words".
  *
  * Nine pages had written this by hand under four different typographies for
- * one role, two of them (`call-audit` and `spoken-summary`) byte-identical down
+ * one role, two of them (`call-audit-workflow` and `spoken-summary-workflow`) byte-identical down
  * to the payload. Three things it takes off the caller:
  *
  * - **The separator cannot be forgotten, and neither can the space around it.**

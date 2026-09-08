@@ -174,7 +174,7 @@
       // `scaffold/server.mjs` — ignored above, shipped to users, and compiled
       // from inside this package by `check:template-types` — was its only
       // importer, so the dependency was unused by knip's reading and
-      // load-bearing by the gate's. `templates/simple/agent.eval.test.ts`
+      // load-bearing by the gate's. `templates/quickstart-agent/agent.eval.test.ts`
       // imports `@alexkroman1/aai-runtime/eval/vitest` now, which knip DOES
       // count, so the entry became a redundant-pattern error. If that eval ever
       // goes away, restore the entry with the paragraph above rather than

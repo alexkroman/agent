@@ -9,7 +9,7 @@ documentation, and the one file in `scaffold/` a project gets no copy of (see
 ## Templates
 
 - `packages/aai-templates/templates/` contains agent
-  scaffolding templates (simple, web-researcher, etc.). Each is
+  scaffolding templates (quickstart-agent, web-research-agent, etc.). Each is
   self-contained with its own `agent.ts` and optional `client.tsx`.
   `scaffold/` has base project files (package.json, tsconfig,
   etc.) layered underneath.
@@ -116,18 +116,18 @@ error always names the constraint or carries a `published by <date>` clause.
 Two rules that a sweep found broken in five templates at once, both of which are
 now compile errors rather than advice.
 
-**A tool that touches session state is `slot.tool` or `slot.updateTool`, never
-a `tool()` that opens with `slot.get(ctx)`.** The declaration is what makes
-"does this write?" visible, and what makes the wrong answer a compile error
-instead of a `TypeError` on the first call. Three shipped tools had it wrong and
-none of them could ever have worked: `infocom-adventure`'s `game_state_take` and
+**A tool that touches session state is `slot.tool` or `slot.updateTool`, never a
+`tool()` that opens with `slot.get(ctx)`.** The declaration is what makes "does
+this write?" visible, and what makes the wrong answer a compile error instead of
+a `TypeError` on the first call. Three shipped tools had it wrong and none of
+them could ever have worked: `text-adventure-agent`'s `game_state_take` and
 `game_state_flag` were declared `slot.tool` while pushing to `inventory` and
-writing into `flags`, and `solo-rpg`'s `oracle` assigned `game.chaosFactor`
-under a comment claiming `gameSlot.get` returned "the live state object", which
-described the removed `ctx.state` bag. Nothing in the repo executed any of them
-(`infocom-adventure` had no spec at all; `agent.test.ts` never reached
-`oracle`), which is the other half of the lesson — a template's spec is what
-makes its exemplar code true.
+writing into `flags`, and `tabletop-rpg-agent`'s `oracle` assigned
+`game.chaosFactor` under a comment claiming `gameSlot.get` returned "the live
+state object", which described the removed `ctx.state` bag. Nothing in the repo
+executed any of them (`text-adventure-agent` had no spec at all; `agent.test.ts`
+never reached `oracle`), which is the other half of the lesson — a template's
+spec is what makes its exemplar code true.
 
 The mixed case is real and has one answer: a tool where only ONE branch writes
 stays an ordinary `tool()` and calls `slot.update` inside that branch —
@@ -136,15 +136,15 @@ mutation window on the four branches that store nothing, and its body must be
 synchronous, which `tool()` bodies routinely are not.
 
 **A derived field belongs in the slot's `after` hook, and a tool that REPORTS it
-needs a PREDICATE.** `dispatch-center`'s board declared
-`after: (state) => { pruneState; recalculateAlertLevel }`; `solo-rpg` matches it
-now, its `updateCrisisFlags` having been called by hand from three mutating
-tools. Moving it is not a straight lift, and the reason generalizes:
+needs a PREDICATE.** `emergency-dispatch-agent`'s board declared
+`after: (state) => { pruneState; recalculateAlertLevel }`; `tabletop-rpg-agent`
+matches it now, its `updateCrisisFlags` having been called by hand from three
+mutating tools. Moving it is not a straight lift, and the reason generalizes:
 **`update()` runs `mutate(draft)` and only THEN `after(draft)`**, so a result
 object built inside the body carries the value the field had BEFORE the
-recalculation. Three solo-rpg tools report `gameOver` in the same call that
-empties the track and one turns it straight into `sendFrom`'s `DOWNED`, so a
-naive move ended the story a tool call late, silently. What works is a
+recalculation. Three tabletop-rpg-agent tools report `gameOver` in the same call
+that empties the track and one turns it straight into `sendFrom`'s `DOWNED`, so
+a naive move ended the story a tool call late, silently. What works is a
 predicate beside the writer (`isGameOver`/`inCrisis`) with `after` owning the
 WRITE: the rule is stated once, no mutating tool can store a stale flag, and a
 body that must report the fact reads the predicate.
@@ -156,15 +156,15 @@ readonly on ARRAYS — so `readonly string[]` stops satisfying `string[]` and th
 widening propagates into every projection, view and summary helper the template
 declares. `FrozenDispatchState`, `FrozenTripState`, `FrozenPlanState`,
 `FrozenRetailState`, `FrozenSupportState`, `FrozenGameState` and
-`FrozenOrderState` are that alias, one per template, each with the same note:
-a mutable value still satisfies it, so an `updateTool` draft passes unchanged,
+`FrozenOrderState` are that alias, one per template, each with the same note: a
+mutable value still satisfies it, so an `updateTool` draft passes unchanged,
 while a helper that WOULD have mutated stops compiling. Two shapes to copy when
-the widening gets awkward — `dispatch-center`'s `findIncident` is GENERIC over
-the incident's own type so one lookup serves the draft and the frozen value
-alike, and `resourceBrief` COPIES the array it puts in a fresh result object
-rather than aliasing a frozen one.
+the widening gets awkward — `emergency-dispatch-agent`'s `findIncident` is
+GENERIC over the incident's own type so one lookup serves the draft and the
+frozen value alike, and `resourceBrief` COPIES the array it puts in a fresh
+result object rather than aliasing a frozen one.
 
-The client half is the same rule one hop out: `solo-rpg` renders
+The client half is the same rule one hop out: `tabletop-rpg-agent` renders
 `DeepReadonly<GameState>` because that is what `gameSlot.projection((g) => g)`
 produces, and a client only ever renders what the server pushed.
 
@@ -182,86 +182,86 @@ once, and the templates are now their reference use:
 
 | Primitive | Demonstrated by |
 | --- | --- |
-| `sessionSlot()` | every stateful template — `pizza-ordering` (smallest), `retail` (slot in `store.ts`, view in `shared.ts`, so the seed stays out of the browser bundle) |
-| `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` projects `gameView`, which withholds seven fields and the unplayed acts (it USED to project the identity, and the argument for that is still in `shared.ts`). Six templates now export the composed projection from the module that declares the slot and import it at BOTH ends — see `useAgentState(projection)` below |
-| `slot.update` (the synchronous draft) | `dispatch-center` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `plan-and-execute` (`work_next_step` CLAIMS its step inside one window, then awaits outside it — the shape to copy when a body needs a model call) |
-| `slot.updateTool` (the mutating half) | `retail` — every one of its fifteen tools, through `retailTool`, which is what a per-agent wrapper on top of it looks like: the wrapper owns the auth gate and the activity log, and passes the DRAFT to the tool body rather than letting it re-read the slot |
-| `slot.tool` (the reading half) | `pizza-ordering` (`view_order`), `travel-concierge` (`lookup_booking`), `executive-assistant` (`inbox_status`, `review_memory`), `infocom-adventure`, `solo-rpg` (`check_state`, and `save_game` — an async body is fine, only `updateTool` must be synchronous), `dispatch-center` (`incident_get`, `ops_dashboard`, `resources_get_available`) — and choosing wrong is loud, since what a read is handed is frozen |
-| `ctx.generate` with a `schema` | `support-line` (five graders and a rewriter over one binary-score schema), `plan-and-execute` (planner, executor and replanner), `executive-assistant` (triage, the tone rewrite, and the two reflection steps). `travel-concierge` deliberately uses none — its specialists are prompts, not models |
-| `ToolFailure` / `isToolFailure` | `retail` (~40 sites, failures propagating through `store.ts` helpers), `dispatch-center` (six) |
-| `sessionSlot(key, create, { caps })` | the ten that paired a `MAX_*` constant with a wrapper whose body was `pushCapped(state.<list>, item, MAX)` — `executive-assistant` (five arrays, three of which — `reflections`, `sent`, `triageExamples` — were pushed to directly and rode every `syncState` frame uncapped), `hiring-desk`, `briefing-desk`, `plan-and-execute`, `support-line`, `travel-concierge`, `roadside-assist`, `infocom-adventure`, `solo-rpg`, and `retail` (`activity`, declared on the slot in `store.ts`). Each declares the bound where the slot is and pushes directly; the `MAX_*` constants that survive are the ones a spec reads |
-| `pushCapped` | `dispatch-center` (incident timeline) ALONE — a NESTED list, one per incident, which is the one shape `caps` has no key for. The other three adopters moved to `caps` above |
-| `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg`. It admits an explicit `undefined` per field now, so the `...(x ? { x } : {})` two specs wrote around an optional `sessionId` — rule 22's shape — is gone |
-| `expectToolOk` / `expectDialogOk`, `parseToolInput` / `parseSchemaInput` (`@alexkroman1/aai/testing`) | the unwrap five specs wrote, and the `["~standard"].validate` reach 18 sites across ten templates re-derived. `travel-concierge` and `plan-and-execute` had read gated results through `(await run(…)) as { result: {…} }`, so a REFUSAL read `undefined` off the cast and died three assertions later; `expectToolOk` fails at the CALL, quoting what the flow refused |
-| `expectDialogRefused` / `dialogRefusalPattern` (`@alexkroman1/aai/testing`) | the OTHER half of the unwrap: that a gate HELD. Seven templates had pinned the refusal sentence by regex — `dispatch-center` and `retail` byte-identically, each with a comment re-deriving the JSON escaping an eval reads a tool result through — so rewording the model-facing half of the gate would have broken eight suites that never imported it. The sentence is built once in the SDK and the pattern derived from it. `hiring-desk`'s unit spec is the `expectDialogRefused` case: the `isToolFailure` + `toBe(true)` + `if` shape it replaces let a SUCCESS through with every assertion after the guard skipped; the evals take `dialogRefusalPattern(state)`, which also folds the `toMatch(/idle/)` line four of them wrote beside it |
-| `installStubStepFetch` (`@alexkroman1/aai/testing/vitest`) | every workflow spec. `recap-workflow`'s used to publish over `globalThis.fetch` while every request in that file goes through `stepFetch`, so ~20 tests were green against `step-fetch.ts`'s unpublished-slot FALLBACK — a path production never takes. `link-digest/agent.test.ts` states the rule its sibling broke |
+| `sessionSlot()` | every stateful template — `pizza-ordering-agent` (smallest), `retail-orders-agent` (slot in `store.ts`, view in `shared.ts`, so the seed stays out of the browser bundle) |
+| `slot.projection(view)` as `syncState` | `pizza-ordering-agent`, `emergency-dispatch-agent`, `retail-orders-agent`; `tabletop-rpg-agent` projects `gameView`, which withholds seven fields and the unplayed acts (it USED to project the identity, and the argument for that is still in `shared.ts`). Six templates now export the composed projection from the module that declares the slot and import it at BOTH ends — see `useAgentState(projection)` below |
+| `slot.update` (the synchronous draft) | `emergency-dispatch-agent` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `research-planner-agent` (`work_next_step` CLAIMS its step inside one window, then awaits outside it — the shape to copy when a body needs a model call) |
+| `slot.updateTool` (the mutating half) | `retail-orders-agent` — every one of its fifteen tools, through `retailTool`, which is what a per-agent wrapper on top of it looks like: the wrapper owns the auth gate and the activity log, and passes the DRAFT to the tool body rather than letting it re-read the slot |
+| `slot.tool` (the reading half) | `pizza-ordering-agent` (`view_order`), `travel-concierge-agent` (`lookup_booking`), `executive-inbox-agent` (`inbox_status`, `review_memory`), `text-adventure-agent`, `tabletop-rpg-agent` (`check_state`, and `save_game` — an async body is fine, only `updateTool` must be synchronous), `emergency-dispatch-agent` (`incident_get`, `ops_dashboard`, `resources_get_available`) — and choosing wrong is loud, since what a read is handed is frozen |
+| `ctx.generate` with a `schema` | `technical-support-agent` (five graders and a rewriter over one binary-score schema), `research-planner-agent` (planner, executor and replanner), `executive-inbox-agent` (triage, the tone rewrite, and the two reflection steps). `travel-concierge-agent` deliberately uses none — its specialists are prompts, not models |
+| `ToolFailure` / `isToolFailure` | `retail-orders-agent` (~40 sites, failures propagating through `store.ts` helpers), `emergency-dispatch-agent` (six) |
+| `sessionSlot(key, create, { caps })` | the ten that paired a `MAX_*` constant with a wrapper whose body was `pushCapped(state.<list>, item, MAX)` — `executive-inbox-agent` (five arrays, three of which — `reflections`, `sent`, `triageExamples` — were pushed to directly and rode every `syncState` frame uncapped), `applicant-screening-agent`, `topic-briefing-agent`, `research-planner-agent`, `technical-support-agent`, `travel-concierge-agent`, `roadside-assistance-agent`, `text-adventure-agent`, `tabletop-rpg-agent`, and `retail-orders-agent` (`activity`, declared on the slot in `store.ts`). Each declares the bound where the slot is and pushes directly; the `MAX_*` constants that survive are the ones a spec reads |
+| `pushCapped` | `emergency-dispatch-agent` (incident timeline) ALONE — a NESTED list, one per incident, which is the one shape `caps` has no key for. The other three adopters moved to `caps` above |
+| `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `emergency-dispatch-agent`, `pizza-ordering-agent`, `retail-orders-agent`, `tabletop-rpg-agent`. It admits an explicit `undefined` per field now, so the `...(x ? { x } : {})` two specs wrote around an optional `sessionId` — rule 22's shape — is gone |
+| `expectToolOk` / `expectDialogOk`, `parseToolInput` / `parseSchemaInput` (`@alexkroman1/aai/testing`) | the unwrap five specs wrote, and the `["~standard"].validate` reach 18 sites across ten templates re-derived. `travel-concierge-agent` and `research-planner-agent` had read gated results through `(await run(…)) as { result: {…} }`, so a REFUSAL read `undefined` off the cast and died three assertions later; `expectToolOk` fails at the CALL, quoting what the flow refused |
+| `expectDialogRefused` / `dialogRefusalPattern` (`@alexkroman1/aai/testing`) | the OTHER half of the unwrap: that a gate HELD. Seven templates had pinned the refusal sentence by regex — `emergency-dispatch-agent` and `retail-orders-agent` byte-identically, each with a comment re-deriving the JSON escaping an eval reads a tool result through — so rewording the model-facing half of the gate would have broken eight suites that never imported it. The sentence is built once in the SDK and the pattern derived from it. `applicant-screening-agent`'s unit spec is the `expectDialogRefused` case: the `isToolFailure` + `toBe(true)` + `if` shape it replaces let a SUCCESS through with every assertion after the guard skipped; the evals take `dialogRefusalPattern(state)`, which also folds the `toMatch(/idle/)` line four of them wrote beside it |
+| `installStubStepFetch` (`@alexkroman1/aai/testing/vitest`) | every workflow spec. `meeting-recap-agent`'s used to publish over `globalThis.fetch` while every request in that file goes through `stepFetch`, so ~20 tests were green against `step-fetch.ts`'s unpublished-slot FALLBACK — a path production never takes. `link-digest-workflow/agent.test.ts` states the rule its sibling broke |
 | `stubTranscribe` (`@alexkroman1/aai/testing`) | the three transcribing templates, which had each re-typed the wire; `transcription-workflow` had ended up asserting the SDK's own `Authorization` header and multipart boundary. Two SDK-contract specs stay there (`speech_models` plural, the file is STREAMED), both out of a live production failure that template's doc narrates |
-| `useAgentState(projection)` | `pizza-ordering`, `dispatch-center`, `plan-and-execute`, `solo-rpg`, `support-line`, `travel-concierge`, `night-owl`, `executive-assistant` — the eight that pass the projection itself, so nothing restates the type and nothing derives the empty frame. `night-owl` is also the one showing a slot BESIDE `useEvent`/`useToolCallStart`; the rule separating them is in `packages/aai-ui/CLAUDE.md` |
-| `useAgentState(fallback)` | `retail` ONLY, and deliberately: the projection overload calls the slot's `create()`, whose factory pulls a 107 KB `seed.json`, so passing it would ship the catalog to the browser (see below) |
-| `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
+| `useAgentState(projection)` | `pizza-ordering-agent`, `emergency-dispatch-agent`, `research-planner-agent`, `tabletop-rpg-agent`, `technical-support-agent`, `travel-concierge-agent`, `entertainment-picks-agent`, `executive-inbox-agent` — the eight that pass the projection itself, so nothing restates the type and nothing derives the empty frame. `entertainment-picks-agent` is also the one showing a slot BESIDE `useEvent`/`useToolCallStart`; the rule separating them is in `packages/aai-ui/CLAUDE.md` |
+| `useAgentState(fallback)` | `retail-orders-agent` ONLY, and deliberately: the projection overload calls the slot's `create()`, whose factory pulls a 107 KB `seed.json`, so passing it would ship the catalog to the browser (see below) |
+| `AutoScroll` | the three custom-chrome clients — `emergency-dispatch-agent`, `retail-orders-agent`, `text-adventure-agent` |
 | `useUserTranscript` | the same three. Each had written `userTranscript !== null && (… === "" ? "…" : …)` by hand, re-deriving a PROTOCOL distinction (`null` is silence, `""` is speech detected with no words yet) from the type |
-| `WorkflowProgress` | `transcription-workflow` and `redline` render a run's WHOLE narration; `link-digest` and `podcast-digest` pass `lines={1}` for the newest one, deleting two hand-rolled versions. `WORKFLOW_STATUS_LABELS` replaced two byte-identical status maps the same way |
-| `useDownloadUrl` (`@alexkroman1/aai-ui`) | `spoken-summary` and `call-audit`, the two that exist BECAUSE of the audio round trip and had copied the 38-line object-URL lifecycle byte-for-byte |
-| `WorkflowPendingNote` + `WorkflowRunError` (`@alexkroman1/aai-ui`) | the six workflow-app pages, which had each written a three-branch `pendingNote()` (pressed here, still looking, found from earlier) differing only in the noun, and a `role="alert"` paragraph for a failed run that had drifted three ways on the sentence and two on the muting class. A page passes the SUBMISSION and names what its run produces — `subject="draft"`, and `scope="browser"` on `podcast-digest`, whose key is `local`. `transcription-workflow` is the documented exception and keeps `recover.ts`'s own function: its streaming flow has a FOURTH branch (a reload does not orphan that run, it ENDS it), which is a fact about the mode rather than about the run, and the sentence is pinned by a spec that has no DOM to render a component in |
-| `SessionErrorBanner` + `AGENT_STATE_LABELS` + `useSessionStatus` (`@alexkroman1/aai-ui`), adopted late | `infocom-adventure` was the one custom chrome still carrying its own `ErrorBanner` (no `role`-independent difference from the SDK's, one more copy to drift), a six-arm ternary over `AgentState` falling through to "Idle", and a raw `useSessionSelector((s) => s.state)`; `retail` rendered the enum member itself, so its header read a lowercase `disconnected`. All three exports had already been published FOR those copies — the audit found them un-adopted. `useSessionError` lost its only template exerciser in the same move and is an allowlist entry now, per "The last remover pays" |
-| `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
-| `spokenAlphanumeric` (`@alexkroman1/aai`) | `retail` (`normalizeOrderId`) and `roadside-assist` (`normalizePolicy`) — two regexes for one job, differing only in where the case fold sat |
-| `dialog()` + `dialog.tool` + `dialog.send` | eight templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `executive-assistant` (the human gate, nested, with a per-proposal allow-list enforced inside it), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, nested, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity), `roadside-assist` (the one that describes a CALL — deadlines, session events and per-phase voice knobs) |
-| `agent({ dialogs })` + `Dialog.receive` / `.timeout` / `.voiceConfig` | `roadside-assist` (and `executive-assistant`, for the hang-up alone), and everything below the tool gate needs it: declaring the dialog on the agent is what feeds it session events, arms its deadlines, puts the active `instruction` in front of the model on every turn, and applies `bargeIn` / `toolChoice` / `temperature`. `AnyDialog` is the type its `DIALOGS` array is written as. See "A dialog can describe a CALL" below |
-| `procedure()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
-| `subagent()` + `ctx.delegate` | `briefing-desk` (and `executive-assistant`'s meeting assistant, one subagent over a calendar tool that lives beside it rather than in `tools/`), and it exists for this: four subagents with different tool surfaces, models and budgets, angles fanned out with `Promise.allSettled`, `stubDelegate` driving its spec. Argued in `packages/aai-runtime/CLAUDE.md`, "Subagents" — this guide is at its cap |
-| `stepDelegate` (`@alexkroman1/aai/step`) | `research-workflow` — `investigate` hands one angle to a researcher subagent with `web_search`/`visit_webpage`. **It hand-rolled the loop and the comparison is the point**: an action schema for the model to pick from, a counter for the budget, a "you have used your budget" sentence, a branch for the turn that named an action and filled in no field, and a second model call to compress — 82 lines of loop and helpers, every one re-deriving what `subagent()` already is (the file is 44 code lines lighter; the difference is the researcher, its `cite` tool and reading the cost off `toolCalls`, which are this template's own decisions). A tool call IS a validated action, `maxSteps` IS the budget, the forced final answer IS the stop rule (enforced, not requested), and `expectedOutput` IS the compression, done where the raw material already is. `plan-and-execute`'s `executeStep` is the same conversion one layer up, through `ctx.delegate` — it had a tool context all along |
-| `SubagentDef.tools` beside a builtin | `briefing-desk`'s roster takes none; `plan-and-execute` gives its executor `search` and `read`, which are this template's OWN tools over `@alexkroman1/aai/tools` rather than the `web_search`/`visit_webpage` builtins. That is deliberate and it is what "the last remover pays" looks like in practice: converting both loops would have left the published `/tools` subpath with no worked example, so it moved one layer down into the subagent's tool set instead. `read` is new — the executor's prompt had said "search once, read what comes back" while the loop offered no way to do it |
-| `stubStepDelegate` / `installStubStepDelegate` | `research-workflow`, at both tiers — the step tests and the DURABLE block, which cannot run without it: the slot THROWS unpublished rather than answering emptily, so a durable test cannot pass over a research pass that never happened |
-| `agent({ subagents })` + `SubagentRoster` | `briefing-desk`, beside the call-site half — and the SPLIT is the lesson. `research_topic` fans ONE subagent over N angles and `verify_claim` reads the board to turn "the second thing you told me" into a sentence, so neither is a choice a model could make; `explainer` and `counterpoint` differ only in what the caller asked, so they go on the roster and reach the model as one `delegate` tool. **Name a subagent in code when the tool IS the choice; put it on the roster when the caller's words are** — an agent growing a fourth `tools/ask_the_<x>.ts` whose body is one `ctx.delegate` line has been hand-rolling the roster |
-| `SubagentDef.expectedOutput` | all four of `briefing-desk`'s, and its spec asserts every one declares one — the parent reads the FINAL message and nothing else, so a subagent added without one is the regression worth catching |
-| `SubagentDef.guardrail` | `hiring-desk`'s `emailWriter`, `executive-assistant`'s meeting assistant, and `plan-and-execute`'s executor. It is for the judgement a SHAPE cannot express — a missing citation, a report naming no time, a step reported settled by a subagent that called no tool. `briefing-desk`'s `factChecker` was the original example and is deliberately NOT one any more: its verdict had to open with `Confirmed:`/`Contradicted:`/`Unclear:`, which is an enum, so it moved to `SubagentDef.schema` and the guardrail came off. That migration is the row's real lesson — reach for a guardrail only once you have established a schema cannot say it. The unaccepted case stays a `unusable` field on the tool result rather than a `ToolFailure`: there IS an answer, and the desk is on a live call |
-| `workflow()` + `ctx.workflows` + `isTerminal` | `research-workflow` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `recap-workflow` is the same shape with `cancel` and a live-run check on top |
-| `mountPage()` + `useWorkflowSubmit` | `link-digest` — the WORKFLOW APP whose FORM is still hand-written and its own `useState`, which is the point of it and what its module doc now says specifically. `useWorkflowRun` was exercised by no template for a while, after `link-digest` and `podcast-digest` moved to `useWorkflowSubmit`; `transcription-workflow`'s `client.tsx` names it again |
-| `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-workflow` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so it names no field component itself; `FileField` is `redline`'s, whose `<FileField read="text">` takes a draft the user already has without an upload |
-| `TextAreaField` beside `<WorkflowFields>` | `redline` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
-| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-workflow` and `link-digest` for the HTTP classification each had hand-written identically, `research-workflow`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-workflow` for the two `catch`-block fatals, `recap-workflow` for both halves of a provider call it also polls, `podcast-digest` for `sendToChannelOrFail` (the 4xx `FatalError` its Slack step used to raise by hand, from a body it had read itself) |
-| `stepFetchOrFail` (`@alexkroman1/aai/step-errors`) | `link-digest`, `recap-workflow`'s `request()` and `podcast-digest`'s `fetchText` — the THIRD copy is what extracted it, on the rule below. Each had written `stepFetch` + `if (!res.ok) throw toStepError(…)`, and each threw the response BODY away, so a 4xx that said what was wrong arrived as a number. The one place that stays on raw `stepFetch` is `recap-workflow`'s DELETE, where a 404 means already-deleted. `podcast-digest`'s Slack post was the other, and it is not a template concern any more — see the `channels` row |
-| `stepGenerateJson` + `stripJsonFence` | `research-workflow` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-workflow` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
-| `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-workflow`, `link-digest`, `redline` and `recap-workflow` specs — the bare `stubGateway` under it is exercised by no template and is an allowlist entry now that `/testing` is in the gate's scope — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
+| `WorkflowProgress` | `transcription-workflow` and `document-redline-workflow` render a run's WHOLE narration; `link-digest-workflow` and `podcast-digest-workflow` pass `lines={1}` for the newest one, deleting two hand-rolled versions. `WORKFLOW_STATUS_LABELS` replaced two byte-identical status maps the same way |
+| `useDownloadUrl` (`@alexkroman1/aai-ui`) | `spoken-summary-workflow` and `call-audit-workflow`, the two that exist BECAUSE of the audio round trip and had copied the 38-line object-URL lifecycle byte-for-byte |
+| `WorkflowPendingNote` + `WorkflowRunError` (`@alexkroman1/aai-ui`) | the six workflow-app pages, which had each written a three-branch `pendingNote()` (pressed here, still looking, found from earlier) differing only in the noun, and a `role="alert"` paragraph for a failed run that had drifted three ways on the sentence and two on the muting class. A page passes the SUBMISSION and names what its run produces — `subject="draft"`, and `scope="browser"` on `podcast-digest-workflow`, whose key is `local`. `transcription-workflow` is the documented exception and keeps `recover.ts`'s own function: its streaming flow has a FOURTH branch (a reload does not orphan that run, it ENDS it), which is a fact about the mode rather than about the run, and the sentence is pinned by a spec that has no DOM to render a component in |
+| `SessionErrorBanner` + `AGENT_STATE_LABELS` + `useSessionStatus` (`@alexkroman1/aai-ui`), adopted late | `text-adventure-agent` was the one custom chrome still carrying its own `ErrorBanner` (no `role`-independent difference from the SDK's, one more copy to drift), a six-arm ternary over `AgentState` falling through to "Idle", and a raw `useSessionSelector((s) => s.state)`; `retail-orders-agent` rendered the enum member itself, so its header read a lowercase `disconnected`. All three exports had already been published FOR those copies — the audit found them un-adopted. `useSessionError` lost its only template exerciser in the same move and is an allowlist entry now, per "The last remover pays" |
+| `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail-orders-agent` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
+| `spokenAlphanumeric` (`@alexkroman1/aai`) | `retail-orders-agent` (`normalizeOrderId`) and `roadside-assistance-agent` (`normalizePolicy`) — two regexes for one job, differing only in where the case fold sat |
+| `dialog()` + `dialog.tool` + `dialog.send` | eight templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge-agent` (the confirmation gate, two states), `executive-inbox-agent` (the human gate, nested, with a per-proposal allow-list enforced inside it), `research-planner-agent` (a plan's lifecycle, three), `retail-orders-agent` (a call's, nested, ending in a TERMINAL state), `tabletop-rpg-agent` (nested, and a final one), `emergency-dispatch-agent` (nested, and the one whose position is deliberately NOT per-entity), `roadside-assistance-agent` (the one that describes a CALL — deadlines, session events and per-phase voice knobs) |
+| `agent({ dialogs })` + `Dialog.receive` / `.timeout` / `.voiceConfig` | `roadside-assistance-agent` (and `executive-inbox-agent`, for the hang-up alone), and everything below the tool gate needs it: declaring the dialog on the agent is what feeds it session events, arms its deadlines, puts the active `instruction` in front of the model on every turn, and applies `bargeIn` / `toolChoice` / `temperature`. `AnyDialog` is the type its `DIALOGS` array is written as. See "A dialog can describe a CALL" below |
+| `procedure()` | `technical-support-agent` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
+| `subagent()` + `ctx.delegate` | `topic-briefing-agent` (and `executive-inbox-agent`'s meeting assistant, one subagent over a calendar tool that lives beside it rather than in `tools/`), and it exists for this: four subagents with different tool surfaces, models and budgets, angles fanned out with `Promise.allSettled`, `stubDelegate` driving its spec. Argued in `packages/aai-runtime/CLAUDE.md`, "Subagents" — this guide is at its cap |
+| `stepDelegate` (`@alexkroman1/aai/step`) | `research-handoff-agent` — `investigate` hands one angle to a researcher subagent with `web_search`/`visit_webpage`. **It hand-rolled the loop and the comparison is the point**: an action schema for the model to pick from, a counter for the budget, a "you have used your budget" sentence, a branch for the turn that named an action and filled in no field, and a second model call to compress — 82 lines of loop and helpers, every one re-deriving what `subagent()` already is (the file is 44 code lines lighter; the difference is the researcher, its `cite` tool and reading the cost off `toolCalls`, which are this template's own decisions). A tool call IS a validated action, `maxSteps` IS the budget, the forced final answer IS the stop rule (enforced, not requested), and `expectedOutput` IS the compression, done where the raw material already is. `research-planner-agent`'s `executeStep` is the same conversion one layer up, through `ctx.delegate` — it had a tool context all along |
+| `SubagentDef.tools` beside a builtin | `topic-briefing-agent`'s roster takes none; `research-planner-agent` gives its executor `search` and `read`, which are this template's OWN tools over `@alexkroman1/aai/tools` rather than the `web_search`/`visit_webpage` builtins. That is deliberate and it is what "the last remover pays" looks like in practice: converting both loops would have left the published `/tools` subpath with no worked example, so it moved one layer down into the subagent's tool set instead. `read` is new — the executor's prompt had said "search once, read what comes back" while the loop offered no way to do it |
+| `stubStepDelegate` / `installStubStepDelegate` | `research-handoff-agent`, at both tiers — the step tests and the DURABLE block, which cannot run without it: the slot THROWS unpublished rather than answering emptily, so a durable test cannot pass over a research pass that never happened |
+| `agent({ subagents })` + `SubagentRoster` | `topic-briefing-agent`, beside the call-site half — and the SPLIT is the lesson. `research_topic` fans ONE subagent over N angles and `verify_claim` reads the board to turn "the second thing you told me" into a sentence, so neither is a choice a model could make; `explainer` and `counterpoint` differ only in what the caller asked, so they go on the roster and reach the model as one `delegate` tool. **Name a subagent in code when the tool IS the choice; put it on the roster when the caller's words are** — an agent growing a fourth `tools/ask_the_<x>.ts` whose body is one `ctx.delegate` line has been hand-rolling the roster |
+| `SubagentDef.expectedOutput` | all four of `topic-briefing-agent`'s, and its spec asserts every one declares one — the parent reads the FINAL message and nothing else, so a subagent added without one is the regression worth catching |
+| `SubagentDef.guardrail` | `applicant-screening-agent`'s `emailWriter`, `executive-inbox-agent`'s meeting assistant, and `research-planner-agent`'s executor. It is for the judgement a SHAPE cannot express — a missing citation, a report naming no time, a step reported settled by a subagent that called no tool. `topic-briefing-agent`'s `factChecker` was the original example and is deliberately NOT one any more: its verdict had to open with `Confirmed:`/`Contradicted:`/`Unclear:`, which is an enum, so it moved to `SubagentDef.schema` and the guardrail came off. That migration is the row's real lesson — reach for a guardrail only once you have established a schema cannot say it. The unaccepted case stays a `unusable` field on the tool result rather than a `ToolFailure`: there IS an answer, and the desk is on a live call |
+| `workflow()` + `ctx.workflows` + `isTerminal` | `research-handoff-agent` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `meeting-recap-agent` is the same shape with `cancel` and a live-run check on top |
+| `mountPage()` + `useWorkflowSubmit` | `link-digest-workflow` — the WORKFLOW APP whose FORM is still hand-written and its own `useState`, which is the point of it and what its module doc now says specifically. `useWorkflowRun` was exercised by no template for a while, after `link-digest-workflow` and `podcast-digest-workflow` moved to `useWorkflowSubmit`; `transcription-workflow`'s `client.tsx` names it again |
+| `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-workflow` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so it names no field component itself; `FileField` is `document-redline-workflow`'s, whose `<FileField read="text">` takes a draft the user already has without an upload |
+| `TextAreaField` beside `<WorkflowFields>` | `document-redline-workflow` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
+| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-workflow` and `link-digest-workflow` for the HTTP classification each had hand-written identically, `research-handoff-agent`/`link-digest-workflow`/`document-redline-workflow` for the `.catch(throwStepError)` on a model call, `transcription-workflow` for the two `catch`-block fatals, `meeting-recap-agent` for both halves of a provider call it also polls, `podcast-digest-workflow` for `sendToChannelOrFail` (the 4xx `FatalError` its Slack step used to raise by hand, from a body it had read itself) |
+| `stepFetchOrFail` (`@alexkroman1/aai/step-errors`) | `link-digest-workflow`, `meeting-recap-agent`'s `request()` and `podcast-digest-workflow`'s `fetchText` — the THIRD copy is what extracted it, on the rule below. Each had written `stepFetch` + `if (!res.ok) throw toStepError(…)`, and each threw the response BODY away, so a 4xx that said what was wrong arrived as a number. The one place that stays on raw `stepFetch` is `meeting-recap-agent`'s DELETE, where a 404 means already-deleted. `podcast-digest-workflow`'s Slack post was the other, and it is not a template concern any more — see the `channels` row |
+| `stepGenerateJson` + `stripJsonFence` | `research-handoff-agent` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest-workflow` (one), `document-redline-workflow` (the critic's findings) and `meeting-recap-agent` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
+| `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-handoff-agent`, `link-digest-workflow`, `document-redline-workflow` and `meeting-recap-agent` specs — the bare `stubGateway` under it is exercised by no template and is an allowlist entry now that `/testing` is in the gate's scope — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest-workflow`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
 | `toolOf` / `runTool` / `toolRunner` (`@alexkroman1/aai/testing`) | the TEN specs driving tools through the agent's own table, each opening `const run = toolRunner(agentDef);`. `args` and `ctx` are both optional (66 `{}` placeholders are gone). **The advice that sat here — write the NARROWEST wrapper your specs need — is RETIRED: it is what produced the drift**, measured on `toolRunner` |
-| `deployedAgent` (`@alexkroman1/aai/testing`) | `retail`'s `registry.test.ts` ALONE. Every other spec imports `virtual:aai/agent`, which the `aaiAgentPlugin()` in this package's `vitest.config.ts` serves — the same lowering, resolved against the importing file, so a spec needs no glob of its own. A tool is a FILE, so `def.tools` is empty until one of the two runs. `retail` keeps the explicit call because the tool REGISTRY is that file's subject and because it is the worked example for a runner that is not vitest. See "A `tools/` file IS the tool" below |
-| `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) `plan-and-execute` (planner, executor, replanner) and `executive-assistant` (four roles, one system constant each) — the three whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
-| `scriptedToolContext` (`@alexkroman1/aai/testing`) | `executive-assistant`, `hiring-desk` and `plan-and-execute` — the three specs that scripted BOTH seams and then wrote `createToolContext({ generate: model.generate, delegate: desk.delegate })`; `plan-and-execute`'s helper returned the two functions, so eleven tests rebuilt the context. The routes table stays in each spec |
-| `runGuardrail` (`@alexkroman1/aai/testing`) | `hiring-desk` (`emailWriter`), `executive-assistant` (the meeting assistant) and `plan-and-execute` (the executor) — a byte-identical seven-line `check()` in the first two, whose real content was refusing a verdict that came back as a promise. `briefing-desk` was one until its `factChecker` moved to a schema; `plan-and-execute`'s spec drives three verdicts through it |
-| `mapSettled` + `partitionSettled` (`@alexkroman1/aai/step`) | `hiring-desk` (`crews.ts`, both crews — `Scored` and `Drafted` are `Settled<Candidate, …>` aliases, and three tools partition the result) and `briefing-desk` (`research_topic`, at `Infinity`, the width its `Promise.allSettled` had). The four "everything failed" sentences read `failed[0]?.error` off a typed list instead of re-narrowing a union |
-| `ttsVoiceIds` (`@alexkroman1/aai/tts`) | `spoken-summary` and `call-audit` — the byte-identical `Object.entries(...).filter(...).map(...)` plus a destructure-with-default, now one line each. `ASSEMBLYAI_TTS_DEFAULT_VOICE` lost its only template exercisers in that move and was owed an allowlist entry; `spoken-summary` names it again (the voice an unchosen summary is read in) and so does `pipeline-simple`'s stage catalog |
-| `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-workflow` and `recap-workflow` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
+| `deployedAgent` (`@alexkroman1/aai/testing`) | `retail-orders-agent`'s `registry.test.ts` ALONE. Every other spec imports `virtual:aai/agent`, which the `aaiAgentPlugin()` in this package's `vitest.config.ts` serves — the same lowering, resolved against the importing file, so a spec needs no glob of its own. A tool is a FILE, so `def.tools` is empty until one of the two runs. `retail-orders-agent` keeps the explicit call because the tool REGISTRY is that file's subject and because it is the worked example for a runner that is not vitest. See "A `tools/` file IS the tool" below |
+| `stubGenerate` (`@alexkroman1/aai/testing`) | `technical-support-agent` (five nodes over one binary-score schema) `research-planner-agent` (planner, executor, replanner) and `executive-inbox-agent` (four roles, one system constant each) — the three whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
+| `scriptedToolContext` (`@alexkroman1/aai/testing`) | `executive-inbox-agent`, `applicant-screening-agent` and `research-planner-agent` — the three specs that scripted BOTH seams and then wrote `createToolContext({ generate: model.generate, delegate: desk.delegate })`; `research-planner-agent`'s helper returned the two functions, so eleven tests rebuilt the context. The routes table stays in each spec |
+| `runGuardrail` (`@alexkroman1/aai/testing`) | `applicant-screening-agent` (`emailWriter`), `executive-inbox-agent` (the meeting assistant) and `research-planner-agent` (the executor) — a byte-identical seven-line `check()` in the first two, whose real content was refusing a verdict that came back as a promise. `topic-briefing-agent` was one until its `factChecker` moved to a schema; `research-planner-agent`'s spec drives three verdicts through it |
+| `mapSettled` + `partitionSettled` (`@alexkroman1/aai/step`) | `applicant-screening-agent` (`crews.ts`, both crews — `Scored` and `Drafted` are `Settled<Candidate, …>` aliases, and three tools partition the result) and `topic-briefing-agent` (`research_topic`, at `Infinity`, the width its `Promise.allSettled` had). The four "everything failed" sentences read `failed[0]?.error` off a typed list instead of re-narrowing a union |
+| `ttsVoiceIds` (`@alexkroman1/aai/tts`) | `spoken-summary-workflow` and `call-audit-workflow` — the byte-identical `Object.entries(...).filter(...).map(...)` plus a destructure-with-default, now one line each. `ASSEMBLYAI_TTS_DEFAULT_VOICE` lost its only template exercisers in that move and was owed an allowlist entry; `spoken-summary-workflow` names it again (the voice an unchosen summary is read in) and so does `custom-pipeline-agent`'s stage catalog |
+| `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-handoff-agent` and `meeting-recap-agent` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
 | `installStubWorkflows` (`@alexkroman1/aai/testing/vitest`) | the same two, and it IS their `stubWorkflows` — fifteen lines apiece, byte-identical apart from the name in `listing`, now one line each. On `/vitest` because `vi.fn` is its CONTENT |
-| `mapConcurrent`, `stepEmit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out over the sync STT endpoint — through `stepTranscribeSync` now, so it names none of `stepFetch`, `multipartBody` or `ASSEMBLYAI_API_KEY` directly any more, which is what adopting an SDK step looks like from the outside — `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/step`, NOT the root: that barrel is the step vocabulary and is zero-zod by rule, where the root barrel drags the whole authoring graph in behind it. That subpath used to be outside the coverage gate, so an unexercised step export was caught by nothing; the gate derives its scope now |
-| `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `plan-and-execute` ALONE now, from an ordinary tool body — the case the module was published for, and the tool set it hands its executor subagent. `research-workflow` was the step-body example until `investigate` became a `stepDelegate`, which is what "the last remover pays" looks like when the last remover is a conversion rather than a deletion |
-| `stepSpeak` + `stepWriteUpload` + `WorkflowApi.download` | `spoken-summary` ONLY, and it is the whole reason that template exists — the audio round trip a workflow could not make before. See "A step that SPEAKS returns an id" below |
-| `stepTranscribeUpload` / `Submit` / `Poll`, and `stepTranscribeSync` | all three templates that transcribe, and the clearest case yet of the extract-on-the-third-copy rule above — `spoken-summary` and `transcription-workflow` had the async API's ~200 lines EACH, reworded and identical in behaviour, and `recap-workflow` a third variant. `transcription-workflow` is the reference for both halves (`batch.ts` for the job API, `sync-api.ts` for the one-request endpoint it fans out over); `recap-workflow` converts its SUBMIT only, and says in place why its poll must not follow — see "A transcription step is the SDK's; the boundaries are the template's" below |
-| `runFfmpeg` / `probeMedia` / `wavEncodeArgs` (`@alexkroman1/aai/ffmpeg`) | `call-audit` — five invocations, every argv built by a pure function in `workflows/media.ts`; `transcription-workflow`'s `normalize.ts` for the smallest possible use (probe, convert, store). See "ffmpeg is what lets a desk cut a recording where a HUMAN would" below |
-| `encodeWav` + `pcmDurationMs` (`@alexkroman1/aai/step`) | `call-audit` — the pair that makes a headerless intermediate workable: the store holds raw PCM so a byte offset is a timestamp, and each span gets a header back for the one request that needs one. `transcription-workflow` had 31 lines of `DataView` writes in a `wavWithHeader` that turned out to be `encodeWav` with the arguments swapped — `WavFormat` is structurally a `PcmFormat` — and now calls it |
-| `throwFfmpegStepError` (`@alexkroman1/aai/step-errors`) | `call-audit` and `transcription-workflow`. **Nothing in a template names `isFfmpegError` or `FfmpegError` any more**, so both sit in `template-api-allowlist.json` deliberately: the SDK recognises the error STRUCTURALLY and makes the `exit`/`missing-binary` → fatal, `timeout`/`aborted` → retry call itself. Its inverted default is pinned in `sdk/step-errors.test.ts`, including `call-audit`'s case: a cause that is not an ffmpeg failure at all is fatal |
-| `withTempDir` / `readUploadToFile` / `writeUploadFromFile` (`@alexkroman1/aai/step-files`) | `call-audit` and `transcription-workflow`, which between them had written the temp dir, the windowed read and the `.slice()`-ing generator FOUR times, with an identical warning that the `.slice()` was load-bearing. `temp-media.ts` (138 lines) is gone |
-| `formatBytes` / `formatDuration` / `countWords` / `plural` (`@alexkroman1/aai/utils`) | seven templates, on BOTH sides of the bundle boundary — a step's `stepReport()` and the page rendering the same run. They existed 4, 5, 4 and 17 times, and the duplication was a live bug: `call-audit` printed one recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, and `transcription-workflow` had three copies of the same disagreement — one inside `workflows/stitch.ts`, the module that exists so the run and the page cannot drift |
-| `slack` / `sendToChannel` (`@alexkroman1/aai/channels`) | `podcast-digest`, which is where the concept came from. It carried the whole third-party contract — Slack's two webhook URLs and the branch between them, Block Kit assembly, mrkdwn escaping, the 4xx/5xx split and the advice each refusal deserves — and every one of those rules is about SLACK rather than about podcasts. What is left in `workflows/slack.ts` is the digest as a `ChannelMessage` and the one function `digest.ts` reaches through `ctx.step("postDigest", …)`. `isSlackWebhookUrl` is imported by `agent.ts` for the same schema refinement as before |
-| `decodeHtmlEntities` (`@alexkroman1/aai/utils`) | `health-assistant` (openFDA label text) and `podcast-digest` (as `decodeXml`) — it began as one byte-identical body under two names in `link-digest` and `podcast-digest`, each arguing for the ORDERING in its own comment, which is the tell that the ordering was the whole function. `link-digest` no longer names it: `htmlToText` and `pageMetadata` both decode, so the call was a no-op. Tag stripping did NOT move |
-| `WorkflowInputOf` / `WorkflowRunOf` / `lastLine` | `podcast-digest`, `call-audit` and `spoken-summary` for the input type (see below — it obliges an annotation on the def); `research-workflow` and `recap-workflow` for the other two, each dropping an eight-line `streamTail`-then-`stream` dance and the comment warning that reading a stream with nothing in it waits forever |
-| `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails. `stubUploads` answers `{ restore, writes, read }`, so a write is assertable without round-tripping through the seam that wrote it |
-| `SessionStateDot` (`@alexkroman1/aai-ui`) | the three custom chromes — `dispatch-center` (three shouted words in `labels`, a `w-2.5` dot), `retail` (no `labels`: the package's words were the fix for a header that read a lowercase `disconnected`), `infocom-adventure` (`pulse={false}` and a `shadow-[0_0_6px_currentColor]` glow, which is what the dot writing its colour to `color` is for). Each keeps its `satisfies Record<AgentState, string>` palette as the `colors` prop; what left is the fourteen lines of dot around it. `AGENT_STATE_LABELS` and `useSessionStatus` lost their last DIRECT exercisers in the same move — the dot calls both — per "The last remover pays" |
-| `SessionControls` (`@alexkroman1/aai-ui`) | the same three — `ShiftControls`, `CallControls` and the CRT `Footer` each pass `labels` and a `renderButton` in their own colours, and the `end(); start()`-not-`reset()` argument two of them carried verbatim lives on the component once. `infocom-adventure` never renders the Start branch (its title screen dials through `useSessionActions`), which is the case the branch is designed to sit out. `useSessionControls` under it is exercised by no template: every chrome so far fits the render slot |
-| `ConversationView` (`@alexkroman1/aai-ui`) | the same three, and `MessageList` inside the package. `dispatch-center` and `retail` pin the transcript BELOW the scroll (`transcriptPosition="below"`) and name who is thinking; `infocom-adventure` keeps its bracketed `[ look ]` tool lines in `renderTool` and its blinking block in `thinkingIndicator`. `useConversation` and `ConversationItem` moved off the templates with it — the view calls the hook — so both are unexercised now |
-| `ToolCallRow variant="compact"` (`@alexkroman1/aai-ui`) | `dispatch-center` and `retail`, whose 23-line mono chip with a pulsing dot IS the row with the dot in its `icon` slot; the shimmer while pending is the row's. What the props do NOT fit: a per-status text colour (the title is always `theme.text`) and a chip surface other than `theme.bg`, so the chip's amber-while-pending text is the one thing the swap gave up. `infocom-adventure` deliberately does not adopt it — its tool line is a dim bracket, not a chip |
-| `AudioResult` (`@alexkroman1/aai-ui`) | `spoken-summary` and `call-audit`, over the `useDownloadUrl` result they already shared. The prop that differs is `captions`: the first passes the one-cue track (the component now serves the WebVTT data URL that page had written), the second omits it on purpose — its spoken text is rendered in full under the player |
-| `WorkflowRunPanel` (`@alexkroman1/aai-ui`) | `redline` (`statusLabels={{ running: "Writing…" }}`, the completed body as a function of the typed output) and `transcription-workflow`, whose `RunPanel` is now the panel with its two slots filled — `live={<LiveTranscript>}` for the transcript as it arrives, which the panel unmounts the moment the run is terminal. Its `History` keeps `STATUS_LINE` for the list rows, so `WORKFLOW_STATUS_LABELS` stays exercised there |
-| `.aai-scroll` (`@alexkroman1/aai-ui/styles.css`) | not an export, but the same rule: the four chromes that each drew a thin scrollbar with three `::-webkit-scrollbar` rules take the class and say only the thumb colour, as `--aai-scrollbar-thumb` on an ancestor (`infocom-adventure` sets thumb and track from `useTheme()`, the two-value case that read is still for). `solo-rpg`'s `.et-scroll` rules had applied to no element at all; its sidebar takes the class now. `aai-pulse` replaced `dc-pulse`/`rt-pulse` on every DOT the same way — the one badge that pulsed a WORD (`dispatch-center`'s red alert) took Tailwind's `animate-pulse`, because `aai-pulse` also scales |
-| `agent({ mcpServers })` (`McpServerConfig` / `McpServers` / `mcpToolName`) | `web-researcher` ALONE — the OTHER way an agent gets tools, and it had no worked example anywhere in the repo until this sweep. The server is GATED on its URL env var, so the starter still deploys with no credential and makes no boot-time connect attempt; configured, it also lists `tokenEnv` in `requiredEnv`, which nothing derives for you. The prompt half matters as much: `mcp_`-prefixed tools are a SOURCE, so they fall under the same citation and prompt-injection rules as the builtins |
-| `createKeyedLock` / `withLock` (`@alexkroman1/aai/utils`) | `roadside-assist` (`yard.ts`, keyed by truck kind) and `hiring-desk` (`screening-lock.ts`, keyed by session) — and the reason both exist is the rule below them. **The LLM loop runs one step's tool calls CONCURRENTLY, so a read-modify-write tool body does NOT run alone.** Both templates shipped that bug: `roadside-assist` handed every concurrent caller the same truck because nothing marked one taken, and `hiring-desk` lost an increment when two re-scores both read `rounds: 0` and both wrote `1`, silently unbounding `MAX_FEEDBACK_ROUNDS`. The primitive existed the whole time with nothing pointing at it. A lock is NOT the answer inside `slot.update` — that window is synchronous and atomic already, which is why `dispatch-center`, `retail` and `hotel-desk` correctly decline it |
-| `agent({ events })` + `SessionEventHandlers` | `roadside-assist`, `travel-concierge`, `dispatch-center` and `hotel-desk` — a session event is how anything reaches the agent when NO TOOL IS RUNNING, and a hang-up is the case each of them needed. `hotel-desk` is the clearest: it had an `abandoned_booking` followup defined with no caller at all, so a guest who hung up mid-booking left nothing behind. `dispatch-center` is the deliberate contrast — its `session.timed-out` records a dropped call on the incident timeline and does NOT move the dialog, because there the caller is one input to a shift rather than the conversation itself |
-| `resolveOne` + `ResolveOneOptions` | `retail` (`resolve.ts`), `hiring-desk`, `briefing-desk`, `night-owl` (`revisit`), `hotel-desk` (a folio line) and `executive-assistant` (`open_email`) — the never-guess contract. **Do not reach for `spokenOrdinal` beside it**: `resolveOne` consults it internally, so calling it directly re-derives step one of the primitive you just adopted. Six templates weighed that and only `solo-rpg` (`findClock`, name-first then ordinal) had a use for the bare helper |
-| `roundMoney` (`@alexkroman1/aai/utils`) | `pizza-ordering` and `travel-concierge`, both load-bearing rather than tidy — the first could total `38.980000000000004`, and the second has one rate with cents where `179.95 * 3 === 539.8499999999999`. `hotel-desk` is the counterexample worth reading beside them: it counts in integer CENTS, so there is no float to drift and adopting it would be theatre |
-| `expectDeployable` (`@alexkroman1/aai/testing`) | the four starter specs — `simple`, `pipeline-simple`, `code-interpreter`, `web-researcher` — plus `health-assistant`, which had each written the same three tests under the same ten-line comment (validates through `toAgentConfig`, the platform can name it, every stage its mode needs is filled), three of them with the 21-line mode cascade byte-identical. It RETURNS the resolved config, so a spec goes on to its own claim (`pipeline-simple`'s stage TUNING, `health-assistant`'s three builtins) without converting twice, and it THROWS naming the invariant where `expect(() => toAgentConfig(def)).not.toThrow()` printed "expected function not to throw". Pair it with `not.toThrow()` when it is the test's only claim — the assertion gate counts `expect` and nothing else, and vitest quotes the thrown message |
-| `expectPromptBuiltinsDeclared` (`@alexkroman1/aai/testing`) | `code-interpreter` and `health-assistant`, whose 32-line snake_case scan through `AgentConfigSchema` was byte-identical, and `web-researcher`, whose hand list of web builtins needed an eight-line second test to guard it against going stale. It asks `BuiltinToolSchema` which tokens are tool NAMES, and the claim FAILS on a prompt naming no builtin — the state a template is in when `system-prompt.md` was not applied. On `/testing` and not `/manifest`, which is on `NON_AUTHORING_SUBPATHS` and promises an author nothing. **`commandedBuiltins`, the reader under it, is an ALLOWLIST entry now**: `math-buddy` was its only exerciser and asserted "the prompt commands `run_code`" on the resolved config, which is what `expectPromptBuiltinsDeclared`'s return value already says — a second call would be a contrived use, which is what the allowlist is for |
-| `runCodeIn` + `runCodeOutput` (`@alexkroman1/aai-runtime/eval`) | `code-interpreter` and `night-owl` (`math-buddy` and `personal-finance` were two more before they were removed as near-duplicates) — the templates that had each declared `RunCodeArgs`, the same `codeIn`, and a `not.toMatch(/only available in the sandboxed runtime/)` over a sentence the runtime owns. `runCodeOutput` imports `RUN_CODE_REFUSAL` and throws on it naming the fix; the "the builtin is wired" cases are `toolNames` + `runCodeOutput` and needed no reader of their own. `packages/aai-runtime/TEXT-AGENT-CLAUDE.md` carries the argument and the two things deliberately not added |
-| `expectToolBeforeSpeech` + `EvalTurn.errors` / `errorsIn` (`@alexkroman1/aai-runtime/eval`) | `code-interpreter` and `web-researcher` for the ordering ("Report RESULTS, never intentions"), each of which had two `findIndex` calls and three `expect`s that failed as "expected 4 to be less than 2"; `simple` and `pipeline-simple` for the errors, which had asserted `events.some(…)` `toBe(false)` — the list prints the code and the message |
+| `mapConcurrent`, `stepEmit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out over the sync STT endpoint — through `stepTranscribeSync` now, so it names none of `stepFetch`, `multipartBody` or `ASSEMBLYAI_API_KEY` directly any more, which is what adopting an SDK step looks like from the outside — `meeting-recap-agent` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-handoff-agent`, `link-digest-workflow`, `document-redline-workflow` and `meeting-recap-agent` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `meeting-recap-agent` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/step`, NOT the root: that barrel is the step vocabulary and is zero-zod by rule, where the root barrel drags the whole authoring graph in behind it. That subpath used to be outside the coverage gate, so an unexercised step export was caught by nothing; the gate derives its scope now |
+| `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-planner-agent` ALONE now, from an ordinary tool body — the case the module was published for, and the tool set it hands its executor subagent. `research-handoff-agent` was the step-body example until `investigate` became a `stepDelegate`, which is what "the last remover pays" looks like when the last remover is a conversion rather than a deletion |
+| `stepSpeak` + `stepWriteUpload` + `WorkflowApi.download` | `spoken-summary-workflow` ONLY, and it is the whole reason that template exists — the audio round trip a workflow could not make before. See "A step that SPEAKS returns an id" below |
+| `stepTranscribeUpload` / `Submit` / `Poll`, and `stepTranscribeSync` | all three templates that transcribe, and the clearest case yet of the extract-on-the-third-copy rule above — `spoken-summary-workflow` and `transcription-workflow` had the async API's ~200 lines EACH, reworded and identical in behaviour, and `meeting-recap-agent` a third variant. `transcription-workflow` is the reference for both halves (`batch.ts` for the job API, `sync-api.ts` for the one-request endpoint it fans out over); `meeting-recap-agent` converts its SUBMIT only, and says in place why its poll must not follow — see "A transcription step is the SDK's; the boundaries are the template's" below |
+| `runFfmpeg` / `probeMedia` / `wavEncodeArgs` (`@alexkroman1/aai/ffmpeg`) | `call-audit-workflow` — five invocations, every argv built by a pure function in `workflows/media.ts`; `transcription-workflow`'s `normalize.ts` for the smallest possible use (probe, convert, store). See "ffmpeg is what lets a desk cut a recording where a HUMAN would" below |
+| `encodeWav` + `pcmDurationMs` (`@alexkroman1/aai/step`) | `call-audit-workflow` — the pair that makes a headerless intermediate workable: the store holds raw PCM so a byte offset is a timestamp, and each span gets a header back for the one request that needs one. `transcription-workflow` had 31 lines of `DataView` writes in a `wavWithHeader` that turned out to be `encodeWav` with the arguments swapped — `WavFormat` is structurally a `PcmFormat` — and now calls it |
+| `throwFfmpegStepError` (`@alexkroman1/aai/step-errors`) | `call-audit-workflow` and `transcription-workflow`. **Nothing in a template names `isFfmpegError` or `FfmpegError` any more**, so both sit in `template-api-allowlist.json` deliberately: the SDK recognises the error STRUCTURALLY and makes the `exit`/`missing-binary` → fatal, `timeout`/`aborted` → retry call itself. Its inverted default is pinned in `sdk/step-errors.test.ts`, including `call-audit-workflow`'s case: a cause that is not an ffmpeg failure at all is fatal |
+| `withTempDir` / `readUploadToFile` / `writeUploadFromFile` (`@alexkroman1/aai/step-files`) | `call-audit-workflow` and `transcription-workflow`, which between them had written the temp dir, the windowed read and the `.slice()`-ing generator FOUR times, with an identical warning that the `.slice()` was load-bearing. `temp-media.ts` (138 lines) is gone |
+| `formatBytes` / `formatDuration` / `countWords` / `plural` (`@alexkroman1/aai/utils`) | seven templates, on BOTH sides of the bundle boundary — a step's `stepReport()` and the page rendering the same run. They existed 4, 5, 4 and 17 times, and the duplication was a live bug: `call-audit-workflow` printed one recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, and `transcription-workflow` had three copies of the same disagreement — one inside `workflows/stitch.ts`, the module that exists so the run and the page cannot drift |
+| `slack` / `sendToChannel` (`@alexkroman1/aai/channels`) | `podcast-digest-workflow`, which is where the concept came from. It carried the whole third-party contract — Slack's two webhook URLs and the branch between them, Block Kit assembly, mrkdwn escaping, the 4xx/5xx split and the advice each refusal deserves — and every one of those rules is about SLACK rather than about podcasts. What is left in `workflows/slack.ts` is the digest as a `ChannelMessage` and the one function `digest.ts` reaches through `ctx.step("postDigest", …)`. `isSlackWebhookUrl` is imported by `agent.ts` for the same schema refinement as before |
+| `decodeHtmlEntities` (`@alexkroman1/aai/utils`) | `medication-safety-agent` (openFDA label text) and `podcast-digest-workflow` (as `decodeXml`) — it began as one byte-identical body under two names in `link-digest-workflow` and `podcast-digest-workflow`, each arguing for the ORDERING in its own comment, which is the tell that the ordering was the whole function. `link-digest-workflow` no longer names it: `htmlToText` and `pageMetadata` both decode, so the call was a no-op. Tag stripping did NOT move |
+| `WorkflowInputOf` / `WorkflowRunOf` / `lastLine` | `podcast-digest-workflow`, `call-audit-workflow` and `spoken-summary-workflow` for the input type (see below — it obliges an annotation on the def); `research-handoff-agent` and `meeting-recap-agent` for the other two, each dropping an eight-line `streamTail`-then-`stream` dance and the comment warning that reading a stream with nothing in it waits forever |
+| `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary-workflow`'s spec, the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails. `stubUploads` answers `{ restore, writes, read }`, so a write is assertable without round-tripping through the seam that wrote it |
+| `SessionStateDot` (`@alexkroman1/aai-ui`) | the three custom chromes — `emergency-dispatch-agent` (three shouted words in `labels`, a `w-2.5` dot), `retail-orders-agent` (no `labels`: the package's words were the fix for a header that read a lowercase `disconnected`), `text-adventure-agent` (`pulse={false}` and a `shadow-[0_0_6px_currentColor]` glow, which is what the dot writing its colour to `color` is for). Each keeps its `satisfies Record<AgentState, string>` palette as the `colors` prop; what left is the fourteen lines of dot around it. `AGENT_STATE_LABELS` and `useSessionStatus` lost their last DIRECT exercisers in the same move — the dot calls both — per "The last remover pays" |
+| `SessionControls` (`@alexkroman1/aai-ui`) | the same three — `ShiftControls`, `CallControls` and the CRT `Footer` each pass `labels` and a `renderButton` in their own colours, and the `end(); start()`-not-`reset()` argument two of them carried verbatim lives on the component once. `text-adventure-agent` never renders the Start branch (its title screen dials through `useSessionActions`), which is the case the branch is designed to sit out. `useSessionControls` under it is exercised by no template: every chrome so far fits the render slot |
+| `ConversationView` (`@alexkroman1/aai-ui`) | the same three, and `MessageList` inside the package. `emergency-dispatch-agent` and `retail-orders-agent` pin the transcript BELOW the scroll (`transcriptPosition="below"`) and name who is thinking; `text-adventure-agent` keeps its bracketed `[ look ]` tool lines in `renderTool` and its blinking block in `thinkingIndicator`. `useConversation` and `ConversationItem` moved off the templates with it — the view calls the hook — so both are unexercised now |
+| `ToolCallRow variant="compact"` (`@alexkroman1/aai-ui`) | `emergency-dispatch-agent` and `retail-orders-agent`, whose 23-line mono chip with a pulsing dot IS the row with the dot in its `icon` slot; the shimmer while pending is the row's. What the props do NOT fit: a per-status text colour (the title is always `theme.text`) and a chip surface other than `theme.bg`, so the chip's amber-while-pending text is the one thing the swap gave up. `text-adventure-agent` deliberately does not adopt it — its tool line is a dim bracket, not a chip |
+| `AudioResult` (`@alexkroman1/aai-ui`) | `spoken-summary-workflow` and `call-audit-workflow`, over the `useDownloadUrl` result they already shared. The prop that differs is `captions`: the first passes the one-cue track (the component now serves the WebVTT data URL that page had written), the second omits it on purpose — its spoken text is rendered in full under the player |
+| `WorkflowRunPanel` (`@alexkroman1/aai-ui`) | `document-redline-workflow` (`statusLabels={{ running: "Writing…" }}`, the completed body as a function of the typed output) and `transcription-workflow`, whose `RunPanel` is now the panel with its two slots filled — `live={<LiveTranscript>}` for the transcript as it arrives, which the panel unmounts the moment the run is terminal. Its `History` keeps `STATUS_LINE` for the list rows, so `WORKFLOW_STATUS_LABELS` stays exercised there |
+| `.aai-scroll` (`@alexkroman1/aai-ui/styles.css`) | not an export, but the same rule: the four chromes that each drew a thin scrollbar with three `::-webkit-scrollbar` rules take the class and say only the thumb colour, as `--aai-scrollbar-thumb` on an ancestor (`text-adventure-agent` sets thumb and track from `useTheme()`, the two-value case that read is still for). `tabletop-rpg-agent`'s `.et-scroll` rules had applied to no element at all; its sidebar takes the class now. `aai-pulse` replaced `dc-pulse`/`rt-pulse` on every DOT the same way — the one badge that pulsed a WORD (`emergency-dispatch-agent`'s red alert) took Tailwind's `animate-pulse`, because `aai-pulse` also scales |
+| `agent({ mcpServers })` (`McpServerConfig` / `McpServers` / `mcpToolName`) | `web-research-agent` ALONE — the OTHER way an agent gets tools, and it had no worked example anywhere in the repo until this sweep. The server is GATED on its URL env var, so the starter still deploys with no credential and makes no boot-time connect attempt; configured, it also lists `tokenEnv` in `requiredEnv`, which nothing derives for you. The prompt half matters as much: `mcp_`-prefixed tools are a SOURCE, so they fall under the same citation and prompt-injection rules as the builtins |
+| `createKeyedLock` / `withLock` (`@alexkroman1/aai/utils`) | `roadside-assistance-agent` (`yard.ts`, keyed by truck kind) and `applicant-screening-agent` (`screening-lock.ts`, keyed by session) — and the reason both exist is the rule below them. **The LLM loop runs one step's tool calls CONCURRENTLY, so a read-modify-write tool body does NOT run alone.** Both templates shipped that bug: `roadside-assistance-agent` handed every concurrent caller the same truck because nothing marked one taken, and `applicant-screening-agent` lost an increment when two re-scores both read `rounds: 0` and both wrote `1`, silently unbounding `MAX_FEEDBACK_ROUNDS`. The primitive existed the whole time with nothing pointing at it. A lock is NOT the answer inside `slot.update` — that window is synchronous and atomic already, which is why `emergency-dispatch-agent`, `retail-orders-agent` and `hotel-reception-agent` correctly decline it |
+| `agent({ events })` + `SessionEventHandlers` | `roadside-assistance-agent`, `travel-concierge-agent`, `emergency-dispatch-agent` and `hotel-reception-agent` — a session event is how anything reaches the agent when NO TOOL IS RUNNING, and a hang-up is the case each of them needed. `hotel-reception-agent` is the clearest: it had an `abandoned_booking` followup defined with no caller at all, so a guest who hung up mid-booking left nothing behind. `emergency-dispatch-agent` is the deliberate contrast — its `session.timed-out` records a dropped call on the incident timeline and does NOT move the dialog, because there the caller is one input to a shift rather than the conversation itself |
+| `resolveOne` + `ResolveOneOptions` | `retail-orders-agent` (`resolve.ts`), `applicant-screening-agent`, `topic-briefing-agent`, `entertainment-picks-agent` (`revisit`), `hotel-reception-agent` (a folio line) and `executive-inbox-agent` (`open_email`) — the never-guess contract. **Do not reach for `spokenOrdinal` beside it**: `resolveOne` consults it internally, so calling it directly re-derives step one of the primitive you just adopted. Six templates weighed that and only `tabletop-rpg-agent` (`findClock`, name-first then ordinal) had a use for the bare helper |
+| `roundMoney` (`@alexkroman1/aai/utils`) | `pizza-ordering-agent` and `travel-concierge-agent`, both load-bearing rather than tidy — the first could total `38.980000000000004`, and the second has one rate with cents where `179.95 * 3 === 539.8499999999999`. `hotel-reception-agent` is the counterexample worth reading beside them: it counts in integer CENTS, so there is no float to drift and adopting it would be theatre |
+| `expectDeployable` (`@alexkroman1/aai/testing`) | the four starter specs — `quickstart-agent`, `custom-pipeline-agent`, `code-interpreter-agent`, `web-research-agent` — plus `medication-safety-agent`, which had each written the same three tests under the same ten-line comment (validates through `toAgentConfig`, the platform can name it, every stage its mode needs is filled), three of them with the 21-line mode cascade byte-identical. It RETURNS the resolved config, so a spec goes on to its own claim (`custom-pipeline-agent`'s stage TUNING, `medication-safety-agent`'s three builtins) without converting twice, and it THROWS naming the invariant where `expect(() => toAgentConfig(def)).not.toThrow()` printed "expected function not to throw". Pair it with `not.toThrow()` when it is the test's only claim — the assertion gate counts `expect` and nothing else, and vitest quotes the thrown message |
+| `expectPromptBuiltinsDeclared` (`@alexkroman1/aai/testing`) | `code-interpreter-agent` and `medication-safety-agent`, whose 32-line snake_case scan through `AgentConfigSchema` was byte-identical, and `web-research-agent`, whose hand list of web builtins needed an eight-line second test to guard it against going stale. It asks `BuiltinToolSchema` which tokens are tool NAMES, and the claim FAILS on a prompt naming no builtin — the state a template is in when `system-prompt.md` was not applied. On `/testing` and not `/manifest`, which is on `NON_AUTHORING_SUBPATHS` and promises an author nothing. **`commandedBuiltins`, the reader under it, is an ALLOWLIST entry now**: `math-buddy` was its only exerciser and asserted "the prompt commands `run_code`" on the resolved config, which is what `expectPromptBuiltinsDeclared`'s return value already says — a second call would be a contrived use, which is what the allowlist is for |
+| `runCodeIn` + `runCodeOutput` (`@alexkroman1/aai-runtime/eval`) | `code-interpreter-agent` and `entertainment-picks-agent` (`math-buddy` and `personal-finance` were two more before they were removed as near-duplicates) — the templates that had each declared `RunCodeArgs`, the same `codeIn`, and a `not.toMatch(/only available in the sandboxed runtime/)` over a sentence the runtime owns. `runCodeOutput` imports `RUN_CODE_REFUSAL` and throws on it naming the fix; the "the builtin is wired" cases are `toolNames` + `runCodeOutput` and needed no reader of their own. `packages/aai-runtime/TEXT-AGENT-CLAUDE.md` carries the argument and the two things deliberately not added |
+| `expectToolBeforeSpeech` + `EvalTurn.errors` / `errorsIn` (`@alexkroman1/aai-runtime/eval`) | `code-interpreter-agent` and `web-research-agent` for the ordering ("Report RESULTS, never intentions"), each of which had two `findIndex` calls and three `expect`s that failed as "expected 4 to be less than 2"; `quickstart-agent` and `custom-pipeline-agent` for the errors, which had asserted `events.some(…)` `toBe(false)` — the list prints the code and the message |
 
 **`defaultClientDir` is the worked example of that rule**: its only exerciser
 was `scaffold/server.mjs`, and the boot is `aai start` now. An allowlist entry
@@ -277,28 +277,31 @@ last can see it is owed.
 
 ## A flow is WHERE A CONVERSATION IS, and a board is not one
 
-Seven templates declare a `dialog()`, and the interesting one is the template that
-almost could not. `dispatch-center` holds many incidents at once and a flow is
-bound to a session, so it has exactly ONE position — and the first instinct, a
-machine per incident over `Incident.status`, is not available at all.
+Seven templates declare a `dialog()`, and the interesting one is the template
+that almost could not. `emergency-dispatch-agent` holds many incidents at once
+and a flow is bound to a session, so it has exactly ONE position — and the first
+instinct, a machine per incident over `Incident.status`, is not available at
+all.
 
 **The resolution is that a position is a fact about the CONVERSATION, not about
 the world.** `working.monitoring` there means "the incident this dispatcher last
 touched has units on it", never "every incident does"; per-incident status stays
 on `Incident.status` and every gated tool stays addressed by id. What its six
-gated tools actually need is one bit — "has anything been logged this shift" — so
-they gate on the PARENT state, and the three children exist to carry the
+gated tools actually need is one bit — "has anything been logged this shift" —
+so they gate on the PARENT state, and the three children exist to carry the
 instruction for the step in front of the dispatcher. Do not read a position as a
 summary of the data, and do not reach for a flow when the thing to constrain is
 per-entity; a `ToolFailure` from a data lookup is what that is for. Read the
-other four in this order: `travel-concierge` (two states, one gate),
-`plan-and-execute` (three, a lifecycle), `retail` (a call ending in a TERMINAL
-state, with a confirmation gate nested inside it), `solo-rpg` (nested, plus a
-`final` one). The sixth, `roadside-assist`, is about what a dialog does when NO
-TOOL IS RUNNING and has its own section below.
+other four in this order: `travel-concierge-agent` (two states, one gate),
+`research-planner-agent` (three, a lifecycle), `retail-orders-agent` (a call
+ending in a TERMINAL state, with a confirmation gate nested inside it),
+`tabletop-rpg-agent` (nested, plus a `final` one). The sixth,
+`roadside-assistance-agent`, is about what a dialog does when NO TOOL IS RUNNING
+and has its own section below.
 
-Four rules came out of converting `dispatch-center`, `retail` and `solo-rpg`,
-each a trap rather than a preference:
+Four rules came out of converting `emergency-dispatch-agent`,
+`retail-orders-agent` and `tabletop-rpg-agent`, each a trap rather than a
+preference:
 
 - **A tool legal in EVERY state is not a flow tool.** `when` is required, so an
   ungated one would list every state — a gate that gates nothing. It stays an
@@ -309,17 +312,17 @@ each a trap rather than a preference:
   than going away; the section of that name below has the A/B. It is also the
   field for "did this actually do the thing": `resources_dispatch` sends nothing
   when every requested callsign was busy.
-- **A `final` state delivers no events, so restarting is `dialog.reset`.** An `on:
-  { SETUP }` on `solo-rpg`'s `gameOver` was dead config that read as live, caught
-  by a test asserting the POSITION rather than a refusal. Resetting is the honest
-  mirror anyway — `setup_character` replaces the campaign with a pristine
-  default, so it replaces the position too.
+- **A `final` state delivers no events, so restarting is `dialog.reset`.** An
+  `on: { SETUP }` on `tabletop-rpg-agent`'s `gameOver` was dead config that read
+  as live, caught by a test asserting the POSITION rather than a refusal.
+  Resetting is the honest mirror anyway — `setup_character` replaces the
+  campaign with a pristine default, so it replaces the position too.
 - **A refusal short-circuits before the tool's own body, bookkeeping included.**
-  `retail`'s wrapper logs an activity entry and bumps `callSeq` on every call, and
-  a gated refusal no longer reaches it — so a blocked call stopped appearing in
-  the sidebar. Stated where the wrapper is, because the natural reading of a
-  missing line is a bug. It is the right trade (the refusal reaches the MODEL,
-  which a sidebar line never did) and it is a trade.
+  `retail-orders-agent`'s wrapper logs an activity entry and bumps `callSeq` on
+  every call, and a gated refusal no longer reaches it — so a blocked call
+  stopped appearing in the sidebar. Stated where the wrapper is, because the
+  natural reading of a missing line is a bug. It is the right trade (the refusal
+  reaches the MODEL, which a sidebar line never did) and it is a trade.
 
 ### A `sendFrom` goes BELOW `execute`
 
@@ -328,15 +331,15 @@ success type, and **that holds only for the non-context-sensitive `execute` the
 type test uses**, a reference to an annotated function. Every real tool body is
 an inline arrow whose parameters are contextually typed, so its return type is
 inferred in a LATER pass than `sendFrom`'s signature is checked: A/B'd on
-`dispatch-center/tools/resources_dispatch.ts`, where moving `sendFrom` above the
-inline `execute` still gives `TS18046: 'result' is of type 'unknown'`. The
-mutually-dependent case behaves the same way — where the body ends in a generic
-call the outer inference must resolve first (`planSlot.update(ctx, …)`, i.e.
-`update<R>`), `R` lands as `unknown` when `sendFrom` is written first, which is
-why `plan-and-execute`'s two tools declare it last and say so.
+`emergency-dispatch-agent/tools/resources_dispatch.ts`, where moving `sendFrom`
+above the inline `execute` still gives `TS18046: 'result' is of type 'unknown'`.
+The mutually-dependent case behaves the same way — where the body ends in a
+generic call the outer inference must resolve first (`planSlot.update(ctx, …)`,
+i.e. `update<R>`), `R` lands as `unknown` when `sendFrom` is written first,
+which is why `research-planner-agent`'s two tools declare it last and say so.
 
 **It is NOT silent, and the sentence here used to say it was.** Re-A/B'd on
-`plan-and-execute/tools/work_next_step.ts`, the hardest case in the tree:
+`research-planner-agent/tools/work_next_step.ts`, the hardest case in the tree:
 declared last, `R` resolves to the full three-arm union (probed by assigning it
 to `never` and reading the error); moved above `execute`, the body reports
 `TS18046: 'outcome' is of type 'unknown'` at the first property read. So the
@@ -354,11 +357,11 @@ in every `summary` — which compiled against `unknown` and meant nothing, and
 which the three deleted ordering warnings existed to explain.
 
 **A per-agent wrapper must copy the SDK's own signature, not its `Exclude`.**
-`retail`'s `RetailToolSpec` typed `execute: (…) => R`, so `R` absorbed the
-failure arm and all nineteen tools wrote a ternary for a case the wrapper never
-passed them. `Exclude<NoInfer<R>, ToolFailure>` does NOT fix that: `Exclude`
-over a NON-NAKED type parameter is not distributive, returning the union
-unchanged. What subtracts the failure arm is declaring
+`retail-orders-agent`'s `RetailToolSpec` typed `execute: (…) => R`, so `R`
+absorbed the failure arm and all nineteen tools wrote a ternary for a case the
+wrapper never passed them. `Exclude<NoInfer<R>, ToolFailure>` does NOT fix that:
+`Exclude` over a NON-NAKED type parameter is not distributive, returning the
+union unchanged. What subtracts the failure arm is declaring
 `execute: (…) => R | ToolFailure` and letting UNION INFERENCE match it off,
 `NoInfer` only holding the second position; `summary` then takes `NoInfer<R>`.
 
@@ -366,7 +369,7 @@ unchanged. What subtracts the failure arm is declaring
 TypeScript gives fresh object literals in ONE group the others' keys as
 `?: never`; a return through a declared type, or an already-normalized inner
 union such as a `slot.update` callback's, is a separate constituent and gains
-nothing. Deleting `plan-and-execute`'s `StepOutcome` hit that — the fix is
+nothing. Deleting `research-planner-agent`'s `StepOutcome` hit that — the fix is
 `response: undefined` at the one early return, not concluding the annotation was
 load-bearing.
 
@@ -375,9 +378,9 @@ load-bearing.
 Every flow template dropped `setup({ types: … })`, its `xstate` import and every
 `meta: { instruction }` wrapper; `type: "final"` is `final: true`, and the
 persisted snapshot is unchanged (every flow suite passed untouched,
-`solo-rpg`'s save/load round trip included). One conversion rule: **the spec
-goes in `as const`** — the event union is synthesized from the `on` keys, so
-widening them to `string` gives `send` nothing to check against.
+`tabletop-rpg-agent`'s save/load round trip included). One conversion rule:
+**the spec goes in `as const`** — the event union is synthesized from the `on`
+keys, so widening them to `string` gives `send` nothing to check against.
 `packages/aai/CLAUDE.md` has why it is worth converting a dialog that worked.
 
 **An ungated tool reports its position by SPREADING it.** A gated tool's result
@@ -387,19 +390,20 @@ templates had each RENAMED those fields on the way out (`at`, `next`,
 sets depending on which tool it called. `dialog.send` and `dialog.position`
 already return a `DialogPosition` of the right shape, so the fix is a spread —
 `return { incidentId: id, ...callFlow.send(ctx, { type: "LOGGED" }) }`, five
-sites. `solo-rpg`'s prompt had asserted the invariant "every other tool answers
-with the same pair" while three of its tools did not.
+sites. `tabletop-rpg-agent`'s prompt had asserted the invariant "every other
+tool answers with the same pair" while three of its tools did not.
 
 **Three things a flow deleted outright, and all three were dead guarantees.**
-`retail`'s policy said to say one sentence after `transfer_to_human_agents` "and
-nothing else", enforced by nothing — every tool stayed callable, so a model that
-kept going kept acting on a call it had given away. Its "confirm every change
-out loud … never act on an implied yes" was carried by nothing too, and cost
-more to fix than one line — see below. `solo-rpg`'s `gameOver` was written
-by `updateCrisisFlags` and read by nobody who could act on it, so a player with
-both tracks empty could roll forever. A terminal state is one line of config for
-each. `solo-rpg` also lost a FIELD: `phase: "genre" | "playing"` was
-`initialized` spelled twice and neither gated anything.
+`retail-orders-agent`'s policy said to say one sentence after
+`transfer_to_human_agents` "and nothing else", enforced by nothing — every tool
+stayed callable, so a model that kept going kept acting on a call it had given
+away. Its "confirm every change out loud … never act on an implied yes" was
+carried by nothing too, and cost more to fix than one line — see below.
+`tabletop-rpg-agent`'s `gameOver` was written by `updateCrisisFlags` and read by
+nobody who could act on it, so a player with both tracks empty could roll
+forever. A terminal state is one line of config for each. `tabletop-rpg-agent`
+also lost a FIELD: `phase: "genre" | "playing"` was `initialized` spelled twice
+and neither gated anything.
 
 **A spec is what makes the gate true.** Each of the three drives its gated tools
 through `expectToolOk`/`expectDialogOk` (`@alexkroman1/aai/testing`) — the
@@ -409,12 +413,12 @@ the refusal: that a tool refuses in the wrong state is half of it, and that the
 position moved (and did NOT move on a failure) is the half a dead transition
 hides in.
 
-### A dialog can describe a CALL: `roadside-assist`
+### A dialog can describe a CALL: `roadside-assistance-agent`
 
-The other six flow templates move on tool results. `roadside-assist` is the one
-written for everything that happens when **no tool is running** — a caller who
-goes quiet, a phase that must not be interrupted, a verification step that has
-to give up on its own — and all of it arrives through one field:
+The other six flow templates move on tool results. `roadside-assistance-agent`
+is the one written for everything that happens when **no tool is running** — a
+caller who goes quiet, a phase that must not be interrupted, a verification step
+that has to give up on its own — and all of it arrives through one field:
 `agent({ dialogs: DIALOGS })`. Without that line the dialog still gates its
 tools and still moves on `send`, and not one of the five things below happens.
 `packages/aai-runtime/DIALOG-CLAUDE.md` owns the wiring; what is here is what
@@ -456,7 +460,7 @@ building an example of it settled.
   either, which is the version of that sentence that fails when it stops being
   true.
 
-Its state names are the other half of `dispatch-center`'s lesson: `locating`,
+Its state names are the other half of `emergency-dispatch-agent`'s lesson: `locating`,
 `verifying`, `disclosure`, `dispatching` are facts about the CONVERSATION, and
 which truck, which policy and which vehicle are per-entity facts in a
 `sessionSlot` beside it. The nesting exists for one reason — the hang-up
@@ -464,11 +468,11 @@ which truck, which policy and which vehicle are per-entity facts in a
 `onCall` parent, where the five phases would otherwise repeat it five times and
 the sixth would be added without it.
 
-### A rule the model can skip is not a rule: `retail`'s confirmation gate
+### A rule the model can skip is not a rule: `retail-orders-agent`
 
-`retail` is the worked example of the expensive case, where a prose rule and the
-tool surface disagree. "Confirm every change out loud … never act on an implied
-yes" was in the prompt and in seven tool descriptions, and
+`retail-orders-agent` is the worked example of the expensive case, where a prose
+rule and the tool surface disagree. "Confirm every change out loud … never act
+on an implied yes" was in the prompt and in seven tool descriptions, and
 `cancel_pending_order` cancelled and refunded on its first call regardless — a
 `grep` for "confirm" over its source returned nothing. Three things, in order:
 
@@ -487,12 +491,12 @@ yes" was in the prompt and in seven tool descriptions, and
   the position and the store could disagree. An unhandled event is ignored,
   which was the behaviour wanted all along.
 
-**Validate at STAGE time, not at confirm time.** `travel-concierge` re-derives
-its effect in `confirm_action`; `retail` computes each plan once and every
-`apply*` is total, because a "yes" followed by a refusal is the exact sequence
-the gate exists to prevent. Hence plans of ids and amounts rather than the
-`Order`/`Variant` references their in-tool-call ancestor held: those alias the
-store, and a persisted session could not carry them.
+**Validate at STAGE time, not at confirm time.** `travel-concierge-agent`
+re-derives its effect in `confirm_action`; `retail-orders-agent` computes each
+plan once and every `apply*` is total, because a "yes" followed by a refusal is
+the exact sequence the gate exists to prevent. Hence plans of ids and amounts
+rather than the `Order`/`Variant` references their in-tool-call ancestor held:
+those alias the store, and a persisted session could not carry them.
 
 **And the tool set stopped being tau2's** — fifteen names `registry.test.ts`
 pinned as a fidelity claim; the gate needs seventeen. Two improvements the
@@ -504,9 +508,9 @@ constraint COSTS before treating it as fixed.
 
 ## A run can be the SCHEDULE
 
-`podcast-digest` is the only template whose run is periodic, and it is worth
-reading for that one property rather than for podcasts. It watches some feeds,
-transcribes what is new, summarizes it, posts a Slack digest — and then
+`podcast-digest-workflow` is the only template whose run is periodic, and it is
+worth reading for that one property rather than for podcasts. It watches some
+feeds, transcribes what is new, summarizes it, posts a Slack digest — and then
 `sleep`s and does it again, for as many digests as it was asked for.
 
 There is **no cron anywhere in it**. A durable `sleep()` inside the body IS the
@@ -524,10 +528,10 @@ Three consequences the template states in place, because each is a trap:
 - **A run is asked when to STOP.** `daysToRun` is an input rather than a
   constant: a run that repeats forever is a resource nobody can see and nobody
   remembers to cancel. Its page pairs `cancel` with `wake`, which is the other
-  half — a sleeping run needs "send it now" to be a different button from
-  "throw it away".
-- **Batch polling is not the single-transcript loop.** `spoken-summary` and
-  `transcription-workflow` wait for ONE transcript, so their body is
+  half — a sleeping run needs "send it now" to be a different button from "throw
+  it away".
+- **Batch polling is not the single-transcript loop.** `spoken-summary-workflow`
+  and `transcription-workflow` wait for ONE transcript, so their body is
   `for (…) { if (done) return; await sleep(…) }`. Here N episodes finish out of
   order, so the loop carries a SHRINKING pending set and lets finished episodes
   drop out — otherwise the whole digest waits on its slowest episode. One that
@@ -544,11 +548,11 @@ first, or the starter fails to build the moment somebody runs it.
 
 ## A step that SPEAKS returns an id
 
-`spoken-summary` is the audio round trip — upload a recording, get back a
-summary you can read AND one you can listen to — and it is the reference use of
-three SDK additions that only make sense together. It is worth reading against
-`transcription-workflow`, which owns the way IN (uploads, and what it costs to
-cut a long recording up) and stops at text.
+`spoken-summary-workflow` is the audio round trip — upload a recording, get back
+a summary you can read AND one you can listen to — and it is the reference use
+of three SDK additions that only make sense together. It is worth reading
+against `transcription-workflow`, which owns the way IN (uploads, and what it
+costs to cut a long recording up) and stops at text.
 
 ```text
    a WAV  →  transcript  →  summary  →  a WAV of the summary
@@ -583,7 +587,7 @@ gets wrong:
 - **Ask the model for a SPOKEN script, not just points.** A template that
   synthesized its own bullet list produces a voice reading "one. two. three."
   with no connective tissue, so the schema asks for both and only the script is
-  spoken. It is the same decision `recap-workflow` makes for the sentence it
+  spoken. It is the same decision `meeting-recap-agent` makes for the sentence it
   reads down a phone, and one a prompt alone does not hold — hence a required
   `spoken` field rather than a defaulted one, so a missing script is a retry
   instead of half a second of silence.
@@ -598,20 +602,20 @@ template. Here the transcription should be the boring leg.
 
 ## ffmpeg is what lets a desk cut a recording where a HUMAN would
 
-`call-audit` is the reference use of `@alexkroman1/aai/ffmpeg`, and until it
-existed that subpath's only worked example was a `no-check` snippet in
+`call-audit-workflow` is the reference use of `@alexkroman1/aai/ffmpeg`, and
+until it existed that subpath's only worked example was a `no-check` snippet in
 `packages/aai-guest/CLAUDE.md`. It is the deepest of the workflow apps and the
-wrong one to read first — `link-digest` owns the shape, `transcription-workflow`
-the fan-out, `spoken-summary` the audio round trip — so what it is FOR is the
-one thing none of those can show: what changes downstream when a decoder is in
-the pipeline.
+wrong one to read first — `link-digest-workflow` owns the shape,
+`transcription-workflow` the fan-out, `spoken-summary-workflow` the audio round
+trip — so what it is FOR is the one thing none of those can show: what changes
+downstream when a decoder is in the pipeline.
 
 The answer is that almost everything gets SMALLER, which is the argument worth
 keeping. `transcription-workflow` cuts by arithmetic because with no decoder that
 is all it can do, and it pays for that three times over. Normalizing first, to a
 format the desk itself chose, deletes all three:
 
-| | `transcription-workflow` | `call-audit` |
+| | `transcription-workflow` | `call-audit-workflow` |
 | --- | --- | --- |
 | intermediate | linear-PCM WAV | headerless raw PCM |
 | header | parsed — `parseWav`, ~180 lines | **none: byte 0 is second 0** |
@@ -698,7 +702,7 @@ broken this way, each carrying a one-function `workflows/ffmpeg-verdict.ts`
 whose only job was to keep a module-scope `isFfmpegError` out of the bundle.
 Both built, type-checked, passed their specs, deployed, and failed EVERY run.
 There is no second artifact now, so both boundary files dissolved and
-`call-audit/workflows/ingest.ts` holds `node:fs/promises`,
+`call-audit-workflow/workflows/ingest.ts` holds `node:fs/promises`,
 `@alexkroman1/aai/ffmpeg` and `@alexkroman1/aai/step-files` at module scope.
 
 **What generalizes is the failure SHAPE.** It did not reproduce in-tree — pnpm
@@ -709,16 +713,16 @@ not evidence.
 
 ### A body that names `WorkflowInputOf` obliges the DEF to carry a type
 
-A workflow body should take `WorkflowInputOf<typeof theDef>` —
-`WorkflowBody` is contravariant, so a body restating a WIDER shape is assignable
-and nothing warns, which is how `podcast-digest` came to re-implement six schema
+A workflow body should take `WorkflowInputOf<typeof theDef>` — `WorkflowBody` is
+contravariant, so a body restating a WIDER shape is assignable and nothing
+warns, which is how `podcast-digest-workflow` came to re-implement six schema
 `.default()`s with `??`. But **the obvious spelling does not compile**:
 `workflow<P, R>()` infers `R` from `run`, so `typeof theDef` needs the body's
-signature and vice versa — `TS7022` against `agent.ts`, plus
-`TS2456`/`TS2502` at the body, and annotating the body's RETURN type does not
-break it. Two template groups hit this independently; the type tests miss it
-because every def there declares `run` as an inline arrow, and
-`sdk/workflow.ts`'s `@example` is `no-check`.
+signature and vice versa — `TS7022` against `agent.ts`, plus `TS2456`/`TS2502`
+at the body, and annotating the body's RETURN type does not break it. Two
+template groups hit this independently; the type tests miss it because every def
+there declares `run` as an inline arrow, and `sdk/workflow.ts`'s `@example` is
+`no-check`.
 
 The fix is two edits in `agent.ts`, not one — name the schema const and ANNOTATE
 the declaration:
@@ -729,15 +733,16 @@ export const audit: WorkflowDef<typeof auditInput, CallAudit> =
   workflow({ input: auditInput, run: auditFlow });
 ```
 
-The annotation resolves without the initializer, so `WorkflowInputOf<typeof
-audit>` comes from the schema alone; the body takes it through a type-only
-import of `agent.ts`, erased at build, so there is no runtime cycle. The cost is
-that the output type must be NAMED — the trade to weigh per template.
-`podcast-digest`, `call-audit` and `spoken-summary` pay it, having exported that
-type for `WorkflowOutputOf` already, and it deletes five `??` fallbacks that
-could silently disagree with a `.default()`. `redline` does NOT convert: its
-body returns an inferred object literal, so the annotation would mean writing
-that shape out by hand.
+The annotation resolves without the initializer, so
+`WorkflowInputOf<typeof audit>` comes from the schema alone; the body takes it
+through a type-only import of `agent.ts`, erased at build, so there is no
+runtime cycle. The cost is that the output type must be NAMED — the trade to
+weigh per template. `podcast-digest-workflow`, `call-audit-workflow` and
+`spoken-summary-workflow` pay it, having exported that type for
+`WorkflowOutputOf` already, and it deletes five `??` fallbacks that could
+silently disagree with a `.default()`. `document-redline-workflow` does NOT
+convert: its body returns an inferred object literal, so the annotation would
+mean writing that shape out by hand.
 
 ## A transcription step is the SDK's; the boundaries are the template's
 
@@ -747,8 +752,8 @@ one-request endpoint), all on `@alexkroman1/aai/step`. Before them all three
 transcribing templates carried their own copy of AssemblyAI's HTTP: the URL, the
 raw-key auth (no `Bearer`, which is a 401 that reads like a wrong key), the
 windowed streaming upload, the PLURAL `speech_models` field, and the failure
-classification. `spoken-summary` and `transcription-workflow` had the SAME ~200
-lines, reworded, drifting at the edges.
+classification. `spoken-summary-workflow` and `transcription-workflow` had the
+SAME ~200 lines, reworded, drifting at the edges.
 
 **What did NOT move is the step boundaries, and that is structural rather than
 tidy.** A step is whatever a BODY wraps in `ctx.step(name, fn)`, so a step
@@ -770,7 +775,7 @@ Three things the conversion settled, each worth knowing before the next one:
   already had in its hand. `stepTranscribePoll` answers with the transcript, so
   a finished job costs one round trip and the value journaled by the last poll
   IS the result. Four steps became three.
-- **`recap-workflow` converts its SUBMIT and deliberately not its POLL.** Its
+- **`meeting-recap-agent` converts its SUBMIT and deliberately not its POLL.** Its
   `checkTranscript` returns the provider's status as a VALUE — read by the Query
   port (`recap_status`) mid-run and branched on by the saga — where
   `stepTranscribePoll` answers `done` and THROWS on a job the provider gave up
@@ -783,11 +788,11 @@ Three things the conversion settled, each worth knowing before the next one:
 both — which is the only way a failed job or a recording with no speech can be
 TERMINAL, since either arrives with a 200 and no status to judge.
 `stepTranscribe*OrFail` is what turns that into the engine's verdict, and it
-is what `podcast-digest`'s two hand-written
+is what `podcast-digest-workflow`'s two hand-written
 `err instanceof TranscribeError && err.retryable` checks were missing —
 both dropped `retryAfter`.
 
-**`research-workflow` is the workflow template, and the split between its
+**`research-handoff-agent` is the workflow template, and the split between its
 files is a CONVENTION now rather than a build requirement.** The body and the
 functions it steps through live in `workflows/research.ts`. That directory used
 to be load-bearing — a body written in `agent.ts` was never transformed and ran
@@ -797,8 +802,8 @@ spec can import the steps alone.
 
 **The DECLARATION goes where its importers can reach it, and this paragraph used
 to get that backwards.** It said `agent.ts` holds it "and nothing else about the
-run" — of the one template where that is not true. `research-workflow` declares
-`research` in `shared.ts`, and so does `recap-workflow` with `recap`, because
+run" — of the one template where that is not true. `research-handoff-agent` declares
+`research` in `shared.ts`, and so does `meeting-recap-agent` with `recap`, because
 four tools apiece import the def to start, poll and cancel a run: a tool cannot
 reach back into `agent.ts`, since `virtual:aai/agent` is `agent.ts` PLUS a
 static import of every `tools/` file and importing it from a tool closes a cycle
@@ -869,14 +874,15 @@ that search got that wrong.** `webSearch`/`visitWebpage`/`fetchJson`
 (`@alexkroman1/aai/tools`) ANSWER with `{ error }` rather than throwing — the
 model-facing contract, so a tool hands something useful back instead of failing
 the turn — and they used to be typed `Promise<T>`, which made that invisible.
-`research-workflow` wrote `(results.results ?? [])` under a `catch` written for
-exactly this failure, and a `catch` cannot see a returned value; `plan-and-execute`
-wrote the same line with no failure path at all. Measured 2026-08-13: DuckDuckGo
-answered `403` to both its endpoints, so every search in both templates reported
-"No results." with the refusal nowhere. The type is `T | ToolFailure` now and
-both narrow with `isToolFailure` — and the `aai:builtins` contract was DROPPED
-over it rather than retained, which is the gate recording that a caller who named
-a shape has to handle the failure it was already receiving.
+`research-handoff-agent` wrote `(results.results ?? [])` under a `catch` written
+for exactly this failure, and a `catch` cannot see a returned value;
+`research-planner-agent` wrote the same line with no failure path at all.
+Measured 2026-08-13: DuckDuckGo answered `403` to both its endpoints, so every
+search in both templates reported "No results." with the refusal nowhere. The
+type is `T | ToolFailure` now and both narrow with `isToolFailure` — and the
+`aai:builtins` contract was DROPPED over it rather than retained, which is the
+gate recording that a caller who named a shape has to handle the failure it was
+already receiving.
 
 **A step's HTTP goes through `stepFetch`, never `fetch`, and that came out of a
 load test rather than review.** `transcription-workflow` used `fetch` with a
@@ -991,7 +997,7 @@ That tier proves the steps are REAL; the issue-order property is asserted
 directly in `sdk/map-concurrent.test.ts`, because a healthy run is not a resume.
 
 **Its `client.tsx` is the form layer's worked example**, and the split with
-`link-digest` is deliberate: that one shows the primitives raw (a hand-written
+`link-digest-workflow` is deliberate: that one shows the primitives raw (a hand-written
 `<form>`, its own `useState`, one `createWorkflowApi()`), and this one shows the
 same page with `useWorkflowSubmit` and `<Form>` over them. There is no field
 markup in it at all — `<WorkflowFields>` renders a control per SCALAR property of
@@ -1017,10 +1023,10 @@ the real replay engine over an in-memory journal, so a template spec can assert
 what its body is FOR: that a run suspended, resumed off its journal without
 redoing settled work, retried, was answered by a signal, and survived a worker
 that died mid-step. Each of the eight has a `describe("the run is DURABLE")`
-block, and each asserts ITS OWN claim rather than a generic one — redline's loop
-exit coming out of a journaled verdict, recap's window deleting unanswered,
-podcast-digest sleeping the schedule between digests, link-digest not re-reading
-the page.
+block, and each asserts ITS OWN claim rather than a generic one —
+document-redline-workflow's loop exit coming out of a journaled verdict, recap's
+window deleting unanswered, podcast-digest-workflow sleeping the schedule
+between digests, link-digest-workflow not re-reading the page.
 
 **`template-durability-gate.test.ts` is what makes that a floor rather than a
 habit.** When the capability landed exactly ONE template used it and every gate
@@ -1030,22 +1036,22 @@ ninth template shipping with none. The gate reads each template's own specs and
 requires the CALL, not the import — an import a deleted block left behind is how
 it would come to pass over nothing — and both arms are A/B'd.
 
-Two limits it deliberately accepts. `call-audit`'s first step runs ffmpeg, which
-this environment does not have, so its block asserts what is reachable (a
-`FatalError` failing a run on ONE attempt of the six that call site asks for) and
-says so; demanding a full run would make that template lie. And a step's HTTP —
-the MODEL CALL included — goes through the published `stepFetch` slot, so a whole
-run cannot stub the gateway over `globalThis.fetch` beside a page stub;
-`stubGatewayRoute` composed into one `installStubStepFetch` is the shape, and
-`stubTranscribe`'s `otherwise` is the same composition where that fake owns the
-slot.
+Two limits it deliberately accepts. `call-audit-workflow`'s first step runs
+ffmpeg, which this environment does not have, so its block asserts what is
+reachable (a `FatalError` failing a run on ONE attempt of the six that call site
+asks for) and says so; demanding a full run would make that template lie. And a
+step's HTTP — the MODEL CALL included — goes through the published `stepFetch`
+slot, so a whole run cannot stub the gateway over `globalThis.fetch` beside a
+page stub; `stubGatewayRoute` composed into one `installStubStepFetch` is the
+shape, and `stubTranscribe`'s `otherwise` is the same composition where that
+fake owns the slot.
 
 ## Every template ships an EVAL
 
 `templates/*/agent.eval.test.ts`, run by `aai eval`, gated in CI against a
 scripted model, and required of every template by `konsistent.json`'s
 `template-eval-spec` — which owns the file set and what one must import. The
-COUNT that stood here went stale the day `briefing-desk` landed without one.
+COUNT that stood here went stale the day `topic-briefing-agent` landed without one.
 **The harness, the two modes, what a template owes, and what these evals found:
 `packages/aai-runtime/CLAUDE.md`, "Driving an agent from text is a published
 surface".**
@@ -1090,19 +1096,19 @@ to be re-derived from memory.
 
 | Source | Template | Front door | What the port had to change |
 | --- | --- | --- | --- |
-| `open_deep_research` | `research-workflow` | voice, handing off to a run | a durable workflow, because five to twelve model calls cannot answer on the line (see above) |
-| customer-support tutorial (Swiss Airlines) | `travel-concierge` | voice | the specialist's prompt becomes a tool RESULT; `interrupt_before` becomes a spoken confirmation |
-| self-RAG + CRAG | `support-line` | voice | lexical retrieval instead of a vectorstore, and the graders are the thing that makes that fine |
-| plan-and-execute | `plan-and-execute` (the one template named for the pattern it ports, because nothing about it is a "desk") | voice | the execute→replan loop is driven by the CALLER, one step per tool call |
-| reflection (the essay assistant) | `redline` | **page over a durable run** (`workflowApp()`) | the loop's exit becomes a step's journaled VERDICT, so a replay takes the same branch |
-| Executive AI Assistant (EAIA) | `executive-assistant` | voice | their drafting model's TOOLS become the agent's tools, the Agent Inbox interrupt becomes four gated tools, and the reflection graphs write to the session |
+| `open_deep_research` | `research-handoff-agent` | voice, handing off to a run | a durable workflow, because five to twelve model calls cannot answer on the line (see above) |
+| customer-support tutorial (Swiss Airlines) | `travel-concierge-agent` | voice | the specialist's prompt becomes a tool RESULT; `interrupt_before` becomes a spoken confirmation |
+| self-RAG + CRAG | `technical-support-agent` | voice | lexical retrieval instead of a vectorstore, and the graders are the thing that makes that fine |
+| plan-and-execute | `research-planner-agent` | voice | the execute→replan loop is driven by the CALLER, one step per tool call |
+| reflection (the essay assistant) | `document-redline-workflow` | **page over a durable run** (`workflowApp()`) | the loop's exit becomes a step's journaled VERDICT, so a replay takes the same branch |
+| Executive AI Assistant (EAIA) | `executive-inbox-agent` | voice | their drafting model's TOOLS become the agent's tools, the Agent Inbox interrupt becomes four gated tools, and the reflection graphs write to the session |
 
 **Which front door a port gets is decided by one question: can it answer
 inside a turn?** A caller will hold the line for a tool call and a sentence
 back; they
 will not hold it for seven long-form model calls in sequence, and what a
 reflection loop produces is a piece of prose to READ rather than two sentences
-to hear. So `redline` is a workflow app, exactly like
+to hear. So `document-redline-workflow` is a workflow app, exactly like
 `transcription-workflow`, and
 the three above it are voice agents. Getting that wrong in either direction is
 the expensive mistake: a voice agent that goes silent for ninety seconds, or a
@@ -1115,15 +1121,15 @@ are reference for someone already inside one of the six.
 
 ## One template is a port of a CrewAI flow
 
-`hiring-desk` is CrewAI's `lead-score-flow` (`crewAIInc/crewAI-examples`, MIT
-— `crews.ts` carries the attribution and the their-name → our-name table), the
-most complex example that repository ships and the only one with a person in
-the loop: two single-agent crews, a `Flow` whose `@router` is a blocking
-`input()` menu between them, Pydantic state and `output_pydantic`, and two
-`asyncio.gather` fan-outs. It is a VOICE agent by the same test as the LangGraph
-ports above — every step answers inside a turn — and the router is the reason:
-"here are the top three; re-score with feedback, proceed, or quit" is already a
-conversation.
+`applicant-screening-agent` is CrewAI's `lead-score-flow`
+(`crewAIInc/crewAI-examples`, MIT — `crews.ts` carries the attribution and the
+their-name → our-name table), the most complex example that repository ships and
+the only one with a person in the loop: two single-agent crews, a `Flow` whose
+`@router` is a blocking `input()` menu between them, Pydantic state and
+`output_pydantic`, and two `asyncio.gather` fan-outs. It is a VOICE agent by the
+same test as the LangGraph ports above — every step answers inside a turn — and
+the router is the reason: "here are the top three; re-score with feedback,
+proceed, or quit" is already a conversation.
 
 **The lesson it exists for is that a crew task's OUTPUT decides which SDK
 primitive it becomes.** `evaluate_candidate` declares `output_pydantic`, so it
@@ -1153,8 +1159,8 @@ attribution and its their-name → our-name table in `shared.ts`.
 
 | Source | Template | What the port had to change |
 | --- | --- | --- |
-| LiveKit Agents `examples/hotel_receptionist` (19 files, a SQLite `HotelDB`, five `AgentTask` sub-agents) | `hotel-desk` | the sub-agents' narrowed tool sets become `when` gates on ONE `booking` dialog; their `_Owed` counter (speech owed before a tool may run) becomes two states left on `@user-transcript.committed`; the database becomes a seeded `sessionSlot` |
-| Pipecat `word-wrangler-gemini-live` (a `ParallelPipeline` running two Gemini Live sessions) | `word-wrangler` | the second model becomes `ctx.generate` inside one tool, on its own prompt with only the current word's context; the `GameTimer` becomes `playing`'s `timeout`; the host's "NO"/"IGNORE" filter and the score regex become a referee FUNCTION |
+| LiveKit Agents `examples/hotel_receptionist` (19 files, a SQLite `HotelDB`, five `AgentTask` sub-agents) | `hotel-reception-agent` | the sub-agents' narrowed tool sets become `when` gates on ONE `booking` dialog; their `_Owed` counter (speech owed before a tool may run) becomes two states left on `@user-transcript.committed`; the database becomes a seeded `sessionSlot` |
+| Pipecat `word-wrangler-gemini-live` (a `ParallelPipeline` running two Gemini Live sessions) | `word-game-agent` | the second model becomes `ctx.generate` inside one tool, on its own prompt with only the current word's context; the `GameTimer` becomes `playing`'s `timeout`; the host's "NO"/"IGNORE" filter and the score regex become a referee FUNCTION |
 
 **Both are about the same thing from opposite ends: what a second model, or a
 sub-agent, IS once the framework is gone.** LiveKit's `AgentTask` is a model with
@@ -1164,21 +1170,21 @@ value is what the flow's last tool wrote to the slot. Pipecat's second pipeline
 branch is a model that must not hear the first; a tool boundary is a room the
 host cannot see into. Neither needs a second session.
 
-**The one property `word-wrangler`'s clock depends on is worth stating:
+**The one property `word-game-agent`'s clock depends on is worth stating:
 `playing` declares no transition on anything but the two ways out.** The
 deadline clock runs from a dialog's last MOVE, so a state that moved on every
 guess would re-arm the two minutes on every sentence and the round would never
-end. Its three in-round tools send nothing — the mirror of `roadside-assist`'s
+end. Its three in-round tools send nothing — the mirror of `roadside-assistance-agent`'s
 silence ladder, and the same rule read the other way.
 
 **The per-template accounts are in [`PORTS-CLAUDE.md`](PORTS-CLAUDE.md)**,
 beside the LangChain and CrewAI ones.
 
-## `recap-workflow` is where the Temporal patterns were ported
+## `meeting-recap-agent` is where the Temporal patterns were ported
 
 The same idea as the LangChain ports above, from the other tradition — and the
 one template whose SUBJECT is the patterns rather than the work. It is
-`research-workflow`'s shape (a voice agent whose tool hands off to a run) carrying
+`research-handoff-agent`'s shape (a voice agent whose tool hands off to a run) carrying
 the Temporal TypeScript samples that survive translation to this engine, each
 against real I/O. Both files carry the mapping table; this is the summary and
 the rationale for the two judgement calls in it.
@@ -1276,9 +1282,9 @@ a workflow template.
 
 The same rule as `tools/`, applied to the one part of an agent that is a
 DOCUMENT rather than a value. Fourteen templates keep a `system-prompt.md`; not
-one imports it, and only `pizza-ordering` declares a `systemPrompt` at all —
-because it composes (the file plus `menuText()`). `night-owl/agent.ts` is three
-fields.
+one imports it, and only `pizza-ordering-agent` declares a `systemPrompt` at all
+— because it composes (the file plus `menuText()`).
+`entertainment-picks-agent/agent.ts` is three fields.
 
 `withSystemPrompt` (`@alexkroman1/aai/manifest`) owns the rules, and the reason
 it is worth a function rather than an assignment is the third one:

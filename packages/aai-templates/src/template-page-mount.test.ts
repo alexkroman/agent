@@ -57,8 +57,8 @@ const agentSources = import.meta.glob("../templates/*/agent.ts", {
  * to transform the whole agent graph — this SDK, its providers, zod — through
  * Vite. Awaited inside a `test.each` case, that cost lands on whichever template
  * happens to be first, so a saturated machine failed
- * `'plan-and-execute': the mount matches what agent.ts declares` on the unit
- * tier's 5s budget while nothing about plan-and-execute was wrong, and the case
+ * `'research-planner-agent': the mount matches what agent.ts declares` on the unit
+ * tier's 5s budget while nothing about research-planner-agent was wrong, and the case
  * that pays is an artifact of iteration order. No tier here carries a retry, so
  * a timing failure has to be designed out rather than absorbed.
  *
@@ -125,7 +125,7 @@ function mountsWith(source: string): { client: boolean; page: boolean } {
  * `source` with its comments blanked out.
  *
  * Every gate here that greps a source owes this, and this one is where the debt
- * came due: `solo-rpg` names `component:` in a JSDoc paragraph ABOUT the
+ * came due: `tabletop-rpg-agent` names `component:` in a JSDoc paragraph ABOUT the
  * wrapper it deleted, which read as a custom component and failed a template
  * that renders the default shell. Prose that discusses a construct is not that
  * construct — the same distinction `check-test-assertions` pays a real parser
@@ -163,7 +163,7 @@ const clientByTemplate = new Map(clients.map(({ name, source }) => [name, source
  *
  * **Two occurrences, not one — the declaration is not the control.** A first
  * draft accepted a single `newConversation(` and A/B'd GREEN against a real
- * regression: unwiring `retail`'s button back to a bare `session.end()` left
+ * regression: unwiring `retail-orders-agent`'s button back to a bare `session.end()` left
  * the helper defined and called by nobody, which is exactly the shape this is
  * meant to catch and reads identically to a wired one. The declaration plus at
  * least one call site is the cheapest thing that tells them apart.

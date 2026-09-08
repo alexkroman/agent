@@ -186,7 +186,7 @@ export function createMemoryJournal(): JournalStore {
    * Its hook tokens go back FIRST: a token is held for as long as its run might
    * still be answered, and no longer. Waiting for the sweep below meant a DERIVED
    * token — which is what the SDK tells authors to use — could serve exactly one
-   * run ever: `recap-workflow` derives `retention:<sessionId>`, so a caller asking
+   * run ever: `meeting-recap-agent` derives `retention:<sessionId>`, so a caller asking
    * for a second recap in one session hit `claimHook`'s conflict, which is not a
    * suspend, so the saga compensated and deleted that transcript too.
    */

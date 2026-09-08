@@ -215,7 +215,7 @@ describeWithPg("session state over a real Postgres", () => {
   });
 
   test("an unchanged value is not rewritten", async () => {
-    // What answers retail's ~106 KB of state being touched on nearly every tool
+    // What answers retail-orders-agent's ~106 KB of state being touched on nearly every tool
     // call: the comparison is on the serialization, since the draft model hands
     // the store a new object every time.
     const store = storeFor();

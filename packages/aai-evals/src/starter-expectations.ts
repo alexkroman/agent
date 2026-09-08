@@ -81,7 +81,7 @@ export type CapabilityReport = {
 
 export const EXPECTATIONS: readonly Expectation[] = [
   {
-    label: "A pizza-ordering agent with a real cart",
+    label: "A pizza counter that keeps a real cart",
     capabilities: [
       ["add", "order_pizza"],
       ["remove", "delete", "cancel"],
@@ -111,7 +111,7 @@ export const EXPECTATIONS: readonly Expectation[] = [
     // a floor of one rather than two: the two prompt-only starters beside it
     // (a math tutor and a finance helper) were the near-duplicate templates
     // they scaffolded from, and both went with them.
-    label: "An agent that solves problems by writing code",
+    label: "A problem solver that writes and runs code",
     // "always compute rather than guess, and read results aloud
     // conversationally" — two explicit clauses of the ask.
     capabilities: [
@@ -129,7 +129,7 @@ export const EXPECTATIONS: readonly Expectation[] = [
     ui: true,
   },
   {
-    label: "A drug-interaction checker on openFDA",
+    label: "A drug-interaction checker that queries openFDA",
     capabilities: [
       ["interaction", "check"],
       ["drug", "label", "lookup", "info"],
@@ -145,7 +145,7 @@ export const EXPECTATIONS: readonly Expectation[] = [
     builtins: ["web_search", "run_code", "fetch_json"],
   },
   {
-    label: "A 911-style dispatch command center",
+    label: "A dispatch desk that runs a live incident board",
     capabilities: [
       ["create", "new_incident", "report"],
       ["triage", "priority", "severity"],
@@ -163,7 +163,7 @@ export const EXPECTATIONS: readonly Expectation[] = [
     ui: true,
   },
   {
-    label: "A retail support agent that manages real orders",
+    label: "A retail support line that manages real orders",
     capabilities: [
       ["find_user", "email", "authenticate", "identify", "lookup_customer"],
       ["order", "get_order", "list_order"],
@@ -177,7 +177,7 @@ export const EXPECTATIONS: readonly Expectation[] = [
     ui: true,
   },
   {
-    label: "A text adventure in the style of Infocom",
+    label: "A text adventure narrator in the style of Infocom",
     // The prompt reads "inventory (take/drop), location, and puzzle flags" —
     // the parenthetical DEFINES inventory as take/drop, so requiring a
     // separate inventory tool over-specifies the ask (it wrongly failed an
@@ -198,7 +198,7 @@ export const EXPECTATIONS: readonly Expectation[] = [
     ui: true,
   },
   {
-    label: "A solo RPG with dice and a story oracle",
+    label: "A tabletop RPG narrator with dice and a story oracle",
     capabilities: [
       ["character", "setup", "create"],
       ["roll", "action", "check"],
@@ -211,7 +211,7 @@ export const EXPECTATIONS: readonly Expectation[] = [
     ui: true,
   },
   {
-    label: "A late-night movie, music, and book picker",
+    label: "A late-night picker for movies, music, and books",
     capabilities: [["recommend", "pick", "suggest", "choose"]],
     minTools: 1,
     ui: true,

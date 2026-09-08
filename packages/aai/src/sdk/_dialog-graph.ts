@@ -96,7 +96,7 @@ function targetsOf(node: DialogNode): readonly DialogNode[] {
  *
  * Being in a state is being in all of them, so this is the set whose
  * transitions are takeable — the half a per-state check misses. It is how
- * `dispatch-center`'s `working.triaging` leaves through `working`'s own `on`.
+ * `emergency-dispatch-agent`'s `working.triaging` leaves through `working`'s own `on`.
  */
 function selfAndAncestors(node: DialogNode): readonly DialogNode[] {
   const chain: DialogNode[] = [];

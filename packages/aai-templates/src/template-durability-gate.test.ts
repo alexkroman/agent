@@ -21,7 +21,7 @@
  *
  * A template with a `workflows/` directory must CALL `runWorkflow` from one of
  * its own specs. That is a floor on the kind of claim the file makes, not on its
- * coverage: `call-audit`'s first step runs ffmpeg, which this repo's test
+ * coverage: `call-audit-workflow`'s first step runs ffmpeg, which this repo's test
  * environment does not have, so its durable block asserts what is reachable (a
  * `FatalError` failing a run on one attempt of six) and says so. A gate that
  * demanded a full run would have that template lying instead.
@@ -122,7 +122,7 @@ describe.each(workflowTemplates())("%s", (name: string) => {
       `${name} declares a workflow in workflows/ but no spec imports ${SURFACE}. ` +
         "A template's body is the thing the template is FOR, and `createWorkflowContext` " +
         "records what it asked for without replaying anything — see " +
-        "link-digest/agent.test.ts for the shape a durable block takes.",
+        "link-digest-workflow/agent.test.ts for the shape a durable block takes.",
     ).toBeGreaterThan(0);
 
     // The CALL, not the import: a block that was deleted leaving its import

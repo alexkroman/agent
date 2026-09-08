@@ -32,7 +32,7 @@ export type EvalEmitted = {
  *
  * Recorded rather than waited out, because a suspension is the thing this engine
  * cannot reproduce and a real wait would only make a case slow while proving
- * nothing extra: `link-digest`'s ten seconds and the six hours its own comment
+ * nothing extra: `link-digest-workflow`'s ten seconds and the six hours its own comment
  * says the mechanism is identical at differ by nothing that runs here. What a
  * case CAN assert is that the body asked, and for how long.
  */
@@ -41,7 +41,7 @@ export type EvalSleep = {
    * The wait's `label` — its identity in a real run's journal, and here the only
    * thing telling two of a body's waits apart.
    *
-   * A case asserting a SCHEDULE wants this: `podcast-digest` sleeps between
+   * A case asserting a SCHEDULE wants this: `podcast-digest-workflow` sleeps between
    * digests and again while polling, and a duration alone cannot say which of
    * them the body reached.
    */

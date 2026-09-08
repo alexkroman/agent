@@ -36,7 +36,7 @@
  * about a step call inside `run` holds here. What is different is the second
  * half of its rule — `run` must issue one step, synchronously — which matters
  * as much for a settled map as a raced one. An unbounded fan-out
- * (`Promise.allSettled(items.map(run))`, `briefing-desk`'s shape) is
+ * (`Promise.allSettled(items.map(run))`, `topic-briefing-agent`'s shape) is
  * `width: Infinity`, spelled out below.
  */
 

@@ -7,7 +7,7 @@
  * the other way, and the two are the same problem seen from each end: a voice
  * agent's boundary is speech in both directions, and only one direction had
  * helpers. Every template that read a number aloud had therefore grown a
- * private copy of these — `hotel-desk` alone carried four, and `roadside-assist`
+ * private copy of these — `hotel-reception-agent` alone carried four, and `roadside-assistance-agent`
  * rendered `$150` where every other desk rendered `$150.00`.
  *
  * **The failure these prevent is not ugliness, it is being misheard.** A TTS

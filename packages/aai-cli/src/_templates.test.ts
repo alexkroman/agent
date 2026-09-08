@@ -31,10 +31,10 @@ async function useFakeRoot(dir: string): Promise<void> {
     // 120KB and is NOT what a scaffolded project gets — see the
     // "authoring guide" tests below.
     "scaffold/CLAUDE.md": "# Writing an aai agent\n\nThe whole SDK reference.\n",
-    "templates/simple/agent.ts": 'export default { name: "simple" };',
-    "templates/web-researcher/agent.ts": 'export default { name: "web-researcher" };',
+    "templates/quickstart-agent/agent.ts": 'export default { name: "quickstart-agent" };',
+    "templates/web-research-agent/agent.ts": 'export default { name: "web-research-agent" };',
     // Template-specific package.json that should take priority over scaffold
-    "templates/web-researcher/package.json": JSON.stringify({
+    "templates/web-research-agent/package.json": JSON.stringify({
       name: "web-researcher-template",
       dependencies: { "node-fetch": "^3.0.0" },
     }),
@@ -55,9 +55,9 @@ describe("bundled templates", () => {
     await withTempDir(async (dir) => {
       // No AAI_TEMPLATES_DIR, getMonorepoRoot() mocked to null: nothing left
       // but the bundled dir, which has no templates/ when running source.
-      await expect(downloadAndMergeTemplate("simple", path.join(dir, "out"))).rejects.toThrow(
-        "Templates directory is missing or unreadable",
-      );
+      await expect(
+        downloadAndMergeTemplate("quickstart-agent", path.join(dir, "out")),
+      ).rejects.toThrow("Templates directory is missing or unreadable");
     });
   });
 });
@@ -75,14 +75,14 @@ describe("templateCopyFilter", () => {
   test.for([".aai", "node_modules", "dist", ".workflow-data", ".swc", ".git"])(
     "%s is never copied out of a template",
     (name) => {
-      expect(templateCopyFilter(path.join("/templates/simple", name))).toBe(false);
+      expect(templateCopyFilter(path.join("/templates/quickstart-agent", name))).toBe(false);
     },
   );
 
   test.for([".env", ".env.local", "pnpm-lock.yaml", "package-lock.json", ".DS_Store"])(
     "%s is never copied out of a template",
     (name) => {
-      expect(templateCopyFilter(path.join("/templates/simple", name))).toBe(false);
+      expect(templateCopyFilter(path.join("/templates/quickstart-agent", name))).toBe(false);
     },
   );
 
@@ -92,12 +92,12 @@ describe("templateCopyFilter", () => {
   test.for([".env.example", "agent.ts", "client.tsx", "package.json", ".gitignore"])(
     "%s is copied",
     (name) => {
-      expect(templateCopyFilter(path.join("/templates/simple", name))).toBe(true);
+      expect(templateCopyFilter(path.join("/templates/quickstart-agent", name))).toBe(true);
     },
   );
 
   test("does not reject the template directory it is copying", () => {
-    expect(templateCopyFilter("/templates/simple")).toBe(true);
+    expect(templateCopyFilter("/templates/quickstart-agent")).toBe(true);
     expect(templateCopyFilter("/root/scaffold")).toBe(true);
   });
 
@@ -121,19 +121,19 @@ describe("templateCopyFilter", () => {
     await withTempDir(async (dir) => {
       const rootDir = await writeFiles(path.join(dir, "templates-root"), {
         "scaffold/.env.example": "API_KEY=",
-        "templates/simple/agent.ts": 'export default { name: "simple" };',
+        "templates/quickstart-agent/agent.ts": 'export default { name: "quickstart-agent" };',
         // What `aai publish` and `aai dev` leave in a template directory.
-        "templates/simple/.aai/project.json":
-          '{"slug":"simple","serverUrl":"http://localhost:8080"}',
-        "templates/simple/.aai/client/index.html": "<html></html>",
-        "templates/simple/.workflow-data/run.json": "{}",
-        "templates/simple/node_modules/zod/package.json": "{}",
-        "templates/simple/.env": "ASSEMBLYAI_API_KEY=sk-real-secret",
-        "templates/simple/pnpm-lock.yaml": "lockfileVersion: '9.0'",
+        "templates/quickstart-agent/.aai/project.json":
+          '{"slug":"quickstart-agent","serverUrl":"http://localhost:8080"}',
+        "templates/quickstart-agent/.aai/client/index.html": "<html></html>",
+        "templates/quickstart-agent/.workflow-data/run.json": "{}",
+        "templates/quickstart-agent/node_modules/zod/package.json": "{}",
+        "templates/quickstart-agent/.env": "ASSEMBLYAI_API_KEY=sk-real-secret",
+        "templates/quickstart-agent/pnpm-lock.yaml": "lockfileVersion: '9.0'",
       });
       vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
       const target = path.join(dir, "output");
-      await downloadAndMergeTemplate("simple", target);
+      await downloadAndMergeTemplate("quickstart-agent", target);
 
       expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
       expect(await fileExists(path.join(target, ".env.example"))).toBe(true);
@@ -156,10 +156,10 @@ describe("downloadAndMergeTemplate", () => {
     await withTempDir(async (dir) => {
       await useFakeRoot(dir);
       const target = path.join(dir, "output");
-      await downloadAndMergeTemplate("simple", target);
+      await downloadAndMergeTemplate("quickstart-agent", target);
       expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
       const content = await fs.readFile(path.join(target, "agent.ts"), "utf-8");
-      expect(content).toContain("simple");
+      expect(content).toContain("quickstart-agent");
     });
   });
 
@@ -167,11 +167,11 @@ describe("downloadAndMergeTemplate", () => {
     await withTempDir(async (dir) => {
       await useFakeRoot(dir);
       const target = path.join(dir, "output");
-      await downloadAndMergeTemplate("simple", target);
+      await downloadAndMergeTemplate("quickstart-agent", target);
       // Scaffold files that don't conflict with template should be copied
       expect(await fileExists(path.join(target, "tsconfig.json"))).toBe(true);
       expect(await fileExists(path.join(target, ".env.example"))).toBe(true);
-      // Scaffold package.json should also be present (simple template has no package.json)
+      // Scaffold package.json should also be present (quickstart-agent template has no package.json)
       expect(await fileExists(path.join(target, "package.json"))).toBe(true);
     });
   });
@@ -181,7 +181,7 @@ describe("downloadAndMergeTemplate", () => {
       await withTempDir(async (dir) => {
         await useFakeRoot(dir);
         const target = path.join(dir, "output");
-        await downloadAndMergeTemplate("simple", target);
+        await downloadAndMergeTemplate("quickstart-agent", target);
         const guide = await fs.readFile(path.join(target, "CLAUDE.md"), "utf-8");
         // The scaffold's own CLAUDE.md is the 120KB authoring guide. Copying it
         // put a file the SDK's shipped skill calls non-authoritative into every
@@ -216,12 +216,12 @@ describe("downloadAndMergeTemplate", () => {
         // Only the SCAFFOLD's CLAUDE.md is the guide. A template's would be
         // that template's own notes, so the filter is keyed on the full path.
         await fs.writeFile(
-          path.join(process.env.AAI_TEMPLATES_DIR ?? "", "templates/simple/CLAUDE.md"),
-          "# simple's notes\n",
+          path.join(process.env.AAI_TEMPLATES_DIR ?? "", "templates/quickstart-agent/CLAUDE.md"),
+          "# quickstart-agent's notes\n",
         );
-        await downloadAndMergeTemplate("simple", target);
+        await downloadAndMergeTemplate("quickstart-agent", target);
         expect(await fs.readFile(path.join(target, "CLAUDE.md"), "utf-8")).toBe(
-          "# simple's notes\n",
+          "# quickstart-agent's notes\n",
         );
       });
     });
@@ -231,8 +231,8 @@ describe("downloadAndMergeTemplate", () => {
     await withTempDir(async (dir) => {
       await useFakeRoot(dir);
       const target = path.join(dir, "output");
-      // web-researcher has its own package.json which should win over scaffold
-      await downloadAndMergeTemplate("web-researcher", target);
+      // web-research-agent has its own package.json which should win over scaffold
+      await downloadAndMergeTemplate("web-research-agent", target);
       const pkgJson = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
       expect(pkgJson.name).toBe("web-researcher-template");
       expect(pkgJson.dependencies["node-fetch"]).toBe("^3.0.0");
@@ -254,7 +254,7 @@ describe("downloadAndMergeTemplate", () => {
       await useFakeRoot(dir);
       const target = path.join(dir, "output");
       await expect(downloadAndMergeTemplate("bad-name", target)).rejects.toThrow(
-        "Available templates: simple, web-researcher",
+        "Available templates: quickstart-agent, web-research-agent",
       );
     });
   });
@@ -264,7 +264,7 @@ describe("downloadAndMergeTemplate", () => {
       await useFakeRoot(dir);
       const target = path.join(dir, "deeply", "nested", "output");
       // fs.cp with recursive:true creates the target directory
-      await downloadAndMergeTemplate("simple", target);
+      await downloadAndMergeTemplate("quickstart-agent", target);
       expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
     });
   });
@@ -275,9 +275,9 @@ describe("downloadAndMergeTemplate", () => {
       const emptyRoot = path.join(dir, "empty-root");
       await fs.mkdir(emptyRoot, { recursive: true });
       vi.stubEnv("AAI_TEMPLATES_DIR", emptyRoot);
-      await expect(downloadAndMergeTemplate("simple", path.join(dir, "out"))).rejects.toThrow(
-        "Templates directory is missing or unreadable",
-      );
+      await expect(
+        downloadAndMergeTemplate("quickstart-agent", path.join(dir, "out")),
+      ).rejects.toThrow("Templates directory is missing or unreadable");
     });
   });
 
@@ -285,13 +285,13 @@ describe("downloadAndMergeTemplate", () => {
     await withTempDir(async (dir) => {
       // Create a root with templates but no scaffold
       const root = await writeFiles(path.join(dir, "no-scaffold-root"), {
-        "templates/simple/agent.ts": "export default {};",
+        "templates/quickstart-agent/agent.ts": "export default {};",
       });
       vi.stubEnv("AAI_TEMPLATES_DIR", root);
 
       const target = path.join(dir, "output");
       // Should not throw even without scaffold dir
-      await downloadAndMergeTemplate("simple", target);
+      await downloadAndMergeTemplate("quickstart-agent", target);
       expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
     });
   });

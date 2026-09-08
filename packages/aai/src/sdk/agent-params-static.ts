@@ -24,7 +24,7 @@ import type { AgentDef } from "./types.ts";
  * A `page: "static"` agent has no session and no LLM loop: nothing reads a
  * system prompt, nothing executes a tool, nothing opens the socket `syncState`
  * pushes over. Every one of these was silently ACCEPTED and inert before this
- * arm existed, and the `link-digest` template shipped a `systemPrompt`
+ * arm existed, and the `link-digest-workflow` template shipped a `systemPrompt`
  * addressed to a model that never runs — with a comment claiming
  * `GET /client-config` served it, which serves `name`/`greeting`/`page` and
  * has never carried a system prompt.

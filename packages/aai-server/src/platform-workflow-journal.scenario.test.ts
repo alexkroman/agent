@@ -316,7 +316,7 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
   });
 
   test("releases the run's hook TOKENS when it goes terminal", async () => {
-    // A derived token is what the SDK tells authors to use — `recap-workflow`
+    // A derived token is what the SDK tells authors to use — `meeting-recap-agent`
     // derives `retention:<sessionId>` — so a token held past its run served
     // exactly one run ever: the second recap in a session hit `claimHook`'s
     // conflict, which is not a suspend, so the saga compensated and deleted the

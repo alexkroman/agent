@@ -214,7 +214,7 @@ the body runs as an ordinary async function. No journal, no replay, no
 suspension, and a step's `maxRetries` is INERT, which has a measured consequence:
 a provider 429 that a deployed run would ride out FAILS an eval run (it happened,
 on a sixth live run inside three minutes). `sleep()` is RECORDED rather than
-taken, which is what lets a case assert `podcast-digest`'s schedule without
+taken, which is what lets a case assert `podcast-digest-workflow`'s schedule without
 waiting a day. Four `WorkflowClient` methods have no honest answer here and say
 so. Do not describe a case written on this as covering replay, resume or retry —
 `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that does.
@@ -222,7 +222,7 @@ so. Do not describe a case written on this as covering replay, resume or retry �
 **Three things a workflow eval CANNOT reach, each costing a real case.**
 `createHook()` throws untransformed and — unlike `sleep()`, whose slot the
 engine publishes into — offers no seam to fill (`@workflow/core`'s
-`create-hook.js` throws unconditionally), so `recap-workflow`'s retention gate,
+`create-hook.js` throws unconditionally), so `meeting-recap-agent`'s retention gate,
 its headline port of Temporal's `expense`, is unevaluable and its eval says so
 rather than asserting around it. `wakeUp` answers `0`, so a "send it now" tool
 can only ever report that nothing was waiting. And because `sleep` is recorded
@@ -279,9 +279,9 @@ because a case that fails against its own stub measures nothing.
 What the stub gate CATCHES, stated because "wiring" is vague: a template whose
 `agent.ts` stopped booting, whose `tools/` stopped resolving, whose provider
 config no longer validates, or whose eval file stopped driving a session — every
-one of which a suite that skips reports as green. `templates/simple` is the
-worked example (`packages/aai-templates/CLAUDE.md`), and the two things that
-belong to a template rather than to this harness are there: the unit-tier
+one of which a suite that skips reports as green. `templates/quickstart-agent`
+is the worked example (`packages/aai-templates/CLAUDE.md`), and the two things
+that belong to a template rather than to this harness are there: the unit-tier
 exclusion for the `.eval.` infix, and a template reading the ENVIRONMENT for a
 credential and never a developer's CLI config.
 

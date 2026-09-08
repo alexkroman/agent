@@ -190,9 +190,12 @@ describe("the shipped templates", () => {
 
   test("and at least one of them really is SCANNED, not merely absent", async () => {
     // The other half of the floor above: the clean result must come from
-    // reading workflow bodies rather than from finding none. `link-digest` is
+    // reading workflow bodies rather than from finding none. `link-digest-workflow` is
     // one of the six templates that ship a `workflows/` directory.
-    const base = path.join(import.meta.dirname, "../../aai-templates/templates/link-digest");
+    const base = path.join(
+      import.meta.dirname,
+      "../../aai-templates/templates/link-digest-workflow",
+    );
     const source = await scanWorkflowDeterminism(base);
     expect(source).toEqual([]);
     const files = await readdir(path.join(base, "workflows"));

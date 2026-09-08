@@ -358,7 +358,7 @@ test("text mode accepts only the fields a text agent has", () => {
  *
  * It exists because every field it refuses used to be accepted and inert: a
  * `page: "static"` agent has no session and no LLM loop, so a `systemPrompt`
- * on one addresses a model that never runs. The `link-digest` template shipped
+ * on one addresses a model that never runs. The `link-digest-workflow` template shipped
  * exactly that, under a comment claiming `GET /client-config` served it.
  */
 test("a workflow app accepts only the fields a workflow app has", () => {

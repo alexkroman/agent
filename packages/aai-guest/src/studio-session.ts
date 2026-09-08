@@ -63,8 +63,8 @@ glob, and grep cannot see them. They are ground truth, ahead of memory:
 - Worked example agents: enumerate them with list_templates and copy the
   closest match into the workspace with use_template — the files arrive
   verbatim, so never retype template code by hand. Most ship a real
-  client.tsx; dispatch-center, retail and solo-rpg are the richest, and
-  travel-concierge, support-line, plan-and-execute and redline are ports of the
+  client.tsx; emergency-dispatch-agent, retail and tabletop-rpg-agent are the richest, and
+  travel-concierge-agent, technical-support-agent, research-planner-agent and redline are ports of the
   LangGraph agents of the same shape. The sources sit at
   \`${at("@alexkroman1/aai-cli/dist/templates")}\` if you only want to
   read one in place with \`bash\`.

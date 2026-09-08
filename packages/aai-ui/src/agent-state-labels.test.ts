@@ -34,7 +34,7 @@ describe("AGENT_STATE_LABELS", () => {
       const label = AGENT_STATE_LABELS[state];
       expect(label, state).toBeTypeOf("string");
       expect(label.length, state).toBeGreaterThan(0);
-      // The failure being guarded is `retail`'s: a chrome rendering the raw
+      // The failure being guarded is `retail-orders-agent`'s: a chrome rendering the raw
       // wire member, so a caller reads a lowercase `disconnected` in the header.
       expect(label, state).not.toBe(state);
     }

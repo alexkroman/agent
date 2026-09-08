@@ -214,10 +214,10 @@ a client that wanted its own bubble markup dropped all four at once:
   pending, off once a trailing agent message has landed with nothing after it).
 
 Three template chromes did exactly that and shipped a worse conversation each —
-`retail` runs FIFTEEN tools and rendered none of them, because tool calls live
-in a second array nothing in that page read; `dispatch-center` eight;
-`infocom-adventure` its eight `game_state_*` calls and every partial of the
-narrator's reply.
+`retail-orders-agent` runs FIFTEEN tools and rendered none of them, because tool
+calls live in a second array nothing in that page read;
+`emergency-dispatch-agent` eight; `text-adventure-agent` its eight
+`game_state_*` calls and every partial of the narrator's reply.
 
 `useConversation()` (`use-conversation.ts`) is that data with nothing rendered:
 `{ items, streaming, transcript, thinking }`, where `items` is a discriminated
@@ -239,7 +239,8 @@ included. `<MessageList>` is now this with the stock bubbles filled in
 (`useCallback`-hoisted renderers, so the view's per-row memo holds), and its
 tests did not change — the acceptance test for the view, as the list was for the
 hook. The default `renderTool` is `<ToolCallRow variant="compact">`;
-`dispatch-center` and `retail` pass it with their own dot in the `icon` slot.
+`emergency-dispatch-agent` and `retail-orders-agent` pass it with their own dot
+in the `icon` slot.
 
 It subscribes with per-field `useSessionSelector` calls, never whole-page
 `useSession()`, and that is half the value: the three hand-rolled chromes all
@@ -255,10 +256,10 @@ the eight methods: no subscription, no store on the object it returns. Pair it
 with a one-field `useSessionSelector`, or with `useSessionStatus()` /
 `useSessionError()`, the only two fields more than one chrome selects.
 
-`retail` and `dispatch-center` are the worked examples of the conversion: both
-were a single `App()` mapping `session.messages`, and both split into `Row` /
-`Conversation` / `StatusReadout` / `ErrorBanner` / `Controls`, which is what
-leaves `App` holding only `useAgentState(projection)`.
+`retail-orders-agent` and `emergency-dispatch-agent` are the worked examples of
+the conversion: both were a single `App()` mapping `session.messages`, and both
+split into `Row` / `Conversation` / `StatusReadout` / `ErrorBanner` /
+`Controls`, which is what leaves `App` holding only `useAgentState(projection)`.
 
 ### `ConsoleShell` is public, `role="alert"` is why — and no template adopted it
 
@@ -274,9 +275,9 @@ is not; reach for `ChatView` when both are ours.
 **It was published in the same change that converted three custom chromes, and
 all three declined it** — record that as the open question it is. It is a whole
 FRAME: a centred `max-w-190` column with its own header (icon + title + state
-eyebrow) and footer. `retail` and `dispatch-center` are full-bleed
+eyebrow) and footer. `retail-orders-agent` and `emergency-dispatch-agent` are full-bleed
 `1fr / 320px` grids whose headers carry things it cannot express ("Verified ·
-Olivia Ito", "SYSTEM ALERT: RED"); `infocom-adventure` is a CRT. Adopting it
+Olivia Ito", "SYSTEM ALERT: RED"); `text-adventure-agent` is a CRT. Adopting it
 would replace the design each template exists to demonstrate. What all three
 actually needed was the `role="alert"` banner INSIDE it, and that is
 `<SessionErrorBanner>` now — its own export, COMPOSED here (so the shell takes
@@ -306,7 +307,7 @@ unusual even for the slot — no template is that chrome yet. And `.aai-scroll`
 in `styles.css` is the thin scrollbar four chromes each drew with three
 `::-webkit-scrollbar` rules, told its colours through `--aai-scrollbar-thumb` /
 `--aai-scrollbar-track` — the two-value case `useTheme()` is still for, which is
-how `infocom-adventure` sets them.
+how `text-adventure-agent` sets them.
 
 ## Three exports whose consumer is a TOOL, not an agent page
 
@@ -343,7 +344,7 @@ undone by the next transcript delta; it misses growth that is not a new message
 (a streamed reply, an expanding tool block, a markdown reflow all change height
 without changing the dependency array); and it needs a synthetic dependency
 (`messages.length + transcript.length`) to fire at all, which is where the dead
-`if (version < 0) return;` line in `infocom-adventure`'s copy came from. A
+`if (version < 0) return;` line in `text-adventure-agent`'s copy came from. A
 `ResizeObserver` on the content has none of those.
 
 The one constraint callers get wrong: the outer container **must have a bounded
@@ -418,9 +419,9 @@ as the projection type and swallows it otherwise, which `hooks.test-d.ts` caught
 on the first draft.
 
 The one place to prefer the `fallback` overload is a slot whose `create()` is
-EXPENSIVE TO IMPORT. `retail`'s does: its factory pulls a 107 KB `seed.json`, and
-the projection overload calls `create()`, so passing the projection would ship
-the catalog to the browser. Its client says so in place.
+EXPENSIVE TO IMPORT. `retail-orders-agent`'s does: its factory pulls a 107 KB
+`seed.json`, and the projection overload calls `create()`, so passing the
+projection would ship the catalog to the browser. Its client says so in place.
 
 Note the fallback is only substituted for `null`, and an absent argument still
 reads back as `null` rather than `undefined` — a client spelling
@@ -434,8 +435,9 @@ the halves that are runtime behaviour.
 `useTheme()` returns a JavaScript object, and `context.ts` admitted outright
 that "a Tailwind class cannot see it" — so every styled node in a custom client
 carried an inline `style={{ }}`. Measured ratio of `theme.` reads to `style={{`
-in the template clients: `night-owl` 10:10, `travel-concierge` 9:8,
-`plan-and-execute` 8:8, `pizza-ordering` 8:8, `support-line` 5:5.
+in the template clients: `entertainment-picks-agent` 10:10,
+`travel-concierge-agent` 9:8, `research-planner-agent` 8:8,
+`pizza-ordering-agent` 8:8, `technical-support-agent` 5:5.
 
 The package already knew the fix and used it three times internally (`Button`'s
 `--aai-btn-bg` consumed as `bg-(--aai-btn-bg)`, `FileField`'s
@@ -443,9 +445,10 @@ The package already knew the fix and used it three times internally (`Button`'s
 none of the five theme tokens. `ThemeProvider` writes `--aai-bg`,
 `--aai-surface`, `--aai-text`, `--aai-border` and `--aai-primary` onto
 `document.documentElement`, and `styles.css`'s `@theme` block maps them into
-Tailwind's `--color-*` namespace, so `className="bg-aai-surface text-aai-text
-border-aai-border"` works. `night-owl` went from 10 reads and 10 style objects
-to zero and zero with its custom dark palette unchanged.
+Tailwind's `--color-*` namespace, so
+`className="bg-aai-surface text-aai-text border-aai-border"` works.
+`entertainment-picks-agent` went from 10 reads and 10 style objects to zero and
+zero with its custom dark palette unchanged.
 
 Four things to keep:
 
@@ -458,7 +461,7 @@ Four things to keep:
   `border-color` position, ternaries included (`on ? theme.primary :
   theme.surface` is two classes, not a computation). The one genuine survivor
   found across five templates is `scrollbar-color`, which takes TWO values and
-  has no utility: `infocom-adventure`'s transcript reads `theme.primary` and
+  has no utility: `text-adventure-agent`'s transcript reads `theme.primary` and
   `theme.surface` for it rather than re-pinning the two hex codes its own
   `mountClient({ theme })` block already declares.
 - **The page background is still painted imperatively on `html` AND `body`.** A
@@ -474,7 +477,7 @@ Four things to keep:
 
 `DefaultShell` forwarded three of the seven fields the two components under it
 accept: `StartScreen` takes `icon`, `subtitle`, `buttonText`; `SidebarLayout`
-takes `sidebarPosition`; none of the four was on `ClientConfig`. So `solo-rpg`
+takes `sidebarPosition`; none of the four was on `ClientConfig`. So `tabletop-rpg-agent`
 wanted all four, could say none in config, and dropped to the `component:` tier
 for a 27-line wrapper whose only job was to re-say what `mountClient()`
 already knows how to say — and which dragged `useAgentState` up a level so its
@@ -492,7 +495,7 @@ MAPPED type over `Pick<ClientConfig, …>`, not a bare `Pick`:
 cannot know which keys the caller wrote.
 
 **Session resume: the default is the fix, and the hand-wired version was worse.**
-`solo-rpg` was the one template of fourteen that wired
+`tabletop-rpg-agent` was the one template of fourteen that wired
 `onSessionId`/`resumeSessionId` by hand — the shape `session-resume-store.ts`
 cites as a default in the wrong place — and the copy used **`localStorage`**, so
 it was not duplicating the new default but OVERRIDING it with the wrong store. A
@@ -505,17 +508,17 @@ fix.
 
 A tool can hand the page STATE or a MOMENT, and there is a different mechanism
 for each — `useAgentState(projection)` over a `sessionSlot` for the first,
-`useEvent` / `useToolCallStart` for the second. `night-owl` is the template that
-puts them side by side deliberately, because it is the first one a reader meets
-that leaves `agent.ts` for a `.tsx` file and it is where the choice is easiest
-to get wrong.
+`useEvent` / `useToolCallStart` for the second. `entertainment-picks-agent` is
+the template that puts them side by side deliberately, because it is the first
+one a reader meets that leaves `agent.ts` for a `.tsx` file and it is where the
+choice is easiest to get wrong.
 
 Its recommendation LOG is state: a slot, projected by `syncState`, read by
 `useAgentState(nightProjection)`. It used to be a `useState` in the sidebar
 rebuilt from a `ctx.send("recommendations", …)` per call, which made the list
 DERIVED — so a page that mounted late or reloaded mid-session started empty
 while the session it reconnected to still remembered every pick. That is the
-same defect `pizza-ordering` records paying ~45 lines for, by a shorter route.
+same defect `pizza-ordering-agent` records paying ~45 lines for, by a shorter route.
 Its "finding something cozy…" flash and its wind-down nudge are moments:
 `useToolCallStart` never replays by construction (a start is about the instant),
 and the nudge is a `ctx.send` precisely because re-delivering it on every
@@ -525,8 +528,9 @@ reconnect would be nagging.
 belongs in a slot. If re-rendering it after a reload would be a LIE (a spinner
 for a finished call) or a nuisance (a nudge shown twice), it is a moment and
 belongs in an event.** Keeping both mechanisms on one screen is better teaching
-than splitting them across two templates, which is why `night-owl` still holds
-the only demonstration of the event hooks.
+than splitting them across two templates, which is why
+`entertainment-picks-agent` still holds the only demonstration of the event
+hooks.
 
 ## Client audio path (browser ⇄ server)
 
@@ -668,7 +672,7 @@ other arm also matches never bites: with `page` left on `SharedAgentParams`,
 `agent({ voice: "michael", page: "static" })` resolved against
 `PipelineAgentParams` and configured a TTS voice for an app that never speaks.
 
-**The cost of not having this was already shipped.** `link-digest` carried
+**The cost of not having this was already shipped.** `link-digest-workflow` carried
 `systemPrompt: "Summarize links into three honest points."` — instructions to a
 model that never runs, since a static agent has no session and no LLM loop, and
 a `"use step"` body calls whatever model client it imports itself. The comment
@@ -724,7 +728,7 @@ runtime: `resolveLlm` throws on a missing key, so a workflow app could not boot
 at all — under `aai dev` it never started, and deployed it is a 500 on the
 workflow API of an app whose workflows are fine, which is the case
 `workflow-api.ts`'s `engine` doc names). Both templates ship exactly this shape,
-so `aai init -t link-digest && aai dev` is the reproduction.
+so `aai init -t link-digest-workflow && aai dev` is the reproduction.
 
 The check keys off `page` rather than the descriptors because by the time a
 config reaches the deploy preflight the injection has already happened:
@@ -781,7 +785,7 @@ finished or was never asleep, the same shape as `cancelled: false`. Without it
 the only handle on a sleeping run was `cancel`, so "send it now" and "throw it
 away" were one button. Both routes ride the platform's already-declared GET
 and POST on the `/workflows` prefix, so neither needed a deployment change;
-`research-workflow` is the worked example for each.
+`research-handoff-agent` is the worked example for each.
 
 ### Rendering progress (`useWorkflowProgress`)
 
@@ -857,11 +861,11 @@ templates had it byte-identical, both comments included. `className` REPLACES
 the default rather than extending it, so a custom chrome is not fighting a
 default it did not ask for, and `placeholder` covers the pre-first-line frame.
 
-`link-digest` deliberately keeps the raw hook: it renders the newest line only
-(a compact status), which is what `latest` is for, and it is this package's
-example of the primitives underneath. `transcription-workflow` and `redline`
-render the whole log through the component, because their fan-out and their
-rounds are where the history is worth seeing.
+`link-digest-workflow` deliberately keeps the raw hook: it renders the newest
+line only (a compact status), which is what `latest` is for, and it is this
+package's example of the primitives underneath. `transcription-workflow` and
+`document-redline-workflow` render the whole log through the component, because
+their fan-out and their rounds are where the history is worth seeing.
 
 `ctx.workflows.start()` only covers the case where a VOICE TURN starts a run; a
 page and a programmatic caller (`aai workflow`, a script, a cron job) had no
@@ -1021,27 +1025,28 @@ one — so a page written as `src={`/workflows/uploads/${id}`}` works against
 `download` on the anchor work as a bonus, the bytes already being in the tab.
 
 **`useDownloadUrl(api, id)` owns the object-URL lifecycle, and both templates
-that exist because of the audio round trip call it** — `spoken-summary` and
-`call-audit` had written the same 38 lines byte-for-byte, doc paragraph
-included, and this package exported no download helper at all. The two lines
-worth centralizing are the two the four are wrapped in: `URL.revokeObjectURL`
-on cleanup (an object URL pins its blob for the life of the DOCUMENT, so a page
-that summarized five recordings holds five files it can no longer reach) and a
-`cancelled` flag (a second run settling while the first download is in flight
-otherwise renders the first run's audio under the second run's output). Both
-failure modes are tested. Both copies also faked `pending` as "neither `url` nor
-`error`", which cannot tell a download in flight from no id at all; `pending` is
-its own field now, and both pages render it.
+that exist because of the audio round trip call it** — `spoken-summary-workflow`
+and `call-audit-workflow` had written the same 38 lines byte-for-byte, doc
+paragraph included, and this package exported no download helper at all. The two
+lines worth centralizing are the two the four are wrapped in:
+`URL.revokeObjectURL` on cleanup (an object URL pins its blob for the life of
+the DOCUMENT, so a page that summarized five recordings holds five files it can
+no longer reach) and a `cancelled` flag (a second run settling while the first
+download is in flight otherwise renders the first run's audio under the second
+run's output). Both failure modes are tested. Both copies also faked `pending`
+as "neither `url` nor `error`", which cannot tell a download in flight from no
+id at all; `pending` is its own field now, and both pages render it.
 
 **`<AudioResult download={…}>` is the block both pages then rendered over that
 result**, byte-identical too: the heading, the "Fetching the audio…" line, the
 `role="alert"` paragraph, the `<audio controls>` over the object URL and the
 anchor with `download` set (which works on an object URL because the bytes are
-in the tab — it was the href that could not carry the bearer). The one difference
-between the pages is the prop: `captions` builds the one-cue WebVTT data URL
-`spoken-summary` had written, and `call-audit` omits it on purpose because its
-spoken text is rendered in full beneath the player. Both are right, so it is
-optional in both directions and the component doc says so.
+in the tab — it was the href that could not carry the bearer). The one
+difference between the pages is the prop: `captions` builds the one-cue WebVTT
+data URL `spoken-summary-workflow` had written, and `call-audit-workflow` omits
+it on purpose because its spoken text is rendered in full beneath the player.
+Both are right, so it is optional in both directions and the component doc says
+so.
 
 ### `useWorkflowSubmit` / `useWorkflowStream` hand back `wake` and `cancel`
 
@@ -1076,7 +1081,7 @@ error in one place every page inherits, and spreading a complete record cannot
 drop a key. `WorkflowRunStatus` is re-exported from `workflow-client.ts` for the
 same reason `WorkflowRun` is.
 
-**`<WorkflowRunPanel run>` is the bordered shell `redline` and
+**`<WorkflowRunPanel run>` is the bordered shell `document-redline-workflow` and
 `transcription-workflow` had each built around those two**: the status line
 (`statusLabels` is the partial override, spread over `WORKFLOW_STATUS_LABELS`),
 an optional Clear, `<WorkflowProgress>`, a `live` slot while the run is not
@@ -1268,7 +1273,7 @@ now make the same promise with nothing written.
 
 `key` still overrides — an ACCOUNT's id, so a run follows the person to another
 device; `useRunKey({ storage: "local" })` for a run that outlives the tab, which
-is `podcast-digest` and the only template that still names the hook. `recover:
+is `podcast-digest-workflow` and the only template that still names the hook. `recover:
 false` opts the LOOKUP out and keeps the key. `useWorkflowStream` has neither,
 for the reason above: its key would be read back by nobody.
 
@@ -1380,7 +1385,7 @@ the keyless read (`GET /workflows/runs` with no `key`, i.e. `ctx.workflows
 .recent`) filtered by the DECLARED name, which matches no stored run, so it
 answered `[]` for every workflow and `aai workflow runs <name>` printed "No runs
 of X yet" for every agent — while every snapshot reported the machine id as its
-`workflow`, which `research-workflow`'s status tool reads down the phone. `find`
+`workflow`, which `research-handoff-agent`'s status tool reads down the phone. `find`
 was
 unaffected: it goes through our own key index, which is keyed by declared name.
 
@@ -1430,7 +1435,7 @@ Four properties are load-bearing and each covers a bug that is silent:
 `WorkflowOutputOf<typeof myWorkflow>` is what makes `run.status === "completed"`
 narrow to a TYPED `run.output`: a type-only import of `agent.ts` is erased, so
 naming the agent's own type pulls no server graph into the browser bundle.
-`link-digest` in `packages/aai-templates/templates/` is the worked example.
+`link-digest-workflow` in `packages/aai-templates/templates/` is the worked example.
 
 ### One request in, one result out (`wait`)
 
@@ -1528,16 +1533,16 @@ URL, which is what the paragraph above says to do.
 before converting a hand-written form.** It renders one control per scalar, all
 of them, from the JSON Schema — the whole value and the whole constraint. There
 is no `exclude`/`only` prop, and `SchemaField` reads only `type`, `enum`,
-`description` and `default`, so `podcast-digest`'s conversion cost three things:
-its `<textarea rows={3}>` for the comma-separated feed list became a one-line
-`<TextField>`, the `min`/`max` on three number inputs stopped reaching the DOM
-(the schema still refuses at `start()`), and a param that used to render only
-when the webhook URL contained `/triggers/` — so nobody was asked about a Slack
-concept they would never meet — is now always rendered. Harmless there, but the
-deliberate hiding is gone. **A page that needs a field CONDITIONALLY has to
-write that field itself, and `<WorkflowFields>` will render it a second time**:
-the mixed shape `redline` uses works only because its hand-written field is one
-`<WorkflowFields>` SKIPS (an array).
+`description` and `default`, so `podcast-digest-workflow`'s conversion cost
+three things: its `<textarea rows={3}>` for the comma-separated feed list became
+a one-line `<TextField>`, the `min`/`max` on three number inputs stopped
+reaching the DOM (the schema still refuses at `start()`), and a param that used
+to render only when the webhook URL contained `/triggers/` — so nobody was asked
+about a Slack concept they would never meet — is now always rendered. Harmless
+there, but the deliberate hiding is gone. **A page that needs a field
+CONDITIONALLY has to write that field itself, and `<WorkflowFields>` will render
+it a second time**: the mixed shape `document-redline-workflow` uses works only
+because its hand-written field is one `<WorkflowFields>` SKIPS (an array).
 
 **`<WorkflowFields workflow="transcribe">` renders the schema half.** It takes
 either the workflow's NAME — fetching the listing itself, which is the form a
@@ -1570,10 +1575,10 @@ under a form that is already submitting again is the one wrong answer this can
 give, and it looks like a correct one.
 
 `transcription-workflow` in `packages/aai-templates/templates/` is the worked
-example; `link-digest` is the smaller one and shows the layer under `<Form>` raw
-(a hand-written `<form>` with its own `useState`, handing an object to
-`submit()`), which is worth keeping as the thing the form layer compresses. It
-used to hold `createWorkflowApi` and `useWorkflowRun` too, and this paragraph
+example; `link-digest-workflow` is the smaller one and shows the layer under
+`<Form>` raw (a hand-written `<form>` with its own `useState`, handing an object
+to `submit()`), which is worth keeping as the thing the form layer compresses.
+It used to hold `createWorkflowApi` and `useWorkflowRun` too, and this paragraph
 said so for a while after it stopped.
 
 ## Surviving a platform restart (`client-config.ts`)

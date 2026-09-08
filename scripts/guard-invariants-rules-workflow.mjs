@@ -148,7 +148,7 @@ export const WORKFLOW_BODY_RULES = [
       "The raw call is RIGHT where the failure is not simply a failure — a `404`\n" +
       'that means "already deleted", a `4xx` whose body decides which advice to\n' +
       "print. Baseline the line and say which case it is in a comment beside it;\n" +
-      "`recap-workflow`'s `discardTranscript` is the worked example.\n" +
+      "`meeting-recap-agent`'s `discardTranscript` is the worked example.\n" +
       "\n" +
       "Scoped to shipped `workflows/` bodies because those are what a user\n" +
       "copies, and because the SDK's own `sdk/step-errors.ts` calls all six —\n" +
@@ -190,7 +190,7 @@ export const WORKFLOW_BODY_RULES = [
         // through a helper the body cannot inline. A line-based scan cannot see
         // that boundary, so what it CAN see is that the body names a step
         // instead of a clock. The third is the `new Date(` half's remedy —
-        // `file` is `link-digest`'s baselined step helper, reached from here.
+        // `file` is `link-digest-workflow`'s baselined step helper, reached from here.
         '  const startedAt = await ctx.step("startClock", startClock);',
         '  const id = await ctx.step("mintId", newId);',
         '  const filedAt = await ctx.step("file", () => file(digest));',

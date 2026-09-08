@@ -206,7 +206,7 @@ export async function stepFetch(url: string, init: StepFetchInit = {}): Promise<
     // published fetch adds it and the caller passes only the iterable — and
     // this path added nothing, so the promise held for a deployed run and broke
     // for every other caller. Measured on a real upload: `stepTranscribeUpload`
-    // streams window by window, so a `spoken-summary` run driven from an eval or
+    // streams window by window, so a `spoken-summary-workflow` run driven from an eval or
     // a spec died before it reached the provider. Only the streaming form needs
     // it (bytes and strings are already buffered), and adding it unconditionally
     // is not free — a `duplex` on a bodiless GET is a different rejection.

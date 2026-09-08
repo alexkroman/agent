@@ -34,7 +34,7 @@ export default defineConfig({
     // The slow-tier infixes, excluded here for the reason every other package
     // excludes them: membership is a NAMING CONVENTION, and the `include` globs
     // above match all three infixes. The gap was latent until it was not —
-    // `templates/simple/agent.eval.test.ts` drives a LIVE MODEL, so without the
+    // `templates/quickstart-agent/agent.eval.test.ts` drives a LIVE MODEL, so without the
     // `.eval.` exclusion `pnpm test` would spend tokens on every developer's
     // key under a 5s budget it cannot meet. `check:eval` is what runs it.
     // Declaring no `check:integration`/`check:scenario` script is deliberate and

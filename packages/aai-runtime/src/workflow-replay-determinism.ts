@@ -9,7 +9,7 @@
  * mechanism — it is `ctx.step`'s own mechanism with the callback fixed and the
  * name reserved, which is precisely the shape authors were already writing by
  * hand. Two shipped templates had it: `transcription-workflow`'s `startClock` and
- * `call-audit`'s two `now` reads, each an exported one-line function reached
+ * `call-audit-workflow`'s two `now` reads, each an exported one-line function reached
  * through a `ctx.step` and each carrying its own paragraph re-deriving the rule.
  *
  * **What it does NOT do is make the body deterministic by construction.**

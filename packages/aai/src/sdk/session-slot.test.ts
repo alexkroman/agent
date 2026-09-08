@@ -344,7 +344,7 @@ describe("sessionSlot", () => {
     });
 
     test("allows a shared subtree — a DAG is not a cycle", () => {
-      // Regression: a single visited-set reported retail's seed catalogue as
+      // Regression: a single visited-set reported retail-orders-agent's seed catalogue as
       // circular, because two items share one `options` object.
       const ctx = createToolContext();
       const shared = { size: "M" };
@@ -519,14 +519,14 @@ describe("sessionSlot", () => {
       // Its mutations would be committed at the end of the synchronous part and
       // the continuation would then write to a frozen draft — a `TypeError` from
       // somewhere unrelated. Enforced at run time because a conditional return
-      // type cannot be satisfied by a generic wrapper (retail's `retailTool`) —
+      // type cannot be satisfied by a generic wrapper (retail-orders-agent's `retailTool`) —
       // but at DECLARATION rather than on the first call, which is a caller on
       // the line. The module holding this is loaded by `aai dev`, by the build,
       // and by the agent's own spec.
       expect(() =>
         // @ts-expect-error - `RejectThenable` refuses this at COMPILE time now,
         // which is the point; the runtime guard stays because a generic wrapper
-        // (retail's `retailTool`) and any JS caller still reach this path, and
+        // (retail-orders-agent's `retailTool`) and any JS caller still reach this path, and
         // this test is what keeps that guard covered.
         cartSlot.updateTool({
           description: "Awaits",

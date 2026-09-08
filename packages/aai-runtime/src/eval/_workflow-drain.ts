@@ -8,7 +8,7 @@
  *
  * ## The leak
  *
- * `recap-workflow`'s eval states it exactly, and this is the argument credited
+ * `meeting-recap-agent`'s eval states it exactly, and this is the argument credited
  * to the failure rather than to the file: the scripted provider a case installs
  * is unpublished when that case finishes, so a body still mid-flight makes its
  * next request "against whatever the next case publishes — or against the real

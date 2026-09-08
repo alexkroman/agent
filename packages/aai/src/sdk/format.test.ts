@@ -27,7 +27,7 @@ describe("formatBytes", () => {
     // The unit steps at exactly 1024, not at 1000.
     [1024, "1 KB"],
     [112_640, "110 KB"],
-    // `call-audit/workflows/summarize.ts` printed KB whole, and still does.
+    // `call-audit-workflow/workflows/summarize.ts` printed KB whole, and still does.
     [1_048_575, "1.0 MB"],
     [1_048_576, "1.0 MB"],
     // The shape the four `mb()` copies produced, to one decimal.
@@ -70,7 +70,7 @@ describe("formatDuration", () => {
     [249_000, "4:09"],
     // Under an hour there is no hours field, however many minutes there are.
     [3_540_000, "59:00"],
-    // The bug this replaces: `call-audit/client.tsx` said "64:09" here.
+    // The bug this replaces: `call-audit-workflow/client.tsx` said "64:09" here.
     [3_849_000, "1:04:09"],
     [3_600_000, "1:00:00"],
     // Minutes are padded only once an hours field exists.
@@ -220,16 +220,16 @@ describe("formatMoney", () => {
 
 describe("the shapes the template copies produced", () => {
   test("one run reports one duration on both sides of the wire", () => {
-    // The live bug: `call-audit/workflows/media.ts` said "1:04:09" and
-    // `call-audit/client.tsx` said "64:09" for the same 3,849,000ms run.
+    // The live bug: `call-audit-workflow/workflows/media.ts` said "1:04:09" and
+    // `call-audit-workflow/client.tsx` said "64:09" for the same 3,849,000ms run.
     const ms = 3_849_000;
     expect(formatDuration(ms)).toBe("1:04:09");
     expect(formatDuration(ms)).toBe(formatDuration(ms));
   });
 
   test("one price reads the same at every desk", () => {
-    // The live drift: `pizza-ordering` rendered "$1234.00", `travel-concierge`
-    // rendered "$1,234" for the same amount, and `retail` spelled a third
+    // The live drift: `pizza-ordering-agent` rendered "$1234.00", `travel-concierge-agent`
+    // rendered "$1,234" for the same amount, and `retail-orders-agent` spelled a third
     // convention inline twelve times.
     expect(formatMoney(1234)).toBe("$1,234.00");
   });
@@ -260,7 +260,7 @@ describe("money properties", () => {
 
   test("roundMoney never changes what formatMoney prints", () => {
     // The whole reason it shares `toFixed(2)`: a value that compares as one
-    // number and reads as another is the bug this replaced in `retail`.
+    // number and reads as another is the bug this replaced in `retail-orders-agent`.
     fc.assert(
       fc.property(amounts, (amount) => {
         expect(formatMoney(roundMoney(amount))).toBe(formatMoney(amount));

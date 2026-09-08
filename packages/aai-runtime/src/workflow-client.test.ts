@@ -364,7 +364,7 @@ describe("recent runs", () => {
 describe("the name a snapshot reports", () => {
   test("is the key the workflow is declared under, not the compiler's id", async () => {
     // `WorkflowRunBase.workflow` says "key the workflow is declared under", and
-    // agents read it aloud: `research-workflow`'s status tool puts it in a sentence
+    // agents read it aloud: `research-handoff-agent`'s status tool puts it in a sentence
     // spoken down the phone.
     const { client } = makeClient();
     expect((await client.get("wrun_1"))?.workflow).toBe("digest");
@@ -586,8 +586,8 @@ describe("listing declared workflows", () => {
    * The FAILING observation: `safeJsonSchema` converted with zod's default
    * `io: "output"`, which describes the PARSED value — so every `.default()`
    * field came back `required`, and `WorkflowSummary.input` is documented as
-   * "the input schema to render". Both `podcast-digest` (five defaulted fields)
-   * and `redline` (two) therefore served a form marking as mandatory exactly the
+   * "the input schema to render". Both `podcast-digest-workflow` (five defaulted fields)
+   * and `document-redline-workflow` (two) therefore served a form marking as mandatory exactly the
    * fields their author had given a fallback, while `validate()` next door
    * accepts the same input WITHOUT them — the two halves of one schema
    * disagreeing about one submission.

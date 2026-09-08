@@ -56,7 +56,7 @@ case "$(cd "$WORKDIR" 2>/dev/null && pwd || echo "$WORKDIR")" in
     exit 2
     ;;
 esac
-AGENTS=${AGENTS:-"simple research-workflow retail pizza-ordering transcription-workflow"}
+AGENTS=${AGENTS:-"simple research-handoff-agent retail pizza-ordering-agent transcription-workflow"}
 PGHOST=${PGHOST:-127.0.0.1}
 PGPORT=${PGPORT:-5432}
 PGUSER=${PGUSER:-postgres}

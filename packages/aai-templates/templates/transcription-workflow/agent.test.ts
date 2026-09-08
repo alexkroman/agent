@@ -189,7 +189,7 @@ describe("the agent declares its three workflows", () => {
     // to edit rather than satisfy. `workflowApp()` declares no session, so a
     // tool has no conversation to be called from — a name appearing here means
     // the voice path crept back in and the tool will never run. If you want a
-    // voice agent that STARTS a workflow, `research-workflow` is that template,
+    // voice agent that STARTS a workflow, `research-handoff-agent` is that template,
     // and this line is what tells you you are on the wrong one.
     expect(Object.keys(agentDef.tools ?? {})).toEqual([]);
   });

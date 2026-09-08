@@ -101,7 +101,7 @@ export const LOCAL_GUEST_IMAGE_TAG = "aai-guest-harness:local";
  * reservation.
  *
  * So the number has to cover the PEAK, and the peak is MEASURED: building the
- * `link-digest` template in a guest (typecheck, then both bundles, as
+ * `link-digest-workflow` template in a guest (typecheck, then both bundles, as
  * `studio-build.ts` runs them) peaks at **1219 MB**, and it is the WORKER
  * bundle that gets there — 106 MB after the typecheck, ~1200 MB after
  * `buildWorker`. That corroborates the 1.29 GB wedge `aai-server/CLAUDE.md`

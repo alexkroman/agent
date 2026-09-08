@@ -55,7 +55,7 @@ describe("executeTest", () => {
   });
 
   test("a narrowed run over a project with other specs is NOT a pass", async () => {
-    // The reproduction from the field: one tool added to the `retail` template
+    // The reproduction from the field: one tool added to the `retail-orders-agent` template
     // broke `registry.test.ts` in 17 assertions while `pnpm test` and
     // `pnpm build` stayed green, because the scaffold wires `"test": "aai test"`
     // and `aai test` ran `agent.test.ts` alone and exited 0.

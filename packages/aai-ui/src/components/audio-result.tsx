@@ -80,9 +80,9 @@ function captionsUrl(text: string, durationMs: number): string {
  * and that is the whole reason both pages hand this a hook result rather than a
  * path.
  *
- * **A caption track is a judgement, not a default.** `spoken-summary` passes
+ * **A caption track is a judgement, not a default.** `spoken-summary-workflow` passes
  * `captions`: the summary was written before it was spoken, so one cue
- * spanning the clip is an honest transcript of it. `call-audit` deliberately
+ * spanning the clip is an honest transcript of it. `call-audit-workflow` deliberately
  * does not: the spoken text is rendered in full immediately below the player,
  * which is the same information a track would carry. Both are right, which is
  * why the prop is optional in both directions.

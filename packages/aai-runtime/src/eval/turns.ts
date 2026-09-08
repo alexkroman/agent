@@ -12,7 +12,7 @@
  * wrote the same paragraph above their own copy: a case must assert about the
  * turn a MECHANISM fired in, never about turn number two, because how many turns
  * an agent takes to get somewhere is the model's business and it measurably
- * varies — `retail`'s desk reads an order back before it stages, and its staging
+ * varies — `retail-orders-agent`'s desk reads an order back before it stages, and its staging
  * call has landed in turn two, three and four across live runs. A case pinned to
  * a turn index is a flake with a misleading name, and it fails on a change to
  * the agent's manner rather than to its behaviour.
@@ -61,7 +61,7 @@ const SAID_MAX = 240;
  * What it is worth is the failure it turns into a finding.
  * `expect(started).toBeDefined()` prints "expected undefined to be defined",
  * which says nothing about a concierge that talked through three turns without
- * ever staging the change — the failure `travel-concierge`'s own comment records
+ * ever staging the change — the failure `travel-concierge-agent`'s own comment records
  * this message catching.
  *
  * Three things it says that a hand-rolled copy did not:
@@ -109,7 +109,7 @@ function elide(text: string): string {
  * same class of mistake as a claim about `said()` that does — see
  * {@link EvalTurn}.
  *
- * Hand-rolled in `travel-concierge` as `callsIn`, which is where the shape comes
+ * Hand-rolled in `travel-concierge-agent` as `callsIn`, which is where the shape comes
  * from. Pair it with `toolNames` for an order claim, or with `toolArgsIn` /
  * `toolResultsIn` for what each was asked and answered.
  */
@@ -170,8 +170,8 @@ export function expectToolBeforeSpeech(turn: EvalTurn): void {
  *
  * The claim a multi-turn case actually wants to make, and the whole reason
  * {@link EvalSession.sayAll} exists: "the desk staged the change on the turn it
- * staged it", never "on turn two". Written out in `retail` as `turnCalling`, in
- * `travel-concierge` as `stagingTurn` and in `dispatch-center` as an inline
+ * staged it", never "on turn two". Written out in `retail-orders-agent` as `turnCalling`, in
+ * `travel-concierge-agent` as `stagingTurn` and in `emergency-dispatch-agent` as an inline
  * `turns.find(…)`, each under a doc making the same argument.
  *
  * **It THROWS rather than answering `undefined`, which is a deliberate break
@@ -192,7 +192,7 @@ export function expectToolBeforeSpeech(turn: EvalTurn): void {
  * as one missing name.
  *
  * `where` narrows to a call that also satisfies a predicate — the near-variant
- * `travel-concierge` needed, where the interesting turn is the one whose
+ * `travel-concierge-agent` needed, where the interesting turn is the one whose
  * `update_ticket` STAGED something rather than being refused by the gate. When
  * the tool was called and no call matched, the message says so rather than
  * reporting the tool as never called: those are different findings and only one

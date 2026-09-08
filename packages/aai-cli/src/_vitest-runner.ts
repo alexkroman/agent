@@ -207,7 +207,7 @@ export function projectSpecFiles(cwd: string): string[] {
  * `runVitest` passes the candidate filename as a vitest FILTER, which is what
  * keeps `test` and `eval` disjoint without either excluding the other's file —
  * see its doc. The cost is that every other `*.test.ts` in the project is
- * skipped, and the skip was SILENT: the shipped `retail` template carries seven
+ * skipped, and the skip was SILENT: the shipped `retail-orders-agent` template carries seven
  * of them, so `aai test` there ran 1 file / 67 tests, printed "Tests passed",
  * and left 211 of the project's 278 tests unrun with nothing saying so.
  *

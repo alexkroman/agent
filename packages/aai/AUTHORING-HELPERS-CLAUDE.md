@@ -52,30 +52,31 @@ Three things the API is load-bearing about:
   `/utils` subpath module itself — so re-exporting it there would be a cycle.
   The root is where an agent author works anyway.
 
-`retail`'s `resolve.ts` is the worked example, and the split there is the one to
-copy: the SDK owns never-guess, the template owns what an order id looks like
-when a caller reads it aloud and which words name a status.
+`retail-orders-agent`'s `resolve.ts` is the worked example, and the split there
+is the one to copy: the SDK owns never-guess, the template owns what an order id
+looks like when a caller reads it aloud and which words name a status.
 
 **Three templates use it, and that is close to all the ones that should** —
 worth writing down, because "3 of 28" reads like an adoption problem and is not
 one. Every `.find()` / `.filter()` over a caller-supplied value in the template
 corpus was classified, and they fall into three groups:
 
-- **An exact id or code the model already chose off a list** — `travel-concierge`
-  has eleven (`FLIGHTS.find((f) => f.id === action.flightId)`), `hotel-desk`
+- **An exact id or code the model already chose off a list** —
+  `travel-concierge-agent` has eleven
+  (`FLIGHTS.find((f) => f.id === action.flightId)`), `hotel-reception-agent`
   nine (`b.code === code`, after `spokenAlphanumeric` has normalized the
-  read-back), `solo-rpg` six, `executive-assistant` and `support-line` one each.
-  There is no ambiguity to resolve here: the id came from a catalog the desk
-  itself read out, so "no such id" is the entire answer and a plain not-found is
-  correct.
-- **A SEARCH that is supposed to return many** — `travel-concierge`'s four
+  read-back), `tabletop-rpg-agent` six, `executive-inbox-agent` and
+  `technical-support-agent` one each. There is no ambiguity to resolve here: the
+  id came from a catalog the desk itself read out, so "no such id" is the entire
+  answer and a plain not-found is correct.
+- **A SEARCH that is supposed to return many** — `travel-concierge-agent`'s four
   `search_*` tools. Picking one would be the bug.
 - **A phrase in the caller's OWN WORDS over a list where several could match.**
-  This is the only group `resolveOne` is for, and `briefing-desk`'s `findByAngle`
-  was the one unconverted member of it. It took the first angle whose text
-  overlapped in either direction, so "lead times" picked between "install lead
-  times" and "battery lead times" by board order, and answered `undefined` for
-  both "nothing matches" and "several do".
+  This is the only group `resolveOne` is for, and `topic-briefing-agent`'s
+  `findByAngle` was the one unconverted member of it. It took the first angle
+  whose text overlapped in either direction, so "lead times" picked between
+  "install lead times" and "battery lead times" by board order, and answered
+  `undefined` for both "nothing matches" and "several do".
 
 So the number to watch is not the adoption count, it is whether a NEW lookup is
 in the third group. The tell is the argument's type: an id or code the desk
@@ -93,8 +94,9 @@ wrong. Rendering the words explicitly is the fix, and it has to happen before
 the string reaches the model, because the model is not reliably going to do it
 for you.
 
-Every voice template had grown a private copy: `hotel-desk` alone carried four,
-and `roadside-assist` rendered `$150` where every other desk rendered `$150.00`.
+Every voice template had grown a private copy: `hotel-reception-agent` alone
+carried four, and `roadside-assistance-agent` rendered `$150` where every other
+desk rendered `$150.00`.
 
 - **`spokenMoney(amount)` takes DOLLARS**, the same unit as `formatMoney`, and
   derives from the same `toFixed(2)` — so the written total on a page and the
@@ -173,7 +175,7 @@ sentence the author had to write. Declared on the schema, the same rule reaches
 the model as JSON Schema before it calls anything, and `parseToolInput`
 rejects a bad value before `execute` runs.
 
-`hotel-desk` had ten `z.string().describe("YYYY-MM-DD")` + `if (!isIsoDate(...))
+`hotel-reception-agent` had ten `z.string().describe("YYYY-MM-DD")` + `if (!isIsoDate(...))
 return toolFailure(...)` pairs, in four different sentences for one rule, plus
 five hand-rolled `HH:MM` checks in three wordings and two different failure
 shapes (`{ error }` and `toolFailure(…)`).
@@ -193,8 +195,8 @@ test" — a spec asserting on what it produced has no way to say which value it
 should have produced, so the assertion becomes a range check or the test is not
 written. Seven shipped templates reached for the global in ten places (dice, a
 shuffle, an ETA jitter, an order number, a reference code), and exactly one —
-`word-wrangler`, which threads `random: () => number = Math.random` through as a
-parameter — was covered.
+`word-game-agent`, which threads `random: () => number = Math.random` through as
+a parameter — was covered.
 
 `ToolContext.random` generalizes that one template's fix. In production it IS
 `Math.random`, so it buys nothing at run time; what it buys is a tool whose
@@ -262,15 +264,15 @@ The wrapper is three lines when it has to be introduced, and each guard it
 removes is one. So the arithmetic is simply whether the function is already a
 declaration:
 
-- **A named helper returning `T | ToolFailure`** — `retail`'s `planModifyItems`,
-  `planExchange`, `assertCanCoverDiff` — pays immediately. `failable` replaces
-  the `function` keyword, so it costs nothing and every guard is a line saved.
-  Nine guards became three `orFail`s there.
+- **A named helper returning `T | ToolFailure`** — `retail-orders-agent`'s
+  `planModifyItems`, `planExchange`, `assertCanCoverDiff` — pays immediately.
+  `failable` replaces the `function` keyword, so it costs nothing and every
+  guard is a line saved. Nine guards became three `orFail`s there.
 - **An inline `slot.update` mutator with one or two guards does NOT.**
-  `dispatch-center`'s six tools were converted and reverted: the wrapper cost
-  more than the guards it removed, and the plain
-  `if (isToolFailure(inc)) return inc;` is a perfectly good first line of a body.
-  There is no rule here that a chain of two lookups needs this.
+  `emergency-dispatch-agent`'s six tools were converted and reverted: the
+  wrapper cost more than the guards it removed, and the plain
+  `if (isToolFailure(inc)) return inc;` is a perfectly good first line of a
+  body. There is no rule here that a chain of two lookups needs this.
 
 ## Reading a WAV is the SDK's now too (`sdk/wav-parse.ts`)
 
@@ -319,11 +321,12 @@ are not the same function — they disagree in BOTH directions. `2.675 * 100` is
 answers `2.67`; `3.005 * 100` is `300.50000000000006`, so it answers `3.01`
 where `toFixed` answers `3.00`. Either is a defensible rounding of a value that
 is not really 2.675. What is not defensible is a total that compares as `3.01`
-and PRINTS as `$3.00`, which is exactly what `retail` did — its own spec pinned
-`money(3.005) === 3.01` while `formatMoney` rendered `$3.00`. One basis, so they
-cannot disagree.
+and PRINTS as `$3.00`, which is exactly what `retail-orders-agent` did — its own
+spec pinned `money(3.005) === 3.01` while `formatMoney` rendered `$3.00`. One
+basis, so they cannot disagree.
 
-`hotel-desk` counts in CENTS and divides on the way into both `formatMoney` and
-`spokenMoney`; `retail` counts in float dollars and rounds at each step. Both
-are legal — counting in integer cents end to end is stricter and is what a
-ledger should do — but a template must pick one and say which.
+`hotel-reception-agent` counts in CENTS and divides on the way into both
+`formatMoney` and `spokenMoney`; `retail-orders-agent` counts in float dollars
+and rounds at each step. Both are legal — counting in integer cents end to end
+is stricter and is what a ledger should do — but a template must pick one and
+say which.

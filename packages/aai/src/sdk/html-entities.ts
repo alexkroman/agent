@@ -2,8 +2,8 @@
 /**
  * The one entity decoder, for a step that reads text off somebody else's markup.
  *
- * Two shipped templates had written it: `link-digest` as `decodeEntities`, over
- * the HTML of a page it fetches, and `podcast-digest` as `decodeXml`, over the
+ * Two shipped templates had written it: `link-digest-workflow` as `decodeEntities`, over
+ * the HTML of a page it fetches, and `podcast-digest-workflow` as `decodeXml`, over the
  * `<title>` and `<description>` of an RSS feed. The two bodies were
  * byte-identical — six `replace` calls in one order — and each carried its own
  * comment explaining the ordering, which is the tell that the ordering is the

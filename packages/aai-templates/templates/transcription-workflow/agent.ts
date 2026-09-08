@@ -3,7 +3,7 @@
  * A WORKFLOW APP that really transcribes: point it at a recording and it comes
  * back with the text.
  *
- * `link-digest` is the template to read first: it owns the shape —
+ * `link-digest-workflow` is the template to read first: it owns the shape —
  * `workflowApp()`, no session, no tools, a form that starts a run and a page
  * that watches it — and none of that is restated here. What this one adds is a
  * workflow that does real, rate-limited, provider-shaped work:

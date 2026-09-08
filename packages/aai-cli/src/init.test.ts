@@ -20,12 +20,12 @@ async function useFakeTemplates(dir: string): Promise<void> {
   await writeFiles(rootDir, {
     "scaffold/shared.txt": "from shared",
     "scaffold/.env.example": "MY_KEY=",
-    "templates/simple/agent.json": JSON.stringify({ name: "Default Name" }),
-    "templates/simple/readme.txt": "hello",
+    "templates/quickstart-agent/agent.json": JSON.stringify({ name: "Default Name" }),
+    "templates/quickstart-agent/readme.txt": "hello",
     // Empty package.json. It no longer keeps the install away — the scaffold's
     // dependencies are merged UNDER a template manifest rather than skipped
     // (layerScaffold) — so tests that reach installDeps stub execa.
-    "templates/simple/package.json": "{}",
+    "templates/quickstart-agent/package.json": "{}",
   });
   vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 }
@@ -83,7 +83,7 @@ describe("runInit", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "output");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         expect(await fs.readFile(path.join(target, "agent.json"), "utf-8")).toContain(
           "Default Name",
         );
@@ -98,7 +98,7 @@ describe("runInit", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "output");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         expect(await fileExists(path.join(target, "node_modules"))).toBe(false);
         expect(await fileExists(path.join(target, "package.json"))).toBe(true);
       }),
@@ -110,7 +110,7 @@ describe("runInit", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "output");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         expect(await fileExists(path.join(target, ".env"))).toBe(true);
         expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
       }),
@@ -139,7 +139,7 @@ describe("scaffold client.tsx", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "output");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         const clientPath = path.join(target, "client.tsx");
         expect(await fileExists(clientPath)).toBe(false);
       }),
@@ -259,7 +259,7 @@ describe("executeInit", () => {
 
         expect(result).toMatchObject({
           ok: true,
-          data: { dir: target, template: "simple" },
+          data: { dir: target, template: "quickstart-agent" },
         });
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
         expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
@@ -300,7 +300,7 @@ describe("executeInit", () => {
         const result = await executeInit({ dir: target, yes: true });
 
         expect(selectMock).not.toHaveBeenCalled();
-        if (result.ok) expect(result.data.template).toBe("simple");
+        if (result.ok) expect(result.data.template).toBe("quickstart-agent");
       }),
     );
   });
@@ -321,7 +321,7 @@ describe("executeInit", () => {
         const result = await executeInit({ dir: target }, { silent: true });
 
         expect(selectMock).not.toHaveBeenCalled();
-        if (result.ok) expect(result.data.template).toBe("simple");
+        if (result.ok) expect(result.data.template).toBe("quickstart-agent");
       }),
     );
   });
@@ -373,7 +373,7 @@ describe("executeInit", () => {
         const result = await executeInit({ dir: target }, { silent: true });
 
         expect(executePublish).not.toHaveBeenCalled();
-        expect(result).toEqual({ ok: true, data: { dir: target, template: "simple" } });
+        expect(result).toEqual({ ok: true, data: { dir: target, template: "quickstart-agent" } });
       }),
     );
   });
@@ -387,7 +387,7 @@ describe("executeInit", () => {
 
         const result = await executeInit({ dir: target }, { silent: true });
 
-        expect(result).toEqual({ ok: true, data: { dir: target, template: "simple" } });
+        expect(result).toEqual({ ok: true, data: { dir: target, template: "quickstart-agent" } });
       }),
     );
   });
@@ -510,18 +510,22 @@ describe("promptTemplate", () => {
 
   test("offers every shipped template, default first and hinted", async () => {
     const picked = await promptTemplate(() =>
-      Promise.resolve(["briefing-desk", "pizza-ordering", "simple"]),
+      Promise.resolve(["topic-briefing-agent", "pizza-ordering-agent", "quickstart-agent"]),
     );
 
-    expect(picked).toBe("simple");
+    expect(picked).toBe("quickstart-agent");
     const opts = selectMock.mock.calls[0]?.[0] as {
       initialValue: string;
       options: { value: string; hint?: string }[];
     };
-    expect(opts.initialValue).toBe("simple");
+    expect(opts.initialValue).toBe("quickstart-agent");
     // Hoisted to the top so the pre-selected entry is the one under the cursor,
     // rather than somewhere down a two-dozen-entry scroll.
-    expect(opts.options.map((o) => o.value)).toEqual(["simple", "briefing-desk", "pizza-ordering"]);
+    expect(opts.options.map((o) => o.value)).toEqual([
+      "quickstart-agent",
+      "topic-briefing-agent",
+      "pizza-ordering-agent",
+    ]);
     expect(opts.options[0]?.hint).toBeTruthy();
     expect(opts.options[1]?.hint).toBeUndefined();
   });
@@ -541,7 +545,7 @@ describe("promptTemplate", () => {
     expect(await promptTemplate(() => Promise.resolve(["only-one"]))).toBe("only-one");
     // An empty list is a broken install; the error belongs to the copy step,
     // which names the templates it did find.
-    expect(await promptTemplate(() => Promise.resolve([]))).toBe("simple");
+    expect(await promptTemplate(() => Promise.resolve([]))).toBe("quickstart-agent");
     expect(selectMock).not.toHaveBeenCalled();
   });
 });

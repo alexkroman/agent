@@ -130,7 +130,7 @@ export function toolCallsInEvents(events: readonly SessionEvent[]): readonly Eva
  * The names of `calls`, in call order — what the agent reached for.
  *
  * Thirty `.map((c) => c.name)` sites across the eval corpus, one of which
- * (`plan-and-execute`) had wrapped it as a local `named()`. Mostly it feeds a
+ * (`research-planner-agent`) had wrapped it as a local `named()`. Mostly it feeds a
  * failure message ({@link describeToolCalls} is that, done properly), but about
  * six sites are the ASSERTION itself —
  * `expect(toolNames(turn.toolCalls)).toEqual(["add_pizza"])` — which is the

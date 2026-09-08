@@ -12,7 +12,7 @@ Three things:
 
 | Path | What it is |
 | --- | --- |
-| [`agent.ts`](./agent.ts) | The [`simple`](../../packages/aai-templates/templates/simple) template, verbatim — what `aai init` scaffolds. Eight lines, no server code in it, and no list of tools. |
+| [`agent.ts`](./agent.ts) | The [`quickstart-agent`](../../packages/aai-templates/templates/quickstart-agent) template, verbatim — what `aai init` scaffolds. Eight lines, no server code in it, and no list of tools. |
 | [`tools/`](./tools) | One file per tool. [`roll_die.ts`](./tools/roll_die.ts) is the tool `roll_die`; the file name is the name the model calls. |
 | [`server.mjs`](./server.mjs) | The deployment. Imports the agent, discovers `tools/`, wires the SDK runtime and the bundled HTTP + WebSocket server, serves `@alexkroman1/aai-ui`'s prebuilt browser client. |
 
@@ -82,7 +82,7 @@ import { agent } from "@alexkroman1/aai";
 import { createAgentServer, withToolsDir } from "@alexkroman1/aai-runtime";
 
 // …in server.mjs, `agent` is `import agent from "./agent.ts"`.
-const served = await withToolsDir(agent({ name: "Simple Assistant" }), new URL("./tools/", import.meta.url));
+const served = await withToolsDir(agent({ name: "Quickstart Assistant" }), new URL("./tools/", import.meta.url));
 
 const server = createAgentServer({ agent: served, env: { ASSEMBLYAI_API_KEY: "…" } });
 await server.listen(3000);
@@ -101,11 +101,11 @@ agent and execute their own tools out over the socket.
 ## Try another template
 
 Replace `agent.ts` with any of the
-[templates](../../packages/aai-templates/templates) — `code-interpreter`,
-`health-assistant`, `pizza-ordering`, `web-researcher`. Nothing in
-`server.mjs` changes. Templates that declare a different provider stage
-(`pipeline-simple` uses Anthropic for the LLM) need that provider's key added
-to the `env` you pass `createAgentServer`. A template that ships its own
+[templates](../../packages/aai-templates/templates) — `code-interpreter-agent`,
+`medication-safety-agent`, `pizza-ordering-agent`, `web-research-agent`. Nothing
+in `server.mjs` changes. Templates that declare a different provider stage
+(`custom-pipeline-agent` uses Anthropic for the LLM) need that provider's key
+added to the `env` you pass `createAgentServer`. A template that ships its own
 `tools/` brings that directory along with it; nothing in `server.mjs` changes.
 
 ## Why self-host?

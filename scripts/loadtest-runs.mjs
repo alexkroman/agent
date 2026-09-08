@@ -40,7 +40,7 @@
 //   land at ~1120ms; 1500 and 2000 both at ~2130; 2600 at ~3125. So it is
 //   ceil(ms/1000) seconds with a 1s floor — graphile-worker's timer poll, and
 //   NOT the step-to-step path, which pays the 38ms above rather than a second.
-//   Fine for `podcast-digest`'s multi-day schedule, an order of magnitude of
+//   Fine for `podcast-digest-workflow`'s multi-day schedule, an order of magnitude of
 //   overshoot for a saga sleeping 100ms between attempts.
 //
 //   A FAN-OUT EXECUTES THREE WIDE whatever the window asks for, because

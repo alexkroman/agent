@@ -77,9 +77,9 @@ function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
 
 A step whose job is one HTTP call ends up writing the same three lines —
 make the request, check `ok`, hand the `Response` to [toStepError](#tosteperror) —
-and three templates had each arrived at their own copy of it: `recap-workflow`
-wrapped it in a local `request()`, `link-digest` inlined it, and
-`podcast-digest` wrote a `fetchText` around it. This is that line, and the
+and three templates had each arrived at their own copy of it: `meeting-recap-agent`
+wrapped it in a local `request()`, `link-digest-workflow` inlined it, and
+`podcast-digest-workflow` wrote a `fetchText` around it. This is that line, and the
 argument for hoisting it is the one in this module's own doc: a snippet
 copied verbatim into three places is a function that has not been written
 yet.
@@ -102,7 +102,7 @@ reasons beyond the line count:
 
 Reach for `stepFetch` directly where the failure is not simply a
 failure: a `404` that means "already deleted", or a `4xx` whose body decides
-which advice to print. `podcast-digest`'s Slack step is the worked example of
+which advice to print. `podcast-digest-workflow`'s Slack step is the worked example of
 that second case.
 
 #### Parameters

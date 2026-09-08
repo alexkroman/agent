@@ -272,7 +272,7 @@ export interface SubagentDef {
    * question.
    *
    * Reach for it when the CALLER has to branch on the answer.
-   * `briefing-desk`'s fact-checker had a three-value verdict crossing three
+   * `topic-briefing-agent`'s fact-checker had a three-value verdict crossing three
    * layers as an English sentence prefix — restated in `expectedOutput`,
    * re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
    * budget — because a model that wrote `"Confirmed - "` was wrong in a way

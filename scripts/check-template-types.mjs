@@ -10,7 +10,7 @@
  * scaffolds it.
  *
  * That is not hypothetical: this check found two `never[]` pushes in the
- * shipped `solo-rpg` client while `pnpm typecheck` stayed green. Those came
+ * shipped `tabletop-rpg-agent` client while `pnpm typecheck` stayed green. Those came
  * from the scaffold ALSO setting `noImplicitAny: false`, which disables
  * evolving-array inference — a setting since reversed (see
  * `studio-project-shape.ts`), and the gap it opened is the reason this gate

@@ -5,7 +5,7 @@
  *
  * Ten templates paired a `MAX_*` constant with a wrapper whose whole body was
  * `pushCapped(state.log, line, MAX)`, and a wrapper caps only the paths that
- * call it: `executive-assistant` capped `log` and `exchange` that way while
+ * call it: `executive-inbox-agent` capped `log` and `exchange` that way while
  * `reflections`, `sent` and `triageExamples` were pushed to directly, and all
  * three rode every `syncState` frame. A cap declared on the slot holds for the
  * stored value whatever path wrote it, which is the same argument `after`

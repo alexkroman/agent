@@ -64,7 +64,7 @@ describe("deployedAgent", () => {
   });
 
   test("an agent.ts that already COMPOSED the file is left exactly as authored", () => {
-    // The `pizza-ordering` shape: `agent.ts` imports the prompt itself and
+    // The `pizza-ordering-agent` shape: `agent.ts` imports the prompt itself and
     // appends a computed menu. A spec must not have to know which of the two
     // its own template does, so passing the file is right either way.
     const composed = `${PROMPT}\n\nToday's menu: margherita, marinara.`;

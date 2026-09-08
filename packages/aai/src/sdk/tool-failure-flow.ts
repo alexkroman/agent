@@ -70,12 +70,12 @@
  * one. So the arithmetic is simply whether the function is already a
  * declaration:
  *
- * - **A named helper returning `T | ToolFailure`** — `retail`'s `planModifyItems`,
+ * - **A named helper returning `T | ToolFailure`** — `retail-orders-agent`'s `planModifyItems`,
  *   `planExchange`, `assertCanCoverDiff` — pays immediately. `failable` replaces
  *   the `function` keyword, so it costs nothing and every guard is a line saved.
  *   Nine guards became three `orFail`s there.
  * - **An inline `slot.update` mutator with one or two guards** does NOT.
- *   `dispatch-center`'s six tools were converted and reverted: the wrapper cost
+ *   `emergency-dispatch-agent`'s six tools were converted and reverted: the wrapper cost
  *   more than the guards it removed, and the plain
  *   `if (isToolFailure(inc)) return inc;` is a perfectly good first line of a
  *   body. There is no rule here that a chain of two lookups needs this.

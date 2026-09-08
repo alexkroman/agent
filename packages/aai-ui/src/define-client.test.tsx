@@ -296,7 +296,7 @@ describe("mountClient", () => {
   });
   /**
    * The four display fields the two shell components already accepted and
-   * `ClientConfig` did not name. `solo-rpg` wanted all four and could say none
+   * `ClientConfig` did not name. `tabletop-rpg-agent` wanted all four and could say none
    * of them in config, so it dropped to the `component:` tier for a 27-line
    * wrapper whose only job was to re-say what `mountClient()` already knows how to
    * say — and which dragged `useAgentState` up a level so its `Sidebar` had to

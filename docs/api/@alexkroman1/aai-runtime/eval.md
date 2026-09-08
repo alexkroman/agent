@@ -670,7 +670,7 @@ and then each case built the sentence by hand anyway.
 What it is worth is the failure it turns into a finding.
 `expect(started).toBeDefined()` prints "expected undefined to be defined",
 which says nothing about a concierge that talked through three turns without
-ever staging the change — the failure `travel-concierge`'s own comment records
+ever staging the change — the failure `travel-concierge-agent`'s own comment records
 this message catching.
 
 Three things it says that a hand-rolled copy did not:
@@ -1155,7 +1155,7 @@ from a session — so asking it alone reports every workflow app ready and every
 keyless run live, and every case then fails on a 401 inside a step.
 
 What names a workflow app's credentials is `requiredEnv`, which is exactly why
-`link-digest`'s own doc calls that field load-bearing in a way it is not for a
+`link-digest-workflow`'s own doc calls that field load-bearing in a way it is not for a
 voice agent. So this is the union of the two, checked against the host
 environment.
 
@@ -3770,7 +3770,7 @@ drove. A claim about "the call" that accidentally includes the greeting is the
 same class of mistake as a claim about `said()` that does — see
 [EvalTurn](#evalturn).
 
-Hand-rolled in `travel-concierge` as `callsIn`, which is where the shape comes
+Hand-rolled in `travel-concierge-agent` as `callsIn`, which is where the shape comes
 from. Pair it with `toolNames` for an order claim, or with `toolArgsIn` /
 `toolResultsIn` for what each was asked and answered.
 
@@ -3795,7 +3795,7 @@ function toolNames(calls: readonly EvalToolCall[]): readonly string[];
 The names of `calls`, in call order — what the agent reached for.
 
 Thirty `.map((c) => c.name)` sites across the eval corpus, one of which
-(`plan-and-execute`) had wrapped it as a local `named()`. Mostly it feeds a
+(`research-planner-agent`) had wrapped it as a local `named()`. Mostly it feeds a
 failure message ([describeToolCalls](#describetoolcalls) is that, done properly), but about
 six sites are the ASSERTION itself —
 `expect(toolNames(turn.toolCalls)).toEqual(["add_pizza"])` — which is the
@@ -3926,8 +3926,8 @@ happened instead when there is none.
 
 The claim a multi-turn case actually wants to make, and the whole reason
 [EvalSession.sayAll](#sayall) exists: "the desk staged the change on the turn it
-staged it", never "on turn two". Written out in `retail` as `turnCalling`, in
-`travel-concierge` as `stagingTurn` and in `dispatch-center` as an inline
+staged it", never "on turn two". Written out in `retail-orders-agent` as `turnCalling`, in
+`travel-concierge-agent` as `stagingTurn` and in `emergency-dispatch-agent` as an inline
 `turns.find(…)`, each under a doc making the same argument.
 
 **It THROWS rather than answering `undefined`, which is a deliberate break
@@ -3948,7 +3948,7 @@ tool list, in order, so the failure reads as the shape of the call rather than
 as one missing name.
 
 `where` narrows to a call that also satisfies a predicate — the near-variant
-`travel-concierge` needed, where the interesting turn is the one whose
+`travel-concierge-agent` needed, where the interesting turn is the one whose
 `update_ticket` STAGED something rather than being refused by the gate. When
 the tool was called and no call matched, the message says so rather than
 reporting the tool as never called: those are different findings and only one
@@ -4709,13 +4709,13 @@ sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
 Say every line in order, waiting out each reply, and hand back every turn.
 
 Byte-identical in three shipped templates before it was published
-(`dispatch-center`, `retail`, `travel-concierge`), each under a doc reaching
+(`emergency-dispatch-agent`, `retail-orders-agent`, `travel-concierge-agent`), each under a doc reaching
 the same conclusion independently — which is the tell that it is the
 harness's concept rather than any template's. The conclusion is the reason
 to reach for this rather than a list of `say()` calls: a case over several
 turns must assert about the turn a MECHANISM fired in, never about turn
 number two, because how many turns an agent takes to get somewhere is the
-model's business and it measurably varies — `retail`'s desk reads the order
+model's business and it measurably varies — `retail-orders-agent`'s desk reads the order
 back before it stages, so its staging call has landed in turn two, three
 and four across live runs. A case pinned to a turn index is a flake with a
 misleading name.
@@ -4923,7 +4923,7 @@ One durable `sleep()` a body asked for — and did NOT take.
 
 Recorded rather than waited out, because a suspension is the thing this engine
 cannot reproduce and a real wait would only make a case slow while proving
-nothing extra: `link-digest`'s ten seconds and the six hours its own comment
+nothing extra: `link-digest-workflow`'s ten seconds and the six hours its own comment
 says the mechanism is identical at differ by nothing that runs here. What a
 case CAN assert is that the body asked, and for how long.
 
@@ -4946,7 +4946,7 @@ readonly label: string;
 The wait's `label` — its identity in a real run's journal, and here the only
 thing telling two of a body's waits apart.
 
-A case asserting a SCHEDULE wants this: `podcast-digest` sleeps between
+A case asserting a SCHEDULE wants this: `podcast-digest-workflow` sleeps between
 digests and again while polling, and a duration alone cannot say which of
 them the body reached.
 
@@ -6297,7 +6297,7 @@ settleAll(options?: {
 Wait for every run this app has started, oldest first, and read them all.
 
 **Not tidiness — a LEAK.** Two shipped templates hand-rolled this loop
-verbatim, and `recap-workflow`'s doc says why: the scripted provider a case
+verbatim, and `meeting-recap-agent`'s doc says why: the scripted provider a case
 installs is unpublished when that case finishes, so a body still mid-flight
 makes its next request "against whatever the next case publishes — or
 against the real provider, with a real key".
@@ -6333,7 +6333,7 @@ The real `ctx.workflows` for this agent, over the in-process engine.
 
 Hand it to `openEvalSession({ workflows })` and a voice agent's tool that
 starts, finds or cancels a run works in an eval — which is what
-`research-workflow` and `recap-workflow` need and could not have.
+`research-handoff-agent` and `meeting-recap-agent` need and could not have.
 
 ***
 

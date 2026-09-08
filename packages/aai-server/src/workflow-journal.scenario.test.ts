@@ -231,7 +231,7 @@ describeWithPg("the durable workflow journal over a real Postgres", () => {
   test("releases the run's hook TOKENS when it goes terminal", async () => {
     // Same claim as the platform store's, and it has to be tested on BOTH: they
     // are separate SQL against separate schemas, and the memory backend was the
-    // only one that ever released. A derived token — `recap-workflow`'s
+    // only one that ever released. A derived token — `meeting-recap-agent`'s
     // `retention:<sessionId>` — otherwise served exactly one run ever.
     const first = nextRun();
     await seed(first);

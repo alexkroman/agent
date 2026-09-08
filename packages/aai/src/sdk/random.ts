@@ -8,7 +8,7 @@
  * which value it should have produced, so the assertion becomes a range check
  * or the test is not written. Seven shipped templates reached for the global in
  * ten places (dice, a shuffle, an ETA jitter, an order number, a reference
- * code), and exactly one of them — `word-wrangler`, which threads
+ * code), and exactly one of them — `word-game-agent`, which threads
  * `random: () => number = Math.random` through as a parameter — was covered.
  *
  * {@link ToolContext.random} is the seam that generalizes that one template's

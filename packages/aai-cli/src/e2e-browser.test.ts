@@ -72,7 +72,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
 
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_browser-dev");
-    initProject("pizza-ordering", projectDir);
+    initProject("pizza-ordering-agent", projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
 
     // A stub http+ws server over the built client, not `aai dev` — see the
@@ -395,7 +395,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
 describe.skipIf(!hasPlaywrightBrowser())("browser: the real aai dev server", () => {
   test("Vite serves the client and proxies the session upgrade", async () => {
     const projectDir = path.join(tmpDir, "_browser-vite");
-    initProject("pizza-ordering", projectDir);
+    initProject("pizza-ordering-agent", projectDir);
     const server = await startSupervisedDevServer({
       aaiBin,
       cwd: projectDir,

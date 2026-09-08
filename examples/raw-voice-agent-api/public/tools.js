@@ -1,4 +1,4 @@
-// Tool definitions — a plain-JavaScript port of the dispatch-center template's
+// Tool definitions — a plain-JavaScript port of the emergency-dispatch-agent template's
 // `tools/*.ts`. Each tool is `{ schema, execute }`:
 //
 //   - `schema`   is the exact JSON Schema the Voice Agent API expects in

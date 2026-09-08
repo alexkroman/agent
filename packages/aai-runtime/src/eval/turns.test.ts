@@ -135,7 +135,7 @@ describe("turnCalling", () => {
   });
 
   test("`where` selects the call that did the thing, not merely the name", () => {
-    // `travel-concierge`'s `stagingTurn`: the interesting turn is the one whose
+    // `travel-concierge-agent`'s `stagingTurn`: the interesting turn is the one whose
     // call STAGED something rather than being refused by the gate.
     const staged = turnCalling(CALL, "cancel_pending_order", (c) =>
       /awaitingConfirmation/.test(c.result ?? ""),

@@ -110,7 +110,7 @@ describe("gradeStarter", () => {
 
   test("a declared starter additionally answers for the prompt's capabilities", () => {
     const checks = grade({
-      label: "A pizza-ordering agent with a real cart",
+      label: "A pizza counter that keeps a real cart",
       // Two of the four capabilities that prompt enumerates, and — via the
       // loaded config, which is the other evidence source — two tools against
       // its `minTools: 4`.
