@@ -1,7 +1,9 @@
 /** The def a DEPLOYED agent runs: authored, plus what `system-prompt.md` says. */
 import agentDef from "virtual:aai/agent";
+import { MCP_TOOL_NAME_MAX, MCP_TOOL_PREFIX, mcpToolName } from "@alexkroman1/aai";
 import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { ARCHIVE_KEY, ARCHIVE_TOKEN_ENV, ARCHIVE_URL_ENV } from "./agent.ts";
 import promptFile from "./system-prompt.md?raw";
 
 /**
@@ -82,5 +84,84 @@ describe("web-researcher template", () => {
     // A prompt naming NO builtin fails, though — a researcher whose prompt
     // never says "search" is the framework default wearing Scout's name.
     expect(expectPromptBuiltinsDeclared(agentDef)).toContain("web_search");
+  });
+});
+
+/** A plausible endpoint, only ever read back out of the config this sets. */
+const ARCHIVE_URL = "https://archive.example.com/mcp";
+
+/**
+ * The archive, Scout's second source.
+ *
+ * `mcpServers` is the OTHER way an agent gets tools — a third party publishing
+ * them over streamable HTTP — and the declaration is GATED on an env var, so
+ * these four cases split along that gate. Out of the box a starter must ask a
+ * deploy for nothing; configured, it must ask for exactly the token the server
+ * needs and hand the model tools it cannot confuse with Scout's own.
+ *
+ * The constants come from `./agent.ts` rather than being retyped, which is the
+ * one thing this file imports from there: the def still comes from
+ * `virtual:aai/agent` because only the BUILD applies `system-prompt.md`, but a
+ * variable NAME is authored data, and a spec that spells `SCOUT_ARCHIVE_MCP_URL`
+ * itself is a spec that keeps passing after somebody renames it.
+ */
+describe("the archive MCP server", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    // The next spec file to load `agent.ts` must not inherit a stubbed env, and
+    // this file's own top-level `agentDef` was evaluated before any stubbing.
+    vi.resetModules();
+  });
+
+  test("is absent out of the box, so the starter deploys with no credential", () => {
+    // The whole reason the declaration is gated. An `mcpServers` entry pointing
+    // at a URL nobody configured is a connect attempt on every boot, and a
+    // `requiredEnv` naming a token nobody set is a deploy that refuses to
+    // happen — either one turns "runs the moment it is deployed" into a
+    // support question, in the template most likely to be somebody's first.
+    const config = expectDeployable(agentDef);
+    expect(config.mcpServers).toBeUndefined();
+    expect(config.requiredEnv).toBeUndefined();
+  });
+
+  test("the prompt names the prefix an MCP tool actually arrives under", () => {
+    // The same drift `expectPromptBuiltinsDeclared` guards one test up, for the
+    // half it cannot see: `mcp_` is not a builtin name, so nothing in the SDK's
+    // schema checks the bullet that tells Scout those tools are sources like
+    // any other. The prefix is the SDK's to choose, and a prompt that spells it
+    // by hand is a prompt that keeps instructing the model about a name the
+    // runtime stopped using.
+    expect(promptFile).toContain(MCP_TOOL_PREFIX);
+  });
+
+  test("pointing the URL variable at a server declares it, and asks a deploy for the token", async () => {
+    vi.stubEnv(ARCHIVE_URL_ENV, ARCHIVE_URL);
+    vi.resetModules();
+    const configured = (await import("virtual:aai/agent")).default;
+
+    const config = expectDeployable(configured);
+    // A URL literal and a token NAME: the config records what to read, never
+    // what was read.
+    expect(config.mcpServers).toEqual({
+      [ARCHIVE_KEY]: { url: ARCHIVE_URL, tokenEnv: ARCHIVE_TOKEN_ENV },
+    });
+    // And the token is in `requiredEnv` too. NOTHING derives one from the other
+    // — `requiredEnv` is what a deploy preflights — so this is the assertion
+    // that fails when a future edit adds a second server and forgets its token,
+    // which otherwise surfaces as a session quietly missing those tools.
+    expect(config.requiredEnv).toContain(ARCHIVE_TOKEN_ENV);
+  });
+
+  test("its tools reach the model namespaced, inside the name length a provider accepts", () => {
+    // Namespacing is the defence that makes a third party safe to add at all:
+    // the archive publishing its own `web_search` cannot land where Scout's
+    // builtin of that name stood. The key is the first segment of that name and
+    // is the template's own choice, so this is where its length is spent —
+    // `MCP_TOOL_NAME_MAX` is a hard cap and a name that exceeds it is TRUNCATED,
+    // which is how two of a server's tools collapse onto one name and one of
+    // them is silently dropped.
+    const name = mcpToolName(ARCHIVE_KEY, "web_search");
+    expect(name).toBe(`${MCP_TOOL_PREFIX}${ARCHIVE_KEY}_web_search`);
+    expect(name.length).toBeLessThanOrEqual(MCP_TOOL_NAME_MAX);
   });
 });
