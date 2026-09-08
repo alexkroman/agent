@@ -26,7 +26,9 @@
  * while a file input holds a `FileValue` where it wants `{ name, text }`.
  * `toInput` is where all of that meets — and it is the only place, so the split
  * lives in one function rather than in the field, the submit handler and the
- * workflow.
+ * workflow. It sits in `form.ts` rather than here for one reason: this module
+ * MOUNTS on import, so nothing declared in it can be reached by a spec, and the
+ * mapping is the half of this page worth pinning.
  *
  * **A `<FileField>` does not imply an upload, and choosing wrong is the trap.**
  * `read="text"` reads the chosen file in the browser and contributes its text
@@ -69,14 +71,12 @@
 
 import "@alexkroman1/aai-ui/styles.css";
 import { plural } from "@alexkroman1/aai/utils";
-import type { WorkflowInputOf, WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   BulletList,
   Facts,
   FileField,
-  type FileValue,
   Form,
-  type FormValues,
   Markdown,
   mountPage,
   SubmitButton,
@@ -87,6 +87,7 @@ import {
   WorkflowRunPanel,
 } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
+import { toInput } from "./form.ts";
 
 /**
  * What a finished run reports.
@@ -99,57 +100,6 @@ type Redline = WorkflowOutputOf<typeof redline>;
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "redline";
-
-/**
- * The submitted form as the workflow's input schema wants it.
- *
- * One function, because the textarea-to-array split is exactly the kind of
- * thing that otherwise gets half-done in three places. Blank lines go, so a
- * trailing newline is not a requirement to cover "".
- */
-export function toInput(values: FormValues): WorkflowInputOf<typeof redline> {
-  const raw = typeof values.mustCover === "string" ? values.mustCover : "";
-  // The scalars ride through as the form collected them — strings from the DOM,
-  // which the WORKFLOW's schema coerces and validates server-side. Only the two
-  // NON-scalars are reshaped here, because they are exactly the two no generic
-  // control renders. The assertion is on the scalars alone and is what
-  // `submitForm` exists to avoid needing anywhere a page is not doing this
-  // reshaping deliberately.
-  const source = attachedDraft(values.source);
-  return {
-    ...(values as Omit<WorkflowInputOf<typeof redline>, "mustCover" | "source">),
-    mustCover: raw
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0),
-    // Spread rather than `source: source` — the schema's `.optional()` means
-    // ABSENT, and an explicit `undefined` is a different thing to both
-    // `exactOptionalPropertyTypes` and a validator.
-    ...(source ? { source } : {}),
-  };
-}
-
-/**
- * The chosen file as the schema's `source`, or nothing at all.
- *
- * `<FileField read="text">` contributes a {@link FileValue} — the file's
- * metadata plus its text, read in the BROWSER — and contributes no key at all
- * when nothing was chosen, which is why this takes `unknown` and why the absent
- * case is the ordinary one rather than an error. Nothing is uploaded: a draft is
- * a few kilobytes of prose that belongs in the run's input, where it is
- * journaled and replayed with everything else. A RECORDING is the other case,
- * and `transcription-workflow` is where it is answered.
- */
-export function attachedDraft(value: unknown): { name: string; text: string } | undefined {
-  const file = value as FileValue | undefined;
-  if (file === undefined || typeof file.content !== "string") return undefined;
-  // Passed through UNTRIMMED, deliberately: a file somebody chose is a file they
-  // meant to redline, so an empty one has to come back as the schema refusing it
-  // by name rather than as a draft written from scratch that they did not ask
-  // for. It is the same layering as `brief` — the schema counts characters, and
-  // `acceptDraft` catches what that cannot see.
-  return { name: file.name, text: file.content };
-}
 
 function RedlineDesk() {
   // The reload is covered by the hook's own key — see the module doc for why

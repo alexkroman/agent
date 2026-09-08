@@ -3,25 +3,63 @@ import type {
   DialogBargeIn,
   DialogPosition,
   DialogSessionEventName,
+  DialogStateSpec,
   DialogTimeout,
+  DialogToolResult,
   DialogVoiceConfig,
+  SlotHolder,
+  TelephonyCarrier,
   ToolContext,
 } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { createToolContext, expectDialogOk } from "@alexkroman1/aai/testing";
-import { describe, expect, test } from "vitest";
-import { roadsideCall } from "./call.ts";
-import { disclosureFor, NON_MEMBER, PLANS, quoteFee, rateFor, roadsideSlot } from "./shared.ts";
+import {
+  createToolContext,
+  dialogRefusalPattern,
+  expectDialogOk,
+  expectDialogRefused,
+  runTool,
+  toolOf,
+} from "@alexkroman1/aai/testing";
+import { beforeEach, describe, expect, test } from "vitest";
+import { CALL_SPEC, roadsideCall } from "./call.ts";
+import { DESK_EVENTS, LOGGED_EVENTS } from "./events.ts";
+import {
+  disclosureFor,
+  LOG_CAP,
+  NON_MEMBER,
+  PLANS,
+  quoteFee,
+  rateFor,
+  roadsideSlot,
+} from "./shared.ts";
 import acknowledgeDisclosure from "./tools/acknowledge_disclosure.ts";
 import dispatchTruck from "./tools/dispatch_truck.ts";
 import jobStatus from "./tools/job_status.ts";
 import lookupCoverage from "./tools/lookup_coverage.ts";
 import reportLocation from "./tools/report_location.ts";
 import serviceDisclosure from "./tools/service_disclosure.ts";
+import { resetYard } from "./yard.ts";
 
-/** Where the call is, without going through a tool. */
-const at = (ctx: ToolContext): DialogPosition => roadsideCall.position(ctx);
+/**
+ * The fleet is not per-session — it is the depot's, shared by every call — so a
+ * suite that dispatches in more than one test has to hand the trucks back
+ * between them, exactly as it would reset any other external resource it stubs.
+ * `yard.ts` says why the board lives outside the slot; `yard.test.ts` is what
+ * drives the contention it exists for.
+ */
+beforeEach(resetYard);
+
+/**
+ * Where the call is, without going through a tool.
+ *
+ * These four read the dialog and nothing else, so they take a
+ * {@link SlotHolder} — the `{ slots, sessionId }` pair every `Dialog` method
+ * asks for — rather than a whole `ToolContext`. A `TestToolContext` satisfies
+ * it, and naming the narrower type is what says a position read needs no model,
+ * no workflows client and no way to speak.
+ */
+const at = (ctx: SlotHolder): DialogPosition => roadsideCall.position(ctx);
 
 /**
  * The deadline declared where the call currently is — a READ, not a timer.
@@ -30,13 +68,13 @@ const at = (ctx: ToolContext): DialogPosition => roadsideCall.position(ctx);
  * `setTimeout`, so asserting on it is asserting on what the session will do.
  * Nothing here starts a clock, which is why these tests can be in the unit tier.
  */
-const deadlineAt = (ctx: ToolContext): DialogTimeout | undefined => roadsideCall.timeout(ctx);
+const deadlineAt = (ctx: SlotHolder): DialogTimeout | undefined => roadsideCall.timeout(ctx);
 
 /** The voice settings in force where the call is — deepest declaring state wins. */
-const knobsAt = (ctx: ToolContext): DialogVoiceConfig | undefined => roadsideCall.voiceConfig(ctx);
+const knobsAt = (ctx: SlotHolder): DialogVoiceConfig | undefined => roadsideCall.voiceConfig(ctx);
 
 /** How interruptible the agent is right here. See `UNINTERRUPTIBLE` in `call.ts`. */
-const bargeInAt = (ctx: ToolContext): DialogBargeIn | undefined => knobsAt(ctx)?.bargeIn;
+const bargeInAt = (ctx: SlotHolder): DialogBargeIn | undefined => knobsAt(ctx)?.bargeIn;
 
 /**
  * The session events this dialog declares a transition on, each paired with the
@@ -95,6 +133,30 @@ async function accept(ctx: ToolContext, policyNumber?: string): Promise<void> {
   expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
 }
 
+/** What `dispatch_truck` answers with, as the specs below read it. */
+interface JobLine {
+  callsign: string;
+  etaMinutes: number;
+  alreadyDispatched: boolean;
+}
+
+/**
+ * Send the truck, and hand back the WHOLE envelope a gated tool answers with.
+ *
+ * The return is annotated {@link DialogToolResult} because that envelope is
+ * written by `roadsideCall.tool` rather than by the tool body — `result`, plus
+ * the `state`/`done`/`instruction` the dialog wraps around it — and four specs
+ * below read both halves. Naming it once is what stops each of them restating
+ * the shape.
+ */
+async function sendTruck(
+  ctx: ToolContext,
+  destination = "Millfield Auto",
+  towMiles = 31,
+): Promise<DialogToolResult<JobLine>> {
+  return expectDialogOk<JobLine>(await dispatchTruck.execute({ destination, towMiles }, ctx));
+}
+
 describe("the roadside call", () => {
   test("a fresh call is locating, and every later phase's tool refuses there", async () => {
     const ctx = createToolContext();
@@ -107,11 +169,13 @@ describe("the roadside call", () => {
       acknowledgeDisclosure.execute({ accepted: true }, ctx),
       dispatchTruck.execute({ destination: "nearest approved shop", towMiles: 4 }, ctx),
     ]) {
-      const refusal = await call;
-      expect(isToolFailure(refusal)).toBe(true);
+      // `expectDialogRefused` pins the GATE's own sentence, built once in the
+      // SDK and matched from there — and it throws on a SUCCESS, which the
+      // `isToolFailure(x) && x.error` shape it replaces quietly let through.
+      const refusal = expectDialogRefused(await call, "onCall.locating");
       // The refusal quotes the state's own instruction, which is the model's
       // recovery path — it names the tool to call instead.
-      expect(isToolFailure(refusal) && refusal.error).toMatch(/report_location/);
+      expect(refusal.error).toMatch(/report_location/);
     }
 
     // And nothing ran: a refusal must not have touched the call.
@@ -135,6 +199,10 @@ describe("the roadside call", () => {
 
     const refused = await lookupCoverage.execute({ policyNumber: "RS-0000" }, ctx);
     expect(isToolFailure(refused) && refused.error).toMatch(/RS-0000/);
+    // A BODY failure, and NOT a gate refusal — the tool was perfectly legal
+    // here and said no. The two are the same `ToolFailure` to a caller and
+    // completely different things to the desk, so the spec says which it is.
+    expect(isToolFailure(refused) && refused.error).not.toMatch(dialogRefusalPattern());
     // The half that matters: a gated tool sends nothing when its body answers a
     // failure, so a misheard digit cannot leave the caller quoted at a rate
     // nobody looked up.
@@ -210,16 +278,12 @@ describe("the roadside call", () => {
     const ctx = createToolContext();
     await accept(ctx, "RS-4417");
 
-    const first = expectDialogOk<{ callsign: string; alreadyDispatched: boolean }>(
-      await dispatchTruck.execute({ destination: "Millfield Auto", towMiles: 31 }, ctx),
-    );
+    const first = await sendTruck(ctx);
     expect(first.result.alreadyDispatched).toBe(false);
 
     // The state pins the model to this tool, so it fires again on every later
     // step. A second truck would be a fleet; the same job is the contract.
-    const second = expectDialogOk<{ callsign: string; alreadyDispatched: boolean }>(
-      await dispatchTruck.execute({ destination: "somewhere else entirely", towMiles: 400 }, ctx),
-    );
+    const second = await sendTruck(ctx, "somewhere else entirely", 400);
     expect(second.result.alreadyDispatched).toBe(true);
     expect(second.result.callsign).toBe(first.result.callsign);
     expect(roadsideSlot.get(ctx).job?.destination).toBe("Millfield Auto");
@@ -228,11 +292,11 @@ describe("the roadside call", () => {
   test("the tow is priced by the plan the lookup found, not by the one it might have", async () => {
     const covered = createToolContext();
     await accept(covered, "RS-4417");
-    expectDialogOk(await dispatchTruck.execute({ destination: "shop", towMiles: 31 }, covered));
+    await sendTruck(covered, "shop");
 
     const uncovered = createToolContext();
     await accept(uncovered);
-    expectDialogOk(await dispatchTruck.execute({ destination: "shop", towMiles: 31 }, uncovered));
+    await sendTruck(uncovered, "shop");
 
     // Plus covers 25 miles and charges $3 for the other six; a non-member pays
     // the call-out plus $7 for all 31. The template computes both through the
@@ -251,9 +315,7 @@ describe("the roadside call", () => {
     );
     expectDialogOk(await lookupCoverage.execute({}, ctx));
     expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
-    const job = expectDialogOk<{ etaMinutes: number }>(
-      await dispatchTruck.execute({ destination: "roadside", towMiles: 0 }, ctx),
-    );
+    const job = await sendTruck(ctx, "roadside", 0);
     expect(job.result.etaMinutes).toBe(10);
   });
 });
@@ -332,10 +394,11 @@ describe("the session events", () => {
       // `abandoned` is final, so it delivers no events and no tool declares
       // itself legal there — including the read, which is gated on the parent
       // rather than left ungated for exactly this.
-      const refused = await jobStatus.execute({}, ctx);
-      expect(isToolFailure(refused)).toBe(true);
-      const late = await dispatchTruck.execute({ destination: "shop", towMiles: 1 }, ctx);
-      expect(isToolFailure(late)).toBe(true);
+      expectDialogRefused(await jobStatus.execute({}, ctx), "abandoned");
+      expectDialogRefused(
+        await dispatchTruck.execute({ destination: "shop", towMiles: 1 }, ctx),
+        "abandoned",
+      );
     }
   });
 
