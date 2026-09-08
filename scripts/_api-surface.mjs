@@ -60,7 +60,15 @@ export function stripPackageDocumentationMarker(body) {
     .trim();
 }
 
-function declarationName(statement) {
+/**
+ * The names one top-level statement of a rollup declares.
+ *
+ * Exported because `_api-contracts-hash.mjs` asks the same question of the same
+ * text for a different reason — which statements a capability owns — and two
+ * copies of "what does this declare" is two things to keep in step with the
+ * next syntax TypeScript adds.
+ */
+export function declarationNames(statement) {
   if (
     ts.isClassDeclaration(statement) ||
     ts.isEnumDeclaration(statement) ||
@@ -191,7 +199,7 @@ function declarationEntries(statement, source, sourceFile) {
   if (!isExported(statement)) return [];
   const tag = releaseTag(source.slice(statement.pos, statement.getStart(sourceFile)));
   const isType = ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement);
-  return declarationName(statement).map((name) => ({ name, tag, isType }));
+  return declarationNames(statement).map((name) => ({ name, tag, isType }));
 }
 
 /**

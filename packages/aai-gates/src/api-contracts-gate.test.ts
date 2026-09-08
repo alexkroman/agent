@@ -483,24 +483,42 @@ describe("capability contracts", () => {
   });
 
   test("no coverage exemption is dead, and the corpus it measures is not empty", () => {
-    // Measured 2026-09-01: 10 fixtures across 6 capabilities, 70 distinct
-    // promised names, ALL 70 imported by frozen code — nothing exempted and
-    // nothing unfreezable. It read 84/75/8/1 until `aai-runtime:db` v2 and
-    // `telephony` v1 were dropped as unsupportable retains, which is where the
-    // last exemption and the last gone-from-the-surface name went. The floors
-    // sit a third under, because a `--bump --drop` legitimately DELETES a
-    // fixture and the floor must not turn a correct drop into a failure — what
-    // it exists to catch is an extraction that stopped finding fixtures at all,
-    // which would agree with an empty deny-list and print a checkmark.
-    expect(coverage.length, "no capability has a frozen example").toBeGreaterThanOrEqual(5);
+    // What this has to catch is an extraction that stopped finding fixtures —
+    // zero of them agrees with an empty deny-list and prints a checkmark. It
+    // used to be a hand-measured floor (10 fixtures across 6 capabilities, 70
+    // promised names, floored a third under at 5/8/50), which was right for as
+    // long as something was retained and became a FALSE failure the moment
+    // nothing was: every capability restarted at epoch 1, so no epoch is
+    // superseded, no fixture is owed, and the honest corpus is empty.
+    //
+    // So the corpus is measured against what the TREE OWES rather than against
+    // a number somebody wrote down. `retained` is read from the contract
+    // tables — the same `supported` minus `current` that decides whether a
+    // fixture is owed at all — so the two cannot disagree, and the vacuous
+    // case is DERIVED rather than assumed. An extraction going quiet while
+    // epochs are retained still fails here; a tree that retains nothing passes
+    // for a reason the assertion can state.
+    const retained = contracts.flatMap((entry) => {
+      const { current, supported } = entry.table[entry.capability] as Contract;
+      return supported.filter((version) => version !== current);
+    });
+    // Two INDEPENDENT derivations: `fixtures` is the raw `?raw` glob over the
+    // compatibility tree, `retained` is read from the contract tables. Deriving
+    // both from the tables would have made this trivially true — the whole
+    // point is that disk and table agree. A broken glob while epochs are
+    // retained reads 0 against N; an orphan left behind by a `--bump --drop`
+    // reads N+1 against N; and a tree retaining nothing reads 0 against 0 and
+    // passes for a reason the assertion states.
     expect(
-      coverage.reduce((total, entry) => total + entry.frozen.length, 0),
-      "no fixtures found",
-    ).toBeGreaterThanOrEqual(8);
-    expect(
-      coverage.reduce((total, entry) => total + entry.promised.length, 0),
-      "the frozen epochs promise almost nothing",
-    ).toBeGreaterThanOrEqual(50);
+      Object.keys(fixtures).length,
+      "the compatibility tree on disk disagrees with what the contract tables retain",
+    ).toBe(retained.length);
+    if (retained.length > 0) {
+      expect(
+        coverage.reduce((total, entry) => total + entry.promised.length, 0),
+        "the frozen epochs promise nothing, so freezing them proves nothing",
+      ).toBeGreaterThan(0);
+    }
 
     // The deny-list is a ratchet that may only shrink, so an entry that has
     // become true has to come OUT — otherwise it is unclaimed headroom the next

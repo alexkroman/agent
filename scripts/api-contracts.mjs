@@ -66,6 +66,7 @@
  *   node scripts/api-contracts.mjs --bump aai:tool --drop "…"
  *   node scripts/api-contracts.mjs --update-internal             # lower the ratchet
  *   node scripts/api-contracts.mjs --init                        # bootstrap epoch 1
+ *   node scripts/api-contracts.mjs --rehash --because "…"        # the hash RULE moved
  *
  * A bare capability name works whenever it is unambiguous; `aai:tool` and
  * `aai-ui:forms` always do.
@@ -78,10 +79,12 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { dirname, join } from "node:path";
 import { authoringSurface, generateCapabilityReports, parseEntrypoint } from "./_api-contracts.mjs";
 import { classify, internalSurfaceSnapshot, runChecks } from "./_api-contracts-checks.mjs";
+import { rehash } from "./_api-contracts-rehash.mjs";
 import {
   capabilities,
   capabilityId,
   contractPackages,
+  epochRecord,
   FIXTURE_PLACEHOLDER,
   fixturePath,
   readEpoch,
@@ -113,10 +116,10 @@ const { values: FLAGS } = parseScriptArgs({
     epoch: { type: "string" },
     init: { type: "boolean" },
     "update-internal": { type: "boolean" },
+    rehash: { type: "boolean" },
+    because: { type: "string" },
   },
 });
-
-const CONTRACT_KIND = "aai-authoring-capability-contract";
 
 const packages = contractPackages();
 if (packages.length === 0) {
@@ -130,14 +133,6 @@ if (packages.length === 0) {
 // ---------------------------------------------------------------------------
 // Mutating modes
 // ---------------------------------------------------------------------------
-
-const epochRecord = (capability, epoch, generated) => ({
-  kind: CONTRACT_KIND,
-  capability,
-  epoch,
-  sha256: generated.sha256,
-  exports: generated.exports,
-});
 
 function scaffoldFixture(pkg, capability, version) {
   const path = fixturePath(pkg, capability, version);
@@ -398,6 +393,11 @@ if (FLAGS["update-internal"] === true) {
     writeInternalSurface(pkg, internalSurfaceSnapshot(authoringSurface(pkg).internalNames));
   }
   console.log("api-contracts: internal-surface baselines lowered to match the tree.");
+  process.exit(0);
+}
+
+if (FLAGS.rehash === true) {
+  rehash(packages, FLAGS.because);
   process.exit(0);
 }
 

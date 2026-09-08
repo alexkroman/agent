@@ -134,7 +134,7 @@ to. The other two stay internal and are on `/internal`:
 `loadClientConfig`'s `null`-vs-`{}` distinction is a session implementation
 detail, and `buildAgentUrl` is a two-line path join.
 
-**`SessionCoreOptions` is gone**, and epoch 1 of `session` went with it. It was
+**`SessionCoreOptions` is gone**, and an epoch of `session` went with it. It was
 an exact alias of `VoiceSessionOptions` with one referent —
 `createBrowserSession`'s parameter, which names `VoiceSessionOptions` directly
 now

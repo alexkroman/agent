@@ -127,12 +127,11 @@ reason this exists.
 
 **A RETAINED epoch owes a frozen, compiling TEMPLATE** under
 `contracts/compatibility/<capability>/v<N>.ts`, and `pnpm typecheck` is what
-enforces it. There are **seven** — `db@2`, `runtime@3`, `server@4`,
-`session-state@1`, `session-state@2`, `telephony@1` and `workflow@1` — and this
-paragraph said "there are none today" until the DevKit removal retained the
-first of them. Editing one to make an error go away defeats the mechanism: the
-error IS the finding, and the way to change an API is a new epoch carrying a new
-template.
+enforces it. **There are none today**: the reset to epoch 1 left nothing
+superseded (`docs/CLAUDE.md`, "Every capability restarts at epoch 1"). Restate
+no count here — it has been wrong twice; read the tree. Editing a template to
+make an error go away defeats the mechanism: the error IS the finding, and an
+API changes by a new epoch carrying a new template.
 
 **A template rather than an example, and the distinction is the point.** `aai`
 and `aai-ui` freeze snippets an author READS: an `agent.ts` is a short file and

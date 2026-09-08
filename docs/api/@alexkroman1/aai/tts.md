@@ -237,8 +237,8 @@ honoured the field on every provider.** `descriptorEnvVar()` in
 `@alexkroman1/aai-runtime` reads `apiKeyEnv` off any descriptor's options
 through an untyped cast, so all thirteen factories accepted it at runtime
 while only the four AssemblyAI options types could spell it — a shape that
-cost `aai:s2s` epoch 1, where the field was added to one stage and left off
-the rest.
+cost the `aai:s2s` contract an epoch, where the field was added to one stage
+and left off the rest.
 
 The argument for keeping it AssemblyAI-only was that AssemblyAI keys are
 environment-scoped, so a mixed staging/production pipeline needs two live at

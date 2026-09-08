@@ -874,9 +874,9 @@ exactly this failure, and a `catch` cannot see a returned value; `plan-and-execu
 wrote the same line with no failure path at all. Measured 2026-08-13: DuckDuckGo
 answered `403` to both its endpoints, so every search in both templates reported
 "No results." with the refusal nowhere. The type is `T | ToolFailure` now and
-both narrow with `isToolFailure` — and `aai:builtins` epoch 1 was DROPPED over
-it, which is the gate recording that a caller who named a shape has to handle the
-failure it was already receiving.
+both narrow with `isToolFailure` — and the `aai:builtins` contract was DROPPED
+over it rather than retained, which is the gate recording that a caller who named
+a shape has to handle the failure it was already receiving.
 
 **A step's HTTP goes through `stepFetch`, never `fetch`, and that came out of a
 load test rather than review.** `transcription-workflow` used `fetch` with a
