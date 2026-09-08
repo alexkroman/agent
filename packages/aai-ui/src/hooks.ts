@@ -281,7 +281,7 @@ export function useAgentState<S = DefaultToolResult>(): S | null;
  * is expensive to IMPORT.** A projection is built from the slot, so the browser
  * bundle gets whatever that module pulls in — and the cost is the static import
  * graph rather than the `create()` call, so no option on the slot can avoid it.
- * `retail` is the worked example: its slot lives beside a 107 KB seed, so the
+ * `retail-orders-agent` is the worked example: its slot lives beside a 107 KB seed, so the
  * page passes a `fallback` built by running the same view over a cheap empty
  * state, from a module that imports no seed. Reach for this overload
  * everywhere the slot's module is cheap, which is every other stateful

@@ -1,4 +1,4 @@
-// The `simple` agent template, exactly as `aai init` scaffolds it.
+// The `quickstart-agent` agent template, exactly as `aai init` scaffolds it.
 //
 // This file is the whole agent. It is not written against the server, the
 // runtime, or anything self-hosting-specific — which is the point: the same
@@ -12,5 +12,5 @@ import { agent } from "@alexkroman1/aai";
 // pipeline, billed to ASSEMBLYAI_API_KEY. (Add `voice: "..."` to pick its
 // TTS voice, or declare any of stt/llm/tts to swap a single stage.)
 export default agent({
-  name: "Simple Assistant",
+  name: "Quickstart Assistant",
 });

@@ -96,7 +96,7 @@ describe("a body whose non-determinism reaches a step NAME", () => {
   /**
    * The quieter half, and the one the live reproduction actually took: a body
    * that catches broadly swallows the refusal and carries on to an answer.
-   * `recap-workflow`'s saga is the shipped shape.
+   * `meeting-recap-agent`'s saga is the shipped shape.
    */
   test("still fails the run when the body SWALLOWS the refusal", async () => {
     const journal = await seed();

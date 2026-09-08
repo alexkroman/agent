@@ -62,8 +62,8 @@
     "packages/aai-studio-server/src/studio-session-ensure.ts": 1,
     "packages/aai-studio-server/src/studio-session-publish.ts": 1,
     "packages/aai-studio-server/src/studio-sse.test.ts": 1,
-    "packages/aai-templates/templates/retail/shared.ts": 1,
-    "packages/aai-templates/templates/retail/tools/get_order_details.ts": 1,
+    "packages/aai-templates/templates/retail-orders-agent/shared.ts": 1,
+    "packages/aai-templates/templates/retail-orders-agent/tools/get_order_details.ts": 1,
     "packages/aai/src/host/builtin-tools.ts": 1,
     "packages/aai/src/host/page-design.ts": 4,
     "packages/aai/src/sdk/providers/stt/assemblyai.ts": 1,
@@ -85,9 +85,9 @@
     "packages/aai-runtime/src/providers/_openai-stream-repair.ts": 1
   },
   "rule30_nondeterministicWorkflowBody": {
-    "packages/aai-templates/templates/link-digest/workflows/digest.ts": 1,
-    "packages/aai-templates/templates/podcast-digest/workflows/digest.ts": 1,
-    "packages/aai-templates/templates/research-workflow/workflows/filing.ts": 1,
+    "packages/aai-templates/templates/link-digest-workflow/workflows/digest.ts": 1,
+    "packages/aai-templates/templates/podcast-digest-workflow/workflows/digest.ts": 1,
+    "packages/aai-templates/templates/research-handoff-agent/workflows/filing.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/batch.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/stream.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/sync-api.ts": 2,

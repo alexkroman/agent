@@ -144,7 +144,7 @@ test("useToolCallStart carries the call through both overloads", () => {
  * The DEFAULT is still `any`, and that half of the old pin is unchanged — it
  * is `ToolCallInfo["args"]`, i.e. `Record<string, any>`, which is a property
  * of that type rather than a choice this hook makes. Tightening it belongs in
- * `types.ts` and is breaking for every untyped client (`night-owl`'s
+ * `types.ts` and is breaking for every untyped client (`entertainment-picks-agent`'s
  * `String(tc.args.mood)` is the in-repo instance).
  *
  * What changed is that there is now a way to opt IN. `useToolCallStart` had no
@@ -228,7 +228,7 @@ test("useDownloadUrl reports pending unconditionally and the rest optionally", (
  * against a real `workflow({ input: z.object(…) })` — building one here would
  * need `zod` (not a dependency of this package) or `StandardSchemaV1` (on
  * `/host-internal`, which a browser package may not import). A/B'd on
- * `link-digest`: reintroducing `submit({ ur1: 42 })` fails with `TS2353: 'ur1'
+ * `link-digest-workflow`: reintroducing `submit({ ur1: 42 })` fails with `TS2353: 'ur1'
  * does not exist in type '{ url: string; }'`.
  *
  * There is no untyped fallback: the def is REQUIRED, so an un-parameterized

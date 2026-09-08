@@ -404,7 +404,7 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(runs.map((r) => r.runId)).toContain(runId);
     // And the name each snapshot reports is the key the agent declares it
     // under, not `workflow//./workflows/research//researchFlow` — which
-    // `research-workflow`'s status tool reads to a caller down the phone.
+    // `research-handoff-agent`'s status tool reads to a caller down the phone.
     expect(runs.every((r) => r.workflow === "research")).toBe(true);
   }, 40_000);
 

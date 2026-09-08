@@ -33,7 +33,7 @@ when stdout is not a TTY). `aai <command> --help` shows flags.
 ## Typical flow
 
 ```sh
-aai init my-agent --template pizza-ordering
+aai init my-agent --template pizza-ordering-agent
 cd my-agent
 # put ASSEMBLYAI_API_KEY=... in .env
 aai dev            # talk to it at the printed URL

@@ -537,8 +537,8 @@ describe("useWorkflowSubmit", () => {
 describe("useWorkflowSubmit: wake and cancel", () => {
   test("wake and cancel target the run this submission is following", async () => {
     // The whole reason a page holding this hook needed an `api` of its own: the
-    // hook knew the run id and would not hand it back, so `link-digest` and
-    // `podcast-digest` each keep a module-scope client purely to write
+    // hook knew the run id and would not hand it back, so `link-digest-workflow` and
+    // `podcast-digest-workflow` each keep a module-scope client purely to write
     // `api.wake(runId)`.
     const api = fakeApi({ get: vi.fn(async () => run({ status: "running" })) });
     const { result } = renderHook(() =>

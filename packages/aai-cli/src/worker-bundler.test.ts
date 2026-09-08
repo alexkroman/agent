@@ -180,7 +180,7 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
       );
       await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-      // `pizza-ordering`'s shape — the file plus a computed suffix. Discovery
+      // `pizza-ordering-agent`'s shape — the file plus a computed suffix. Discovery
       // must not apply the file a second time, and must not call this a mistake.
       const agentDef = await loadWorker(dir);
       expect(agentDef.systemPrompt).toBe(`${PROMPT}\nTODAY: fish`);

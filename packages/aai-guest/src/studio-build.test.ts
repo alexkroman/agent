@@ -36,8 +36,11 @@ describe("toolchainModules", () => {
     ["@alexkroman1/aai/dist", "the SDK types"],
     ["@alexkroman1/aai-ui/dist/index.d.ts", "what client.tsx can import"],
     ["@alexkroman1/aai-ui/dist/components/chat-view.d.ts", "a component's props"],
-    ["@alexkroman1/aai-cli/dist/templates/simple/agent.ts", "a bundled template"],
-    ["@alexkroman1/aai-cli/dist/templates/night-owl/client.tsx", "a bundled client.tsx"],
+    ["@alexkroman1/aai-cli/dist/templates/quickstart-agent/agent.ts", "a bundled template"],
+    [
+      "@alexkroman1/aai-cli/dist/templates/entertainment-picks-agent/client.tsx",
+      "a bundled client.tsx",
+    ],
   ])("%s resolves (%s)", ([rel]) => {
     expect(existsSync(path.join(modulesDir as string, rel as string))).toBe(true);
   });

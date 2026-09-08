@@ -1,4 +1,4 @@
-// Dispatch domain logic — a plain-JavaScript port of the dispatch-center
+// Dispatch domain logic — a plain-JavaScript port of the emergency-dispatch-agent
 // template's `shared.ts`. No SDK, no zod, no build step. This module holds
 // the pure scoring/protocol/resource engines plus an in-memory KV store that
 // mirrors the `{ get, set, delete }` interface the original tools expect.

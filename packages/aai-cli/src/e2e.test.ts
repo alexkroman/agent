@@ -60,7 +60,7 @@ import { WORKER_ARTIFACT_REL } from "./build.ts";
 // the config) lives in packages/aai-templates/src/templates.test.ts
 // (pnpm test:templates).
 //
-// `research-workflow` is here for one reason no in-tree test can cover: its
+// `research-handoff-agent` is here for one reason no in-tree test can cover: its
 // `workflows/research.ts` imports `workflow`, and a scaffolded project resolves
 // its dependencies from a real INSTALL of the published manifest rather than
 // from this repo's node_modules. Missing from the scaffold's `dependencies`,
@@ -68,20 +68,26 @@ import { WORKER_ARTIFACT_REL } from "./build.ts";
 // build dies on `Could not resolve "workflow"` in the one place no CI job
 // looks.
 //
-// `link-digest` is the WORKFLOW APP — `workflowApp()` + `mountPage()`, no
+// `link-digest-workflow` is the WORKFLOW APP — `workflowApp()` + `mountPage()`, no
 // stt/llm/tts, `page: "static"`. It is a different front door with different
 // wiring (telephony defaults off, `/websocket` is declined with a reason), and
 // until it was added no workflow app was built or booted anywhere in this tier;
 // the shipped set has six of them.
 //
-// `retail` is the MULTI-SPEC case, and it is here because nothing verified it.
+// `retail-orders-agent` is the MULTI-SPEC case, and it is here because nothing verified it.
 // A template that ships more than `agent.test.ts` — retail ships eight — is a
 // different shape of project to build and boot, and every template in this set
 // used to ship exactly one, so "the suite passes in a real project" and "this
 // template happens to have one spec file" were the same assertion. They came
 // apart the moment a template gained a second spec, and the tier failed for a
 // reason that was not a defect in the template.
-const templates = ["simple", "web-researcher", "research-workflow", "link-digest", "retail"];
+const templates = [
+  "quickstart-agent",
+  "web-research-agent",
+  "research-handoff-agent",
+  "link-digest-workflow",
+  "retail-orders-agent",
+];
 
 let aaiBin: string;
 let tmpDir: string;
@@ -175,16 +181,16 @@ describe("self-hosted server: npm start", () => {
    * worker that build left on disk, and `defaultClientDir()` resolves out of the
    * installed `@alexkroman1/aai-ui`.
    *
-   * **`pizza-ordering`, because it has a `tools/` directory — which is what this
+   * **`pizza-ordering-agent`, because it has a `tools/` directory — which is what this
    * leg is really about.** A tool is registered by EXISTING, enumerated into the
    * bundler's generated entry, so an entrypoint loading `agent.ts` directly boots
    * an agent with none of its six tools and no error anywhere. It also keeps what
    * the starter it replaced was picked for: a `system-prompt.md` the BUILD
    * resolves rather than `agent.ts` importing it.
    */
-  test("boots a scaffolded pizza-ordering project and serves it", async ({ skip }) => {
+  test("boots a scaffolded pizza-ordering-agent project and serves it", async ({ skip }) => {
     const projectDir = path.join(tmpDir, "_self-hosted");
-    aai(aaiBin, ["init", projectDir, "-t", "pizza-ordering"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", "pizza-ordering-agent"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
@@ -256,13 +262,13 @@ describe("self-hosted server: durable workflows", () => {
    *
    * Nothing else can ask this. The `aai dev` leg below drives the same lab
    * through a different front door, and the "boots and serves it" leg above uses
-   * `pizza-ordering`, which declares no workflows at all — so a self-hosted
+   * `pizza-ordering-agent`, which declares no workflows at all — so a self-hosted
    * server that accepted a run and then stalled forever passed every test in the
    * repo.
    */
   test("runs a durable workflow end to end under npm start", async ({ skip }) => {
     const projectDir = path.join(tmpDir, "_self-hosted-workflow");
-    aai(aaiBin, ["init", projectDir, "-t", "research-workflow"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", "research-handoff-agent"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
@@ -332,7 +338,7 @@ describe("aai dev: a scaffolded workflow template", () => {
 
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_dev-workflow");
-    aai(aaiBin, ["init", projectDir, "-t", "research-workflow"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", "research-handoff-agent"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
@@ -494,7 +500,7 @@ describe("bundled templates", () => {
     try {
       const detachedBin = detachedCli(aaiBin, detachedDir);
       const projectDir = path.join(tmpDir, "bundled-templates");
-      aai(detachedBin, ["init", projectDir, "-t", "pipeline-simple"], tmpDir);
+      aai(detachedBin, ["init", projectDir, "-t", "custom-pipeline-agent"], tmpDir);
 
       // A template file and a scaffold file: both dirs have to ship.
       expect(fs.existsSync(path.join(projectDir, "agent.ts"))).toBe(true);

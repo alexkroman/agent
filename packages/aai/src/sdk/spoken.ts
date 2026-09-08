@@ -12,7 +12,7 @@
  * {@link ToolFailure} that LISTS the candidates — which is the one shape that
  * lets the model recover on its own turn ("I see two — the jacket or the
  * boots?") instead of acting and apologizing. That is the rule this module
- * exists to make cheaper than re-deriving; the retail template had it right and
+ * exists to make cheaper than re-deriving; the retail-orders-agent template had it right and
  * had it alone.
  *
  * What is here is only the part that is the same for every domain: spoken

@@ -297,7 +297,7 @@ export type RuntimeOptions = {
    * It is an option because that budget is not universal, and the tool executor
    * has always accepted one — `text-agent.ts` passes `toolTimeoutMs` and the
    * SESSION path passed nothing, so a session's 30s was unreachable from any
-   * caller. A `support-line`-shaped tool (a graded retrieval loop, up to eleven
+   * caller. A `technical-support-agent`-shaped tool (a graded retrieval loop, up to eleven
    * sequential model calls, measured at 22-30s against ~10x gateway variance)
    * therefore times out in a way its author cannot fix from the agent
    * definition. Raising it trades a voice-turn promise for a tool that finishes;

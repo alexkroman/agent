@@ -44,15 +44,15 @@ beforeEach(async () => {
   await writeFile(path.join(templatesRoot, "pizza", "agent.ts"), AGENT_TS);
   await writeFile(path.join(templatesRoot, "pizza", "client.tsx"), CLIENT_TSX);
   await writeFile(path.join(templatesRoot, "pizza", "prompts", "system.md"), "be helpful\n");
-  await mkdir(path.join(templatesRoot, "simple"));
-  await writeFile(path.join(templatesRoot, "simple", "agent.ts"), "export default 1;\n");
+  await mkdir(path.join(templatesRoot, "quickstart-agent"));
+  await writeFile(path.join(templatesRoot, "quickstart-agent", "agent.ts"), "export default 1;\n");
 });
 
 describe("list_templates", () => {
   test("lists every template with its files and display name", async () => {
     const result = await runTool(makeTools(), "list_templates", {});
     expect(result).toContain('- pizza ("Pizza Ordering"): agent.ts, client.tsx, prompts/system.md');
-    expect(result).toContain("- simple: agent.ts");
+    expect(result).toContain("- quickstart-agent: agent.ts");
     expect(result).toContain("use_template");
   });
 
@@ -69,8 +69,8 @@ describe("list_templates", () => {
       diagnostics: createPostWriteDiagnostics(async () => ({ ok: true, skipped: false })),
     });
     const result = await runTool(tools, "list_templates", {});
-    expect(result).toContain("- simple");
-    expect(result).toContain("- pizza-ordering");
+    expect(result).toContain("- quickstart-agent");
+    expect(result).toContain("- pizza-ordering-agent");
   });
 });
 
@@ -152,7 +152,7 @@ describe("use_template", () => {
     const result = await runTool(
       makeTools({ typecheck: async () => ({ ok: false, output: "agent.ts(1,1): TS0000" }) }),
       "use_template",
-      { template: "simple" },
+      { template: "quickstart-agent" },
     );
     expect(result).toContain("Copied 1 file(s)");
     expect(result).toContain("Type errors after writing");

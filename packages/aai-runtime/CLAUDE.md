@@ -322,9 +322,9 @@ window, and no port-0 special case. What is left of the sequence is one line:
 Two things the old wiring's failure taught, which still hold:
 
 - **A test has to boot a workflow through this DOOR.** The e2e suite's
-  `npm start` leg used `pizza-ordering`, which declares no workflows, and the
-  one durable leg ran under `aai dev` — so the door nobody tested was the one
-  that did not work. `aai-cli`'s `e2e.test.ts` covers both now, and the
+  `npm start` leg used `pizza-ordering-agent`, which declares no workflows, and
+  the one durable leg ran under `aai dev` — so the door nobody tested was the
+  one that did not work. `aai-cli`'s `e2e.test.ts` covers both now, and the
   `pack + build + boot` subset boots every template it builds, a workflow app
   among them.
 - **The scaffold PROMISES this.** `server.mjs` documents `PUBLIC_URL` as what to
@@ -559,17 +559,17 @@ Wired in three places, all of them the same two lines: `setupSubagents` in
 OBJECT like `createGenerateFn`, so a subagent declared at module scope reuses
 one client across a session's delegations.
 
-**The worked example is the `briefing-desk` template**, which exists for this
-and is arranged so the three reasons to pay a subagent's latency are each
+**The worked example is the `topic-briefing-agent` template**, which exists for
+this and is arranged so the three reasons to pay a subagent's latency are each
 visible in one place: a context window the caller does not pay for (a researcher
 reads whole pages; what crosses back is its final paragraph), parallelism
 (`tools/research_topic.ts` fans every angle out at once, so the caller waits for
-the slowest rather than the sum — `allSettled`, because a caller on the phone
-would rather hear three angles and an apology than an error), and tools isolated
-by capability (`researcher` searches AND browses on six steps, `factChecker`
-only searches, on two, on a cheaper model). Compare `web-researcher`, which puts
-the search builtins on the agent ITSELF — right for one lookup, wrong the moment
-a question has four sides. Two things it states in place because they are how a
+the slowest rather than the sum — `allSettled`, because a caller would rather
+hear three angles and an apology than an error), and tools isolated by
+capability (`researcher` searches AND browses on six steps, `factChecker` only
+searches, on two, on a cheaper model). Compare `web-research-agent`, which puts
+the search builtins on the agent ITSELF — right for one lookup, wrong once a
+question has four sides. Two things it states in place because they are how a
 subagent disappoints: its instructions END with "your final message is the only
 thing the desk receives", and every angle is written as a COMPLETE brief, since
 a subagent has not heard the call. This account lives here rather than in
@@ -762,11 +762,11 @@ a healthy step for the life of the run.
 
 `ctx.now()`, `ctx.random()` and `ctx.uuid()` journal what they read — one value
 per reach, keyed `now!0` / `random!0` / `uuid!0` in a POSITIONAL space of their
-own, appended through `appendStep` so no `JournalStore` method was added and every
-backend carries them already. They are the shape two shipped templates were
-hand-rolling (`transcription-workflow`'s `startClock`, `call-audit`'s two `now`
-reads), and `guard-invariants` rule 30 stays the lexical backstop with its remedy
-naming them.
+own, appended through `appendStep` so no `JournalStore` method was added and
+every backend carries them already. They are the shape two shipped templates
+were hand-rolling (`transcription-workflow`'s `startClock`,
+`call-audit-workflow`'s two `now` reads), and `guard-invariants` rule 30 stays
+the lexical backstop with its remedy naming them.
 
 **`workflow-replay-determinism.ts`'s module doc is the argument**, and the three
 decisions it records are the ones not to relitigate: their own key space (per
@@ -1609,8 +1609,8 @@ things deliberately not done. This guide is at its cap.
 ## A step's REQUEST is bounded in tokens; the message cap only guards growth
 
 `DEFAULT_MAX_HISTORY` counts MESSAGES, which does not predict what a request
-costs: one `retail`-shaped tool result is ~106 KB, so 200 of them overflow any
-window and the request fails at the provider mid-call.
+costs: one `retail-orders-agent`-shaped tool result is ~106 KB, so 200 overflow
+any window and the request fails at the provider mid-call.
 `transports/pipeline-context-budget.ts` bounds it as a **`prepareStep`
 preparer** — the SDK's per-step hook, whose `messages` override is what the step
 SENDS — so `PipelineHistory` keeps everything (client replay, resume and
@@ -1755,11 +1755,12 @@ tracking every `conversation.item` id to delete, which is its own change.
 
 ## A run can tell the caller it finished
 
-`start(def, input, { key, notify })` makes the session that started a run take an
-UNPROMPTED, interruptible turn when it lands — the promise `research-workflow` used
-to make ("I'll let you know") and had no way to keep. `Transport.injectTurn` is
-the primitive (pipeline only; S2S has no such verb, so there it is a logged
-no-op). **See `workflow-notify.ts`'s module doc** for the rest.
+`start(def, input, { key, notify })` makes the session that started a run take
+an UNPROMPTED, interruptible turn when it lands — the promise
+`research-handoff-agent` used to make ("I'll let you know") and had no way to
+keep. `Transport.injectTurn` is the primitive (pipeline only; S2S has no such
+verb, so there it is a logged no-op). **See `workflow-notify.ts`'s module doc**
+for the rest.
 
 ## An envelope is only the codec's if the codec WROTE it
 

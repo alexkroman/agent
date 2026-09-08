@@ -105,7 +105,7 @@ export function useSessionCore(): BrowserSession {
  * rebuilds the snapshot object on every change. Measured consequence: four
  * components across three templates re-rendered on every STT partial and every
  * streaming delta, in files whose every other component is narrowly subscribed
- * on purpose. One of them (`infocom-adventure`'s `TitleScreen`) reads nothing
+ * on purpose. One of them (`text-adventure-agent`'s `TitleScreen`) reads nothing
  * from the snapshot at all and subscribes to all of it for `session.start`.
  *
  * **Why publishing this does not reopen what `/internal` closed.**

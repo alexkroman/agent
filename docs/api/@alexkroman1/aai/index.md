@@ -5409,7 +5409,7 @@ That is enforced at RUN TIME rather than in the type, and the reason is
 worth knowing before "fixing" it: a conditional return type
 (`R extends Promise<unknown> ? never : R`) cannot be satisfied by a generic
 WRAPPER around this method, and a per-agent wrapper is the main way it gets
-used (`retail`'s `retailTool`). The runtime check has the better message
+used (`retail-orders-agent`'s `retailTool`). The runtime check has the better message
 anyway, and it is the half a user's project actually runs — neither bundler
 type-checks user code.
 
@@ -5986,7 +5986,7 @@ guardrail asked to judge a malformed answer is being asked the wrong
 question.
 
 Reach for it when the CALLER has to branch on the answer.
-`briefing-desk`'s fact-checker had a three-value verdict crossing three
+`topic-briefing-agent`'s fact-checker had a three-value verdict crossing three
 layers as an English sentence prefix — restated in `expectedOutput`,
 re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
 budget — because a model that wrote `"Confirmed - "` was wrong in a way
@@ -6454,7 +6454,7 @@ guardrail asked to judge a malformed answer is being asked the wrong
 question.
 
 Reach for it when the CALLER has to branch on the answer.
-`briefing-desk`'s fact-checker had a three-value verdict crossing three
+`topic-briefing-agent`'s fact-checker had a three-value verdict crossing three
 layers as an English sentence prefix — restated in `expectedOutput`,
 re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
 budget — because a model that wrote `"Confirmed - "` was wrong in a way
@@ -7654,7 +7654,7 @@ tool runs, whether a reply is cancelled. Maintaining the session's own state is
 a different act, and one the alternative made worse: an author who wanted a
 fact recorded per turn had no choice but to declare a TOOL for it and instruct
 the model to call it, which is a model-cooperation problem standing in for a
-bookkeeping one — see `infocom-adventure`, whose `game_state_history` tool
+bookkeeping one — see `text-adventure-agent`, whose `game_state_history` tool
 existed to hand the framework back a transcript it already had. A hook writes
 the fact directly, on every turn, whether or not the model cooperates.
 
@@ -8488,7 +8488,7 @@ that passes its own `timeoutMs` — `createTextAgent` does — gives its tools
 a different one. And it was unreachable because the default lives on
 `@alexkroman1/aai/internal`, a subpath an agent may not import, while the
 per-call override was visible nowhere at all. What an author wrote instead
-was the number, by hand: `support-line` carried
+was the number, by hand: `technical-support-agent` carried
 `const LOOKUP_BUDGET_MS = 28_000` under a comment saying where the real
 constant lived and that this copy would have to be moved with it.
 

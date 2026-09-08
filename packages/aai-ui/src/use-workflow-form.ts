@@ -11,7 +11,7 @@
  *
  * A page that submits a workflow always needs the same four pieces of state:
  * the run id, whether a submit is in flight, whether the RUN is still going, and
- * whichever of the two failed. `link-digest` writes them out by hand, which is
+ * whichever of the two failed. `link-digest-workflow` writes them out by hand, which is
  * the right shape for a template teaching the primitives and the wrong shape to
  * write a third time — and it is easy to get subtly wrong: dropping the previous
  * run id before the new `POST` returns is what stops a finished result sitting

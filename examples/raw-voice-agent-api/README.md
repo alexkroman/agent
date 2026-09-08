@@ -3,7 +3,7 @@
 A browser talking **directly to the [AssemblyAI Voice Agent
 API](https://www.assemblyai.com/docs/voice-agents/voice-agent-api/quickstart)**
 over one WebSocket, with nothing in between. The workload happens to be the
-[`dispatch-center`](../../packages/aai-templates/templates/dispatch-center)
+[`emergency-dispatch-agent`](../../packages/aai-templates/templates/emergency-dispatch-agent)
 template rebuilt from scratch; the point is the wire protocol, not the domain.
 
 Read [How the wire protocol maps](#how-the-wire-protocol-maps) first — that

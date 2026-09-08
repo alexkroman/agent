@@ -18,7 +18,7 @@
  * `system-prompt.md` beside it is read by nothing at all.
  *
  * Both ARE caught today, and that is the reason this exists rather than a
- * reason it does not need to. A/B'd by planting each in `redline`: konsistent
+ * reason it does not need to. A/B'd by planting each in `document-redline-workflow`: konsistent
  * fails with `Missing import from "virtual:aai/agent"` against
  * `agent.eval.test.ts` — the `eval-drives-the-discovered-*` rules flip on the
  * moment a template gains discoverable content, so the shape is defended and
@@ -29,7 +29,7 @@
  *
  * Eight templates declare a `workflow({ … })`, and the split is exact: the six
  * `workflowApp()`s declare it in `agent.ts`, and the two voice agents that hand
- * off — `recap-workflow`, `research-workflow` — declare it in `shared.ts`,
+ * off — `meeting-recap-agent`, `research-handoff-agent` — declare it in `shared.ts`,
  * where eight of their tools import it from.
  *
  * That is forced by the layering rather than chosen: a workflow app has no
@@ -40,7 +40,7 @@
  *
  * The rule was already written down twice, and both copies described the
  * majority instead of the cause: this package's guide said of
- * `research-workflow` that "`agent.ts` holds the declaration … and nothing else
+ * `research-handoff-agent` that "`agent.ts` holds the declaration … and nothing else
  * about the run", and that file's own module doc said "this module declares the
  * agent and the workflow it hands off to". Neither was true of the file. Both
  * are corrected in the same change as this gate.
@@ -48,7 +48,7 @@
  * ## 3. A session slot is declared in `shared.ts`
  *
  * Fourteen of the fifteen stateful templates declare `sessionSlot()` there, and
- * `retail` is the exception FOR A REASON that is easy to copy without: its slot
+ * `retail-orders-agent` is the exception FOR A REASON that is easy to copy without: its slot
  * sits in `store.ts` because that module imports a 107 KB `seed.json`, and
  * `shared.ts` — which the browser half imports for the view — must not pull it.
  * An exemption with its reason attached is the point of listing it here rather
@@ -92,7 +92,7 @@ const DECLARES_SLOT = /\bsessionSlot\s*\(/;
  * the entry is how this narrows; adding one asks for the same argument again.
  */
 const SLOT_ELSEWHERE: Readonly<Record<string, string>> = {
-  retail:
+  "retail-orders-agent":
     "its slot is in store.ts, which imports a 107 KB seed.json — shared.ts holds " +
     "the view and is imported by client.tsx, so the seed must not reach it",
 };
@@ -111,7 +111,7 @@ function templateNames(): string[] {
 /**
  * A module's CODE, with its comments removed.
  *
- * Every pattern here would otherwise match prose. `research-workflow/agent.ts`
+ * Every pattern here would otherwise match prose. `research-handoff-agent/agent.ts`
  * is the case that proved it: its module doc explains that a form-shaped
  * product "is declared with `workflowApp()` instead", so a plain read reported
  * this voice agent as a workflow app and the gate demanded it delete its own
@@ -161,7 +161,7 @@ describe("the corpus this gate walks", () => {
   });
 
   test("reads CODE, not prose — the trap this gate walked into first", () => {
-    // A/B: before `codeOf`, research-workflow's module doc — which names
+    // A/B: before `codeOf`, research-handoff-agent's module doc — which names
     // `workflowApp()` to explain what it is NOT — reported it as one, and the
     // gate told a voice agent to delete its tools/.
     const doc = "/** the agent is declared with `workflowApp()` instead */\nexport default agent({";
@@ -219,7 +219,7 @@ describe("where a workflow def is declared", () => {
         `${name} has tools/ and declares its workflow in agent.ts. Its tools need the ` +
           "def, and `virtual:aai/agent` is agent.ts PLUS a static import of every tools/ " +
           "file — so importing it back from a tool closes a cycle through that module. " +
-          "Declare the def in shared.ts, as recap-workflow and research-workflow do.",
+          "Declare the def in shared.ts, as meeting-recap-agent and research-handoff-agent do.",
       ).toBe(false);
     } else {
       expect(
@@ -251,7 +251,7 @@ describe.each(STATEFUL)("%s (stateful)", (name: string) => {
       `${name} declares a sessionSlot outside shared.ts. Every stateful template keeps ` +
         "the slot, the view and the projection in one module both ends import — see " +
         "`useAgentState(projection)`. If an expensive import forces it elsewhere (the " +
-        "one case: retail's seed), add it to SLOT_ELSEWHERE with that reason.",
+        "one case: retail-orders-agent's seed), add it to SLOT_ELSEWHERE with that reason.",
     ).toBe(true);
   });
 });

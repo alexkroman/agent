@@ -77,34 +77,34 @@ work off to a durable workflow.
 
 | Template | Kind | What it is |
 | --- | --- | --- |
-| `simple` | voice | the whole default AssemblyAI pipeline in nine lines — start here |
-| `pipeline-simple` | voice | the same pipeline with one stage swapped for an Anthropic LLM |
-| `web-researcher` | voice | Scout — `web_search` + `visit_webpage`, the smallest builtin-tool agent |
-| `code-interpreter` | voice | Coda — answers by writing and running code (`run_code`) |
-| `health-assistant` | voice | Dr. Sage — the smallest custom tool over a live REST API (openFDA), beside `web_search`, `run_code` and `fetch_json` |
-| `night-owl` | voice | movie picks and sleep timing, with a synced recommendation log |
-| `pizza-ordering` | voice | the smallest stateful agent: a cart in one `sessionSlot`, six tools, one projection |
-| `infocom-adventure` | voice | a spoken text adventure; the world lives in a slot, custom chrome renders it |
-| `solo-rpg` | voice | a solo tabletop narrator — game state in a slot, a nested dialog and a final one |
-| `dispatch-center` | voice | an emergency dispatch board: incidents, units, and a live dashboard projection that keeps caller PII server-side |
-| `retail` | voice | the largest — fifteen tools over a seeded catalog, an auth gate, and a call's dialog ending in a terminal state |
-| `travel-concierge` | voice | LangGraph's customer-support tutorial as a phone concierge: a dialog stack and a confirmation gate |
-| `executive-assistant` | voice | LangChain's Executive AI Assistant (EAIA) as a call about your inbox: triage, drafts in your voice, a calendar subagent, the Agent Inbox's four answers as gated tools, and a memory that rewrites its own prompts from your corrections |
-| `roadside-assist` | voice | a dialog that describes a CALL rather than a form: a silence ladder, an uninterruptible fee disclosure, and per-phase LLM knobs |
-| `support-line` | voice | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) — and the reference for a knowledge base bundled as a JSON asset import |
-| `plan-and-execute` | voice | a planning desk that really searches — plan-and-execute with the caller in the loop |
-| `briefing-desk` | voice | phone a desk, it puts several subagents on a topic at once — the `ctx.delegate` example |
-| `hiring-desk` | voice | CrewAI's `lead-score-flow` as a call about a stack of applicants: one crew scores them through `ctx.generate`, a human-in-the-loop router becomes a dialog with a bounded feedback loop, and the other crew writes every email as a guarded subagent |
-| `hotel-desk` | voice | LiveKit Agents' `hotel_receptionist` as a phone front desk: a seeded hotel in one slot, verification the TOOLS run, a booking dialog whose read-back is owed until the caller's next turn, a dispute engine, and the walk procedure — forty-one tools |
-| `word-wrangler` | voice | Pipecat's three-way phone word game: the host is the agent, the A.I. player is `ctx.generate` on its own context, the referee is a function, and the two-minute clock is a dialog `timeout` |
-| `research-workflow` | voice + workflow | the **handoff**: a tool starts a durable run, answers the turn, and the finished run speaks back |
-| `recap-workflow` | voice + workflow | transcribe and write up a recording — the Temporal patterns (cancel, signal, compensate) over a phone call |
-| `link-digest` | workflow app | the smallest one: a URL in, a digest out. Read this before the other five |
-| `transcription-workflow` | workflow app | a real transcription pipeline — split a recording, transcribe each piece in its own step, stitch |
-| `spoken-summary` | workflow app | audio in, audio out: upload a recording, get a summary you can listen to |
-| `call-audit` | workflow app | audits a recorded call with ffmpeg on both sides of the model |
-| `redline` | workflow app | LangGraph's reflection agent as something you submit work to |
-| `podcast-digest` | workflow app | a **scheduled** run that sleeps for days, wakes, and posts a digest to a channel |
+| `quickstart-agent` | voice | a bare voice agent on the default AssemblyAI pipeline — nine lines, and where to start |
+| `custom-pipeline-agent` | voice | the same agent with one pipeline stage swapped — an Anthropic LLM between AssemblyAI's STT and TTS |
+| `web-research-agent` | voice | a researcher that answers from the open web — `web_search` + `visit_webpage`, the smallest builtin-tool agent |
+| `code-interpreter-agent` | voice | a problem solver that answers by writing and running code — the `run_code` builtin |
+| `medication-safety-agent` | voice | a drug-interaction checker over openFDA — the smallest custom tool on a live REST API, beside `web_search`, `run_code` and `fetch_json` |
+| `entertainment-picks-agent` | voice | a late-night picker for movies, music and books — a slot beside `useEvent`, with a synced recommendation log |
+| `pizza-ordering-agent` | voice | a pizza counter that keeps a real cart — the smallest stateful agent: one `sessionSlot`, six tools, one projection |
+| `text-adventure-agent` | voice | a spoken text adventure — the world lives in a slot, custom chrome renders it |
+| `tabletop-rpg-agent` | voice | a solo tabletop narrator — game state in a slot, a nested dialog and a final one |
+| `emergency-dispatch-agent` | voice | a 911-style dispatch desk — incidents, units, and a live board projection that keeps caller PII server-side |
+| `retail-orders-agent` | voice | a retail support line that manages real orders — the largest: fifteen tools over a seeded catalog, an auth gate, and a call's dialog ending in a terminal state |
+| `travel-concierge-agent` | voice | a phone travel concierge (LangGraph's customer-support tutorial) — a dialog stack and a confirmation gate |
+| `executive-inbox-agent` | voice | an assistant you phone about your inbox (LangChain's EAIA) — triage, drafts in your voice, a calendar subagent, the Agent Inbox's four answers as gated tools, and a memory that rewrites its own prompts from your corrections |
+| `roadside-assistance-agent` | voice | a roadside assistance desk — the dialog that describes a CALL rather than a form: a silence ladder, an uninterruptible fee disclosure, per-phase LLM knobs |
+| `technical-support-agent` | voice | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) — and the reference for a knowledge base bundled as a JSON asset import |
+| `research-planner-agent` | voice | a planning desk that really searches (LangGraph's plan-and-execute) — the execute→replan loop, driven one step per tool call by the caller |
+| `topic-briefing-agent` | voice | a briefing desk that puts several researchers on one topic at once — the `ctx.delegate` example |
+| `applicant-screening-agent` | voice | a hiring desk that screens a stack of applicants (CrewAI's `lead-score-flow`) — one crew scores them through `ctx.generate`, a human-in-the-loop router becomes a dialog with a bounded feedback loop, and the other crew writes every email as a guarded subagent |
+| `hotel-reception-agent` | voice | a hotel front desk (LiveKit Agents' `hotel_receptionist`) — a seeded hotel in one slot, verification the TOOLS run, a booking dialog whose read-back is owed until the caller's next turn, a dispute engine, and the walk procedure: forty-one tools |
+| `word-game-agent` | voice | a three-way phone word game (Pipecat's) — the host is the agent, the A.I. player is `ctx.generate` on its own context, the referee is a function, and the two-minute clock is a dialog `timeout` |
+| `research-handoff-agent` | voice + workflow | a research desk that hands off — a tool starts a durable run, answers the turn, and the finished run speaks back |
+| `meeting-recap-agent` | voice + workflow | a recap desk that transcribes and writes up a recording — the Temporal patterns (cancel, signal, compensate) over a phone call |
+| `link-digest-workflow` | workflow app | a URL in, a digest out — the smallest one; read it before the other five |
+| `transcription-workflow` | workflow app | a transcription desk for an uploaded recording — split it, transcribe each piece in its own step, stitch |
+| `spoken-summary-workflow` | workflow app | a recording summarized and read back aloud — audio in, audio out |
+| `call-audit-workflow` | workflow app | an audit of a recorded call — ffmpeg on both sides of the model |
+| `document-redline-workflow` | workflow app | a document redliner you submit work to (LangGraph's reflection agent) — write, critique, revise |
+| `podcast-digest-workflow` | workflow app | a podcast digest posted to a channel — a **scheduled** run that sleeps for days, wakes, and posts |
 
 ## Running things
 

@@ -167,7 +167,7 @@ export function assertNoSpecDelays(key: string, spec: DialogSpec): void {
  *
  * Self-and-ancestors, not the node alone: being in a state is being in all of
  * them, so a leaf's deadline may legitimately be caught by the `on` map its
- * parent declares — the shape `dispatch-center` uses, and the one the graph
+ * parent declares — the shape `emergency-dispatch-agent` uses, and the one the graph
  * guard's `hasExit` already had to learn. Refusing it would make this check a
  * source of false alarms on dialogs that work.
  */

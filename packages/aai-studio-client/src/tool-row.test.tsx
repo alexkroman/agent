@@ -177,7 +177,7 @@ describe("summarizeArgs", () => {
   test("leads with the identifying argument, not the whole record", () => {
     // write_file's `content` is the entire file; only the path is readable.
     expect(summarizeArgs({ path: "agent.ts", content: "export default {};" })).toBe("agent.ts");
-    expect(summarizeArgs({ template: "web-researcher" })).toBe("web-researcher");
+    expect(summarizeArgs({ template: "web-research-agent" })).toBe("web-research-agent");
     expect(summarizeArgs({ pattern: "tool\\(", path: "src" })).toBe("tool\\(");
   });
 

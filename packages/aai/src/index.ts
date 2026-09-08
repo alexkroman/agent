@@ -166,8 +166,8 @@ export * from "./sdk/random.ts";
  * `agent.ts`. The second half is right and the first is not: the membership
  * test is "would an `agent.ts`, a TOOL MODULE, or a `workflow()` name it", and
  * both of those clauses hit here. A body in `workflows/` is what `workflow()`
- * declares — the three shipped templates that have one (`call-audit`,
- * `podcast-digest`, `spoken-summary`) each annotate its parameter with
+ * declares — the three shipped templates that have one (`call-audit-workflow`,
+ * `podcast-digest-workflow`, `spoken-summary-workflow`) each annotate its parameter with
  * `WorkflowInputOf`, which is the ONE annotation that is not optional (see that
  * type's doc: a hand-written parameter is contravariant, so a body disagreeing
  * with its own schema compiles). `WorkflowRunOf` is what a `*_status` TOOL

@@ -54,7 +54,7 @@ export type RejectThenable<R> =
  * `((draft: T) => R) & RejectThenable<R>` cannot be satisfied when `R` is still
  * a type parameter — the conditional is deferred and nothing is assignable to
  * it — so a helper that forwards its own `R` into a mutation stops compiling.
- * This repo has one (`retailTool` in the retail template, which wraps every one
+ * This repo has one (`retailTool` in the retail-orders-agent template, which wraps every one
  * of its fifteen tools), and making it and every future wrapper carry a cast
  * would be a worse trade than the weaker check.
  *

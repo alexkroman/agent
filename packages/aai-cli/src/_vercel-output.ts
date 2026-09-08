@@ -49,7 +49,7 @@ import {
  * a DECLARATION; the second holds a developer's own keys, and copying it would
  * bake them into a deployment artifact and let them silently win over the
  * values set in the Vercel project. Declarations ship, values come from the
- * platform environment. Verified by building the `simple` template: a local
+ * platform environment. Verified by building the `quickstart-agent` template: a local
  * `.env` with live credentials landed in the function until this list dropped
  * it.
  */

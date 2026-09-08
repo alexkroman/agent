@@ -27,7 +27,7 @@
  * The platform's sweep then burns its five attempts and abandons the message, so
  * a run reaches `step_created` and stops there FOREVER, with the run row still
  * `running` and nothing in the journal naming a date. Reproduced end to end
- * against a local stack with the `link-digest` template.
+ * against a local stack with the `link-digest-workflow` template.
  *
  * So anything carrying Storage values over HTTP has to encode them, and BOTH
  * directions matter. The platform's route receives args (a `run_created` carries a

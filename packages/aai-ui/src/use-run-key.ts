@@ -52,7 +52,7 @@
  * coming back on Friday to press Stop is the ordinary case rather than an edge
  * one, and a tab-scoped key would answer that with an empty form beside a run
  * still posting somewhere. It is as far as a key can go without a login, and no
- * further. `podcast-digest` is that template, and the reason this hook is still
+ * further. `podcast-digest-workflow` is that template, and the reason this hook is still
  * called by name anywhere; the other five take the tab-scoped default the
  * submit hook mints for them.
  *

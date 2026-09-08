@@ -8,7 +8,7 @@
  * had to hand-roll one: an action schema for the model to pick from, a counter
  * for the budget, a sentence telling it to answer once the budget is spent, and
  * a branch for the turn where it names an action and fills in none of its
- * fields. `research-workflow` wrote exactly that — 82 lines of loop and helpers
+ * fields. `research-handoff-agent` wrote exactly that — 82 lines of loop and helpers
  * by itself, and a second model call to compress what they collected — beside a
  * `subagent()` implementation that does all four and is tested.
  *

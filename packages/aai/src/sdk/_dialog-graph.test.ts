@@ -101,7 +101,7 @@ describe("wedged states", () => {
   });
 
   test("a leaf whose only exit is declared on its PARENT is not wedged", () => {
-    // `dispatch-center`'s shape: the leaves carry the instructions, the parent
+    // `emergency-dispatch-agent`'s shape: the leaves carry the instructions, the parent
     // carries the escape. A per-state check would report all three as wedged.
     expect(() =>
       dialog("call", {

@@ -47,9 +47,9 @@
  * **Every caller in this repo got it wrong, three for three**, and all three the
  * same way — `(results.results ?? [])` and `page.content ?? ""`, which turn a
  * real failure into an empty answer. Measured 2026-08-13: DuckDuckGo answered
- * `403` to both endpoints from this machine, so `research-workflow` and `plan-and-execute`
+ * `403` to both endpoints from this machine, so `research-handoff-agent` and `research-planner-agent`
  * were both reporting "No results." for every search, with the 403 nowhere.
- * `research-workflow` even had a `catch` for it, carefully commented — and a `catch`
+ * `research-handoff-agent` even had a `catch` for it, carefully commented — and a `catch`
  * cannot see a returned value, so it never ran.
  *
  * So the return type is `T | ToolFailure` and `isToolFailure`

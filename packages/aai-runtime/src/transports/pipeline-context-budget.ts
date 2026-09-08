@@ -5,7 +5,7 @@
  * `DEFAULT_MAX_HISTORY` bounds the number of MESSAGES a session remembers and
  * says nothing about their size, and the two do not correlate: a text-only turn
  * is a sentence, and a tool result carrying an agent's whole mutable state is
- * ~106 KB — the `retail` template writes one on nearly every tool call. Two
+ * ~106 KB — the `retail-orders-agent` template writes one on nearly every tool call. Two
  * hundred of those is an order of magnitude past any model's context window,
  * and the failure lands mid-call, at the provider, on a live voice session:
  * every remaining turn fails and the caller hears `errorPhrase` instead of a

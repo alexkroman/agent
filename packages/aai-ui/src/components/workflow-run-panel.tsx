@@ -50,7 +50,7 @@ export type WorkflowRunPanelProps<O> = {
  * button, the run's own narration, the live slot while it works, the completed
  * body once it has, and the announced error if it failed.
  *
- * Two pages had written this shell — `redline` and `transcription-workflow` —
+ * Two pages had written this shell — `document-redline-workflow` and `transcription-workflow` —
  * with the same header, the same `text-xs underline` Clear, the same
  * {@link WorkflowProgress} under it, the same `run.status === "completed"`
  * discrimination above the same {@link WorkflowRunError}, and each spread

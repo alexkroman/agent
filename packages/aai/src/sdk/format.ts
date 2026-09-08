@@ -12,11 +12,11 @@
  * `${n === 1 ? "" : "s"}`, and three incompatible money formats — split across
  * the server and browser sides of one project.
  *
- * **The duplication was already producing wrong output.** `call-audit` printed a
+ * **The duplication was already producing wrong output.** `call-audit-workflow` printed a
  * 64-minute recording as `1:04:09` from its workflow and `64:09` from its page:
  * two copies of one formatter, in one template, disagreeing about the same run.
- * {@link formatMoney} arrived the same way — `pizza-ordering` rendered
- * `$1234.00` where `travel-concierge` rendered `$1,234`, and `retail` had no
+ * {@link formatMoney} arrived the same way — `pizza-ordering-agent` rendered
+ * `$1234.00` where `travel-concierge-agent` rendered `$1,234`, and `retail-orders-agent` had no
  * helper at all and spelled the format inline twelve times, so one product
  * showed a caller three conventions depending on which desk they reached.
  * That is the argument for a single implementation rather than a style

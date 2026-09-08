@@ -21,7 +21,7 @@ aai publish    # ship it to the managed platform
 ```
 
 Requires Node.js 24+. `aai init` scaffolds a project from a template
-(`aai templates` lists them; `--template pizza-ordering` picks one) and writes
+(`aai templates` lists them; `--template pizza-ordering-agent` picks one) and writes
 a `.env` for your `ASSEMBLYAI_API_KEY` — the one key the default pipeline
 needs for speech-to-text, the LLM gateway, and text-to-speech alike.
 

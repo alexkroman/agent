@@ -56,7 +56,7 @@
  * this bounds what one session may leave in the TENANT's own Postgres schema —
  * which `appDatabaseUsage` counts and the studio shows an author as their own
  * database usage — so the two answer to different pressures and should not share a
- * number. The largest state any template holds is retail's ~106 KB store, so 1 MiB
+ * number. The largest state any template holds is retail-orders-agent's ~106 KB store, so 1 MiB
  * leaves an order of magnitude of headroom while still bounding a runaway append.
  *
  * Exceeding it costs DURABILITY, not correctness: the in-memory value is still
@@ -281,7 +281,7 @@ function serializeForCommit(
   }
   // Write only what CHANGED. The draft model hands us a new object on every
   // mutation, so identity says nothing and the serialization is the comparison —
-  // which is the answer to retail's ~106 KB of state being touched on nearly
+  // which is the answer to retail-orders-agent's ~106 KB of state being touched on nearly
   // every tool call.
   if (json === entry.committed.get(key)) return undefined;
   // BYTES, never `String.length` — the same rule `_fetch-capped.ts` states, and

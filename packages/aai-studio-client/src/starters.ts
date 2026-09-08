@@ -24,40 +24,40 @@ export type Starter = { label: string; prompt: string };
 /** Voice agents — `agent()`, a microphone, a session. */
 export const AGENT_STARTERS: Starter[] = [
   {
-    label: "A pizza-ordering agent with a real cart",
-    prompt: "Use the pizza-ordering template.",
+    label: "A pizza counter that keeps a real cart",
+    prompt: "Use the pizza-ordering-agent template.",
   },
   {
-    label: "An agent that solves problems by writing code",
-    prompt: "Use the code-interpreter template.",
+    label: "A problem solver that writes and runs code",
+    prompt: "Use the code-interpreter-agent template.",
   },
   {
     label: "A web researcher that cites its sources",
-    prompt: "Use the web-researcher template.",
+    prompt: "Use the web-research-agent template.",
   },
   {
-    label: "A drug-interaction checker on openFDA",
-    prompt: "Use the health-assistant template.",
+    label: "A drug-interaction checker that queries openFDA",
+    prompt: "Use the medication-safety-agent template.",
   },
   {
-    label: "A 911-style dispatch command center",
-    prompt: "Use the dispatch-center template.",
+    label: "A dispatch desk that runs a live incident board",
+    prompt: "Use the emergency-dispatch-agent template.",
   },
   {
-    label: "A retail support agent that manages real orders",
-    prompt: "Use the retail template.",
+    label: "A retail support line that manages real orders",
+    prompt: "Use the retail-orders-agent template.",
   },
   {
-    label: "A text adventure in the style of Infocom",
-    prompt: "Use the infocom-adventure template.",
+    label: "A text adventure narrator in the style of Infocom",
+    prompt: "Use the text-adventure-agent template.",
   },
   {
-    label: "A solo RPG with dice and a story oracle",
-    prompt: "Use the solo-rpg template.",
+    label: "A tabletop RPG narrator with dice and a story oracle",
+    prompt: "Use the tabletop-rpg-agent template.",
   },
   {
-    label: "A late-night movie, music, and book picker",
-    prompt: "Use the night-owl template.",
+    label: "A late-night picker for movies, music, and books",
+    prompt: "Use the entertainment-picks-agent template.",
   },
 ];
 
@@ -66,8 +66,8 @@ export const AGENT_STARTERS: Starter[] = [
  *
  * The three template-backed entries come first because they are the shape the
  * mode's system prompt tells the agent to start from; `transcription-workflow` is
- * the fuller of them (an upload, a webhook resume, a fan-out), `link-digest` the
- * same thing at its smallest, and `spoken-summary` the one whose ANSWER is a
+ * the fuller of them (an upload, a webhook resume, a fan-out), `link-digest-workflow` the
+ * same thing at its smallest, and `spoken-summary-workflow` the one whose ANSWER is a
  * file — a step speaks and stores, and the page plays what the run made. The
  * prose entries below them
  * are jobs of the same shape with no template to copy — a form in, a durable
@@ -75,29 +75,29 @@ export const AGENT_STARTERS: Starter[] = [
  */
 export const WORKFLOW_STARTERS: Starter[] = [
   {
-    label: "A transcription desk with an upload form",
+    label: "A transcription desk that takes an uploaded recording",
     prompt: "Use the transcription-workflow template.",
   },
   {
-    label: "A link digest that summarizes a URL",
-    prompt: "Use the link-digest template.",
+    label: "A link digest that summarizes any URL",
+    prompt: "Use the link-digest-workflow template.",
   },
   {
-    label: "A recording summarized, and read back aloud",
-    prompt: "Use the spoken-summary template.",
+    label: "A recording summarizer that reads its answer back aloud",
+    prompt: "Use the spoken-summary-workflow template.",
   },
   {
-    label: "A batch job that enriches a list of companies",
+    label: "A batch enricher that works through a list of companies",
     prompt:
       "Build a workflow app: a form takes a list of company domains, the run enriches each one, and the page shows the finished table.",
   },
   {
-    label: "An overnight report you submit and come back to",
+    label: "An overnight reporter you submit to and come back to",
     prompt:
       "Build a workflow app: a form starts a report for a date range, the run gathers and summarizes the data, and the page shows the report when it is ready.",
   },
   {
-    label: "A document pipeline that waits on a callback",
+    label: "A document pipeline that parks on a provider callback",
     prompt:
       "Build a workflow app: a form submits a document for processing, the run parks on a webhook until the provider calls back, and the page shows the extracted fields.",
   },

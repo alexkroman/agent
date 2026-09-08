@@ -176,7 +176,7 @@ describe("hooks", () => {
 
   test("frees a DERIVED token when its run ends, so the next run can reuse it", async () => {
     // The SDK tells authors to derive a hook token from the run's own input, and
-    // `recap-workflow` derives `retention:<sessionId>` — so a token that outlived
+    // `meeting-recap-agent` derives `retention:<sessionId>` — so a token that outlived
     // its run could serve exactly ONE run ever. A caller asking for a second
     // recap in one session hit `claimHook`'s conflict, which is NOT a suspend, so
     // the saga's catch compensated and deleted that transcript too.

@@ -72,7 +72,7 @@ async function promptProjectName(yes?: boolean): Promise<string> {
  * The template a non-interactive `init` gets, and the entry the selector opens
  * on — so an author who just presses Enter lands where they used to.
  */
-const DEFAULT_TEMPLATE = "simple";
+const DEFAULT_TEMPLATE = "quickstart-agent";
 
 /**
  * Ask which template to scaffold, listing what this CLI actually ships.

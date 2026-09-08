@@ -7,7 +7,7 @@ import { patchPackageJsonForWorkspace, runInit } from "./_init.ts";
 import { silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
-/** Create a fake templates root with a simple template and scaffold, and point runInit at it. */
+/** Create a fake templates root with a quickstart-agent template and scaffold, and point runInit at it. */
 async function useFakeTemplates(dir: string): Promise<void> {
   const rootDir = await writeFiles(path.join(dir, "fake-root"), {
     "scaffold/.env.example": "ASSEMBLYAI_API_KEY=",
@@ -15,7 +15,7 @@ async function useFakeTemplates(dir: string): Promise<void> {
       name: "scaffold-pkg",
       dependencies: { "@alexkroman1/aai": "^1.0.0" },
     }),
-    "templates/simple/agent.ts": 'export default { name: "test" };',
+    "templates/quickstart-agent/agent.ts": 'export default { name: "test" };',
   });
   vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 }
@@ -26,7 +26,7 @@ describe("runInit", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "my-agent");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         expect(await fileExists(path.join(target, ".env"))).toBe(true);
         const content = await fs.readFile(path.join(target, ".env"), "utf-8");
         expect(content).toBe("ASSEMBLYAI_API_KEY=");
@@ -39,7 +39,7 @@ describe("runInit", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "cool-agent");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         expect(await fileExists(path.join(target, "README.md"))).toBe(true);
         const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
         expect(readme).toContain("# cool-agent");
@@ -62,7 +62,7 @@ describe("runInit", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "cool-agent");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
 
         expect(readme).toContain("npm run dev");
@@ -84,7 +84,7 @@ describe("runInit", () => {
         const target = path.join(dir, "my-agent");
         await fs.mkdir(target, { recursive: true });
         await fs.writeFile(path.join(target, "README.md"), "existing content");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
         expect(readme).toBe("existing content");
       }),
@@ -108,13 +108,13 @@ describe("runInit", () => {
       silenced(async (dir) => {
         // Create templates without .env.example
         const rootDir = await writeFiles(path.join(dir, "fake-root"), {
-          "templates/simple/agent.ts": "export default {};",
+          "templates/quickstart-agent/agent.ts": "export default {};",
         });
         vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 
         const target = path.join(dir, "output");
         // Should not throw even without .env.example
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target, template: "quickstart-agent" });
         expect(await fileExists(path.join(target, ".env"))).toBe(false);
       }),
     );
@@ -163,7 +163,7 @@ describe("patchPackageJsonForWorkspace", () => {
     // Linking is what makes two copies possible: the SDK's types come out of the
     // workspace's `node_modules` while the project installs its own. Two copies
     // of xstate are two incompatible sets of types, and `aai init --template
-    // support-line` really did fail its typecheck gate and refuse the deploy —
+    // technical-support-agent` really did fail its typecheck gate and refuse the deploy —
     // workspace 5.32.5 against the project's freshly-resolved 5.32.6.
     await withTempDir(async (dir) => {
       const target = path.join(dir, "agent");

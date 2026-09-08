@@ -31,7 +31,7 @@
  * broken the link too.
  *
  * `data:` is here for the caption `<track>`, whose fetch destination CSP also
- * governs with `media-src` — `spoken-summary` serves a one-cue WebVTT inline
+ * governs with `media-src` — `spoken-summary-workflow` serves a one-cue WebVTT inline
  * rather than paying a second upload for a few hundred bytes. Neither value
  * widens much: a `blob:` URL is same-origin by construction, and both are scoped
  * to media and text-track loads on a page that already permits `data:` images.

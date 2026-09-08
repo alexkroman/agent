@@ -11,7 +11,7 @@
  * answer: a `toBeDefined()` on the result is satisfied by the refusal string
  * itself.
  *
- * So four template evals — `code-interpreter`, `night-owl` and the two
+ * So four template evals — `code-interpreter-agent`, `entertainment-picks-agent` and the two
  * starters since removed as near-duplicates (`math-buddy`,
  * `personal-finance`) — each wrote the same eleven lines: a `runInNewContext`
  * with a capturing `console.log`, a one-second timeout, and `errorMessage` on

@@ -167,7 +167,7 @@ export function createPostgresJournal(options: { db: Db }): JournalStore {
       // still be answered; the memory backend gives it back the moment the run
       // goes terminal and these two did not, so a DERIVED token — which is what
       // the SDK tells authors to use — served exactly one run ever.
-      // `recap-workflow` derives `retention:<sessionId>`, so a second recap in
+      // `meeting-recap-agent` derives `retention:<sessionId>`, so a second recap in
       // one session hit `claimHook`'s conflict, which is not a suspend, so the
       // saga compensated and deleted that transcript too.
       //

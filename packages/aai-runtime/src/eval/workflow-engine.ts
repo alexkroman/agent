@@ -72,7 +72,7 @@
  * `publishStepInfoReader` — which answers a first-and-only attempt, because
  * nothing here replays and a step that degrades on its last try must not be
  * measured on that branch. What makes a body like
- * `link-digest`'s drivable at all. A body's WAITS need no slot — `ctx.sleep` and
+ * `link-digest-workflow`'s drivable at all. A body's WAITS need no slot — `ctx.sleep` and
  * `ctx.waitFor` are `evalCtx`'s to answer, where the DevKit's `sleep()` looked
  * for a `Symbol.for("WORKFLOW_SLEEP")` global and threw without one. Two more are
  * filled only when a caller supplies one
@@ -246,7 +246,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // RECORDED, not taken — the same treatment the DevKit's `sleep()` gets
       // through the global slot above, and for the same reason: a suspension is
       // the one thing this engine cannot reproduce, and really waiting would
-      // make a case slow while proving nothing extra. `link-digest`'s ten
+      // make a case slow while proving nothing extra. `link-digest-workflow`'s ten
       // seconds and the six hours its own comment says are mechanically
       // identical differ by nothing that runs here. What a case CAN assert is
       // that the body asked, and for how long.
@@ -259,7 +259,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // inventing a payload would evaluate a run nobody could have produced.
       // Under the DevKit this was the same gap arriving less legibly —
       // `createHook()` threw from inside `@workflow/core` with a message about
-      // workflow functions — and `recap-workflow`'s retention gate is still the
+      // workflow functions — and `meeting-recap-agent`'s retention gate is still the
       // case it costs. The seam that would close it is an
       // `openEvalWorkflows({ hooks })` supplying payloads by token; it is not
       // built, and this message is what says so.

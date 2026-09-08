@@ -165,7 +165,7 @@ describe("rule 12 — undeclared guest routes", () => {
 });
 
 describe("rule 13 — a template import escaping its template", () => {
-  const PIZZA = "packages/aai-templates/templates/pizza-ordering";
+  const PIZZA = "packages/aai-templates/templates/pizza-ordering-agent";
 
   test("the pure half is importable", () => {
     expect(importEscapesTemplate, "importEscapesTemplate not exported").toBeTypeOf("function");
@@ -197,12 +197,12 @@ describe("rule 13 — a template import escaping its template", () => {
   });
 
   test("flags a climb that lands exactly ON the template root", () => {
-    // `templates/pizza-ordering` itself is not `templates/pizza-ordering/…`,
+    // `templates/pizza-ordering-agent` itself is not `templates/pizza-ordering-agent/…`,
     // so the prefix check has to reject it — an off-by-one here would silently
     // admit every escape that stops one segment short.
-    expect(importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../../pizza-ordering")).toBe(
-      true,
-    );
+    expect(
+      importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../../pizza-ordering-agent"),
+    ).toBe(true);
   });
 });
 

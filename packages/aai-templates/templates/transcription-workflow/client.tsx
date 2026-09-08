@@ -2,7 +2,7 @@
 /**
  * The transcription desk's page: a form, a progress log, and a transcript.
  *
- * `link-digest` is the smaller example and the one to read first — it shows the
+ * `link-digest-workflow` is the smaller example and the one to read first — it shows the
  * layer under `<Form>` raw: a hand-written `<form>` with its own `useState`,
  * handing an object to `submit()`. This page is the same thing with the two
  * pieces that hand-rolling gets tedious:

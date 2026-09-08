@@ -9,7 +9,7 @@
  * everything.** A body that wrapped its waits in a `try` caught the engine's own
  * signal and ran its failure path against a run that was merely waiting.
  *
- * That is not hypothetical. It shipped. `recap-workflow`'s saga wrapped its
+ * That is not hypothetical. It shipped. `meeting-recap-agent`'s saga wrapped its
  * whole body in a `try`/`catch` that unwound a compensation stack, so the first
  * poll that had to wait DELETED the transcript the run was waiting for,
  * journaled the deletion as successful, and re-threw — and the engine, seeing

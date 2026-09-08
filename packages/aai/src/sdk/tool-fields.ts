@@ -6,7 +6,7 @@
  * clock time — and the shape kept being declared twice: once as
  * `z.string().describe("YYYY-MM-DD")`, which is advice, and once as an
  * `if (!isIsoDate(...)) return toolFailure(...)` in the body, which is the
- * actual rule. `hotel-desk` had ten of those pairs with four different
+ * actual rule. `hotel-reception-agent` had ten of those pairs with four different
  * sentences for one constraint, plus five hand-rolled `HH:MM` checks in three
  * wordings and two different failure shapes.
  *

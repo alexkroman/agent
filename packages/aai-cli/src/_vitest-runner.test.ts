@@ -222,7 +222,7 @@ describe("runVitest announces what it did not run", () => {
 
 describe("unrunSpecFiles", () => {
   test("names the project specs `aai test` did NOT run", async () => {
-    // The shipped `retail` template carries seven of these. `aai test` there ran
+    // The shipped `retail-orders-agent` template carries seven of these. `aai test` there ran
     // 1 file / 67 tests, printed "Tests passed", and left 211 of the project's
     // 278 tests unrun with nothing saying so — measured on a scaffolded copy.
     await writeFile(path.join(tempDir, "agent.test.ts"), "");

@@ -13,7 +13,7 @@ prompts module), so nothing here has to be re-derived from memory. What follows
 is the account per template: the mechanism worth reading it for, and the
 decisions that were measured rather than preferred.
 
-**`travel-concierge` — the two mechanisms, and the narrowing that is enforced
+**`travel-concierge-agent` — the two mechanisms, and the narrowing that is enforced
 now.** Their graph gives each specialist node its own bound tool set and swaps
 the assistant's prompt as `dialog_state` is pushed and popped. A voice session
 has ONE model with ONE tool list and a system prompt fixed at connect, so the
@@ -36,14 +36,15 @@ gate — and it is the reason `stageAction` is one helper rather than a pattern
 each tool repeats: the next sensitive tool is otherwise the one that forgets.
 Its spec asserts, per tool, that calling it changes nothing.
 
-**`support-line` — the graders are the product.** Retrieval is idf-weighted term
-overlap over `knowledge.json`, not embeddings, because the SDK has no vector
-store; the argument in `shared.ts` is that this makes CRAG's corrective loop MORE
-valuable rather than less, since a weaker retriever is exactly what its query
-rewriter was designed for. The knowledge base is BAITED to prove it — "cancelling
-your contract" and "cancelling an engineer visit" are two documents, two fees and
-one word apart, and a spec pins that the neighbour ranks FIRST for a caller's
-phrasing. Three decisions in the loop are not defaults:
+**`technical-support-agent` — the graders are the product.** Retrieval is
+idf-weighted term overlap over `knowledge.json`, not embeddings, because the SDK
+has no vector store; the argument in `shared.ts` is that this makes CRAG's
+corrective loop MORE valuable rather than less, since a weaker retriever is
+exactly what its query rewriter was designed for. The knowledge base is BAITED
+to prove it — "cancelling your contract" and "cancelling an engineer visit" are
+two documents, two fees and one word apart, and a spec pins that the neighbour
+ranks FIRST for a caller's phrasing. Three decisions in the loop are not
+defaults:
 
 - **An ungrounded answer is never spoken.** One regeneration, then the answer is
   withheld and the run ends `exhausted`. A grounded-but-not-useful answer, by
@@ -53,9 +54,9 @@ phrasing. Three decisions in the loop are not defaults:
   something worse, so the exit has to exist before the grading is worth anything.
 - **There is no web-search fallback**, which CRAG has. A support line answering
   from the open web about a private product is the exact failure its grader
-  exists to prevent; `plan-and-execute` is where real search lives.
+  exists to prevent; `research-planner-agent` is where real search lives.
 
-**`plan-and-execute` — the loop belongs to the caller.** Their notebook runs
+**`research-planner-agent` — the loop belongs to the caller.** Their notebook runs
 plan→execute→replan to completion and prints the answer. A phone line cannot go
 quiet for ninety seconds, so one `work_next_step` call is exactly one
 execute-then-replan turn: the desk reports, and the pause that creates is what
@@ -73,8 +74,9 @@ things are decisions:
   key) and the spec passes its own. A template spec that depended on the live web
   would be a flake with a stranger's rate limit attached.
 
-**`redline` — a loop whose exit is data, and the mixed form.** Two things in it
-are worth reading for, and neither exists elsewhere in `templates/`:
+**`document-redline-workflow` — a loop whose exit is data, and the mixed form.**
+Two things in it are worth reading for, and neither exists elsewhere in
+`templates/`:
 
 - **The `while` is legal because the verdict is journaled.** `transcription-workflow`
   derives its fan-out's WIDTH from a step's result; this derives a LOOP EXIT from
@@ -110,19 +112,20 @@ owns the `{ text, object }` envelope. That envelope is why it is worth having:
 fake with one `{ text }`-only branch is unassignable AS A WHOLE, and both
 templates carried a comment explaining that to the next reader.
 
-What each template keeps is its own TRANSCRIPT: `support-line`'s routes push
-node names (`grade_documents:D1`) into a local array, because the assertions are
-about the graph rather than about the calls, while `plan-and-execute` reads
-`stubGenerate`'s own `calls` — the prompt of the turn after a failed search is
-exactly what its "a failed search goes back to the model" test is about.
+What each template keeps is its own TRANSCRIPT: `technical-support-agent`'s
+routes push node names (`grade_documents:D1`) into a local array, because the
+assertions are about the graph rather than about the calls, while
+`research-planner-agent` reads `stubGenerate`'s own `calls` — the prompt of the
+turn after a failed search is exactly what its "a failed search goes back to the
+model" test is about.
 
-**`executive-assistant` — their drafting model IS the voice model, and the
+**`executive-inbox-agent` — their drafting model IS the voice model, and the
 interrupt is four tools.** EAIA's `draft_response` binds six pydantic tools to
 an LLM with `tool_choice="required"` and reads the chosen call's arguments as
 the draft. A voice session already has a model choosing tools every turn, so
 those six are `tools/` and `EMAIL_WRITING_INSTRUCTIONS` is the RESULT of
 `open_email`, with the four memory prompts interpolated when it is called — the
-same move as `travel-concierge`'s brief, for a sharper reason: memory changes
+same move as `travel-concierge-agent`'s brief, for a sharper reason: memory changes
 mid-call and a system prompt does not. The three nodes that really are separate
 model calls (triage, the tone rewrite, reflection) run as `ctx.generate` inside
 the tools, each under its own `system` constant so `stubGenerate` can script
@@ -134,7 +137,7 @@ them apart. Four things are decisions:
   heads-up is refused with the two answers that ARE offered. `applyProposal`
   (`review.ts`) is the one write to the outside world, and every drafting tool
   ends in `propose`, which refuses a second proposal — the concurrent-step lesson
-  `travel-concierge`'s `stageAction` paid for.
+  `travel-concierge-agent`'s `stageAction` paid for.
 - **Their reflection graphs run inside `edit` and `respond` and write to the
   SESSION.** `reflect` (`nodes.ts`) is their two steps — choose which of the four
   prompts the feedback touches, rewrite each in parallel — held to the
@@ -157,14 +160,14 @@ result — thread plus brief plus memory — is asserted under the 4000-characte
 tool-result cap per seeded email, since the brief is the one place a growing
 memory would overflow silently.
 
-## The CrewAI port — `hiring-desk`
+## The CrewAI port — `applicant-screening-agent`
 
 The one port from a third tradition, and it is worth reading beside the
 LangGraph ones for what a CREW is once the framework is gone: a system prompt
 rendered from three YAML fields, a task description with placeholders, and an
 `expected_output`. `crews.ts` carries the attribution and the table.
 
-**`hiring-desk` — the router is the call, and the two crews are two
+**`applicant-screening-agent` — the router is the call, and the two crews are two
 primitives.** Their `Flow` is `load_leads → score_leads → human_in_the_loop`,
 where the last is a `@router` that prints the top three and blocks on
 `input()` with three numbered options: quit, re-score with feedback (which
@@ -217,7 +220,7 @@ script, because a test that screens and then re-scores changes the score table
 between the two calls and the slot is keyed by the context, so swapping the
 context to swap the model would also swap the state.
 
-## The LiveKit port — `hotel-desk`
+## The LiveKit port — `hotel-reception-agent`
 
 LiveKit Agents' `hotel_receptionist` is the largest example that repository
 ships and the closest thing in it to a production desk: a `HotelDB` over apsw,
@@ -277,7 +280,7 @@ the sidebar renders the ledger of everything the call wrote. And their
 model at them — the four catalog topics are rendered from `catalogs.ts`, which
 also retires the "keep the two in sync" comment on each catalog.
 
-## The Pipecat port — `word-wrangler`
+## The Pipecat port — `word-game-agent`
 
 Pipecat's `word-wrangler-gemini-live` phone game is a three-way conversation —
 an AI host, a human describer, an AI player — built on a `ParallelPipeline`

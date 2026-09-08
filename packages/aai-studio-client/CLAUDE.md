@@ -39,35 +39,35 @@ so every piece of per-project state resets on a switch with no effect to do it.
 ## Panes and behaviour
 
 - **The home hero switches between the two things the platform builds**
-  (`home.tsx` — Voice agent / Workflow, `starters.ts`, `api.createProject`).
-  The position is not a display preference: it is sent as `kind` on
+  (`home.tsx` — Voice agent / Workflow, `starters.ts`, `api.createProject`). The
+  position is not a display preference: it is sent as `kind` on
   `POST /studio/projects`, stamped on the workspace, and read back at every
-  session install to pick the coding agent's system prompt (see "A project has
-  a KIND" in `packages/aai-studio-server/CLAUDE.md`). So it is settable ONLY
-  here — `app.tsx`'s create mutation is the one call that carries it, and
-  nothing in the project view can change it afterwards.
-  - **Each position owns its copy AND its starter catalog.** The heading,
-    blurb and placeholder come from `KIND_COPY`, and the chips from
-    `STARTERS[kind]` — two separate lists rather than one tagged list, because
-    a workflow-mode pick must never land a voice template in a project whose
-    prompt forbids writing one. The workflow catalog leads with
-    `transcription-workflow` and `link-digest`, the two `workflowApp()` templates;
-    `research-workflow` stays under Voice agent, since it is an `agent()` that
-    hands off to a run.
-  - **Both catalogs are sampled once per MOUNT, not per flip.** Re-sampling
-    when the switcher moves reads as the chips being unrelated to the position
-    just chosen, so `useState` holds one sample per kind for the page load.
+  session install to pick the coding agent's system prompt (see "A project has a
+  KIND" in `packages/aai-studio-server/CLAUDE.md`). So it is settable ONLY here
+  — `app.tsx`'s create mutation is the one call that carries it, and nothing in
+  the project view can change it afterwards.
+  - **Each position owns its copy AND its starter catalog.** The heading, blurb
+    and placeholder come from `KIND_COPY`, and the chips from `STARTERS[kind]` —
+    two separate lists rather than one tagged list, because a workflow-mode pick
+    must never land a voice template in a project whose prompt forbids writing
+    one. The workflow catalog leads with `transcription-workflow` and
+    `link-digest-workflow`, the two `workflowApp()` templates;
+    `research-handoff-agent` stays under Voice agent, since it is an `agent()`
+    that hands off to a run.
+  - **Both catalogs are sampled once per MOUNT, not per flip.** Re-sampling when
+    the switcher moves reads as the chips being unrelated to the position just
+    chosen, so `useState` holds one sample per kind for the page load.
   - **`creating` disables the switcher; a still-loading `/studio/status` does
     not.** The kind is baked into the create that is already in flight, so it
-    must not move under it — but with nothing yet submittable, choosing what
-    you are about to build costs the server nothing.
+    must not move under it — but with nothing yet submittable, choosing what you
+    are about to build costs the server nothing.
   - It is a `fieldset` of real radios with an `sr-only` legend, not a row of
-    buttons with `aria-pressed`: arrow-key navigation and the group's
-    accessible name then come from the markup, and the segmented look is
-    entirely on the labels.
+    buttons with `aria-pressed`: arrow-key navigation and the group's accessible
+    name then come from the markup, and the segmented look is entirely on the
+    labels.
 - **The switcher runs deployed-agent-first, then workspace**: API, UI,
-  Workflows, Database, Code, Secrets, Settings (`StudioTab` in `top-bar.tsx`
-  is the one union; `project-view.tsx`'s `selectedTab` state is the only
+  Workflows, Database, Code, Secrets, Settings (`StudioTab` in `top-bar.tsx` is
+  the one union; `project-view.tsx`'s `selectedTab` state is the only
   selection).
   - **No pane is gated any more, and the gate that was here is worth knowing.**
     `isTabVisible` hid **Database** and **Workflows** behind one
@@ -97,59 +97,56 @@ so every piece of per-project state resets on a switch with no effect to do it.
       that hid it; derived during render rather than corrected by an effect,
       since a selection of something that stopped existing is not a selection.
     - The switcher's left borders index the VISIBLE list, or a missing pane
-      leaves a seam where it used to be.
-  The first four are all about the agent that is RUNNING — talk to it, call
-  it, watch what it is still doing, read what it stored — where Code, Secrets
-  and Settings are about the workspace and the project. UI LEADS and API sits
-  beside it: the two ask one question of a person and of a caller, so the
-  client someone can actually use comes before the contract it exercises.
-  Secrets sits before Settings because a key is what a WORKING project needs
-  where Settings ends in Delete project. The order is a product decision
-  nothing else here holds — the panes are peers, so a reshuffle of `TABS` is
-  invisible to every other assertion in `top-bar.test.tsx`, which is why one
-  test pins the rendered sequence.
+      leaves a seam where it used to be. The first four are all about the agent
+      that is RUNNING — talk to it, call it, watch what it is still doing, read
+      what it stored — where Code, Secrets and Settings are about the workspace
+      and the project. UI LEADS and API sits beside it: the two ask one question
+      of a person and of a caller, so the client someone can actually use comes
+      before the contract it exercises. Secrets sits before Settings because a
+      key is what a WORKING project needs where Settings ends in Delete project.
+      The order is a product decision nothing else here holds — the panes are
+      peers, so a reshuffle of `TABS` is invisible to every other assertion in
+      `top-bar.test.tsx`, which is why one test pins the rendered sequence.
   - **The UI tab's id is `preview` and its label is "UI".** The id names a
     platform concept the whole product spells that way (the auto-deployed
-    PREVIEW agent, `previewSlug`, `previewVersion`, `previewStale`), so
-    renaming the state to match a button would put a second word for one
-    thing into the codebase. The LABEL is what has moved twice: "Preview"
-    read as a rendering of the code rather than something to use, and
-    "Playground" said what the pane was FOR without naming what it is — the
-    client the project serves. `top-bar.test.tsx` pins the pairs, label
-    against id, for exactly this reason.
+    PREVIEW agent, `previewSlug`, `previewVersion`, `previewStale`), so renaming
+    the state to match a button would put a second word for one thing into the
+    codebase. The LABEL is what has moved twice: "Preview" read as a rendering
+    of the code rather than something to use, and "Playground" said what the
+    pane was FOR without naming what it is — the client the project serves.
+    `top-bar.test.tsx` pins the pairs, label against id, for exactly this
+    reason.
   - **The coding agent's preamble says "UI pane" too**
-    (`aai-studio-server/studio-preamble.ts`, `studio-preamble-mode.ts`). It
-    told users to "try it in the Preview pane" through both label changes,
-    naming a tab that has never existed under that name — the one copy in the
-    product that a relabel here silently invalidates, because it lives in
-    another package and no test reads it.
-- **Settings is a PANE, not a dropdown** (`settings.tsx`): it renders
-  full-width beside the chat panel like every other pane. It was
-  a floating 384px panel that scrolled itself — three unrelated sections
-  (secrets, the CLI round-trip, Delete project) never laid out in that
-  width. Nothing on the pane gates on a build or a deploy: Delete project
-  has to work before anything has ever been published, so Settings is
-  reachable whenever a project is open.
-- **The sections are in a FIXED order**: Work locally, Database, Danger zone
-  — setting up first, destruction last. `settings.test.tsx` asserts the
-  sequence of card titles, so moving one means updating that list — and
-  re-reading any copy that names a neighbour's direction, which is the trap
-  this used to carry: the Phone card said "Secrets **below**" twice while
-  sitting above it, and then moved panes entirely.
-  - **Three subjects LEFT this pane.** The carrier webhook URLs and the
-    workflow runs are both about a DEPLOYED agent — how something calls it,
-    and what it is still doing — which is the API and Workflows panes'
-    subject rather than this one's. Secrets left for a different reason (see
-    below). What that buys is that "nothing here gates on a deploy" is now
-    literally true rather than nearly: every remaining card works from the
-    moment a project exists, so `SettingsPane` takes no slug of any kind, and
-    with the secrets query gone it makes no request of its own at all —
-    `settings.test.tsx` asserts it never touches `/secret`, which is what
-    would catch a copy of the card coming back.
-- **Secrets are a PANE; storage has none.** `secrets.tsx` talks to the
-  project route (`/studio/projects/:project/secret`) and, like every pane,
-  reports its own outcome and writes NOTHING into the conversation — see "No
-  studio action writes into the transcript" below.
+    (`aai-studio-server/studio-preamble.ts`, `studio-preamble-mode.ts`). It told
+    users to "try it in the Preview pane" through both label changes, naming a
+    tab that has never existed under that name — the one copy in the product
+    that a relabel here silently invalidates, because it lives in another
+    package and no test reads it.
+- **Settings is a PANE, not a dropdown** (`settings.tsx`): it renders full-width
+  beside the chat panel like every other pane. It was a floating 384px panel
+  that scrolled itself — three unrelated sections (secrets, the CLI round-trip,
+  Delete project) never laid out in that width. Nothing on the pane gates on a
+  build or a deploy: Delete project has to work before anything has ever been
+  published, so Settings is reachable whenever a project is open.
+- **The sections are in a FIXED order**: Work locally, Database, Danger zone —
+  setting up first, destruction last. `settings.test.tsx` asserts the sequence
+  of card titles, so moving one means updating that list — and re-reading any
+  copy that names a neighbour's direction, which is the trap this used to carry:
+  the Phone card said "Secrets **below**" twice while sitting above it, and then
+  moved panes entirely.
+  - **Three subjects LEFT this pane.** The carrier webhook URLs and the workflow
+    runs are both about a DEPLOYED agent — how something calls it, and what it
+    is still doing — which is the API and Workflows panes' subject rather than
+    this one's. Secrets left for a different reason (see below). What that buys
+    is that "nothing here gates on a deploy" is now literally true rather than
+    nearly: every remaining card works from the moment a project exists, so
+    `SettingsPane` takes no slug of any kind, and with the secrets query gone it
+    makes no request of its own at all — `settings.test.tsx` asserts it never
+    touches `/secret`, which is what would catch a copy of the card coming back.
+- **Secrets are a PANE; storage has none.** `secrets.tsx` talks to the project
+  route (`/studio/projects/:project/secret`) and, like every pane, reports its
+  own outcome and writes NOTHING into the conversation — see "No studio action
+  writes into the transcript" below.
 
   **It was a card in Settings, and what forced the move was its UI rather
   than its subject.** The whole control was one textarea of `KEY=value`

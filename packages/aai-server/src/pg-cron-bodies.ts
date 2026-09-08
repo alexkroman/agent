@@ -211,7 +211,7 @@ end $$`;
  * nothing holding the two together.
  *
  * **Seven days rather than session state's two**, because an upload is an INPUT to
- * runs that may sleep — `podcast-digest` parks for days between digests — so
+ * runs that may sleep — `podcast-digest-workflow` parks for days between digests — so
  * expiring one at two days would break the workflow the retention exists to
  * support.
  *
@@ -345,7 +345,7 @@ const WORKFLOW_RUN_KEY_BATCH = 50_000;
  * ## The predicate is "the run is GONE", not "the key is old"
  *
  * Age alone would be wrong rather than merely coarse: a run can park for longer
- * than any window this could pick — `podcast-digest` sleeps between digests — and
+ * than any window this could pick — `podcast-digest-workflow` sleeps between digests — and
  * deleting the key of a LIVE run is exactly the failure the index exists to
  * prevent, one call before the caller phones back. Asking about the run instead
  * needs no knowledge of the run-retention policy at all, so it stays right if that

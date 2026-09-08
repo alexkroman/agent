@@ -3,7 +3,7 @@
  * Reading what an agent RAN — the `run_code` builtin's two halves, the code it
  * was handed and what came back.
  *
- * Four template evals — `code-interpreter`, `night-owl` and the two starters
+ * Four template evals — `code-interpreter-agent`, `entertainment-picks-agent` and the two starters
  * since removed as near-duplicates (`math-buddy`, `personal-finance`) — each
  * declared the same `RunCodeArgs` schema and the same
  * `codeIn` reader under the same ten-line comment about reading arguments

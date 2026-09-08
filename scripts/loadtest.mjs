@@ -123,7 +123,7 @@ async function httpScenario() {
  * would measure the 400 path instead.
  */
 const WORKFLOW_INPUT = {
-  "research-workflow": {
+  "research-handoff-agent": {
     workflow: "research",
     input: { topic: "durable workflows under load", requestedBy: "loadtest" },
   },

@@ -50,7 +50,7 @@
  * and it pays for the breadth with seven baselined occurrences in this repo.
  * Measured before writing this: a faithful port reports **all seven and nothing
  * else** — and all seven are correct code. Each is a read inside a step-called
- * helper (`timed`, `pollTranscript`, `file`), which `link-digest`'s own comment
+ * helper (`timed`, `pollTranscript`, `file`), which `link-digest-workflow`'s own comment
  * explains: "the `ctx.step` callback boundary is not decidable from a line …
  * Anything at BODY level is the bug, not an exception."
  *

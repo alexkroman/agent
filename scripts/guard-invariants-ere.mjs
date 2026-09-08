@@ -137,7 +137,7 @@ export const DECLARES = `(\\?)?(:|${ARGS} *(:|\\{))`;
  * `stepFetch` is deliberately ABSENT. Its sibling is `stepFetchOrFail`, whose value
  * is the non-2xx branch rather than the verdict, and a raw `stepFetch` whose
  * caller reads the status itself is the ordinary correct spelling — see
- * `recap-workflow`'s `discardTranscript`, where a 404 is success.
+ * `meeting-recap-agent`'s `discardTranscript`, where a 404 is success.
  */
 export const CLASSIFIABLE_STEP_CALLS = [
   "stepGenerate",

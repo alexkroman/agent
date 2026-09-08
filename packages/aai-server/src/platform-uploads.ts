@@ -282,7 +282,7 @@ export async function finishUpload(
  * How long an upload's record outlives its creation.
  *
  * Read by `pg-cron.ts`, where the sweep lives. Seven days rather than session
- * state's two: an upload is an INPUT to runs that may sleep — `podcast-digest`
+ * state's two: an upload is an INPUT to runs that may sleep — `podcast-digest-workflow`
  * parks for days between digests — so expiring one at two days would break the
  * workflow the retention exists to support. The bytes have their own lifetime in
  * the bucket; this bounds the row.

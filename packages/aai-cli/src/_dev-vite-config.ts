@@ -155,7 +155,7 @@ function workflowPathServedByVite(base: string, rawUrl: string | undefined): str
  * agent), and under load it intermittently stalls for almost exactly two
  * seconds.
  *
- * Measured on the `retail` template, session handshakes to `session.configured`:
+ * Measured on the `retail-orders-agent` template, session handshakes to `session.configured`:
  *
  * | Target | conc | rps | p50 | p99 |
  * | --- | --- | --- | --- | --- |

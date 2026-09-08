@@ -254,7 +254,7 @@ export async function startSelfHostedServer(
         // mode, where `log.info` is SILENCED and the human "listening on"
         // line below is never printed at all. Waiting on that line alone gave
         // no line, no exit and no rejection: the promise hung to the 300s
-        // suite timeout, reported as `template simple` being slow rather than
+        // suite timeout, reported as `template quickstart-agent` being slow rather than
         // as a server that never announced itself.
         const json = buf.match(/\{"ok":true,"data":\{[^\n]*?"port":(\d+)/);
         if (json?.[1]) return resolve(Number(json[1]));

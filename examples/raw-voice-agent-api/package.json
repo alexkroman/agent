@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The dispatch-center agent rebuilt against the AssemblyAI Voice Agent API with zero SDKs or libraries.",
+  "description": "The emergency-dispatch-agent agent rebuilt against the AssemblyAI Voice Agent API with zero SDKs or libraries.",
   "scripts": {
     "start": "node server.mjs"
   }

@@ -73,9 +73,9 @@ works on an object URL because the bytes are already in the tab — it was the
 and that is the whole reason both pages hand this a hook result rather than a
 path.
 
-**A caption track is a judgement, not a default.** `spoken-summary` passes
+**A caption track is a judgement, not a default.** `spoken-summary-workflow` passes
 `captions`: the summary was written before it was spoken, so one cue
-spanning the clip is an honest transcript of it. `call-audit` deliberately
+spanning the clip is an honest transcript of it. `call-audit-workflow` deliberately
 does not: the spoken text is rendered in full immediately below the player,
 which is the same information a track would carry. Both are right, which is
 why the prop is optional in both directions.
@@ -673,7 +673,7 @@ A muted line of run facts, joined by `·` — "6 segments · 12:04 of audio ·
 1,840 words".
 
 Nine pages had written this by hand under four different typographies for
-one role, two of them (`call-audit` and `spoken-summary`) byte-identical down
+one role, two of them (`call-audit-workflow` and `spoken-summary-workflow`) byte-identical down
 to the payload. Three things it takes off the caller:
 
 - **The separator cannot be forgotten, and neither can the space around it.**
@@ -1984,7 +1984,7 @@ body silently got wrong.
 is expensive to IMPORT.** A projection is built from the slot, so the browser
 bundle gets whatever that module pulls in — and the cost is the static import
 graph rather than the `create()` call, so no option on the slot can avoid it.
-`retail` is the worked example: its slot lives beside a 107 KB seed, so the
+`retail-orders-agent` is the worked example: its slot lives beside a 107 KB seed, so the
 page passes a `fallback` built by running the same view over a cheap empty
 state, from a module that imports no seed. Reach for this overload
 everywhere the slot's module is cheap, which is every other stateful
@@ -2408,7 +2408,7 @@ and `toggle` held a WHOLE-SNAPSHOT `useSession()`, and `session-core.ts`
 rebuilds the snapshot object on every change. Measured consequence: four
 components across three templates re-rendered on every STT partial and every
 streaming delta, in files whose every other component is narrowly subscribed
-on purpose. One of them (`infocom-adventure`'s `TitleScreen`) reads nothing
+on purpose. One of them (`text-adventure-agent`'s `TitleScreen`) reads nothing
 from the snapshot at all and subscribes to all of it for `session.start`.
 
 **Why publishing this does not reopen what `/internal` closed.**
@@ -3605,7 +3605,7 @@ The bordered panel a workflow page shows one run in: a status line, a Clear
 button, the run's own narration, the live slot while it works, the completed
 body once it has, and the announced error if it failed.
 
-Two pages had written this shell — `redline` and `transcription-workflow` —
+Two pages had written this shell — `document-redline-workflow` and `transcription-workflow` —
 with the same header, the same `text-xs underline` Clear, the same
 [WorkflowProgress](#workflowprogress) under it, the same `run.status === "completed"`
 discrimination above the same [WorkflowRunError](#workflowrunerror), and each spread

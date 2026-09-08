@@ -13,7 +13,7 @@
  * Until now the only way to express that was prose in `systemPrompt` plus trust.
  * Every tool in a `tools/` directory is available on every turn, so "ask these
  * questions in this order" was advice to a model rather than a property of the
- * agent — and `support-line/procedure.ts` is what that costs at the far end: 224
+ * agent — and `technical-support-agent/procedure.ts` is what that costs at the far end: 224
  * lines of hand-rolled control flow, with the node names it came from preserved
  * in a trace so a run stays readable as the procedure it used to be.
  *

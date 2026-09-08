@@ -170,13 +170,13 @@ export type EvalSession = {
    * Say every line in order, waiting out each reply, and hand back every turn.
    *
    * Byte-identical in three shipped templates before it was published
-   * (`dispatch-center`, `retail`, `travel-concierge`), each under a doc reaching
+   * (`emergency-dispatch-agent`, `retail-orders-agent`, `travel-concierge-agent`), each under a doc reaching
    * the same conclusion independently — which is the tell that it is the
    * harness's concept rather than any template's. The conclusion is the reason
    * to reach for this rather than a list of `say()` calls: a case over several
    * turns must assert about the turn a MECHANISM fired in, never about turn
    * number two, because how many turns an agent takes to get somewhere is the
-   * model's business and it measurably varies — `retail`'s desk reads the order
+   * model's business and it measurably varies — `retail-orders-agent`'s desk reads the order
    * back before it stages, so its staging call has landed in turn two, three
    * and four across live runs. A case pinned to a turn index is a flake with a
    * misleading name.

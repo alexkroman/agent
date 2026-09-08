@@ -45,7 +45,7 @@ function replay(
 }
 
 describe("a body that tries to observe its own suspend", () => {
-  // The severe case, and it shipped: `recap-workflow`'s saga wrapped its whole
+  // The severe case, and it shipped: `meeting-recap-agent`'s saga wrapped its whole
   // body in a `try`/`catch` that unwound a compensation stack, so the first poll
   // that had to WAIT deleted the transcript the run was waiting for, journaled
   // the deletion as successful, and re-threw — and the engine, seeing its own

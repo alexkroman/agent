@@ -101,8 +101,8 @@
  * reaches the TEMPLATES.** Every template's `client.tsx` opens with
  * `import "@alexkroman1/aai-ui/styles.css"`, and several then declare keyframes
  * of their own in an inline `<style>` block: `dc-pulse`/`dc-slide-in`
- * (dispatch-center), `rt-pulse`/`rt-slide-in` (retail), `crisisPulse`
- * (solo-rpg), and `ic-flicker`/`ic-scanline`/`ic-pulse` (infocom-adventure,
+ * (emergency-dispatch-agent), `rt-pulse`/`rt-slide-in` (retail), `crisisPulse`
+ * (tabletop-rpg-agent), and `ic-flicker`/`ic-scanline`/`ic-pulse` (text-adventure-agent,
  * which flickers the whole viewport's opacity and sweeps a scanline across the
  * page — the worst thing in the repo for a motion-sensitive reader). Nothing in
  * this package knows those names, and no per-component fix could: it would have

@@ -189,7 +189,7 @@ unless they ask outright for a voice agent instead.`,
   result, and a page that watches the run. Call \`use_template\` with it (or
   \`list_templates\` first) and adapt what it copies to what the user asked
   for — that lands a complete working app instead of your best guess at one.
-  \`link-digest\` is the same shape at its smallest (one URL field, the
+  \`link-digest-workflow\` is the same shape at its smallest (one URL field, the
   primitives raw) when the user's job needs no upload and no callback.
 - **A workflow app is not an agent with the voice turned off.** It has no
   session and no LLM loop, so \`systemPrompt\`, \`tools\`, \`maxSteps\`,

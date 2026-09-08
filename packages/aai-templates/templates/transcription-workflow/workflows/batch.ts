@@ -28,7 +28,7 @@
  * `stepTranscribeUpload` / `stepTranscribeSubmit` / `stepTranscribePoll` on
  * `@alexkroman1/aai/step` own the URL, the raw-key auth, the windowed streaming
  * upload, the PLURAL `speech_models` field and the failure classification. This file
- * used to spell all of that out, and so did `spoken-summary` — the same ~200 lines
+ * used to spell all of that out, and so did `spoken-summary-workflow` — the same ~200 lines
  * twice, reworded, identical in behaviour, and drifting apart at the edges.
  *
  * What stays here is what a dependency cannot decide: how many steps to cut the job
@@ -41,7 +41,7 @@
  *
  * The wait. A job takes minutes, and nothing about an HTTP request survives minutes:
  * the poll has to outlive the process that started it, which is exactly what a
- * durable `sleep` is. `recap-workflow` ports Temporal's `polling` sample for this
+ * durable `sleep` is. `meeting-recap-agent` ports Temporal's `polling` sample for this
  * shape and its module doc carries the argument; this is the same pattern with the
  * poll bounded by attempts rather than by a deadline.
  *

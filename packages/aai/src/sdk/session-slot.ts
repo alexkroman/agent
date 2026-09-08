@@ -174,7 +174,7 @@ export interface SessionSlot<K extends string, T> {
    * worth knowing before "fixing" it: a conditional return type
    * (`R extends Promise<unknown> ? never : R`) cannot be satisfied by a generic
    * WRAPPER around this method, and a per-agent wrapper is the main way it gets
-   * used (`retail`'s `retailTool`). The runtime check has the better message
+   * used (`retail-orders-agent`'s `retailTool`). The runtime check has the better message
    * anyway, and it is the half a user's project actually runs — neither bundler
    * type-checks user code.
    *
@@ -339,7 +339,7 @@ export function sessionSlot<const K extends string, T, After = void>(
    * A `set`, `reset` or nested `update` inside a window would be overwritten by
    * the draft the moment the outer mutator returned — a write that succeeds and
    * then vanishes, which is the exact failure class this whole change exists to
-   * remove. `pizza-ordering` had one: its `resetOrder` helper called
+   * remove. `pizza-ordering-agent` had one: its `resetOrder` helper called
    * `slot.set(ctx, …)` from inside a mutating tool body.
    *
    * Keyed by session, so two sessions never interfere, and per SLOT because the

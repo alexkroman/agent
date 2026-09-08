@@ -36,7 +36,7 @@ import type { SlotStore } from "./session-state.ts";
  * a different act, and one the alternative made worse: an author who wanted a
  * fact recorded per turn had no choice but to declare a TOOL for it and instruct
  * the model to call it, which is a model-cooperation problem standing in for a
- * bookkeeping one — see `infocom-adventure`, whose `game_state_history` tool
+ * bookkeeping one — see `text-adventure-agent`, whose `game_state_history` tool
  * existed to hand the framework back a transcript it already had. A hook writes
  * the fact directly, on every turn, whether or not the model cooperates.
  *

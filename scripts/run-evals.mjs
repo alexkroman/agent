@@ -37,7 +37,7 @@
  * ```
  *
  * One template needs a credential this script does not resolve:
- * `templates/pipeline-simple` names an Anthropic LLM stage, so a live run of it
+ * `templates/custom-pipeline-agent` names an Anthropic LLM stage, so a live run of it
  * wants `ANTHROPIC_API_KEY` too. Without that key the default fails it by
  * design; `--allow-scripted` is the way to run the other 24 live anyway.
  *
@@ -90,7 +90,7 @@ function childEnv() {
   //
   // `--allow-scripted` is for the MIXED case, which is real: a template whose
   // pipeline names another provider needs that provider's key to run live, and
-  // `templates/pipeline-simple` needs `ANTHROPIC_API_KEY`. Without the flag that
+  // `templates/custom-pipeline-agent` needs `ANTHROPIC_API_KEY`. Without the flag that
   // template fails the run on a machine holding only an AssemblyAI key —
   // correctly, and uselessly, every time. With it, the other 24 still run live
   // and that one degrades with its reason printed.

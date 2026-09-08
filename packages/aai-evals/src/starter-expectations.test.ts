@@ -114,7 +114,7 @@ describe("starter expectations", () => {
     // The delegation floor is ONE, and deliberately: `builtinDelegation` is
     // for a prompt-only starter — no custom tools, the builtins and the prose
     // telling the model what to reach for them for — and only the
-    // code-interpreter one is left, the other two having gone with the
+    // code-interpreter-agent one is left, the other two having gone with the
     // near-duplicate templates they scaffolded from. One case is still enough
     // for the rename this catches, since the field NAME is what each filter reads.
     const withUi = EXPECTATIONS.filter((e) => e.ui);

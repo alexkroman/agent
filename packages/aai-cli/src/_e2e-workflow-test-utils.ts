@@ -5,7 +5,7 @@
  * ## Why a lab rather than the shipped template's own workflows
  *
  * The e2e workflow test could only ever assert that the DevKit's queue routes
- * were MOUNTED (`status !== 404`), because `research-workflow`'s one workflow
+ * were MOUNTED (`status !== 404`), because `research-handoff-agent`'s one workflow
  * calls a model and a search engine on the first step — so an e2e run with no
  * credentials cannot drive it past `running`, and one WITH credentials would
  * make a required check paid and flaky. The whole durable lifecycle therefore
@@ -97,7 +97,7 @@ export async function labInc(n: number): Promise<number> {
  *
  * `aai test` runs `agent.test.ts` and nothing else, which is correct — and used
  * to be silent about it, in two arms. With an `agent.test.ts` present it
- * reported "Tests passed" and named nothing: the shipped `retail` template
+ * reported "Tests passed" and named nothing: the shipped `retail-orders-agent` template
  * carries seven sibling specs, so that run left 211 of the project's 278 tests
  * unexecuted. With NO `agent.test.ts` it printed "No test file found. Create
  * agent.test.ts to add tests." while the project's specs sat right there —

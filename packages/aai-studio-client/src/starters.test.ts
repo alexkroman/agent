@@ -53,30 +53,30 @@ describe("the two catalogs", () => {
 
   test("the workflow catalog leads with the three workflow-app templates", () => {
     // `transcription-workflow` is the shape the workflow system prompt tells the
-    // agent to start from, `link-digest` is the same shape at its smallest, and
-    // `spoken-summary` is the one whose answer is a FILE. All three are
+    // agent to start from, `link-digest-workflow` is the same shape at its smallest, and
+    // `spoken-summary-workflow` is the one whose answer is a FILE. All three are
     // `workflowApp()`; a voice template here would contradict the prompt the
     // project runs under.
     expect(WORKFLOW_STARTERS.slice(0, 3).map((s) => s.prompt)).toEqual([
       "Use the transcription-workflow template.",
-      "Use the link-digest template.",
-      "Use the spoken-summary template.",
+      "Use the link-digest-workflow template.",
+      "Use the spoken-summary-workflow template.",
     ]);
   });
 
   test("no workflow starter names a voice template, and vice versa", () => {
-    // `research-workflow` is the trap: it is a workflow template AND an `agent()`
+    // `research-handoff-agent` is the trap: it is a workflow template AND an `agent()`
     // (a caller is on the line, so a tool starts the run), so filing it under
     // Workflow would create it under a prompt that forbids what it is.
     const named = (list: readonly { prompt: string }[]) =>
       list.flatMap((s) => [...s.prompt.matchAll(/use the (\S+) template/gi)].map((m) => m[1]));
     expect(named(WORKFLOW_STARTERS)).toEqual([
       "transcription-workflow",
-      "link-digest",
-      "spoken-summary",
+      "link-digest-workflow",
+      "spoken-summary-workflow",
     ]);
     expect(named(AGENT_STARTERS)).not.toContain("transcription-workflow");
-    expect(named(AGENT_STARTERS)).not.toContain("link-digest");
-    expect(named(AGENT_STARTERS)).not.toContain("spoken-summary");
+    expect(named(AGENT_STARTERS)).not.toContain("link-digest-workflow");
+    expect(named(AGENT_STARTERS)).not.toContain("spoken-summary-workflow");
   });
 });

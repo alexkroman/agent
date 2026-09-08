@@ -50,15 +50,19 @@ const fakeRunner = (code: number, output = ""): ReturnType<typeof vi.fn<Contract
 
 describe("templateNamed", () => {
   test("reads the template a prompt names", () => {
-    expect(templateNamed("Build a desk. Use the retail template as a starting point.")).toBe(
-      "retail",
-    );
+    expect(
+      templateNamed("Build a desk. Use the retail-orders-agent template as a starting point."),
+    ).toBe("retail-orders-agent");
   });
 
   test("trailing punctuation is not part of the name", () => {
     // `\S+` would otherwise carry the sentence's period into a directory name.
-    expect(templateNamed("Use the night-owl template.")).toBe("night-owl");
-    expect(templateNamed("Use the solo-rpg template, then extend it")).toBe("solo-rpg");
+    expect(templateNamed("Use the entertainment-picks-agent template.")).toBe(
+      "entertainment-picks-agent",
+    );
+    expect(templateNamed("Use the tabletop-rpg-agent template, then extend it")).toBe(
+      "tabletop-rpg-agent",
+    );
   });
 
   test("a prompt naming no template yields undefined", () => {
@@ -110,7 +114,7 @@ describe("contractWorkspace", () => {
 
 describe("readContract", () => {
   test("reads a real template's shipped contract", async () => {
-    const { source, note } = await readContract(TEMPLATES_DIR, "retail");
+    const { source, note } = await readContract(TEMPLATES_DIR, "retail-orders-agent");
     expect(note).toBe("");
     expect(source).toMatch(/virtual:aai\/agent/);
   });
@@ -154,7 +158,7 @@ describe("runTemplateContract", () => {
   test("a green contract run passes", async () => {
     const result = await runTemplateContract({
       ...base,
-      prompt: "Use the retail template",
+      prompt: "Use the retail-orders-agent template",
       scratchDir: await scratch(),
       run: fakeRunner(0),
     });
@@ -164,7 +168,7 @@ describe("runTemplateContract", () => {
   test("a red contract run fails and keeps the output", async () => {
     const result = await runTemplateContract({
       ...base,
-      prompt: "Use the retail template",
+      prompt: "Use the retail-orders-agent template",
       scratchDir: await scratch(),
       run: fakeRunner(1, "AssertionError:  every  order tool must refuse"),
     });
@@ -178,7 +182,7 @@ describe("runTemplateContract", () => {
     await runTemplateContract({
       files: { "agent.ts": "export default {}", "tools/find.ts": "export default {}" },
       templatesDir: TEMPLATES_DIR,
-      prompt: "Use the retail template",
+      prompt: "Use the retail-orders-agent template",
       scratchDir: dir,
       async run(at) {
         seen = {
@@ -200,7 +204,7 @@ describe("runTemplateContract", () => {
     const dir = await scratch();
     await runTemplateContract({
       ...base,
-      prompt: "Use the retail template",
+      prompt: "Use the retail-orders-agent template",
       scratchDir: dir,
       run: fakeRunner(0),
     });
@@ -215,7 +219,7 @@ describe("runTemplateContract", () => {
     await expect(
       runTemplateContract({
         ...base,
-        prompt: "Use the retail template",
+        prompt: "Use the retail-orders-agent template",
         scratchDir: dir,
         run: () => Promise.reject(new Error("vitest died")),
       }),
@@ -231,7 +235,7 @@ describe("runTemplateContract", () => {
     await writeFile(path.join(dir, "stale.ts"), "old", "utf-8");
     const result = await runTemplateContract({
       ...base,
-      prompt: "Use the retail template",
+      prompt: "Use the retail-orders-agent template",
       scratchDir: dir,
       run: fakeRunner(0),
     });

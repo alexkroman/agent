@@ -199,7 +199,7 @@ export function mountRoot(
  *
  * Named rather than spread as four more parameters because that is exactly how
  * this drifted: `DefaultShell` forwarded three of the seven fields the two
- * components underneath it accept, so `solo-rpg` — which wants a right-hand
+ * components underneath it accept, so `tabletop-rpg-agent` — which wants a right-hand
  * sidebar, an icon, a subtitle and its own CTA, all of which
  * `StartScreen`/`SidebarLayout` already take — could not say any of it in
  * config and dropped to the `component:` tier for a 27-line wrapper whose only
