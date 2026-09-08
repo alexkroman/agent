@@ -17,13 +17,17 @@
 import { describe, expect, test } from "vitest";
 import {
   BUILD_TARGETS,
+  type BuildTarget,
   DEFAULT_BUILD_TARGET,
   isBuildTarget,
   resolveBuildTarget,
+  resolveDeploySteps,
+  SECRET_NAME_PLACEHOLDER,
   TARGET_ENV_MARKERS,
   TARGET_OUTPUTS,
 } from "./_build-target.ts";
-import { DENO_OUTPUT_DIR } from "./_deno-target.ts";
+import { DENO_ENTRY_FILE, DENO_OUTPUT_DIR } from "./_deno-target.ts";
+import { modalAppName, modalSecretName } from "./_modal-app.ts";
 import { MODAL_APP_FILE, MODAL_OUTPUT_DIR } from "./_modal-target.ts";
 import { VERCEL_OUTPUT_DIR } from "./_vercel-target.ts";
 
@@ -126,6 +130,19 @@ describe("resolveBuildTarget", () => {
     expect(isBuildTarget("netlify")).toBe(false);
   });
 });
+/**
+ * The one command that SHIPS a target — its `each` step.
+ *
+ * A helper because the assertions below are about that command specifically,
+ * and reaching through the sequence at each call site would let a test quietly
+ * start asserting against the create or the secret step instead.
+ */
+function shipStep(target: BuildTarget): string {
+  const run = TARGET_OUTPUTS[target].deploy?.find((step) => step.when === "each")?.run;
+  if (run === undefined) throw new Error(`${target} has no ship step`);
+  return run;
+}
+
 describe("what each target says it produced", () => {
   test("every target answers both questions, because the record is TOTAL", () => {
     // The point of the table over a `log.info` per switch arm: a new target
@@ -148,7 +165,7 @@ describe("what each target says it produced", () => {
         expect(output.deploy).toBeUndefined();
         expect(output.preview).toBeDefined();
       } else {
-        expect(output.deploy).toBeDefined();
+        expect(output.deploy ?? []).not.toHaveLength(0);
       }
     }
     expect(TARGET_OUTPUTS.node.dir).toBeUndefined();
@@ -158,11 +175,11 @@ describe("what each target says it produced", () => {
     // `deno deploy` uploads the WORKING directory, so a command run from the
     // project root would upload the project — node_modules, source and the
     // developer's .env included. Nitro's deno-deploy preset writes the same cd.
-    expect(TARGET_OUTPUTS.deno.deploy).toContain(`cd ${DENO_OUTPUT_DIR}`);
+    expect(shipStep("deno")).toContain(`cd ${DENO_OUTPUT_DIR}`);
     expect(TARGET_OUTPUTS.deno.preview).toContain(`cd ${DENO_OUTPUT_DIR}`);
     // Modal is pointed at a MODULE instead, so both of its commands name it —
     // there is nothing in the directory to infer it from.
-    expect(TARGET_OUTPUTS.modal.deploy).toContain(MODAL_APP_FILE);
+    expect(shipStep("modal")).toContain(MODAL_APP_FILE);
     expect(TARGET_OUTPUTS.modal.preview).toContain(MODAL_APP_FILE);
   });
 
@@ -179,6 +196,92 @@ describe("what each target says it produced", () => {
     // so naming it would point a user at a different program than the one they
     // just built.
     expect(TARGET_OUTPUTS.vercel.preview).toBeUndefined();
-    expect(TARGET_OUTPUTS.vercel.deploy).toBe("vercel deploy --prebuilt");
+    expect(shipStep("vercel")).toBe("vercel deploy --prebuilt");
+  });
+
+  test("every deploy sequence STARTS with a build and ends with exactly one ship", () => {
+    // The two structural claims the sequence exists to make. The `build` step
+    // is first because it is a prerequisite of everything after it and the one
+    // whose omission is SILENT — both hosts upload the emitted directory as it
+    // stands, so a forgotten rebuild ships the previous bundle and reports
+    // success. Exactly one `each` because that is the command that deploys:
+    // two would mean the sequence never says which one ships it.
+    for (const target of BUILD_TARGETS) {
+      const steps = TARGET_OUTPUTS[target].deploy;
+      if (steps === undefined) continue;
+      expect(steps[0]?.when).toBe("build");
+      expect(steps[0]?.run).toBe(`aai build --target ${target}`);
+      expect(steps.filter((s) => s.when === "each")).toHaveLength(1);
+      expect(steps.at(-1)?.when).toBe("each");
+    }
+  });
+
+  test("every host that takes a secret names the command, which deno and modal did not", () => {
+    // The regression this shape was built for. `TargetOutput.secret` was
+    // absent for `deno` and `modal` — the two hosts whose secret command a
+    // reader is least likely to guess — so `missingEnvWarnings` fell back to
+    // "Set it in the <target> environment" and named nothing to run.
+    for (const target of ["vercel", "deno", "modal"] as const) {
+      const secret = TARGET_OUTPUTS[target].deploy?.find((s) => s.when === "perSecret");
+      expect(secret?.run).toContain(SECRET_NAME_PLACEHOLDER);
+    }
+  });
+
+  test("only deno needs a one-time create, and it overrides Deploy's detection", () => {
+    // Every flag was established by a failed revision: Deploy's auto-detected
+    // config for this directory resolves to no entrypoint and fails at
+    // `building`, and the create is refused outright without a region.
+    const once = TARGET_OUTPUTS.deno.deploy?.filter((s) => s.when === "once") ?? [];
+    expect(once).toHaveLength(1);
+    expect(once[0]?.run).toContain("--do-not-use-detected-build-config");
+    expect(once[0]?.run).toContain(`--entrypoint ${DENO_ENTRY_FILE}`);
+    expect(once[0]?.run).toContain("--region");
+
+    // Modal creates its app on first deploy, so it has nothing to run once.
+    expect(TARGET_OUTPUTS.modal.deploy?.some((s) => s.when === "once")).toBe(false);
+    expect(TARGET_OUTPUTS.vercel.deploy?.some((s) => s.when === "once")).toBe(false);
+  });
+});
+
+describe("resolveDeploySteps", () => {
+  test("expands the secret step once per missing variable, with the real name", () => {
+    const steps = resolveDeploySteps("deno", {
+      agentName: "Quickstart Assistant",
+      missingEnv: ["ASSEMBLYAI_API_KEY", "BRAVE_API_KEY"],
+    });
+    const secrets = steps.filter((s) => s.when === "perSecret");
+    expect(secrets).toHaveLength(2);
+    expect(secrets[0]?.run).toContain("ASSEMBLYAI_API_KEY");
+    expect(secrets[1]?.run).toContain("BRAVE_API_KEY");
+    // Substituted, not left for the reader to fill.
+    expect(secrets.map((s) => s.run).join()).not.toContain(SECRET_NAME_PLACEHOLDER);
+  });
+
+  test("KEEPS the secret step when nothing is missing, because the host is not the build", () => {
+    // `missingDeployEnv` reads the BUILD's environment. An empty set means
+    // "your shell had these", never "the platform does" — so dropping the step
+    // would promise a configured host nobody configured.
+    const steps = resolveDeploySteps("deno", { agentName: "A", missingEnv: [] });
+    const secrets = steps.filter((s) => s.when === "perSecret");
+    expect(secrets).toHaveLength(1);
+    expect(secrets[0]?.run).toContain(SECRET_NAME_PLACEHOLDER);
+  });
+
+  test("fills Modal's derived secret name, which app.py must agree with", () => {
+    // A reader who invents this name gets a deploy that dies on
+    // `Secret.from_name`, so it is substituted rather than left as a prompt.
+    const steps = resolveDeploySteps("modal", {
+      agentName: "Quickstart Assistant",
+      missingEnv: ["ASSEMBLYAI_API_KEY"],
+    });
+    const secret = steps.find((s) => s.when === "perSecret");
+    expect(secret?.run).toContain(modalSecretName(modalAppName("Quickstart Assistant")));
+    expect(secret?.run).toBe(
+      "modal secret create quickstart-assistant-env ASSEMBLYAI_API_KEY=<value>",
+    );
+  });
+
+  test("a target that deploys nowhere resolves to no steps", () => {
+    expect(resolveDeploySteps("node", { agentName: "A", missingEnv: [] })).toEqual([]);
   });
 });

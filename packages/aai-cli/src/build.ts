@@ -20,7 +20,9 @@ import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import {
   type BuildTarget,
+  type DeployStep,
   resolveBuildTarget,
+  resolveDeploySteps,
   SECRET_NAME_PLACEHOLDER,
   TARGET_OUTPUTS,
 } from "./_build-target.ts";
@@ -67,9 +69,13 @@ type BuildData = {
    * above is: `log` is silenced under `--json`, so a CI job that builds and
    * then deploys could read neither the directory it should upload nor the
    * command that uploads it, and had to restate both from this file.
+   *
+   * `deploy` is the RESOLVED sequence — see {@link resolveDeploySteps} — so a
+   * CI job can execute it in order rather than re-encoding each host's
+   * prerequisites. Empty for a target that deploys nowhere.
    */
   outputDir: string | undefined;
-  deploy: string | undefined;
+  deploy: DeployStep[];
   /**
    * Variables the deployment DECLARES and this build's host had no value for —
    * see {@link missingDeployEnv}. Empty for a target that deploys nowhere.
@@ -199,12 +205,30 @@ export async function executeBuild(opts: {
   // variable with no value on the host is legal, builds green, and fails at the
   // first session as an opaque provider auth error. See `missingDeployEnv`.
   const missingEnv = await missingDeployEnv(cwd, target);
-  for (const warning of missingEnvWarnings(missingEnv, target)) notify("warn", warning);
+  for (const warning of missingEnvWarnings(missingEnv, target, agentDef.name)) {
+    notify("warn", warning);
+  }
   if (output.dir !== undefined) log.info(`Target ${target}: wrote ${output.dir}`);
   // Nitro prints the same line after every build, and for the same reason: the
   // artifact is useless to somebody who does not know the command that ships
   // it, and `--target vercel` used to print only the directory.
-  if (output.deploy !== undefined) log.info(`Deploy it with \`${output.deploy}\``);
+  const deploy = resolveDeploySteps(target, { agentName: agentDef.name, missingEnv });
+  if (deploy.length > 0) {
+    log.info("Deploy it with:");
+    // The `build` step is dropped HERE and kept on the result: this reader just
+    // ran one, so printing it as step 1 is noise, while a `--json` consumer may
+    // be scripting a checkout where it is the step that matters. Numbered over
+    // what remains, so the list reads as the sequence to type.
+    const printed = deploy.filter((step) => step.when !== "build");
+    printed.forEach((step, index) => {
+      const note = step.when === "once" ? "   (first deploy only)" : "";
+      log.info(`  ${index + 1}. ${step.run}${note}`);
+    });
+    // The footgun the `build` step exists for, stated once rather than as a
+    // step the reader would read as already done. `deno deploy` and
+    // `modal deploy` upload the directory as it stands.
+    log.info(`Re-run \`aai build --target ${target}\` before every deploy.`);
+  }
 
   // Reported in BOTH modes, deliberately: `log` is silenced under --json, and a
   // field on the result is invisible on a TTY, so the swap this exists to
@@ -220,7 +244,7 @@ export async function executeBuild(opts: {
     systemPrompt,
     target,
     outputDir: output.dir,
-    deploy: output.deploy,
+    deploy,
     missingEnv,
   });
 }
@@ -342,8 +366,20 @@ export async function missingDeployEnv(
  * and `determinismWarnings`: each is independently actionable, and the command
  * differs per name.
  */
-export function missingEnvWarnings(missing: readonly string[], target: BuildTarget): string[] {
-  const { secret } = TARGET_OUTPUTS[target];
+export function missingEnvWarnings(
+  missing: readonly string[],
+  target: BuildTarget,
+  agentName: string,
+): string[] {
+  // Read off the RESOLVED sequence rather than off `TARGET_OUTPUTS` directly,
+  // so this warning and the printed steps cannot name two different commands —
+  // Modal's secret name is derived from the agent's, and reading the raw record
+  // here printed a literal `<secret>` beside a sequence showing the real one.
+  // `missingEnv: []` because the placeholder form is what wants substituting,
+  // once per name below.
+  const secret = resolveDeploySteps(target, { agentName, missingEnv: [] }).find(
+    (step) => step.when === "perSecret",
+  )?.run;
   return missing.map((name) => {
     const fix =
       secret === undefined
