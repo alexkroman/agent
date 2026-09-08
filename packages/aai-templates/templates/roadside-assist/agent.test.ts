@@ -104,6 +104,27 @@ const WIRED: readonly { declared: DialogSessionEventName; event: SessionEvent }[
 const HEARD_SOMETHING = WIRED[0]!.event;
 const CALLER_GONE = WIRED[1]!.event;
 
+/**
+ * Every state in a dialog spec, parents included, as `<parent>.<child>` paths.
+ *
+ * Typed with {@link DialogStateSpec} rather than read off the `as const`
+ * literal: the annotation is what makes the recursion legal (a state's
+ * `states` is the same shape) and what says the two fields audited below are
+ * ones the SDK really accepts — a spec that dropped `voice` from the type
+ * would fail here rather than leave the audit passing over a field nothing
+ * can declare any more.
+ */
+function eachState(
+  states: Readonly<Record<string, DialogStateSpec>>,
+  prefix = "",
+): [string, DialogStateSpec][] {
+  return Object.entries(states).flatMap(([name, spec]) => {
+    const path = prefix === "" ? name : `${prefix}.${name}`;
+    const here: [string, DialogStateSpec] = [path, spec];
+    return [here, ...eachState(spec.states ?? {}, path)];
+  });
+}
+
 const A_LOCATION = {
   where: "eastbound route nine, just past the exit for Millfield",
   landmark: "the boarded-up diner",
@@ -435,38 +456,151 @@ describe("the per-phase voice knobs", () => {
     expect(knobsAt(ctx)?.toolChoice).toEqual({ type: "tool", toolName: "dispatch_truck" });
   });
 
-  test("no phase declares a knob the runtime cannot apply", () => {
-    const ctx = createToolContext();
+  test("no state declares a knob the runtime cannot apply", () => {
     // `voice` and `keyterms` are accepted by `DialogStateSpec` and implemented
     // by NEITHER transport — the runtime warns at the first session and applies
     // nothing. A template that declared one would be documenting a promise the
     // SDK does not keep, which is worse than leaving the knob unexercised.
-    const visited: string[] = [];
-    for (const event of [
-      { type: "QUIET" },
-      { type: "LOCATED" },
-      { type: "VERIFIED" },
-      { type: "DISCLOSED" },
-    ] as const) {
-      visited.push(at(ctx).state);
-      const knobs = knobsAt(ctx);
-      expect(knobs?.voice).toBeUndefined();
-      expect(knobs?.keyterms).toBeUndefined();
-      roadsideCall.send(ctx, event);
+    //
+    // Read off the SPEC rather than walked by sending events, which is what
+    // makes the claim cover `abandoned` — a final state no walk can reach and
+    // the one a sixth phase would be added beside.
+    const audited = eachState(CALL_SPEC.states);
+    for (const [path, spec] of audited) {
+      expect({ at: path, voice: spec.voice, keyterms: spec.keyterms }).toEqual({
+        at: path,
+        voice: undefined,
+        keyterms: undefined,
+      });
     }
-    visited.push(at(ctx).state);
-    expect(knobsAt(ctx)?.voice).toBeUndefined();
-    expect(knobsAt(ctx)?.keyterms).toBeUndefined();
 
-    // Non-vacuity: the walk really visited every live phase rather than
-    // stalling on one that ignored its event and asserting about it five times.
-    expect(visited).toEqual([
+    // Non-vacuity, and the reason the walk is structural: every state in the
+    // tree, parents included, and a new one joins this list or fails here.
+    expect(audited.map(([path]) => path)).toEqual([
+      "onCall",
       "onCall.locating",
       "onCall.quiet",
       "onCall.verifying",
       "onCall.disclosure",
       "onCall.dispatching",
+      "abandoned",
     ]);
+  });
+});
+
+describe("what the desk is REACHED by, and what it writes down", () => {
+  test("the phone route is mounted, for exactly the carriers the numbers are with", () => {
+    // `telephony` is an ALLOW-LIST whose default is empty: without this
+    // declaration `WS /phone` is not served, and a roadside desk nobody can
+    // dial is not a roadside desk. The carriers are named as
+    // `TelephonyCarrier`s so a third one added to `agent.ts` and not here
+    // fails at compile time rather than as a refused upgrade.
+    const carriers: readonly TelephonyCarrier[] = ["twilio", "telnyx"];
+    expect(agentDef.telephony).toEqual(carriers);
+  });
+
+  test("the hooks the agent declares are exactly the ones the desk logs", () => {
+    expect(agentDef.events).toBe(DESK_EVENTS);
+    expect(Object.keys(DESK_EVENTS)).toEqual([...LOGGED_EVENTS]);
+  });
+
+  test("a hang-up and a line fault are recorded by hooks, which no tool can do", async () => {
+    const ctx = createToolContext();
+    await accept(ctx, "RS-4417");
+    await sendTruck(ctx);
+    const before = roadsideSlot.get(ctx).log.length;
+
+    DESK_EVENTS["error.reported"]?.(
+      {
+        type: "error.reported",
+        code: "stt",
+        message: "transcriber dropped the stream",
+        fatal: false,
+        meta: { id: "evt_stt", at: 0 },
+      },
+      ctx,
+    );
+    DESK_EVENTS["session.timed-out"]?.(
+      { type: "session.timed-out", meta: { id: "evt_gone", at: 0 } },
+      ctx,
+    );
+
+    const log = roadsideSlot.get(ctx).log;
+    expect(log).toHaveLength(before + 2);
+    // The fatal/non-fatal split is the whole reason the line says which it
+    // was: a caller cut off mid-disclosure and one whose transcription
+    // hiccuped are the same silence on a recording.
+    expect(log.at(-2)).toBe("Line trouble (stt, recovered): transcriber dropped the stream");
+    expect(log.at(-1)).toMatch(/Caller gone/);
+  });
+
+  test("the log is bounded where the slot says, and the OLDEST line is what goes", () => {
+    const ctx = createToolContext();
+    // A `SlotCaps` entry is optional per key, so the bound is read rather than
+    // assumed — and asserted non-zero, or the overflow below proves nothing.
+    const cap = LOG_CAP.log ?? 0;
+    expect(cap).toBeGreaterThan(0);
+
+    const overflow = cap + 6;
+    for (let n = 0; n < overflow; n += 1) {
+      DESK_EVENTS["error.reported"]?.(
+        {
+          type: "error.reported",
+          code: "connection",
+          message: `fault ${n}`,
+          fatal: false,
+          meta: { id: `evt_${n}`, at: 0 },
+        },
+        ctx,
+      );
+    }
+
+    const log = roadsideSlot.get(ctx).log;
+    expect(log).toHaveLength(cap);
+    expect(log[0]).toContain(`fault ${overflow - cap}`);
+    expect(log.at(-1)).toContain(`fault ${overflow - 1}`);
+  });
+});
+
+describe("the registered surface", () => {
+  test("job_status reports the call, in the envelope the dialog wraps it in", async () => {
+    const ctx = createToolContext();
+    await accept(ctx, "RS-4417");
+    await sendTruck(ctx);
+
+    const status = expectDialogOk<{
+      plan: string;
+      feeDisclosureAccepted: boolean;
+      job: { callsign: string } | null;
+    }>(await jobStatus.execute({}, ctx));
+
+    expect(status.result.plan).toBe(PLANS.plus.name);
+    expect(status.result.feeDisclosureAccepted).toBe(true);
+    expect(status.result.job?.callsign).toBe("Flat-2");
+    // The three fields `roadsideCall.tool` writes around every result, and how
+    // the model re-reads its own position after a turn that called nothing.
+    expect(status.state).toBe("onCall.dispatching");
+    expect(status.done).toBe(false);
+    expect(status.instruction).toMatch(/dispatch_truck/);
+  });
+
+  test("the dispatching pin names a tool the agent really registers", async () => {
+    const ctx = createToolContext();
+    await accept(ctx, "RS-4417");
+
+    const pin = knobsAt(ctx)?.toolChoice;
+    const pinned = typeof pin === "object" ? pin.toolName : "";
+    // `toolOf` throws when the registry has no such tool, which is the claim:
+    // `tools/dispatch_truck.ts` could be renamed and every other test in this
+    // file would go on passing while the pin named nothing.
+    expect(toolOf(agentDef, pinned)).toBe(dispatchTruck);
+
+    // And run it BY THAT NAME, through the agent's own table and its schema —
+    // the path the model takes, which calling `.execute` directly skips.
+    const ran = expectDialogOk<JobLine>(
+      await runTool(agentDef, pinned, { destination: "Millfield Auto", towMiles: 31 }, ctx),
+    );
+    expect(ran.result.alreadyDispatched).toBe(false);
   });
 });
 

@@ -50,11 +50,16 @@ import {
   type DeepReadonly,
   type DialogSpec,
   dialog,
+  isClockTime,
   sessionSlot,
+  type SlotToolDef,
+  type StateProjection,
   type ToolContext,
+  type ToolDef,
   type ToolFailure,
+  type ToolInputSchema,
 } from "@alexkroman1/aai";
-import { formatMoney, plural } from "@alexkroman1/aai/utils";
+import { formatMoney, plural, roundMoney } from "@alexkroman1/aai/utils";
 
 // ─── The booking world ───────────────────────────────────────────────────────
 // Their notebook downloads a sqlite database of a real airline's schedule and
@@ -157,11 +162,15 @@ export const HOTELS: Hotel[] = [
     stars: 5,
   },
   {
+    // The one rate with cents in it, and it is deliberate: three nights here is
+    // `179.95 * 3 === 539.8499999999999`, so this row is what makes
+    // {@link roundMoney} load-bearing rather than decorative — see the totals in
+    // `applyPending` and {@link tripView}.
     id: "H3",
     name: "Cambridge Rooms",
     city: "Boston",
     area: "Cambridge",
-    pricePerNight: 180,
+    pricePerNight: 179.95,
     stars: 3,
   },
   {
@@ -433,7 +442,7 @@ export function activeAssistant(state: FrozenTripState): DialogState {
  * stack, which is the right price: the alternative is a desk whose position is
  * decoration.
  */
-export function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailure | undefined {
+function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailure | undefined {
   const at = activeAssistant(state);
   if (at === id) return undefined;
   const here = at === "primary" ? "the main concierge" : SPECIALISTS[at].title;
@@ -444,6 +453,60 @@ export function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailu
       "caller asked for — its answer is that desk's brief — and then call this tool again. " +
       "Do not tell the caller about any of this; they should hear one continuous conversation.",
   };
+}
+
+/**
+ * A desk's own tool: {@link requireDesk} first, then the body — declared once.
+ *
+ * Nine tools used to open with the same two lines, and a wrapper is what makes
+ * the narrowing STRUCTURAL rather than remembered: their graph binds a tool set
+ * per node, and the tenth desk tool written here cannot forget the gate the way
+ * a copied prologue can. It is the per-agent wrapper `retail` demonstrates, at
+ * its smallest — all this one adds is the gate, so what it takes is the SLOT's
+ * OWN {@link SlotToolDef} rather than a spec of its own, and a tool file reads
+ * exactly as it did minus the prologue.
+ *
+ * Two of them because the slot has two halves and choosing wrong is a compile
+ * error: a search READS the frozen state, a staging tool takes the mutable
+ * draft. `requireDesk` short-circuits before either body runs, so a refused call
+ * really searches, stages and books nothing.
+ */
+export function deskTool<P extends ToolInputSchema, R>(
+  id: SpecialistId,
+  def: SlotToolDef<P, FrozenTripState, R>,
+): ToolDef<P, R | ToolFailure> {
+  return tripSlot.tool<P, R | ToolFailure>({
+    ...def,
+    execute: (args, trip, ctx) => requireDesk(trip, id) ?? def.execute(args, trip, ctx),
+  });
+}
+
+/** {@link deskTool} for a tool that WRITES — the draft half of the slot. */
+export function deskUpdateTool<P extends ToolInputSchema, R>(
+  id: SpecialistId,
+  def: SlotToolDef<P, TripState, R>,
+): ToolDef<P, R | ToolFailure> {
+  return tripSlot.updateTool<P, R | ToolFailure>({
+    ...def,
+    execute: (args, trip, ctx) => requireDesk(trip, id) ?? def.execute(args, trip, ctx),
+  });
+}
+
+/**
+ * A flight's departure as a comparable `HH:MM`, or `undefined` for a row that
+ * does not carry one.
+ *
+ * The schedule writes a departure as `"Tue 13:05"` — a weekday a caller says
+ * and a clock reading a caller filters by — and `search_flights` compares the
+ * clock half as a STRING, which is legal for exactly the reason
+ * {@link isClockTime} exists: a zero-padded 24-hour reading sorts the way the
+ * clock runs, and `"9:05"` does not. So the predicate is what stands between a
+ * row and a comparison, rather than a regex written here: a row it refuses is
+ * left out of a time-filtered search instead of being ordered against `"Tue"`.
+ */
+export function departureClock(flight: DeepReadonly<Flight>): string | undefined {
+  const clock = flight.departs.slice(-5);
+  return isClockTime(clock) ? clock : undefined;
 }
 
 // ─── The confirmation gate ───────────────────────────────────────────────────
@@ -657,7 +720,10 @@ export function applyPending(
     case "book_hotel": {
       const hotel = HOTELS.find((h) => h.id === action.hotelId);
       if (!hotel) return { error: `No hotel ${action.hotelId}.` };
-      const price = hotel.pricePerNight * action.nights;
+      // `roundMoney` because this is STORED and then summed into the itinerary
+      // total: `179.95 * 3` is `539.8499999999999`, which prints as $539.85 and
+      // compares equal to nothing anyone would write down.
+      const price = roundMoney(hotel.pricePerNight * action.nights);
       state.bookings.push({
         kind: "hotel",
         reference,
@@ -670,7 +736,7 @@ export function applyPending(
     case "book_car": {
       const car = CAR_RENTALS.find((c) => c.id === action.carId);
       if (!car) return { error: `No car ${action.carId}.` };
-      const price = car.pricePerDay * action.days;
+      const price = roundMoney(car.pricePerDay * action.days);
       state.bookings.push({
         kind: "car",
         reference,
@@ -742,11 +808,24 @@ export function tripView(state: FrozenTripState): TripView {
           }
         : null,
     bookings: state.bookings,
-    total: state.bookings.reduce((sum, b) => sum + b.price, 0),
+    // The running total the sidebar prints and a spec compares — rounded for
+    // the reason `roundMoney` exists, since a sum of floats is where the cents
+    // that survived each booking come back.
+    total: roundMoney(state.bookings.reduce((sum, b) => sum + b.price, 0)),
     pending: described,
     log: state.log,
   };
 }
 
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const tripProjection = tripSlot.projection(tripView);
+/**
+ * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the
+ * client.
+ *
+ * Annotated, because the annotation is the CONTRACT rather than a restatement:
+ * `agent({ syncState })` and `useAgentState()` are both declared against
+ * `StateProjection<V>`, so writing it here is what says the frame the server
+ * pushes and the frame the browser renders are the same {@link TripView} — and
+ * what fails at this line, rather than in `client.tsx`, if `tripView` stops
+ * producing one.
+ */
+export const tripProjection: StateProjection<TripView> = tripSlot.projection(tripView);

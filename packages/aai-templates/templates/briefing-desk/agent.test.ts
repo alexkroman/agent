@@ -525,6 +525,22 @@ describe("the briefing as a channel message", () => {
     expect(message.subtitle).toBe("5 searches, 1 page read");
   });
 
+  test("still names something when the board carries findings and no topic", () => {
+    // Reachable: a tool can push to the board without setting `topic`, and a
+    // heading reading "Briefing: null" is the kind of thing a channel keeps
+    // forever.
+    const ctx = createToolContext();
+    briefingSlot.update(ctx, (board) => {
+      board.findings.push({ angle: "a", summary: "A.", work: NO_WORK });
+    });
+
+    const message = briefingMessage(briefingSlot.get(ctx));
+
+    expect(message.heading).toBe("Briefing: an unnamed subject");
+    expect(message.text).toBe("Briefing on an unnamed subject: 1 angle");
+    expect(message.subtitle).toBe("0 searches, 0 pages read");
+  });
+
   test("refuses a destination that is not Slack, before anything is posted", () => {
     // A security boundary rather than a typo check: the value is the target of
     // a POST carrying everything the desk was told.
@@ -582,6 +598,19 @@ describe("send_briefing", () => {
 
     expect(isToolFailure(result) && result.error).toMatch(/will not help/);
     expect(isToolFailure(result) && result.error).not.toMatch(/try again/);
+  });
+
+  test("reports a connection that never got there as itself", async () => {
+    // Not a `ChannelDeliveryError`: there was no response to classify. The
+    // channel cannot say whether a retry would help, so neither does the desk.
+    installStubStepFetch(() => {
+      throw new Error("connection reset");
+    });
+
+    const result = await run("send_briefing", {}, deskWithBoard());
+
+    expect(isToolFailure(result) && result.error).toMatch(/did not send/);
+    expect(isToolFailure(result) && result.error).toContain("connection reset");
   });
 
   test("names the missing variable when no channel is configured", async () => {

@@ -26,6 +26,7 @@ import { fieldKindFor } from "@alexkroman1/aai-ui";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import agentDef, { MAX_ROUNDS, redline, redlineInput } from "./agent.ts";
+import { toInput } from "./form.ts";
 import {
   acceptDraft,
   briefBlock,
@@ -156,6 +157,64 @@ describe("which fields the FORM declares, and which the page writes", () => {
     // in `toInput`, which is the whole reason this template exists beside
     // `transcription-workflow`'s all-declared one.
     expect(fieldKindFor(properties[name])).toBe("none");
+  });
+});
+
+describe("what the page submits", () => {
+  /** What `<Form>` collects off the DOM for a filled-in desk. */
+  const FILLED = {
+    brief: INPUT.brief,
+    audience: "customers",
+    rounds: 2,
+    mustCover: "  what to do about it \n\n how to raise the cap \n",
+  };
+
+  test("splits the textarea into the array the schema declares", async () => {
+    const input = toInput(FILLED);
+    expect(input.mustCover).toEqual(["what to do about it", "how to raise the cap"]);
+    // The whole point of pinning it here: what this produces has to survive the
+    // schema, and a mapping that missed is a 400 at `start()` rather than a
+    // compile error at the call site.
+    expect(await schemaInputIssues(redline.input, input, "redline")).toBeUndefined();
+  });
+
+  test("omits the attached draft when no file was chosen", async () => {
+    // A file input with no file contributes NO KEY, so the ordinary run has to
+    // come out of this function with `source` absent rather than `undefined`.
+    const input = toInput(FILLED);
+    expect("source" in input).toBe(false);
+    expect(await schemaInputIssues(redline.input, input, "redline")).toBeUndefined();
+  });
+
+  test("turns the chosen file into the object the workflow branches on", async () => {
+    // What `<FileField read="text">` really contributes: the file's metadata,
+    // plus its text because `read="text"` asked for it.
+    const input = toInput({
+      ...FILLED,
+      source: {
+        name: ATTACHED.name,
+        size: ATTACHED.text.length,
+        type: "text/markdown",
+        lastModified: 0,
+        content: ATTACHED.text,
+      },
+    });
+
+    expect(input.source).toEqual(ATTACHED);
+    expect(await schemaInputIssues(redline.input, input, "redline")).toBeUndefined();
+  });
+
+  test("hands an EMPTY file to the schema rather than silently writing from scratch", async () => {
+    // A file somebody chose is one they meant to redline, so the refusal has to
+    // name it. Dropping it here would start the ordinary run instead, and the
+    // page would show a piece nobody asked for.
+    const input = toInput({
+      ...FILLED,
+      source: { name: "empty.md", size: 0, type: "text/markdown", lastModified: 0, content: "" },
+    });
+
+    expect(input.source).toEqual({ name: "empty.md", text: "" });
+    expect(await schemaInputIssues(redline.input, input, "redline")).toBeDefined();
   });
 });
 

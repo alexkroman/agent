@@ -13,8 +13,8 @@
  * import it in a plain Node spec.
  */
 
-import type { FileValue, FormValues } from "@alexkroman1/aai-ui";
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
+import type { FileValue, FormValues } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
 
 /** What the desk is asked for, derived from the declaration rather than restated. */
