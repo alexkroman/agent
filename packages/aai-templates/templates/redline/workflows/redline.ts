@@ -122,8 +122,8 @@ export interface Round {
 }
 
 /**
- * Write, then critique and revise until the critic ships it or the rounds run
- * out.
+ * Write a first draft — or take the one that came attached — then critique and
+ * revise until the critic ships it or the rounds run out.
  *
  * Whatever this returns is what a completed run reports as `output`, so it is
  * the page's render model — and `WorkflowOutputOf<typeof redline>` in

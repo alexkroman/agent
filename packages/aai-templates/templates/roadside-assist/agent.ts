@@ -33,7 +33,10 @@ const PHONE_LINE: TelephonyAccess = ["twilio", "telnyx"];
  * through the one field below.
  *
  * Read `call.ts` first: it is the whole template. `shared.ts` is the rate card,
- * the fleet and the session slot, and it is deliberately boring.
+ * the fleet and the session slot, and it is deliberately boring. Two smaller
+ * files carry what is NOT a fact about one call: `yard.ts` is the depot's own
+ * board, which every session shares and which a keyed lock is what keeps
+ * honest, and `events.ts` is the desk's log of the two outcomes no tool sees.
  */
 export default agent({
   name: "Roadside Assist",

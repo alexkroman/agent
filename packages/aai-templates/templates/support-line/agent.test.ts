@@ -417,7 +417,10 @@ describe("log_ticket", () => {
  */
 function admits(access: TelephonyAccess | undefined, carrier: TelephonyCarrier): boolean {
   if (access === undefined) return false;
-  return access === true || access.includes(carrier);
+  // `true` admits every carrier the runtime ships a codec for and `false` is
+  // the explicit refusal; only an allow-list is a claim about one carrier.
+  if (typeof access === "boolean") return access;
+  return access.includes(carrier);
 }
 
 describe("the phone route", () => {

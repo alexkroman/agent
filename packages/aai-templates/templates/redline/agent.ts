@@ -4,8 +4,9 @@
  * `link-digest` owns the shape and is the one to read first (`workflowApp()`, no
  * session, no tools, a form that starts a run and a page that watches it), and
  * none of that is restated here. What this one is FOR is the mechanism in
- * `workflows/redline.ts`: write a piece, grade it against its brief, revise, and
- * go round again until the critic says ship or the rounds run out.
+ * `workflows/redline.ts`: write a piece — or take one the author attached —
+ * grade it against its brief, revise, and go round again until the critic says
+ * ship or the rounds run out.
  *
  * ## Why this one is not a voice agent
  *

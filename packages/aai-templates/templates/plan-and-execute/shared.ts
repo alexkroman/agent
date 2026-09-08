@@ -17,18 +17,28 @@ import {
   type DeepReadonly,
   type DialogPosition,
   type DialogSpec,
+  type SlotCaps,
+  type StateProjection,
+  type ToolFailure,
   dialog,
-  isToolFailure,
+  failable,
+  orFail,
   sessionSlot,
   tool,
 } from "@alexkroman1/aai";
-import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+import { type CallOptions, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { z } from "zod";
 
 /** One completed step — their `past_steps`, as a pair rather than a tuple. */
 export interface PastStep {
   step: string;
   result: string;
+  /**
+   * Whether the executor could actually settle the step — its own
+   * `stepAnswerSchema.settled`, carried through rather than re-derived from the
+   * wording of {@link PastStep.result}.
+   */
+  settled: boolean;
   /** Searches this step ran, so the sidebar can show what the wait bought. */
   searches: string[];
 }
@@ -61,13 +71,25 @@ export interface PlanState {
  */
 export const MAX_PAST_STEPS = 20;
 
+/** Growth cap on the revision trail, which rides in every `syncState` frame. */
+export const MAX_REVISIONS = 20;
+
 export function emptyPlan(): PlanState {
   return { objective: null, plan: [], pastSteps: [], response: null, revisions: [] };
 }
 
-export const planSlot = sessionSlot("plan", emptyPlan, {
-  caps: { pastSteps: MAX_PAST_STEPS, revisions: 20 },
-});
+/**
+ * Both bounds, in one annotated value.
+ *
+ * `SlotCaps<PlanState>` is what makes a typo here a compile error rather than a
+ * cap that silently does nothing: the mapped type keeps only the keys whose
+ * value is an array, so `response: 20` — a cap on a string — is refused where
+ * an inline object literal would have been checked against the same type but
+ * read as a free-standing option bag by anyone skimming.
+ */
+const planCaps: SlotCaps<PlanState> = { pastSteps: MAX_PAST_STEPS, revisions: MAX_REVISIONS };
+
+export const planSlot = sessionSlot("plan", emptyPlan, { caps: planCaps });
 
 /**
  * The plan's LIFECYCLE, as a declared machine rather than a guard per tool.

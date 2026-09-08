@@ -62,8 +62,12 @@ export default storyFlow.tool({
       // Update chaos factor
       updateChaosFactor(state, roll.result);
 
-      // Check for chaos interrupt
-      const interrupt = checkChaosInterrupt(state);
+      // Check for chaos interrupt. `ctx.random` here as everywhere else in this
+      // body: the parameter is optional and falls back to `Math.random`, so
+      // omitting it took ONE of a roll's five draws off the seam and out of the
+      // process — a scene resolved from a seeded context was reproducible in its
+      // dice and not in its interrupt.
+      const interrupt = checkChaosInterrupt(state, ctx.random);
 
       // Increment scene count
       state.sceneCount++;

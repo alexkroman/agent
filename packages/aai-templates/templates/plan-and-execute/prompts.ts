@@ -57,6 +57,32 @@ export const actSchema = z.object({
     .optional(),
 });
 
+/**
+ * What one worked step comes back as — `SubagentDef.schema`, so the executor is
+ * a TYPED subagent and `ctx.delegate` answers a `TypedDelegateResult`.
+ *
+ * **`settled` is the half a prompt could not hold.** The instruction "say
+ * plainly rather than inventing a result" has been in {@link EXECUTOR_OUTPUT}
+ * from the start, and nothing downstream could act on it: the desk read one
+ * string, so a step that found nothing and a step that answered the question
+ * were the same shape by the time the replanner saw them. As a field it is
+ * checkable — the replanner is told which steps are open, the sidebar says so,
+ * and {@link executorGuardrail} can refuse an executor that reports a step
+ * unsettled without having looked.
+ */
+export const stepAnswerSchema = z.object({
+  finding: z
+    .string()
+    .max(600)
+    .describe("What the step established, in a sentence or two, saying where it came from"),
+  settled: z
+    .boolean()
+    .describe("true when the step is genuinely answered; false when it could not be settled"),
+});
+
+/** One worked step, as {@link stepAnswerSchema} validates it. */
+export type StepAnswer = z.infer<typeof stepAnswerSchema>;
+
 export const PLANNER_SYSTEM = [
   "For the given objective, come up with a simple step by step plan.",
   "The plan is individual tasks which, done in order, yield the objective.",
@@ -84,15 +110,19 @@ export const EXECUTOR_SYSTEM = [
  * desk is this message and nothing else, so the shape of it is a declaration
  * rather than a paragraph buried in the instructions.
  *
- * "Say that plainly rather than inventing a result" is the load-bearing
- * sentence and is close to theirs: a step that failed is workable by a later
- * step, but only if it is told the truth.
+ * **It stays even though {@link stepAnswerSchema} now constrains the reply**,
+ * and the split between them is the point: the schema says the answer has a
+ * `finding` and a `settled`, and this says what a good one holds. "Say that
+ * plainly rather than inventing a result" is the load-bearing sentence and is
+ * close to theirs — a step that failed is workable by a later step, but only if
+ * it is told the truth — and no schema can check it.
  */
 export const EXECUTOR_OUTPUT = [
-  "What the step established, in a sentence or two, saying where it came from.",
-  "If searching did not settle it, say that plainly rather than inventing a",
-  "result — a later step may be able to work around it, but only if it is told",
-  "the truth.",
+  "Answer with `finding` — what the step established, in a sentence or two,",
+  "saying where it came from — and `settled`.",
+  "If searching did not settle the step, set `settled` false and say so plainly",
+  "in `finding` rather than inventing a result: a later step may be able to work",
+  "around it, but only if it is told the truth.",
 ].join(" ");
 
 export const REPLANNER_SYSTEM = [

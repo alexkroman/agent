@@ -1,4 +1,5 @@
 import { agent } from "@alexkroman1/aai";
+import { callEvents } from "./call-events.ts";
 import { gateFlow, tripProjection } from "./shared.ts";
 
 /**
@@ -12,9 +13,9 @@ import { gateFlow, tripProjection } from "./shared.ts";
  * set, so a specialist physically cannot call another desk's tools. A voice
  * session has one model with one tool list for its whole life, so a list cannot
  * be narrowed here — but a TOOL can refuse, which is the same guarantee by a
- * route that works mid-call: every desk tool checks the stack first
- * (`requireDesk` in `shared.ts`) and answers a `ToolFailure` naming the
- * `to_…_assistant` to call. So the position the sidebar renders is always the
+ * route that works mid-call: every desk tool is declared through `deskTool` /
+ * `deskUpdateTool` (`shared.ts`), which checks the stack before the body runs
+ * and answers a `ToolFailure` naming the `to_…_assistant` to call. So the position the sidebar renders is always the
  * position the work is being done at, and the specialist's brief has always
  * been read before that desk's first search.
  *
@@ -42,6 +43,16 @@ export default agent({
    * tool still legal in it.
    */
   dialogs: [gateFlow],
+  /**
+   * The other half of the same hang-up, and of everything else that happens to
+   * a call rather than in it.
+   *
+   * A dialog moves the POSITION; a hook writes a LINE. `call-events.ts` carries
+   * why both are declared for `"session.timed-out"` and why neither covers the
+   * other — and it is the only route by which the sidebar's call log can end
+   * with how the call ended rather than with whatever the model last did.
+   */
+  events: callEvents,
   greeting:
     "Swiss Air Travel, this is the concierge desk. I can see your booking — what can I do for you today?",
 });

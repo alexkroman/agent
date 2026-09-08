@@ -14,8 +14,8 @@ import { FLEET, type Situation, TRUCK_FOR, type Truck, type TruckKind } from "./
  * **This is the one thing in the template that is NOT per-session**, and that
  * is the whole reason the file exists. Everything in `shared.ts` is a fact
  * about one caller and lives in a `sessionSlot`; a truck is a fact about the
- * DEPOT, and two callers who both need a van are competing for the same three
- * vehicles. `shared.ts` used to pretend otherwise — `assignTruck` returned the
+ * DEPOT, and two callers who both need a van are competing for the same two
+ * vans. `shared.ts` used to pretend otherwise — `assignTruck` returned the
  * first truck of the right kind and nothing marked it taken, so every
  * simultaneous caller on this line was promised `Van-3`.
  *
