@@ -73,3 +73,7 @@ packages/aai-evals/.eval-workspaces/
 # Agent scratch: reproductions and probes, never committed.
 zz-*
 .zz-*
+# TypeDoc renders the generated SDK reference here; `astro build` copies it
+# into docs/dist/reference. Both are build output.
+docs/public/reference/
+docs/.astro/

@@ -1,8 +1,9 @@
 # CLAUDE.md — `docs/`
 
-The `aai-docs` workspace — the TypeDoc setup that turns the published type
-surface into documentation, in two renderings — **and the guide for the other
-two committed descriptions of that same surface**: the API reports
+The `aai-docs` workspace — the narrative documentation SITE, the TypeDoc setup
+that turns the published type surface into a reference in two renderings —
+**and the guide for the other two committed descriptions of that same
+surface**: the API reports
 (`packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`) and the capability
 epochs (`packages/*/src/contracts/`). Three artifacts, three gates, one question
 each — did a signature MOVE, is the move BREAKING, and what does it MEAN — and
@@ -24,12 +25,52 @@ section, and `packages/aai-runtime/CLAUDE.md` its "The published surface is
 versioned in epochs". Those say what a bump means for that package; this says
 how the mechanism works.
 
-## Two renderings, one set of entry points
+## The site is two trees in one `dist/`
 
-| Command | Output | For |
+`docs/dist` is what `.github/workflows/docs.yml` uploads to GitHub Pages, and
+two independent builds fill it:
+
+| Command | Output | What it is |
 | --- | --- | --- |
-| `pnpm docs:api` | `docs/dist/**` (HTML) | humans, published to GitHub Pages |
+| `pnpm --filter aai-docs docs:reference` | `docs/public/reference/**` | TypeDoc HTML — the GENERATED reference |
+| `pnpm --filter aai-docs exec astro build` | `docs/dist/**` | Astro + Starlight — the HANDWRITTEN guide, which copies `public/` through verbatim |
+| `pnpm docs:api` | both, in that order | what CI and the turbo `docs` task run |
 | `pnpm docs:md` | `docs/api/**` (markdown, **committed**) | agents and anything reading the repo as files |
+
+`pnpm --filter aai-docs docs:dev` serves the guide with hot reload; it does NOT
+re-render the reference, so run `docs:reference` once if you need `/reference/`
+to resolve locally.
+
+**`/reference/` belongs entirely to TypeDoc.** That is why the handwritten CLI
+page sits at `/cli/` and not under it: an authored page and a generated tree
+sharing a URL prefix collide the first time an entry point is named like one of
+the pages, and nothing would report it — Astro would emit both and one would
+win. Keep authored pages out of `/reference/`.
+
+**Two things are load-bearing about the split.** Astro copies `public/`
+untouched, so the reference keeps the tuned TypeDoc config below and every gate
+that reads it — nothing about adding the site changed what TypeDoc renders. And
+Pagefind indexes only elements Starlight marks with `data-pagefind-body`, so
+site search covers the ~15 guide pages and not the ~780 reference files; that is
+deliberate, and a `data-pagefind-body` appearing in the TypeDoc theme would
+quietly drown the guide in symbol pages.
+
+**Every page of the guide is compiled.** `docs/src/content/docs/**` is listed in
+`MARKDOWN_FILES` (`scripts/check-doc-examples.mjs`), so every ` ```ts ` fence on
+the site is type-checked under the scaffold's tsconfig — which is the whole
+population this gate exists for, since these pages are written to be the FIRST
+code somebody runs. The list has to be literal (both gate specs scrape its
+string literals — see `packages/aai-gates/src/_doc-example-corpus.ts`), so
+`assertEveryDocsPageListed` in that script resolves the directory and fails
+naming a page nobody listed. A fence that imports a file living in the READER's
+project (`./agent.ts`, `../shared.ts`) cannot compile here and takes
+`no-check` plus a hand-raised entry in `scripts/no-check-baseline.json`; keep
+that population small, and prefer making an example self-contained. The gate
+earns its keep — the first run of these pages caught `createRuntimeServer` and
+`stubGenerate` being called with signatures neither has.
+
+**The site's own sidebar is the one hand-kept list.** `docs/astro.config.mjs`
+names each page; a new page that nobody adds to it is built and unreachable.
 
 Both cover the same surface from the built `dist/*.d.ts`: all of `aai` and
 `aai-ui`, and **three of `aai-runtime`'s five subpaths** — `/eval`,

@@ -110,7 +110,62 @@ const MARKDOWN_FILES = [
   "packages/aai-templates/scaffold/CLAUDE.md",
   "examples/host-server/README.md",
   "examples/self-hosted-server/README.md",
+  // The narrative documentation site. Every fence here is something a reader
+  // copies into their own project, which is the whole population this gate
+  // exists for — and unlike the READMEs above, these pages are written to be
+  // the FIRST code someone runs. Listed one per line rather than resolved from
+  // the directory because both gate specs scrape this array's string literals
+  // (see `_doc-example-corpus.ts`), and a spread would make the pages
+  // invisible to them; `assertEveryDocsPageListed` below is what stops a new
+  // page defaulting out.
+  "docs/src/content/docs/index.mdx",
+  "docs/src/content/docs/404.md",
+  "docs/src/content/docs/cli/index.md",
+  "docs/src/content/docs/build/agent.md",
+  "docs/src/content/docs/build/state.md",
+  "docs/src/content/docs/build/testing.md",
+  "docs/src/content/docs/build/tools.md",
+  "docs/src/content/docs/deploy/local.md",
+  "docs/src/content/docs/deploy/phone.md",
+  "docs/src/content/docs/deploy/publish.md",
+  "docs/src/content/docs/more/background-jobs.md",
+  "docs/src/content/docs/more/custom-ui.md",
+  "docs/src/content/docs/more/self-hosting.md",
+  "docs/src/content/docs/more/voices-and-models.md",
+  "docs/src/content/docs/start/how-it-works.md",
+  "docs/src/content/docs/start/quickstart.md",
 ];
+
+/**
+ * Every page of the docs site is in {@link MARKDOWN_FILES}.
+ *
+ * The list above has to be literal for the gate specs to read it, and a
+ * hand-kept list of a growing directory is the shape this repo has already
+ * paid for twice. So the directory is resolved here and compared: add a page
+ * and forget to list it, and the gate fails naming the file rather than
+ * quietly checking one fewer document.
+ */
+function assertEveryDocsPageListed() {
+  const dir = "docs/src/content/docs";
+  const out = execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", dir],
+    { cwd: repo, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+  );
+  const onDisk = out
+    .split("\n")
+    .filter((p) => /\.mdx?$/.test(p) && existsSync(path.join(repo, p)));
+  const listed = new Set(MARKDOWN_FILES);
+  const missing = onDisk.filter((p) => !listed.has(p));
+  if (missing.length > 0) {
+    console.error(
+      `check-doc-examples: ${missing.length} docs page(s) are not in MARKDOWN_FILES, so ` +
+        `their examples compile under no gate:\n  ${missing.join("\n  ")}`,
+    );
+    process.exit(1);
+  }
+}
+assertEveryDocsPageListed();
 
 /**
  * Prompt text the studio's coding agent treats as ground truth — a DIRECTORY,
