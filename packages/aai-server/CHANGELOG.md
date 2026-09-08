@@ -1,5 +1,14 @@
 # @alexkroman1/aai-server
 
+## 5.3.5
+
+### Patch Changes
+
+- aai-guest@0.6.5
+  - @alexkroman1/aai@16.1.0
+  - @alexkroman1/aai-runtime@16.1.0
+  - @alexkroman1/aai-ui@16.1.0
+
 ## 5.3.4
 
 ### Patch Changes
