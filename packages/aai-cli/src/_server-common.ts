@@ -38,7 +38,21 @@ async function readDotenv(file: string): Promise<Record<string, string>> {
  * and treating the example as a declaration would surface a key they have not
  * filled in yet as one they have.
  */
-export const DEPLOY_ENV_FILES = [".env.example", ".env"] as const;
+/**
+ * The one dotenv file that SHIPS — copied into a target's deployment artifact
+ * (`RUNTIME_FILES` in `_vercel-output.ts`) because it declares which variables
+ * become `ctx.env`.
+ *
+ * Named on its own because "what does the deployment declare" and "what can
+ * this machine resolve" are different questions with different answers, and a
+ * build that asks the second when it means the first cannot see the failure
+ * `missingDeployEnv` exists to report: `.env` is present in a host's BUILD
+ * workspace and absent from its RUNTIME, so a value read from there suppresses
+ * a warning about a variable the deployed function will never see.
+ */
+export const DEPLOY_ENV_DECLARATION_FILE = ".env.example";
+
+export const DEPLOY_ENV_FILES = [DEPLOY_ENV_DECLARATION_FILE, ".env"] as const;
 
 /**
  * Build the `ctx.env` record that agent tools will see at runtime.
@@ -95,4 +109,41 @@ export async function resolveServerEnv(
   }
 
   return env;
+}
+
+/**
+ * Every variable name the dotenv `files` DECLARE, whether or not they carry a
+ * value.
+ *
+ * The complement of {@link resolveServerEnv}, which returns the subset that
+ * resolved to something non-empty. Subtracting one from the other is how a
+ * build reports the variables a deployment declares and the host has no value
+ * for — see `missingDeployEnv` in `build.ts`. A declared-but-blank key is the
+ * `.env.example` idiom for "you need to set this" (`BRAVE_API_KEY=`), so the
+ * names are exactly what a caller asking that question needs and `resolveServerEnv`
+ * is exactly where they are dropped.
+ *
+ * SORTED, and that is a choice rather than the parser's output. Node's
+ * `parseEnv` preserves declaration order for keys that carry a VALUE but
+ * groups the blank ones and returns them alphabetically (`Z=\nY=\nX=` comes
+ * back `X, Y, Z`) — and a declaration file is mostly blank keys by
+ * construction, so its own order barely survives the parse. Sorting makes the
+ * result one predictable thing instead of two, which matters because a warning
+ * built from this is read by a human and diffed by a test.
+ *
+ * @param cwd - Project directory. `undefined` declares nothing, matching
+ *   {@link resolveServerEnv}'s handling of the same argument.
+ * @param files - Which dotenv files to read. {@link DEPLOY_ENV_FILES} is what a
+ *   DEPLOYMENT declares.
+ */
+export async function declaredEnvNames(
+  cwd: string | undefined,
+  files: readonly string[] = [".env"],
+): Promise<string[]> {
+  if (cwd === undefined) return [];
+  const names = new Set<string>();
+  for (const file of files) {
+    for (const key of Object.keys(await readDotenv(path.join(cwd, file)))) names.add(key);
+  }
+  return [...names].sort();
 }

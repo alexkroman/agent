@@ -18,11 +18,17 @@ import path from "node:path";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import { type BuildTarget, resolveBuildTarget, TARGET_OUTPUTS } from "./_build-target.ts";
+import {
+  type BuildTarget,
+  resolveBuildTarget,
+  SECRET_NAME_PLACEHOLDER,
+  TARGET_OUTPUTS,
+} from "./_build-target.ts";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
 import { emitModalOutput } from "./_modal-output.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
+import { DEPLOY_ENV_DECLARATION_FILE, declaredEnvNames } from "./_server-common.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
 import { emitVercelOutput } from "./_vercel-output.ts";
@@ -64,6 +70,15 @@ type BuildData = {
    */
   outputDir: string | undefined;
   deploy: string | undefined;
+  /**
+   * Variables the deployment DECLARES and this build's host had no value for —
+   * see {@link missingDeployEnv}. Empty for a target that deploys nowhere.
+   *
+   * On the result as well as in a warning, for the reason `outputDir` above is:
+   * `log` is silenced under `--json`, and this is the field a CI job would gate
+   * its own deploy step on.
+   */
+  missingEnv: string[];
 };
 
 /**
@@ -180,6 +195,11 @@ export async function executeBuild(opts: {
 
   await emitTargetFiles(cwd, target, { name: agentDef.name });
   const output = TARGET_OUTPUTS[target];
+  // Same posture as the two warning classes above, one layer out: a declared
+  // variable with no value on the host is legal, builds green, and fails at the
+  // first session as an opaque provider auth error. See `missingDeployEnv`.
+  const missingEnv = await missingDeployEnv(cwd, target);
+  for (const warning of missingEnvWarnings(missingEnv, target)) notify("warn", warning);
   if (output.dir !== undefined) log.info(`Target ${target}: wrote ${output.dir}`);
   // Nitro prints the same line after every build, and for the same reason: the
   // artifact is useless to somebody who does not know the command that ships
@@ -201,6 +221,7 @@ export async function executeBuild(opts: {
     target,
     outputDir: output.dir,
     deploy: output.deploy,
+    missingEnv,
   });
 }
 
@@ -252,4 +273,85 @@ async function emitTargetFiles(
       throw new Error(`Unhandled build target ${String(unhandled)}`);
     }
   }
+}
+
+/**
+ * Which variables the DEPLOYMENT declares that this build's host has no value
+ * for — the check behind the warning `aai build` prints for a host target.
+ *
+ * ## Why the host environment and not `resolveServerEnv`
+ *
+ * The obvious implementation resolves {@link DEPLOY_ENV_FILES} the way the
+ * deployment will and reports what came back empty. It is wrong here, and
+ * wrong in exactly the case worth catching: `.env` is uploaded into a host's
+ * BUILD workspace (Vercel filters uploads by `.vercelignore`, never by
+ * `.gitignore`'s contents) and is deliberately NOT copied into the deployment
+ * artifact — see `RUNTIME_FILES` in `_vercel-output.ts`, where shipping it was
+ * a credential leak. So a developer's own `.env` sitting beside the build would
+ * satisfy a resolver and satisfy nothing at runtime, silencing the warning for
+ * the one deployment that needs it.
+ *
+ * Values therefore come from `env` alone, and declarations from
+ * {@link DEPLOY_ENV_DECLARATION_FILE} alone — the single file that ships.
+ *
+ * ## What it can and cannot see
+ *
+ * On a host-run build this is precise: the build container's environment IS the
+ * project's configured variables, so a name missing here is a name missing at
+ * runtime. That is the zero-config path `TARGET_ENV_MARKERS` describes and the
+ * failure this was written for — a Vercel deployment whose `ASSEMBLYAI_API_KEY`
+ * was never set, which built green and died at its first session.
+ *
+ * Two inaccuracies follow from a build being unable to interrogate its own
+ * host, and both are why this WARNS rather than gates. A variable a host
+ * exposes only at runtime (Vercel's sensitive variables) is reported though it
+ * will resolve. And a build run locally reads the developer's shell, which says
+ * nothing about what the host has — so an exported value hides a name the
+ * platform is still missing.
+ *
+ * @param env - Where values are read from. Defaults to the build's own
+ *   environment; a parameter so a spec need not mutate `process.env`.
+ */
+export async function missingDeployEnv(
+  cwd: string,
+  target: BuildTarget,
+  env: Record<string, string | undefined> = process.env,
+): Promise<string[]> {
+  // A target with no output directory deploys nowhere, and `node` is the only
+  // one: the deployment is a process someone starts, which reads `.env` at boot
+  // and gets a provider credential from the shell through
+  // `withHostCredentialFallback`. A blank there is a developer mid-setup, so
+  // warning would fire on every ordinary local build and teach nothing.
+  if (TARGET_OUTPUTS[target].dir === undefined) return [];
+  const declared = await declaredEnvNames(cwd, [DEPLOY_ENV_DECLARATION_FILE]);
+  // An empty value counts as missing for the reason `resolveServerEnv` drops
+  // it: `BRAVE_API_KEY=` is how the declaration says "you need to set this",
+  // and a provider handed `""` authenticates with it instead of reporting the
+  // credential as absent.
+  return declared.filter((name) => {
+    const value = env[name];
+    return value === undefined || value === "";
+  });
+}
+
+/**
+ * One warning sentence per variable {@link missingDeployEnv} reported, naming
+ * the command that sets it where the target knows one.
+ *
+ * A sentence each rather than one combined line, matching `agentConfigWarnings`
+ * and `determinismWarnings`: each is independently actionable, and the command
+ * differs per name.
+ */
+export function missingEnvWarnings(missing: readonly string[], target: BuildTarget): string[] {
+  const { secret } = TARGET_OUTPUTS[target];
+  return missing.map((name) => {
+    const fix =
+      secret === undefined
+        ? `Set it in the ${target} environment`
+        : `Set it with \`${secret.replaceAll(SECRET_NAME_PLACEHOLDER, name)}\``;
+    // "deploy again" because a host that injects variables at invocation still
+    // captured the old set for THIS deployment — setting the value without a
+    // redeploy leaves the same dead build serving.
+    return `${name} is declared in ${DEPLOY_ENV_DECLARATION_FILE} but has no value in this build's environment, so the deployed agent will see none. ${fix}, then deploy again.`;
+  });
 }

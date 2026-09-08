@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { resolveServerEnv } from "./_server-common.ts";
+import { DEPLOY_ENV_FILES, declaredEnvNames, resolveServerEnv } from "./_server-common.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 describe("resolveServerEnv", () => {
@@ -80,6 +80,39 @@ describe("resolveServerEnv", () => {
     await withTempDir(async (dir) => {
       const env = await resolveServerEnv(dir, { ASSEMBLYAI_API_KEY: "key", FOO: "bar" });
       expect(env).toEqual({});
+    });
+  });
+});
+
+describe("declaredEnvNames", () => {
+  test("returns names whether or not they carry a value", async () => {
+    // The complement of `resolveServerEnv`, which drops the blank ones — and a
+    // blank is the `.env.example` idiom for "you need to set this", so a
+    // caller asking what a deployment DECLARES needs exactly those.
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, ".env"), "SET_KEY=value\nBLANK_KEY=\n");
+      expect(await declaredEnvNames(dir)).toEqual(["BLANK_KEY", "SET_KEY"]);
+    });
+  });
+
+  test("unions the files, sorted, with a shared name declared once", async () => {
+    // Sorted rather than in declaration order because `parseEnv` does not
+    // preserve it for blank keys — see the doc comment.
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, ".env.example"), "FROM_EXAMPLE=\nSHARED=\n");
+      await fs.writeFile(path.join(dir, ".env"), "SHARED=v\nFROM_ENV=v\n");
+      expect(await declaredEnvNames(dir, DEPLOY_ENV_FILES)).toEqual([
+        "FROM_ENV",
+        "FROM_EXAMPLE",
+        "SHARED",
+      ]);
+    });
+  });
+
+  test("declares nothing without a directory or without the file", async () => {
+    expect(await declaredEnvNames(undefined)).toEqual([]);
+    await withTempDir(async (dir) => {
+      expect(await declaredEnvNames(dir)).toEqual([]);
     });
   });
 });
