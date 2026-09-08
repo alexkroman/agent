@@ -560,6 +560,9 @@ describe("a caller who hangs up", () => {
     // The shape this replaces — `isToolFailure(…)` then a `toContain` guarded by
     // it — lets a SUCCESS through as an assertion that never runs.
     expectDialogRefused(await run("confirm_action", {}, ctx), "abandoned");
+    // Still abandoned afterwards: refusing once and reopening would satisfy the
+    // line above while losing the property the state exists for.
+    expect(gateFlow.position(ctx).state).toBe("abandoned");
   });
 
   test("the staged action is still THERE — the state is final so nothing reads it", async () => {

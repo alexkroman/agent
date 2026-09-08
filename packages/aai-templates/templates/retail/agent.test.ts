@@ -1227,6 +1227,10 @@ describe("a caller who hangs up", () => {
     // The whole point of the state. `confirm_change` is what applies a staged
     // change to the store, and a caller who is gone has agreed to nothing.
     expectDialogRefused(await confirmChange.execute({}, ctx), "abandoned");
+    // And the refusal did not move the call off the terminal state, which is
+    // the other half of "nothing runnable": a gate that refused once and then
+    // reopened would satisfy the line above and still be wrong.
+    expect(callFlow.position(ctx).state).toBe("abandoned");
   });
 
   test("an event no state declares still writes nothing", () => {

@@ -438,5 +438,8 @@ describe("the transfer is terminal", () => {
       await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, ctx),
       "transferred",
     );
+    // The state is TERMINAL, so the refusal must also have left it there — a
+    // tool that refused and then advanced the call would pass the line above.
+    expect(callFlow.position(ctx).state).toBe("transferred");
   });
 });

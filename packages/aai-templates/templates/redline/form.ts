@@ -13,6 +13,7 @@
  * import it in a plain Node spec.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import type { FileValue, FormValues } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
@@ -46,7 +47,7 @@ export function toInput(values: FormValues): RedlineFormInput {
     // Spread rather than `source`, because the schema's `.optional()` means
     // ABSENT: an explicit `undefined` is a different thing to a validator, and
     // to `exactOptionalPropertyTypes`.
-    ...(source ? { source } : {}),
+    ...omitUndefined({ source }),
   };
 }
 

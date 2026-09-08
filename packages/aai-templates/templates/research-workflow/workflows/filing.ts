@@ -153,5 +153,12 @@ export async function file(filing: Filing): Promise<string> {
       `Filing the findings: no ${FILING_WEBHOOK_ENV} is set, so the report stays on the run.`,
     );
   }
+  // Read inside a STEP, never at body level: `file` is only ever called through
+  // `ctx.step("file", …)`, so this clock is journaled with the step's result and
+  // a replay answers from the journal rather than re-reading it. `ctx.now()` is
+  // the body-level spelling and the engine refuses it inside a step, so the
+  // plain read is correct here — guard-invariants rule 30 bans the call anywhere
+  // in a shipped `workflows/*.ts` because the callback boundary is not decidable
+  // from a line, and leaves this case to its baseline.
   return new Date().toISOString();
 }

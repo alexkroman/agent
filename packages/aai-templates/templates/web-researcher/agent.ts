@@ -19,6 +19,7 @@
  */
 
 import { agent, type McpServerConfig, type McpServers } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 
 /**
  * The server KEY, and the first segment of every tool name it contributes.
@@ -95,5 +96,5 @@ export default agent({
   // Spread rather than `mcpServers: undefined`: an agent with no archive
   // declares no server and asks a deploy for no credential, which is the
   // shape every field on this call already has.
-  ...(mcpServers ? { mcpServers, requiredEnv: [ARCHIVE_TOKEN_ENV] } : {}),
+  ...omitUndefined({ mcpServers, requiredEnv: mcpServers && [ARCHIVE_TOKEN_ENV] }),
 });

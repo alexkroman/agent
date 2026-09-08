@@ -30,6 +30,7 @@ import type { MediaInfo } from "@alexkroman1/aai/ffmpeg";
 import type { StepInfo, UploadSlice } from "@alexkroman1/aai/step";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { installStubReporter, installStubUploads } from "@alexkroman1/aai/testing/vitest";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   attemptSuffix,
@@ -72,7 +73,7 @@ function probed(...kinds: string[]): MediaInfo {
   // `exactOptionalPropertyTypes`, so an OPTIONAL property may be absent but may
   // not be present-and-undefined — which is exactly the shape `probeMedia`
   // returns for a file with no audio track.
-  return { format: "mov,mp4,m4a", streams, ...(audio === undefined ? {} : { audio }), raw: {} };
+  return { format: "mov,mp4,m4a", streams, ...omitUndefined({ audio }), raw: {} };
 }
 
 beforeEach(() => {

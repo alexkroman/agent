@@ -1,7 +1,7 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import { createToolContext, expectDialogOk } from "@alexkroman1/aai/testing";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { roadsideSlot, type Truck } from "./shared.ts";
 import acknowledgeDisclosure from "./tools/acknowledge_disclosure.ts";
 import dispatchTruck from "./tools/dispatch_truck.ts";
@@ -108,7 +108,11 @@ describe("the yard hands one truck to one caller", () => {
     await reserveTruck("collision", "call-b");
     // Two keys were held; a lock that kept an entry per distinct key would grow
     // forever in a process that answers calls all day.
-    await expect.poll(() => yardLock.size).toBe(0);
+    await vi.waitUntil(() => yardLock.size === 0);
+    // Paired with the wait because the assertion gate counts `expect` and
+    // nothing else — and because `waitUntil` timing out reports a deadline
+    // rather than the size, which is the number a reader wants.
+    expect(yardLock.size).toBe(0);
   });
 });
 
