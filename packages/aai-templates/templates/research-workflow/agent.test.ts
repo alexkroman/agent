@@ -675,6 +675,13 @@ describe("the steps that research", () => {
  * them again would pin the SDK's rendering from the outside.
  */
 describe("filing the findings", () => {
+  // See the note in "the run is DURABLE": the scaffold's vitest config does not
+  // set `unstubEnvs`, so a webhook stubbed by one case is still set in the next
+  // unless each case starts from a known environment.
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   const WEBHOOK = "https://hooks.slack.com/services/T000/B000/abc";
   const TRIGGER = "https://hooks.slack.com/triggers/T000/B000/abc";
 
@@ -828,6 +835,14 @@ describe("the run is DURABLE", () => {
   const RUN = { name: "research" } satisfies RunWorkflowOptions;
 
   beforeEach(() => {
+    // `unstubAllEnvs` FIRST, and it is load-bearing rather than tidy: the
+    // workspace's vitest config sets `unstubEnvs: true` and the SCAFFOLD's does
+    // not, so in a project `aai init` produced, a `vi.stubEnv` from an earlier
+    // test is still in the environment here. These cases assert that no webhook
+    // is configured, so inheriting one made four of them fail in a scaffolded
+    // project while passing in this repo — the failure shape this guide warns
+    // about, where the in-tree run is not evidence.
+    vi.unstubAllEnvs();
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     // No `RESEARCH_SLACK_WEBHOOK_URL`, so the filing step posts nothing — which
     // is why the gateway counts below are the run's model calls and only those.
