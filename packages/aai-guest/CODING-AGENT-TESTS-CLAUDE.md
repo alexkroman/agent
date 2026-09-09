@@ -77,7 +77,7 @@ own `__aaiConfig` rather than off anything reachable from this definition.
 
 ## The coding agent has an eval of its own
 
-`studio-agent.eval.test.ts` + `_studio-eval-harness.ts`. Nine cases that drive
+`studio-agent.eval.test.ts` + `_studio-eval-harness.ts`. Ten cases that drive
 `createStudioAgent` over a REAL workspace and ask the question none of this
 package's other suites can: given this instruction and this tree, did the agent
 reach for the right tool, in the right order, and leave something that
@@ -125,22 +125,59 @@ families and three web builtins, the SDK's tool executor with its `ctx` and the
 `typecheckWorkspaceDir` behind the post-write diagnostics, `HARD_TURN_MS` as the
 turn deadline, and `test_agent`'s real build → bundle load → trial.
 
-**Not real: the system prompt**, and this is the honest limit of an eval on this
-side of the boundary. The shipped one is `studioSystemPrompt(kind)` in
-`packages/aai-studio-server/src/prompts/`, which `guest-package-boundary` denies
-this package — correctly, since the guest must not link against the host. A case
-runs on `STUDIO_EVAL_PROMPT` plus the real, guest-owned
-`toolchainPromptSection()` that `initStudioSession` appends. So these cases
-adjudicate the tool set, the tool DESCRIPTIONS, each tool's own result prose and
-the model; the studio's prompt is graded by the HTTP starter eval and by nothing
-here, and **no result from this file may be reported as covering it.**
+**The system prompt is a PER-CASE choice, and it used to be the file's honest
+limit.** It is worth reading the older shape first, because the thin prompt is
+still the default and still what most cases mean: the shipped prompt is
+`studioSystemPrompt(kind)` in `packages/aai-studio-server/src/prompts/`, which
+this package may not import — `guest-package-boundary`, and more sharply a task
+graph cycle, since `aai-server` depends on `aai-guest` — so for a while every
+case ran on `STUDIO_EVAL_PROMPT` and no result here could be reported as
+covering the studio's own text.
+
+`_studio-eval-prompt.ts` closes that: `scripts/sync-studio-prompt.mjs` commits
+the composed prompt per kind under `studio-prompts/`, `check:studio-prompt`
+holds the copies current, and a case that passes `studioPrompt` runs the shipped
+text as DATA — which is what it is in production too, since the host puts it in
+the session-init payload and the guest only ever runs it. So:
+
+| A case with… | runs on | and therefore grades |
+| --- | --- | --- |
+| no `studioPrompt` (the default) | `STUDIO_EVAL_PROMPT` | the tool set, the tool DESCRIPTIONS, each tool's own result prose, and the model |
+| `studioPrompt: "agent"` \| `"workflow"` | the shipped text | the studio's PROMPT, plus all of the above |
+
+Either way the real, guest-owned `toolchainPromptSection()` that
+`initStudioSession` appends is present, exactly as in production.
+
+**Report a result against the CASE's prompt, never against the file's** — that
+is what replaces the old blanket disclaimer, and it is the same failure in a
+narrower place. One case takes the second row: "builds the studio's own starter,
+on the studio's own prompt". `shippedStudioPrompt` THROWS on a missing copy
+rather than falling back, because a case that asked for the shipped prompt and
+silently got the harness's would be reporting green about a string nobody ships.
 
 `STUDIO_EVAL_PROMPT` is deliberately thin in one direction: it says nothing that
 would pre-answer a case. A base prompt telling the agent to copy templates
 verbatim, or not to delete a failing spec, would turn the corresponding case
 into a measurement of that constant. Those instructions belong to the guest's
 own surfaces, which are the thing under eval — and the template one really is
-there, in `toolchainPromptSection()`, which is what makes that case fair.
+there, in `toolchainPromptSection()`, which is what makes that case fair. That
+is also why the shipped prompt is opted into per CASE and not per file: a global
+switch would silently turn the refusal cases and the template case into
+measurements of 150KB of the studio's prose.
+
+**A starter's PROMPT is read, not retyped either.** `studioStarter(kind, label)`
+reads the synced catalog and throws naming the labels there are, so a starter
+the product renamed or retired fails the case that graded it instead of leaving
+it grading a frozen copy. Worth knowing what those prompts now look like: twelve
+of the fifteen are one sentence naming a template ("Use the
+pizza-ordering-agent template."), which is exactly why grading them means
+grading the shipped prompt — five words carry nothing else.
+
+**`workflow.md` is committed and no case reads it.** The workflow prompt is
+therefore synced, gated and unmeasured in process; the three "Build a workflow
+app" starters are the from-scratch cases that would grade it, and they are the
+obvious next ones to add. `shippedStudioPrompt("workflow")` is reached only by
+`_studio-eval-prompt.test.ts` today.
 
 Also absent: `studio-chat.ts`'s turn shaping — the wall-clock `stopWhen`,
 compaction's `prepareStep`, the mid-turn checkpoints and the end-of-turn sync.
@@ -168,7 +205,7 @@ different file), and the failing-spec case requires `agent.test.ts` to be
 unchanged byte for byte, because editing the assertion to match the code makes
 the tests pass while destroying the only record of what was wanted.
 
-### Five cases are live, four are scripted, and the split is not about cost
+### Six cases are live, four are scripted, and the split is not about cost
 
 The four scripted ones are REFUSALS, and a refusal can only be observed if
 something calls the refused thing: a competent model does not write unparsable
@@ -192,7 +229,7 @@ different definition than the run announces the wrong mode while holding the key
 the run would have used), and that the refusing `fetch` names the URL it turned
 down.
 
-Two mechanical notes for whoever adds the tenth case:
+Two mechanical notes for whoever adds the eleventh case:
 
 - **A helper may not call `expect`** — `noMisplacedAssertion` matches lexical
   position, not the call graph (the same trap `studio-chat.test.ts` hit). Both
@@ -228,18 +265,41 @@ AAI_EVAL_STUB=1 pnpm --filter aai-guest test:eval    # wiring + the tools' own a
 pnpm --filter aai-guest test:eval -- -t "type-clean" # one case (vitest's own filter)
 ```
 
-**Measured, on the day it landed.** Scripted: 4 cases run, 5 skipped, **38s**,
-of which the `test_agent` case alone is **34s** — two real in-guest rolldown
-passes, two bundle loads, a real vitest run and one trial call. So the tier's
-wall clock here is its build passes and everything else is noise, which is worth
-knowing before adding a case that calls `test_agent` twice.
-The five live cases' FIXTURES and both ground-truth readers were validated
-separately against scripted runs that drive the same tools (the broken tool
+**Measured, scripted.** 4 cases run, 6 skipped, **9s**, of which the
+`test_agent` case alone is **~7.5s** — two real in-guest rolldown passes, two
+bundle loads, a real vitest run and one trial call. So the tier's wall clock in
+stub mode is its build passes and everything else is noise, which is worth
+knowing before adding a case that calls `test_agent` twice. (This was 38s when
+the file landed, the `test_agent` case 34s of it; the build passes got faster,
+not the eval.)
+
+**Measured, LIVE, on `gpt-5.5` — and the six live cases have now HAD the
+validation this paragraph used to say they were waiting for.** All six pass.
+Two consecutive runs, whole file **88s at five cases** and **117s at six**, per
+case:
+
+| case | run 1 | run 2 |
+| --- | --- | --- |
+| adds what it was asked for | 16.8s | 22.2s |
+| repairs the type error it is handed | 25.0s | 18.6s |
+| starts from a template by COPYING it | 10.5s | 16.0s |
+| makes a failing spec pass | 22.1s | 31.4s |
+| looks at a file before it changes it | 13.4s | 14.6s |
+| builds the studio's own starter | — | 13.8s |
+
+**Read that spread before drawing anything from a single run.** Identical code,
+±40% per case on wall clock — which is what the starter eval's own guide warns
+about one level up ("run-to-run variance swamps a prompt edit", tool calls
+varying 9–14 on one starter). These cases are pass/fail rather than scored, so
+variance costs latency rather than a verdict; a case that starts flipping wants
+`AAI_EVAL_REPEAT` and a look at the spread, not a nudged assertion.
+
+Before that first live run the fixtures and both ground-truth readers had been
+validated only against scripted runs driving the same tools (the broken tool
 really fails `tsc` and the diagnostic really reaches the write result; the
 failing spec really fails and an edit to `agent.ts` really makes it pass; a
-copied template really is byte-identical); what has not been observed is a live
-model's behaviour against them, so treat the first live run as the validation
-those five have not had.
+copied template really is byte-identical) — which is the right way to build them
+and is not the same claim.
 
 ### `studioBundleAccess` exists because this eval wanted the real one
 

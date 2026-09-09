@@ -60,6 +60,55 @@ test("no host bearer", () => { expect(process.env.AAI_GUEST_TOKEN).toBeUndefined
     expect(result.passed, result.output).toBe(true);
   });
 
+  // The eval tier is `aai test`'s to exclude and was not this runner's, which
+  // made `test_agent` grade a workspace on a strictly larger set than the
+  // project's own `npm test` runs. Both halves are asserted, because the
+  // discovery predicate and the spawn were independently wrong: dropping the
+  // file from `testFiles` does nothing on its own, since an unfiltered
+  // `vitest run` applies its own include glob and finds it anyway.
+  test("never runs the eval tier — it neither gates nor can adjudicate here", async () => {
+    const result = await withBuildDir(
+      {
+        "agent.test.ts": `import { expect, test } from "vitest";
+test("the unit spec", () => { expect(1).toBe(1); });
+`,
+        // FAILS if it is ever collected, which is what makes this sharp: a
+        // green run is evidence the file was not reached, where a passing
+        // fixture would be evidence of nothing.
+        "agent.eval.test.ts": `import { expect, test } from "vitest";
+test("the eval that must not run", () => { expect("scripted").toBe("live"); });
+`,
+      },
+      materialize,
+      (dir) => runWorkspaceTests(dir),
+    );
+    expect(result.ran).toBe(true);
+    if (!result.ran) return;
+    expect(result.passed, result.output).toBe(true);
+    // ONE file, and the count is the assertion rather than the name: the
+    // reporter this spawn resolves prints a dot per file, so `not.toContain`
+    // over a filename is an assertion that cannot fail. Collected, the eval
+    // would read `1 failed | 1 passed (2)`.
+    expect(result.output, result.output).toMatch(/Test Files\s+1 passed \(1\)/);
+  });
+
+  test("a workspace holding only an eval has no tests to run", async () => {
+    // Not merely the mirror of the case above: `testFiles` matched
+    // `.test.tsx?$`, so this workspace reported `ran: true` — and `test_agent`
+    // told the coding agent its tests had passed on the strength of a scripted
+    // eval run.
+    const result = await withBuildDir(
+      {
+        "agent.eval.test.ts": `import { expect, test } from "vitest";
+test("the eval", () => { expect(1).toBe(1); });
+`,
+      },
+      materialize,
+      (dir) => runWorkspaceTests(dir),
+    );
+    expect(result).toEqual({ ran: false, reason: "no test files in the workspace" });
+  });
+
   test("reports a failing test as output the agent can act on", async () => {
     const result = await withBuildDir(
       {

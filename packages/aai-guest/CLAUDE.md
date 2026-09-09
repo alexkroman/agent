@@ -180,6 +180,24 @@ which is right for a CLI on a laptop and wrong for a guest holding a
 control-channel bearer. `test_agent` stays here whole: it is the one tool that
 knows the workspace is an aai agent.
 
+**`test_agent`'s test run is `aai test`'s TIER, and the eval tier is excluded.**
+`runWorkspaceTests` spawned a bare `vitest run --root <dir>`, so vitest applied
+its own default include glob and collected `agent.eval.test.ts` — while `aai
+test` goes to real trouble to keep the two disjoint (`_vitest-runner.ts`: a
+positional argument is a substring FILTER, so `agent.test.ts` cannot match
+`agent.eval.test.ts` and neither command lists the other's filenames). So the
+coding agent graded itself on a strictly LARGER set than the project's own `npm
+test` runs, and this was the common case rather than an edge one: twelve of the
+fifteen shipped starters copy a template and every template ships an
+`agent.eval.test.ts`. An eval reached that way can only ever run scripted —
+`workspaceChildEnv()` scrubs the key — so it is minutes of agent boots that
+adjudicate nothing, inside a 45s budget, and a `Tests: FAILED` on a workspace
+whose actual tests pass. Both halves were wrong and both are fixed: `testFiles`
+drops the tier by infix (a workspace holding ONLY an eval used to report `ran`),
+and the discovered files are passed as positional filters, without which the
+discovery does nothing. Covered in `studio-test.scenario.test.ts` by a fixture
+eval that FAILS if it is ever collected.
+
 **The DESCRIPTIONS split the same way.** `CODING_TOOL_DESCRIPTIONS` is the
 SDK's, `STUDIO_CODING_TOOL_DESCRIPTIONS` overrides the three whose prose is
 about THIS host (a write is type-checked, dependencies have their own tools, a

@@ -6,18 +6,26 @@
 // four tool families, the labels, the deadline). `studio-tools.test.ts` drives
 // each tool directly. `studio-chat.scenario.test.ts` drives the HTTP surface
 // with a scripted model. None of them can say whether the AGENT — a model,
-// reading these tool descriptions, holding these twenty-three tools over a real
-// workspace — reaches for the right one, in the right order, and leaves a tree
-// that actually compiles. That is what this file is for, and it is the same
-// question, asked with the same suite, that the twenty-five shipped template
-// evals ask of a voice agent.
+// reading these tool descriptions, holding these twenty-two tools (nineteen
+// declared plus the three web builtins) over a real workspace — reaches for the
+// right one, in the right order, and leaves a tree that actually compiles. That
+// is what this file is for, and it is the same question, asked with the same
+// suite, that the twenty-five shipped template evals ask of a voice agent.
 //
 // `_studio-eval-harness.ts` carries the whole account of what is real in a case
-// and what is not. The one limit to keep in mind while reading a result: the
-// system prompt here is the HARNESS's, because the shipped one lives in
-// `aai-studio-server` and this package may not import it. So these cases
-// adjudicate the tool set, the tools' own answers and the model. The studio's
-// prompt is graded by the HTTP starter eval in `aai-evals`, and by nothing here.
+// and what is not. The limit to keep in mind while reading a result is WHICH
+// PROMPT a case ran on, and it is per case:
+//
+// - Most run on `STUDIO_EVAL_PROMPT`, a thin harness constant pinned to say
+//   nothing that would pre-answer a case. Those adjudicate the tool set, the
+//   tool descriptions, each tool's own result prose and the model — the guest's
+//   own surfaces — and they say nothing whatever about the studio's prompt.
+// - A case whose subject is an OUTCOME passes `studioPrompt` and runs the
+//   SHIPPED text from `studio-prompts/`, because what an agent builds from a
+//   product prompt is very largely a measurement of that prompt. One case does:
+//   "builds the studio's own starter, on the studio's own prompt".
+//
+// Report a result against the case's own prompt, never against the file's.
 //
 // ```sh
 // pnpm test:eval --filter aai-guest                       # live, spends tokens
@@ -34,6 +42,7 @@ import {
 } from "@alexkroman1/aai-runtime/eval";
 import { expect } from "vitest";
 import { describeStudioEval, type StudioEvalContext } from "./_studio-eval-harness.ts";
+import { studioStarter } from "./_studio-eval-prompt.ts";
 
 // ---- fixtures ---------------------------------------------------------------
 
@@ -88,6 +97,20 @@ export default tool({
 
 /** The pizza template, which twelve of the studio's own starter prompts name. */
 const PIZZA_TEMPLATE = "pizza-ordering-agent";
+
+/**
+ * The studio's OWN words for the starter that names {@link PIZZA_TEMPLATE},
+ * read from the synced catalog rather than retyped.
+ *
+ * `studioStarter` throws naming the labels there are, so a starter the product
+ * renamed or retired fails the case that graded it instead of leaving it
+ * grading a prompt string frozen in this repository — which is the whole
+ * reason `sync-studio-prompt.mjs` commits the catalog. Note how little it
+ * says: five words, no enumerated capabilities. That terseness is the point of
+ * grading it, because everything that turns those five words into a project
+ * comes from the shipped system prompt.
+ */
+const PIZZA_STARTER = studioStarter("agent", "A pizza counter that keeps a real cart");
 
 /** An agent whose name disagrees with the spec beside it. */
 const MISNAMED_AGENT = `import { agent } from "@alexkroman1/aai";
@@ -342,6 +365,42 @@ describeStudioEval((test) => {
       await expectWorkspaceCompiles(ctx);
     },
     { files: { "agent.ts": GREETER_AGENT }, live: true },
+  );
+
+  // ---- the one case whose subject is the STUDIO's own prompt ----------------
+
+  test(
+    "builds the studio's own starter, on the studio's own prompt",
+    async ({ chat, ...ctx }) => {
+      const turns = await chat.sendAll([PIZZA_STARTER.prompt]);
+      const calls = toolCallsInTurns(turns);
+      const seen = toolNames(calls);
+      const said = turns.map(describeTurn).join(" | ");
+
+      // The starter's whole ask, in the product's own five words. `use_template`
+      // is what turns them into a shipped project; the move a model makes
+      // instead — writing a pizza agent from memory — satisfies nothing below.
+      expect(seen, `never reached for a template: ${said}`).toContain("use_template");
+      // Step 3 of the SHIPPED workflow: "Run test_agent to check your work
+      // builds, loads, and passes the workspace's tests." No other case in this
+      // file can make that claim, and the reason is the harness prompt rather
+      // than the model: `_studio-eval-harness.test.ts` pins
+      // `STUDIO_EVAL_PROMPT` to mention neither tests nor type-checking, so on
+      // the thin prompt a `test_agent` call would be reporting the model's
+      // habits and its absence would be reporting nothing at all.
+      expect(seen, `never verified its own work: ${said}`).toContain("test_agent");
+      // GROUND TRUTH, both halves, run by the CASE — the in-process analogue of
+      // the HTTP starter eval's "shippable, not just green". Neither reads a
+      // tool result and the agent can edit neither into passing.
+      await expectWorkspaceCompiles(ctx);
+      const tests = await ctx.runTests();
+      expect(tests.ran, "the workspace reported no tests to run").toBe(true);
+      if (!tests.ran) return;
+      expect(tests.passed, `the starter's own tests fail:\n${tests.output}`).toBe(true);
+    },
+    // `studioPrompt` is the whole reason this case exists: on the thin harness
+    // constant it would be grading five words with no workflow behind them.
+    { files: {}, live: true, maxSteps: 20, studioPrompt: "agent" },
   );
 
   // ---- the mechanisms a live model will not provoke -------------------------
