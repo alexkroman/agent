@@ -62,6 +62,8 @@ import {
   procedure,
 } from "@alexkroman1/aai";
 import { assign, fromPromise, setup } from "xstate";
+import type { Doc } from "./knowledge.ts";
+import { retrieve } from "./knowledge.ts";
 import {
   generateAnswer,
   gradeDocuments,
@@ -69,8 +71,7 @@ import {
   gradeUseful,
   transformQuery,
 } from "./nodes.ts";
-import type { AnswerTrace, Doc, GradedDoc, TraceStep } from "./shared.ts";
-import { retrieve } from "./shared.ts";
+import type { AnswerTrace, GradedDoc, TraceStep } from "./shared.ts";
 
 /** Retrieve-and-answer attempts, i.e. one query rewrite. */
 export const MAX_ATTEMPTS = 2;
@@ -217,7 +218,7 @@ const machine = setup({
   }),
   states: {
     /**
-     * Retrieval is LEXICAL and synchronous (`shared.ts`), so it is an entry
+     * Retrieval is LEXICAL and synchronous (`knowledge.ts`), so it is an entry
      * action rather than an invoked actor — there is nothing to await.
      */
     retrieve: {

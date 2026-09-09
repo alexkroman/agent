@@ -2,7 +2,8 @@ import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { requireRoom } from "../hotel.ts";
 import { clockTime, isoDate, speakCode, spokenDate, spokenTime, TODAY } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /** Their `schedule_wakeup_call`: it actually sets the call — never a followup note instead. */
 export default hotelSlot.updateTool({

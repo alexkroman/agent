@@ -2,7 +2,8 @@ import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { requireRoom } from "../hotel.ts";
 import { EMERGENCY_KINDS, type EmergencyKind } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /** What the caller is told to do THEMSELVES, per kind — never a substitute for sending hotel people. */
 const DIRECTION: Record<EmergencyKind, string> = {

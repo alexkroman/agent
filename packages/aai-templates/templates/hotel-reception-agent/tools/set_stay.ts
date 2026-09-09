@@ -4,7 +4,8 @@ import { bookingStatus, nextStep, requote } from "../booking.ts";
 import { deskFlow, IN_BOOKING } from "../desk.ts";
 import { describeRoomOptions, listRoomOptions } from "../hotel.ts";
 import { daysBetween, isoDate, MAX_PARTY_SIZE, spokenDate, TODAY } from "../records.ts";
-import { bookingByCode, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { bookingByCode } from "../shared.ts";
 
 const MAX_NIGHTS = 30;
 

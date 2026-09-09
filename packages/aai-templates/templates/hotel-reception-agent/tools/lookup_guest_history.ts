@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /** Their `lookup_guest_history`: a returning guest's remembered preferences, or none. */
 export default hotelSlot.tool({

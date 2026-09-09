@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { deskFlow, IN_BOOKING } from "../desk.ts";
-import { hotelSlot, note } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { note } from "../shared.ts";
 
 /**
  * Their `give_up`, on every task: end the flow without making the booking, or

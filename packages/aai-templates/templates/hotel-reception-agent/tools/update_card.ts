@@ -1,7 +1,8 @@
 import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { validateCard } from "../card.ts";
-import { hotelSlot, note, requireVerified } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { note, requireVerified } from "../shared.ts";
 
 /**
  * Replace the card on file — their `start_card_update`, which verified and then

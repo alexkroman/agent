@@ -2,7 +2,7 @@ import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { describeRoomOptions, listRoomOptions } from "../hotel.ts";
 import { isoDate, MAX_PARTY_SIZE, ROOM_TYPES, spokenDate } from "../records.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /** Their `check_room_availability`: read-only browsing, never a booking. */
 export default hotelSlot.tool({

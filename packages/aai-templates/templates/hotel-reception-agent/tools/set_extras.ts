@@ -3,7 +3,7 @@ import { z } from "zod";
 import { bookingStatus, nextStep, requote } from "../booking.ts";
 import { AFTER_ROOM, deskFlow } from "../desk.ts";
 import { type RoomExtra, speakUsd } from "../records.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /**
  * Record the caller's answer on each extra — their `set_extras`.

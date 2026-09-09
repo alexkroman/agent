@@ -22,6 +22,8 @@ import type {
   GenerateResult,
   GuardrailVerdict,
 } from "@alexkroman1/aai";
+import type { Doc } from "./knowledge.ts";
+import { formatDoc } from "./knowledge.ts";
 import {
   ANSWER_SYSTEM,
   ANSWERS_SYSTEM,
@@ -31,8 +33,7 @@ import {
   GROUNDED_SYSTEM,
   REWRITE_SYSTEM,
 } from "./prompts.ts";
-import type { Doc, GradedDoc } from "./shared.ts";
-import { formatDoc } from "./shared.ts";
+import type { GradedDoc } from "./shared.ts";
 
 /**
  * One closed question, asked with the schema that constrains it.

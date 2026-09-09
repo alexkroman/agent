@@ -29,7 +29,8 @@ import {
   spokenTime,
   TODAY,
 } from "./records.ts";
-import { deskProjection, deskView, hotelSlot } from "./shared.ts";
+import { deskProjection, hotelSlot } from "./session.ts";
+import { deskView } from "./shared.ts";
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
 

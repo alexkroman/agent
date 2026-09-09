@@ -11,7 +11,7 @@ import {
   TODAY,
 } from "../records.ts";
 import { openDinnerSlots, reserveTable } from "../restaurant.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /**
  * Book a table — their `BookRestaurantTask`, collapsed to one call.

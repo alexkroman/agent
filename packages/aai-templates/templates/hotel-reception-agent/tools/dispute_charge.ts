@@ -8,7 +8,8 @@ import {
 } from "../disputes.ts";
 import { invoiceFor } from "../hotel.ts";
 import { DISPUTE_CATEGORIES, mintCode } from "../records.ts";
-import { hotelSlot, note, requireVerified, takenCodes } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { note, requireVerified, takenCodes } from "../shared.ts";
 
 /**
  * Handle a dispute on a line item — their `dispute_charge`.

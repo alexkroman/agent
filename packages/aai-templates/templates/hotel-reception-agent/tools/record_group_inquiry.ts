@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { digitsOf, isoDate, speakCode } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /** Their `record_group_inquiry`: fifteen or more guests is a block, never a booking. */
 export default hotelSlot.updateTool({

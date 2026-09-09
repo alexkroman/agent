@@ -1,7 +1,7 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
-import { type DeskView, deskProjection } from "./shared.ts";
+import { type DeskView, deskView, emptyHotelState } from "./shared.ts";
 
 /**
  * The receptionist's screen — their `ui_view.py`, which streamed SQLite
@@ -51,8 +51,20 @@ const KIND_LABELS: Record<DeskView["ledger"][number]["kind"], string> = {
   walk: "Walk",
 };
 
+// The desk before the first tool call, derived from the projection itself so a
+// new DeskView field can't miss the pre-first-call render.
+//
+// **This template does NOT pass its projection to `useAgentState`**, and the
+// reason is the browser bundle rather than style: that overload derives the
+// empty frame by calling the projection, which calls the slot's `create()` —
+// and this slot's factory lives in `session.ts` and pulls `seed.ts`, so
+// importing it here would ship every seeded booking to the browser.
+// `emptyHotelState()` is the same shape without the seed. Reach for the
+// projection overload everywhere the factory is cheap.
+const EMPTY_VIEW: DeskView = deskView(emptyHotelState());
+
 function DeskSidebar() {
-  const desk = useAgentState(deskProjection);
+  const desk = useAgentState<DeskView>(EMPTY_VIEW);
   return (
     <div className="flex flex-col gap-6 p-4 text-aai-text">
       <Section title="Tonight">

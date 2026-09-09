@@ -1,7 +1,8 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { roomConflict } from "../hotel.ts";
 import { daysBetween, speakUsd, spokenDate } from "../records.ts";
-import { hotelSlot, requireVerified } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { requireVerified } from "../shared.ts";
 
 /**
  * Read-only lookup of the verified booking — their `lookup_booking`, including

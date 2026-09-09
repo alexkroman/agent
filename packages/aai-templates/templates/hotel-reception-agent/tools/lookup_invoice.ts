@@ -1,7 +1,8 @@
 import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { invoiceFor } from "../hotel.ts";
 import { speakUsd } from "../records.ts";
-import { hotelSlot, requireVerified } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { requireVerified } from "../shared.ts";
 
 /** Their `lookup_invoice`: the verified booking's line items, read back. */
 export default hotelSlot.tool({

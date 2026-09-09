@@ -3,7 +3,7 @@ import { z } from "zod";
 import { bookingStatus, nextStep } from "../booking.ts";
 import { validateCard } from "../card.ts";
 import { AFTER_DETAILS, deskFlow } from "../desk.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /**
  * Take the card for a new booking — their `GetCardTask`, whose four recording

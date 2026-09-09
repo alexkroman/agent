@@ -1,6 +1,7 @@
 import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { hotelSlot, note, requireVerified } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { note, requireVerified } from "../shared.ts";
 
 /** Their `flag_late_arrival`: a note on the booking so the desk holds the room. */
 export default hotelSlot.updateTool({

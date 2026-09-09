@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isoDate, MAX_PARTY_SIZE, spokenDate, spokenTime } from "../records.ts";
 import { openDinnerSlots } from "../restaurant.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /** Their `check_restaurant_availability`: the open slots for a date and party. */
 export default hotelSlot.tool({

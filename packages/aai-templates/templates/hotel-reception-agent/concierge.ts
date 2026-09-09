@@ -22,7 +22,8 @@ import {
   type Ticket,
   TODAY,
 } from "./records.ts";
-import { addTicket, hotelSlot } from "./shared.ts";
+import { hotelSlot } from "./session.ts";
+import { addTicket } from "./shared.ts";
 
 export interface CatalogBookingSpec<P extends z.ZodObject> {
   description: string;

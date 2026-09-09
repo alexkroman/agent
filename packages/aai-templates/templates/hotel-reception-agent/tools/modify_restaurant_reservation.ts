@@ -12,7 +12,7 @@ import {
   TODAY,
 } from "../records.ts";
 import { findReservation, modifyReservation, openDinnerSlots } from "../restaurant.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /**
  * Move a reservation — their `modify_restaurant_reservation`, one step, same

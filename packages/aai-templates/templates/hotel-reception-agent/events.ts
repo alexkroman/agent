@@ -28,7 +28,8 @@ import type { SessionEventHandler, SessionEventHandlers, SlotHolder } from "@ale
 import { bookingStatus } from "./booking.ts";
 import type { Ticket } from "./records.ts";
 import { digitsOf } from "./records.ts";
-import { addTicket, hotelSlot, note } from "./shared.ts";
+import { hotelSlot } from "./session.ts";
+import { addTicket, note } from "./shared.ts";
 
 /**
  * File the abandoned booking, if there was one, and return the ticket.
