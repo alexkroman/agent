@@ -26,6 +26,26 @@ export {
   SANDBOX_ONLY_BUILTINS,
   type ToolDefRecord,
 } from "./host/builtin-tools.ts";
+// The capped child-process runner under `@alexkroman1/aai/coding-tools`. Here
+// rather than on that subpath because its reader is the FRAMEWORK: the guest
+// harness spawns npm, the CLI bundler and the workspace test run through it,
+// and each of those decides for itself whether a killed child is a failure or
+// an annotated line. It carries no semver promise, and an `agent.ts` names none
+// of it.
+//
+// `RunCappedOptions` rides with it because `runCapped` NAMES it: a type a
+// published signature references and no subpath exports is one a consumer can
+// pass and cannot write, which `check:api-nameable` fails on. The edit matcher
+// and the workspace grep are deliberately NOT here — they are what
+// `createCodingTools` is built from, nothing outside that module imports them,
+// and a name published in anticipation of a consumer is a surface with no
+// reader.
+export {
+  outputWithKillNote,
+  type RunCappedOptions,
+  runCapped,
+  type SpawnCappedResult,
+} from "./host/coding-spawn.ts";
 export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";

@@ -16,6 +16,7 @@
     "dist/sdk/providers/llm-barrel.d.ts",
     "dist/sdk/providers/s2s-barrel.d.ts",
     "dist/host/tools-barrel.d.ts",
+    "dist/host/coding-tools-barrel.d.ts",
     "dist/host/ffmpeg-barrel.d.ts",
     "dist/host/html-barrel.d.ts",
     "dist/host/step-files-barrel.d.ts"

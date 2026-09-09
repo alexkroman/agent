@@ -58,7 +58,7 @@ import {
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
-import { resolveWorkflowEvalMode } from "./describe.ts";
+import { resolveWorkflowEvalMode } from "./eval-mode.ts";
 import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
 
 /** What a workflow case gets to say about how it should be run. */

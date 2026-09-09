@@ -140,16 +140,19 @@
 import type { AgentDef } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
+import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { ModelMessage } from "ai";
+import { llmProviderEnvVar } from "../providers/_provider-env-var.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { type Logger, silentLogger } from "../runtime-config.ts";
 import { createTextAgent } from "../text-agent.ts";
+import { credentialVerdict } from "./_credential-verdict.ts";
 import { assertTurnMeasurable } from "./_turn-faults.ts";
 import { type EvalToolCall, errorsIn, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
-import type { EvalTurn } from "./session.ts";
+import type { EvalCredentials, EvalTurn } from "./session.ts";
 
 /**
  * How long one turn may take before the harness cancels it.
@@ -160,6 +163,29 @@ import type { EvalTurn } from "./session.ts";
  * one.
  */
 const DEFAULT_TURN_TIMEOUT_MS = 90_000;
+
+/**
+ * Can this machine run a TEXT agent's eval live, and if not, which key is
+ * missing?
+ *
+ * The sibling of `evalCredentials`, and separate because that one OVER-ASKS
+ * here: it answers about a voice agent, so an agent with no complete pipeline
+ * gets the default AssemblyAI STT key added — and a text agent declaring
+ * `anthropicLlm()` was reported as needing `ASSEMBLYAI_API_KEY` it will never
+ * read, which skips a suite the machine could have run live.
+ *
+ * A text agent resolves exactly one provider credential, its LLM's — and when
+ * it declares no `llm` at all, `createTextAgent` defaults the same descriptor
+ * this does, so the question is asked about the model the run would use.
+ */
+export function evalTextCredentials(
+  agent: AgentDef,
+  hostEnv: Record<string, string | undefined> = process.env,
+): EvalCredentials {
+  const env = withHostCredentialFallback({}, hostEnv);
+  const name = llmProviderEnvVar(agent.llm ?? assemblyAILlm());
+  return { env, ...credentialVerdict(name.length > 0 && !env[name] ? [name] : []) };
+}
 
 /** What {@link openEvalTextAgent} takes. */
 export type EvalTextAgentOptions = {

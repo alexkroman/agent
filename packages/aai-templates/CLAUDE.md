@@ -1319,18 +1319,17 @@ non-vacuity guard is worth copying: the first version derived "which templates
 have a file" from the SAME glob it was checking, so breaking the pattern changed
 nothing — verified by A/B. It reads the filesystem instead.
 
-**There is deliberately no TEXT-mode template, and the allowlist records
-it.** A template is a starter the platform DEPLOYS — `templates.test.ts` loads
-each `agent.ts` and validates the config a voice session is built from, and the
-studio's `use_template` copies one into a workspace that gets deployed next.
-`agent({ text: true })` has no session to deploy (`createRuntime` refuses it by
-name), so a text template would be a starter nothing downstream can run.
-`TextAgentParams` therefore sits in `template-api-allowlist.json` beside
-`PipelineAgentParams` and `S2sAgentParams`, which are unexercised for a
-narrower reason — they are the union arms `agent()` derives from, and an author
-never names one. `createTextAgent`'s worked example is the studio's own coding
-agent (`packages/aai-guest/CLAUDE.md`), which is a better one than a template
-could be: it is a real agent doing real work, on the same SDK it builds with.
+**One template is TEXT-mode, and it ships its own front door.**
+`coding-agent` declares `text: true`, so `createRuntime` refuses it by name and
+no session exists for `aai dev` to serve — hence its `chat.ts`, the only entry
+point in `templates/`. This guide used to say a text template was impossible
+for that reason; the reason was right about DEPLOYMENT and wrong about the
+template, a starter being a worked example first. Its own files carry the rest:
+`agent.ts` for the mode, `shared.ts` for why nine `tools/` files share ONE
+`createCodingTools` registry. `TextAgentParams` stays in
+`template-api-allowlist.json` beside `PipelineAgentParams` and
+`S2sAgentParams`: they are the union arms `agent()` derives from, and an author
+names none of them.
 
 ## What `tsconfig.json` includes is what gets type-checked
 

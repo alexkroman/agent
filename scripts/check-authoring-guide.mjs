@@ -83,6 +83,15 @@ const PACKAGES_ROOT = join(ROOT, "packages");
  * is a hard failure below.
  */
 const UNDOCUMENTED_CAPABILITIES = {
+  "aai:coding":
+    "the workspace tool set for an agent that EDITS CODE, and the one capability whose reader " +
+    "is not the agent this guide teaches how to write. Its factory answers a resolved tool " +
+    "registry that a HOST attaches with `withTools`, rather than tools an author declares as " +
+    "files; it needs a `text: true` agent, which has no session for the platform to serve; and " +
+    "every tool in it reaches `node:fs` or spawns a child. An `agent.ts` deployed from an " +
+    "`aai init` project reaches none of it. Its worked example is `templates/coding-agent`, " +
+    "which ships its own `chat.ts` front door for exactly that reason, and its documentation is " +
+    "the subpath table in `packages/aai/CLAUDE.md`.",
   "aai-runtime:logging":
     "the HOST logging surface — the buffer/page/line constants a deployment tunes and " +
     "`consoleLogger`. It reaches the example-facing set the same way `aai-runtime:runtime` " +

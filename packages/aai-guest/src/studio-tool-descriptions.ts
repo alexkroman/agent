@@ -1,19 +1,32 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Descriptions for the studio coding agent's workspace tools — the prose
- * the model reads, kept out of `studio-tools.ts` so it can be tuned
- * without touching execution code (and so that file stays under the
- * repo's length cap).
+ * Descriptions for the studio coding agent's tools — the prose the model
+ * reads, kept out of the modules that build the tools so it can be tuned
+ * without touching execution code (and so those files stay under the repo's
+ * length cap).
  *
- * The numeric limits a description quotes live here too and are imported
- * back by `studio-tools.ts` for enforcement — a description that names a
- * different number than the code enforces is worse than no number at all.
+ * TWO maps, because the tool set has two halves now. The nine workspace tools
+ * are the SDK's (`@alexkroman1/aai/coding-tools`) and so is their prose;
+ * {@link STUDIO_CODING_TOOL_DESCRIPTIONS} is what the studio has to say that
+ * a generic coding agent does not — that a write is type-checked, that
+ * dependencies have their own tools, that a workspace syncs back.
+ * {@link STUDIO_TOOL_DESCRIPTIONS} describes the tools only this host has.
+ *
+ * The numeric limits a description quotes are the SDK's too and are
+ * RE-EXPORTED rather than mirrored, exactly as `limits.ts` does it: a
+ * description that names a different number than the code enforces is worse
+ * than one that names no number at all.
  */
 
-/** read_file paging defaults — opencode's read-tool semantics. */
-export const READ_LIMIT = 2000;
-/** Max glob results before truncation. */
-export const GLOB_LIMIT = 100;
+import { BASH_TIMEOUT_MAX_MS, BASH_TIMEOUT_MS } from "@alexkroman1/aai/coding-tools";
+
+export {
+  BASH_TIMEOUT_MAX_MS,
+  BASH_TIMEOUT_MS,
+  GLOB_LIMIT,
+  READ_LIMIT,
+} from "@alexkroman1/aai/coding-tools";
+
 /**
  * Lines one `read_logs` call may ask for.
  *
@@ -23,30 +36,15 @@ export const GLOB_LIMIT = 100;
  * asking for more than the host admits is a rejected RPC rather than a clamp.
  */
 export const LOGS_TOOL_MAX_LINES = 500;
-/** Default and max wall-clock for one bash command. */
-export const BASH_TIMEOUT_MS = 60_000;
-export const BASH_TIMEOUT_MAX_MS = 300_000;
 
-export const STUDIO_TOOL_DESCRIPTIONS = {
-  list_files: `List every file in the project workspace (node_modules, dist, and .git are excluded).
-
-WHEN TO USE:
-- Orienting at the start of a request, or when unsure what exists.
-- For targeted lookups prefer glob (find by name) or grep (search contents).`,
-
-  read_file: `Read a file from the project workspace. Returns numbered lines ("NNNNN| text"); use offset/limit to page through large files.
-
-GUIDELINES:
-- Read a file before editing it, and read multiple files in parallel when gathering context.
-- Do NOT re-read a file after a successful edit_file — the diff it returned already shows the result.
-- Only pass offset/limit when a previous read said the file continues.`,
-
-  glob: `Find workspace files whose path matches a glob pattern (e.g. **/*.ts, "*.tsx"), newest first, capped at ${GLOB_LIMIT} results.
-
-WHEN TO USE:
-- Locating files by name or extension.
-- Use grep instead when you are searching by contents.`,
-
+/**
+ * What the studio says about a workspace tool that the SDK's own description
+ * cannot: the three whose behaviour here differs from a generic coding agent's.
+ *
+ * An override REPLACES the SDK's prose for that tool, so each one below still
+ * has to say what the tool does — it is not an addendum.
+ */
+export const STUDIO_CODING_TOOL_DESCRIPTIONS = {
   write_file: `Create a new file, or fully replace an existing one. Parent directories are created automatically.
 
 IMPORTANT — minimize full rewrites:
@@ -65,19 +63,6 @@ GUIDELINES:
 - Trust the returned diff; do not re-read the file just to confirm the edit applied.
 - Like write_file, each successful edit reports the workspace's type errors in its result; no errors listed means the workspace type-checks.`,
 
-  delete_file: `Delete a file from the project workspace.
-
-WHEN TO USE:
-- Removing scratch scripts, debug artifacts, or files nothing imports anymore.
-- Deleting is permanent — check what a file is before removing something you didn't create.`,
-
-  grep: `Regex-based code search across workspace file contents. Returns "path:line: text" for each match.
-
-GUIDELINES:
-- Filter which files are searched with glob (e.g. "*.ts"), and set literal: true to match plain text without regex escaping.
-- Cheaper than reading whole files — use it to find where something is defined, then read_file just that file.
-- When matches span several files, check each before deciding where a change belongs.`,
-
   bash: `Run a bash command in the workspace directory (network access available).
 
 COMMONLY USED FOR:
@@ -89,7 +74,10 @@ RULES:
 - Make source changes with edit_file/write_file, not shell redirection — the dedicated tools show the user a diff.
 - The workspace ships without node_modules, and only workspace source files (never node_modules, dist, or .git) sync back to the project.
 - Output is capped with the tail kept; long-running commands are killed at the timeout (default ${BASH_TIMEOUT_MS}ms, max ${BASH_TIMEOUT_MAX_MS}ms).`,
+} as const;
 
+/** The tools only the studio has — the SDK describes the other nine. */
+export const STUDIO_TOOL_DESCRIPTIONS = {
   npm_info: `Look up a package on the npm registry: name, version, description, homepage, exports, and peerDependencies.
 
 WHEN TO USE:
@@ -147,13 +135,6 @@ SKIP WHEN:
 - The project already has a client.tsx with an established style — preserve it instead.
 
 IMPORTANT: if you generate a design brief, you MUST follow it.`,
-
-  todo_write: `Replace your todo list for the current request. The user sees the list, so it doubles as a progress report.
-
-WHEN TO USE:
-- Multi-step work: several named capabilities, or a build plus a redesign. Write the steps up front, then resend the full list as statuses change.
-- Keep exactly one item in_progress at a time, and use milestone-level steps, not micro-steps.
-- SKIP it for single-step changes and questions.`,
 
   read_logs: `Read what the project's DEPLOYED agent has printed — the same output the user sees in the studio's Logs pane, most recent lines last.
 

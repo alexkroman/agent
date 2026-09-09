@@ -747,6 +747,9 @@ export type OpenUpload = {
     read(start: number, end: number): Promise<Uint8Array>;
 };
 
+// @public
+export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string;
+
 // @internal
 export const pinnedFetch: typeof globalThis.fetch;
 
@@ -910,6 +913,18 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
 export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
 
 // @public
+export function runCapped(cmd: string, args: string[], opts: RunCappedOptions): Promise<SpawnCappedResult>;
+
+// @public
+export type RunCappedOptions = {
+    cwd: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    cap: number;
+    combineStreams?: boolean;
+};
+
+// @public
 export type RunCodeExecutor = (code: string) => Promise<string | {
     error: string;
 }>;
@@ -957,6 +972,14 @@ interface SonioxSttOptions extends ProviderCredentialOptions {
     languages?: readonly string[];
     model?: string;
 }
+
+// @public
+export type SpawnCappedResult = {
+    exitCode: number | null;
+    signal: NodeJS.Signals | null;
+    stdout: string;
+    stderr: string;
+};
 
 // @internal
 export type SpeechSynthesizer = (request: {

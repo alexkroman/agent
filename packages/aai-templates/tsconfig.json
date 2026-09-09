@@ -34,5 +34,24 @@
     "templates/*/*.ts",
     "templates/*/*.tsx",
     "templates/*/tools/*.ts"
+  ],
+  "exclude": [
+    // `coding-agent/chat.ts` is the one template file this program cannot
+    // hold, and it is NOT unchecked: `check:template-types` compiles it under
+    // the SCAFFOLD's tsconfig, which is the config a user actually gets, and
+    // konsistent's `template-authoring-boundary` still reads its imports.
+    //
+    // What it names is `@alexkroman1/aai-runtime`'s ROOT barrel — the only way
+    // to reach `createTextAgent` and `withToolsDir` — and `@dev/source`
+    // resolves that to SOURCE, so including it pulls that package's whole
+    // module graph into this program. That graph does not compile under the
+    // `lib` above: `_upload-blobs-*.ts` and `step-fetch.ts` pass a
+    // `Uint8Array` as a `BodyInit`, which undici's types admit and the DOM
+    // lib's do not. It is the same hazard `packages/aai-runtime/CLAUDE.md`
+    // records against handing SDK internals on through
+    // `@alexkroman1/aai-runtime/internal`, arriving by the front door: the
+    // template evals stay clean only because `/eval` and `/eval/vitest` reach
+    // a narrower graph.
+    "templates/coding-agent/chat.ts"
   ]
 }

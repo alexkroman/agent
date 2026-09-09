@@ -330,7 +330,7 @@ describeStudioEval((test) => {
       // a fair claim: `edit_file` needs the exact existing text and `write_file`
       // needs the whole file, so an agent that changes this file without
       // reading it is guessing. An edit that MISSES is the observable failure
-      // (`studio-edit.ts`'s rewrite hint), and it costs a repair round.
+      // (the SDK's `coding-edit.ts` rewrite hint), and it costs a repair round.
       const read = firstIndexOf(calls, READ_TOOLS);
       const wrote = firstIndexOf(calls, WRITE_TOOLS);
       expect(wrote, `nothing was written: ${describeTurn(turn)}`).toBeGreaterThanOrEqual(0);

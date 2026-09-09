@@ -1,23 +1,26 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Surgical text replacement for studio workspace files, with a unified diff.
+ * Surgical text replacement for a workspace file, with a unified diff.
  *
- * Why this exists: without it the coding agent's only way to change a file is
- * `write_file` with the *entire* new contents. On a 200-line agent.ts that is
- * a full rewrite for a one-line change — slow, token-expensive, and the most
+ * Why this exists: without it a coding agent's only way to change a file is
+ * `write_file` with the *entire* new contents. On a 200-line module that is a
+ * full rewrite for a one-line change — slow, token-expensive, and the most
  * common way a model silently drops code it was supposed to keep.
+ *
+ * It operates on plain STRINGS and opens no file: the caller reads, applies,
+ * and decides what a failure looks like — which is what lets one implementation
+ * back `edit_file` over a real filesystem (`coding-tools.ts`) and over a
+ * workspace held in memory alike.
  *
  * The matching and diff logic is ported from edge-pi (MIT), a Vercel AI SDK
  * coding-agent library: https://github.com/marcusschiesser/edge-pi —
- * `packages/edge-pi/src/tools/edit-diff.ts`. Adapted to operate on plain
- * strings, since a studio workspace is a JSON document rather than a
- * filesystem, so the path/fs plumbing around it does not apply.
+ * `packages/edge-pi/src/tools/edit-diff.ts`.
  */
 
 import * as Diff from "diff";
 
 /** Thrown when an edit cannot be applied; the message goes back to the agent. */
-export class StudioEditError extends Error {}
+export class CodingEditError extends Error {}
 
 type LineEnding = "\r\n" | "\n";
 
@@ -231,8 +234,8 @@ function replaceAllMatches(haystack: string, needle: string, to: string): [strin
  * that matched nothing, and a single edit that found nothing) and each carried
  * its own byte-identical copy of the sentence.
  */
-function notFound(path: string): StudioEditError {
-  return new StudioEditError(
+function notFound(path: string): CodingEditError {
+  return new CodingEditError(
     `Could not find that text in ${path}. It must match the file exactly, ` +
       "including whitespace and newlines — read the file and copy the text verbatim.",
   );
@@ -243,7 +246,7 @@ function notFound(path: string): StudioEditError {
  * occurrence with `replaceAll` (the rename case, where requiring a unique
  * match would force one edit per call site).
  *
- * @throws {StudioEditError} when the text is absent or (without `replaceAll`)
+ * @throws {CodingEditError} when the text is absent or (without `replaceAll`)
  * ambiguous — both are cases where guessing would corrupt the file, so the
  * agent is told to try again with more context rather than having an edit
  * applied to the wrong occurrence.
@@ -263,7 +266,7 @@ export function applyEdit(
   const to = toLF(newText);
 
   if (from.length === 0) {
-    throw new StudioEditError(`oldText must not be empty (editing ${path})`);
+    throw new CodingEditError(`oldText must not be empty (editing ${path})`);
   }
 
   let updated: string;
@@ -277,7 +280,7 @@ export function applyEdit(
 
     const occurrences = countOccurrences(match.occurrenceHaystack, match.occurrenceNeedle);
     if (occurrences > 1) {
-      throw new StudioEditError(
+      throw new CodingEditError(
         `Found ${occurrences} occurrences of that text in ${path}. Include surrounding ` +
           "lines so the match is unambiguous, or pass replaceAll: true to change every one.",
       );
@@ -290,7 +293,7 @@ export function applyEdit(
     replacements = 1;
   }
   if (updated === normalized) {
-    throw new StudioEditError(`No change: the replacement is identical to the original in ${path}`);
+    throw new CodingEditError(`No change: the replacement is identical to the original in ${path}`);
   }
 
   return {

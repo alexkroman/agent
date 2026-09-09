@@ -125,12 +125,40 @@ harness:
   `aai-evals`' `_gate.ts`), as they do for `openEvalSession` — with no
   credential and no `llm` this throws from `resolveLlm` at open time naming the
   env var.
-- **`evalCredentials` over-asks for a text agent.** It answers "can this machine
-  run this AGENT", and its no-complete-pipeline branch adds the default
-  AssemblyAI STT key — so a text agent declaring `anthropic()` is reported as
-  needing `ASSEMBLYAI_API_KEY` it will never read. A text agent resolves exactly
-  one provider credential, its LLM's. There is no `describeTextEval` yet: a
-  suite drives `openEvalTextAgent` under its own gate.
+- **`evalCredentials` over-asks for a text agent, so there is a second gate.**
+  It answers "can this machine run this AGENT", and its no-complete-pipeline
+  branch adds the default AssemblyAI STT key — so a text agent declaring
+  `anthropic()` was reported as needing `ASSEMBLYAI_API_KEY` it will never read,
+  which SKIPS a suite the machine could have run live. `evalTextCredentials`
+  (`/eval`) asks about the LLM alone, and about the DEFAULTED descriptor when
+  the agent declares none, so the question is asked about the model the run
+  would really use.
+
+### And a text suite is `describeTextEval`, on `/eval/vitest`
+
+Its own function rather than a flag on `describeEval`, for the reason there are
+two harnesses at all: `openEvalSession` stands up `createRuntime`, which refuses
+`text: true` by name, so nothing about the two can be merged below the suite.
+What IS shared is everything a case author sees — the two modes, the announce
+line, the per-case `stubReply`, the `live`/`scripted` markers, the `EvalTurn`,
+and every reader and assertion above it — so a case moved between the two files
+changes one word. `modeFrom` is shared rather than copied, because
+`AAI_EVAL_STUB` and `AAI_REQUIRE_EVAL` have to mean one thing across every eval
+suite and a second copy of that three-branch decision is how one of them comes
+to be honoured by two doors of three.
+
+Two things differ, and both are properties of the MODE. The case context is
+`{ agent }` rather than `{ session }` — there is no session, and naming it one
+is the kind of sameness that costs a reader an hour when they go looking for the
+transport. And no workflow engine is opened per case, where `describeEval` opens
+one for an agent that declares `workflows`; a text agent may still be handed a
+client through the options, and the automatic open is missing because nothing
+has needed it rather than for a reason.
+
+`templates/coding-agent` is the worked example, and it is what forced this: a
+template's eval must import `@alexkroman1/aai-runtime/eval/vitest`
+(konsistent's `template-eval-spec`), and before this the only thing there for a
+text agent was a voice suite that would refuse it.
 
 Two differences a case author meets, both properties of the MODE: there is no
 greeting turn (`createTextAgent` drops the definition's `greeting`, which

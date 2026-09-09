@@ -58,6 +58,7 @@
     "createStubSttOpener",
     "createStubTtsOpener",
     "evalCredentials",
+    "evalTextCredentials",
     "evalWorkflowCredentials",
     "installStubLlm",
     "installStubSpeechProviders",
@@ -69,10 +70,13 @@
   ],
   "@alexkroman1/aai-runtime/eval/vitest": [
     "DescribeEvalOptions",
+    "DescribeTextEvalOptions",
     "EvalCaseOptions",
     "EvalMode",
     "EvalTest",
     "EvalTestContext",
+    "EvalTextTest",
+    "EvalTextTestContext",
     "EvalWorkflowCaseOptions",
     "EvalWorkflowTest",
     "EvalWorkflowTestContext",
@@ -205,6 +209,15 @@
     "registeredChannelKindNames",
     "renderChannelPayload",
     "renderSlackChannelPayload"
+  ],
+  "@alexkroman1/aai/coding-tools": [
+    "BASH_TIMEOUT_MAX_MS",
+    "BASH_TIMEOUT_MS",
+    "CODING_TOOL_DESCRIPTIONS",
+    "CodingToolName",
+    "CodingToolsOptions",
+    "GLOB_LIMIT",
+    "READ_LIMIT"
   ],
   "@alexkroman1/aai/ffmpeg": [
     "FfmpegError",

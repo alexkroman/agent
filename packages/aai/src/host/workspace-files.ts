@@ -21,7 +21,7 @@
  * subpath, which exists for the workspace packages rather than for SDK users.
  */
 
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -132,6 +132,58 @@ export function decodeWorkspaceText(bytes: Uint8Array): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Is `target` the directory `dir` itself, or something under it?
+ *
+ * The one containment test in the repo. It was written here-and-there as
+ * `abs.startsWith(dir + path.sep)`, and that spelling is only correct for an
+ * absolute, normalized, trailing-slash-free root — nothing states any of the
+ * three, so `isPathInside("/a/b/", "/a/b/c.ts")` answered false and every
+ * caller that resolved its own root from a config was one trailing slash away
+ * from refusing its whole tree. It lives in this package, the base of the
+ * dependency graph, because every side that walks a workspace needs it:
+ * `aai-runtime` re-exports it on `/internal` for the static file server, the
+ * guest harness resolves its coding-agent tool paths with it, and the CLI's
+ * push does the same on the other end of the round trip.
+ */
+export function isPathInside(dir: string, target: string): boolean {
+  const root = path.resolve(dir);
+  const abs = path.resolve(target);
+  // A filesystem root already ends in the separator (`/`, `C:\`), and appending
+  // a second one makes nothing inside it — including every absolute path.
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  return abs === root || abs.startsWith(prefix);
+}
+
+/**
+ * Resolve a workspace-relative path, refusing one that escapes the root.
+ *
+ * Every tool that opens a model-supplied path goes through here, so the refusal
+ * is one decision rather than one per tool. The message names the path as the
+ * caller wrote it: the model's next move is to try a different one, and an
+ * absolute path it never typed reads as the tool malfunctioning.
+ */
+export function resolveInside(dir: string, rel: string): string {
+  const abs = path.resolve(dir, rel);
+  if (!isPathInside(dir, abs)) {
+    throw new Error(`Path escapes the workspace: ${rel}`);
+  }
+  return abs;
+}
+
+/**
+ * Write one file at an already-resolved absolute path, creating its parent
+ * directories.
+ *
+ * The path is passed RESOLVED rather than relative on purpose: each caller
+ * refuses an escape with {@link resolveInside} at the point where its own error
+ * shape is right, and this must not become a second place that decides.
+ */
+export async function writeFileWithParents(abs: string, content: string): Promise<void> {
+  await mkdir(path.dirname(abs), { recursive: true });
+  await writeFile(abs, content, "utf-8");
 }
 
 /** Options shared by the walk and the snapshot. */

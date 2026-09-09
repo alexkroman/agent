@@ -17,6 +17,9 @@ export function isLocalOnlyFile(name: string): boolean;
 export function isLockfile(name: string): boolean;
 
 // @public
+export function isPathInside(dir: string, target: string): boolean;
+
+// @public
 export const LOCAL_ONLY_FILES: readonly RegExp[];
 
 // @public
@@ -27,6 +30,9 @@ export const MAX_WORKSPACE_FILE_BYTES = 256000;
 
 // @public
 export const MAX_WORKSPACE_FILES = 100;
+
+// @public
+export function resolveInside(dir: string, rel: string): string;
 
 // @public
 export function snapshotWorkspaceFiles(dir: string, options?: WorkspaceWalkOptions & {
@@ -46,6 +52,9 @@ export type WorkspaceSnapshot = {
 export type WorkspaceWalkOptions = {
     skipFile?: ((name: string) => boolean) | undefined;
 };
+
+// @public
+export function writeFileWithParents(abs: string, content: string): Promise<void>;
 
 // (No @packageDocumentation comment for this package)
 

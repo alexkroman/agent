@@ -145,6 +145,9 @@ export type EvalTextAgentOptions = {
 };
 
 // @public
+export function evalTextCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
 export type EvalToolCall = {
     readonly toolCallId: string;
     readonly name: string;

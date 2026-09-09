@@ -604,6 +604,7 @@ that already lives in two places.)
 ## Modules
 
 - [channels](channels.md)
+- [coding-tools](coding-tools.md)
 - [ffmpeg](ffmpeg.md)
 - [html](html.md)
 - [index](index.md)

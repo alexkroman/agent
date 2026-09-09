@@ -25,6 +25,16 @@
     "sendToChannel",
     "slackChannel"
   ],
+  "@alexkroman1/aai/coding-tools": [
+    "BASH_TIMEOUT_MAX_MS",
+    "BASH_TIMEOUT_MS",
+    "CODING_TOOL_DESCRIPTIONS",
+    "CodingToolName",
+    "CodingToolsOptions",
+    "GLOB_LIMIT",
+    "READ_LIMIT",
+    "createCodingTools"
+  ],
   "@alexkroman1/aai/ffmpeg": [
     "FfmpegError",
     "FfmpegFailureKind",
@@ -128,6 +138,7 @@
     "RIME_KIND",
     "RUN_CODE_REFUSAL",
     "ResolvedBuiltins",
+    "RunCappedOptions",
     "RunCodeExecutor",
     "S2S_MAX_RESUME_ATTEMPTS",
     "SANDBOX_ONLY_BUILTINS",
@@ -146,6 +157,7 @@
     "STT_FRAME_FLOOR_MS",
     "STT_FRAME_MAX_MS",
     "STT_FRAME_TARGET_MS",
+    "SpawnCappedResult",
     "SpeechSynthesizer",
     "StandardSchemaIssue",
     "StandardSchemaV1",
@@ -199,6 +211,7 @@
     "isConvertibleSchema",
     "mapStream",
     "normalizeLlm",
+    "outputWithKillNote",
     "pinnedFetch",
     "publishSpeechSynthesizer",
     "publishStepDelegate",
@@ -217,6 +230,7 @@
     "resolveElevenLabsSttSettings",
     "resolveRimeTtsSettings",
     "resolveSonioxSttSettings",
+    "runCapped",
     "safeFetch",
     "serializeToolFailure",
     "ssrfSafeFetch",
@@ -868,8 +882,11 @@
     "decodeWorkspaceText",
     "isLocalOnlyFile",
     "isLockfile",
+    "isPathInside",
+    "resolveInside",
     "snapshotWorkspaceFiles",
-    "walkWorkspaceFiles"
+    "walkWorkspaceFiles",
+    "writeFileWithParents"
   ],
   "@alexkroman1/aai-cli/client-bundler": [
     "BuildClientOptions",
@@ -940,6 +957,7 @@
     "describeTurn",
     "errorsIn",
     "evalCredentials",
+    "evalTextCredentials",
     "evalWorkflowCredentials",
     "expectCalled",
     "expectToolBeforeSpeech",
@@ -964,14 +982,18 @@
   ],
   "@alexkroman1/aai-runtime/eval/vitest": [
     "DescribeEvalOptions",
+    "DescribeTextEvalOptions",
     "EvalCaseOptions",
     "EvalMode",
     "EvalTest",
     "EvalTestContext",
+    "EvalTextTest",
+    "EvalTextTestContext",
     "EvalWorkflowCaseOptions",
     "EvalWorkflowTest",
     "EvalWorkflowTestContext",
     "describeEval",
+    "describeTextEval",
     "describeWorkflowEval",
     "resolveEvalMode",
     "resolveWorkflowEvalMode"

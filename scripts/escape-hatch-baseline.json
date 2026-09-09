@@ -19,6 +19,7 @@
     "packages/aai-templates/templates/tabletop-rpg-agent/client.tsx": 2,
     "packages/aai-ui/src/components/message-list.tsx": 1,
     "packages/aai/src/host/_ffmpeg-spawn.ts": 1,
+    "packages/aai/src/host/coding-spawn.ts": 1,
     "packages/aai/src/index.ts": 1
   },
   "as unknown as": {

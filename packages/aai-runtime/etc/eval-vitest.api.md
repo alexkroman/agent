@@ -31,6 +31,12 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
 };
 
 // @public
+export function describeTextEval(agent: AgentDef, define: (test: EvalTextTest) => void, options?: DescribeTextEvalOptions): void;
+
+// @public
+export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
+
+// @public
 export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
 
 // @public
@@ -95,6 +101,40 @@ export type EvalTestContext = {
     readonly session: EvalSession;
     readonly mode: EvalMode;
     readonly workflows: EvalWorkflows | undefined;
+};
+
+// @public
+type EvalTextAgent = {
+    readonly id: string;
+    send(text: string): Promise<EvalTurn>;
+    sendAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public
+type EvalTextAgentOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly llm?: LlmProvider;
+    readonly runCode?: RunCodeExecutor;
+    readonly fetch?: typeof globalThis.fetch;
+    readonly toolTimeoutMs?: number;
+    readonly workflows?: WorkflowClient | undefined;
+    readonly turnTimeoutMs?: number;
+    readonly logger?: Logger;
+};
+
+// @public
+export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+
+// @public
+export type EvalTextTestContext = {
+    readonly agent: EvalTextAgent;
+    readonly mode: EvalMode;
 };
 
 // @public

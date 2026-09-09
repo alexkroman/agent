@@ -1,9 +1,10 @@
 {
-  "_description": "Per-report budget of types referenced by a published surface but exported by no subpath of their own package. Only ever lowered — see scripts/check-api-nameable.mjs.",
-  "_step": "step.api.md went 1 -> 2 for StandardSchemaResult, which `stepDelegate` drags in: it takes a SubagentDef, whose `tools` are ToolDefs, whose `inputSchema` is a Standard Schema, whose `validate` returns this. It is the same class as the `Literal` already budgeted here — a structural type an author reads in a tsc message and never writes — and it is unnameable from every authoring subpath, not just this one.",
+  "_description": "Per-report budget of types referenced by a published surface but exported by no subpath of their own package. Only ever lowered \u2014 see scripts/check-api-nameable.mjs.",
+  "_step": "step.api.md went 1 -> 2 for StandardSchemaResult, which `stepDelegate` drags in: it takes a SubagentDef, whose `tools` are ToolDefs, whose `inputSchema` is a Standard Schema, whose `validate` returns this. It is the same class as the `Literal` already budgeted here \u2014 a structural type an author reads in a tsc message and never writes \u2014 and it is unnameable from every authoring subpath, not just this one.",
   "unnameable": {
     "packages/aai-runtime/etc/index.api.md": 5,
     "packages/aai-runtime/etc/internal.api.md": 13,
+    "packages/aai/etc/coding-tools.api.md": 2,
     "packages/aai/etc/host-internal.api.md": 4,
     "packages/aai/etc/index.api.md": 24,
     "packages/aai/etc/internal.api.md": 2,
@@ -14,5 +15,6 @@
     "packages/aai/etc/testing-vitest.api.md": 2,
     "packages/aai/etc/testing.api.md": 2,
     "packages/aai/etc/workflow-api.api.md": 2
-  }
+  },
+  "_coding": "coding-tools.api.md arrives at 2, and both are the SAME class already budgeted above: `createCodingTools` answers a record of `ToolDef`s, so the report carries `ToolContext` whole \u2014 `Literal` (the step-name guard an author meets only as a tsc message) and `StandardSchemaResult` (what a tool's `inputSchema.validate` returns). Neither is nameable from any authoring subpath, and neither is a name a host writing `createCodingTools({ dir })` ever types."
 }

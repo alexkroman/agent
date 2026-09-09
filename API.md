@@ -16,6 +16,7 @@ symbol exported from two subpaths appears under both.
 ## Contents
 
 - `@alexkroman1/aai/channels` — `packages/aai/etc/channels.api.md`
+- `@alexkroman1/aai/coding-tools` — `packages/aai/etc/coding-tools.api.md`
 - `@alexkroman1/aai/ffmpeg` — `packages/aai/etc/ffmpeg.api.md`
 - `@alexkroman1/aai/host-internal` — `packages/aai/etc/host-internal.api.md`
 - `@alexkroman1/aai/html` — `packages/aai/etc/html.api.md`
@@ -173,6 +174,376 @@ export interface SlackChannelOptions {
     readonly textParam?: string;
     readonly webhookUrl: string;
 }
+```
+
+## `@alexkroman1/aai/coding-tools`
+
+```ts
+// @public
+type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<never, R>;
+};
+
+// @public (undocumented)
+export const BASH_TIMEOUT_MAX_MS = 300000;
+
+// @public
+export const BASH_TIMEOUT_MS = 60000;
+
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public (undocumented)
+export const CODING_TOOL_DESCRIPTIONS: Readonly<Record<CodingToolName, string>>;
+
+// @public
+export type CodingToolName = "list_files" | "read_file" | "glob" | "grep" | "write_file" | "edit_file" | "delete_file" | "bash" | "todo_write";
+
+// @public
+export type CodingToolsOptions<N extends CodingToolName = CodingToolName> = {
+    dir: string;
+    validate?: (rel: string, content: string) => Promise<string | undefined>;
+    afterWrite?: (rel: string) => Promise<string | undefined>;
+    env?: NodeJS.ProcessEnv;
+    descriptions?: Partial<Record<CodingToolName, string>>;
+    only?: readonly N[];
+};
+
+// @public
+export function createCodingTools<const N extends CodingToolName = CodingToolName>(options: CodingToolsOptions<N>): Record<N, ToolDef>;
+
+// @public
+type DelegateFn = {
+    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
+}
+
+// @public
+type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type GenerateFn = {
+    <S extends StandardSchemaV1>(options: GenerateOptions & {
+        schema: S;
+    }): Promise<GenerateObjectResult<InferSchemaOutput<S>>>;
+    (options: GenerateOptions): Promise<GenerateResult>;
+};
+
+// @public
+type GenerateObjectResult<T> = {
+    text: string;
+    object: T;
+};
+
+// @public
+type GenerateOptions = {
+    prompt: string;
+    system?: string;
+    llm?: LlmProvider | string;
+    schema?: StandardSchemaV1 | Record<string, unknown>;
+    temperature?: number;
+    maxOutputTokens?: number;
+};
+
+// @public
+type GenerateResult = {
+    text: string;
+    object?: unknown;
+};
+
+// @public
+export const GLOB_LIMIT = 100;
+
+// @public
+type GuardrailVerdict = true | string;
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @internal
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "llm";
+};
+
+// @public
+type Message = {
+    role: "user" | "assistant" | "tool";
+    content: string;
+};
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+type RandomSource = () => number;
+
+// @public
+export const READ_LIMIT = 2000;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
+type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
+};
+
+// @public
+interface StandardSchemaIssue {
+    readonly errors?: unknown;
+    readonly issues?: unknown;
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
+type StartOptions = {
+    key?: string;
+    notify?: boolean | string;
+};
+
+// @public
+type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    maxAttempts?: number;
+    schema?: S | undefined;
+};
+
+// @public
+type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
+    schema: S;
+};
+
+// @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
+interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    maxSteps?: number;
+    name: string;
+    schema?: StandardSchemaV1;
+    systemPrompt: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
+type ToolContext = {
+    env: Readonly<Partial<Record<string, string>>>;
+    slots: SlotStore;
+    generate: GenerateFn;
+    delegate: DelegateFn;
+    messages: readonly Message[];
+    sessionId: string;
+    send(event: string, data: unknown): void;
+    signal: AbortSignal;
+    deadlineAt: number;
+    workflows: WorkflowClient;
+    random: RandomSource;
+};
+
+// @public
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description: string;
+    inputSchema?: P;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+};
+
+// @public
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+interface TypedDelegateResult<T> extends DelegateResult {
+    object: T;
+}
+
+// @public
+interface TypedSubagentDef<T> extends SubagentDef {
+    // (undocumented)
+    schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    timeoutMs: number;
+    schema?: S | undefined;
+};
+
+// @public
+type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    schema: S;
+};
+
+// @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
+
+// @public
+type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
+    publicWebhookUrl(token: string): string;
+    listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowContext = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    now(): Promise<number>;
+    random(): Promise<number>;
+    uuid(): Promise<string>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public
+type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
+type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+};
+
+// @public
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    uploads?: readonly string[];
+};
 ```
 
 ## `@alexkroman1/aai/ffmpeg`
@@ -1043,6 +1414,9 @@ export type OpenUpload = {
     read(start: number, end: number): Promise<Uint8Array>;
 };
 
+// @public
+export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string;
+
 // @internal
 export const pinnedFetch: typeof globalThis.fetch;
 
@@ -1206,6 +1580,18 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
 export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
 
 // @public
+export function runCapped(cmd: string, args: string[], opts: RunCappedOptions): Promise<SpawnCappedResult>;
+
+// @public
+export type RunCappedOptions = {
+    cwd: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    cap: number;
+    combineStreams?: boolean;
+};
+
+// @public
 export type RunCodeExecutor = (code: string) => Promise<string | {
     error: string;
 }>;
@@ -1253,6 +1639,14 @@ interface SonioxSttOptions extends ProviderCredentialOptions {
     languages?: readonly string[];
     model?: string;
 }
+
+// @public
+export type SpawnCappedResult = {
+    exitCode: number | null;
+    signal: NodeJS.Signals | null;
+    stdout: string;
+    stderr: string;
+};
 
 // @internal
 export type SpeechSynthesizer = (request: {
@@ -8260,6 +8654,9 @@ export function isLocalOnlyFile(name: string): boolean;
 export function isLockfile(name: string): boolean;
 
 // @public
+export function isPathInside(dir: string, target: string): boolean;
+
+// @public
 export const LOCAL_ONLY_FILES: readonly RegExp[];
 
 // @public
@@ -8270,6 +8667,9 @@ export const MAX_WORKSPACE_FILE_BYTES = 256000;
 
 // @public
 export const MAX_WORKSPACE_FILES = 100;
+
+// @public
+export function resolveInside(dir: string, rel: string): string;
 
 // @public
 export function snapshotWorkspaceFiles(dir: string, options?: WorkspaceWalkOptions & {
@@ -8289,6 +8689,9 @@ export type WorkspaceSnapshot = {
 export type WorkspaceWalkOptions = {
     skipFile?: ((name: string) => boolean) | undefined;
 };
+
+// @public
+export function writeFileWithParents(abs: string, content: string): Promise<void>;
 ```
 
 ## `@alexkroman1/aai-cli/client-bundler`
@@ -8553,6 +8956,9 @@ export type EvalTextAgentOptions = {
 };
 
 // @public
+export function evalTextCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
 export type EvalToolCall = {
     readonly toolCallId: string;
     readonly name: string;
@@ -8805,6 +9211,12 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
 };
 
 // @public
+export function describeTextEval(agent: AgentDef, define: (test: EvalTextTest) => void, options?: DescribeTextEvalOptions): void;
+
+// @public
+export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
+
+// @public
 export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
 
 // @public
@@ -8869,6 +9281,40 @@ export type EvalTestContext = {
     readonly session: EvalSession;
     readonly mode: EvalMode;
     readonly workflows: EvalWorkflows | undefined;
+};
+
+// @public
+type EvalTextAgent = {
+    readonly id: string;
+    send(text: string): Promise<EvalTurn>;
+    sendAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public
+type EvalTextAgentOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly llm?: LlmProvider;
+    readonly runCode?: RunCodeExecutor;
+    readonly fetch?: typeof globalThis.fetch;
+    readonly toolTimeoutMs?: number;
+    readonly workflows?: WorkflowClient | undefined;
+    readonly turnTimeoutMs?: number;
+    readonly logger?: Logger;
+};
+
+// @public
+export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+
+// @public
+export type EvalTextTestContext = {
+    readonly agent: EvalTextAgent;
+    readonly mode: EvalMode;
 };
 
 // @public
