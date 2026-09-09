@@ -12,15 +12,14 @@
   },
   "scripts": {
     "build": "tsdown",
-    "check:scenario": "pnpm run test:scenario",
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-cli": "workspace:*",
     "@alexkroman1/aai-runtime": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@opentelemetry/api": "catalog:",

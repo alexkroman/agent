@@ -392,6 +392,9 @@ importers:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      '@alexkroman1/aai-cli':
+        specifier: workspace:*
+        version: link:../aai-cli
       '@alexkroman1/aai-runtime':
         specifier: workspace:*
         version: link:../aai-runtime

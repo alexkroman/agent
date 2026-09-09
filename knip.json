@@ -211,6 +211,13 @@
       // `node_modules`. Neither is a dependency of this package any more, so both
       // entries became redundant patterns knip reports as configuration hints.
       "ignoreDependencies": [
+        // `@alexkroman1/aai-cli` is EXTERNAL in the harness bundle
+        // (`neverBundle` in tsdown.config.ts), so it is resolved at run time
+        // from the node_modules beside `dist/harness.mjs` — this package's own.
+        // Removing it on knip's word was tried and Publish died with
+        // "Cannot find package '@alexkroman1/aai-cli' imported from
+        // .../dist/harness.mjs", which no static import graph can predict.
+        "@alexkroman1/aai-cli",
         "@alexkroman1/aai-ui",
         "@tailwindcss/vite",
         "@types/react",
