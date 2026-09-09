@@ -3,28 +3,24 @@ title: Tools
 description: A tool is a file in tools/. The filename is the name the model calls it by.
 ---
 
-A tool is an ordinary async function the model can decide to call. It lives in
+A tool is an ordinary function the model can decide to call. It lives in
 `tools/`, and the filename is its name:
 
 ```ts
-// tools/get_weather.ts
-// The model calls this `get_weather`.
+// tools/get_store_hours.ts
+// The model calls this `get_store_hours`.
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
+const HOURS: Record<string, string> = {
+  denver: "9am to 7pm",
+  austin: "10am to 6pm",
+};
+
 export default tool({
-  description: "Get current weather for a city",
-  inputSchema: z.object({ city: z.string().describe("City name") }),
-  execute: async ({ city }) => {
-    const where = encodeURIComponent(city);
-    const res = await fetch(`https://wttr.in/${where}?format=j1`);
-    const report = (await res.json()) as {
-      current_condition?: { temp_F?: string; weatherDesc?: { value?: string }[] }[];
-    };
-    const now = report.current_condition?.[0];
-    // Return what the agent will SAY, not the whole response.
-    return { city, tempF: now?.temp_F, sky: now?.weatherDesc?.[0]?.value };
-  },
+  description: "Get today's opening hours for one of our stores",
+  inputSchema: z.object({ city: z.string().describe("City name, e.g. Denver") }),
+  execute: ({ city }) => ({ city, hours: HOURS[city.toLowerCase()] ?? "closed today" }),
 });
 ```
 
@@ -36,53 +32,81 @@ Three fields:
   `.describe()` on a field is shown to the model, so use it.
 - **`execute`** — sync or async. Return anything JSON-shaped; the model sees it.
 
+There is nothing to register and no list to join. A file in `tools/` is a tool
+because it is in `tools/`.
+
+## Calling your own API
+
 `execute` can call `fetch` directly, and it works the same in `aai dev` as it
-does deployed.
-
-**Return only the few fields the answer needs**, not the whole API response.
-
-:::caution[A big return value stays in the prompt]
-Whatever you return is serialized into the conversation and re-sent to the
-model on every later turn of the call. So `return await res.json()` leaves an
-entire API response in the prompt for the rest of the call: slower, more
-expensive, and more for the model to misread. A result over 4000 characters is
-warned about once per tool in the server log.
-:::
-
-## Secrets and cancellation
-
-`execute` gets a second argument, `ctx`. Two parts of it matter early:
+does deployed. Its second argument, `ctx`, carries two things worth using from
+the start:
 
 ```ts
+// tools/get_order.ts
 import { requireEnv, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 export default tool({
-  description: "Look up an order",
-  inputSchema: z.object({ id: z.string() }),
+  description: "Look up one of the caller's orders",
+  inputSchema: z.object({ id: z.string().describe("Order number") }),
   execute: async ({ id }, ctx) => {
     const res = await fetch(`https://api.example.com/orders/${id}`, {
       headers: { authorization: requireEnv(ctx, "ORDERS_API_KEY") },
-      // Pass this to anything slow. It aborts when the caller interrupts.
       signal: ctx.signal,
     });
-    const order = (await res.json()) as { status?: string; eta?: string };
+    const order = (await res.json()) as { status: string; eta: string };
     return { id, status: order.status, eta: order.eta };
   },
 });
 ```
 
-`ctx.env` holds the keys from your `.env` locally, and your agent secrets in
+`ctx.env` holds the keys from your `.env` locally, and your agent's secrets in
 production. `requireEnv(ctx, "KEY")` fails by name instead of sending
 `undefined` into a header.
 
-`ctx.signal` aborts when the caller interrupts or the call ends. Forwarding it
-stops work nobody is waiting for any more. It is always present, so no `?.` is
-needed.
+`ctx.signal` aborts when the caller interrupts or the call ends. Pass it to
+anything slow, so a request nobody is waiting for stops instead of being waited
+out. It is always present, so no `?.` is needed.
 
 The rest of `ctx` — conversation history, one-shot model calls, subagents,
 pushing events to the browser, starting background runs — is in the
 [SDK reference](/agent/reference/).
+
+## Return only the fields the answer needs
+
+Whatever you return is serialized into the conversation and re-sent to the
+model on every later turn of the call. So `return await res.json()` leaves an
+entire API response in the prompt for the rest of the call: slower, more
+expensive, and more for the model to misread. A result over 4000 characters is
+warned about once per tool in the server log.
+
+## When a tool fails
+
+Return the failure instead of throwing it. `toolFailure` gives the model a
+sentence it can say out loud, and the conversation carries on:
+
+```ts
+// tools/get_order.ts
+import { tool, toolFailure } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up one of the caller's orders",
+  inputSchema: z.object({ id: z.string().describe("Order number") }),
+  execute: async ({ id }, ctx) => {
+    const url = `https://api.example.com/orders/${id}`;
+    const res = await fetch(url, { signal: ctx.signal });
+    if (!res.ok) return toolFailure(`I couldn't look up order ${id} just now.`);
+    const order = (await res.json()) as { status: string };
+    return { id, status: order.status };
+  },
+});
+```
+
+Throwing is not silent: the runtime hands the model the error message as that
+call's result. But then a bug in your code and "no such order" look the same to
+it, and it will keep trying. Returning a failure is how you say which one
+happened.
 
 ## Matching what a caller said
 

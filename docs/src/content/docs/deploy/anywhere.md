@@ -3,9 +3,9 @@ title: Deploy anywhere
 description: One flag builds for Vercel, Deno Deploy, Modal, or plain Node.
 ---
 
-[`aai publish`](/agent/deploy/publish/) ships to the managed platform. When
-you'd rather own the hosting, `aai build --target <host>` emits a deployment for
-one of four hosts, and prints the exact sequence to deploy it:
+[`aai publish`](/agent/deploy/publish/) ships to the managed platform. To own
+the hosting instead, `aai build --target <host>` emits a deployment for one of
+four hosts and prints the exact sequence to ship it:
 
 ```sh
 aai build --target vercel
@@ -21,17 +21,7 @@ aai build --target node     # the default
 | `deno` | a self-contained `.aai/deno/` | `cd .aai/deno && deno deploy --prod` (plus `--org`/`--app`) |
 | `modal` | a self-contained `.aai/modal/` with an `app.py` | `modal deploy .aai/modal/app.py` |
 
-## The flag is usually optional
-
-`aai build` detects the host it is running on. A Vercel build sets `VERCEL`, and
-Deno Deploy's git integration sets `DENO_DEPLOYMENT_ID` — so pointing either
-platform at your repository needs no configuration and no flag.
-
-The flag is for the other direction: building on **your** machine and uploading
-the result. Modal runs no build of its own, so `--target modal` is the only way
-to reach it.
-
-## It prints the sequence, not one command
+## The build prints the sequence
 
 For every target but `node`, the build ends by printing the ordered steps, with
 what it knows already filled in:
@@ -78,10 +68,6 @@ by name about anything the deployment will be missing, and expands the printed
 secret step once per name. A key you declared is a line you can run rather than
 one you have to write.
 
-`node` emits no directory, so there is no deployment to warn about: what runs
-is a process you start, reading `.env` at boot. A blank there is a developer
-mid-setup, and the warning would fire on every ordinary local build.
-
 Three things count as declared, and the build reads all three:
 
 - the provider credentials your `stt`/`llm`/`tts`/`s2s` choices imply
@@ -96,3 +82,17 @@ host setting like `PORT`.
 :::caution[Your `.env` is never uploaded to the host]
 The secret step in the printed sequence is how the values get there.
 :::
+
+`node` emits no directory, so there is no deployment to warn about: what runs is
+a process you start, reading `.env` at boot. A blank there is a developer
+mid-setup, and the warning would fire on every ordinary local build.
+
+## The flag is usually optional
+
+`aai build` detects the host it is running on. A Vercel build sets `VERCEL`, and
+Deno Deploy's git integration sets `DENO_DEPLOYMENT_ID` — so pointing either
+platform at your repository needs no configuration and no flag.
+
+The flag is for the other direction: building on **your** machine and uploading
+the result. Modal runs no build of its own, so `--target modal` is the only way
+to reach it.
