@@ -202,6 +202,33 @@ line-wise, from a floating statement, and three of the tree's occurrences are
 exactly that — a rule flagging correct code is one that gets muted rather than
 fixed. The listener half has no such twin, which is why it is rule 23.
 
+## A gated-runtime suite's CI wiring is specced here too
+
+`runtime-pins-gate.test.ts` holds the CLI's runtime matrix
+(`aai-cli/_target-runtimes.scenario.test.ts`, which boots one emitted
+deployment under `node`, `deno` and `bun`) to CI. Each non-node arm skips when
+its binary is absent — right on a laptop, worthless as a gate — so being a gate
+in CI takes four separate things, and every one of them is a silent no-op when
+it breaks: the workflow installs the runtime, in the job that runs the scenario
+tier, BEFORE the step that runs it, exporting `AAI_REQUIRE_<X>`, with that
+variable declared in the task's `env` (turbo's strict env mode strips an
+undeclared one before the task starts, so the export would set nothing).
+
+Nothing held any of them, and the cost is on the record: the Deno arm shipped on
+the branch that added the target with no `deno` installed anywhere in CI, green
+on every leg, over the only assertion that target rests on.
+
+Two things about its shape are the ones to preserve. The expectation is DERIVED
+from the suite's own `requireEnv` declarations, so a FOURTH runtime fails this
+gate until the workflow installs it — a hand-kept list would rot in exactly the
+direction that matters. And `node`'s exemption is pinned in both directions
+(declared by the suite, absent from `turbo.json`), so exempting a runtime stays
+a decision somebody edits a named constant for.
+
+A/B'd against three real breakages before landing, per this package's
+non-vacuity rule: no `setup-bun` step, the flag undeclared in `turbo.json`, and
+a fourth runtime added with no wiring. Each fails, naming what is missing.
+
 ## `check.yml`'s push list and concurrency group are specced here
 
 `ci-gate-job.test.ts` guards the `ci` job — the single required check — and it
