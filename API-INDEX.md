@@ -1098,6 +1098,7 @@ trace or a type error can be traced back to something.
 | `RIME_KIND` | `@alexkroman1/aai/host-internal` |
 | `RUN_CODE_REFUSAL` | `@alexkroman1/aai/host-internal` |
 | `ResolvedBuiltins` | `@alexkroman1/aai/host-internal` |
+| `RunCappedOptions` | `@alexkroman1/aai/host-internal` |
 | `S2S_MAX_RESUME_ATTEMPTS` | `@alexkroman1/aai/host-internal` |
 | `SANDBOX_ONLY_BUILTINS` | `@alexkroman1/aai/host-internal` |
 | `SERVER_ROUTES` | `@alexkroman1/aai-runtime/internal` |

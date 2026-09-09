@@ -138,6 +138,7 @@
     "RIME_KIND",
     "RUN_CODE_REFUSAL",
     "ResolvedBuiltins",
+    "RunCappedOptions",
     "RunCodeExecutor",
     "S2S_MAX_RESUME_ATTEMPTS",
     "SANDBOX_ONLY_BUILTINS",

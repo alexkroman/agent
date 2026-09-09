@@ -33,12 +33,16 @@ export {
 // an annotated line. It carries no semver promise, and an `agent.ts` names none
 // of it.
 //
-// The edit matcher and the workspace grep are deliberately NOT here. They are
-// what `createCodingTools` is built from, nothing outside that module imports
-// them, and a name published in anticipation of a consumer is a surface with no
-// reader — the rule `@alexkroman1/aai-runtime/internal` states for itself.
+// `RunCappedOptions` rides with it because `runCapped` NAMES it: a type a
+// published signature references and no subpath exports is one a consumer can
+// pass and cannot write, which `check:api-nameable` fails on. The edit matcher
+// and the workspace grep are deliberately NOT here — they are what
+// `createCodingTools` is built from, nothing outside that module imports them,
+// and a name published in anticipation of a consumer is a surface with no
+// reader.
 export {
   outputWithKillNote,
+  type RunCappedOptions,
   runCapped,
   type SpawnCappedResult,
 } from "./host/coding-spawn.ts";

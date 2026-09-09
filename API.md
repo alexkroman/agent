@@ -1583,7 +1583,7 @@ export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed run
 export function runCapped(cmd: string, args: string[], opts: RunCappedOptions): Promise<SpawnCappedResult>;
 
 // @public
-type RunCappedOptions = {
+export type RunCappedOptions = {
     cwd: string;
     env?: NodeJS.ProcessEnv;
     timeoutMs: number;
