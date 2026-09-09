@@ -434,6 +434,33 @@ jobs:
           # this job would pass — the exact "a check that exists without
           # running" failure their own comments say they must not become.
           echo "AAI_REQUIRE_PG=1" >> "$GITHUB_ENV"
+      # The runner image ships Google's Chrome apt repo, and nothing in this
+      # repository wants a package from it — ffmpeg comes from the Ubuntu
+      # archive and Playwright downloads its own browser. When that repo's
+      # `Release` and its `Packages.gz` disagree, `apt-get update` exits 100 on
+      # the Hash Sum mismatch and takes the whole step with it: on 2026-09-09
+      # the Release file was regenerated at 17:16:59Z while a mirror still
+      # served the 09:41:12Z index, and both Linux legs of this workflow died
+      # in an apt step before running one test.
+      #
+      # Dropping the source is narrower than `apt-get update || true`, which
+      # would also swallow a real failure to fetch what we DO need, and it is
+      # the only apt source in the image this repo can rule out by name. The
+      # removal is ANNOUNCED both ways: a run that finds nothing to remove has
+      # either been fixed upstream or is looking at a renamed file, and a
+      # silent no-op reads as neither.
+      - name: Drop the unused Chrome apt source (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          removed=0
+          for src in /etc/apt/sources.list.d/*google-chrome*; do
+            [ -e "$src" ] || continue
+            echo "removing unused apt source: $src"
+            sudo rm -f "$src"
+            removed=1
+          done
+          [ "$removed" = 1 ] || echo "no google-chrome apt source found; the runner image may have changed"
       # ffmpeg for the SDK's real-binary scenario suite
       # (aai/host/ffmpeg.scenario.test.ts). A mocked child cannot check an argv,
       # so this is the only thing standing between a wrong flag and a user's
@@ -579,6 +606,33 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}
+      # The runner image ships Google's Chrome apt repo, and nothing in this
+      # repository wants a package from it — ffmpeg comes from the Ubuntu
+      # archive and Playwright downloads its own browser. When that repo's
+      # `Release` and its `Packages.gz` disagree, `apt-get update` exits 100 on
+      # the Hash Sum mismatch and takes the whole step with it: on 2026-09-09
+      # the Release file was regenerated at 17:16:59Z while a mirror still
+      # served the 09:41:12Z index, and both Linux legs of this workflow died
+      # in an apt step before running one test.
+      #
+      # Dropping the source is narrower than `apt-get update || true`, which
+      # would also swallow a real failure to fetch what we DO need, and it is
+      # the only apt source in the image this repo can rule out by name. The
+      # removal is ANNOUNCED both ways: a run that finds nothing to remove has
+      # either been fixed upstream or is looking at a renamed file, and a
+      # silent no-op reads as neither.
+      - name: Drop the unused Chrome apt source (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          removed=0
+          for src in /etc/apt/sources.list.d/*google-chrome*; do
+            [ -e "$src" ] || continue
+            echo "removing unused apt source: $src"
+            sudo rm -f "$src"
+            removed=1
+          done
+          [ "$removed" = 1 ] || echo "no google-chrome apt source found; the runner image may have changed"
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       # --concurrency=1: the e2e run republishes every publishable package from
       # the live workspace, truncating shared dist/ directories while it does.
