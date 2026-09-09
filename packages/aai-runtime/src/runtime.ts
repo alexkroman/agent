@@ -91,11 +91,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
   const providerEnv = options.providerEnv ?? env;
-  // The runtime's own stores — slot storage and the workflow journal — not
-  // anything tool code sees: a caller-injected Db wins (the platform passes one
-  // when storage is enabled for the app); otherwise a DATABASE_URL in the
-  // provider env (self-hosted `aai dev` reads the project .env) connects one
-  // here. Neither means both stores live in this process's memory.
+  // Backs slot storage and the workflow journal, NOT anything tool code sees:
+  // a caller-injected Db wins (the platform passes one when storage is enabled);
+  // otherwise a DATABASE_URL in the provider env (self-hosted `aai dev` reads
+  // the project .env) connects one. Neither leaves both stores in memory.
   // The runtime owns — and must close on dispose — only the connection it
   // opened itself; an injected Db stays the caller's to dispose. Without the
   // close, `aai dev` (which rebuilds the runtime on every file save) strands
@@ -258,9 +257,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     // The one way this session publishes an event: recorded into the retained
     // stream, sent to the client, then announced to the agent's own hooks. Built
     // BEFORE the transport callbacks, because two of them emit directly. Hook
-    // deps carry no database: a hook that persists brings its own client, the
-    // same as tool code — see `hookDepsFor`, which dropped its `db` thunk with
-    // `ctx.db`.
+    // deps carry no database — a hook that persists brings its own client, like
+    // tool code; see `hookDepsFor`, which dropped its `db` thunk with `ctx.db`.
     const hooks = hookDepsFor({
       handlers: agent.events,
       env,

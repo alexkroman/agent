@@ -211,12 +211,10 @@ export {
  * ```
  *
  * Deliberately NOT the same object as a tool's `ToolContext`. A tool's `execute`
- * runs once, inside a live session, so it holds live things — `send` to the
- * page, `signal` for the caller's deadline, `generate` for a model call. A
- * workflow body is REPLAYED from the top on every resume and may hold nothing
- * live at all. Sharing one type would put those in reach of a body that re-runs
- * them on each resume, which is the bug the DevKit migration removed and which
- * this must not reintroduce.
+ * runs once inside a live session, so it holds live things — `send`, `signal`,
+ * `generate`. A workflow body is REPLAYED from the top on every resume. Sharing
+ * one type would put those in reach of a body that re-runs them on each resume,
+ * the bug the DevKit migration removed and which this must not reintroduce.
  *
  * @public
  */
