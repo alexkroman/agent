@@ -19,6 +19,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import {
   assertSandboxBackendOrWarn,
   assertStorageBucket,
@@ -113,6 +114,18 @@ async function main(): Promise<void> {
   // change stream to sandbox invalidation.
   const orchestrator = createOrchestrator({
     ...base,
+    // WHERE the prebuilt browser client lives is this root's call, not
+    // aai-server's: that package is compiled into this entry, so a module of
+    // its own cannot resolve a sibling package by its module location (see
+    // "the module's own location is no longer where its source lives" in this
+    // package's guide). The import lives HERE because this is the package that
+    // DECLARES `@alexkroman1/aai-ui`, which is what keeps the specifier
+    // external to the bundle and `defaultClientDir()` inside the package it
+    // self-references.
+    //
+    // Called eagerly, so an unbuilt or missing aai-ui fails the boot with its
+    // own message instead of 500ing every agent page on first hit.
+    clientDir: defaultClientDir(),
     // The agent surface's fleet-wide per-IP limiters, when a platform database
     // is configured. All three at once, from one factory in the package that
     // owns the windows — see `createPgAgentRateLimiters` for why this is not

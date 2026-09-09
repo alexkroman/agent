@@ -12,6 +12,20 @@ import {
   deployBody,
 } from "./test-utils.ts";
 
+/**
+ * An orchestrator serving aai-ui's REAL built default client.
+ *
+ * The directory is INJECTED, and importing `defaultClientDir` from the test is
+ * the point: aai-server's shipped source resolves no sibling package by module
+ * location, because it is compiled into `aai-studio-server`'s single-file entry
+ * where that resolution cannot work (see `createDefaultClientHandlers`).
+ * `createTestOrchestrator` defaults to a path with no client in it, so the
+ * specs that exercise the fallback are the ones that say so.
+ */
+function withDefaultClient(): ReturnType<typeof createTestOrchestrator> {
+  return createTestOrchestrator({ clientDir: defaultClientDir() });
+}
+
 test("returns health check", async () => {
   const { fetch } = await createTestOrchestrator();
   const res = await fetch("/health");
@@ -140,7 +154,7 @@ test("agent page returns HTML for deployed agent", async () => {
 });
 
 test("agent page serves default aai-ui when deployed without client files", async () => {
-  const { fetch } = await createTestOrchestrator();
+  const { fetch } = await withDefaultClient();
   const res = await deploy(fetch, { body: { slug: "no-client", clientFiles: {} } });
   expect(res.status).toBe(200);
 
@@ -153,7 +167,7 @@ test("agent page serves default aai-ui when deployed without client files", asyn
 });
 
 test("default aai-ui serves JS assets for agents without custom client", async () => {
-  const { fetch } = await createTestOrchestrator();
+  const { fetch } = await withDefaultClient();
   await deploy(fetch, { body: { slug: "default-assets", clientFiles: {} } });
 
   // The default HTML references ./assets/index-*.js
@@ -229,7 +243,7 @@ test("agent favicon serves a custom client's stored favicon", async () => {
 });
 
 test("agent favicon falls back to the default client's icon", async () => {
-  const { fetch } = await createTestOrchestrator();
+  const { fetch } = await withDefaultClient();
   await deployAgent(fetch);
   // The fallback reads aai-ui's built default client off disk — the same hard
   // precondition the agent-page specs above assert on. ASSERTED, never branched

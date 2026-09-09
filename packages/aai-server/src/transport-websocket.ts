@@ -1,22 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { AGENT_CSP, isTextAssetPath } from "@alexkroman1/aai/internal";
-import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
-import { createCachedDirReader } from "./_static-files.ts";
+import type { CachedDirReader } from "./_static-files.ts";
 import type { AppContext } from "./context.ts";
 import { SafePathSchema } from "./schemas.ts";
-
-// Cached, containment-checked reads over aai-ui's built default client.
-// Cached Buffers are served as bytes — no per-request UTF-8 round trip.
-//
-// `defaultClientDir` is aai-ui's own export rather than a third copy of the
-// three-line `require.resolve` dance: it resolves through that package's
-// manifest the same way, and turns a missing install into a message naming
-// @alexkroman1/aai-ui instead of a MODULE_NOT_FOUND for a path nobody wrote.
-// The memo the local copy carried is `createCachedDirReader`'s already.
-const readDefaultClient = createCachedDirReader(defaultClientDir);
 
 export async function handleAgentHealth(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
@@ -49,74 +38,111 @@ export async function handleAgentHealth(c: AppContext): Promise<Response> {
  */
 const SHELL_CACHE_CONTROL = "no-store";
 
-export async function handleAgentPage(c: AppContext): Promise<Response> {
-  const slug = c.var.slug;
-  const pageHeaders = {
-    "Content-Security-Policy": AGENT_CSP,
-    "Cache-Control": SHELL_CACHE_CONTROL,
-  };
-
-  const page = await c.env.store.getClientFile(slug, "index.html");
-  if (page) return c.html(page, 200, pageHeaders);
-
-  const record = await c.env.store.getAgent(slug);
-  if (!record) throw new HTTPException(404, { message: "HTML not found" });
-  const html = await readDefaultClient("index.html");
-  if (!html) throw new HTTPException(500, { message: "Default client not built" });
-  return c.body(new Uint8Array(html), 200, {
-    ...pageHeaders,
-    "Content-Type": "text/html; charset=UTF-8",
-  });
-}
-
 /**
- * `GET /:slug/favicon.ico` — the icon the default client's page links
- * relatively (`./favicon.ico`). A custom client that shipped its own
- * favicon wins; otherwise the one bundled with aai-ui's default client
- * is served (it ships in `dist/default-client` via the Vite public dir).
+ * The three routes that fall back to the prebuilt browser client, over an
+ * INJECTED reader.
+ *
+ * A factory rather than three module-level handlers because the reader is a
+ * dependency, and this module must not resolve it: it used to hold
+ * `createCachedDirReader(defaultClientDir)` at module scope, and that import
+ * is what dragged `@alexkroman1/aai-ui` into `aai-studio-server`'s bundle —
+ * where `defaultClientDir()`, which finds the client by self-referencing
+ * aai-ui's own `package.json`, cannot resolve, because Node permits that only
+ * from inside the package. Every deployed agent page answered 500 with "Could
+ * not locate the default client UI" on a platform where it was installed.
+ * Nothing types that away (a `require.resolve` returns `string` whether or not
+ * it resolved), so the fix is to not do it from here — `createOrchestrator`
+ * takes a required `clientDir` and the composition root passes
+ * `defaultClientDir()` in.
+ *
+ * Closed over rather than carried on `HonoEnv.Bindings`: only these three
+ * routes read it, and the studio app builds the same bindings (`StudioHonoEnv`
+ * extends them) while serving its own client through `studio-static.ts` — a
+ * shared binding would make every composition supply a reader that two of
+ * them never call. Same shape as `createAgentLogsHandler`,
+ * `createAgentClientConfigHandler` and `createPhoneHandler` beside it.
+ *
+ * The reader is built ONCE by the caller, not per request: it memoizes the
+ * files it has read, so one per request would re-read the whole default client
+ * on every page load. Its cached Buffers are served as bytes — no per-request
+ * UTF-8 round trip.
  */
-export async function handleAgentFavicon(c: AppContext): Promise<Response> {
-  const slug = c.var.slug;
-  const headers = {
-    "Content-Type": "image/x-icon",
-    "Cache-Control": "public, max-age=86400",
-  };
+export function createDefaultClientHandlers(readDefaultClient: CachedDirReader): {
+  handleAgentPage: (c: AppContext) => Promise<Response>;
+  handleAgentFavicon: (c: AppContext) => Promise<Response>;
+  handleClientAsset: (c: AppContext) => Promise<Response>;
+} {
+  async function handleAgentPage(c: AppContext): Promise<Response> {
+    const slug = c.var.slug;
+    const pageHeaders = {
+      "Content-Security-Policy": AGENT_CSP,
+      "Cache-Control": SHELL_CACHE_CONTROL,
+    };
 
-  // Stored deployed favicons are binary, so the bundler base64-encoded them
-  // (isTextAssetPath — same contract as handleClientAsset).
-  const stored = await c.env.store.getClientFile(slug, "favicon.ico");
-  if (stored !== null) return c.body(Buffer.from(stored, "base64"), 200, headers);
+    const page = await c.env.store.getClientFile(slug, "index.html");
+    if (page) return c.html(page, 200, pageHeaders);
 
-  const fallback = await readDefaultClient("favicon.ico");
-  if (!fallback) throw new HTTPException(404, { message: "Favicon not found" });
-  return c.body(new Uint8Array(fallback), 200, headers);
-}
-
-export async function handleClientAsset(c: AppContext): Promise<Response> {
-  const slug = c.var.slug;
-  // biome-ignore lint/style/noNonNullAssertion: path param guaranteed by route
-  const rawPath = c.req.param("path")!;
-  const parsed = SafePathSchema.safeParse(rawPath);
-  if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
-
-  const assetPath = parsed.data;
-  const relPath = `assets/${assetPath}`;
-  const headers = {
-    "Content-Type": mime.lookup(assetPath) || "application/octet-stream",
-    "Cache-Control": "public, max-age=31536000, immutable",
-  };
-
-  // User-deployed assets: binary files are stored base64-encoded (the bundler
-  // uses the same isTextAssetPath heuristic); decode them back to bytes.
-  const stored = await c.env.store.getClientFile(slug, relPath);
-  if (stored !== null) {
-    const body = isTextAssetPath(assetPath) ? stored : Buffer.from(stored, "base64");
-    return c.body(body, 200, headers);
+    const record = await c.env.store.getAgent(slug);
+    if (!record) throw new HTTPException(404, { message: "HTML not found" });
+    const html = await readDefaultClient("index.html");
+    if (!html) throw new HTTPException(500, { message: "Default client not built" });
+    return c.body(new Uint8Array(html), 200, {
+      ...pageHeaders,
+      "Content-Type": "text/html; charset=UTF-8",
+    });
   }
 
-  // Default client assets served straight from the cached Buffers (the
-  // shipped client is JS/CSS/HTML only).
-  const fallback = await readDefaultClient(relPath);
-  if (!fallback) throw new HTTPException(404, { message: "Asset not found" });
-  return c.body(new Uint8Array(fallback), 200, headers);
+  /**
+   * `GET /:slug/favicon.ico` — the icon the default client's page links
+   * relatively (`./favicon.ico`). A custom client that shipped its own
+   * favicon wins; otherwise the one bundled with aai-ui's default client
+   * is served (it ships in `dist/default-client` via the Vite public dir).
+   */
+  async function handleAgentFavicon(c: AppContext): Promise<Response> {
+    const slug = c.var.slug;
+    const headers = {
+      "Content-Type": "image/x-icon",
+      "Cache-Control": "public, max-age=86400",
+    };
+
+    // Stored deployed favicons are binary, so the bundler base64-encoded them
+    // (isTextAssetPath — same contract as handleClientAsset).
+    const stored = await c.env.store.getClientFile(slug, "favicon.ico");
+    if (stored !== null) return c.body(Buffer.from(stored, "base64"), 200, headers);
+
+    const fallback = await readDefaultClient("favicon.ico");
+    if (!fallback) throw new HTTPException(404, { message: "Favicon not found" });
+    return c.body(new Uint8Array(fallback), 200, headers);
+  }
+
+  async function handleClientAsset(c: AppContext): Promise<Response> {
+    const slug = c.var.slug;
+    // biome-ignore lint/style/noNonNullAssertion: path param guaranteed by route
+    const rawPath = c.req.param("path")!;
+    const parsed = SafePathSchema.safeParse(rawPath);
+    if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
+
+    const assetPath = parsed.data;
+    const relPath = `assets/${assetPath}`;
+    const headers = {
+      "Content-Type": mime.lookup(assetPath) || "application/octet-stream",
+      "Cache-Control": "public, max-age=31536000, immutable",
+    };
+
+    // User-deployed assets: binary files are stored base64-encoded (the bundler
+    // uses the same isTextAssetPath heuristic); decode them back to bytes.
+    const stored = await c.env.store.getClientFile(slug, relPath);
+    if (stored !== null) {
+      const body = isTextAssetPath(assetPath) ? stored : Buffer.from(stored, "base64");
+      return c.body(body, 200, headers);
+    }
+
+    // Default client assets served straight from the cached Buffers (the
+    // shipped client is JS/CSS/HTML only).
+    const fallback = await readDefaultClient(relPath);
+    if (!fallback) throw new HTTPException(404, { message: "Asset not found" });
+    return c.body(new Uint8Array(fallback), 200, headers);
+  }
+
+  return { handleAgentPage, handleAgentFavicon, handleClientAsset };
 }

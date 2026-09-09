@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import http from "node:http";
 import net, { type AddressInfo } from "node:net";
+import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
 import { createOrchestrator } from "./orchestrator.ts";
@@ -12,6 +13,7 @@ import {
   deploy,
   deployAgent,
   fakeSandbox,
+  NO_CLIENT_DIR,
 } from "./test-utils.ts";
 
 describe("handleAgentHealth", () => {
@@ -191,7 +193,9 @@ describe("handleAgentPage", () => {
   });
 
   test("the default-client fallback shell is no-store too", async () => {
-    const { fetch } = await createTestOrchestrator();
+    // The real built client, injected — see `createDefaultClientHandlers` for
+    // why this package's shipped source never resolves it itself.
+    const { fetch } = await createTestOrchestrator({ clientDir: defaultClientDir() });
     // An agent that shipped no client of its own falls back to aai-ui's
     // built default client — served from the container image, so a cached
     // shell outlives its assets across a rollout the same way.
@@ -267,7 +271,7 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
     credential_hashes: ["h"],
   });
 
-  const { injectWebSocket } = createOrchestrator({ slots, store });
+  const { injectWebSocket } = createOrchestrator({ slots, store, clientDir: NO_CLIENT_DIR });
   const server = http.createServer((_req, res) => {
     res.writeHead(404);
     res.end();

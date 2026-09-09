@@ -42,6 +42,7 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import { createSemaphore } from "./_semaphore.ts";
+import { createCachedDirReader } from "./_static-files.ts";
 import { createAgentLogsHandler } from "./agent-logs.ts";
 import { startAgentSweeps } from "./agent-sweeps.ts";
 import { registerAgentWorkflowRoutes } from "./agent-workflow-routes.ts";
@@ -80,17 +81,41 @@ import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import type { StudioAuth } from "./supabase-auth.ts";
-import {
-  handleAgentFavicon,
-  handleAgentHealth,
-  handleAgentPage,
-  handleClientAsset,
-} from "./transport-websocket.ts";
+import { createDefaultClientHandlers, handleAgentHealth } from "./transport-websocket.ts";
 import { createMemoryUploadBytes, type UploadBytes } from "./upload-bytes.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
   store: BundleStore;
+  /**
+   * Directory holding the prebuilt browser client — what an agent that
+   * deployed no client of its own is served. Pass `defaultClientDir()` from
+   * `@alexkroman1/aai-ui/client-dir`.
+   *
+   * REQUIRED, with no fallback, and both halves are load-bearing. This package
+   * used to resolve it itself, at module scope in `transport-websocket.ts`;
+   * compiled into `aai-studio-server`'s single-file entry that put
+   * `defaultClientDir()` outside the package it self-references, and every
+   * deployed agent page answered 500 with "Could not locate the default client
+   * UI" on a platform where it was installed. A `clientDir?: string` defaulting
+   * to `defaultClientDir()` here would be the same bug with an option in front
+   * of it — the import is what breaks, not the call — and a silently absent
+   * one would put the 500 back on whichever composition forgot. Required, a
+   * composition that forgets does not compile.
+   *
+   * It is also what every other consumer of this value already does:
+   * `createAgentServer` in `@alexkroman1/aai-runtime` takes `clientDir`, and
+   * the CLI's `start.ts`, `_dev-server.ts`, `_target-output.ts`,
+   * `_vercel-output.ts` plus the self-hosted example all pass
+   * `defaultClientDir()` in. This was the one consumer reaching for it.
+   *
+   * Resolve it EAGERLY at the call site. `defaultClientDir` is lazy as a
+   * published API, on the reasoning that a caller who never wanted the client
+   * should not pay an import-time throw; a composition passing it here does
+   * want the client, so a missing one should fail the boot rather than 500 one
+   * route on first hit.
+   */
+  clientDir: string;
   /** Named secret storage (Supabase Vault in production, memory in tests). */
   secrets?: SecretStore;
   /** Browser-session auth; absent means raw-API-key bearers only. */
@@ -371,6 +396,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // GET as well as POST because a carrier's webhook method is the operator's
   // to configure, and a GET-configured number should work rather than 405.
   const handlePhone = createPhoneHandler({ store: opts.store });
+
+  // The default-client fallbacks, over a reader built ONCE (it memoizes; one
+  // per request would re-read the whole client on every page load). WHERE that
+  // directory is comes from the caller — see `clientDir` above.
+  const { handleAgentPage, handleAgentFavicon, handleClientAsset } = createDefaultClientHandlers(
+    createCachedDirReader(() => opts.clientDir),
+  );
   agents.on(["GET", "POST"], PHONE_ROUTE, (c) => handlePhone(c, brokerOpts));
   // Every `/:slug/*` route the durable-workflow feature needs
   // (agent-workflow-routes.ts). Grouped because their correctness is a claim

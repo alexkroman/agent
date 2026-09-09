@@ -1523,20 +1523,31 @@ own location is no longer where its source lives.** `createRequire(import.meta
 harness path. Anything else that resolves a workspace sibling by module
 location owes the same fallback.
 
-**A sibling aai-server IMPORTS owes the opposite fix: declare it here, so it
-never moves.** tsdown externalizes only what this manifest declares, so an
-undeclared workspace package is inlined at `dist/index.mjs` — silent to the
-build and to tsc, and fatal to any module in it that resolves by its own
-location. `@alexkroman1/aai-ui` was undeclared (nothing here imports it;
-`aai-server/transport-websocket.ts` does), so `client-dir.ts` came in with it:
-`defaultClientDir()` finds the prebuilt browser client by self-referencing
-`@alexkroman1/aai-ui/package.json`, legal from inside that package and nowhere
-else, and every deployed agent page answered 500 with **"Could not locate the
-default client UI — is @alexkroman1/aai-ui installed?"** on a platform where it
-plainly was. A fallback was the wrong shape: that resolution is aai-ui's own,
-three modules from anything aai-server wrote. `bundled-deps.test.ts` holds
-every workspace package aai-server imports to this manifest; knip.json carries
-the ignore an unimported declaration needs.
+**So aai-server may not resolve a sibling package at all — THIS root does, and
+passes the result in.** `createOrchestrator` takes a required `clientDir` and
+this entry passes `defaultClientDir()`; the reader built from it is closed over
+by `createDefaultClientHandlers`. That is the shape every other consumer of
+this value already used (`createAgentServer` in `@alexkroman1/aai-runtime` takes
+`clientDir`; the CLI's four entries and the self-hosted example all pass
+`defaultClientDir()`), and aai-server was the one reaching for it — at module
+scope, in `transport-websocket.ts`. Bundled here, that import put
+`defaultClientDir()` outside the package whose `package.json` it
+self-references, which Node permits only from inside it, and every deployed
+agent page answered 500 with **"Could not locate the default client UI — is
+@alexkroman1/aai-ui installed?"** on a platform where it plainly was.
+
+Four properties. The option is **required with no fallback** — a
+`clientDir?: string` defaulting to `defaultClientDir()` here is the same bug
+with an option in front of it, since the IMPORT is what breaks, and a silently
+absent one puts the 500 back on whichever composition forgot; required, a
+composition that forgets does not compile. `ServiceConfig` therefore
+**`Omit`s** it: everything else there is read from the environment, and this is
+read from a sibling's module location, which only this package can ask for. It
+is resolved **eagerly**, so a missing aai-ui fails the boot rather than 500ing
+one route on first hit. And nothing types the resolution itself away — a
+`require.resolve` returns `string` whether or not it resolved — so
+`bundled-deps.test.ts` holds every workspace package aai-server's SHIPPED
+source imports to this manifest, for the next value that is not injectable.
 
 **The shared core is the `exports` map, and nothing else.** It is an
 explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox

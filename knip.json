@@ -276,22 +276,7 @@
       "entry": [
         "**/*.test.ts"
       ],
-      "includeEntryExports": true,
-      // Declared so it stays EXTERNAL to the service bundle, not because
-      // anything here imports it — the same shape as `aai-guest`'s list above.
-      // `aai-server` is compiled into this package's entry
-      // (tsdown.config.ts), it imports `@alexkroman1/aai-ui/client-dir`, and
-      // tsdown externalizes only what this manifest declares. Undeclared, that
-      // module was INLINED at `dist/index.mjs`, where its
-      // `require.resolve("@alexkroman1/aai-ui/package.json")` — a package
-      // self-reference, legal only from inside the package — cannot resolve:
-      // every deployed agent page answered 500 with "Could not locate the
-      // default client UI". Dropping this entry does not make the import
-      // unused; it moves the module out of the package that has to hold it.
-      // `bundled-deps.test.ts` is what fails if the dependency goes away.
-      "ignoreDependencies": [
-        "@alexkroman1/aai-ui"
-      ]
+      "includeEntryExports": true
     }
   }
 }

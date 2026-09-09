@@ -65,8 +65,8 @@ describe("bundled workspace deps", () => {
 });
 
 /**
- * Every workspace package `aai-server` imports must be declared HERE too, so
- * bundling that package in never MOVES a sibling's modules.
+ * A workspace package `aai-server`'s SHIPPED source imports must be declared
+ * HERE too, so bundling that package in never MOVES a sibling's modules.
  *
  * `aai-server` is compiled into this entry (above), and tsdown externalizes
  * only what this manifest declares — so a sibling `aai-server` imports and
@@ -80,31 +80,41 @@ describe("bundled workspace deps", () => {
  * `@alexkroman1/aai-ui/package.json`, legal from inside that package and
  * nowhere else — was inlined here, and every deployed agent page answered 500
  * with "Could not locate the default client UI — is @alexkroman1/aai-ui
- * installed?" on a platform where it plainly was. Declared, the specifier
- * stays external and the function runs inside its own package again.
+ * installed?" on a platform where it plainly was.
  *
- * The check is on the IMPORT, not on the `require.resolve`: the resolution
- * that broke lives in aai-ui, three modules from anything aai-server wrote, so
- * a scan for resolve calls in the bundled source would have seen nothing. What
- * is knowable here is which packages the bundle swallows.
+ * The REAL fix was to stop resolving it from a package that gets bundled:
+ * `createOrchestrator` takes a required `clientDir` and this entry passes
+ * `defaultClientDir()` in, so the resolution happens in the package that
+ * declares aai-ui (`createDefaultClientHandlers` carries that argument).
+ * This check is what keeps the NEXT one from being found in production
+ * instead — it is a property of the bundling boundary, not of that one value.
  *
- * This package's own guide states the mirror rule — "anything else that resolves a
- * workspace sibling by module location owes the same fallback" (the shape
- * `guestPackageDir` carries for `aai-guest`, which is RESOLVED but never
+ * Two scoping notes. It reads SHIPPED source only: a test file is not in the
+ * entry graph, which is exactly why aai-server's remaining aai-ui imports live
+ * in `orchestrator.test.ts` and `transport-websocket.test.ts`. And it checks
+ * the IMPORT, not the `require.resolve` — the resolution that broke lives in
+ * aai-ui, three modules from anything aai-server wrote, so a scan for resolve
+ * calls in the bundled source would have seen nothing. What is knowable here
+ * is which packages the bundle swallows.
+ *
+ * This package's own guide states the mirror rule — "anything else that
+ * resolves a workspace sibling by module location owes the same fallback" (the
+ * shape `guestPackageDir` carries for `aai-guest`, which is RESOLVED but never
  * imported, so it does not appear here): keeping the package external is the
  * fix when the sibling is imported, and a fallback is the fix when it is only
  * ever resolved.
  */
 describe("workspace siblings of the bundled server", () => {
-  /** Every workspace package `aai-server`'s source imports by name. */
+  /** Every workspace package `aai-server`'s SHIPPED source imports by name. */
   function serverWorkspaceImports(): string[] {
     const found = new Set<string>();
     for (const name of readdirSync(SERVER_SRC)) {
-      if (!name.endsWith(".ts")) continue;
+      // Tests are not in the entry graph, so their imports are not bundled.
+      if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;
       const source = readFileSync(path.join(SERVER_SRC, name), "utf-8");
       // The character class excludes `/`, so a subpath specifier
-      // (`@alexkroman1/aai-ui/client-dir`, `aai-server/orchestrator`) yields
-      // the PACKAGE — which is the granularity externality is decided at.
+      // (`@alexkroman1/aai-runtime/internal`) yields the PACKAGE — which is
+      // the granularity externality is decided at.
       for (const m of source.matchAll(/from "(@alexkroman1\/[\w.-]+|aai-[\w.-]+)/g)) {
         found.add(m[1] as string);
       }
@@ -118,7 +128,7 @@ describe("workspace siblings of the bundled server", () => {
     const imports = serverWorkspaceImports();
     // A scan that matched nothing would make the loop below vacuous — the same
     // trap the aai-server specifier check above guards against.
-    expect(imports.length).toBeGreaterThan(2);
+    expect(imports.length).toBeGreaterThan(1);
     const declared = Object.keys(manifest.dependencies);
     for (const name of imports) {
       expect
@@ -131,9 +141,17 @@ describe("workspace siblings of the bundled server", () => {
     }
   });
 
-  // The regression itself: the package whose self-reference the bundle broke.
-  test("include the default client's package", () => {
-    expect(serverWorkspaceImports()).toContain("@alexkroman1/aai-ui");
+  // The regression, stated as the property that now holds rather than as the
+  // declaration that patched it: the agent surface serves the default client
+  // from an INJECTED directory, so the package that gets bundled names aai-ui
+  // nowhere outside its own tests.
+  test("do not include the default client, which is injected instead", () => {
+    expect(serverWorkspaceImports()).not.toContain("@alexkroman1/aai-ui");
+    // …and the composition root is the one that resolves it, which is what
+    // keeps the specifier external and the dependency honest to knip.
+    const entry = readFileSync(path.join(PACKAGE_DIR, "index.ts"), "utf-8");
+    expect(entry).toContain('from "@alexkroman1/aai-ui/client-dir"');
+    expect(entry).toContain("clientDir: defaultClientDir()");
     expect(Object.keys(manifest.dependencies)).toContain("@alexkroman1/aai-ui");
   });
 });
