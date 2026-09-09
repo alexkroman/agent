@@ -49,6 +49,7 @@ import {
 } from "@alexkroman1/aai-runtime/eval";
 import { type EvalMode, resolveEvalMode } from "@alexkroman1/aai-runtime/eval/vitest";
 import { afterEach, beforeEach, describe, test } from "vitest";
+import { type StudioPromptKind, shippedStudioPrompt } from "./_studio-eval-prompt.ts";
 import { type FakeHostChannel, installFakeHostChannel } from "./_test-utils.ts";
 import { setHostSend } from "./harness-rpc.ts";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS } from "./studio-agent.ts";
@@ -177,6 +178,21 @@ export type StudioEvalCaseOptions = {
    * pass one to grade a builtin that must really answer.
    */
   readonly fetch?: typeof globalThis.fetch;
+  /**
+   * Which system prompt this case runs on. Defaults to the harness's.
+   *
+   * The default is right for a case whose subject is a GUEST surface — a tool's
+   * refusal wording, its result prose — and `_studio-eval-prompt.test.ts` pins
+   * {@link STUDIO_EVAL_PROMPT} thin precisely so those cases cannot be
+   * pre-answered by it. It is wrong for a case whose subject is an OUTCOME:
+   * what the agent builds from a product prompt is largely a measurement of the
+   * studio's own prompt, so those pass a kind here and run the shipped text.
+   *
+   * Per case rather than per file, because the suite legitimately holds both
+   * kinds of claim and a global switch would silently change what the refusal
+   * cases mean.
+   */
+  readonly studioPrompt?: StudioPromptKind;
 };
 
 /** How a case is declared. Named `test` at the call site — see `EvalTest`. */
@@ -271,8 +287,9 @@ export function describeStudioEval(define: (test: StudioEvalTest) => void): void
           "wiring and the tools' own answers, not the agent's behaviour.",
   );
   sayFromHarness(
-    "eval: the system prompt is the harness's, NOT the studio's shipped one — see " +
-      "_studio-eval-harness.ts. A result here says nothing about that prompt.",
+    "eval: cases default to the HARNESS system prompt and say nothing about the " +
+      "studio's; a case that passes `studioPrompt` runs the shipped one from " +
+      "packages/aai-guest/studio-prompts/ (kept current by `check:studio-prompt`).",
   );
 
   describe("the studio coding agent", () => {
@@ -346,7 +363,15 @@ async function runStudioCase(run: StudioCaseRun): Promise<void> {
       // `providerEnv` and never as `ctx.env`.
       apiKey: process.env[ASSEMBLYAI_LLM_API_KEY_ENV] ?? "",
       chatToken: "eval-chat-token",
-      system: STUDIO_EVAL_PROMPT,
+      // The shipped prompt when the case asked for one, and the thin harness
+      // constant otherwise. `shippedStudioPrompt` THROWS on a missing copy
+      // rather than falling back — a case that asked for the studio's prompt
+      // and quietly got the harness's is the one failure worth more than the
+      // case itself.
+      system:
+        options?.studioPrompt === undefined
+          ? STUDIO_EVAL_PROMPT
+          : shippedStudioPrompt(options.studioPrompt),
       model: studioEvalModel(),
       maxSteps: options?.maxSteps ?? DEFAULT_STUDIO_EVAL_STEPS,
     });

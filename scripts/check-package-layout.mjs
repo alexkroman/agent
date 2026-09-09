@@ -74,53 +74,20 @@ import { join } from "node:path";
 
 import { parseScriptArgs } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
+import { isAllowedOutsideSrc } from "./_package-layout-scope.mjs";
+
+// Re-exported so an existing importer keeps one name for each. The gate's own
+// spec reaches past this file to the scope module: these are DECISIONS with no
+// I/O, and importing them from here would drag `node:fs` and
+// `node:child_process` into a package whose tsconfig has no node types.
+export { isAllowedOutsideSrc, PRODUCT_TREES, ROOT_CONFIGS } from "./_package-layout-scope.mjs";
 
 const ROOT = repoRoot(import.meta.url);
-
-/**
- * Config files a package keeps at its root, by exact name.
- *
- * Not a pattern: each of these is resolved BY NAME from the package directory
- * by a tool that is not ours (vitest, tsdown, vite, tsc, turbo), so the list is
- * a statement about those tools rather than a convention we could relax.
- */
-export const ROOT_CONFIGS = new Set(["vitest.config.ts", "vite.config.ts", "tsdown.config.ts"]);
-
-/**
- * Directories whose TypeScript is a shipped product rather than this repo's
- * source, keyed by package.
- *
- * Per package AND per directory on purpose. A repo-wide glob (`**\/templates/**`)
- * would silently exempt any future directory that happened to take the name,
- * which is the shape of exemption `guard-invariants` records paying for four
- * times.
- */
-export const PRODUCT_TREES = {
-  "aai-templates": ["templates", "scaffold"],
-};
 
 /** A corpus this far below the real tree means the scan stopped resolving. */
 export const MIN_PACKAGES = 8;
 /** Likewise for files: the tree holds ~1,750 under `src/`. */
 export const MIN_FILES = 1200;
-
-/**
- * Whether a repo-relative TypeScript path is allowed to sit outside `src/`.
- *
- * Exported so the gate's spec can drive the decision directly rather than
- * re-deriving it from the report — the same reason `_deploy-changeset-scope.mjs`
- * exports `isShippedSource`.
- *
- * @param {string} file - repo-relative path, `/`-separated
- * @returns {boolean}
- */
-export function isAllowedOutsideSrc(file) {
-  const [, pkg, ...rest] = file.split("/");
-  if (pkg === undefined || rest.length === 0) return false;
-  if (rest.length === 1 && ROOT_CONFIGS.has(rest[0])) return true;
-  const trees = PRODUCT_TREES[pkg] ?? [];
-  return trees.includes(rest[0]);
-}
 
 /** Every git-tracked `.ts`/`.tsx` under `packages/`. */
 function trackedTypeScript() {
