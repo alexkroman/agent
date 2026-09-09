@@ -85,7 +85,7 @@ describe("SuiteSpread.report", () => {
     });
     try {
       const spread = new mod.SuiteSpread("Desk");
-      await body(spread as unknown as SuiteSpread);
+      await body(spread);
       spread.report();
       for (const fn of hooks) fn();
     } finally {
