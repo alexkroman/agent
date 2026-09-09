@@ -127,7 +127,6 @@ const MARKDOWN_FILES = [
   "docs/src/content/docs/build/state.md",
   "docs/src/content/docs/build/testing.md",
   "docs/src/content/docs/build/tools.md",
-  "docs/src/content/docs/build/workflow-evals.md",
   "docs/src/content/docs/deploy/anywhere.md",
   "docs/src/content/docs/deploy/local.md",
   "docs/src/content/docs/deploy/phone.md",
@@ -136,6 +135,7 @@ const MARKDOWN_FILES = [
   "docs/src/content/docs/more/custom-ui.md",
   "docs/src/content/docs/more/self-hosting.md",
   "docs/src/content/docs/more/voices-and-models.md",
+  "docs/src/content/docs/more/workflow-evals.md",
   "docs/src/content/docs/start/how-it-works.md",
   "docs/src/content/docs/start/quickstart.md",
 ];

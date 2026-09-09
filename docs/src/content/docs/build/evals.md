@@ -15,7 +15,7 @@ An eval is an ordinary vitest file. Everything in it is real — your prompt, yo
 tools, the session's own event stream — except the microphone and the speaker.
 
 A [background job](/agent/more/background-jobs/) has no session, so it is
-covered separately, in [Workflow evals](/agent/build/workflow-evals/).
+covered separately, in [Workflow evals](/agent/more/workflow-evals/).
 
 ## Your first eval
 
@@ -258,7 +258,7 @@ answer, and prefer a harder case to a weaker assertion.
 
 ## Next
 
-- [Workflow evals](/agent/build/workflow-evals/) — the same job for a background
-  job
+- [Workflow evals](/agent/more/workflow-evals/) — the same questions, asked of a
+  background job
 - [Run it locally](/agent/deploy/local/) — `aai dev`, and the half no eval reaches
 - [Publish](/agent/deploy/publish/) — ship it, and where your secrets go

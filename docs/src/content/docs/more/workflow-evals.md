@@ -81,6 +81,7 @@ the work. It says nothing about resuming after step 27.
 
 ## Next
 
-- [Evals](/agent/build/evals/) — the same job for a voice session, and why one
-  run is not a verdict
-- [Background jobs](/agent/more/background-jobs/) — writing the workflow itself
+- [Your own UI](/agent/more/custom-ui/) — the page a workflow app serves
+- [Publish](/agent/deploy/publish/) — shipping it
+- [Evals](/agent/build/evals/) — the same questions asked of a voice session, and
+  why one run is not a verdict
