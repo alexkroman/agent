@@ -1,0 +1,73 @@
+/* Copyright 2026 the AAI authors. MIT license. */
+
+/*
+ * The palette is one accent plus Starlight's own greys. A docs site for a
+ * five-minute quickstart should read as calm rather than branded, and every
+ * colour past the first is a decision the reader has to interpret.
+ */
+:root {
+  --sl-color-accent-low: #17263a;
+  --sl-color-accent: #2f6feb;
+  --sl-color-accent-high: #b9d0fb;
+  --sl-content-width: 50rem;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #d4e2fd;
+  --sl-color-accent: #1a56d6;
+  --sl-color-accent-high: #10306e;
+}
+
+/*
+ * Prose that breathes. The default heading rhythm is tuned for reference pages
+ * with many short sections; these pages are a handful of long ones.
+ */
+.sl-markdown-content :not(h1, h2, h3, h4, h5, h6) + :is(h2, h3) {
+  margin-top: 2.5rem;
+}
+
+.sl-markdown-content h2 {
+  font-size: var(--sl-text-xl);
+  letter-spacing: -0.01em;
+}
+
+/* Code is the point of most of these pages, so give it room and a soft edge. */
+.sl-markdown-content :is(pre) {
+  border-radius: 0.5rem;
+  padding: 1rem;
+  font-size: var(--sl-text-code-sm);
+}
+
+/*
+ * Code sizing.
+ *
+ * Most of these pages are made of seventy-odd-column TypeScript, and at the
+ * inherited size 20 blocks across the 16 pages clipped and grew a horizontal
+ * scrollbar. Sizing the code down fits them in the prose column; widening the
+ * column instead would fix the code by making every paragraph too long to
+ * read, and letting the block break out of the column ran it under the
+ * sidebar divider and the table-of-contents rail.
+ */
+.sl-markdown-content :is(pre) code {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+/*
+ * The splash page's hero. With no hero image the two-column layout collapses
+ * to one, and its reserved height became ~130px of nothing between the call to
+ * action and the first section — which reads as a page that has ended.
+ */
+.hero {
+  padding-block: 1rem 0;
+}
+
+.hero .tagline {
+  font-size: var(--sl-text-body-lg);
+  max-width: 34rem;
+}
+
+/* First section of a splash page follows the hero directly. */
+.hero + .sl-markdown-content > :first-child {
+  margin-top: 1.5rem;
+}

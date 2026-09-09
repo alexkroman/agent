@@ -1,48 +1,15 @@
 # AAI SDK
 
-Voice agent development kit. Define a voice agent as a TypeScript file,
-run it locally with a browser voice client, and deploy it with one command.
+The generated API reference for the published packages — every type, every
+signature, every doc comment, rendered from the source.
 
-```sh
-npm i -g @alexkroman1/aai-cli
-aai init my-agent
-cd my-agent
-aai dev
-```
+**New here? Start with the [guide](/agent/) instead.** It is fifteen short
+pages that build and ship an agent; this reference is what you reach for once
+you know which name you are looking up.
 
-`agent.ts` — the definition:
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "Weather Assistant",
-  systemPrompt: "You help callers plan around the weather. Keep replies short.",
-  voice: "michael",
-});
-```
-
-`tools/get_weather.ts` — **a tool is a FILE**, named by its own filename and
-registered by nothing. `agent()` takes no `tools` field:
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Get current weather for a city",
-  inputSchema: z.object({ city: z.string().describe("City name") }),
-  execute: async ({ city }) => {
-    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
-    return await res.json();
-  },
-});
-```
-
-With no provider fields the agent runs an all-AssemblyAI STT → LLM → TTS
-pipeline billed to one `ASSEMBLYAI_API_KEY`; `voice` picks its TTS voice.
-Set any of `stt`, `llm`, `tts` to swap a single stage — e.g.
-`llm: "claude-sonnet-4-6"` — and the unset stages keep the default.
+- [Quickstart](/agent/start/quickstart/) — a working agent in five minutes
+- [Tools](/agent/build/tools/) · [Session state](/agent/build/state/) ·
+  [Voices and models](/agent/more/voices-and-models/)
 
 ## What's documented here
 
@@ -116,6 +83,7 @@ frame:
 
 ## More
 
+- [The guide](/agent/) — how to build and ship an agent
 - [GitHub repository](https://github.com/alexkroman/agent)
 - [Agent-building guide](https://github.com/alexkroman/agent/blob/main/packages/aai-templates/scaffold/CLAUDE.md)
   (ships inside the SDK as `node_modules/@alexkroman1/aai/AGENT_GUIDE.md`,

@@ -602,12 +602,16 @@
         "typedoc.json",
         "home.md",
         "tsconfig.typedoc.json",
+        "astro.config.mjs",
+        "src/**",
         "$TURBO_ROOT$/packages/aai/typedoc.json",
         "$TURBO_ROOT$/packages/aai-ui/typedoc.json",
         "$TURBO_ROOT$/packages/aai-runtime/typedoc.json"
       ],
       "outputs": [
-        "dist/**"
+        "dist/**",
+        "public/reference/**",
+        ".astro/**"
       ]
     }
   }

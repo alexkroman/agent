@@ -3,7 +3,7 @@
   "name": "AAI SDK",
   "entryPointStrategy": "packages",
   "entryPoints": ["../packages/aai", "../packages/aai-ui", "../packages/aai-runtime"],
-  "out": "dist",
+  "out": "public/reference",
   "readme": "./home.md",
   "includeVersion": true,
   // Every option here reaches the SUB-PROJECTS. With

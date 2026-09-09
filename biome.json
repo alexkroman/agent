@@ -9,6 +9,8 @@
       "docs/**",
       "!**/node_modules",
       "!**/dist",
+      "!docs/public/reference",
+      "!docs/.astro",
       "!**/coverage",
       "!**/.studio-build",
       "!**/.workspaces",

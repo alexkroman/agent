@@ -39,6 +39,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import path from "node:path";
 import { parseScriptArgs } from "./_args.mjs";
 import { stripReferenceDirectives } from "./_doc-example-ambients.mjs";
+import { assertEveryDocsPageListed } from "./_docs-site-pages.mjs";
 import { enforceNoCheckBudget } from "./_no-check-ratchet.mjs";
 import { REPO_ROOT as repo, runScaffoldTsc } from "./_scaffold-tsc.mjs";
 
@@ -110,7 +111,34 @@ const MARKDOWN_FILES = [
   "packages/aai-templates/scaffold/CLAUDE.md",
   "examples/host-server/README.md",
   "examples/self-hosted-server/README.md",
+  // The narrative documentation site. Every fence here is something a reader
+  // copies into their own project, which is the whole population this gate
+  // exists for — and unlike the READMEs above, these pages are written to be
+  // the FIRST code someone runs. Listed one per line rather than resolved from
+  // the directory because both gate specs scrape this array's string literals
+  // (see `_doc-example-corpus.ts`), and a spread would make the pages
+  // invisible to them; `assertEveryDocsPageListed` (`_docs-site-pages.mjs`)
+  // is what stops a new page defaulting out.
+  "docs/src/content/docs/index.mdx",
+  "docs/src/content/docs/404.md",
+  "docs/src/content/docs/cli/index.md",
+  "docs/src/content/docs/build/agent.md",
+  "docs/src/content/docs/build/state.md",
+  "docs/src/content/docs/build/testing.md",
+  "docs/src/content/docs/build/tools.md",
+  "docs/src/content/docs/deploy/anywhere.md",
+  "docs/src/content/docs/deploy/local.md",
+  "docs/src/content/docs/deploy/phone.md",
+  "docs/src/content/docs/deploy/publish.md",
+  "docs/src/content/docs/more/background-jobs.md",
+  "docs/src/content/docs/more/custom-ui.md",
+  "docs/src/content/docs/more/self-hosting.md",
+  "docs/src/content/docs/more/voices-and-models.md",
+  "docs/src/content/docs/start/how-it-works.md",
+  "docs/src/content/docs/start/quickstart.md",
 ];
+
+assertEveryDocsPageListed(repo, MARKDOWN_FILES);
 
 /**
  * Prompt text the studio's coding agent treats as ground truth — a DIRECTORY,
