@@ -28,7 +28,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
-import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
+import { type AgentClient, createAgentClient } from "@alexkroman1/aai/workflow-api";
 import { pageBaseUrl } from "./_utils.ts";
 
 /**
@@ -57,13 +57,20 @@ export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
  * re-exported so a page needs ONE import to type its runs and render its form.
  */
 /**
- * The call set {@link createWorkflowApi} returns.
+ * The workflow half of what {@link createWorkflowApi} returns — every hook here
+ * takes it, because a run is all a hook needs.
  *
  * Re-exported from the SDK rather than declared here: it IS the SDK's client,
  * and a structural restatement would be a second thing to keep in step with the
  * routes for no gain.
  */
 export type {
+  // What {@link createWorkflowApi} answers: every workflow route AND
+  // `config()`. Named here because a page that holds one names its type — a
+  // prop, a module-level const's annotation — and reaching into
+  // `@alexkroman1/aai/workflow-api` for one name is what this package's
+  // wrappers exist to avoid.
+  AgentClient,
   WorkflowApi,
   // Both halves of a def's shape, not just the output. `WorkflowInputOf` is
   // what a page names to type the object it hands `submit()`, and it was absent
@@ -106,20 +113,28 @@ export type WorkflowApiOptions = {
 };
 
 /**
- * Create a workflow API client aimed at the agent serving this page.
+ * Create a client for the agent serving this page.
  *
- * Hoist it out of the component that uses it. `useWorkflowRun` holds the client
- * in a ref precisely so a fresh object per render does not restart its watch,
- * but a client built in render is still a new `fetch` closure every time and
- * reads as though it were free.
+ * **You usually do not need one.** Every hook and component here builds this
+ * exact client lazily and once when no `api` is passed
+ * (`_workflow-api-ref.ts`), so `useWorkflowSubmit("digest")` already talks to
+ * the right agent. Reach for this when the client has to be DIFFERENT from that
+ * default — another agent's `baseUrl`, or a `token` — or when a page wants
+ * `config()` and the run calls on one object.
+ *
+ * If you do build one, hoist it out of the component that uses it.
+ * `useWorkflowRun` holds the client in a ref precisely so a fresh object per
+ * render does not restart its watch, but a client built in render is still a new
+ * `fetch` closure every time and reads as though it were free.
  *
  * @example
  * ```tsx
  * import { createWorkflowApi, useWorkflowRun } from "@alexkroman1/aai-ui";
  * import { useState } from "react";
  *
- * // Module scope, not render scope — see above.
- * const api = createWorkflowApi();
+ * // A DIFFERENT agent than the one serving this page, so the client is
+ * // explicit — and module scope, not render scope, per above.
+ * const api = createWorkflowApi({ baseUrl: "https://agents.example/digest" });
  *
  * function StartDigest() {
  *   const [runId, setRunId] = useState<string>();
@@ -137,12 +152,17 @@ export type WorkflowApiOptions = {
  *
  * @param options - See {@link WorkflowApiOptions}. Both fields are optional; the
  * default base URL is the page's own origin and path.
- * @returns The call set — see {@link WorkflowApi}.
+ * @returns Every workflow call plus `config()` and `baseUrl` — see
+ * {@link AgentClient}. It was the narrow {@link WorkflowApi}, which left a page
+ * that also wanted the agent's own name building a SECOND client (or a bare
+ * `fetch` and a hand-written URL join) for one read; the SDK documents
+ * `createAgentClient` as a superset of the same routes, so delegating to it
+ * widens the return without a second implementation of anything.
  *
  * @public
  */
-export function createWorkflowApi(options: WorkflowApiOptions = {}): WorkflowApi {
-  return createWorkflowApiClient({
+export function createWorkflowApi(options: WorkflowApiOptions = {}): AgentClient {
+  return createAgentClient({
     baseUrl: options.baseUrl ?? pageBaseUrl(),
     ...omitUndefined({ token: options.token }),
   });

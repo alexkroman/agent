@@ -12,6 +12,7 @@
  * @module session-slot-types
  */
 
+import type { DeepReadonly } from "./deep-readonly.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
@@ -134,9 +135,52 @@ export type SlotCaps<T> = T extends object
 /**
  * Options for {@link sessionSlot}.
  *
+ * @typeParam V - What {@link SessionSlotOptions.view} projects to, inferred from
+ *   the view itself. Defaults to the whole value, which is what
+ *   {@link SessionSlot.projected} projects when no view is declared.
+ *
  * @public
  */
-export interface SessionSlotOptions<T, After = void> {
+export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
+  /**
+   * What this slot shows the BROWSER — declared here so it is written once and
+   * read from both ends as {@link SessionSlot.projected}.
+   *
+   * `agent({ syncState: cartSlot.projected })` and
+   * `useAgentState(cartSlot.projected)` are then the same object, so the frame
+   * the server pushes and the frame the page renders before the first push
+   * cannot disagree. That drift is what this field exists to remove:
+   * {@link SessionSlot.projection} is a METHOD, so the projection is a value
+   * somebody has to name, export and import at both ends — and every shipped
+   * example that got it right did so by exporting
+   * `export const cartProjection = cartSlot.projection(cartView)` from a
+   * `shared.ts`, eight of them also hand-writing the `StateProjection<V>`
+   * annotation that follows from the view.
+   *
+   * It also makes the memoization caveat on `useAgentState` evaporate for this
+   * path: `projected` is built ONCE, at declaration, so it is identity-stable
+   * for the life of the module and a projection spelled inline in a render body
+   * is not something this spelling can express.
+   *
+   * **Absent, the WHOLE value is projected.** Declare a view to narrow it — to
+   * what the page renders, rather than to whatever the slot happens to hold.
+   *
+   * A slot with more than one audience keeps
+   * {@link SessionSlot.projection}: `syncState` takes an array, so a second view
+   * is a second projection over the same slot.
+   *
+   * ```ts
+   * import { agent, sessionSlot } from "@alexkroman1/aai";
+   *
+   * type Cart = { items: string[]; nextId: number };
+   * export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [], nextId: 1 }), {
+   *   view: (cart) => ({ count: cart.items.length }),
+   * });
+   *
+   * export default agent({ name: "Shop", syncState: cartSlot.projected });
+   * ```
+   */
+  view?: (value: DeepReadonly<T>) => V;
   /**
    * Growth caps on the slot's top-level arrays, enforced by the SLOT on every
    * store — `update`, `set`, `reset`, and the first `get` that installs the

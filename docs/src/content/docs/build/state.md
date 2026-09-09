@@ -13,10 +13,10 @@ module-level variable it is safe when tools run concurrently:
 import { sessionSlot } from "@alexkroman1/aai";
 
 export type Item = { sku: string; qty: number };
+export type Cart = { items: Item[] };
 
-export const cartSlot = sessionSlot("cart", () => ({
-  items: [] as Item[],
-}));
+// The return annotation is what types the value — no `[] as Item[]` cast.
+export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }));
 ```
 
 Then a tool **reads** it with `slot.tool()`:
@@ -53,8 +53,10 @@ There is nothing to declare on `agent()`. The slot owns its own default.
 
 ## Four rules
 
-- **`tool` reads, `updateTool` writes.** A read gets a frozen copy, so
-  mutating it throws instead of silently doing nothing.
+- **`tool` reads, `updateTool` writes.** A read is readonly all the way down,
+  so `cart.items.push(item)` is a compile error at every depth — and a
+  `TypeError` at run time for a caller with no types — instead of a write that
+  silently goes nowhere.
 - **An `updateTool` body cannot `await`.** Whatever it leaves on the draft is
   stored the moment it returns, which is what keeps two tools from overwriting
   each other. If you need to fetch something first, use a plain `tool()` — its
@@ -69,22 +71,41 @@ There is nothing to declare on `agent()`. The slot owns its own default.
 
 ## Showing it to the browser
 
-`syncState` projects a slot to your own UI after every tool call:
+Add a `view` to the same declaration — what the browser sees — and the slot
+carries it as `slot.projected`:
+
+```ts
+// shared.ts, again — the view belongs with the slot.
+import { sessionSlot } from "@alexkroman1/aai";
+
+export type Cart = { items: { sku: string; qty: number }[] };
+
+export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
+  view: (cart) => ({ count: cart.items.length }),
+});
+```
+
+`syncState` pushes it after every tool call:
 
 ```ts no-check
 // agent.ts
 import { agent } from "@alexkroman1/aai";
 import { cartSlot } from "./shared.ts";
 
-export default agent({
-  name: "Store",
-  syncState: cartSlot.projection((cart) => ({ count: cart.items.length })),
-});
+export default agent({ name: "Store", syncState: cartSlot.projected });
 ```
 
-Read it with `useAgentState(cartSlot.projection(view))` in the browser — see
-[Your own UI](/agent/more/custom-ui/). Without a `syncState` there is nothing
-for that hook to receive.
+The browser reads it with the same object — `useAgentState(cartSlot.projected)`,
+no type argument and no empty frame to derive. See
+[Your own UI](/agent/more/custom-ui/).
+
+Both ends pass one projection, built once where the slot is declared, so the
+frame the page renders before the first tool call and the frames pushed after it
+cannot describe different views.
+
+Showing one slot two ways is what `slot.projection(view)` is still for —
+`syncState` takes an array. Without a `syncState` at all there is nothing for
+the hook to receive.
 
 ## Next
 

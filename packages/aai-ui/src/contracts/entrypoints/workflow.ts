@@ -19,6 +19,10 @@
  */
 
 export {
+  // What `createWorkflowApi` answers — every workflow route plus the agent's
+  // own `config()`. It is the SDK's `AgentClient`, re-exported from the root
+  // barrel like the three names above.
+  type AgentClient,
   AudioResult,
   type AudioResultCaptions,
   type AudioResultProps,

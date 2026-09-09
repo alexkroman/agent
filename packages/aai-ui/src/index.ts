@@ -26,7 +26,7 @@
  * | --- | --- |
  * | the call itself | {@link useSession} (everything), {@link useSessionStatus}, {@link useSessionError}, {@link useSessionActions}, {@link useSessionSelector} |
  * | what was said | {@link useConversation}, {@link useUserTranscript} |
- * | what the agent projects | {@link useAgentState} — pass the `slot.projection(…)` the agent declared, and it types the state AND supplies the frame rendered before the first push |
+ * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
  * | tools, as they run | {@link useToolCallStart}, {@link useToolResult}, {@link useEvent} |
  * | a durable run | {@link useWorkflowSubmit} (start one), {@link useWorkflowRun} (watch one), {@link useWorkflowRuns} / {@link useWorkflows} (list), {@link useWorkflowProgress} / {@link useWorkflowStream} (its output as it arrives) |
  * | page chrome | {@link useTheme}, {@link useCopy}, {@link useFlash}, {@link useDownloadUrl}, {@link useRunKey} |
@@ -40,17 +40,20 @@
  *
  * ## Two things worth knowing before the reference below
  *
- * **Three names are re-exported from `@alexkroman1/aai`** — {@link WorkflowInputOf},
- * {@link WorkflowOutputOf} and {@link WorkflowSummary}, plus {@link isTerminal}
- * and {@link ClientConfigResponse}. They are one declaration with two reference
- * pages, not two types; a page takes them from here, an `agent.ts` from there.
+ * **Several names are re-exported from `@alexkroman1/aai`** —
+ * {@link WorkflowInputOf}, {@link WorkflowOutputOf}, {@link WorkflowSummary} and
+ * {@link AgentClient}, plus {@link isTerminal} and {@link ClientConfigResponse}.
+ * They are one declaration with two reference pages, not two types; a page takes
+ * them from here, an `agent.ts` from there.
  *
- * **{@link createWorkflowApi} is the browser's workflow client, and there are two
- * others.** `createWorkflowApiClient` (`@alexkroman1/aai/workflow-api`) is the
- * same call set for a caller with no page to default its base URL from — a
- * script, a cron job, a server — and `createAgentClient` on that subpath is a
- * superset that also reaches `/client-config`. Reach for the one here whenever
- * the code runs in a page the agent serves.
+ * **{@link createWorkflowApi} is the browser's client, and there is one other.**
+ * `createAgentClient` (`@alexkroman1/aai/workflow-api`) is the same
+ * {@link AgentClient} for a caller with no page to default its base URL from — a
+ * script, a cron job, a server. Reach for the one here whenever the code runs in
+ * a page the agent serves; it delegates to that factory, so there is one
+ * implementation of the routes and one `config()`. (It used to answer the
+ * narrower `WorkflowApi`, which made a page wanting the agent's own name build a
+ * second client for one read.)
  *
  * @module
  */
@@ -60,9 +63,10 @@
 // and same argument as `WORKFLOW_STATUS_LABELS` below.
 export { AGENT_STATE_LABELS } from "./agent-state-labels.ts";
 // Pre-connection client-config lookup (name + greeting). `fetchClientConfig`
-// is the PUBLIC half — a workflow app's replacement for the lookup `mountClient()`
-// makes for itself, since `mountPage()` makes none. The default client's and the
-// session's own plumbing (`buildAgentUrl`, `loadClientConfig`) is on
+// is the PUBLIC half — what a page with its own `component` calls, since both
+// mounts make this lookup only for the shell they render themselves. Its base
+// URL defaults to the page's own. The default client's and the session's own
+// plumbing (`buildAgentUrl`, `loadClientConfig`) is on
 // `@alexkroman1/aai-ui/internal`.
 export {
   type ClientConfigResponse,
@@ -212,8 +216,11 @@ export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 export { mountClient } from "./define-client.tsx";
 export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 // Workflow apps — the `workflowApp()` half of this package. `mountPage()`
-// is the mount (no session, no audio, no socket) and the two workflow exports
-// are what its component talks to the agent with, in place of `useSession()`.
+// is the mount (no session, no audio, no socket), and its `component` is
+// OPTIONAL: with none it renders a form per declared workflow, the run's
+// progress and its result, out of the exports below. What a component of its
+// own talks to the agent with is those same exports, in place of
+// `useSession()`.
 export { mountPage, type PageConfig, type PageHandle } from "./page.tsx";
 // Session core (for advanced use)
 export { createBrowserSession } from "./session-core.ts";
@@ -303,6 +310,7 @@ export {
   useWorkflows,
 } from "./use-workflows.ts";
 export {
+  type AgentClient,
   createWorkflowApi,
   isTerminal,
   type WorkflowApi,

@@ -60,13 +60,32 @@ describe("createWorkflowApi", () => {
     expect(init.headers).toEqual({});
   });
 
+  test("reads the agent's front door too, on the same object", async () => {
+    // The widening: this answered the narrow `WorkflowApi`, so a page that
+    // wanted the agent's own name built a SECOND client — or a bare `fetch` and
+    // a hand-written URL join — for one read. `createAgentClient` is documented
+    // as a superset of the same routes, so delegating to it costs no second
+    // implementation.
+    fetchMock.mockImplementation(
+      async () => new Response(JSON.stringify({ name: "Digest", page: "static" }), { status: 200 }),
+    );
+    const api = createWorkflowApi({ baseUrl: "https://agents.example/a/" });
+    await expect(api.config()).resolves.toEqual({ name: "Digest", page: "static" });
+    // No `//client-config`: a base with a trailing slash is normalized, which is
+    // the 404 a platform routing `/:slug/client-config` would otherwise answer.
+    expect(url()).toBe("https://agents.example/a/client-config");
+    expect(api.baseUrl).toBe("https://agents.example/a");
+  });
+
   test("the whole call set is present, so a page cannot find a verb missing", async () => {
     // The methods are the SDK's; what this pins is that the wrapper returns the
     // client rather than a narrowed subset of it, which is precisely what each of
     // the three hand-written copies was.
     const api = createWorkflowApi({ baseUrl: "https://agents.example/a" });
     expect(Object.keys(api).sort()).toEqual([
+      "baseUrl",
       "cancel",
+      "config",
       "download",
       "find",
       "follow",

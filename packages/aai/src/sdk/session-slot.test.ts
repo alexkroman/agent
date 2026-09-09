@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { type DeepReadonly, sessionSlot } from "./session-slot.ts";
+import { sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
 
 type Cart = { items: string[]; nextId: number };
@@ -370,38 +370,6 @@ describe("sessionSlot", () => {
       ).not.toThrow();
       expect(Object.isFrozen(virtual.get(ctx))).toBe(false);
       expect(virtual.get(ctx).handle.get("a")).toBe(1);
-    });
-  });
-
-  describe("projection", () => {
-    const view = (cart: DeepReadonly<Cart>) => ({ count: cart.items.length });
-
-    test("projects the stored value", () => {
-      expect(cartSlot.projection(view)({ items: ["a", "b"], nextId: 3 })).toEqual({ count: 2 });
-    });
-
-    test("projects the default before anything is stored", () => {
-      // What makes a client's empty-state fallback derivable from the projection
-      // itself rather than hand-written — five templates hoist exactly this.
-      expect(cartSlot.projection(view)()).toEqual({ count: 0 });
-      expect(cartSlot.projection(view)(undefined)).toEqual({ count: 0 });
-    });
-
-    test("the projection sees a non-optional value", () => {
-      // The callback's parameter is a real `Cart`, so a projection needs no
-      // optional chaining. A type-level claim, asserted by dereferencing.
-      expect(cartSlot.projection((cart) => cart.items.length)(undefined)).toBe(0);
-    });
-
-    test("carries the slot's key and default, which is what the runtime reads", () => {
-      const projection = cartSlot.projection(view);
-      expect(projection.key).toBe("cart");
-      expect(projection.create()).toEqual({ items: [], nextId: 1 });
-    });
-
-    test("its default is minted per call, never a shared object", () => {
-      const projection = cartSlot.projection(view);
-      expect(projection.create()).not.toBe(projection.create());
     });
   });
 

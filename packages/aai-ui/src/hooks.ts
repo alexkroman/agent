@@ -250,8 +250,8 @@ export function useToolResult(...args: unknown[]): void {
 export function useAgentState<S = DefaultToolResult>(): S | null;
 /**
  * The agent's projected session state, typed and defaulted by the SAME
- * projection the agent pushes — pass `slot.projection(view)` and there is no
- * type argument to restate and no empty frame to derive.
+ * projection the agent pushes — pass `slot.projected` and there is no type
+ * argument to restate and no empty frame to derive.
  *
  * This is the overload to reach for whenever `syncState` is a slot projection,
  * because it closes the round-trip the other two leave open. A projection is
@@ -262,20 +262,29 @@ export function useAgentState<S = DefaultToolResult>(): S | null;
  * declaration and both were written by hand:
  *
  * ```tsx no-check
- * // `no-check`: the projection lives with the agent, in another file.
+ * // `no-check`: the slot lives with the agent, in another file.
  * // Before — the empty frame derived by hand, the type named three times:
  * const EMPTY: CartView = cartSlot.projection(cartView)(undefined);
  * const cart = useAgentState<CartView>(EMPTY);
  *
- * // After — `shared.ts` exports the projection once, both ends import it:
- * const cart = useAgentState(cartProjection);
+ * // After — the slot declares its `view`, and both ends pass the one object
+ * // it built at declaration:
+ * const cart = useAgentState(cartSlot.projected);
  * ```
+ *
+ * **`slot.projected` is the spelling to prefer, and it retires the caveat
+ * below.** Declare the view on the slot (`sessionSlot(key, create, { view })`)
+ * and the projection is built ONCE where the slot is, so `agent({ syncState })`
+ * and this hook are handed the same object and nothing has to arrange for that.
+ * `slot.projection(view)` composes a NEW projection per call, which is what
+ * leaves both halves below to a convention.
  *
  * The empty frame is memoized on the projection's identity, so a module-scope
  * projection (the normal case) produces ONE frame for the life of the
  * component — which the `fallback` overload can only ask you to arrange by
  * hoisting, and which a `slot.projection(view)` spelled inline in the render
- * body silently got wrong.
+ * body silently got wrong. A `slot.projected` cannot be spelled inline: it is
+ * the slot's own field.
  *
  * **The one case that cannot use this overload is a slot whose declaring module
  * is expensive to IMPORT.** A projection is built from the slot, so the browser
@@ -287,9 +296,10 @@ export function useAgentState<S = DefaultToolResult>(): S | null;
  * everywhere the slot's module is cheap, which is every other stateful
  * template.
  *
- * @param projection - The same `slot.projection(view)` the agent declares as
- *   `syncState`. Export it from the module that declares the slot so the two
- *   ends cannot drift.
+ * @param projection - The same projection the agent declares as `syncState`.
+ *   `slot.projected` is that object by construction; a `slot.projection(view)`
+ *   has to be exported from the module that declares the slot so the two ends
+ *   cannot drift.
  *
  * @public
  */

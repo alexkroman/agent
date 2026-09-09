@@ -19,6 +19,7 @@ import {
   type ClientConfigResponse,
   ClientConfigResponseSchema,
 } from "@alexkroman1/aai/protocol";
+import { pageBaseUrl } from "./_utils.ts";
 
 /** @internal Re-exported for the sibling modules; the SDK's `/protocol` subpath is the canonical home. */
 export type { ClientConfigResponse } from "@alexkroman1/aai/protocol";
@@ -106,12 +107,12 @@ export async function loadClientConfig(
  * Fetch the agent's declared `name`, `greeting` and front door; any failure
  * yields the agent default (`{}`).
  *
- * **This is what a workflow app calls instead of receiving the config.**
- * `mountClient()` fetches `GET client-config` for itself before it renders the
- * default chat shell, so a voice client never has to. `mountPage()` mounts no
- * session and makes no such request — deliberately, since a page has no shell
- * to put a name in — so a page that wants the agent's own `name` or `greeting`
- * asks for them here.
+ * **This is what a workflow app's own component calls instead of receiving the
+ * config.** Both mounts fetch `GET client-config` for the shell they render
+ * themselves — `mountClient()` for the chat shell, `mountPage()` for the
+ * generated workflow shell — so neither DEFAULT has to be told the agent's
+ * name. A `component:` replaces that shell, and with it the lookup, so a page
+ * that wants the agent's own `name` or `greeting` asks for them here.
  *
  * Every failure path degrades to the empty default rather than throwing: a
  * network error, a 404 from a server older than the endpoint, a malformed
@@ -121,9 +122,12 @@ export async function loadClientConfig(
  * treat every field as optional, because an agent that declared none is a
  * normal agent.
  *
- * @param platformUrl - The agent's base URL. On a deployed page that is the
- * page's own origin and path (`location.origin + location.pathname`); the
- * endpoint is resolved relative to it.
+ * @param platformUrl - The agent's base URL. **Defaults to the page's own
+ * origin and path** (`pageBaseUrl()`), which is the agent that served the page
+ * and the only case a browser has — the argument was required while the default
+ * sat one module away in this same package, so every caller wrote
+ * `location.origin + location.pathname` for itself. Pass one for a page reading
+ * a DIFFERENT agent. The endpoint is resolved relative to it.
  * @param fetchFn - Fetch implementation, for tests and for a caller that
  * supplies its own credentials. Defaults to the global `fetch`.
  * @returns The agent's config, or `{}` when the lookup produced no answer.
@@ -132,9 +136,7 @@ export async function loadClientConfig(
  * ```tsx
  * import { fetchClientConfig, mountPage } from "@alexkroman1/aai-ui";
  *
- * const { name, greeting } = await fetchClientConfig(
- *   location.origin + location.pathname,
- * );
+ * const { name, greeting } = await fetchClientConfig();
  *
  * function App() {
  *   return (
@@ -151,7 +153,7 @@ export async function loadClientConfig(
  * @public
  */
 export async function fetchClientConfig(
-  platformUrl: string,
+  platformUrl: string = pageBaseUrl(),
   fetchFn?: typeof globalThis.fetch,
 ): Promise<ClientConfigResponse> {
   return (await loadClientConfig(platformUrl, fetchFn)) ?? AGENT_DEFAULT;

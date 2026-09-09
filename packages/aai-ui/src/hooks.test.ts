@@ -257,6 +257,32 @@ describe("useAgentState", () => {
     expect(result.current).toBe(first);
   });
 
+  it("takes the slot's DECLARED view, and the two ends are one object", async () => {
+    // The browser half of the round trip: the agent declares
+    // `syncState: cartSlot.projected` and this passes the same field, so the
+    // frame rendered before the first push and the frames pushed after it are
+    // the same view by construction rather than by two expressions agreeing.
+    const core = createMockCore();
+    const cartSlot = sessionSlot("cart", () => ({ items: ["seeded"] }), {
+      view: (cart) => ({ count: cart.items.length }),
+    });
+    const { result, rerender } = renderHook(() => useAgentState(cartSlot.projected), {
+      wrapper: wrap(core),
+    });
+    const before = result.current;
+    expect(before).toEqual({ count: 1 });
+    // Stable without anything to hoist — the projection is built at DECLARATION,
+    // so its identity (which the empty frame is memoized on) cannot change.
+    rerender();
+    expect(result.current).toBe(before);
+
+    // …and a pushed frame carries the same fields, which is the drift this
+    // spelling removes.
+    act(() => core.update({ agentState: cartSlot.projected({ items: ["a", "b"] }) }));
+    expect(Object.keys(result.current).sort()).toEqual(Object.keys(before).sort());
+    expect(result.current).toEqual({ count: 2 });
+  });
+
   it("still treats a plain object as a fallback, not a projection", () => {
     // The projection overload is declared FIRST so it wins for a function, and
     // a type test caught `fallback: S` swallowing one. This is the other

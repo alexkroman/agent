@@ -86,7 +86,8 @@ export type SlotHolder = {
 
 /**
  * One slot's contribution to the `agent_state` frame — what
- * {@link SessionSlot.projection} returns and what `agent({ syncState })` takes.
+ * {@link SessionSlot.projected} and {@link SessionSlot.projection} are, and what
+ * `agent({ syncState })` takes.
  *
  * It is a FUNCTION carrying the two facts the runtime needs, rather than a
  * plain record, and the callable half is load-bearing at both ends. The server
