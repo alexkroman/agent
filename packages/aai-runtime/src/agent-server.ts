@@ -20,6 +20,12 @@
  *   `@alexkroman1/aai-ui/client-dir`.
  * - **Shutdown ordering.** `AgentServer.close()` already shuts the runtime down,
  *   so callers who also called `runtime.shutdown()` were doing it twice.
+ * - **The TABLES did not come with the database.** A `DATABASE_URL` puts session
+ *   state and durable runs in Postgres and the boot line said so, while nothing
+ *   on this path created either set of tables — the two public `ensure*Schema`
+ *   functions had production callers in `aai-cli` alone. See
+ *   `agent-server-schemas.ts`, which is the fourth instance of this module's
+ *   own failure class: a door that reports a capability it did not wire.
  *
  * **A field this bag does not carry is a field nobody can reach**, which is the
  * failure mode a front door has and a two-call pair does not: dropping back to
@@ -47,6 +53,7 @@ import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { ensureOwnedSchemas, ownedSchemaUrl } from "./agent-server-schemas.ts";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { type AgentServer, createRuntimeServer, type SharedServerOptions } from "./server.ts";
@@ -225,6 +232,31 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     env,
     ...omitUndefined({ providerEnv, db, journal, publicUrl, logger: hooks.logger }),
   });
+
+  /**
+   * The database this deployment owes tables to, or none — see
+   * `agent-server-schemas.ts`, which owns both the decision and the applier.
+   */
+  const ownedDatabaseUrl = ownedSchemaUrl({ env, providerEnv });
+
+  /**
+   * Started at CONSTRUCTION, awaited by `listen()` — and the split is the whole
+   * design.
+   *
+   * `listen()` is where it has to be AWAITED: the tables must exist before a
+   * session or a delivery can reach a store, and the bind is the moment the
+   * first one becomes possible. But `listen()` is also the one thing a
+   * serverless host skips — it is handed `AgentServer.node` and binds the socket
+   * itself — and this package's guide records the rule that came out of the step
+   * env doing exactly that: anything `listen()` does that is not the bind runs
+   * in dev and silently not in production. So the WORK starts here, at the point
+   * every route in goes through, and `listen()` only waits for it. A host that
+   * binds `node` gets the DDL best-effort and concurrently, which is the same
+   * posture the warn-rather-than-throw applier already takes.
+   */
+  const ownedSchemas = ownedDatabaseUrl
+    ? ensureOwnedSchemas(ownedDatabaseUrl, hooks.logger ?? consoleLogger)
+    : undefined;
 
   /**
    * What this door will actually mount, decided HERE rather than in
@@ -411,6 +443,11 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // `createRuntimeServer` owns that default (3000), and restating it here is the kind
     // of second copy that drifts.
     async listen(...args: Parameters<AgentServer["listen"]>) {
+      // BEFORE the bind, so the first session cannot race the DDL — the
+      // ordering `npm start` and `aai dev` already keep by applying it before
+      // they build a server at all. On a healthy database this is already
+      // settled by now (it was issued at construction) and costs nothing.
+      await ownedSchemas;
       await server.listen(...args);
       // After the bind, so a server that could not take the port advertises
       // nothing.

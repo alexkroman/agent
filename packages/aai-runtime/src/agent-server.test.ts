@@ -30,7 +30,7 @@ import { describe, expect, test, vi } from "vitest";
 import { WebSocket as NodeWebSocket } from "ws";
 import { z } from "zod";
 import { AGENT_SERVER_ENV as ENV, withServer } from "./_agent-server-test-utils.ts";
-import { silentLogger, withDeadline } from "./_test-utils.ts";
+import { makeLogger, silentLogger, withDeadline } from "./_test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -544,6 +544,87 @@ describe("the boot line names what this door mounts", () => {
       { agent: myAgent, clientDir: "/nonexistent-client-dir", logger: capture.logger },
       async () => {
         expect(capture.http()).toContain("GET / (static assets)");
+      },
+    );
+  });
+});
+
+/**
+ * WHICH database this door owes tables to — the decision, in the unit tier.
+ *
+ * That it really CREATES them is a claim about a catalog and lives in
+ * `self-hosted-schema.scenario.test.ts` over a real Postgres. What is
+ * unit-testable is the branch in front of it, and each case here reads the same
+ * observable: a `DATABASE_URL` this door owns is one it tries to provision, so
+ * the applier's own warning is emitted when nothing answers. A closed loopback
+ * port is what makes that fast and tier-legal — measured at 24ms to
+ * `ECONNREFUSED`, where a firewalled host would sit on postgres.js's 30s
+ * connect timeout.
+ */
+describe("the tables this door owes its own database", () => {
+  /**
+   * The two appliers' own warnings.
+   *
+   * Matched on each one's actual wording rather than on a shared phrase,
+   * because the two do not share one: `applySessionStateDdl` names the tables
+   * in the message and `applyWorkflowJournalDdl` names the subsystem and puts
+   * the error in the context object. Asserting them separately is what makes
+   * this a claim about BOTH stores being provisioned rather than about one.
+   */
+  const SESSION_WARNING = /aai_session_state/;
+  const JOURNAL_WARNING = /Workflow journal schema not applied/;
+
+  /**
+   * A URL nothing is listening on, unique per case.
+   *
+   * Unique because the door remembers what it has provisioned FOR THE PROCESS
+   * — which is the point of the guard and would otherwise make the second case
+   * in this file pass by memoization rather than by the rule it is asserting.
+   */
+  function deadUrl(name: string): string {
+    return `postgres://nobody@127.0.0.1:1/${name}`;
+  }
+
+  test("a DATABASE_URL is provisioned, and a failure is REPORTED rather than swallowed", async () => {
+    const logger = makeLogger();
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer(
+      { agent: myAgent, env: { ...ENV, DATABASE_URL: deadUrl("owned") }, logger },
+      async (baseUrl) => {
+        // BOTH stores, which is the half that shipped broken twice: the journal
+        // applier had no production caller on any path at all, and the
+        // session-state one had callers everywhere except here.
+        const said = logger.warn.mock.calls.map(([message]) => String(message));
+        expect(said.some((line) => SESSION_WARNING.test(line))).toBe(true);
+        expect(said.some((line) => JOURNAL_WARNING.test(line))).toBe(true);
+        // And the boot still happened. Warn-rather-than-throw is the posture
+        // both appliers document — a role that may not CREATE, because a real
+        // migration already made these tables, has to keep serving — so this
+        // may never become the reason a working deployment fails to bind.
+        expect(await (await fetch(`${baseUrl}/health`)).json()).toMatchObject({ status: "ok" });
+      },
+    );
+  });
+
+  test("a PLATFORM guest's stores are the platform's, so this door provisions nothing", async () => {
+    // Both keys or neither — `resolvePlatformQueue` refuses to resolve a
+    // half-configured environment, and reports it rather than falling back.
+    // Loopback so that a regression here fails fast rather than dialling out.
+    vi.stubEnv("AAI_PLATFORM_BASE_URL", "http://127.0.0.1:1/slug");
+    vi.stubEnv("AAI_GUEST_TOKEN", "guest-token");
+    const logger = makeLogger();
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer(
+      // A `DATABASE_URL` an author also set, which is the case that decides
+      // this: `selectJournal` and `selectBackend` both put the platform FIRST,
+      // ahead of it, so tables created here would be read by nobody.
+      { agent: myAgent, env: { ...ENV, DATABASE_URL: deadUrl("platform") }, logger },
+      async () => {
+        const said = logger.warn.mock.calls.map(([message]) => String(message));
+        expect(said.filter((line) => SESSION_WARNING.test(line))).toEqual([]);
+        expect(said.filter((line) => JOURNAL_WARNING.test(line))).toEqual([]);
       },
     );
   });

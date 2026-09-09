@@ -16,6 +16,7 @@ my-agent/
   client.tsx          # your own browser UI (optional, React)
   shared.ts           # types and state shared by both of those
   agent.test.ts       # ordinary vitest — `aai test`
+  agent.eval.test.ts  # does it BEHAVE — `aai eval`
   .env                # local secrets; `aai publish` syncs them
 ```
 
