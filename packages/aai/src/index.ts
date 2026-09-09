@@ -8,7 +8,7 @@
  * | --- | --- |
  * | the agent | {@link agent} — one object; {@link AgentDef} documents every field and default, {@link AgentParams} which combinations are legal |
  * | a tool | {@link tool} — but a tool is a FILE: `tools/<name>.ts` default-exporting one IS the tool `<name>`, and `agent({ tools })` is a compile error |
- * | session state | {@link sessionSlot} — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projection()` shows it to the browser |
+ * | session state | {@link sessionSlot} — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
  * | conversation order | {@link dialog} — a tool declared `when` simply does not run outside those states |
  * | work that outlives the call | {@link workflow} — journaled, resumable; {@link workflowApp} for an agent whose front door is a form |
  * | a second tool loop | {@link subagent}, reached with `ctx.delegate` |
@@ -17,13 +17,15 @@
  * ```ts
  * import { agent, sessionSlot } from "@alexkroman1/aai";
  *
- * export const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
+ * export const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
+ *   view: (c) => ({ count: c.items.length }),
+ * });
  *
  * export default agent({
  *   name: "Storefront",
  *   systemPrompt: "You help callers order from the catalog.",
  *   voice: "michael",
- *   syncState: cart.projection((c) => ({ count: c.items.length })),
+ *   syncState: cart.projected,
  * });
  * ```
  *

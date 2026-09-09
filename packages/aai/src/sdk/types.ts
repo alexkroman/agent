@@ -282,12 +282,16 @@ export interface AgentDef extends PipelineVoiceTuning {
    * Project per-session state to the browser client, so a custom UI can
    * render it without the agent hand-rolling a sync channel.
    *
-   * One {@link SessionSlot.projection} per slot the client should see, or an
-   * array of them — the `agent_state` frame carries the merge. A slot the agent
-   * does not project never leaves the server, which is the point: session state
-   * routinely holds things a browser should not have, so the author decides what
-   * leaves, and whatever a projection returns is exactly what `useAgentState`
-   * receives.
+   * One projection per slot the client should see, or an array of them — the
+   * `agent_state` frame carries the merge. A slot the agent does not project
+   * never leaves the server, which is the point: session state routinely holds
+   * things a browser should not have, so the author decides what leaves, and
+   * whatever a projection returns is exactly what `useAgentState` receives.
+   *
+   * **Declare the view on the slot and pass {@link SessionSlot.projected}.**
+   * That is one object the agent pushes with and the page renders with, so the
+   * frame shown before the first tool call cannot describe a different view
+   * from the ones pushed after it.
    *
    * Pushed after every tool call, and only when a projection actually changed —
    * most turns do not touch state, and this shares a socket with 384 kbps of
@@ -297,12 +301,32 @@ export interface AgentDef extends PipelineVoiceTuning {
    * import { agent, sessionSlot } from "@alexkroman1/aai";
    * type Item = { sku: string; qty: number };
    *
-   * const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }));
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
+   *   // staffPin stays server-side
+   *   view: (s) => ({ items: s.items }),
+   * });
+   *
+   * agent({ name: "Cart", syncState: cartSlot.projected });
+   * ```
+   *
+   * A slot with more than one audience keeps
+   * {@link SessionSlot.projection}, which builds a second view over the same
+   * slot:
+   *
+   * ```ts
+   * import { agent, sessionSlot } from "@alexkroman1/aai";
+   * type Item = { sku: string; qty: number };
+   *
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
+   *   view: (s) => ({ items: s.items }),
+   * });
    *
    * agent({
    *   name: "Cart",
-   *   // staffPin stays server-side
-   *   syncState: cartSlot.projection((s) => ({ items: s.items })),
+   *   syncState: [
+   *     cartSlot.projected,
+   *     cartSlot.projection((s) => ({ count: s.items.length })),
+   *   ],
    * });
    * ```
    *

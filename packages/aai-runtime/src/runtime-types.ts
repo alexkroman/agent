@@ -132,10 +132,14 @@ export type RuntimeOptions = {
    */
   providerEnv?: ProviderEnv | undefined;
   /**
-   * SQL database exposed to tool code as `ctx.db`. When omitted, the runtime
-   * connects one itself from `DATABASE_URL` in the provider env (self-hosted
-   * `aai dev` parity with the platform's database switch); with neither,
-   * `ctx.db` access throws.
+   * SQL database backing the runtime's OWN two stores: session-slot storage
+   * (`createRuntimeSessionState`) and the workflow run journal plus its
+   * correlation key store (`selectJournal` / `selectKeyStore`). It is NOT
+   * handed to tool code — there is no `ctx.db`, and a tool needing SQL brings
+   * its own client. When omitted, the runtime connects one itself from
+   * `DATABASE_URL` in the provider env (self-hosted `aai dev` parity with the
+   * platform's database switch); with neither, both stores fall back to
+   * process memory and a restart forgets them.
    */
   db?: Db | undefined;
   /**

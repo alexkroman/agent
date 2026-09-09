@@ -22,8 +22,26 @@ import type { WorkflowClient } from "./workflow.ts";
 /**
  * Context passed to tool `execute` functions.
  *
- * Provides access to the session environment, state, database, and
- * conversation history from within a tool's execute handler.
+ * Eleven fields, grouped by what a tool reaches for:
+ *
+ * - **Its own configuration** — `env`, the agent's secrets and settings.
+ * - **The session** — `slots` (its state; reach for {@link sessionSlot} rather
+ *   than the store itself), `messages` (the conversation so far) and
+ *   `sessionId`.
+ * - **Its own deadline** — `signal` and `deadlineAt`, the two a tool doing slow
+ *   work has to honour: the signal aborts on barge-in, reset, stop or timeout,
+ *   and the deadline says WHEN that will happen, so a tool that can answer
+ *   partially still can.
+ * - **A model** — `generate` for one prompt, `delegate` for a whole subagent
+ *   loop.
+ * - **Work that outlives the call** — `workflows`, which starts and inspects
+ *   durable runs.
+ * - **The connected page** — `send`, one custom event to the browser client.
+ * - **Randomness** — `random`, the seam a spec can pin instead of
+ *   `Math.random`.
+ *
+ * There is no `ctx.db` and no `ctx.state`: the platform hands tool code no
+ * database, and a session's state lives in {@link sessionSlot}s.
  *
  * @remarks
  * It takes no type parameter. It used to take the agent's state shape, because
