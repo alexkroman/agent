@@ -1,7 +1,8 @@
 # @alexkroman1/aai-runtime
 
-The host runtime for [AAI](https://github.com/alexkroman/agent) agents: the
-thing that actually runs an `agent.ts`.
+The host runtime for
+[AssemblyAI Agent SDK](https://github.com/alexkroman/agent) agents: the thing
+that actually runs an `agent.ts`.
 
 ```ts
 import { createAgentServer } from "@alexkroman1/aai-runtime";

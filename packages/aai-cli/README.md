@@ -1,6 +1,7 @@
 # @alexkroman1/aai-cli
 
-The `aai` command — scaffold, run, test, and publish aai voice agents.
+The `aai` command — scaffold, run, test, and publish voice agents built with
+the AssemblyAI Agent SDK.
 
 ```sh
 npm i -g @alexkroman1/aai-cli

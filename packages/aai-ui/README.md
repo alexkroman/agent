@@ -1,7 +1,8 @@
 # @alexkroman1/aai-ui
 
-The browser client for aai agents: React 19 hooks and components over a
-framework-agnostic session core (WebSocket + microphone + playback).
+The browser client for AssemblyAI Agent SDK agents: React 19 hooks and
+components over a framework-agnostic session core (WebSocket + microphone +
+playback).
 
 ```sh
 npm i @alexkroman1/aai-ui react react-dom

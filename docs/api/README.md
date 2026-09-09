@@ -1,4 +1,4 @@
-# AAI SDK
+# AssemblyAI Agent SDK
 
 ## Packages
 
