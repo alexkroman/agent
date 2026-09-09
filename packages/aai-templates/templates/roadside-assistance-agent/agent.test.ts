@@ -148,9 +148,14 @@ async function verify(ctx: ToolContext, policyNumber?: string): Promise<void> {
   );
 }
 
-/** And on to `onCall.dispatching`, with the fee accepted. */
+/** And on to `onCall.dispatching`, with the fee READ and then accepted. */
 async function accept(ctx: ToolContext, policyNumber?: string): Promise<void> {
   await verify(ctx, policyNumber);
+  // The read is not optional and this helper used to skip it, which is exactly
+  // the shortcut a live desk was measured taking — `acknowledge_disclosure`
+  // refuses without it now, so every spike through this helper goes the way a
+  // real call has to.
+  expectDialogOk(await serviceDisclosure.execute({}, ctx));
   expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
 }
 
@@ -266,6 +271,9 @@ describe("the roadside call", () => {
     const ctx = createToolContext();
     await verify(ctx, "RS-4417");
     expect(at(ctx).state).toBe("onCall.disclosure");
+    // Read it first: the answer to a disclosure nobody handed over is refused,
+    // which the case below this one pins on its own.
+    expectDialogOk(await serviceDisclosure.execute({}, ctx));
 
     // `sendFrom` returning `undefined` is "that worked and it moved nothing" —
     // not a failure, because declining a fee is not an error.
@@ -276,6 +284,28 @@ describe("the roadside call", () => {
     expect(declined.state).toBe("onCall.disclosure");
     expect(roadsideSlot.get(ctx).disclosureAcceptedAt).toBeNull();
 
+    const agreed = expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
+    expect(agreed.state).toBe("onCall.dispatching");
+  });
+
+  test("a yes to a disclosure nobody read is REFUSED, and records nothing", async () => {
+    // The hole this closes: "after you have read it to them in full" lived in
+    // `acknowledge_disclosure`'s description and in nothing else, so a desk
+    // could take the caller's yes and dispatch on a fee never spoken. Measured
+    // on a live run — `lookup_coverage`, `acknowledge_disclosure`,
+    // `dispatch_truck`, no `service_disclosure` anywhere.
+    const ctx = createToolContext();
+    await verify(ctx, "RS-4417");
+
+    const refused = await acknowledgeDisclosure.execute({ accepted: true }, ctx);
+    expect(isToolFailure(refused) && refused.error).toMatch(/service_disclosure/);
+    // Refused means NOTHING moved: not the acceptance, not the call's phase.
+    expect(roadsideSlot.get(ctx).disclosureAcceptedAt).toBeNull();
+    expect(at(ctx).state).toBe("onCall.disclosure");
+
+    // And it is the READ that unblocks it, not the passage of time.
+    expectDialogOk(await serviceDisclosure.execute({}, ctx));
+    expect(roadsideSlot.get(ctx).disclosureReadAt).not.toBeNull();
     const agreed = expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
     expect(agreed.state).toBe("onCall.dispatching");
   });
@@ -335,6 +365,7 @@ describe("the roadside call", () => {
       await reportLocation.execute({ ...A_LOCATION, safeToWait: false, situation: "battery" }, ctx),
     );
     expectDialogOk(await lookupCoverage.execute({}, ctx));
+    expectDialogOk(await serviceDisclosure.execute({}, ctx));
     expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
     const job = await sendTruck(ctx, "roadside", 0);
     expect(job.result.etaMinutes).toBe(10);
@@ -438,6 +469,11 @@ describe("the per-phase voice knobs", () => {
     expect(bargeInAt(ctx)).toEqual({ minWords: 1 });
 
     await verify(ctx, "RS-4417");
+    expect(bargeInAt(ctx)).toBe("off");
+
+    // Reading the disclosure does not move the call, so the knob is unchanged
+    // across it — which is the property this case is about.
+    expectDialogOk(await serviceDisclosure.execute({}, ctx));
     expect(bargeInAt(ctx)).toBe("off");
 
     expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));

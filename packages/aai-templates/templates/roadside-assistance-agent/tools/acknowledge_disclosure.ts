@@ -1,3 +1,4 @@
+import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { roadsideCall } from "../call.ts";
 import { roadsideSlot } from "../shared.ts";
@@ -35,6 +36,19 @@ export default roadsideCall.tool({
   }),
   execute: (args, ctx) =>
     roadsideSlot.update(ctx, (state) => {
+      // The disclosure has to have been HANDED OVER first, and this is the only
+      // thing that checks it. "after you have read it to them in full" was a
+      // sentence in the description above and nothing else: a live desk was
+      // measured calling `lookup_coverage`, this tool and `dispatch_truck`
+      // while never calling `service_disclosure`, so a truck went out on a fee
+      // the caller had never been read. A refusal rather than a silent
+      // recording, because a yes to something nobody said is not a yes.
+      if (state.disclosureReadAt === null) {
+        return toolFailure(
+          "The caller has not heard the fee disclosure yet. Call service_disclosure, read back " +
+            "exactly what it returns, and only then record their answer.",
+        );
+      }
       state.disclosureAcceptedAt = args.accepted ? Date.now() : null;
       state.log.push(args.accepted ? "Fee disclosure accepted" : "Fee disclosure declined");
       return {

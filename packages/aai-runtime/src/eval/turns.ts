@@ -165,6 +165,77 @@ export function expectToolBeforeSpeech(turn: EvalTurn): void {
 }
 
 /**
+ * Every name in `names` was called in this turn, and a throw naming what the
+ * agent did INSTEAD when one was not.
+ *
+ * ## The finding this exists to name
+ *
+ * A live model calls a median of ONE tool per reply and then speaks — the
+ * measurement is on `DEFAULT_MAX_STEPS`, p50 1 and p90 3 across 815 replies — so
+ * "the agent announced what it was about to do and ended its turn" is the single
+ * most common way a case fails. It is the sibling of
+ * {@link expectToolBeforeSpeech}: that one reads the ORDER of a turn that did
+ * both, this one is for a turn that did not act at all.
+ *
+ * It had no name, so it arrived as four different sentences across one
+ * afternoon, none of which says what happened:
+ *
+ * ```text
+ * expected [] to deeply equal [ 'recommend' ]
+ * expected undefined to be defined
+ * expected -1 to be greater than or equal to 0
+ * expected [ 'open_email' ] to include 'draft_reply'
+ * ```
+ *
+ * What a reader needs is the tools that WERE called and the sentence the agent
+ * said in place of the one it skipped — which is what makes "it promised and
+ * stopped" distinguishable from "it reached for the wrong tool" without opening
+ * the transcript.
+ *
+ * ```ts
+ * import { expectCalled, type EvalTurn } from "@alexkroman1/aai-runtime/eval";
+ *
+ * export function stagedTheDraft(turn: EvalTurn): void {
+ *   // Throws: `never called draft_reply — called open_email, and said "I'll
+ *   // draft a yes."` rather than `expected [ 'open_email' ] to include …`.
+ *   expectCalled(turn, "open_email", "draft_reply");
+ * }
+ * ```
+ *
+ * A THROW rather than a predicate, for {@link expectToolBeforeSpeech}'s reason:
+ * the value worth having is the sentence, and a boolean loses it.
+ *
+ * Takes a turn LIST as readily as a turn, so `sayAll`'s result passes straight
+ * in — the shape most claims want, since a model calling one tool per reply
+ * cannot satisfy a two-tool claim inside one.
+ */
+export function expectCalled(
+  scope: EvalTurn | readonly EvalTurn[],
+  ...names: readonly string[]
+): void {
+  // A LIST as readily as a turn, because most claims worth making are about the
+  // SESSION rather than one reply: a live model calls a median of one tool per
+  // reply, so demanding two in one turn is demanding it chain. `sayAll`'s result
+  // passes straight in.
+  const turns: readonly EvalTurn[] = Array.isArray(scope) ? scope : [scope as EvalTurn];
+  const called = turns.flatMap((turn) => turn.toolCalls.map((call) => call.name));
+  const missing = names.filter((name) => !called.includes(name));
+  if (missing.length === 0) return;
+  // "called nothing and spoke" is the announcing case and gets said outright,
+  // because it is the one a reader would otherwise have to infer from an empty
+  // list. A scope that called something else is a different finding.
+  const spoken = turns
+    .map((turn) => turn.text)
+    .filter((text) => text !== "")
+    .join(" ");
+  const instead =
+    called.length === 0
+      ? `called no tools and ${spoken === "" ? "said nothing" : `only spoke — ${elide(spoken)}`}`
+      : `called ${called.join(", ")}${spoken === "" ? "" : `, and said ${elide(spoken)}`}`;
+  throw new Error(`never called ${missing.join(", ")} — ${instead}`);
+}
+
+/**
  * The turn `name` was called in — the FIRST one, and a throw naming what
  * happened instead when there is none.
  *

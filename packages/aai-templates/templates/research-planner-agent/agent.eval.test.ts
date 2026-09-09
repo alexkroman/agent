@@ -69,6 +69,9 @@ const planState = (session: EvalSession) => lastStateIn(session.events(), Projec
  *  dialog envelope — it reads the position itself. */
 const IdleStatus = z.object({ stage: z.string(), reads: z.string(), next: z.string() });
 
+/** How many steps the plan has actually recorded as worked, so far this session. */
+const workedSteps = (session: EvalSession): number => planState(session)?.done.length ?? 0;
+
 describeEval(agentDef, (test) => {
   test(
     "the stage the desk reports is the flow's, not a guess at the plan",
@@ -133,6 +136,14 @@ describeEval(agentDef, (test) => {
       await session.say(
         "I want to work out whether it is cheaper to take the train or fly from London to Edinburgh next month.",
       );
+      // One more utterance when the desk asked something instead of planning.
+      // Its brief allows a single clarifying question, so spending it is legal
+      // and the caller answering is what a real call does — without this the
+      // case failed on "called no tools" for a desk that was following its own
+      // instructions.
+      if (session.toolCalls().every((call) => call.name !== "start_plan")) {
+        await session.say("Just those two options, next month, cheapest total. Go ahead and plan.");
+      }
       const started = session.toolCalls().find((call) => call.name === "start_plan");
       // The whole SESSION's calls, not one turn's: the plan may be started on
       // either utterance, and "expected undefined to be defined" says nothing
@@ -145,13 +156,24 @@ describeEval(agentDef, (test) => {
       expect(planned?.objective, `start_plan answered: ${started?.result}`).toBeTruthy();
       expect(planned?.plan.length ?? 0).toBeGreaterThan(0);
 
-      const worked = await session.say("Yes, go ahead and start on it.");
+      let worked = await session.say("Yes — work the first step now and tell me what it found.");
+      // ONE more turn when nothing landed, keyed on the OUTCOME rather than on
+      // the tool's message. A step whose `executeStep` throws is put back at the
+      // head of the plan by the tool itself, "where a retry will find it" — so a
+      // transient delegate failure is a designed-for outcome with a designed-for
+      // recovery, and on a real call the caller asking again IS the retry. Read
+      // off `done` because the two ways to get here need the same nudge: the
+      // step threw, or the desk never called it. Without this a gateway hiccup
+      // failed the case on "expected 0 to be greater than 0", naming neither.
+      if (workedSteps(session) === 0) worked = await session.say("Give that step another try.");
       const calls = toolNames(worked.toolCalls).filter((name) => name === "work_next_step").length;
       expect(calls, describeTurn(worked)).toBeGreaterThan(0);
 
       const after = planState(session);
       const done = after?.done ?? [];
-      expect(done.length).toBeGreaterThan(0);
+      // Named, because "expected 0 to be greater than 0" says nothing about WHY
+      // nothing landed — a step that threw answers here with its own sentence.
+      expect(done.length, describeToolCalls(session.toolCalls())).toBeGreaterThan(0);
       // ONE STEP PER CALL: `work_next_step` is one execute-then-replan turn, not
       // a loop. More steps recorded than calls made would mean the tool had run
       // the plan to completion, leaving the caller on a silent line with no gap

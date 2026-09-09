@@ -23,8 +23,10 @@
 import agentDef from "virtual:aai/agent";
 import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import {
+  describeToolCalls,
   describeTurn,
   type EvalSession,
+  expectCalled,
   lastStateIn,
   statesIn,
   toolCallsInTurns,
@@ -70,17 +72,37 @@ const DRAFT =
 describeEval(agentDef, (test) => {
   test(
     "the call opens with a triage, and a triage sends nothing",
-    async ({ session }) => {
+    async ({ session, mode }) => {
       const turn = await session.say("Morning. What came in?");
-      expect(toolNames(turn.toolCalls), describeTurn(turn)).toContain("triage_inbox");
-      // Their `route_after_triage`: two `no`s filed on the spot, six queued.
+      expectCalled(turn, "triage_inbox");
+      // Their `route_after_triage` routed EVERY email: nothing is left
+      // `untriaged`. `open` is allowed because a desk that went on to open the
+      // first one has still triaged all eight, and whether it opens unprompted
+      // is the next case's business rather than this one's.
       const view = latest(session);
-      expect(view?.emails.filter((e) => e.status === "closed")).toHaveLength(2);
-      expect(view?.emails.filter((e) => e.status === "queued")).toHaveLength(6);
-      // Triage is not a proposal, and nothing was sent by reading the inbox.
-      expect(view?.proposal).toBeNull();
+      expect(view?.emails).toHaveLength(TRIAGE_SCRIPT.length);
+      expect(
+        view?.emails.every((e) => e.status !== "untriaged"),
+        describeTurn(turn),
+      ).toBe(true);
+      // The exact split is the TRIAGE model's judgment — one verdict per email,
+      // eight of them — so it is pinned only where `TRIAGE_SCRIPT` determines
+      // it. Live it drifts: a run that filed nothing failed this case on "expected
+      // [] to have a length of 2", which reads as broken routing rather than as
+      // a model that found every email worth answering.
+      if (mode === "stub") {
+        expect(view?.emails.filter((e) => e.status === "closed")).toHaveLength(2);
+        expect(view?.emails.filter((e) => e.status === "queued")).toHaveLength(6);
+      }
+      // THE claim, and the one this case is named for: reading the inbox sent
+      // nothing. Live, that is all it asserts.
       expect(view?.sent).toEqual([]);
       expect(toolNames(turn.toolCalls)).not.toContain("accept");
+      // A triage is not a proposal — true of the SCRIPT, which runs `triage_inbox`
+      // and stops. A live desk that opened the first email as well has staged a
+      // proposal and still sent nothing, so pinning this live measured its
+      // helpfulness rather than the gate.
+      if (mode === "stub") expect(view?.proposal).toBeNull();
     },
     {
       stubReply: [
@@ -94,18 +116,37 @@ describeEval(agentDef, (test) => {
   test(
     "a draft is staged and read back, and nothing is sent before a yes",
     async ({ session }) => {
-      const turn = await session.say(
+      // Two turns, and the second only repeats the instruction the first
+      // carried. The desk opens the email and then usually SPEAKS — one tool
+      // per reply is the live model's median — so reading both calls out of a
+      // single turn measured that rather than the gate. Nothing below cares
+      // which turn the staging landed in: the claim is that staging produced a
+      // READ-BACK and not a receipt, and that nothing was sent without a yes.
+      //
+      // The nudge is worded twice over. "Go ahead and draft that reply" reads as
+      // APPROVAL to a live model, which answered it with `accept` — passing the
+      // chain and failing the one assertion this case exists for. "Draft it, but
+      // do not send anything yet" fixed that and cost the other half: the desk
+      // heard the negation and did nothing at all, and a bare "write that reply
+      // for me" was no better. What works is an instruction to ACT that names
+      // the reply AND its content while saying nothing about sending — there is
+      // no yes in it to mishear, and nothing to read as "wait".
+      const turns = await session.sayAll([
         "Open the one from Dana at Northwind and reply that yes, inference stays inside their VPC.",
-      );
-      const names = toolNames(turn.toolCalls);
-      expect(names, describeTurn(turn)).toContain("open_email");
-      expect(names).toContain("draft_reply");
+        "Write the reply now — say yes, it stays inside their VPC.",
+      ]);
+      const calls = toolCallsInTurns(turns);
+      const names = toolNames(calls);
+      // Across BOTH turns, and named: "expected [ 'open_email' ] to include
+      // 'draft_reply'" said nothing about what the desk did instead.
+      expectCalled(turns, "open_email", "draft_reply");
       // The staging tool answered with the read-back, not a receipt.
-      const staged = turn.toolCalls.find((call) => call.name === "draft_reply");
+      const staged = calls.find((call) => call.name === "draft_reply");
       expect(staged?.result).toMatch(/awaitingDecision/);
       expect(staged?.result).toMatch(/Nothing has been sent/);
-      // The assistant asks; it does not decide. An `accept` in the same turn as
-      // the staging is the agent confirming on its own initiative.
+      // The assistant asks; it does not decide. An `accept` anywhere in here is
+      // the agent confirming on its own initiative — neither utterance was a
+      // yes to SEND, only an instruction to draft.
       expect(names).not.toContain("accept");
       // THE claim: through every frame, nothing went out.
       for (const view of frames(session)) expect(view.sent).toEqual([]);
@@ -117,6 +158,7 @@ describeEval(agentDef, (test) => {
     {
       stubReply: [
         { tool: "open_email", args: { which: "m2" } },
+        "Dana is asking whether inference stays inside their VPC.",
         { tool: "draft_reply", args: { content: DRAFT } },
         "Here's the draft: Dana, it stays inside your VPC, models included. Send it?",
       ],
@@ -145,8 +187,14 @@ describeEval(agentDef, (test) => {
   test(
     "the executive's yes is the only thing that sends",
     async ({ session }) => {
+      // Three turns: the request, an instruction to draft, THEN the yes. The
+      // middle one exists because the desk reliably opens the email and speaks
+      // rather than chaining the staging into the same reply, which left this
+      // case failing on a draft that had not happened yet rather than on the
+      // gate it is here to measure. The yes is still the only send.
       const turns = await session.sayAll([
         "Open Dana's email from Northwind and reply that inference stays inside their VPC.",
+        "Write the reply now — say inference stays inside their VPC.",
         "Yes. Send it.",
       ]);
       const calls = toolCallsInTurns(turns);
@@ -154,7 +202,11 @@ describeEval(agentDef, (test) => {
       // Staged first, sent second, once each — reversed, or a send with nothing
       // staged, is the regression this template's whole shape exists to prevent.
       expect(names.indexOf("draft_reply"), describeTurn(turns[0]!)).toBeGreaterThanOrEqual(0);
-      expect(names.lastIndexOf("accept")).toBeGreaterThan(names.indexOf("draft_reply"));
+      // Named across BOTH turns: "expected -1 to be greater than 2" says a send
+      // never happened and nothing about what the desk did with the yes instead.
+      expect(names.lastIndexOf("accept"), describeToolCalls(calls)).toBeGreaterThan(
+        names.indexOf("draft_reply"),
+      );
       const sent = calls.filter(
         (call) => call.name === "accept" && /"sent"/.test(call.result ?? ""),
       );
@@ -172,6 +224,7 @@ describeEval(agentDef, (test) => {
     {
       stubReply: [
         { tool: "open_email", args: { which: "m2" } },
+        "Dana wants to know whether inference stays inside their VPC.",
         { tool: "draft_reply", args: { content: DRAFT } },
         "Here's the draft — it stays inside your VPC. Send it?",
         { tool: "accept" },
@@ -186,7 +239,7 @@ describeEval(agentDef, (test) => {
     async ({ session }) => {
       const turn = await session.say("Open the Docusign one.");
       const names = toolNames(turn.toolCalls);
-      expect(names, describeTurn(turn)).toContain("open_email");
+      expectCalled(turn, "open_email");
       // Their `notify` route halts for the human with nothing drafted.
       expect(names).not.toContain("draft_reply");
       const view = latest(session);
@@ -207,11 +260,19 @@ describeEval(agentDef, (test) => {
     "a scheduling request goes through the meeting assistant before any draft",
     async ({ session }) => {
       const scheduling = INBOX.find((e) => e.id === "m4");
-      const turn = await session.say(
+      // Two turns, and the second NAMES the action. "Yes, go ahead" left this a
+      // coin toss (measured 1/2 over repeats) because it authorises without
+      // saying what to do; naming the calendar is what a caller answering
+      // "shall I check?" actually says. The judgement being
+      // measured is that the CALENDAR is consulted before a time is written
+      // down — an ordering claim, and the ordering holds across the pair.
+      const turns = await session.sayAll([
         `Open the one from Sam Reyes, "${scheduling?.subject}", and sort out a time with him.`,
-      );
-      const names = toolNames(turn.toolCalls);
-      expect(names, describeTurn(turn)).toContain("meeting_assistant");
+        "Check my calendar and find us a slot.",
+      ]);
+      const calls = toolCallsInTurns(turns);
+      const names = toolNames(calls);
+      expectCalled(turns, "meeting_assistant");
       // The calendar is consulted before a time is ever written down: the brief
       // says never to guess free time, and a draft or an invite that came first
       // would have.
@@ -221,7 +282,7 @@ describeEval(agentDef, (test) => {
         if (at >= 0) expect(at).toBeGreaterThan(checked);
       }
       // And the specialist's report is what came back — not a calendar dump.
-      const report = turn.toolCalls.find((call) => call.name === "meeting_assistant");
+      const report = calls.find((call) => call.name === "meeting_assistant");
       expect(report?.result).toMatch(/availability/);
       expect(latest(session)?.sent).toEqual([]);
     },

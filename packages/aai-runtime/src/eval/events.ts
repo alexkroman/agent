@@ -273,6 +273,50 @@ function parseToolResult(raw: string, name: string, at: number, hasSchema: boole
 }
 
 /**
+ * The result of the LAST call to `name` in `calls`, parsed.
+ *
+ * {@link toolResultIn} refuses a scope holding two calls to one tool, and that
+ * refusal is right for a single TURN: two calls there is usually the finding.
+ * Across turns it is ordinary — a caller nudges, the agent re-reads the state,
+ * and a case reading `toolCallsInTurns(turns)` meets a duplicate through no
+ * fault of the agent's.
+ *
+ * That left the reader pushing cases back onto single-turn scopes, which is
+ * exactly the wrong direction: a live model calls a median of one tool per reply
+ * (`DEFAULT_MAX_STEPS`), so the claims that survive it are the ones read across
+ * turns. One eval was restructured to give a tool its own turn purely to dodge
+ * the refusal.
+ *
+ * The LAST rather than the first, because a repeated call is the agent settling
+ * on an answer and the settled one is what the caller was told.
+ *
+ * ```ts
+ * import { lastToolResultIn, toolCallsInTurns } from "@alexkroman1/aai-runtime/eval";
+ *
+ * const calls = toolCallsInTurns(turns);
+ * // The score as it finally stood, even if the narrator awarded twice.
+ * const scored = lastToolResultIn(calls, "game_state_score", Scored);
+ * ```
+ *
+ * Use {@link toolResultIn} when "exactly once" is part of the claim. This is for
+ * when it is not.
+ */
+export function lastToolResultIn<T = unknown>(
+  calls: readonly EvalToolCall[],
+  name: string,
+  schema?: StandardSchemaV1<unknown, T>,
+): T {
+  const matching = calls.filter((call) => call.name === name);
+  if (matching.length === 0) {
+    const seen = calls.map((c) => c.name).join(", ");
+    throw new Error(`no call to "${name}"; this scope called: ${seen || "no tools"}`);
+  }
+  // Hand the single last call to the reader that already parses one, so the
+  // parse, the never-completed check and the schema path have one spelling.
+  return toolResultIn([matching.at(-1) as EvalToolCall], name, schema);
+}
+
+/**
  * The result of the ONE call to `name` in `calls`, parsed.
  *
  * `EvalToolCall.result` is the serialized string the model was handed, so every

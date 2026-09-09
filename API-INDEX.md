@@ -695,6 +695,7 @@ each is for.
 | `evalCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `evalWorkflowCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `executeStart` | `@alexkroman1/aai-cli/start` |
+| `expectCalled` | `@alexkroman1/aai-runtime/eval` |
 | `expectDeployable` | `@alexkroman1/aai/testing` |
 | `expectDialogOk` | `@alexkroman1/aai/testing` |
 | `expectDialogRefused` | `@alexkroman1/aai/testing` |
@@ -738,6 +739,7 @@ each is for.
 | `isTransientStatus` | `@alexkroman1/aai/step` |
 | `isoDate` | `@alexkroman1/aai` |
 | `lastStateIn` | `@alexkroman1/aai-runtime/eval` |
+| `lastToolResultIn` | `@alexkroman1/aai-runtime/eval` |
 | `lenientParse` | `@alexkroman1/aai/protocol` |
 | `loadBuiltAgent` | `@alexkroman1/aai-cli/start` |
 | `mapConcurrent` | `@alexkroman1/aai/step` |

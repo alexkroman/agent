@@ -1179,6 +1179,72 @@ what the agent says it needs and no unrelated shell variable reaches it.
 
 ***
 
+### expectCalled()
+
+```ts
+function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+```
+
+Every name in `names` was called in this turn, and a throw naming what the
+agent did INSTEAD when one was not.
+
+## The finding this exists to name
+
+A live model calls a median of ONE tool per reply and then speaks — the
+measurement is on `DEFAULT_MAX_STEPS`, p50 1 and p90 3 across 815 replies — so
+"the agent announced what it was about to do and ended its turn" is the single
+most common way a case fails. It is the sibling of
+[expectToolBeforeSpeech](#expecttoolbeforespeech): that one reads the ORDER of a turn that did
+both, this one is for a turn that did not act at all.
+
+It had no name, so it arrived as four different sentences across one
+afternoon, none of which says what happened:
+
+```text
+expected [] to deeply equal [ 'recommend' ]
+expected undefined to be defined
+expected -1 to be greater than or equal to 0
+expected [ 'open_email' ] to include 'draft_reply'
+```
+
+What a reader needs is the tools that WERE called and the sentence the agent
+said in place of the one it skipped — which is what makes "it promised and
+stopped" distinguishable from "it reached for the wrong tool" without opening
+the transcript.
+
+```ts
+import { expectCalled, type EvalTurn } from "@alexkroman1/aai-runtime/eval";
+
+export function stagedTheDraft(turn: EvalTurn): void {
+  // Throws: `never called draft_reply — called open_email, and said "I'll
+  // draft a yes."` rather than `expected [ 'open_email' ] to include …`.
+  expectCalled(turn, "open_email", "draft_reply");
+}
+```
+
+A THROW rather than a predicate, for [expectToolBeforeSpeech](#expecttoolbeforespeech)'s reason:
+the value worth having is the sentence, and a boolean loses it.
+
+Takes a turn LIST as readily as a turn, so `sayAll`'s result passes straight
+in — the shape most claims want, since a model calling one tool per reply
+cannot satisfy a two-tool claim inside one.
+
+#### Parameters
+
+##### scope
+
+[`EvalTurn`](#evalturn) \| readonly [`EvalTurn`](#evalturn)[]
+
+##### names
+
+...readonly `string`[]
+
+#### Returns
+
+`void`
+
+***
+
 ### expectToolBeforeSpeech()
 
 ```ts
@@ -2000,6 +2066,70 @@ readonly (
 ##### Returns
 
 `unknown`
+
+***
+
+### lastToolResultIn()
+
+```ts
+function lastToolResultIn<T = unknown>(
+   calls: readonly EvalToolCall[], 
+   name: string, 
+   schema?: StandardSchemaV1<unknown, T>
+): T;
+```
+
+The result of the LAST call to `name` in `calls`, parsed.
+
+[toolResultIn](#toolresultin) refuses a scope holding two calls to one tool, and that
+refusal is right for a single TURN: two calls there is usually the finding.
+Across turns it is ordinary — a caller nudges, the agent re-reads the state,
+and a case reading `toolCallsInTurns(turns)` meets a duplicate through no
+fault of the agent's.
+
+That left the reader pushing cases back onto single-turn scopes, which is
+exactly the wrong direction: a live model calls a median of one tool per reply
+(`DEFAULT_MAX_STEPS`), so the claims that survive it are the ones read across
+turns. One eval was restructured to give a tool its own turn purely to dodge
+the refusal.
+
+The LAST rather than the first, because a repeated call is the agent settling
+on an answer and the settled one is what the caller was told.
+
+```ts
+import { lastToolResultIn, toolCallsInTurns } from "@alexkroman1/aai-runtime/eval";
+
+const calls = toolCallsInTurns(turns);
+// The score as it finally stood, even if the narrator awarded twice.
+const scored = lastToolResultIn(calls, "game_state_score", Scored);
+```
+
+Use [toolResultIn](#toolresultin) when "exactly once" is part of the claim. This is for
+when it is not.
+
+#### Type Parameters
+
+##### T
+
+`T` = `unknown`
+
+#### Parameters
+
+##### calls
+
+readonly [`EvalToolCall`](#evaltoolcall)[]
+
+##### name
+
+`string`
+
+##### schema?
+
+`StandardSchemaV1`\<`unknown`, `T`\>
+
+#### Returns
+
+`T`
 
 ***
 
@@ -5878,6 +6008,10 @@ This turn's tool calls, in call order, each with its result.
 type EvalWorkflowEngineOptions = {
   env: Readonly<Record<string, string>>;
   speech?: SpeechSynthesizer;
+  stepAttempt?: {
+     attempt: number;
+     maxAttempts: number;
+  };
   stepFetch?: StepFetch;
   workflows: Readonly<Record<string, WorkflowDef>>;
 };
@@ -5917,6 +6051,47 @@ fall back to. A case supplies `installStubSpeech`
 (`@alexkroman1/aai/testing/vitest`); a host wanting the real socket passes
 `speakOverWebSocket`, which is not named here for the same graph reason as
 [EvalWorkflowEngineOptions.stepFetch](#stepfetch).
+
+##### stepAttempt?
+
+```ts
+readonly optional stepAttempt?: {
+  attempt: number;
+  maxAttempts: number;
+};
+```
+
+What `stepInfo()` answers this app's steps, when a case needs a body's
+NON-degraded branch.
+
+Defaults to a first-and-only attempt (`attempt: 1, maxAttempts: 1`), which
+is the truth about this engine — it never replays, so no step is ever
+retried. The consequence is easy to miss and it is the reason this option
+exists: `isLastAttempt` is therefore always `true`, so a body that degrades
+on its last try is measured on that branch by EVERY eval and its primary
+path is exercised by none.
+
+`link-digest-workflow` is the worked case. Its digest step asks its call
+site for six attempts and reads `isLastAttempt` to swap in a blunter
+instruction and a fallback model; under the default every eval of it took
+that arm, so the prompt a real run uses five times out of six had no
+coverage at all. `{ attempt: 1, maxAttempts: 6 }` measures that one.
+
+It does NOT make the engine retry — there is nothing to intercept, per
+`maxRetries` being inert above. What it changes is only what the body is
+TOLD, which is what selects the branch.
+
+###### attempt
+
+```ts
+readonly attempt: number;
+```
+
+###### maxAttempts
+
+```ts
+readonly maxAttempts: number;
+```
 
 ##### stepFetch?
 

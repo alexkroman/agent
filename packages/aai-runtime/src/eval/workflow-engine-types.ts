@@ -130,6 +130,28 @@ export type EvalWorkflowEngineOptions = {
    */
   readonly stepFetch?: StepFetch | undefined;
   /**
+   * What `stepInfo()` answers this app's steps, when a case needs a body's
+   * NON-degraded branch.
+   *
+   * Defaults to a first-and-only attempt (`attempt: 1, maxAttempts: 1`), which
+   * is the truth about this engine — it never replays, so no step is ever
+   * retried. The consequence is easy to miss and it is the reason this option
+   * exists: `isLastAttempt` is therefore always `true`, so a body that degrades
+   * on its last try is measured on that branch by EVERY eval and its primary
+   * path is exercised by none.
+   *
+   * `link-digest-workflow` is the worked case. Its digest step asks its call
+   * site for six attempts and reads `isLastAttempt` to swap in a blunter
+   * instruction and a fallback model; under the default every eval of it took
+   * that arm, so the prompt a real run uses five times out of six had no
+   * coverage at all. `{ attempt: 1, maxAttempts: 6 }` measures that one.
+   *
+   * It does NOT make the engine retry — there is nothing to intercept, per
+   * `maxRetries` being inert above. What it changes is only what the body is
+   * TOLD, which is what selects the branch.
+   */
+  readonly stepAttempt?: { readonly attempt: number; readonly maxAttempts: number } | undefined;
+  /**
    * A speech synthesizer to publish, for a flow whose step calls `stepSpeak`.
    *
    * Nothing by default, so an unpublished slot fails by name — which is the

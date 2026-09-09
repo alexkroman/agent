@@ -323,3 +323,68 @@ inside `evalTest(…)` is an error), and a case body takes a DESTRUCTURED contex
 (`noDoneCallback` reads the first positional parameter of an async test callback
 as jest's `done`, so `async (session) => …` is an error where
 `async ({ session }) => …` is vitest's own fixture shape). Do not "tidy" either.
+
+## Telling a DEFECT from the instrument, and the five things that were missing
+
+The live tier is a noisy instrument by construction, so the reading that
+matters is never one case's boolean — it is which cases moved between runs.
+Measured over one afternoon of eight full live passes of the 28 template
+suites: **15 failures became 10 while the MEMBERSHIP churned by five suites**,
+four of which nobody had touched. Two of the failures in the first run were
+gone by the second with no change at all (a 90-second gateway timeout, a
+one-off malformed JSON), and two of them reproduced every single run and were
+real (a chain the model does not make, a rule the prompt had inverted).
+
+Everything below exists because that judgement was made by hand — running the
+whole suite repeatedly and diffing the failure lists — while the harness had
+the pieces to make it for free.
+
+- **`AAI_EVAL_REPEAT` and `AAI_EVAL_ONLY` were SILENT NO-OPS here.** Declared in
+  `check:eval`'s `env`, forwarded by `scripts/run-evals.mjs` as `--repeat` and
+  `--only`, documented in its header, and read only by `aai-evals` — so for all
+  28 template suites both did nothing. Measured: `AAI_EVAL_REPEAT=3` on a
+  two-case suite ran two tests, not six. `eval/_env.ts` reads them now and
+  carries the argument, including why the duplication with `aai-evals`' own
+  `_env.ts` is deliberate rather than sloppy.
+
+- **A spread REPORT, not more failures.** With repeats on, a case that failed
+  some and passed others is reported `UNSTABLE: <name> (2/4)` and PASSES; a case
+  that failed every repeat throws its FIRST failure and fails. `SuiteSpread` in
+  `describe.ts` argues why that is safe rather than a loophole — it is opt-in,
+  CI gates the scripted run where a repeat cannot disagree with itself, and the
+  live tier reports without gating anyway.
+
+  Two bugs the filter had on its first draft, both fixed and both worth not
+  reintroducing: a filtered case was counted as a MODE skip, so the coverage
+  line said "2 skipped as live-only" about cases carrying no marker; and a
+  filter matching nothing tripped `registerEmptySuiteFailure`, which would fail
+  27 suites for a filter aimed at the 28th. `aai-evals/_register.ts` had already
+  reached that second conclusion for the same reason, and warns.
+
+- **`expectCalled(turn, ...names)`** names the tier's most common finding. A
+  live model calls a median of ONE tool per reply (`DEFAULT_MAX_STEPS`) and then
+  speaks, so "it announced and stopped" is how most cases fail — and it arrived
+  as four different sentences (`expected [] to deeply equal [ 'recommend' ]`,
+  `expected undefined to be defined`, `expected -1 to be greater than or equal
+  to 0`, `expected [ 'open_email' ] to include 'draft_reply'`), none naming the
+  sentence said in place of the tool. It is the sibling of
+  `expectToolBeforeSpeech`, which reads the ORDER of a turn that did both.
+
+- **`lastToolResultIn`** is `toolResultIn` without the exactly-once refusal.
+  That refusal is right within a turn and wrong across turns, where a repeated
+  call is ordinary — and its absence pushed cases back onto single-turn scopes,
+  which is precisely the wrong direction given the p50 above. One template eval
+  was restructured to give a tool its own turn purely to dodge it.
+
+- **`EvalWorkflowEngineOptions.stepAttempt`.** The engine has no retry and
+  cannot have one (nothing sits between an untransformed body and its step), so
+  it answers `stepInfo()` a first-and-only attempt — which makes `isLastAttempt`
+  always TRUE, so a body with a last-chance branch is measured on it by EVERY
+  eval and on its primary path by NONE. `link-digest-workflow` is the worked
+  case: its digest step asks for six attempts and swaps in a blunter prompt on
+  the last, so the prompt five runs out of six use had no coverage at all.
+
+**And the rule that would have prevented three of the defects outright is on
+`EvalTestContext.mode`**: a value a SCRIPT determined may only be asserted under
+`mode === "stub"`. That doc carries the three shipped cases that got it wrong
+and what to assert instead.

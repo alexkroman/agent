@@ -74,12 +74,24 @@ export function announceEvalCoverage(
   mode: EvalMode,
   declared: number,
   skipped: number,
+  /**
+   * Cases `AAI_EVAL_ONLY` dropped, reported as their OWN reason.
+   *
+   * Folding them into `skipped` made this line lie: a filtered run announced
+   * "2 skipped as live-only" about two cases carrying no marker, which is the
+   * one thing a coverage line exists not to do.
+   */
+  filtered = 0,
 ): void {
   const model = mode === "live" ? "the live model" : "the scripted model";
   const because = mode === "live" ? "scripted-only" : "live-only";
+  const reasons = [
+    skipped === 0 ? undefined : `${skipped} skipped as ${because}`,
+    filtered === 0 ? undefined : `${filtered} filtered out by AAI_EVAL_ONLY`,
+  ].filter((one) => one !== undefined);
   announceEvalMode(
-    `eval: ${name} — ${declared - skipped} of ${declared} case(s) run against ${model}` +
-      `${skipped === 0 ? "" : `; ${skipped} skipped as ${because}`}.`,
+    `eval: ${name} — ${declared - skipped - filtered} of ${declared} case(s) run against ` +
+      `${model}${reasons.length === 0 ? "" : `; ${reasons.join("; ")}`}.`,
   );
 }
 

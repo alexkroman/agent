@@ -268,6 +268,17 @@ export interface RoadsideState {
   situation: Situation | null;
   /** The plan the lookup found. `null` means unverified, which is a PRICE. */
   coverage: Coverage | null;
+  /**
+   * When `service_disclosure` HANDED the words over, epoch ms.
+   *
+   * The disclosure used to be a pure read, so nothing recorded that it had
+   * happened and `acknowledge_disclosure` had no way to tell a caller who had
+   * heard the fee from one who had not. Measured: a live desk called
+   * `lookup_coverage`, `acknowledge_disclosure` and `dispatch_truck` and never
+   * called this one at all — so the truck moved on a fee nobody read, which is
+   * the single thing this call exists to prevent.
+   */
+  disclosureReadAt: number | null;
   /** When the caller said they understood the disclosure, epoch ms. */
   disclosureAcceptedAt: number | null;
   /** The one truck this call ever assigns. See `dispatch_truck`. */
@@ -281,6 +292,7 @@ export function emptyRoadsideState(): RoadsideState {
     where: null,
     situation: null,
     coverage: null,
+    disclosureReadAt: null,
     disclosureAcceptedAt: null,
     job: null,
     log: [],

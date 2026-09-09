@@ -10,6 +10,7 @@ import {
   describeToolCalls,
   type EvalToolCall,
   lastStateIn,
+  lastToolResultIn,
   saidIn,
   statesIn,
   TURN_ENDS,
@@ -317,5 +318,42 @@ describe("describeToolCalls", () => {
     // The case the message exists for — the agent answered with a question
     // instead of acting — and `tools called: []` reads like a truncated message.
     expect(describeToolCalls([])).toBe("called no tools");
+  });
+});
+
+describe("lastToolResultIn", () => {
+  const twice = toolCallsInEvents([
+    called("c1", "game_state_score", { value: 10 }),
+    completed("c1", '{"score":10}'),
+    called("c2", "game_state_score", { value: 20 }),
+    completed("c2", '{"score":30}'),
+  ]);
+
+  test("answers the LAST call where toolResultIn refuses the scope outright", () => {
+    // Across turns a repeated call is ordinary, and the settled answer is the
+    // one the caller was told.
+    expect(lastToolResultIn(twice, "game_state_score")).toEqual({ score: 30 });
+    expect(() => toolResultIn(twice, "game_state_score")).toThrow(/2 calls to/);
+  });
+
+  test("a single call reads identically to toolResultIn", () => {
+    const once = toolCallsInEvents([
+      called("c1", "look_up", { id: "W1" }),
+      completed("c1", '{"status":"shipped"}'),
+    ]);
+    expect(lastToolResultIn(once, "look_up")).toEqual(toolResultIn(once, "look_up"));
+  });
+
+  test("validates against a schema like its sibling", () => {
+    expect(lastToolResultIn(twice, "game_state_score", z.object({ score: z.number() }))).toEqual({
+      score: 30,
+    });
+  });
+
+  test("a miss names what WAS called, so an empty scope reads as one", () => {
+    expect(() => lastToolResultIn(twice, "game_state_get")).toThrow(
+      /no call to "game_state_get"; this scope called: game_state_score, game_state_score/,
+    );
+    expect(() => lastToolResultIn([], "game_state_get")).toThrow(/this scope called: no tools/);
   });
 });

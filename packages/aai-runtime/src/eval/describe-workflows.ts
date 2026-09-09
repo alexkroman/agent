@@ -55,6 +55,8 @@ import {
   type EvalMode,
   registerEmptySuiteFailure,
 } from "./_announce.ts";
+import { evalOnlySelects, evalRepeat } from "./_env.ts";
+import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
 import { resolveWorkflowEvalMode } from "./describe.ts";
 import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
@@ -121,22 +123,35 @@ export function describeWorkflowEval(
   );
   const env = options?.env ?? stubbedEnv(agent, mode);
 
+  // The same two settings the session door reads, for the same reason: a
+  // workflow suite is at least as noisy as a session one — its steps really
+  // call out — and it was covered by neither, so a `--repeat` printed a spread
+  // for most of the tier and ran these once.
+  const repeat = evalRepeat();
+  const spread = new SuiteSpread(agent.name);
+
   describe(agent.name, () => {
     let declared = 0;
     let skipped = 0;
+    const filteredOut: string[] = [];
     const evalTest: EvalWorkflowTest = (name, body, caseOptions) => {
       declared += 1;
-      const skip = mode === "stub" && caseOptions?.live === true;
-      if (skip) skipped += 1;
-      const run = skip ? test.skip : test;
-      run(name, async () => {
+      const wrongMode = mode === "stub" && caseOptions?.live === true;
+      const filtered = !(wrongMode || evalOnlySelects(name));
+      if (wrongMode) skipped += 1;
+      if (filtered) filteredOut.push(name);
+      const run = wrongMode || filtered ? test.skip : test;
+      // A fresh app per REPEAT, closed in a `finally`: the engine publishes
+      // process-global slots, so two live at once would share them.
+      const once = async () => {
         const app = openEvalWorkflows({ ...options, agent, env });
         try {
           await body({ app, mode });
         } finally {
           await app.close();
         }
-      });
+      };
+      run(name, () => runRepeats(once, name, repeat, spread));
     };
     define(evalTest);
     // The same two lines `describeEval` owes, for the same reason and with the
@@ -146,7 +161,20 @@ export function describeWorkflowEval(
     // tempting here, since a scripted run needs the case to install a fake per
     // provider a step reaches — so a keyless CI job going green and empty is
     // easier to arrive at by degrees.
-    announceEvalCoverage(agent.name, mode, declared, skipped);
-    registerEmptySuiteFailure(agent.name, mode, declared, skipped);
+    announceEvalCoverage(agent.name, mode, declared, skipped, filteredOut.length);
+    // A filter that matched nothing WARNS rather than failing, for the reason
+    // `describeEval` carries: one variable across the whole tier, and each suite
+    // sees only its own cases.
+    if (declared > 0 && filteredOut.length === declared) {
+      announceEvalMode(
+        `eval: ${agent.name} — AAI_EVAL_ONLY matched none of its ${declared} case(s), so this ` +
+          `suite ran nothing. Its cases are: ${filteredOut
+            .map((one) => JSON.stringify(one))
+            .join(", ")}.`,
+      );
+    } else {
+      registerEmptySuiteFailure(agent.name, mode, declared - filteredOut.length, skipped);
+    }
+    spread.report();
   });
 }

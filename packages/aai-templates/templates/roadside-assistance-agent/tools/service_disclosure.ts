@@ -31,15 +31,21 @@ export default roadsideCall.tool({
     "word — do not shorten it, paraphrase it, or fold it into another sentence.",
   when: "onCall.disclosure",
   inputSchema: z.object({}),
-  execute: (_args, ctx) => {
-    const state = roadsideSlot.get(ctx);
-    const words = disclosureFor(state.coverage);
-    return {
-      readThisVerbatim: words,
-      // The count is here so a spec can assert that what was spoken is the
-      // whole thing rather than the first clause of it. It is the caller's only
-      // protection against a "summary" of a disclosure.
-      wordCount: countWords(words),
-    };
-  },
+  execute: (_args, ctx) =>
+    // A WRITE now, and only a timestamp: `acknowledge_disclosure` refuses
+    // without it, so this is what makes "read it before you take their yes" a
+    // mechanism rather than a sentence in a description. It still sends no
+    // event, so the split this module's doc argues — advancing is
+    // `acknowledge_disclosure`'s job, a turn later — is untouched.
+    roadsideSlot.update(ctx, (state) => {
+      const words = disclosureFor(state.coverage);
+      state.disclosureReadAt = Date.now();
+      return {
+        readThisVerbatim: words,
+        // The count is here so a spec can assert that what was spoken is the
+        // whole thing rather than the first clause of it. It is the caller's only
+        // protection against a "summary" of a disclosure.
+        wordCount: countWords(words),
+      };
+    }),
 });

@@ -135,7 +135,9 @@ export function draftingBrief(exec: Executive, memory: Memory): string {
     text.trim() === "" ? [] : [`${label}: ${text.trim()}`];
   return [
     `You are ${exec.fullName}'s executive assistant, helping ${exec.name} respond to this email. ${exec.background}`,
-    "Choose ONE tool:",
+    "Choose ONE tool and CALL IT NOW, in this same turn, before you say anything to " +
+      `${exec.name}. Speaking ends your turn: a sentence promising to check the calendar or ` +
+      "draft a reply, with no tool behind it, is a promise you never keep.",
     `ask_question — when you lack information only ${exec.name} has. Never draft with a placeholder for a name, an email or a fact; ask instead. Never ask ${exec.name} when they are free — that is meeting_assistant's job.`,
     `draft_reply — when you have enough to respond. Write as ${exec.name}, never as an assistant. Add a new recipient only when ${exec.name} asked for it and you know the address; never invent one.`,
     `meeting_assistant — when a legitimate sender is trying to schedule a meeting. It reads ${exec.name}'s calendar and answers with the free slots. Not for a meeting already booked.`,

@@ -108,6 +108,7 @@ export {
   type EvalToolCall,
   errorsIn,
   lastStateIn,
+  lastToolResultIn,
   saidIn,
   statesIn,
   TURN_ENDS,
@@ -174,10 +175,14 @@ export {
 // get somewhere is the model's business and it measurably varies, so a case
 // pinned to an index is a flake with a misleading name. Three templates reached
 // that conclusion independently and wrote these three out under it.
-// …plus the one per-turn CLAIM two templates wrote out by hand: the agent acted
-// before it spoke.
+// …plus the two per-turn CLAIMS: the agent acted before it spoke, and it acted
+// at ALL. The second is the more common finding by far — a live model calls a
+// median of one tool per reply and then talks — and it had arrived as four
+// different assertion messages, none of which named the sentence the agent said
+// in place of the tool it skipped.
 export {
   describeTurn,
+  expectCalled,
   expectToolBeforeSpeech,
   toolCallsInTurns,
   turnCalling,

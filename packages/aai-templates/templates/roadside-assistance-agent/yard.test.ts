@@ -7,6 +7,7 @@ import acknowledgeDisclosure from "./tools/acknowledge_disclosure.ts";
 import dispatchTruck from "./tools/dispatch_truck.ts";
 import lookupCoverage from "./tools/lookup_coverage.ts";
 import reportLocation from "./tools/report_location.ts";
+import serviceDisclosure from "./tools/service_disclosure.ts";
 import { HOLD_MINUTES, reserveTruck, resetYard, yardLock } from "./yard.ts";
 
 /**
@@ -40,6 +41,9 @@ const A_LOCATION = {
 async function toDispatching(ctx: ToolContext): Promise<void> {
   expectDialogOk(await reportLocation.execute(A_LOCATION, ctx));
   expectDialogOk(await lookupCoverage.execute({ policyNumber: "RS-4417" }, ctx));
+  // The fee has to be READ before the yes counts — see the gate in
+  // `acknowledge_disclosure`, which refuses without it.
+  expectDialogOk(await serviceDisclosure.execute({}, ctx));
   expectDialogOk(await acknowledgeDisclosure.execute({ accepted: true }, ctx));
 }
 

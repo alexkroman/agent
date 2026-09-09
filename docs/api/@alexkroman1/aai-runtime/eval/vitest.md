@@ -409,6 +409,43 @@ readonly mode: EvalMode;
 
 Which model this run got. A case may branch on it, and most should not.
 
+## The one branch that is always right
+
+**A value a SCRIPT determined may only be asserted under
+`mode === "stub"`.** `stubReply` and `stubGenerate` are what make a value
+predictable, so pinning one against a live model is pinning the script — and
+it presents as the agent misbehaving, which is the expensive part. Three
+shipped template evals had it, and each read as a defect in the template
+until the script was checked:
+
+- `word-game-agent` asserted `playerSaid: "Is it a zebra crossing?"`, the
+  exact remark of a scripted player, in a game whose word is drawn at
+  random. Live, "Is it a zebra?" is a perfectly good wrong guess.
+- `executive-inbox-agent` pinned `2 closed / 6 queued`, a split decided by
+  eight live triage verdicts. A run that found every email worth answering
+  failed on "expected [] to have a length of 2".
+- `topic-briefing-agent` required a verdict word from a subagent its own
+  tool documents as allowed to come back unusable.
+
+So: assert the INVARIANT in both modes — the tool was called, the verdict
+and the score agree, nothing was sent before a yes — and put the exact
+strings behind the branch.
+
+```ts no-check
+test("a wrong guess is relayed without a point", async ({ session, mode }) => {
+  const relayed = await play(session);
+  // True either way: the player answered and the round stands.
+  expect(relayed.playerSaid.length).toBeGreaterThan(0);
+  if (relayed.verdict === "wrong") expect(relayed.score).toBe(0);
+  // Only a script can pin the words.
+  if (mode === "stub") expect(relayed.playerSaid).toBe("Is it a zebra crossing?");
+});
+```
+
+A case that cannot be written that way wants `{ scripted: true }` instead,
+which skips it live rather than weakening it — see
+[EvalCaseOptions.scripted](#scripted).
+
 ##### session
 
 ```ts

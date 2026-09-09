@@ -14,7 +14,13 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import type { EvalToolCall } from "./events.ts";
 import type { EvalTurn } from "./session.ts";
-import { describeTurn, expectToolBeforeSpeech, toolCallsInTurns, turnCalling } from "./turns.ts";
+import {
+  describeTurn,
+  expectCalled,
+  expectToolBeforeSpeech,
+  toolCallsInTurns,
+  turnCalling,
+} from "./turns.ts";
 
 const call = (name: string, result?: string): EvalToolCall => ({
   toolCallId: `c-${name}`,
@@ -200,5 +206,68 @@ describe("expectToolBeforeSpeech", () => {
     expect(() =>
       expectToolBeforeSpeech(turn("", [call("web_search", "[]")], true, [calledEvent])),
     ).toThrow(/said nothing, so there is no reply/);
+  });
+});
+
+describe("expectCalled", () => {
+  test("passes when every named tool was called, in any order", () => {
+    const ok = turn("Here's the draft.", [call("open_email"), call("draft_reply")], true, []);
+    expect(() => expectCalled(ok, "draft_reply", "open_email")).not.toThrow();
+  });
+
+  test("the ANNOUNCING case says so, and quotes the sentence", () => {
+    // The finding this reader exists for: a live model that promised and ended
+    // its turn. `expected [] to deeply equal [ 'recommend' ]` is what this
+    // replaces.
+    const promised = turn("I'll look into home battery prices for you.", [], true, []);
+    expect(() => expectCalled(promised, "research_topic")).toThrow(
+      /never called research_topic — called no tools and only spoke — "I'll look into home battery/,
+    );
+  });
+
+  test("a turn that called something ELSE is a different sentence", () => {
+    const wrong = turn("Eight came in.", [call("triage_inbox")], true, []);
+    expect(() => expectCalled(wrong, "open_email")).toThrow(
+      /never called open_email — called triage_inbox, and said "Eight came in\."/,
+    );
+  });
+
+  test("names every missing tool, not just the first", () => {
+    const only = turn("Opened it.", [call("open_email")], true, []);
+    expect(() => expectCalled(only, "open_email", "draft_reply", "accept")).toThrow(
+      /never called draft_reply, accept/,
+    );
+  });
+
+  test("silence with no tools is its own wording", () => {
+    expect(() => expectCalled(turn("", [], true, []), "start_game")).toThrow(
+      /called no tools and said nothing/,
+    );
+  });
+});
+
+describe("expectCalled over a turn LIST", () => {
+  test("a name called on ANY turn satisfies the claim", () => {
+    // The shape `sayAll` hands back, and the one most claims want: the model
+    // opened on turn one and staged on turn two, which is a pass.
+    const turns = [
+      turn("Dana is asking about the VPC.", [call("open_email")], true, []),
+      turn("Here's the draft.", [call("draft_reply")], true, []),
+    ];
+    expect(() => expectCalled(turns, "open_email", "draft_reply")).not.toThrow();
+  });
+
+  test("a miss across the list names every call and every sentence", () => {
+    const turns = [
+      turn("Dana is asking about the VPC.", [call("open_email")], true, []),
+      turn("I'll write that up.", [], true, []),
+    ];
+    expect(() => expectCalled(turns, "draft_reply")).toThrow(
+      /never called draft_reply — called open_email, and said "Dana is asking about the VPC\. I'll write that up\."/,
+    );
+  });
+
+  test("an empty list is a scope that called nothing", () => {
+    expect(() => expectCalled([], "open_email")).toThrow(/called no tools and said nothing/);
   });
 });
