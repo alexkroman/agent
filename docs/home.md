@@ -1,5 +1,4 @@
-# AAI SDK
-
+<!-- markdownlint-disable-next-line MD041 -->
 The generated API reference for the published packages — every type, every
 signature, every doc comment, rendered from the source.
 

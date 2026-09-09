@@ -32,6 +32,11 @@ export default defineConfig({
       "src/.workspaces/**",
       "**/*.integration.test.ts",
       "**/*.scenario.test.ts",
+      // The EVAL tier, by the same naming convention — `studio-agent.eval.test.ts`
+      // drives the coding agent against a live model over a real workspace, and
+      // `test:eval` is what selects it. Without this glob it would also run here
+      // under a 5s budget with no credential gate.
+      "**/*.eval.test.ts",
     ],
     coverage: {
       exclude: [...sharedCoverageExclude],
@@ -46,6 +51,12 @@ export default defineConfig({
       // Only `branches` moved: the two readings of it disagree (75.58 vs
       // 77.88), so the floor is set under the LOWER one — the point of a
       // ratchet is that it never has to come back down.
+      // Actuals (2026-09, with the studio eval's two specs — `studio-bundle-
+      // access` and the eval harness's own): lines 86.06, functions 84.86,
+      // branches 80.04, statements 84.77. Every floor gained headroom and NONE
+      // is raised, deliberately: that is ONE reading, and the disagreement
+      // recorded above is exactly what a single reading cannot see. Raise them
+      // when a second run agrees.
       thresholds: { lines: 83, functions: 82, branches: 74, statements: 81 },
     },
   },
