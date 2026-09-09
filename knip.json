@@ -274,7 +274,11 @@
     },
     "packages/aai-studio-server": {
       "entry": [
-        "**/*.test.ts"
+        "**/*.test.ts",
+        // The starter eval. `**/*.test.ts` already matches it as a string, but
+        // naming it is what survives that glob being tightened — the same reason
+        // `packages/aai-evals` lists both.
+        "**/*.eval.test.ts"
       ],
       "includeEntryExports": true,
       // Declared so it stays resolvable to the service BUNDLE, not because

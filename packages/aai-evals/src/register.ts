@@ -27,7 +27,7 @@
  */
 
 import { afterAll, expect, test } from "vitest";
-import { evalOnly, sayFromHarness } from "./_gate.ts";
+import { evalOnly, sayFromHarness } from "./gate.ts";
 import { evalShortfalls, formatEvalReport } from "./report.ts";
 import { type EvalReport, type EvalSpec, evalMinScore, runEval } from "./runner.ts";
 

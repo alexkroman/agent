@@ -233,7 +233,7 @@ and the `typescript@6` pin — **and, because they answer three versions of one
 question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-Thirteen files sit outside the table for a different reason — SIBLINGS of their
+Fourteen files sit outside the table for a different reason — SIBLINGS of their
 package's guide rather than second package guides:
 
 | Sibling | Covers |
@@ -248,6 +248,7 @@ package's guide rather than second package guides:
 | `packages/aai-server/PLATFORM-SOCKET-CLAUDE.md` | The platform session socket |
 | `packages/aai-server/SCHEMA-CLAUDE.md` | The platform database schema |
 | `packages/aai-server/TRACING-CLAUDE.md` | Platform tracing |
+| `packages/aai-studio-server/STARTER-EVAL-CLAUDE.md` | The studio starter eval: its five modules and why they are in that package rather than in `aai-evals`, the five tool-output regexes and what would retire them, the second in-process eval in `aai-guest`, and the opt-in template behaviour contract |
 | `packages/aai-templates/PORTS-CLAUDE.md` | Porting a framework's example to a voice agent |
 | `packages/aai-templates/STEP-IO-CLAUDE.md` | A template's step I/O |
 | `packages/aai-ui/PLAYBACK-CLAUDE.md` | The browser playback path |

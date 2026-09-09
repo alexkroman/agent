@@ -5,18 +5,28 @@
  * This is the machinery that used to be `scripts/starter-eval/run.mjs` — a
  * second, non-vitest test runner with its own case loop, verdict aggregation and
  * reporter. Its ASSERTIONS were and are a different job from behaviour (they
- * grade generated SOURCE, and live in `./starter-expectations.ts`); what is here
- * is only the driving of the studio's real HTTP surface, which the eval tier now
- * owns for both targets.
+ * grade generated SOURCE, and live in `./studio-starter-expectations.ts`); what
+ * is here is only the driving of the studio's real HTTP surface.
  *
  * It drives create-project → broker a sandbox session → stream one chat turn, so
  * it exercises the same server and guest path a browser does.
+ *
+ * **It lives in `aai-studio-server`, not in `aai-evals`.** It did for a while,
+ * and the line that sorts them is what a module is ABOUT rather than what runs
+ * it: `aai-evals` is the eval FRAMEWORK — a recording runner, a spread report
+ * and an assertion vocabulary over the session event stream, none of which name
+ * a product surface — while every constant in this file is a fact about the
+ * studio (its chat route, its per-sandbox token, its step cap, the prose its
+ * tools write). The framework is imported from here, `aai-evals/report` for
+ * `condense` being the whole of it; nothing goes the other way, which is what
+ * kept the split from closing a cycle.
  *
  * @module
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { isRecord, responseErrorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
+import { condense } from "aai-evals/report";
 import {
   getToolName,
   isDynamicToolUIPart,
@@ -28,7 +38,6 @@ import {
 import type { EventSourceMessage } from "eventsource-parser";
 import { EventSourceParserStream } from "eventsource-parser/stream";
 import { Agent, fetch as undiciFetch } from "undici";
-import { condense } from "./report.ts";
 
 /**
  * A turn can legitimately run for many minutes (the studio's step cap is 80),
@@ -243,7 +252,7 @@ function foldMessage(turn: MutableTurn, message: UIMessage | undefined): void {
  * which is why this module is excluded from the package's coverage floors. The
  * stream reading is also the half most likely to break silently — a part-shape
  * the SDK renamed folds to an empty turn, and an empty turn grades as a coding
- * agent that did nothing rather than as a broken harness. `studio-target.test.ts`
+ * agent that did nothing rather than as a broken harness. `studio-eval-target.test.ts`
  * drives it with canned SSE for exactly that reason.
  */
 export async function readTurn(body: ReadableStream<Uint8Array>): Promise<StudioTurn> {

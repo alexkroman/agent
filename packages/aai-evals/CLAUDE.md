@@ -1,6 +1,11 @@
 # packages/aai-evals — the behaviour eval tier
 
-The repo's eval runner and its cases (private package). Repo-wide conventions and
+The repo's eval FRAMEWORK — a recording runner, a spread report, an assertion
+vocabulary over the session event stream, and the key gate — plus the level-1
+behaviour cases that use it (private package). It is importable: `aai-studio-server`
+drives the same runner for the studio starter eval. See "This package is a
+LIBRARY, and what that excludes" for the subpaths and for the line between the
+two. Repo-wide conventions and
 the test-tier table live in the root `AGENTS.md`; the turbo rules are in
 `.agents/ci.md`.
 
@@ -219,14 +224,24 @@ than take one — the second `pnpm test:eval` of a variance check would print FU
 TURBO and the first run's number. No `inputs` are declared rather than declaring
 a set nothing reads; if this ever becomes cacheable, a package-relative
 `$TURBO_DEFAULT$` is now enough. It was not always: the starter corpus lived
-OUTSIDE the package at `scripts/starter-eval/expectations.mjs`, which a
+OUTSIDE any package at `scripts/starter-eval/expectations.mjs`, which a
 package-relative glob cannot see, and the cached UNIT tier had to name it in a
 `turbo.json` override to avoid replaying a green run over an edited grader.
-Moving the corpus in retired both the override and the hazard.
+Moving the corpus into a package retired both the override and the hazard; it is
+`aai-studio-server/src/studio-starter-expectations.ts` today.
+
+**Four packages declare `check:eval`** — `aai-templates` (the template evals, and
+the only one `pnpm check` and CI run, against a SCRIPTED model), this one,
+`aai-guest` (the coding agent's in-process eval) and `aai-studio-server` (the
+studio starter eval). The `env` block is declared once on the TASK, so every
+package that declares the task gets every variable; `AAI_EVAL_ORIGIN`,
+`AAI_EVAL_CONTRACTS` and `AAI_STEP_CAP_HINT` are read only by
+`aai-studio-server`.
 
 ## The gate ANNOUNCES its skip
 
-`_gate.ts`. The tier needs a live key and spends real tokens, so it skips
+`gate.ts`, published as `aai-evals/gate`. The tier needs a live key and spends
+real tokens, so it skips
 without one — and a silent skip is the worst outcome available to a tier nobody
 runs, because a green run of nothing is indistinguishable from a green run of
 something. Same shape as `aai-server/_pg-test-utils.ts`: the skip prints how to
@@ -234,9 +249,19 @@ fix it, and `AAI_REQUIRE_EVAL` turns it into a hard failure. CI deliberately doe
 NOT set `AAI_REQUIRE_EVAL` — unlike the Postgres tier there is no argument for
 gating merges on a live model's behaviour.
 
-The starter eval carries a SECOND gate, a `/health` probe of the studio origin:
-with a key but no studio every case would fail as a harness error, which reads
-like the codegen being broken.
+`describeEvalTierWhen` is how a caller adds a precondition of its own, and the
+studio starter eval in `aai-studio-server` is the one caller — a `/health` probe
+of the studio origin: with a key but no studio every case would fail as a
+harness error, which reads like the codegen being broken. The gates COMPOSE: a
+missing key still skips when the caller's own precondition holds.
+
+**Importing this module RESOLVES a credential and ANNOUNCES at import time**, so
+nothing the unit tier loads may reach it — `konsistent.json`'s
+`eval-gate-is-not-unit-tier` here, and `studio-eval-gate-is-not-unit-tier` over
+there, where the same hazard arrived with the eval. That is why the
+side-effect-free readers are `env.ts` (`aai-evals/env`) and why the settings that
+name a target read the environment through those rather than living behind the
+gate.
 
 ## Level 1 does NOT drive `?host=1`, and the plan expected it to
 
@@ -310,227 +335,68 @@ runs the next repeat, which is what made it compound — `AAI_EVAL_REPEAT=5`
 against a failing agent orphaned five pairs. The runtime is shut down on that
 path too.
 
-## The studio starter eval
+## This package is a LIBRARY, and what that excludes
 
-`starter.eval.test.ts` + `studio-target.ts` are `scripts/starter-eval/run.mjs`'s
-case loop, verdict and reporter (485 + 175 + 85 = 745 lines, deleted) on the
-shared runner. The GRADING is a different job — those checks read generated
-source rather than behaviour — so it was kept when the runner was not, and it is
-`starter-expectations.ts` in this package. See "Studio starter
-evals" in `packages/aai-studio-server/CLAUDE.md` for what it measures and why
-single runs cannot adjudicate a prompt change.
+It is importable — five subpath exports, `@dev/source` only, since nothing here
+builds:
 
-**It was `scripts/starter-eval/expectations.mjs` until it was the last file
-there.** Its two neighbours were deleted as dead chains; it survived as the one
-thing in that directory nothing had outgrown, reached by both starter suites
-through a `../../scripts/` specifier. That cost a package `allowJs`, two
-`turbo.json` input overrides to hash a corpus living outside the package that
-reads it, and a grader whose eval-only half — `parseLoadedConfig`, `checkMode`,
-`checkWorkflowShape`, `checkUi` — was in no coverage report at all, so it was
-exercised only by a run needing a live key and a live studio. Moving it in
-retired all three; the four functions have unit tests now.
+| Subpath | What a consumer takes from it |
+| --- | --- |
+| `aai-evals/runner` | `runEval`, `createRecorder`, `EvalRecorder`, the report types |
+| `aai-evals/report` | `formatEvalReport`, `evalShortfalls`, `condense` |
+| `aai-evals/gate` | `describeEvalTier`, `describeEvalTierWhen`, `evalApiKey`, `evalKeyEnv`, `sayFromHarness` |
+| `aai-evals/register` | `registerEvalCases`, `evalOnlySelects` |
+| `aai-evals/env` | `envValue`, `envFlag`, `envInt` |
 
-**The same shape recurred one level UP, and `starter-grade.ts` is the fix** —
-a module with its own tests now, driven by a canned `StudioTurn`, rather than a
-`gradeStarter` sitting in a file `vitest.config.ts` excludes.
-`konsistent.json`'s `eval-module-has-unit-test` is that floor for every module
-here and carries both halves of the account.
+**Five and not seven.** `assertions.ts` and `tool-assertions.ts` are the natural
+next entries and are deliberately NOT exported: no consumer imports them today,
+and an export nobody resolves is the same dead-config shape this repo keeps
+finding — the `.size-limit.json` nothing ran, the `ls-lint` config no pipeline
+invoked. Adding one when a case outside this package needs the vocabulary is a
+one-line change, and it will then be a line somebody can review.
 
-**Note what that move exposed: `_gate.ts` may not be imported by anything the
-UNIT tier loads** — `konsistent.json`'s `eval-gate-is-not-unit-tier`, which
-carries why and names the two files that may. The tier's side-effect-free
-settings live in `_env.ts` for that reason, and that module also exists because
-the "blank counts as unset" rule was spelled FIVE ways in two files — including
-inside the function whose own doc warns that "a rule spelled out twice is one
-that can come to be spelled differently".
+`aai-studio-server` is the one consumer, and it exists because the STUDIO
+starter eval lives there now — `studio-eval-target.ts`, `studio-starter-*.ts`,
+`studio-template-contract.ts` and `studio-starter.eval.test.ts`, all of which
+were in this `src/` until they were not. See "Studio starter evals" and
+[`packages/aai-studio-server/STARTER-EVAL-CLAUDE.md`](../aai-studio-server/STARTER-EVAL-CLAUDE.md)
+for what that eval measures, why single runs cannot adjudicate a prompt change,
+and the template behaviour contract it can opt into.
 
-**`run.mjs` could not have run, and porting it is what found that out.** The
-chat request belongs to the GUEST and is authenticated by the per-sandbox token
-the session broker returns beside the URL; `run.mjs` sent the account's API key
-and gets `401 {"error":"Unauthorized"}`. So the harness the guides cite numbers
-from had rotted, in the way a second runner nobody exercises does. Verified
-against a live studio after the fix: one starter, **100%, 15s**, driving create
-project → broker a sandbox session → stream a chat turn → read the synced
-workspace.
+**The line is what a module is ABOUT, not what runs it.** Everything here is
+framework-general: it names no product surface, no HTTP route, no prompt and no
+tool. Everything that moved named the studio in every constant it declared — its
+chat route, its per-sandbox token, its step cap, the prose its own tools write,
+the eighteen starter prompts and what each one asked for. The two halves had
+been sitting in one `src/` since the tier absorbed `scripts/starter-eval/`, and
+what that cost was legible: this package depended on `aai-studio-client` for the
+starter list, on `undici`, `ai` and `eventsource-parser` for one target's
+transport, and carried an `evals-package-boundary` exception for a subpath one
+file read. All four are gone, and the boundary is a total deny again — which is
+the half worth keeping, because a package that MAY import the studio's starter
+list is one where the next studio-shaped eval will land.
 
-The port also **dropped one check `run.mjs` never made**: a bare "did it write a
-`client.tsx`". That file was recorded as INFORMATION there and kept out of the
-`shippable` verdict, because most starters never ask for a UI — asserting it
-failed the math-tutor template for shipping exactly what it should. `checkUi` is
-the whole UI claim.
+Three mechanical consequences, each of which was a small decision:
 
-**`regrade.mjs`'s job is not reproduced, deliberately.** It re-graded a SAVED run
-with today's expectations, because the grader had been corrected four times after
-the runs it should have applied to. The cheap version of that is
-`starter-expectations.test.ts`, which was a fail-fast block at the top of
-`run.mjs` — so it ran only when somebody spent tokens — and is now a UNIT test:
-an expectation demanding a tool its prompt never asks for, and a
-`builtinDelegation` that passes on prose alone, both fail in the ordinary test
-run with no key, no studio and no model.
+- **`_gate.ts`, `_register.ts` and `_env.ts` lost their underscores.** The
+  prefix means "not part of the public API, never import cross-package" (root
+  `AGENTS.md`), and a subpath export pointing at one would say the opposite.
+- **`evalOrigin`, `evalContracts` and `evalStepCapHint` went with the eval**, to
+  `aai-studio-server/src/studio-eval-env.ts`, and read the environment through
+  `aai-evals/env` from there rather than re-deriving "blank counts as unset" —
+  the rule that was spelled five different ways before it was one function.
+- **`eval-case-registration` and `eval-gate-is-not-unit-tier` each have a
+  studio-side twin** (`studio-eval-case-registration`,
+  `studio-eval-gate-is-not-unit-tier`). Two conventions rather than one widened
+  `paths`, because konsistent matches an import SPECIFIER literally and
+  `./register.ts` and `aai-evals/register` are two strings for one module — a
+  single rule could require only one of them and would exempt the other package.
 
-### The five regexes are about tool OUTPUT, not about missing events
-
-`text-agent-events.ts` cites this file as "the measured consequence" of a text
-agent having had no event stream — five REGEXES over tool-output text. That is
-the right motivation for the event stream and the wrong prediction about these
-five, and the audit is worth recording because it says where the remaining work
-actually is.
-
-| | what it reads | replaceable by events? |
-| --- | --- | --- |
-| `TS_ERROR` | a tool RESULT's text carries a TypeScript diagnostic | **no** |
-| `BUILD_FAILED` | `test_agent`'s text says the build failed | **no** |
-| `TESTS_FAILED` | `test_agent`'s text says the tests failed | **no** |
-| `WRITE_DIAGNOSTIC_PREAMBLE` | strips `formatPostWriteDiagnostics`' fixed instruction | **no** |
-| `TEST_AGENT_PREAMBLE` | strips `test_agent`'s success prose | **no** |
-
-All five classify or trim the CONTENT of a tool result, and an event carries
-that content as the same string (`tool.completed.result`) — so an in-process
-harness would run the identical patterns over `turn.toolCalls`. Two of them are
-not even classification: they exist because the excerpt is prose a tool wrote.
-What the event stream replaces is the PLUMBING — pairing a call with its result,
-ordering, per-tool tallies — and this target never hand-rolled that in the first
-place: `readUIMessageStream` does the `toolCallId` → name correlation, and the
-tool arms above are what would replace `VERIFYING_TOOLS` + `redChecks` +
-`testAgentRuns`. So the honest saving is `StudioTurn` shrinking to its events
-plus the two excerpt renderers, and the pattern set staying exactly as it is.
-
-**A projection was available and was not taken.** `foldMessage` could map the
-UI message parts into `SessionEvent`s and let `starter-grade.ts` grade through
-`eventScope` and the tool arms — and it would be testable, since
-`studio-target.test.ts` drives `readTurn` with canned SSE. It is declined on two
-grounds. It makes this file a SECOND producer of the union whose fidelity
-nothing can check (there is no live studio in CI, and the guest's own events are
-not on the wire to compare against), which is the two-vocabularies hazard
-inverted. And it buys no measurement: the same patterns, the same verdicts, in a
-grading path exercised only by a run holding a live key and a live studio. The
-version that pays for itself needs the guest to emit, which is the next
-paragraph.
-
-**What WOULD retire them is structured tool results** — `test_agent` and
-`check_types` answering JSON a case reads with `toolResultIn(calls, name,
-Schema)` instead of prose. That is a change to the studio's tools in
-`aai-guest`, not to the eval, and it is the only version of this that removes a
-regex rather than moving it.
-
-### Carrying the guest's events to a client: measured, and not worth it
-
-The events Step 2 added are emitted IN-PROCESS inside the Modal guest, so this
-target — which drives create-project → broker a session → stream one chat turn
-over real HTTP — cannot read them. The obvious fix is a frame on the chat SSE
-stream (a `data-*` part in the AI SDK's UI message stream, which the client
-would ignore). Of the seven events a text agent emits, **five are already on
-that stream in the SDK's own vocabulary**: the user message is the request's
-own, `tool.called`/`tool.completed` are the tool parts, the reply is the text
-parts, and the terminator is the stream ending. The two that would add
-information are `custom.emitted` (a tool's `ctx.send`) and
-`error.reported` with `code: "tool"` (a tool that THREW rather than returning a
-failure). Neither is something a starter eval grades, and the cost is a new
-versioned wire surface plus a second encoding of arguments and results already
-on the stream. **Recommendation: do not.** Revisit if a case needs to grade a
-`ctx.send` or an uncaught tool throw from outside the sandbox.
-
-### The SECOND, in-process studio eval is BUILT — in `aai-guest`
-
-`packages/aai-guest/src/studio-agent.eval.test.ts`, nine cases on
-`_studio-eval-harness.ts`. This section used to argue for it and say where it
-would have to live; both halves held.
-
-It could not be built from HERE. `createStudioAgent(session, deps)` returns a
-plain `AgentDef` with `text: true` — exactly what `openEvalTextAgent` takes, so
-the eval really was one call away — but `StudioSession` carries a real workspace
-`dir` and `StudioAgentDeps` is `HarnessBundleAccess & { typecheck }`, all of
-which live in `aai-guest`, which `evals-package-boundary` denies this package by
-name and for a stated reason ("aai-guest would have it inspect the sandbox
-rather than the session"). Widening that boundary to reach a composition root
-was the wrong trade then and is the wrong trade now.
-
-Two predictions this section made, and how they came out:
-
-- **"An in-process eval without an installed toolchain measures tool CHOICE and
-  not the verification loop."** Correct, and the reason it was built with one:
-  the cases run `initStudioSession` and hand `createStudioAgent` the real
-  `typecheckWorkspaceDir`, so the post-write diagnostics are a real compiler and
-  four cases end by asking the workspace — `typecheck()` and `runTests()`,
-  called by the CASE — rather than reading a tool result. That is the class of
-  assertion a model cannot satisfy with prose, and it is what this package's own
-  five regexes over tool-output text are a substitute for.
-- **"It would not replace the HTTP target; keep both, convert nothing."** Held.
-  `starter.eval.test.ts` measures the DEPLOYED path — the broker, the
-  per-sandbox token, the guest chat route, the end-of-turn workspace sync —
-  which is where the harness it replaced had rotted. Nothing was converted.
-
-**One thing the argument missed, and it is the limit on everything that eval
-reports: the system prompt.** The studio's is `studioSystemPrompt(kind)` in
-`aai-studio-server`, and `guest-package-boundary` denies the guest that import
-just as firmly. So the guest-side eval runs on a harness prompt plus the real,
-guest-owned `toolchainPromptSection()`, and adjudicates the tool set, the tool
-descriptions, each tool's own result prose and the model. **The shipped prompt is
-graded by the HTTP target here and by nothing there** — which is a stronger
-reason to keep both than the deployed-path one, and the reason a prompt change
-still has to be measured through a live studio. See "The coding agent has an eval
-of its own" in `packages/aai-guest/CLAUDE.md`.
-
-Note the two packages that see the two halves: only `aai-evals`, over HTTP, sees
-prompt AND tools together. Nothing in the workspace can import both.
-
-## The template behaviour contract (opt-in)
-
-`template-contract.ts`. The starter eval grades generated SOURCE — does a tool
-whose name or description carries "cancel" exist, is the mode pipeline, is there
-a client that reads live state. Every one of those is a question about
-STRUCTURE, and a generated retail desk can answer all of them while
-authenticating nobody. The other half of this package grades BEHAVIOUR, and for
-a long time nothing ran it against generated code: the two halves sat disjoint,
-and the starter eval's verdict stopped exactly where the interesting question
-started.
-
-```sh
-AAI_EVAL_CONTRACTS=1 AAI_EVAL_ONLY=retail pnpm test:eval
-```
-
-**The contract is the TEMPLATE'S OWN `agent.eval.test.ts`, and three facts make
-that work.** Twelve of the eighteen starter prompts say "use the `<name>`
-template", which makes the template the ask rather than an illustration —
-`checkCapabilities` already special-cases them for it. Twenty-five of the
-twenty-six templates ship an eval. And those files were written to drive a
-DEPLOYED agent rather than their own directory: they import `virtual:aai/agent`,
-which `aaiAgentPlugin` resolves against the IMPORTER's directory, so dropping one
-into a materialized workspace drives that workspace's agent. They also assert
-MECHANISMS — a refusal sentence, a tool result, the projection sent to the
-browser — never the words the model chose, which is what lets a
-different-but-valid implementation pass.
-
-**The canonical copy always wins.** `use_template` copies template files verbatim,
-eval file included, so a workspace can arrive holding a contract the coding agent
-was then free to edit. `contractWorkspace` overwrites it with the copy read from
-`packages/aai-templates/`. That is the whole non-gameability argument, and it is
-the same one `starter-expectations.ts` rests on: the prompt is ours, the contract
-is ours, and the only thing the agent controls is the agent.
-
-**Why the scratch directory is inside this package.** A contract imports
-`@alexkroman1/aai/protocol`, `@alexkroman1/aai-runtime/eval`, `vitest` and `zod`,
-and Node resolution walks UPWARD — a directory under `packages/aai-evals/`
-resolves all four with nothing installed, where one in `tmpdir()` resolves none.
-It is `.eval-workspaces/`, gitignored, and removed in a `finally`: a leak here is
-a tree that `git status`, `biome check` and `tsc` all walk into.
-
-**Off by default, and that is a cost decision rather than a doubt.** A contract
-run is a live model session on top of a codegen turn that already takes minutes,
-so making it unconditional would roughly double the tier's wall clock and spend
-to answer a question most runs are not asking. A starter naming no template, or
-naming one that ships no eval, records NOTHING rather than a passing check — a
-check that cannot fail is one more line saying "green" for no reason.
-
-**What is NOT verified: the live path.** The selection, the overwrite, the
-materialization, the cleanup and the subprocess plumbing all have unit tests
-(`template-contract.test.ts`, 23 of them, with the vitest spawn faked and
-`spawnCommand` driven through `node -e`). What no test here reaches is one real
-`npx vitest run` against a real generated workspace, because that needs a live
-studio, a key and a model. Treat the first `AAI_EVAL_CONTRACTS=1` run as the
-validation it has not had — and note that a contract failing for want of the
-template's DATA files, rather than for behaviour, is the failure mode to watch:
-`use_template` copies them, but only if the agent asked for them.
+**No cycle, and it is worth being able to say why quickly.** `aai-evals`
+depends on `@alexkroman1/aai` and `@alexkroman1/aai-runtime` and on nothing else
+in the workspace; `evals-package-boundary` denies `aai-studio-server` from here,
+so the edge cannot acquire a reverse. `turbo.json`'s `build` is
+`dependsOn: ["^build"]` and would fail hard rather than quietly if it did.
 
 ## Adding a case
 

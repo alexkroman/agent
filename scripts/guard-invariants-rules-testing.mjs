@@ -16,8 +16,10 @@
  *
  *   - `aai-cli/_deno-output.scenario.test.ts` — a doc comment quoting the
  *     anti-pattern, in the very file whose fix added this rule.
- *   - `aai-evals/template-contract.test.ts` — the STRING `"expect(true).toBe(true)"`,
- *     a fixture body written into a temp file for the eval harness to run.
+ *   - `aai-studio-server/studio-template-contract.test.ts` — the STRING
+ *     `"expect(true).toBe(true)"`, a fixture body written into a temp file for
+ *     the eval harness to run. (It was `aai-evals/template-contract.test.ts`
+ *     when this was measured; the file moved packages with the studio eval.)
  *
  * A line rule would therefore need `skipComments` plus something it does not
  * have for the string, so it would either fail on prose it cannot fix or need a
