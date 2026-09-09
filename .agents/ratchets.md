@@ -579,6 +579,35 @@ than half the corpus could vanish silently (its `extractFences` also dropped
 every block after an unclosed fence, which now throws); and `guard-invariants`
 rules 11, 12 and 13 had no corpus floor.
 
+**An EXPLICIT FILE LIST gets a floor too, and its floor is its own LENGTH.**
+`SCAN_CORPORA`'s glob entries carry a measured number with headroom, because
+the interesting failure there is partial; a hand-written list of exact paths
+has no headroom to allow — every entry must resolve, so `minFiles:
+THE_LIST.length` is the honest floor and a single renamed file fails it by
+name. `SESSION_SURFACE_PATHS` had that from the start and
+`RUNTIME_ROUTE_SOURCES` did not, which is the worse of the two failure modes
+rather than a smaller one: rule 12 does not merely SCAN those six modules, it
+`readFileSync`s each to resolve the `export const` a `server-routes.ts` entry
+references — unguarded — so one moved file threw an uncaught `ENOENT` out of
+the gate and took the OTHER 29 rules' findings with it. `check:invariants`
+reported nothing about anything, which is the one output a ratchet must never
+have. Being SPREAD into a wider pathspec list is not a floor for the entries
+either: `RUNTIME_ROUTE_SOURCES` feeds `GUEST_SURFACE_PATHSPECS`, whose 32 files
+clear a floor of 20 with five of the six missing.
+
+The general rule, which is what the `src/` restructuring cost four times over:
+**a path or specifier written down in a gate needs an assertion that it still
+resolves, sited before anything reads it.** TypeScript cannot supply one — a
+gate script runs outside the program it checks, and the whole reason these
+lists exist is to reach files nothing imports (see "Before splitting another
+prefix" in `packages/aai-runtime/CLAUDE.md`). What is available instead is the
+choice between a named finding and a silent narrowing, and it is made per
+mechanism: `check-optional-peers.mjs` fails when a `TEST_ONLY_EDGES` exemption
+names a subpath that is gone, `JOURNAL_BACKENDS`' sweep fails when a registered
+`module` is absent from the tree, and this floor covers the third shape. A
+`readFileSync` over a path literal with no such assertion is the shape to
+refuse in review.
+
 These are pure fs checks (no build needed), so they run up front and fail fast.
 To tighten quality over time, lower the entries in the file-length allowlist and
 in the two per-file baselines (`escape-hatch-baseline.json`,

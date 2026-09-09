@@ -344,6 +344,19 @@ export const SCAN_CORPORA = [
     pathspecs: SESSION_SURFACE_PATHS,
     minFiles: SESSION_SURFACE_PATHS.length,
   },
+  // The other explicit file list, and the one that had no floor. Rule 12 does
+  // not just SCAN these — it `readFileSync`s each to resolve the `export const`
+  // a `server-routes.ts` entry references, unguarded, so a renamed module threw
+  // an uncaught ENOENT out of the gate and took the OTHER 29 rules' findings
+  // with it: one moved file, and `check:invariants` reported nothing about
+  // anything. Two of these six were repointed when `workflow-*` became
+  // `workflow/`. Being spread into GUEST_SURFACE_PATHSPECS below is not a floor
+  // for them — 32 files clear a floor of 20 with five of these missing.
+  {
+    what: "rule 12's runtime route-source file list",
+    pathspecs: RUNTIME_ROUTE_SOURCES,
+    minFiles: RUNTIME_ROUTE_SOURCES.length,
+  },
   { what: "rule 12's guest HTTP-surface scan", pathspecs: GUEST_SURFACE_PATHSPECS, minFiles: 20 }, // 32
   { what: "rule 13's template scan", pathspecs: TEMPLATE_PATHSPECS, minFiles: 100 }, // 175
   { what: "rule 33's test-file scan", pathspecs: TEST_FILE_PATHSPECS, minFiles: 600 }, // 850
