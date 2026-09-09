@@ -11290,7 +11290,7 @@ It was NOT, until recently, and the note here said so — the URL was served
 by the DevKit's own hook table, which knew nothing about this wait and
 answered `HookNotFound`. Both hops are covered now: the route→`signal` hop
 by `server-workflow-app.test.ts`, and `signal`→resume by
-`workflow-in-process.test.ts`.
+`workflow/in-process.test.ts`.
 
 ```ts no-check
 // The token is the AUTHOR's, derived so the body and the tool that hands it

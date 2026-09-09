@@ -279,7 +279,7 @@ about the store, and it needs its own type because those two want opposite
 handling: a store that is unreachable means the run's state is UNKNOWN, so the
 delivery fails and the queue retries it, where a refusal cannot change however
 many times it is retried and the right move is to fail the run and say why.
-`workflow-replay-journal-failure.ts` is what reads the difference.
+`workflow/replay/journal-failure.ts` is what reads the difference.
 
 Everything else a store may reject with — a reset socket, an exhausted pool, a
 full disk, a timeout — is the store, so the set here is CLOSED and small
@@ -1173,7 +1173,7 @@ tally, and the difference is a durable-execution defect rather than a nuance
 one budget that only a crash was supposed to spend, so two overlapping
 deliveries of a step whose body sleeps burned four attempts of three and the
 loser journaled `failed` over a step that had SUCCEEDED. See
-`workflow-replay-step.ts`, "An attempt is a lease".
+`workflow/replay/step.ts`, "An attempt is a lease".
 
 ## `holder` is WHOSE lease, and it is what makes the charge attributable
 
@@ -1196,7 +1196,7 @@ the second is why the parameter exists at all:
 
 A charge older than this does not appear in the answer, and is the store's
 to forget. The window is the CALLER's policy — `ATTEMPT_LEASE_MS` in
-`workflow-replay-attempt.ts` carries the number and the argument for it,
+`workflow/replay/attempt.ts` carries the number and the argument for it,
 including why it is generous and what a heartbeat would buy.
 
 The store must NOT refresh a live holder's `claimed_at` on a re-claim: the
@@ -1500,7 +1500,7 @@ whole and not queried per step"). That argument is about the WALK's opening
 read, where a lookup per `ctx.step` costs a round trip per step per replay
 and reading whole costs one whatever the run has done. This answers a
 different question, asked on one path only: `settledSince`
-(`workflow-replay-attempt.ts`) re-reads a SINGLE key when `claimAttempt`
+(`workflow/replay/attempt.ts`) re-reads a SINGLE key when `claimAttempt`
 says somebody else reached it, to find out whether they settled it. That
 call site had no keyed primitive, so it read the whole journal and kept one
 entry — an O(N) scan to answer an O(1) question, on the contended path, in
@@ -1577,7 +1577,7 @@ charge is never read again, or leaves the charge deliberately standing:
 - **A death keeps it, and that asymmetry is the whole mechanism.** A worker
   that dies mid-body cannot release, so the charge is the only evidence the
   attempt happened — which is also what the divergence check reads (see
-  `workflow-replay-divergence.ts`, "two facts decide it").
+  `workflow/replay/divergence.ts`, "two facts decide it").
 - **An in-process retry keeps it**, being the same walk working on the same
   step. A charge per TRY would leave a window between the release and the
   next claim in which a kill leaves no evidence at all.
@@ -1749,7 +1749,7 @@ the proven version of this question:
 **OPTIONAL, and an absent implementation is a DECLARATION.** A backend that
 cannot answer omits it, and `createInProcessWorkflowEngine` then WARNS at boot
 rather than silently forgetting the runs — a durability tradeoff absent from
-the log reads as a bug. `workflow-journal-platform.ts` is the one backend that
+the log reads as a bug. `workflow/journal/platform.ts` is the one backend that
 omits it on purpose: a deployed guest's schedule lives in the platform's
 queue, whose reconcile already recovers a lost one server-side, so a sweep
 here would be a second recovery mechanism booting a sandbox per copy. See
@@ -1840,7 +1840,7 @@ flight" versus "the BODY is non-deterministic") unanswerable from the
 journal alone. One version here settles half of it: compared at each walk,
 an inequality states the redeploy and an equality eliminates it.
 
-It is a DIAGNOSTIC and never a gate — `workflow-code-version.ts` carries
+It is a DIAGNOSTIC and never a gate — `workflow/code-version.ts` carries
 why a mismatch does not refuse the run, and why the value has to come from
 the process environment rather than the agent's.
 
