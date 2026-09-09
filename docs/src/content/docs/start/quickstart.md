@@ -3,8 +3,8 @@ title: Quickstart
 description: Build, run, and publish a working voice agent in about five minutes.
 ---
 
-You need Node.js 24+ and an AssemblyAI API key. That one key covers
-listening, thinking, and speaking.
+You need Node.js 24, 25, or 26 — the range a scaffolded project declares — and
+an AssemblyAI API key. That one key covers listening, thinking, and speaking.
 
 ## 1. Create a project
 
@@ -14,9 +14,26 @@ aai init my-agent
 cd my-agent
 ```
 
-`aai init` scaffolds from a template and writes a `.env` with an empty
-`ASSEMBLYAI_API_KEY=`. **Fill it in** — paste your key there, or run
-`aai login` to store one globally.
+`aai init` scaffolds from a template, installs with whichever package manager
+you ran it from, and writes a `.env` with an empty `ASSEMBLYAI_API_KEY=`.
+**Fill it in** — paste your key there, or run `aai login` to store one
+globally.
+
+The agent it writes is five files, and the whole framework is visible in them:
+
+```text
+my-agent/
+  agent.ts            # the definition
+  system-prompt.md    # the prompt — discovered, not imported
+  tools/
+    get_weather.ts    # one tool; the filename is its name
+  agent.test.ts       # ordinary vitest — `aai test`
+  agent.eval.test.ts  # does it BEHAVE — `aai eval`
+```
+
+The usual project files (`package.json`, `tsconfig.json`, `.env`) come with
+them. Nothing in the five names another: the prompt and the tool are found
+where they sit, which is the one idea the rest of the framework is built on.
 
 Run `aai templates` to see the other starting points;
 `--template pizza-ordering-agent` picks one.
@@ -24,17 +41,17 @@ Run `aai templates` to see the other starting points;
 ## 2. Talk to it
 
 ```sh
-aai dev --watch
+aai dev
 ```
 
 That starts a local server and prints a URL. Open it, click the microphone,
-and talk.
-
-`--watch` rebuilds when you save; without it, restart to pick up an edit.
+and ask it about the weather somewhere. It rebuilds when you save, so leave it
+running for the next two steps.
 
 ## 3. Change what it says
 
-The agent's personality lives in two files. `agent.ts` is the definition:
+The agent's personality lives in two of those files. `agent.ts` is the
+definition — three fields, all yours to change:
 
 ```ts
 // agent.ts
@@ -56,31 +73,47 @@ You help callers plan around the weather.
 Answer in one or two sentences — this is a phone call, not a paragraph.
 ```
 
-Save either one and `aai dev --watch` picks it up.
+Save either one and the running `aai dev` picks it up.
 
 ## 4. Give it something to do
 
 A tool is a file in `tools/`. The filename is the name the model calls it by,
-so this one is `get_weather`:
+so the one you already have is `get_weather`. Open it and, comments aside,
+this is all of it:
 
 ```ts
 // tools/get_weather.ts
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
+type Wttr = {
+  current_condition?: [{ temp_F?: string; weatherDesc?: [{ value?: string }] }];
+};
+
 export default tool({
-  description: "Get current weather for a city",
-  inputSchema: z.object({ city: z.string().describe("City name") }),
-  execute: async ({ city }) => {
-    const where = encodeURIComponent(city);
-    const res = await fetch(`https://wttr.in/${where}?format=j1`);
-    return await res.json();
+  description: "Get the current weather for a city.",
+  inputSchema: z.object({ city: z.string().describe("City name, e.g. Denver") }),
+  execute: async ({ city }, ctx) => {
+    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, {
+      signal: ctx.signal,
+    });
+    if (!res.ok) return { error: `The weather service answered ${res.status}.` };
+    const now = ((await res.json()) as Wttr).current_condition?.[0];
+    return { city, tempF: now?.temp_F, conditions: now?.weatherDesc?.[0]?.value };
   },
 });
 ```
 
-Ask the agent about the weather in Denver and it will call this. There is
-nothing to register.
+Three things in it are worth copying into your own: the input `z.object` is
+what the model fills in and `.describe()` is what it reads; `ctx.signal` is the
+call's deadline, so a slow service ends the request instead of being waited out
+and discarded; and a failure is RETURNED rather than thrown, because a message
+the model can read is one it can apologize for out loud.
+
+Now copy the file to `tools/get_forecast.ts` and change the description and the
+body — the model can call that too. There is nothing to register, no list to
+join, and no import to add: a file in `tools/` is a tool because it is in
+`tools/`.
 
 ## 5. Ship it
 
@@ -89,12 +122,9 @@ aai login      # once
 aai publish
 ```
 
-That uploads your source, builds it on the platform, deploys, and prints a
-URL you can share.
-
-On your **first** publish the secrets from `.env` are attached after the
-deploy, so run `aai publish` once more to pick them up. See
-[Publish](/agent/deploy/publish/) for the details, and
+That uploads your source, syncs the secrets from `.env`, builds it on the
+platform, deploys, and prints a URL you can share. One command, including the
+first time. See [Publish](/agent/deploy/publish/) for the details, and
 [Phone calls](/agent/deploy/phone/) for putting it on a phone number.
 
 ## Next

@@ -42,31 +42,41 @@ export function devBindHost(): string | undefined {
 }
 
 /**
- * File watching is OPT-IN — `aai dev --watch`, or `AAI_DEV_WATCH=1`.
+ * File watching is on for a HUMAN and off for everything else — `--watch` /
+ * `--watch=false` and `AAI_DEV_WATCH` override it in either direction.
  *
  * A restart rebuilds the bundle and replaces the server, which drops nothing
  * mid-request but does end in-flight voice sessions. That is the right default
  * while editing an agent and the wrong one while a benchmark is driving the
  * host for twenty minutes: a stray formatter save, a `.env` touch, or a git
  * operation restarts the server underneath the run, and the harness reports it
- * as a provider failure several records deep.
+ * as a provider failure several records deep. That argument is why watching was
+ * opt-in, and it is unchanged — what changed is that it is an argument about a
+ * HARNESS, and every default here was paying for it.
  *
- * **The FLAG exists because the variable was undiscoverable**, which made the
- * default a defect rather than a decision: `aai dev --help` listed nothing about
- * watching, `AAI_DEV_WATCH` appeared in no document a user reads, and the guide
- * shipped into every scaffolded project opened with "Iterate in `pnpm dev` —
- * hot reload". So the promise was false and there was no way to find the switch
- * that makes it true. The variable stays for a process supervisor, which has an
- * environment and no argv.
+ * **The two TTYs are the narrowing.** `process.stdin.isTTY && stdout.isTTY` is
+ * already this CLI's discriminator for "a person is running this" (`cli.ts`
+ * confirms before an implicit publish on exactly that pair), and a harness or
+ * supervisor driving `aai dev` has neither — it pipes stdout, which is also
+ * what auto-selects JSON mode. So the twenty-minute benchmark keeps today's
+ * behaviour by construction, without having to know a variable exists, and the
+ * author editing `agent.ts` in a terminal gets the reload the guide shipped
+ * into every scaffolded project has always promised ("Iterate in `pnpm dev` —
+ * hot reload") and the quickstart's own `aai dev --watch` had to ask for.
  *
- * The flag WINS when passed, in both directions: `--watch` turns it on where the
- * variable is unset or off, and `--watch=false` turns it off where the variable
- * says on — an explicit argument that a stale exported variable could override
- * would be the same discoverability bug wearing the fix's clothes.
+ * The FLAG still wins when passed, in both directions, and `AAI_DEV_WATCH`
+ * decides whenever it carries a value — `AAI_DEV_WATCH=0` is what turns
+ * watching OFF at a terminal, and it has to be read explicitly for that:
+ * before, every value but the four truthy ones fell through to a default of
+ * off, so `=0` worked by coincidence rather than by being read.
  */
 export function devWatchEnabled(flag?: boolean | undefined): boolean {
   if (flag !== undefined) return flag;
-  return /^(1|true|yes|on)$/i.test(process.env.AAI_DEV_WATCH?.trim() ?? "");
+  const declared = process.env.AAI_DEV_WATCH?.trim();
+  // Empty reads as UNSET, the same rule `devBindHost` follows above — an
+  // exported-but-empty variable must not be a third answer.
+  if (declared) return /^(1|true|yes|on)$/i.test(declared);
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
 /**

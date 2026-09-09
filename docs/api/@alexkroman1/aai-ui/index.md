@@ -26,7 +26,7 @@ exists so a component re-renders on its own slice rather than on every frame:
 | --- | --- |
 | the call itself | [useSession](#usesession) (everything), [useSessionStatus](#usesessionstatus), [useSessionError](#usesessionerror), [useSessionActions](#usesessionactions), [useSessionSelector](#usesessionselector) |
 | what was said | [useConversation](#useconversation), [useUserTranscript](#useusertranscript) |
-| what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projection(…)` the agent declared, and it types the state AND supplies the frame rendered before the first push |
+| what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
 | tools, as they run | [useToolCallStart](#usetoolcallstart), [useToolResult](#usetoolresult), [useEvent](#useevent) |
 | a durable run | [useWorkflowSubmit](#useworkflowsubmit) (start one), [useWorkflowRun](#useworkflowrun) (watch one), [useWorkflowRuns](#useworkflowruns) / [useWorkflows](#useworkflows) (list), [useWorkflowProgress](#useworkflowprogress) / [useWorkflowStream](#useworkflowstream) (its output as it arrives) |
 | page chrome | [useTheme](#usetheme), [useCopy](#usecopy), [useFlash](#useflash), [useDownloadUrl](#usedownloadurl), [useRunKey](#userunkey) |
@@ -40,17 +40,20 @@ and the components are one rendering of it.
 
 ## Two things worth knowing before the reference below
 
-**Three names are re-exported from `@alexkroman1/aai`** — [WorkflowInputOf](#workflowinputof),
-[WorkflowOutputOf](#workflowoutputof) and [WorkflowSummary](#workflowsummary), plus [isTerminal](#isterminal)
-and [ClientConfigResponse](#clientconfigresponse). They are one declaration with two reference
-pages, not two types; a page takes them from here, an `agent.ts` from there.
+**Several names are re-exported from `@alexkroman1/aai`** —
+[WorkflowInputOf](#workflowinputof), [WorkflowOutputOf](#workflowoutputof), [WorkflowSummary](#workflowsummary) and
+[AgentClient](#agentclient), plus [isTerminal](#isterminal) and [ClientConfigResponse](#clientconfigresponse).
+They are one declaration with two reference pages, not two types; a page takes
+them from here, an `agent.ts` from there.
 
-**[createWorkflowApi](#createworkflowapi) is the browser's workflow client, and there are two
-others.** `createWorkflowApiClient` (`@alexkroman1/aai/workflow-api`) is the
-same call set for a caller with no page to default its base URL from — a
-script, a cron job, a server — and `createAgentClient` on that subpath is a
-superset that also reaches `/client-config`. Reach for the one here whenever
-the code runs in a page the agent serves.
+**[createWorkflowApi](#createworkflowapi) is the browser's client, and there is one other.**
+`createAgentClient` (`@alexkroman1/aai/workflow-api`) is the same
+[AgentClient](#agentclient) for a caller with no page to default its base URL from — a
+script, a cron job, a server. Reach for the one here whenever the code runs in
+a page the agent serves; it delegates to that factory, so there is one
+implementation of the routes and one `config()`. (It used to answer the
+narrower `WorkflowApi`, which made a page wanting the agent's own name build a
+second client for one read.)
 
 ## Functions
 
@@ -613,15 +616,22 @@ session.start();
 ### createWorkflowApi()
 
 ```ts
-function createWorkflowApi(options?: WorkflowApiOptions): WorkflowApi;
+function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
 ```
 
-Create a workflow API client aimed at the agent serving this page.
+Create a client for the agent serving this page.
 
-Hoist it out of the component that uses it. `useWorkflowRun` holds the client
-in a ref precisely so a fresh object per render does not restart its watch,
-but a client built in render is still a new `fetch` closure every time and
-reads as though it were free.
+**You usually do not need one.** Every hook and component here builds this
+exact client lazily and once when no `api` is passed
+(`_workflow-api-ref.ts`), so `useWorkflowSubmit("digest")` already talks to
+the right agent. Reach for this when the client has to be DIFFERENT from that
+default — another agent's `baseUrl`, or a `token` — or when a page wants
+`config()` and the run calls on one object.
+
+If you do build one, hoist it out of the component that uses it.
+`useWorkflowRun` holds the client in a ref precisely so a fresh object per
+render does not restart its watch, but a client built in render is still a new
+`fetch` closure every time and reads as though it were free.
 
 #### Parameters
 
@@ -634,9 +644,14 @@ default base URL is the page's own origin and path.
 
 #### Returns
 
-[`WorkflowApi`](#workflowapi)
+[`AgentClient`](#agentclient)
 
-The call set — see [WorkflowApi](#workflowapi).
+Every workflow call plus `config()` and `baseUrl` — see
+[AgentClient](#agentclient). It was the narrow [WorkflowApi](#workflowapi), which left a page
+that also wanted the agent's own name building a SECOND client (or a bare
+`fetch` and a hand-written URL join) for one read; the SDK documents
+`createAgentClient` as a superset of the same routes, so delegating to it
+widens the return without a second implementation of anything.
 
 #### Example
 
@@ -644,8 +659,9 @@ The call set — see [WorkflowApi](#workflowapi).
 import { createWorkflowApi, useWorkflowRun } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 
-// Module scope, not render scope — see above.
-const api = createWorkflowApi();
+// A DIFFERENT agent than the one serving this page, so the client is
+// explicit — and module scope, not render scope, per above.
+const api = createWorkflowApi({ baseUrl: "https://agents.example/digest" });
 
 function StartDigest() {
   const [runId, setRunId] = useState<string>();
@@ -723,7 +739,7 @@ function RunFacts({ words, cut }: { words: number; cut: number }) {
 ### fetchClientConfig()
 
 ```ts
-function fetchClientConfig(platformUrl: string, fetchFn?: {
+function fetchClientConfig(platformUrl?: string, fetchFn?: {
   (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   (input: string | Request | URL, init?: RequestInit): Promise<Response>;
 }): Promise<{
@@ -737,12 +753,12 @@ function fetchClientConfig(platformUrl: string, fetchFn?: {
 Fetch the agent's declared `name`, `greeting` and front door; any failure
 yields the agent default (`{}`).
 
-**This is what a workflow app calls instead of receiving the config.**
-`mountClient()` fetches `GET client-config` for itself before it renders the
-default chat shell, so a voice client never has to. `mountPage()` mounts no
-session and makes no such request — deliberately, since a page has no shell
-to put a name in — so a page that wants the agent's own `name` or `greeting`
-asks for them here.
+**This is what a workflow app's own component calls instead of receiving the
+config.** Both mounts fetch `GET client-config` for the shell they render
+themselves — `mountClient()` for the chat shell, `mountPage()` for the
+generated workflow shell — so neither DEFAULT has to be told the agent's
+name. A `component:` replaces that shell, and with it the lookup, so a page
+that wants the agent's own `name` or `greeting` asks for them here.
 
 Every failure path degrades to the empty default rather than throwing: a
 network error, a 404 from a server older than the endpoint, a malformed
@@ -754,13 +770,16 @@ normal agent.
 
 #### Parameters
 
-##### platformUrl
+##### platformUrl?
 
 `string`
 
-The agent's base URL. On a deployed page that is the
-page's own origin and path (`location.origin + location.pathname`); the
-endpoint is resolved relative to it.
+The agent's base URL. **Defaults to the page's own
+origin and path** (`pageBaseUrl()`), which is the agent that served the page
+and the only case a browser has — the argument was required while the default
+sat one module away in this same package, so every caller wrote
+`location.origin + location.pathname` for itself. Pass one for a page reading
+a DIFFERENT agent. The endpoint is resolved relative to it.
 
 ##### fetchFn?
 
@@ -788,9 +807,7 @@ The agent's config, or `{}` when the lookup produced no answer.
 ```tsx
 import { fetchClientConfig, mountPage } from "@alexkroman1/aai-ui";
 
-const { name, greeting } = await fetchClientConfig(
-  location.origin + location.pathname,
-);
+const { name, greeting } = await fetchClientConfig();
 
 function App() {
   return (
@@ -1145,18 +1162,27 @@ If the target element is not found in the DOM.
 ### mountPage()
 
 ```ts
-function mountPage(config: PageConfig): PageHandle;
+function mountPage(config?: PageConfig): PageHandle;
 ```
 
 Mount a page for an agent whose work happens in workflows.
 
-There is deliberately no session, no microphone, and no socket: the component
-talks to the agent over the workflow HTTP API
-(`createWorkflowApi`/`useWorkflowRun`), which is durable and outlives the tab.
+There is deliberately no session, no microphone, and no socket: the page talks
+to the agent over the workflow HTTP API (`useWorkflowSubmit`/`useWorkflowRun`),
+which is durable and outlives the tab.
+
+**Config only:** leave `component` out and the generated shell renders — a
+form per declared workflow, the run's progress, its failure, its output.
+
+**A custom component:** pass `component` and it is rendered inside the theme
+provider instead. The pieces the default shell is built from are all published
+(`useWorkflows`, `<WorkflowFields>`, `useWorkflowSubmit`,
+`<WorkflowProgress>`, `<WorkflowRunError>`), so replacing the shell does not
+mean starting from `fetch`.
 
 #### Parameters
 
-##### config
+##### config?
 
 [`PageConfig`](#pageconfig)
 
@@ -1164,25 +1190,32 @@ talks to the agent over the workflow HTTP API
 
 [`PageHandle`](#pagehandle)
 
-#### Example
+#### Examples
+
+**The default shell**
 
 ```tsx
-import { createWorkflowApi, mountPage, useWorkflowRun } from "@alexkroman1/aai-ui";
-import { useState } from "react";
+import { mountPage } from "@alexkroman1/aai-ui";
 
-// Hoisted: a client built in render is a new object every render.
-const api = createWorkflowApi();
+mountPage({ name: "Digest" });
+```
+
+**A custom component**
+
+```tsx
+import { mountPage, useWorkflows } from "@alexkroman1/aai-ui";
 
 function App() {
-  const [runId, setRunId] = useState<string>();
-  const { run } = useWorkflowRun(runId, { api });
+  // No client to build and none to hoist: every workflow hook defaults to one
+  // aimed at the agent serving this page, built lazily and once.
+  const { workflows, loading } = useWorkflows();
+  if (loading) return <p>Loading…</p>;
   return (
-    <button
-      type="button"
-      onClick={() => void api.start("digest", { topic: "ai" }).then(setRunId)}
-    >
-      {run ? run.status : "Start"}
-    </button>
+    <ul>
+      {workflows.map((entry) => (
+        <li key={entry.name}>{entry.description ?? entry.name}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -1953,8 +1986,8 @@ function useAgentState<V>(projection: StateProjection<V>): V;
 ```
 
 The agent's projected session state, typed and defaulted by the SAME
-projection the agent pushes — pass `slot.projection(view)` and there is no
-type argument to restate and no empty frame to derive.
+projection the agent pushes — pass `slot.projected` and there is no type
+argument to restate and no empty frame to derive.
 
 This is the overload to reach for whenever `syncState` is a slot projection,
 because it closes the round-trip the other two leave open. A projection is
@@ -1965,20 +1998,29 @@ was restating what `cartView` already knew. Both halves came out of the same
 declaration and both were written by hand:
 
 ```tsx no-check
-// `no-check`: the projection lives with the agent, in another file.
+// `no-check`: the slot lives with the agent, in another file.
 // Before — the empty frame derived by hand, the type named three times:
 const EMPTY: CartView = cartSlot.projection(cartView)(undefined);
 const cart = useAgentState<CartView>(EMPTY);
 
-// After — `shared.ts` exports the projection once, both ends import it:
-const cart = useAgentState(cartProjection);
+// After — the slot declares its `view`, and both ends pass the one object
+// it built at declaration:
+const cart = useAgentState(cartSlot.projected);
 ```
+
+**`slot.projected` is the spelling to prefer, and it retires the caveat
+below.** Declare the view on the slot (`sessionSlot(key, create, { view })`)
+and the projection is built ONCE where the slot is, so `agent({ syncState })`
+and this hook are handed the same object and nothing has to arrange for that.
+`slot.projection(view)` composes a NEW projection per call, which is what
+leaves both halves below to a convention.
 
 The empty frame is memoized on the projection's identity, so a module-scope
 projection (the normal case) produces ONE frame for the life of the
 component — which the `fallback` overload can only ask you to arrange by
 hoisting, and which a `slot.projection(view)` spelled inline in the render
-body silently got wrong.
+body silently got wrong. A `slot.projected` cannot be spelled inline: it is
+the slot's own field.
 
 **The one case that cannot use this overload is a slot whose declaring module
 is expensive to IMPORT.** A projection is built from the slot, so the browser
@@ -2002,9 +2044,10 @@ template.
 
 [`StateProjection`](../aai/index.md#stateprojection)\<`V`\>
 
-The same `slot.projection(view)` the agent declares as
-  `syncState`. Export it from the module that declares the slot so the two
-  ends cannot drift.
+The same projection the agent declares as `syncState`.
+  `slot.projected` is that object by construction; a `slot.projection(view)`
+  has to be exported from the module that declares the slot so the two ends
+  cannot drift.
 
 ##### Returns
 
@@ -3761,6 +3804,85 @@ Empty string when nobody is speaking.
 
 ## Type Aliases
 
+### AgentClient
+
+```ts
+type AgentClient = WorkflowApi & {
+  baseUrl: string;
+  config: Promise<{
+     greeting?: z.ZodOptional<z.ZodString>;
+     name?: z.ZodOptional<z.ZodString>;
+     page: z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+     }>;
+     sessionUrl?: z.ZodOptional<z.ZodString>;
+  }>;
+};
+```
+
+Everything one agent answers: every [WorkflowApi](#workflowapi) call, plus the front
+door.
+
+An intersection rather than a redeclaration — the workflow half must not be
+describable twice.
+
+#### Type Declaration
+
+##### baseUrl
+
+```ts
+readonly baseUrl: string;
+```
+
+The agent's base URL, normalized — no trailing slash.
+
+Here because a caller that has this client should not also be threading the
+string it was built from: a webhook to register, a link to print, a `curl`
+to paste in a bug report all want it, and re-deriving it invites the
+trailing-slash `//workflows` 404 this normalizes away.
+
+##### config()
+
+```ts
+config(): Promise<{
+  greeting?: z.ZodOptional<z.ZodString>;
+  name?: z.ZodOptional<z.ZodString>;
+  page: z.ZodEnum<{
+     static: "static";
+     voice: "voice";
+  }>;
+  sessionUrl?: z.ZodOptional<z.ZodString>;
+}>;
+```
+
+What the agent says it IS: `{ name?, greeting?, page?, sessionUrl? }`.
+
+The one read that works on EVERY agent, whatever shape it is, and the one a
+caller starts with — `page` (absent reads as `"voice"`) is how you know
+whether there is a session to open at all, and `sessionUrl` is the current
+one. **Re-read it on every connect rather than storing it**: on the platform
+it names the agent's sandbox, and that URL changes when the sandbox is
+replaced by an idle reclaim or a redeploy.
+
+Unauthenticated on a deployed agent, exactly like the page it describes — so
+this call works with no `token`, and a workflow API closed by
+`AAI_WORKFLOW_API_TOKEN` does not close it.
+
+###### Returns
+
+`Promise`\<\{
+  `greeting?`: `z.ZodOptional`\<`z.ZodString`\>;
+  `name?`: `z.ZodOptional`\<`z.ZodString`\>;
+  `page`: `z.ZodEnum`\<\{
+     `static`: `"static"`;
+     `voice`: `"voice"`;
+  \}\>;
+  `sessionUrl?`: `z.ZodOptional`\<`z.ZodString`\>;
+\}\>
+
+***
+
 ### AgentCustomEvent
 
 ```ts
@@ -5252,7 +5374,7 @@ message.
 
 ```ts
 type PageConfig = {
-  component: ComponentType;
+  component?: ComponentType;
   name?: string;
   target?: string | HTMLElement;
   theme?: ClientTheme;
@@ -5263,14 +5385,21 @@ Configuration for [mountPage](#mountpage).
 
 #### Properties
 
-##### component
+##### component?
 
 ```ts
-component: ComponentType;
+optional component?: ComponentType;
 ```
 
-The root component. Required — a workflow app has no default shell to fall
-back to, because there is no session for one to render.
+The root component, rendered instead of the generated shell.
+
+**Optional**, the way `mountClient()`'s is: leave it out and `mountPage()`
+renders a form per declared workflow, the run's progress, its failure and
+its output — see `_page-shell.tsx` for what that shell is composed of and
+why it is deliberately functional rather than designed. It was REQUIRED,
+because "a workflow app has no default shell to fall back to" — true of a
+session and false of the page, and it cost the six shipped workflow
+templates 220-511 lines each of the same composition.
 
 ##### name?
 

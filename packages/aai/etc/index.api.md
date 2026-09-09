@@ -75,6 +75,9 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
+export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
+
+// @public
 export function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
     stt: SttProvider;
     llm: LlmProvider;
@@ -456,7 +459,7 @@ export function pickOne<T>(items: readonly T[], random?: RandomSource): T | unde
 
 // @public
 export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-    llm?: LlmProvider | string;
+    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
     s2s?: undefined;
     text?: undefined;
     page?: "voice" | StaticFrontDoorMisuse;
@@ -555,8 +558,10 @@ export function resolveOne<T>(candidates: readonly T[], spoken: string, options:
 
 // @public
 export interface ResolveOneOptions<T> {
+    code?: (candidate: T) => string;
     describe: (candidate: T) => string;
     label?: string;
+    match?: (candidate: T) => string;
     score?: (candidate: T, text: string) => number;
 }
 
@@ -774,12 +779,13 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 export type SessionEventType = SessionEvent["type"];
 
 // @public
-export interface SessionSlot<K extends string, T> {
+export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     create(): T;
     readonly durable: boolean;
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
-    projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
+    readonly projected: StateProjection<V>;
+    projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
     reset(ctx: SlotHolder): DeepReadonly<T>;
     set(ctx: SlotHolder, value: T): DeepReadonly<T>;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
@@ -788,13 +794,14 @@ export interface SessionSlot<K extends string, T> {
 }
 
 // @public
-export function sessionSlot<const K extends string, T, After = void>(key: K, create: () => T, options?: SessionSlotOptions<T, After>): SessionSlot<K, T>;
+export function sessionSlot<const K extends string, T, After = void, V = DeepReadonly<T>>(key: K, create: () => T, options?: SessionSlotOptions<T, After, V>): SessionSlot<K, T, V>;
 
 // @public
-export interface SessionSlotOptions<T, After = void> {
+export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
     after?: ((draft: T) => After) & RejectThenable<After>;
     caps?: SlotCaps<T>;
     durable?: boolean;
+    view?: (value: DeepReadonly<T>) => V;
 }
 
 // @public
@@ -1007,7 +1014,7 @@ export type TelephonyCarrier = "twilio" | "telnyx";
 // @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
     text: true;
-    llm?: LlmProvider | string;
+    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
     stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
     tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
     s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";

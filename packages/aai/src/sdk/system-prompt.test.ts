@@ -391,6 +391,48 @@ describe("an author's prompt that interpolates DEFAULT_SYSTEM_PROMPT", () => {
     expect(result).toBe(buildSystemPrompt(makeConfig(), { hasTools: true }));
   });
 
+  test("says so when it fires, rather than repairing the premise silently", () => {
+    // The repair is what made the false premise survivable: an author who
+    // interpolated saw a prompt that worked. One line is what turns it back
+    // into something they can act on.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // A prompt of its own, so the once-per-prompt latch is not already spent by
+    // another case in this file.
+    const mine = `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss the catalog, please.`;
+    buildSystemPrompt(makeConfig({ systemPrompt: mine }), { hasTools: true });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("begins with a verbatim copy");
+    expect(warn.mock.calls[0]?.[0]).toContain("APPENDED");
+    // Once per prompt: the runtime rebuilds this string every calendar day.
+    buildSystemPrompt(makeConfig({ systemPrompt: mine }), { hasTools: true });
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  test("a MID-STRING copy is warned about — the shape the old advice's own rationale produced", () => {
+    // "Interpolate when part of the prompt is computed" puts the constant
+    // anywhere but the front, which `stripDefaultPrefix` deliberately does not
+    // repair. Unrepaired and unreported, it is ~10,000 duplicated characters a
+    // turn under two precedence headers.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const computed = `Today's specials: pepperoni.\n\n${DEFAULT_SYSTEM_PROMPT}\n\nBe brief.`;
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: computed }), { hasTools: true });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("somewhere other than the start");
+    expect(warn.mock.calls[0]?.[0]).toContain("TWICE");
+    // Still not STRIPPED — the warning is the whole change, and the scope
+    // boundary (drop a duplicate prefix, never edit prose) is unmoved.
+    expect(result.endsWith(`${AGENT_HEADER}\n${computed}`)).toBe(true);
+    warn.mockRestore();
+  });
+
+  test("a prompt that names none of it says nothing", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    buildSystemPrompt(makeConfig({ systemPrompt: "Only discuss pizza." }), { hasTools: true });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   test("only a LEADING copy is stripped — a prompt that merely mentions it is untouched", () => {
     // The strip is a duplicate-prefix removal, not prose editing: a constant
     // interpolated mid-prompt stays where the author put it.

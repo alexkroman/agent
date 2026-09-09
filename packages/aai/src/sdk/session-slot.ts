@@ -18,14 +18,9 @@ import { claimKey, type KeyOwner, shapeOf } from "./_slot-owners.ts";
 import type { DeepReadonly } from "./deep-readonly.ts";
 import { isRecord } from "./is-record.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import type {
-  RejectThenable,
-  RejectThenableResult,
-  SessionSlotOptions,
-  SlotToolDef,
-} from "./session-slot-types.ts";
+import type { SessionSlot } from "./session-slot-handle.ts";
+import type { SessionSlotOptions, SlotToolDef } from "./session-slot-types.ts";
 import type { SlotHolder, SlotStore, StateProjection } from "./session-state.ts";
-import type { ToolDef } from "./types.ts";
 
 // Re-exported rather than defined here: it is the type of what `get` hands
 // back, so it belongs beside `sessionSlot` on the root barrel — and it is its
@@ -33,203 +28,19 @@ import type { ToolDef } from "./types.ts";
 // slot machinery, which is exactly what adopting it asks every such helper to
 // do (see the type's own doc).
 export type { DeepReadonly } from "./deep-readonly.ts";
+// The HANDLE this factory answers with, in its own module for the reason
+// `sdk/dialog-handle.ts` is — see that file's doc. Re-exported here so
+// `@alexkroman1/aai` and a reader who looks for it where `sessionSlot` is both
+// still find it in one place.
+export type { SessionSlot } from "./session-slot-handle.ts";
 // The types a CALLER writes live in their own module (this file was at the
 // 500-line cap) and are re-exported here, so `@alexkroman1/aai` — and a reader
 // who looks for them where `sessionSlot` is — still finds them in one place.
 export type { SessionSlotOptions, SlotCaps, SlotToolDef } from "./session-slot-types.ts";
-// The seam every method above takes. Re-exported here for the reason
-// `DeepReadonly` is: a caller writing a helper around a slot names it, and it
-// should be findable where `sessionSlot` is.
+// The seam every one of the handle's methods takes. Re-exported here for the
+// reason `DeepReadonly` is: a caller writing a helper around a slot names it,
+// and it should be findable where `sessionSlot` is.
 export type { SlotHolder } from "./session-state.ts";
-
-/**
- * A named slot of per-session state, created by {@link sessionSlot}.
- *
- * @typeParam K - The key this slot occupies in the session's state.
- * @typeParam T - The value's shape.
- *
- * @public
- */
-export interface SessionSlot<K extends string, T> {
-  /** The store key this slot occupies. Two slots must not share one. */
-  readonly key: K;
-  /** A fresh default value, as `get` would install one. */
-  create(): T;
-  /**
-   * Whether this slot's value is stored durably. `true` unless the slot
-   * declared otherwise — see {@link SessionSlotOptions.durable}.
-   */
-  readonly durable: boolean;
-  /**
-   * This session's value, installing the default on first access.
-   *
-   * **Readonly all the way down, and frozen to match.** Mutating what this
-   * returns is a compile error at every depth — `cart.items.push(x)` as much as
-   * `cart.total = 0` — and a `TypeError` for a caller with no types, because a
-   * mutation applied here is applied to a value nothing is going to store.
-   * Every write goes through {@link SessionSlot.update}. See
-   * {@link DeepReadonly} for why the type is deep rather than shallow.
-   */
-  get(ctx: SlotHolder): DeepReadonly<T>;
-  /**
-   * Mutate this session's value, and store the result.
-   *
-   * `mutate` is handed a mutable DRAFT — a private copy of the current value —
-   * and whatever it leaves behind becomes the stored value when it returns.
-   * Resolves to whatever `mutate` returned, so a tool body can compute its
-   * result and its mutation in one pass.
-   *
-   * **It is SYNCHRONOUS, and that is the invariant, not an implementation
-   * detail.** There is no await between the read and the write, so a
-   * read-modify-write cannot interleave with another JS turn — which matters
-   * because the LLM loop runs a step's tool calls CONCURRENTLY. Await in FRONT
-   * of the mutation instead:
-   *
-   * ```ts
-   * import { sessionSlot, tool } from "@alexkroman1/aai";
-   * import { z } from "zod";
-   *
-   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[], quote: 0 }));
-   *
-   * export default tool({
-   *   description: "Price the cart",
-   *   inputSchema: z.object({}),
-   *   execute: async (_args, ctx) => {
-   *     const quote = await ctx.generate({ prompt: "price it" });   // await first
-   *     return cartSlot.update(ctx, (cart) => {                     // then mutate
-   *       cart.quote = Number(quote.text);
-   *       return { quote: cart.quote };
-   *     });
-   *   },
-   * });
-   * ```
-   *
-   * A mutator that throws stores NOTHING: the draft is discarded and the
-   * mutator's error propagates. The `after` hook does not run either — see
-   * {@link SessionSlotOptions.after}.
-   *
-   * For serialized work that is not a slot mutation — an external resource, a
-   * key that isn't the session id, or a mutation that must fail rather than
-   * queue — reach for `createKeyedLock`/`withLock`. They are public for exactly
-   * that, and this method no longer takes a lock at all: a synchronous window
-   * has nothing to serialize.
-   */
-  update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
-  /**
-   * Replace this session's value wholesale (a load, an import, a restore), and
-   * return it as `get` would.
-   *
-   * **The caller's object is COPIED, not adopted.** A durable slot freezes what
-   * it stores, and this method's own examples — a load, an import, a restore —
-   * are exactly the cases where the caller still holds a reference to what it
-   * passed: freezing in place turned an unrelated later line
-   * (`imported.items.push(...)`) into a `TypeError` from a stack that names
-   * nothing about this slot. {@link SessionSlot.update} was already safe because
-   * its draft is a copy; this is the same rule applied to the other writer.
-   */
-  set(ctx: SlotHolder, value: T): DeepReadonly<T>;
-  /** Discard this session's value and install a fresh default, and return it. */
-  reset(ctx: SlotHolder): DeepReadonly<T>;
-  /**
-   * Define a READ-ONLY tool over this slot: `execute` is handed the frozen
-   * value, so the body needs neither a context annotation nor an opening
-   * `slot.get(ctx)`.
-   *
-   * A body that mutates wants {@link SessionSlot.updateTool}. This one's value
-   * is {@link DeepReadonly}`<T>`, so choosing wrong is a compile error — at any
-   * depth — rather than a write that goes nowhere or throws.
-   *
-   * **`R` is threaded out**, as {@link tool}'s is: `R` used to be bound here and
-   * thrown away at the interface, so `InferToolOutput` answered `unknown` for
-   * exactly the tools an agent most often writes. Narrowing a return type is
-   * covariant, so the tool stays assignable to `ToolDef<ToolInputSchema>`.
-   *
-   * @example
-   * ```ts
-   * import { sessionSlot } from "@alexkroman1/aai";
-   * import { z } from "zod";
-   *
-   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-   *
-   * export default cartSlot.tool({
-   *   description: "How many items are in the cart",
-   *   inputSchema: z.object({}),
-   *   execute: (_args, cart) => ({ count: cart.items.length }),
-   * });
-   * ```
-   */
-  tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
-    def: SlotToolDef<P, DeepReadonly<T>, R>,
-  ): ToolDef<P, R>;
-  /**
-   * Define a MUTATING tool over this slot: the body runs inside
-   * {@link SessionSlot.update}, so it is handed a draft and whatever it leaves
-   * behind is stored.
-   *
-   * The body must therefore be SYNCHRONOUS. A tool that has to await does the
-   * awaiting in an ordinary `tool()` and calls `update` afterwards; see
-   * `update`'s example.
-   *
-   * That is enforced at RUN TIME rather than in the type, and the reason is
-   * worth knowing before "fixing" it: a conditional return type
-   * (`R extends Promise<unknown> ? never : R`) cannot be satisfied by a generic
-   * WRAPPER around this method, and a per-agent wrapper is the main way it gets
-   * used (`retail-orders-agent`'s `retailTool`). The runtime check has the better message
-   * anyway, and it is the half a user's project actually runs — neither bundler
-   * type-checks user code.
-   *
-   * **It fires at DECLARATION for the common case.** An `async` body is an
-   * `AsyncFunction`, visible the moment the module loads — under `aai dev`, in
-   * the build, in the agent's own spec. A sync function that RETURNS a promise
-   * is the other half, and only the call can catch it.
-   *
-   * @example
-   * ```ts
-   * import { sessionSlot } from "@alexkroman1/aai";
-   * import { z } from "zod";
-   *
-   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-   *
-   * export default cartSlot.updateTool({
-   *   description: "Add an item to the cart",
-   *   inputSchema: z.object({ item: z.string() }),
-   *   execute: ({ item }, cart) => {
-   *     cart.items.push(item);
-   *     return { count: cart.items.length };
-   *   },
-   * });
-   * ```
-   */
-  updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
-    def: SlotToolDef<P, T, R> & RejectThenable<R>,
-  ): ToolDef<P, R>;
-  /**
-   * A `syncState` projection over this slot: read the value (defaulting when
-   * the session has not touched it), then project.
-   *
-   * The result is CALLABLE as well as declarable, which is what lets a client
-   * derive its own empty state from the same function the server pushes —
-   * `slot.projection(view)()` is the pre-first-tool-call frame. Declaring it is
-   * `agent({ syncState: slot.projection(view) })`, and an agent with more than
-   * one slot passes an array; the frame carries the merge.
-   *
-   * `project` receives a REAL value, so a projection needs no optional chaining
-   * for the moment before the first tool call.
-   *
-   * @example
-   * ```ts
-   * import { agent, sessionSlot } from "@alexkroman1/aai";
-   *
-   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-   *
-   * export default agent({
-   *   name: "Shop",
-   *   syncState: cartSlot.projection((cart) => ({ count: cart.items.length })),
-   * });
-   * ```
-   */
-  projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
-}
 
 /** Would `await` on this do anything? */
 function isThenable(value: unknown): value is PromiseLike<unknown> {
@@ -273,14 +84,20 @@ function mustBeSync(key: string, how: string): Error {
  *   access (and again on `reset`), so a shared module-level default must be
  *   cloned here — `() => structuredClone(DEFAULT)` — or every session mutates
  *   the same object.
+ * @param options - See {@link SessionSlotOptions}. `view` is the one worth
+ *   knowing about up front: it declares what the BROWSER sees, so
+ *   {@link SessionSlot.projected} is the one object `agent({ syncState })` and
+ *   `useAgentState` both take.
  *
  * @example
  * ```ts
- * // shared.ts — the one place the slot is declared.
+ * // shared.ts — the one place the slot is declared, view included.
  * import { sessionSlot } from "@alexkroman1/aai";
  *
  * export type Cart = { items: string[] };
- * export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }));
+ * export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
+ *   view: (cart) => ({ count: cart.items.length }),
+ * });
  * ```
  *
  * @example
@@ -303,11 +120,11 @@ function mustBeSync(key: string, how: string): Error {
  *
  * @public
  */
-export function sessionSlot<const K extends string, T, After = void>(
+export function sessionSlot<const K extends string, T, After = void, V = DeepReadonly<T>>(
   key: K,
   create: () => T,
-  options: SessionSlotOptions<T, After> = {},
-): SessionSlot<K, T> {
+  options: SessionSlotOptions<T, After, V> = {},
+): SessionSlot<K, T, V> {
   const durable = options.durable ?? true;
   /**
    * This slot's identity, for the ownership check in {@link claimKey}. The slot
@@ -399,6 +216,27 @@ export function sessionSlot<const K extends string, T, After = void>(
    */
   const privateCopy = (value: T): T => (durable ? structuredClone(value) : value);
 
+  /**
+   * One projection over this slot, for both {@link SessionSlot.projection} and
+   * the declared `projected` below.
+   *
+   * A named function rather than the method body, so `projected` can be built
+   * from the SAME code path at declaration time. That is the whole point of the
+   * field: one object, handed to `syncState` and to `useAgentState`, rather than
+   * an expression composed once per end.
+   */
+  const project = <P>(view: (value: DeepReadonly<T>) => P): StateProjection<P> => {
+    // `applyCaps` on the default too: a stored value never exceeds its caps,
+    // and the frame rendered before the first tool call should not either.
+    const projection = (value?: unknown): P =>
+      view((value === undefined ? applyCaps(create()) : value) as DeepReadonly<T>);
+    // The slot's own `create` rather than a captured default: the runtime
+    // calls this for a session that never touched the slot, and a shared
+    // default object would then be projected — and, worse, be the thing a
+    // later `update` cloned.
+    return Object.assign(projection, { key, create: create as () => unknown });
+  };
+
   const update = <R>(ctx: SlotHolder, mutate: (draft: T) => R): R => {
     if (open.has(ctx.sessionId)) {
       throw new Error(
@@ -483,16 +321,22 @@ export function sessionSlot<const K extends string, T, After = void>(
           }),
       };
     }) as SessionSlot<K, T>["updateTool"],
-    projection(project) {
-      // `applyCaps` on the default too: a stored value never exceeds its caps,
-      // and the frame rendered before the first tool call should not either.
-      const projection = (value?: unknown): ReturnType<typeof project> =>
-        project((value === undefined ? applyCaps(create()) : value) as DeepReadonly<T>);
-      // The slot's own `create` rather than a captured default: the runtime
-      // calls this for a session that never touched the slot, and a shared
-      // default object would then be projected — and, worse, be the thing a
-      // later `update` cloned.
-      return Object.assign(projection, { key, create: create as () => unknown });
-    },
+    // Built HERE, at declaration, which is the field's whole guarantee: one
+    // object for the life of the module, so the two ends pass the same
+    // projection and `useAgentState` memoizes one empty frame off its identity.
+    //
+    // The identity view is what a slot that declared none projects — the whole
+    // value, which is what `slot.projection((value) => value)` already spelled
+    // by hand — and `projected` is total rather than conditionally present so
+    // that "no view" has to mean something. The assertion is this file's
+    // existing seam (see `update` above): with no `view`, `V` really is its own
+    // default (`DeepReadonly<T>`), but the `??` widens the inferred projection
+    // to the union of both arms and nothing at this position narrows it back.
+    projected: project<V | DeepReadonly<T>>(options.view ?? ((value) => value)) as SessionSlot<
+      K,
+      T,
+      V
+    >["projected"],
+    projection: project,
   };
 }

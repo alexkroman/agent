@@ -84,7 +84,18 @@ export async function resolveCliEntry(): Promise<string> {
 
 /** The CLI's one-line `--json` result (see aai-cli/_output.ts). */
 type CliResult =
-  | { ok: true; data: { slug: string; url: string; warnings?: string[] } }
+  | {
+      ok: true;
+      data: {
+        slug: string;
+        url: string;
+        warnings?: string[];
+        // Present only when the agent declares `telephony`. Publish is the
+        // path most users run, so dropping it here would mean the URLs are
+        // printed by a `aai deploy` almost nobody types.
+        webhooks?: { carrier: string; url: string }[];
+      };
+    }
   | { ok: false; error: string; code: string; hint?: string };
 
 /**
@@ -205,9 +216,14 @@ export async function deployWorkspaceDir(
   const stderrTail = result.stderr.trim();
   if (parsed?.ok) {
     const warnings = parsed.data.warnings ?? [];
+    // A webhook URL is not a warning, so it rides its own field rather than
+    // being smuggled through `warnings` — but it still has to REACH the user,
+    // and Publish is the path they take.
+    const webhooks = parsed.data.webhooks ?? [];
     const output = [
       `Deployed ${parsed.data.url}`,
       `slug: ${parsed.data.slug}`,
+      ...webhooks.map(({ carrier, url }) => `${carrier} webhook: ${url}`),
       ...warnings.map((w) => `warning: ${w}`),
     ].join("\n");
     return {

@@ -266,10 +266,23 @@ export async function executePush(opts: {
 }
 
 /**
- * Mirror `.env` into the deployed agent's secrets (the same `/:slug/secret`
- * routes `aai secret` uses). Secrets are merged into the agent env at
- * deploy time, which is why publish syncs them BEFORE deploying when the
- * slug is already known.
+ * Mirror `.env` into the project's secrets, which is what makes this callable
+ * BEFORE anything has been deployed.
+ *
+ * The route is the PROJECT's (`/studio/projects/:project/secret`), and that is
+ * the whole reason publish syncs unconditionally rather than only once a slug
+ * exists. A project holds its own secret record — `studio-secrets.ts` argues
+ * it, and the argument is exactly this failure: writing only to the slugs that
+ * exist forces "deploy it broken, then attach the key, then deploy again",
+ * which was the shortest path to a working agent and is not an order anybody
+ * should have to learn. `reconcileProjectSecrets` is wired as the broker's
+ * post-deploy hook and FLOORS a newly minted slug from that record, so the
+ * deploy this call precedes picks the values up as it claims its slug — and
+ * the preview agent, auto-deployed on the first edit, gets them too.
+ *
+ * Only the project row has to exist, and `pushProject` has already created it:
+ * server-side, a project with nothing deployed resolves to an empty target set
+ * and the record write is the whole operation.
  */
 async function syncEnvSecrets(
   cwd: string,
@@ -282,7 +295,8 @@ async function syncEnvSecrets(
   if (names.length === 0) return [];
   // The PROJECT route, not the deployed slug's: a project has a preview agent
   // too — one this very command created — and a `.env` synced to production
-  // alone leaves it failing at its first session. The server fans out.
+  // alone leaves it failing at its first session. The server fans out over the
+  // slugs that exist and records the rest against the project.
   await apiRequest(`${studioProjectApiUrl(serverUrl, project)}/secret`, {
     apiKey,
     action: "secret",
@@ -313,9 +327,14 @@ export async function executePublish(opts: {
   const pushed = await pushProject(opts);
   const { project, serverUrl, apiKey } = pushed;
 
-  // Secrets merge into the agent env at deploy time — sync them first when
-  // the slug already exists so this publish picks them up.
-  if (pushed.slug) await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project);
+  // ALWAYS before the deploy, first publish included. Secrets are merged into
+  // the agent env when the sandbox is BUILT, so anything synced afterwards
+  // reaches nothing until the next publish — and the gate here used to be
+  // `if (pushed.slug)`, i.e. "has this project ever been deployed", so every
+  // brand-new agent's first deployment ran without its credentials and the
+  // docs told the user to publish twice. `syncEnvSecrets` writes to the
+  // project route, which needs only the row `pushProject` just created.
+  await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project);
 
   log.step(`Publishing ${project} (builds in the project's sandbox)…`);
   // Wire data, so it is checked rather than trusted. A 200 whose body lacks
@@ -335,14 +354,12 @@ export async function executePublish(opts: {
   if (result.output.trim()) log.message(result.output.trim());
 
   await updateProjectConfig(opts.cwd, { serverUrl, slug: result.slug });
-  // First publish: the slug didn't exist to attach secrets to until now.
-  // `pushed` is a const, so this reads the same value the branch above tested —
-  // one predicate, one spelling. The two used to differ (`!== undefined` here,
-  // truthiness there), which disagree on an empty slug.
-  if (!pushed.slug) {
-    const synced = await syncEnvSecrets(opts.cwd, serverUrl, apiKey, result.slug);
-    if (synced.length > 0) log.info("They apply on the next `aai publish`.");
-  }
+  // No post-deploy re-sync. It used to run on a first publish, against
+  // `result.slug` rather than the project — the asymmetry that made the
+  // pre-deploy call look slug-dependent when it never was — and its own log
+  // line ("They apply on the next `aai publish`") was the tell: a sync that
+  // has to be followed by a second deploy is not a sync, it is a workaround
+  // for the gate above.
 
   const agentUrl = `${serverUrl}/${result.slug}`;
   const studioUrl = studioProjectUrl(serverUrl, project);

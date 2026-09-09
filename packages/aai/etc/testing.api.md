@@ -425,7 +425,7 @@ export function scriptedToolContext(options?: ScriptedToolContextOptions): Scrip
 
 // @public
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
-    generate?: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute | undefined;
+    generate?: StubGenerateScript | undefined;
     delegate?: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute | undefined;
 };
 
@@ -792,7 +792,7 @@ export interface StubGenerate {
 }
 
 // @public
-export function stubGenerate(script: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute): StubGenerate;
+export function stubGenerate(script: StubGenerateScript): StubGenerate;
 
 // @public
 export interface StubGenerateCall {
@@ -809,6 +809,14 @@ export type StubGenerateReply = string | {
 
 // @public
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
+
+// @public
+export type StubGenerateRoutes = Readonly<Record<string, StubGenerateRoute>> & {
+    readonly text?: 'a bare `{ text }` is read as a route TABLE keyed "text", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both';
+};
+
+// @public
+export type StubGenerateScript = StubGenerateRoutes | StubGenerateRoute;
 
 // @public
 export type StubReporter = {
@@ -1000,6 +1008,8 @@ type TelephonyCarrier = "twilio" | "telnyx";
 // @public
 export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
+    readonly model: StubGenerate;
+    readonly desk: StubDelegate;
 };
 
 // @public
@@ -1030,7 +1040,12 @@ type ToolContext = {
 
 // @public
 export type ToolContextOverrides = {
-    [K in keyof ToolContext]?: ToolContext[K] | undefined;
+    [K in Exclude<keyof ToolContext, "generate" | "delegate">]?: ToolContext[K] | undefined;
+} & {
+    generate?: ToolContext["generate"] | StubGenerateRoutes | StubGenerateReply | undefined;
+    delegate?: ToolContext["delegate"] | Readonly<Record<string, StubDelegateRoute>> | StubDelegateReply | undefined;
+    model?: StubGenerate | undefined;
+    desk?: StubDelegate | undefined;
 };
 
 // @public

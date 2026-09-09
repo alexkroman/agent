@@ -43,6 +43,13 @@ export default nightSlot.tool({
       // Two words the listener can name, scored independently: "the spooky
       // books" beats a spooky MOVIE and a cozy BOOK, and "the spooky ones"
       // ties them — which is a refusal that asks, not a coin flip.
+      //
+      // A hand-written scorer where four sibling templates use `resolveOne`'s
+      // built-in `match`, and deliberately: a listener says "books" where the
+      // field says `book`, and the built-in matches whole WORDS on both sides
+      // with no stemming, so the plural would score nothing and every category
+      // would tie. Substring containment against two NAMED fields is the
+      // domain fact here, which is exactly what `score` is kept for.
       score: (rec, text) =>
         (text.includes(rec.mood) ? 1 : 0) + (text.includes(rec.category) ? 1 : 0),
     }),

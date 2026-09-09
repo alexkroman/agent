@@ -16,6 +16,7 @@ my-agent/
   client.tsx          # your own browser UI (optional, React)
   shared.ts           # types and state shared by both of those
   agent.test.ts       # ordinary vitest — `aai test`
+  agent.eval.test.ts  # does it BEHAVE — `aai eval`
   .env                # local secrets; `aai publish` syncs them
 ```
 
@@ -24,8 +25,13 @@ That is the whole idea: **a file in `tools/` is a tool because it is in
 forget, and adding an ability is adding a file. The same goes for
 `system-prompt.md` and `client.tsx`.
 
-(`workflows/` is the exception: a body lives there, but you register it by
-name on `agent()`. See [Background jobs](/agent/more/background-jobs/).)
+(`workflows/` is the exception, and deliberately. That directory holds a
+workflow's modules — its body and the steps it calls — rather than one file
+per workflow, and a workflow's name is stored with every run of it, so the
+name has to be something you choose: if renaming a file renamed the workflow,
+the next deploy would abandon the jobs still in flight under the old name. You
+register it by name on `agent()`. See
+[Background jobs](/agent/more/background-jobs/).)
 
 ## What runs where
 

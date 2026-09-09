@@ -58,6 +58,62 @@ export type StubGenerateReply = string | { text?: string; object: unknown };
  */
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
 
+/**
+ * A table of routes keyed by system prompt — with the one key that cannot mean
+ * what it looks like typed as the RULE it breaks.
+ *
+ * The `text` arm is a misuse message, on the same pattern as `AgentParams`'
+ * misuse arms and `SyncMutationMisuse`: a string literal type nothing an author
+ * can pass satisfies, so the offending literal is unassignable and the rule
+ * itself is what `tsc` prints. It is written INLINE rather than as its own
+ * exported alias, because a misuse arm is machinery an author meets as a
+ * message and never by name — the argument `packages/aai/typedoc.json`'s
+ * `intentionallyNotExported` makes for the twenty-odd others.
+ *
+ * The misuse it names is the one `isRouteTable` cannot see. A record
+ * without an `object` key IS a route table, so `stubGenerate({ text: "…" })`
+ * type-checked as a table with one route named `text` — a system prompt no tool
+ * carries — and then rejected every call with "no route for this call's system
+ * prompt". Nothing about that failure points at the literal that caused it, and
+ * the documentation page spent four lines teaching readers to remember the
+ * discriminator instead.
+ *
+ * The cost is that a route table can no longer be keyed by a system prompt whose
+ * whole text is `"text"`, which is not a system prompt, and which the runtime
+ * guard in {@link stubGenerate} refuses anyway.
+ *
+ * @public
+ */
+export type StubGenerateRoutes = Readonly<Record<string, StubGenerateRoute>> & {
+  readonly text?: 'a bare `{ text }` is read as a route TABLE keyed "text", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both';
+};
+
+/**
+ * The same sentence at RUNTIME, for a caller with no compiler — in two halves
+ * because one literal of that length reads to Biome's `noSecrets` as a
+ * high-entropy secret, the trap `testing-deployable.ts` composes around too.
+ *
+ * {@link TEXT_ONLY_MISUSE} is annotated OFF the type rather than merely
+ * resembling it, so the two cannot drift: a JS spec and a TS spec are told the
+ * same thing, and an edit to one copy that misses the other fails to compile.
+ */
+const MISUSE_HEAD = 'a bare `{ text }` is read as a route TABLE keyed "text", not as a reply — ';
+const MISUSE_TAIL =
+  "pass the string on its own for a text answer, or `{ text, object }` when the tool reads both";
+const TEXT_ONLY_MISUSE: NonNullable<StubGenerateRoutes["text"]> = `${MISUSE_HEAD}${MISUSE_TAIL}`;
+
+/**
+ * Everything {@link stubGenerate} accepts: a table of routes, or one route.
+ *
+ * Named because it is written down in three places — that function, the
+ * `generate` field of `createToolContext`'s overrides, and
+ * `ScriptedToolContextOptions` — and a union restated at each of them is a union
+ * that drifts.
+ *
+ * @public
+ */
+export type StubGenerateScript = StubGenerateRoutes | StubGenerateRoute;
+
 /** A fake `ctx.generate`: the function to pass, and what it was asked. */
 export interface StubGenerate {
   /** Pass as `generate` to `createToolContext`. */
@@ -93,14 +149,21 @@ export interface StubGenerate {
  * import { stubGenerate } from "@alexkroman1/aai/testing";
  *
  * const model = stubGenerate({ object: { steps: ["Only step"] } });
+ * // A text-only answer is the STRING, never `{ text }` alone — that shape is a
+ * // route table keyed "text", and `StubGenerateRoutes` makes it a compile error.
+ * const answerer = stubGenerate("The documented answer.");
  * ```
  *
  * @public
  */
-export function stubGenerate(
-  script: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute,
-): StubGenerate {
+export function stubGenerate(script: StubGenerateScript): StubGenerate {
   const calls: StubGenerateCall[] = [];
+  // At BIND rather than on the first call, and for the reason the type refuses
+  // the same shape: the cause is the literal here, and the routing failure it
+  // used to produce named a system prompt instead.
+  if (isRecord(script) && !("object" in script) && "text" in script) {
+    throw new Error(`stubGenerate: ${TEXT_ONLY_MISUSE}`);
+  }
   const routes = isRouteTable(script) ? script : undefined;
 
   // Annotated rather than inferred, and the implementation returns `object` on
@@ -140,9 +203,18 @@ export function stubGenerate(
  * the reply shape rather than by `typeof` — which is also why `StubGenerateReply`
  * requires `object` rather than allowing `{ text }` alone: a bare `{ text }`
  * would be indistinguishable from a table with one route named `text`.
+ *
+ * That trade-off is unchanged, and what changed is who pays for it.
+ * {@link StubGenerateRoutes}' misuse arm makes the indistinguishable literal a
+ * compile error and {@link stubGenerate} refuses it at bind, so the rule is
+ * enforced where it is written rather than discovered from a rejected call.
+ * Relaxing `StubGenerateReply` to accept `{ text }` alone was considered and
+ * rejected: the literal would then be assignable to the reply arm, the misuse
+ * arm could never fire, and this predicate would still read it as a table —
+ * i.e. exactly today's silent failure, with the compile error removed.
  */
 function isRouteTable(
-  script: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute,
+  script: StubGenerateScript,
 ): script is Readonly<Record<string, StubGenerateRoute>> {
   return isRecord(script) && !("object" in script);
 }

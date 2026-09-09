@@ -26,7 +26,7 @@ each is for.
 | `ASSEMBLYAI_TTS_LANGUAGES` | `@alexkroman1/aai/tts` |
 | `ASSEMBLYAI_TTS_VOICES` | `@alexkroman1/aai`, `@alexkroman1/aai/tts` |
 | `AaiVitePlugin` | `@alexkroman1/aai/testing/vite` |
-| `AgentClient` | `@alexkroman1/aai/workflow-api` |
+| `AgentClient` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
 | `AgentConfig` | `@alexkroman1/aai/manifest` |
 | `AgentConfigSchema` | `@alexkroman1/aai/manifest` |
 | `AgentConfigSource` | `@alexkroman1/aai/manifest` |
@@ -41,7 +41,7 @@ each is for.
 | `AnthropicLlmOptions` | `@alexkroman1/aai/llm` |
 | `AnyDialog` | `@alexkroman1/aai` |
 | `AnyWorkflowDef` | `@alexkroman1/aai/workflow-api` |
-| `AssemblyAIGatewayModel` | `@alexkroman1/aai/llm` |
+| `AssemblyAIGatewayModel` | `@alexkroman1/aai`, `@alexkroman1/aai/llm` |
 | `AssemblyAILlmOptions` | `@alexkroman1/aai/llm` |
 | `AssemblyAIPipelineOptions` | `@alexkroman1/aai` |
 | `AssemblyAIReasoningEffort` | `@alexkroman1/aai/llm` |
@@ -427,6 +427,8 @@ each is for.
 | `StubGenerateCall` | `@alexkroman1/aai/testing` |
 | `StubGenerateReply` | `@alexkroman1/aai/testing` |
 | `StubGenerateRoute` | `@alexkroman1/aai/testing` |
+| `StubGenerateRoutes` | `@alexkroman1/aai/testing` |
+| `StubGenerateScript` | `@alexkroman1/aai/testing` |
 | `StubLlm` | `@alexkroman1/aai-runtime/eval` |
 | `StubReporter` | `@alexkroman1/aai/testing` |
 | `StubScript` | `@alexkroman1/aai-runtime/eval` |

@@ -453,23 +453,35 @@ describe("aai dev: a scaffolded workflow template", () => {
   // this covers webhooks with nothing, deliberately: see the note in
   // `dev-workflow.scenario.test.ts` for what closes it.
 
-  test("`aai test` FAILS naming the spec files it did not run", async ({ skip }) => {
-    // The lab leaves a spec `aai test` does not run and no `agent.test.ts`, so
-    // this drives the arm that stayed broken longest: the CLI printed "No test
-    // file found. Create agent.test.ts to add tests." while the project's specs
-    // sat right there unrun. Only a scaffolded project can observe it — the
-    // rule is about a real directory, not about a function's arguments.
+  test("`aai test` covers the project, and `--only` is honest about not doing", async ({
+    skip,
+  }) => {
+    // The lab leaves a spec and no `agent.test.ts`, which is the shape that
+    // stayed broken longest: the CLI printed "No test file found. Create
+    // agent.test.ts to add tests." while the project's specs sat right there
+    // unrun. Only a scaffolded project can observe it — the rule is about a
+    // real directory, not about a function's arguments.
+    //
+    // The DEFAULT no longer has that failure mode, because it no longer
+    // narrows: it runs the project's non-eval specs, so there is nothing left
+    // for a verdict to lie about. `--only` is where the old arm survives, and
+    // in this project it narrows to a file that does not exist while other
+    // specs do — so it must still fail.
     //
     // Naming them was never enough: the exit code is what CI reads, and this
-    // arm returned 0. So the assertion is the code FIRST and the message
+    // arm returned 0. So both halves assert the CODE first and the message
     // second — a version that only greps stdout passed throughout the years
     // this was green over an unrun suite.
     if (skipReason !== undefined) skip(skipReason);
-    const { stdout, stderr, exitCode } = aaiOutputFailing(
-      aaiBin,
-      ["test"],
-      path.join(tmpDir, "_dev-workflow"),
-    );
+    const cwd = path.join(tmpDir, "_dev-workflow");
+
+    // The default covers `lab.test.ts`; `aai` throws on a non-zero exit, so
+    // this line IS the assertion that the project's suite really ran.
+    aai(aaiBin, ["test"], cwd);
+
+    // `--only` narrows to a missing `agent.test.ts` while `lab.test.ts` sits
+    // there, which is the one arm `incomplete_run` still exists for.
+    const { stdout, stderr, exitCode } = aaiOutputFailing(aaiBin, ["test", "--only"], cwd);
     expect(exitCode).toBe(1);
     expect(`${stdout}${stderr}`).toContain("lab.test.ts");
   });

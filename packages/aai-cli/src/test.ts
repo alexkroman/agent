@@ -7,7 +7,6 @@
  * and the verdict over the ones a run did not cover.
  */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 import { formatCappedList } from "./_utils.ts";
@@ -33,55 +32,82 @@ type TestData = {
 };
 
 /**
- * The files `aai test` runs, in preference order.
+ * The files a NARROWED `aai test` runs, in preference order.
  *
  * The tier's filenames belong to the command, not to the runner — `aai eval`
  * declares `EVAL_FILES` the same way one module over, and neither names the
  * other's. `aai build` imports this one because its pre-build gate runs the
  * TEST tier.
+ *
+ * They are no longer what a BARE `aai test` runs — see {@link executeTest} for
+ * why the default is the whole project — so this list is now reached only by
+ * `--only`.
  */
 export const TEST_FILES = ["agent.test.ts", "agent.test.js"] as const;
 
 /** What `aai test` was asked to cover. */
 export type TestOptions = {
-  /** Run every non-eval spec in the project rather than `agent.test.ts` alone. */
-  readonly all?: boolean | undefined;
+  /**
+   * Narrow the run to {@link TEST_FILES} rather than every non-eval spec.
+   *
+   * The fast inner loop, and the OPT-IN half of the pair: it is what the old
+   * default did, minus the false verdict — a narrowed run reports the specs it
+   * skipped through `warnUnrunSpecs` and says `complete: false`.
+   */
+  readonly only?: boolean | undefined;
 };
 
 /**
  * Execute agent tests and return structured result.
  *
- * **An incomplete run is not a pass.** For as long as this command answered
- * `{"ok":true,"data":{"passed":true}}` with exit 0 over specs it had not run,
- * the scaffold's `"test": "aai test"` was what users wired into CI — so a suite
- * of 25 tests could go red in the editor and green in the pipeline, and adding
- * one tool could break `registry.test.ts` in 17 assertions with `pnpm test` and
- * `pnpm build` both staying green throughout. It is the same defect
- * `defineExec`'s `cwd` policy exists for (a green result for a project that is
- * not there), one directory over, and it gets the same answer: the command
- * fails, names the files, and names the flag that runs them.
+ * **The default is the whole project, and it used to be one file.**
+ * `aai test` ran `agent.test.ts` alone and then FAILED (`incomplete_run`) over
+ * every other spec it had skipped — so on any project with a second spec file
+ * the default invocation could never be green, and the scaffold routed around
+ * the command it was supposed to wire into CI (`"test": "vitest run --exclude
+ * …"`, with `aai test` demoted to `test:agent`). Nine shipped templates carry
+ * two or more non-eval specs, so that was the normal case rather than the edge:
+ * the command's own remedy was "do not run this command".
+ *
+ * The narrow default was defensible when it was written — running a project's
+ * other specs could reach ones that are slow or want credentials — but the
+ * verdict is what made it unusable, and `aai build`'s pre-build gate had
+ * already gone the other way (`all: true`) for the same reason a build is run
+ * deliberately. So the widening is the default here too and `--only` is the
+ * inner loop, which leaves the two halves of the original defect closed: a
+ * complete run is a green run, and a narrowed one is honest about what it
+ * skipped instead of failing over it.
+ *
+ * **An incomplete run is still not a pass.** For as long as this command
+ * answered `{"ok":true,"data":{"passed":true}}` with exit 0 over specs it had
+ * not run, adding one tool could break `registry.test.ts` in 17 assertions with
+ * `pnpm test` and `pnpm build` both staying green throughout. What carries that
+ * now is the RESULT (`unrun`, `complete: false`) plus the runner's own warning,
+ * because the reader of a deliberate `--only` asked for the narrowing.
  */
 export async function executeTest(
   cwd: string,
   opts: TestOptions = {},
 ): Promise<CommandResult<TestData>> {
-  log.step(opts.all ? "Running project tests" : "Running agent tests");
+  const narrowed = opts.only === true;
+  log.step(narrowed ? "Running agent tests" : "Running project tests");
   try {
-    // `announceUnrun: false`: this function reports the same set itself, in the
-    // result as well as the output, and reporting it twice reads as two findings.
-    const ran = runVitest(cwd, {
-      candidates: TEST_FILES,
-      announceUnrun: false,
-      ...omitUndefined({ all: opts.all }),
-    });
+    // `announceUnrun` left at its DEFAULT (on), unlike before: the complete run
+    // has nothing to announce, and the narrowed one is exactly the caller that
+    // notice was written for. Reporting it here as well would read as two
+    // findings.
+    const ran = runVitest(cwd, { candidates: TEST_FILES, all: !narrowed });
     const unrun = unrunSpecFiles(cwd, ran);
-    if (unrun.length > 0) return incomplete(ran, unrun);
     if (ran === false) {
+      // Nothing to point vitest at. Unreachable for the default invocation with
+      // any spec in the project at all, so a non-empty `unrun` here means
+      // `--only` narrowed the run down to a file that does not exist.
+      if (unrun.length > 0) return noNarrowTarget(unrun);
       log.info("No test file found. Create agent.test.ts to add tests.");
       return ok({ passed: true, skipped: true, ran: [], unrun: [], complete: true });
     }
     log.success(`Tests passed (${ran.length} spec file(s))`);
-    return ok({ passed: true, ran, unrun: [], complete: true });
+    return ok({ passed: true, ran, unrun, complete: unrun.length === 0 });
   } catch (err: unknown) {
     const { code, message } = classifyVitestError(err);
     return fail(code, message);
@@ -89,22 +115,21 @@ export async function executeTest(
 }
 
 /**
- * The verdict for a run that left specs uncovered.
+ * The verdict for `--only` in a project with no `agent.test.ts`.
  *
- * Both arms fail, and the `ran === false` arm is the one that had misled
- * longest: `aai test` printed "No test file found" while the project's specs sat
- * right there unrun, which reads as "this project has no tests". Measured on a
- * project whose only spec was `tools/echo_back.test.ts` — `{"passed":true,
- * "skipped":true}`, exit 0, and not a word about it.
+ * This is the arm that had misled longest, and it is the one place the
+ * `incomplete_run` failure is still right: `aai test` printed "No test file
+ * found" while the project's specs sat right there unrun, which reads as "this
+ * project has no tests". Measured on a project whose only spec was
+ * `tools/echo_back.test.ts` — `{"passed":true,"skipped":true}`, exit 0, and not
+ * a word about it. Bare `aai test` runs those specs now; `--only` asked for a
+ * file that is not there, and the honest answer is neither a pass nor silence.
  */
-function incomplete(ran: string[] | false, unrun: string[]): CommandResult<never> {
-  const preamble =
-    ran === false
-      ? `\`aai test\` found no agent.test.ts, so it ran nothing, but ${unrun.length} spec file(s) exist`
-      : `\`aai test\` ran ${ran.join(", ")} only — ${unrun.length} other spec file(s) in this project were not run`;
+function noNarrowTarget(unrun: string[]): CommandResult<never> {
   return fail(
     "incomplete_run",
-    `${preamble}: ${formatCappedList(unrun)}. An unrun spec is not a passing one, so this is not a green result.`,
+    `\`aai test --only\` found no ${TEST_FILES[0]}, so it ran nothing, but ${unrun.length} spec file(s) exist: ` +
+      `${formatCappedList(unrun)}. An unrun spec is not a passing one, so this is not a green result.`,
     WIDEN_HINT,
   );
 }

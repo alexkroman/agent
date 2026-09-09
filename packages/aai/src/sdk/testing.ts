@@ -112,6 +112,8 @@ export {
   type StubGenerateCall,
   type StubGenerateReply,
   type StubGenerateRoute,
+  type StubGenerateRoutes,
+  type StubGenerateScript,
   stubGenerate,
 } from "./testing-generate.ts";
 // A subagent's guardrail, called as the runtime calls it — the one piece of a

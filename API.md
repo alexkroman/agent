@@ -1869,6 +1869,9 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
+export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
+
+// @public
 export function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
     stt: SttProvider;
     llm: LlmProvider;
@@ -2250,7 +2253,7 @@ export function pickOne<T>(items: readonly T[], random?: RandomSource): T | unde
 
 // @public
 export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-    llm?: LlmProvider | string;
+    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
     s2s?: undefined;
     text?: undefined;
     page?: "voice" | StaticFrontDoorMisuse;
@@ -2349,8 +2352,10 @@ export function resolveOne<T>(candidates: readonly T[], spoken: string, options:
 
 // @public
 export interface ResolveOneOptions<T> {
+    code?: (candidate: T) => string;
     describe: (candidate: T) => string;
     label?: string;
+    match?: (candidate: T) => string;
     score?: (candidate: T, text: string) => number;
 }
 
@@ -2568,12 +2573,13 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 export type SessionEventType = SessionEvent["type"];
 
 // @public
-export interface SessionSlot<K extends string, T> {
+export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     create(): T;
     readonly durable: boolean;
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
-    projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
+    readonly projected: StateProjection<V>;
+    projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
     reset(ctx: SlotHolder): DeepReadonly<T>;
     set(ctx: SlotHolder, value: T): DeepReadonly<T>;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
@@ -2582,13 +2588,14 @@ export interface SessionSlot<K extends string, T> {
 }
 
 // @public
-export function sessionSlot<const K extends string, T, After = void>(key: K, create: () => T, options?: SessionSlotOptions<T, After>): SessionSlot<K, T>;
+export function sessionSlot<const K extends string, T, After = void, V = DeepReadonly<T>>(key: K, create: () => T, options?: SessionSlotOptions<T, After, V>): SessionSlot<K, T, V>;
 
 // @public
-export interface SessionSlotOptions<T, After = void> {
+export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
     after?: ((draft: T) => After) & RejectThenable<After>;
     caps?: SlotCaps<T>;
     durable?: boolean;
+    view?: (value: DeepReadonly<T>) => V;
 }
 
 // @public
@@ -2801,7 +2808,7 @@ export type TelephonyCarrier = "twilio" | "telnyx";
 // @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
     text: true;
-    llm?: LlmProvider | string;
+    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
     stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
     tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
     s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
@@ -6320,7 +6327,7 @@ export function scriptedToolContext(options?: ScriptedToolContextOptions): Scrip
 
 // @public
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
-    generate?: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute | undefined;
+    generate?: StubGenerateScript | undefined;
     delegate?: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute | undefined;
 };
 
@@ -6687,7 +6694,7 @@ export interface StubGenerate {
 }
 
 // @public
-export function stubGenerate(script: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute): StubGenerate;
+export function stubGenerate(script: StubGenerateScript): StubGenerate;
 
 // @public
 export interface StubGenerateCall {
@@ -6704,6 +6711,14 @@ export type StubGenerateReply = string | {
 
 // @public
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
+
+// @public
+export type StubGenerateRoutes = Readonly<Record<string, StubGenerateRoute>> & {
+    readonly text?: 'a bare `{ text }` is read as a route TABLE keyed "text", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both';
+};
+
+// @public
+export type StubGenerateScript = StubGenerateRoutes | StubGenerateRoute;
 
 // @public
 export type StubReporter = {
@@ -6895,6 +6910,8 @@ type TelephonyCarrier = "twilio" | "telnyx";
 // @public
 export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
+    readonly model: StubGenerate;
+    readonly desk: StubDelegate;
 };
 
 // @public
@@ -6925,7 +6942,12 @@ type ToolContext = {
 
 // @public
 export type ToolContextOverrides = {
-    [K in keyof ToolContext]?: ToolContext[K] | undefined;
+    [K in Exclude<keyof ToolContext, "generate" | "delegate">]?: ToolContext[K] | undefined;
+} & {
+    generate?: ToolContext["generate"] | StubGenerateRoutes | StubGenerateReply | undefined;
+    delegate?: ToolContext["delegate"] | Readonly<Record<string, StubDelegateRoute>> | StubDelegateReply | undefined;
+    model?: StubGenerate | undefined;
+    desk?: StubDelegate | undefined;
 };
 
 // @public
@@ -10935,6 +10957,7 @@ export function defaultClientDir(): string;
 ## `@alexkroman1/aai-ui`
 
 ```ts
+import { AgentClient } from '@alexkroman1/aai/workflow-api';
 import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ButtonHTMLAttributes } from 'react';
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
@@ -10963,6 +10986,8 @@ import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
 export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
+
+export { AgentClient }
 
 // @public
 export type AgentCustomEvent = {
@@ -11156,7 +11181,7 @@ export type ConversationViewProps = {
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
-export function createWorkflowApi(options?: WorkflowApiOptions): WorkflowApi;
+export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
 
 // @public
 export function Facts(input: FactsProps): ReactNode;
@@ -11170,7 +11195,7 @@ export type FactsProps = {
 };
 
 // @public
-export function fetchClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
+export function fetchClientConfig(platformUrl?: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
 
 // @public
 export function Field(input: {
@@ -11252,14 +11277,14 @@ export type MessageListProps = {
 export function mountClient(config: ClientConfig): ClientHandle;
 
 // @public
-export function mountPage(config: PageConfig): PageHandle;
+export function mountPage(config?: PageConfig): PageHandle;
 
 // @public
 export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
 export type PageConfig = {
-    component: ComponentType;
+    component?: ComponentType;
     target?: string | HTMLElement;
     name?: string;
     theme?: ClientTheme;

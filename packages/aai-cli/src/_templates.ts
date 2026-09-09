@@ -215,7 +215,7 @@ the types are what the compiler enforces.
 
 \`\`\`sh
 npm run dev            # Run locally on http://localhost:3000
-npm test               # This project's suite, minus the evals (vitest)
+npm test               # This project's suite, minus the evals
 npm run test:agent     # Just agent.test.ts, via the CLI
 npm run eval           # Drive a real session against a live model (spends money)
 npm run build          # Bundle the agent

@@ -97,12 +97,14 @@ const dev = defineExec({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
     port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
-    // No `default`, deliberately: the absence is what leaves `AAI_DEV_WATCH` in
-    // charge, and a `default: false` here would make the flag the only way to
-    // enable watching and break every supervisor setting the variable.
+    // No `default`, deliberately: the absence is what leaves `devWatchEnabled`
+    // in charge — the two-TTY test, then `AAI_DEV_WATCH` — and a `default`
+    // either way here would make this flag the only way to reach the other
+    // answer, breaking both the supervisor that sets the variable and the
+    // human who sets nothing.
     watch: {
       type: "boolean",
-      description: "Restart on file changes (also AAI_DEV_WATCH=1)",
+      description: "Restart on file changes (default at a terminal; AAI_DEV_WATCH=0 disables)",
     },
     json: sharedArgs.json,
   },
@@ -142,15 +144,24 @@ const start = defineExec({
 });
 
 const test = defineExec({
-  meta: { name: "test", description: "Run agent tests" },
+  meta: { name: "test", description: "Run the project's tests" },
   args: {
     json: sharedArgs.json,
-    // The widening `executeTest`'s own `incomplete_run` failure recommends.
-    // Without it declared here `assertKnownArgv` rejects the very flag that
-    // error tells the reader to run.
+    // The NARROWING, which used to be the default — see `executeTest` for why
+    // it stopped being one. The fast inner loop is still worth a flag; a
+    // verdict over a subset is not worth a default.
+    only: {
+      type: "boolean",
+      description: "Run agent.test.ts alone, not every spec in the project",
+    },
+    // Accepted and IGNORED, because it is what the old failure's own hint told
+    // people to put in CI: `assertKnownArgv` refuses an undeclared flag, so
+    // dropping it would turn every scripted `aai test --all` into a usage
+    // error over behaviour that is now the default. Its description says so
+    // rather than pretending the flag still does something.
     all: {
       type: "boolean",
-      description: "Run every spec in the project, not just agent.test.ts",
+      description: "Deprecated: every spec in the project is the default",
     },
   },
   // Like dev/build/push/publish. This command shipped once WITHOUT the agent
@@ -161,7 +172,7 @@ const test = defineExec({
   cwd: "agent",
   async run({ args, cwd }) {
     const { executeTest } = await import("./test.ts");
-    return executeTest(cwd, { all: args.all === true });
+    return executeTest(cwd, { only: args.only === true });
   },
 });
 

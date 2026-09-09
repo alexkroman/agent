@@ -4,6 +4,7 @@
 
 ```ts
 
+import { AgentClient } from '@alexkroman1/aai/workflow-api';
 import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ButtonHTMLAttributes } from 'react';
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
@@ -32,6 +33,8 @@ import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
 export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
+
+export { AgentClient }
 
 // @public
 export type AgentCustomEvent = {
@@ -225,7 +228,7 @@ export type ConversationViewProps = {
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
-export function createWorkflowApi(options?: WorkflowApiOptions): WorkflowApi;
+export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
 
 // @public
 export function Facts(input: FactsProps): ReactNode;
@@ -239,7 +242,7 @@ export type FactsProps = {
 };
 
 // @public
-export function fetchClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
+export function fetchClientConfig(platformUrl?: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
 
 // @public
 export function Field(input: {
@@ -321,14 +324,14 @@ export type MessageListProps = {
 export function mountClient(config: ClientConfig): ClientHandle;
 
 // @public
-export function mountPage(config: PageConfig): PageHandle;
+export function mountPage(config?: PageConfig): PageHandle;
 
 // @public
 export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
 export type PageConfig = {
-    component: ComponentType;
+    component?: ComponentType;
     target?: string | HTMLElement;
     name?: string;
     theme?: ClientTheme;

@@ -16,6 +16,9 @@
 //   npm start
 //
 // then open http://127.0.0.1:3000.
+//
+// Two more variables are optional and only matter once state or a durable
+// workflow does: DATABASE_URL (below) and PUBLIC_URL (below that).
 
 import { createAgentServer, withToolsDir } from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
@@ -41,9 +44,30 @@ const served = await withToolsDir(agent, new URL("./tools/", import.meta.url));
 // resolved from. On the platform this comes from `aai secret put`; here it is
 // yours to assemble — from a vault, a mounted file, whatever you already use.
 // Nothing falls back to the host's process.env on its own.
+//
+// `DATABASE_URL` is the one entry that is more than a credential: set it and
+// session state and durable workflow runs go to that database instead of this
+// process's memory, which is what makes a restart — or a second replica behind
+// a load balancer — keep a conversation. The TABLES come with whoever owns the
+// database, and a self-hosted deployment has no migration step to hang them
+// off, so `createAgentServer` creates its own at boot, before it binds.
+// (`ensureSessionStateSchema` and `ensureWorkflowJournalSchema` are still
+// exported for an operator who would rather run that DDL out of band.)
 const server = createAgentServer({
   agent: served,
-  env: { ASSEMBLYAI_API_KEY: apiKey },
+  env: {
+    ASSEMBLYAI_API_KEY: apiKey,
+    // Unset reads as an empty string, which is treated as no database at all —
+    // so this one line covers both deployments.
+    DATABASE_URL: process.env.DATABASE_URL ?? "",
+  },
+  // Where this deployment is reachable from OUTSIDE, which behind a proxy is
+  // not the socket it binds — so it is never derived from PORT. Set it whenever
+  // a durable workflow has to hand a URL to somebody else:
+  // `ctx.workflows.publicWebhookUrl()` is the only reader, and unconfigured it
+  // THROWS naming this option rather than minting a `http://127.0.0.1:3000`
+  // callback a payment provider will dial days later and fail.
+  publicUrl: process.env.PUBLIC_URL,
   // The prebuilt browser UI that `aai dev` serves, shipped inside aai-ui.
   clientDir: defaultClientDir(),
 });

@@ -23,7 +23,8 @@ from each end, and for a long time the SDK owned only the first.
 
 A voice agent's tool arguments do not arrive as ids: "cancel my second order",
 "the blue medium one", "eight six four two, one nine…". `resolveOne(candidates,
-spoken, { describe, label?, score? })` on the root barrel picks one, and the
+spoken, { describe, label?, code?, match?, score? })` on the root barrel picks
+one, and the
 interesting part is what it does when the utterance picks NONE or MORE THAN ONE
 — a `ToolFailure` that LISTS the candidates, which is the one shape that lets
 the model recover on its own turn instead of acting and apologizing.
@@ -31,7 +32,14 @@ the model recover on its own turn instead of acting and apologizing.
 because an agent narrowing by its own vocabulary needs them before the pick;
 `spokenAlphanumeric` is `spokenDigits` for an id that carries letters (a policy
 number, a `#W…` order id — upper-cased ASCII), which two templates had each
-normalized with a regex of their own.
+normalized with a regex of their own. **`code` and `match` are the two scorers
+you no longer write**: `code` compares an id through `spokenAlphanumeric`,
+`match` counts whole-word overlap (filler words skipped, a minimum word
+length), and the ladder is code → ordinal → words. Four templates had
+independently written the same word-overlap scorer with four different
+splitting rules; `score` stays for a genuine domain scorer, and
+`entertainment-picks-agent` still needs one — its listener says "books" where
+the field says "book", and `match` has no stemming.
 
 Three things the API is load-bearing about:
 

@@ -1,3 +1,14 @@
+/**
+ * The def a DEPLOYED agent runs: authored, plus what `tools/` and
+ * `system-prompt.md` declare.
+ *
+ * `./agent.ts` would be the wrong import even for a template this small.
+ * Discovery happens where the bundle is assembled, so the authored export has
+ * NO tools and the framework-default prompt — an eval driving it measures a
+ * different agent than the one that deploys, and the tool-choice claim below
+ * would pass or fail for the wrong reason.
+ */
+import agentDef from "virtual:aai/agent";
 // An EVAL: does the agent actually behave? Run it with `aai eval`.
 //
 // A test asserts about the config (see agent.test.ts — it never calls a model).
@@ -17,10 +28,9 @@
 // What no eval here can see: anything below the audio boundary — where the
 // agent decides you stopped talking, how it handles being interrupted, whether
 // two sentences merged into one turn. Those need real paced audio.
-import { errorsIn } from "@alexkroman1/aai-runtime/eval";
+import { errorsIn, toolNames } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
-import agentDef from "./agent.ts";
 
 describeEval(agentDef, (test) => {
   test(
@@ -33,10 +43,36 @@ describeEval(agentDef, (test) => {
 
       expect(turn.completed).toBe(true);
       expect(turn.text).toMatch(/paris/i);
-      // This agent has no tools, so reaching for one would be a real finding.
+      // The agent's one tool looks up WEATHER, so reaching for it here would
+      // be a real finding — not "this agent has no tools", which is what this
+      // line used to say and stopped being true the day it got one.
       expect(turn.toolCalls).toEqual([]);
     },
     { stubReply: "Paris is the capital of France." },
+  );
+
+  test(
+    "reaches for the tool that is only a FILE",
+    async ({ session }) => {
+      const turn = await session.say("What's the weather in Denver?");
+
+      // The claim the quickstart makes about this project: `get_weather` is a
+      // file in `tools/` that nothing imports and nothing registers, and this
+      // is the case that would notice if the directory went missing — a
+      // scripted run still boots the agent and still executes the tool a
+      // script names, so it checks the wiring even with no key set.
+      expect(toolNames(turn.toolCalls)).toEqual(["get_weather"]);
+      expect(turn.text).toMatch(/denver/i);
+    },
+    // The tool really runs, and really calls wttr.in. Nothing here asserts on
+    // what it answered: a service that is down returns the `{ error }` the
+    // tool is written to hand back, and the claim is about the CHOICE.
+    {
+      stubReply: [
+        { tool: "get_weather", args: { city: "Denver" } },
+        "It's 54 degrees and clear in Denver.",
+      ],
+    },
   );
 
   test(

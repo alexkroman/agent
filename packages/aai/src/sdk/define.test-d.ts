@@ -11,6 +11,7 @@ import {
   tool,
   type workflowApp,
 } from "./define.ts";
+import type { AssemblyAIGatewayModel } from "./providers/llm/shared/gateway-models.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
@@ -214,6 +215,34 @@ test("any subset of the provider triple is an accepted AgentParams", () => {
     tts: TtsProvider;
   }>().toExtend<AgentParams>();
   expectTypeOf<{ name: string }>().toExtend<AgentParams>();
+});
+
+/**
+ * `llm`'s string shorthand is a WIDENING of the gateway union, not a narrowing.
+ *
+ * The field used to be `LlmProvider | string`, so the documented spelling
+ * (`llm: "claude-sonnet-4-6"`) had no autocomplete and a typo became a gateway
+ * 400 at the first live session — while `assemblyAILlm({ model })`, which this
+ * field desugars into, was typed against the generated union all along. These
+ * cases are the two halves of that: the union has to be VISIBLE, and every
+ * string that compiled before has to keep compiling.
+ */
+test("llm accepts a generated gateway id, an aggregator id, and any other string", () => {
+  // The union is visible, which is the point — this is what autocompletes.
+  expectTypeOf<{ name: string; llm: "claude-sonnet-4-6" }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; llm: AssemblyAIGatewayModel }>().toExtend<AgentParams>();
+  // `"creator/model"` routes through the Vercel AI Gateway.
+  expectTypeOf<{ name: string; llm: "anthropic/claude-sonnet-4-5" }>().toExtend<AgentParams>();
+  // And it stays a widening: a model shipped after this release, and a bare
+  // `string` from a computed value, both still compile.
+  expectTypeOf<{ name: string; llm: "model-shipped-last-week" }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; llm: string }>().toExtend<AgentParams>();
+  // Text mode is the same field and must not diverge.
+  expectTypeOf<{ name: string; text: true; llm: "gpt-5.5" }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; llm: string }>().toExtend<AgentParams>();
+  // A descriptor is still accepted, and a non-string is still refused.
+  expectTypeOf<{ name: string; llm: LlmProvider }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; llm: 7 }>().not.toExtend<AgentParams>();
 });
 
 test("voice picks the default pipeline's TTS voice, never a descriptor's or S2S's", () => {

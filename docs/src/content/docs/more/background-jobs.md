@@ -26,9 +26,10 @@ export async function transcribeFlow(
   const segments = await ctx.step("plan", () => planSegments(recording));
 
   // Four at a time, each its own step: a dropped
-  // connection costs one segment, not the run.
+  // connection costs one segment, not the run. One NAME for all of them —
+  // see "A step's name is not unique" below.
   const parts = await mapConcurrent(segments, 4, (seg) =>
-    ctx.step(`segment-${seg.index}`, () => transcribeSegment(seg)),
+    ctx.step("transcribeSegment", () => transcribeSegment(seg)),
   );
 
   return { text: parts.map((part) => part.text).join(" ") };
@@ -50,17 +51,46 @@ re-run from the top on every resume, and each step that already finished
 returns its recorded value instead of running again.
 
 That is what makes the run survive the process it started in: restart a
-sixty-segment job at segment 41 and the first forty are not re-done. The name
-is the step's identity in that record, so give each one a distinct name.
+sixty-segment job at segment 41 and the first forty are not re-done.
+
+## A step's name is not unique — its identity is (name, occurrence)
+
+A step's identity in that record is its name plus the number of times the run
+has already reached that name: `transcribeSegment#0`, `transcribeSegment#1`,
+and so on, counted per name. Two things follow, and the first reads backwards
+until you know that:
+
+- **A loop or a fan-out wants ONE name.** The sixty calls above are sixty
+  distinct rows under one literal, which is exactly what the occurrence counter
+  is for. So do not build a name per item: `` ctx.step(`segment-${seg.index}`,
+  …) `` looks like the careful version and is the bug. An interpolated name is
+  computed at run time, so a replay mints a key no earlier attempt reached, and
+  the step either runs a second time or the run is refused. Measured on a
+  one-line body: 7 of 10 runs ran the side effect twice, all 10 reporting
+  `completed`. `aai build` and `aai publish` scan for this and warn.
+- **Two DIFFERENT call sites want two names.** Sharing a literal means sharing
+  the counter, so whichever site is reached second reads the first one's
+  recorded result. Nothing checks that today, so it is a convention to keep:
+  one name per call site, one call site per name.
+
+Fan-out is safe under one name because the order the calls are ISSUED in is a
+pure function of the list — `mapConcurrent` hands out the next item to whichever
+slot is free, and nothing in a journal key depends on which slot that was. What
+it asks of your callback is that it issue its step immediately: awaiting
+something first, or issuing two steps in a row, is what makes issue order depend
+on completion order.
 
 `ctx.sleep("settle", 6 * 60 * 60 * 1000)` suspends rather than blocks — the
 container is free to exit, and the run resumes when it comes due. Six hours
-costs the same as ten seconds.
+costs the same as ten seconds. Its label, and `ctx.waitFor(token)`'s token, are
+journal keys on the same (name, occurrence) scheme, so everything above applies
+to them.
 
 The constraints follow from the replay: no `Date.now()`, no `Math.random()`,
-no `fetch` in the body — those belong in a step. A step's arguments and return
-value are recorded, so keep them JSON-shaped and small. Put bytes in an upload
-and pass the id.
+no `fetch` in the body — those belong in a step, and `ctx.now()`,
+`ctx.random()` and `ctx.uuid()` are the journaled readings for a body that
+needs one anyway. A step's arguments and return value are recorded, so keep
+them JSON-shaped and small. Put bytes in an upload and pass the id.
 
 ## Starting one from a call
 

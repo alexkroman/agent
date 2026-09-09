@@ -489,7 +489,7 @@ describe("startDevServer", () => {
     });
   });
 
-  test("does NOT watch by default — AAI_DEV_WATCH is opt-in", async () => {
+  test("does NOT watch with no TTY — a harness gets no watcher", async () => {
     // A restart replaces the server and ends in-flight voice sessions, which is
     // right while editing an agent and wrong while a benchmark drives the host:
     // a formatter save or a `.env` touch restarts underneath the run and the

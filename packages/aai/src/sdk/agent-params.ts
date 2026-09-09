@@ -20,6 +20,7 @@
 
 import type { StaticAgentParamsCore } from "./agent-params-static.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+import type { AssemblyAIGatewayModel } from "./providers/llm/shared/gateway-models.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { AgentDef } from "./types.ts";
@@ -246,10 +247,29 @@ export type PipelineAgentParams = SharedAgentParams &
   Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> &
   SilenceNudgeParams & {
     /**
-     * See {@link AgentDef.llm}; a string is gateway model-id shorthand.
-     * Unset → the default AssemblyAI LLM Gateway model.
+     * See {@link AgentDef.llm}; a string is gateway model-id shorthand —
+     * {@link AssemblyAIGatewayModel} for a bare id on the AssemblyAI LLM
+     * Gateway, `"creator/model"` for the Vercel AI Gateway. Unset → the default
+     * AssemblyAI LLM Gateway model.
+     *
+     * **Typed against the generated union so a typo is caught where it is
+     * written**, which is the same job `assemblyAILlm({ model })` has done all
+     * along — `from-string.ts` desugars this field straight into that factory,
+     * so one field had two types and only the longer spelling checked anything.
+     * A bare `string` here made `llm: "claude-sonnet-4-6"` a name with no
+     * autocomplete and a typo a gateway 400 at the first live session.
+     *
+     * The `string & Record<never, never>` arm keeps it a WIDENING: the catalog
+     * is a snapshot of a service that ships models faster than this package
+     * releases, so every id that compiled before still compiles — see
+     * {@link AssemblyAITtsVoice}, which is autocomplete over its catalog for
+     * exactly the same reason and with the same non-guarantee.
      */
-    llm?: LlmProvider | string;
+    llm?:
+      | LlmProvider
+      | AssemblyAIGatewayModel
+      | `${string}/${string}`
+      | (string & Record<never, never>);
     s2s?: undefined;
     text?: undefined;
     /** See {@link AgentDef.page}. A pipeline agent's front door is a mic. */
@@ -365,8 +385,17 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony">
    * See {@link AgentDef.llm}; a string is gateway model-id shorthand. Unset →
    * the default AssemblyAI LLM Gateway model. The one provider stage a text
    * agent has.
+   *
+   * Typed exactly as the pipeline arm's `llm` — read the argument there. The
+   * two are one field to an author, and typing them differently is how the
+   * shorthand would come to autocomplete on a voice agent and not on a text
+   * one.
    */
-  llm?: LlmProvider | string;
+  llm?:
+    | LlmProvider
+    | AssemblyAIGatewayModel
+    | `${string}/${string}`
+    | (string & Record<never, never>);
   stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
   tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
   s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";

@@ -4,7 +4,7 @@
  *
  * Imports agent.ts directly for the full agent definition,
  * builds a runtime, and starts an HTTP+WebSocket server. File watching is
- * opt-in via `AAI_DEV_WATCH=1` (see devWatchEnabled). Optionally runs Vite for
+ * on at a terminal, off otherwise (see devWatchEnabled). Optionally runs Vite for
  * client SPA HMR.
  */
 
@@ -233,8 +233,9 @@ export type DevServerOptions = {
   cwd: string;
   port: number;
   /**
-   * Restart on a file change. Omitted, `AAI_DEV_WATCH` decides — see
-   * {@link devWatchEnabled} for why watching is opt-in at all.
+   * Restart on a file change. Omitted, `AAI_DEV_WATCH` decides, and failing
+   * that the TTY pair does — see {@link devWatchEnabled} for why a person gets
+   * a watcher and a harness does not.
    */
   watch?: boolean | undefined;
 };
@@ -432,7 +433,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   // Install the watcher BEFORE the initial build: `ignoreInitial` means an
   // edit saved during startup (bundle + listen + Vite boot) would otherwise
   // never fire an event and the dev server would serve stale code until the
-  // next save. Undefined unless AAI_DEV_WATCH is set — see devWatchEnabled.
+  // next save. Undefined unless watching resolved on — see devWatchEnabled.
   // The supervisor starts queueing, so an event landing mid-boot is held.
   // Typecheck at boot and on every restart, in the background. `aai dev` is the
   // only command that did not, which made every compile-time diagnostic this

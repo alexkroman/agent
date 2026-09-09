@@ -98,6 +98,32 @@ assembled, and `ctx.db` is whatever `Db` you passed. That is the sharpest
 contrast with [`host-server`](../host-server), where callers bring their own
 agent and execute their own tools out over the socket.
 
+## State and durable workflows need a database
+
+With no `DATABASE_URL`, session state and durable workflow runs live in **this
+process's memory**: fine for one replica you are happy to restart, and gone the
+moment you are not. The boot line says which it picked.
+
+```sh
+export DATABASE_URL=postgres://…
+npm start
+```
+
+That is the whole setup. The tables come with whoever owns the database, and a
+self-hosted deployment has no migration step to hang them off, so
+`createAgentServer()` creates its own — the two session-state tables and the
+five journal tables — before it binds the port. It is best-effort by design: a
+role that may not `CREATE`, because a real migration already made them, gets
+one warning and keeps serving. `ensureSessionStateSchema` and
+`ensureWorkflowJournalSchema` stay exported from `@alexkroman1/aai-runtime` for
+exactly that operator.
+
+One more variable, and only if a durable workflow hands a URL to someone else:
+`PUBLIC_URL` is where a third party reaches this deployment, which behind a
+proxy is not the socket it binds. `ctx.workflows.publicWebhookUrl()` is its
+only reader and throws without it, rather than minting a `127.0.0.1` callback
+that fails days later on somebody else's server.
+
 ## Try another template
 
 Replace `agent.ts` with any of the

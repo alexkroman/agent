@@ -19,6 +19,7 @@
  * ```
  */
 
+import { nearestNames } from "../../_nearest-names.ts";
 import { isRecord } from "../../is-record.ts";
 import { omitUndefined } from "../../omit-undefined.ts";
 import type { ProviderCredentialOptions, TtsProvider } from "../../providers.ts";
@@ -255,6 +256,16 @@ export function assemblyAITtsLanguageCodes(): string[] {
  * and the opener's connect-time throw fires too late to help anyone authoring.
  *
  * Takes `unknown` so callers can pass a possibly-absent descriptor.
+ *
+ * **It also PRINTS the voice warning, and that is why it is reached on every
+ * authoring path.** `agentConfigWarnings` computes the same sentence for `aai
+ * build` and `aai dev` — but from the raw `AgentDef`, whose `tts` is undefined
+ * for the shape the docs lead with (`agent({ voice: "michael" })`, desugared by
+ * `normalizeAgentConveniences`), so the documented one-liner was checked by
+ * nothing at all. `toAgentConfig` runs the desugaring first and this second, so
+ * here the voice is RESOLVED whichever way it was written. A voice is never
+ * refused — see {@link assemblyAIVoiceWarning} for that argument — so the
+ * `assert` in the name still describes only the language rules below.
  */
 export function assertAssemblyAITtsLanguage(tts: unknown): void {
   if (!isRecord(tts)) return;
@@ -262,6 +273,12 @@ export function assertAssemblyAITtsLanguage(tts: unknown): void {
   if (kind !== ASSEMBLYAI_TTS_KIND) return;
   if (!isRecord(options)) return;
   const { language, voice } = options;
+  // BEFORE the `language` early-return, deliberately. `language` is unset in
+  // the overwhelmingly common shape (the server infers it from the voice), so
+  // a voice check gated on it would run for almost nobody — while a wrong VOICE
+  // is the far likelier mistake and has the same symptom: connected, ready,
+  // permanently silent.
+  warnUnknownVoice(tts);
   if (language === undefined) return;
   if (typeof language !== "string" || resolveAssemblyAITtsLanguage(language) === undefined) {
     throw new Error(
@@ -338,7 +355,47 @@ export function assemblyAIVoiceWarning(descriptor: unknown): string | undefined 
   if (deprecated.includes(voice)) {
     return `AssemblyAI voice "${voice}" still works but is scheduled for removal — pick a current one from ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts).`;
   }
-  return `AssemblyAI voice "${voice}" is not in this release's catalog. If it is a typo the agent will connect, report ready and never speak — the service refuses an unknown voice after the socket opens. Check it against ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts); a voice added since this release is fine.`;
+  // The catalog's own keys are the candidate list; `_voice-suggest.ts` knows
+  // nothing about voices, which is what keeps that seam one-way.
+  const near = nearestNames(voice, Object.keys(ASSEMBLYAI_TTS_VOICES));
+  const suggestion =
+    near.length > 0 ? ` Did you mean ${near.map((id) => `"${id}"`).join(", ")}?` : "";
+  return `AssemblyAI voice "${voice}" is not in this release's catalog.${suggestion} If it is a typo the agent will connect, report ready and never speak — the service refuses an unknown voice after the socket opens. Check it against ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts); a voice added since this release is fine.`;
+}
+
+/**
+ * Sentences already printed, so a config built repeatedly (the runtime rebuilds
+ * one per session; a spec builds many) says each thing once.
+ *
+ * Keyed by the SENTENCE rather than by the voice, so it also covers the second
+ * stage: an S2S descriptor and a TTS descriptor naming the same missing voice
+ * produce the same line and deserve one copy of it.
+ */
+const printedVoiceWarnings = new Set<string>();
+
+/**
+ * Print {@link assemblyAIVoiceWarning}'s sentence, once, on any authoring path.
+ *
+ * A warning and never a throw, which is the whole of {@link AssemblyAITtsVoice}'s
+ * argument: this catalog is the SERVICE's and goes stale between releases, so
+ * refusing an id outside it would refuse a voice AssemblyAI shipped last week —
+ * the same silent mute from the other side. What was missing was the other
+ * half: saying nothing left a TYPO with no signal anywhere before a live call.
+ *
+ * `console.warn` through `globalThis`, like `stepReport`'s fallback channel:
+ * `sdk/` must run in a browser and in Deno and has no logger threaded to it.
+ * The CLI ALSO prints this sentence through `notify` (`agentConfigWarnings`),
+ * so an author who wrote an explicit `assemblyAITts({ voice })` descriptor and
+ * runs `aai build` sees it twice; the shorthand — the shape this call exists
+ * for — reaches only this one.
+ */
+function warnUnknownVoice(descriptor: unknown): void {
+  const warning = assemblyAIVoiceWarning(descriptor);
+  if (warning === undefined || printedVoiceWarnings.has(warning)) return;
+  printedVoiceWarnings.add(warning);
+  (globalThis as { console?: { warn?: (...args: unknown[]) => void } }).console?.warn?.(
+    `[aai] ${warning}`,
+  );
 }
 
 export interface AssemblyAITtsOptions extends ProviderCredentialOptions {

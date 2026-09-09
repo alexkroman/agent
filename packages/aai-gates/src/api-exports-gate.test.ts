@@ -111,6 +111,8 @@ describe("API-EXPORTS.json", () => {
       "StubGenerateCall",
       "StubGenerateReply",
       "StubGenerateRoute",
+      "StubGenerateRoutes",
+      "StubGenerateScript",
       "StubReporter",
       "StubSpeech",
       "StubSpeechCall",

@@ -121,6 +121,89 @@ describe("runInit", () => {
   });
 });
 
+describe("runInit stamps the package manager it was told about", () => {
+  /**
+   * The scaffold ships `packageManager: "pnpm@<v>"` because it is a pnpm
+   * workspace root in this repo, and it used to be COPIED into a project
+   * installed with something else. pnpm and Yarn both read that field and
+   * refuse to run when it names another manager, so a project scaffolded by an
+   * npm user could not later be touched by yarn without editing a field nobody
+   * chose. Dev mode is off in these specs because
+   * `patchPackageJsonForWorkspace` drops the field outright for a linked
+   * project — see the group below.
+   */
+  async function scaffoldWithPin(dir: string): Promise<void> {
+    await useFakeTemplates(dir);
+    await writeFiles(path.join(dir, "fake-root"), {
+      "scaffold/package.json": JSON.stringify({
+        name: "scaffold-pkg",
+        packageManager: "pnpm@10.29.3",
+        dependencies: { "@alexkroman1/aai": "^1.0.0" },
+      }),
+    });
+    vi.stubEnv("AAI_NO_DEV", "1");
+  }
+
+  async function manifestOf(target: string): Promise<{ packageManager?: string }> {
+    return JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8")) as {
+      packageManager?: string;
+    };
+  }
+
+  test("pins the manager that will run, replacing the scaffold's", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await scaffoldWithPin(dir);
+        const target = path.join(dir, "bun-project");
+        await runInit({
+          targetDir: target,
+          template: "quickstart-agent",
+          packageManager: { name: "bun", version: "1.2.4" },
+        });
+        expect((await manifestOf(target)).packageManager).toBe("bun@1.2.4");
+      }),
+    );
+  });
+
+  test("REMOVES the pin when there is no version to pin", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await scaffoldWithPin(dir);
+        const target = path.join(dir, "unpinned");
+        // A bare name is not a valid value for that field, and leaving pnpm's
+        // is worse than leaving none.
+        await runInit({
+          targetDir: target,
+          template: "quickstart-agent",
+          packageManager: { name: "npm" },
+        });
+        expect(await manifestOf(target)).not.toHaveProperty("packageManager");
+      }),
+    );
+  });
+
+  test("the README speaks the manager's own commands", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await scaffoldWithPin(dir);
+        const target = path.join(dir, "bun-readme");
+        await runInit({
+          targetDir: target,
+          template: "quickstart-agent",
+          packageManager: { name: "bun", version: "1.2.4" },
+        });
+        const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
+        expect(readme).toContain("bun install");
+        expect(readme).toContain("bun run dev");
+        // `bunx`, not `npx`: the point of the parametrization is that the one
+        // doc a scaffolded project ships agrees with the directory it describes.
+        expect(readme).toContain("bunx aai login");
+        expect(readme).not.toContain("npm install\n");
+      }),
+    );
+  });
+});
+
 describe("patchPackageJsonForWorkspace", () => {
   test("no-ops when package.json does not exist", async () => {
     await withTempDir(async (dir) => {

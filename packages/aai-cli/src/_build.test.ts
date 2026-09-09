@@ -327,6 +327,85 @@ describe("missingDeployEnv", () => {
       expect(await missingDeployEnv(dir, "vercel", {})).toEqual([]);
     });
   });
+
+  test("names a requiredEnv key with no .env.example entry behind it", async () => {
+    // The bug: `anywhere.md` promised "list what your tools read in
+    // `requiredEnv` … the build warns by name about anything the deployment
+    // will be missing", and this path derived from `.env.example` ALONE. So an
+    // agent declaring ORDERS_API_KEY and nothing else got neither the warning
+    // nor the `env add` step the printed `perSecret` sequence expands from this
+    // same list — while the managed path (`_preflight.ts`) saw both sources.
+    await withTempDir(async (dir) => {
+      expect(
+        await missingDeployEnv(
+          dir,
+          "vercel",
+          {},
+          {
+            page: "static",
+            requiredEnv: ["ORDERS_API_KEY"],
+          },
+        ),
+      ).toEqual(["ORDERS_API_KEY"]);
+    });
+  });
+
+  test("names a provider credential the normalized config implies", async () => {
+    // Derived from the descriptors rather than declared anywhere by the author,
+    // which is why the config has to be the NORMALIZED one (`__aaiConfig`) and
+    // not the raw def — see `_preflight.ts`.
+    await withTempDir(async (dir) => {
+      expect(
+        await missingDeployEnv(dir, "vercel", {}, { llm: { kind: "anthropic", options: {} } }),
+      ).toContain("ANTHROPIC_API_KEY");
+    });
+  });
+
+  test("unions the two sources and de-duplicates a name in both", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(path.join(dir, ".env.example"), "FROM_EXAMPLE=\nIN_BOTH=\n");
+      expect(
+        await missingDeployEnv(
+          dir,
+          "vercel",
+          {},
+          {
+            page: "static",
+            requiredEnv: ["IN_BOTH", "FROM_CONFIG"],
+          },
+        ),
+      ).toEqual(["FROM_EXAMPLE", "IN_BOTH", "FROM_CONFIG"]);
+    });
+  });
+
+  test("a host value clears a config-derived name exactly as it clears a declared one", async () => {
+    await withTempDir(async (dir) => {
+      expect(
+        await missingDeployEnv(
+          dir,
+          "vercel",
+          { ORDERS_API_KEY: "v" },
+          { page: "static", requiredEnv: ["ORDERS_API_KEY"] },
+        ),
+      ).toEqual([]);
+    });
+  });
+
+  test("stays quiet for the node target even with a config in hand", async () => {
+    // The early return is what makes `build.ts` skip the second bundle
+    // evaluation on every ordinary local build, so it must not be reachable
+    // past the config argument.
+    await withTempDir(async (dir) => {
+      expect(
+        await missingDeployEnv(
+          dir,
+          "node",
+          {},
+          { page: "static", requiredEnv: ["ORDERS_API_KEY"] },
+        ),
+      ).toEqual([]);
+    });
+  });
 });
 
 describe("missingEnvWarnings", () => {

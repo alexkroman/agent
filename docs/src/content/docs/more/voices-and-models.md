@@ -15,6 +15,14 @@ import { agent } from "@alexkroman1/aai";
 export default agent({ name: "My Agent", voice: "michael" });
 ```
 
+Ids come from `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai/tts`), and the type is
+autocomplete rather than a guard — the catalog belongs to the service, so a
+voice added after your SDK release still has to work. **A misspelled id is
+refused after the socket opens**, which leaves an agent that connects, reports
+ready and never speaks, so `aai build` and `aai dev` warn about an id they do
+not recognise and name the ones it is closest to. Every voice speaks exactly
+one language.
+
 ## A model
 
 `llm` takes a bare model id:
@@ -28,6 +36,12 @@ export default agent({ name: "My Agent", llm: "claude-sonnet-4-6" });
 A bare id routes through the AssemblyAI LLM gateway on your existing key. A
 `"creator/model"` id routes through the Vercel AI Gateway and needs
 `AI_GATEWAY_API_KEY` in your secrets.
+
+Bare ids autocomplete from `AssemblyAIGatewayModel` (`@alexkroman1/aai`), the
+union generated from what the gateway advertises. Like `voice`, it is
+autocomplete rather than a guard — a model shipped after your SDK release still
+works — so an id the gateway does not carry is a 400 on the first turn rather
+than a build error.
 
 ## A whole stage
 

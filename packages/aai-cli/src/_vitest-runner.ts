@@ -86,10 +86,11 @@ export type VitestRunOptions = {
   /**
    * Run EVERY non-eval spec in the project rather than the first candidate.
    *
-   * The opt-in half of the narrowing documented on {@link unrunSpecFiles}: the
-   * default stays one file, and this is how a caller says "I want the whole
-   * suite" without the command having to guess. Still a filter list rather than
-   * an include glob, so the eval tier stays disjoint by construction.
+   * What both gates over a project's own suite pass — `aai test` unless
+   * `--only` narrows it, and `aai build`'s pre-build gate — because a verdict
+   * over a subset of a project's specs is the false green documented on
+   * {@link unrunSpecFiles}. Still a filter LIST rather than an include glob, so
+   * the eval tier stays disjoint by construction.
    */
   readonly all?: boolean;
   /**
@@ -98,10 +99,16 @@ export type VitestRunOptions = {
    * Default TRUE, and the default is the point: the caller most in need of the
    * notice is the one that does not know it is narrowing. `aai build` runs this
    * as its pre-build gate and reports nothing of its own, so a build gated on
-   * one file out of eight said so nowhere. `aai test` and `aai eval` pass
-   * `false` — the first because it reports the same set itself, in its result
-   * as well as its output, and the second because "did not run" is a claim
-   * about the TEST tier and every unit spec in the project would be named
+   * one file out of eight said so nowhere — it passes `all` now, but the
+   * default is what closed that without the gate having to know.
+   *
+   * `aai test` takes the default too, and used to pass `false`: it reported the
+   * skipped set itself, as an `incomplete_run` FAILURE, which is what made its
+   * own default invocation unpassable on any project with a second spec file
+   * (see `executeTest`). The widened run is the default there now and has
+   * nothing to announce; `--only` is a deliberate narrowing, and this notice is
+   * its report. `aai eval` still passes `false`, because "did not run" is a
+   * claim about the TEST tier and every unit spec in the project would be named
    * falsely by an eval run.
    */
   readonly announceUnrun?: boolean;
@@ -211,12 +218,15 @@ export function projectSpecFiles(cwd: string): string[] {
  * of them, so `aai test` there ran 1 file / 67 tests, printed "Tests passed",
  * and left 211 of the project's 278 tests unrun with nothing saying so.
  *
- * The narrow default STANDS — which files `aai test` runs is a documented
- * contract (the scaffold guide says "Run agent.test.ts via vitest"), and running
- * a project's other specs by default could reach ones that are slow or want
- * credentials. What does not stand is a GREEN VERDICT over the difference: this
- * set is what `executeTest` refuses to call a pass, what it puts in its result
- * for a script to read, and what `--all` opts into running.
+ * The narrow default did NOT stand, and this set is why. It was defensible on
+ * its own terms — one documented file, so a spec that is slow or wants
+ * credentials is not dragged into every save — but neither verdict over the
+ * difference was liveable: a green one is the false pass above, and the
+ * failure that replaced it made bare `aai test` red on every project with a
+ * second spec file. So `all` is the default for both gates now and `--only`
+ * is the inner loop, and what this set feeds is the honest report of a
+ * narrowing somebody asked for: {@link warnUnrunSpecs}'s notice, plus
+ * `unrun`/`complete` on `aai test`'s own result for a script to read.
  */
 export function unrunSpecFiles(cwd: string, ran: RanSpecs): string[] {
   const covered = new Set(coveredList(ran));
@@ -259,23 +269,25 @@ function collectSpecs(dir: string, prefix: string, out: string[]): void {
 /**
  * The remedy, named the same way wherever the narrowing is reported.
  *
- * The project's own `npm test` comes FIRST because it is the command a
- * scaffolded project already ships (`scaffold/package.json`), so it is the one
- * answer that needs nothing installed or remembered; `--all` is the same thing
- * without leaving the CLI.
+ * It is a bare `aai test` now rather than a flag: the whole suite IS the
+ * default, so the remedy for a narrowed run is to stop narrowing it. The
+ * project's own `npm test` comes second because it is the command a scaffolded
+ * project already ships (`scaffold/package.json`) and runs the same set with
+ * nothing to remember.
  */
 export const WIDEN_HINT =
-  'Run the whole suite with this project\'s `npm test` (`vitest run --exclude "**/*.eval.test.*"`) ' +
-  "or `aai test --all`; behaviour evals have their own command (`aai eval`).";
+  "Run every non-eval spec with a bare `aai test` (the default) or this project's `npm test`; " +
+  "behaviour evals have their own command (`aai eval`).";
 
 /**
  * Warn, once, naming the spec files this run did not cover.
  *
- * This is the notice for a caller whose own result says nothing about the
- * narrowing — today that is `aai build`'s pre-build gate, which ran one file
- * out of eight and printed "Build complete". `aai test` does not use it: an
- * incomplete run is a FAILURE there, and the failure's own message is the
- * report.
+ * This is the notice for a run that covered a SUBSET, and `aai test --only` is
+ * the caller it now serves: an author asking for the fast inner loop gets
+ * vitest's own summary and then the files that loop did not reach. It was
+ * written for `aai build`'s pre-build gate, which ran one file out of eight
+ * and printed "Build complete" — that gate passes `all` now, so the notice is
+ * silent there, which is the correct end state rather than a lost check.
  */
 export function warnUnrunSpecs(cwd: string, ran: RanSpecs): void {
   const skipped = unrunSpecFiles(cwd, ran);

@@ -66,6 +66,21 @@ describe("fetchClientConfig", () => {
     const fetchFn = vi.fn(async () => new Response("<html>oops</html>", { status: 200 }));
     await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
   });
+
+  it("defaults to the page's own origin and path — no argument at all", async () => {
+    // The only base URL a browser has, and it sat one module away in this same
+    // package (`pageBaseUrl`) while the argument was required — so every caller,
+    // the shipped `@example` included, wrote `location.origin + location.pathname`
+    // for itself.
+    vi.stubGlobal("location", { origin: "https://h", pathname: "/my-agent/" });
+    const fetchFn = vi.fn(async () => jsonResponse({ name: "a", page: "static" }));
+    await expect(fetchClientConfig(undefined, fetchFn)).resolves.toEqual({
+      name: "a",
+      page: "static",
+    });
+    expect(fetchFn).toHaveBeenCalledWith("https://h/my-agent/client-config", expect.anything());
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("loadClientConfig", () => {

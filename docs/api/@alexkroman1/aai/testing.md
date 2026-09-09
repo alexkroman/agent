@@ -417,9 +417,15 @@ function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 Build a [ToolContext](index.md#toolcontext) for testing a tool's `execute` in isolation.
 
 Defaults are chosen so the context is inert: empty `env`, an empty slot store,
-a `db`, `generate` and `delegate` that reject with a message naming
+`workflows`, `generate` and `delegate` that reject with a message naming
 themselves, a `signal` that never aborts, and a `send` that records.
 Override any of them.
+
+**`generate` and `delegate` also take a SCRIPT**, which is the way in for a
+tool that calls a model: pass `stubGenerate`'s own argument and the fake is
+built here, installed, and handed back on `ctx.model` (`ctx.desk` for
+`delegate`). [scriptedToolContext](#scriptedtoolcontext-1) is the same thing under a name that
+says both seams are scripted, and returns the two fakes beside the context.
 
 **Each call is a distinct session.** `sessionId` auto-increments, which is
 what makes the two-context isolation test — the same tool run against two
@@ -473,6 +479,18 @@ test("recommend pushes its picks to the client", async () => {
   await recommend.execute({ mood: "chill" }, ctx);
   expect(ctx.sent).toEqual([{ event: "recommendations", data: expect.anything() }]);
 });
+```
+
+**Scripting the model in the same call**
+
+```ts
+import { createToolContext } from "@alexkroman1/aai/testing";
+
+// A bare string answers every call; a table keyed by system prompt answers a
+// tool that plays more than one model role.
+const ctx = createToolContext({ generate: "A short summary." });
+// … run the tool, then assert on what it asked:
+// expect(ctx.model.calls.map((call) => call.prompt)).toEqual([…]);
 ```
 
 ***
@@ -1718,6 +1736,13 @@ function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedTool
 Build a [TestToolContext](#testtoolcontext) whose `generate` and `delegate` are both
 scripted, and hand back the fakes beside it.
 
+**`createToolContext` is the way in now.** Its `generate` and `delegate` take
+the same scripts and expose the same fakes on the context (`ctx.model`,
+`ctx.desk`), so one call covers scripting either seam, both, or neither. This
+stays for the spec that reads the two fakes by name — `const { ctx, model,
+desk } = scriptedToolContext(…)` — and for the one script shape the context's
+own field cannot express, a top-level function route.
+
 Each call is a distinct session, as with `createToolContext`. A spec that
 wants two sessions sharing one script calls this twice with the same routes
 object — the routes are read at call time, so a function route with its own
@@ -1909,9 +1934,7 @@ Completion contents, in order; the last repeats. A bare
 ### stubGenerate()
 
 ```ts
-function stubGenerate(script: 
-  | StubGenerateRoute
-  | Readonly<Record<string, StubGenerateRoute>>): StubGenerate;
+function stubGenerate(script: StubGenerateScript): StubGenerate;
 ```
 
 Build a fake `ctx.generate` from a script keyed by system prompt.
@@ -1925,8 +1948,7 @@ what a one-model tool wants.
 
 ##### script
 
-  \| [`StubGenerateRoute`](#stubgenerateroute)
-  \| `Readonly`\<`Record`\<`string`, [`StubGenerateRoute`](#stubgenerateroute)\>\>
+[`StubGenerateScript`](#stubgeneratescript)
 
 #### Returns
 
@@ -1955,6 +1977,9 @@ const ctx = createToolContext({ generate: model.generate });
 import { stubGenerate } from "@alexkroman1/aai/testing";
 
 const model = stubGenerate({ object: { steps: ["Only step"] } });
+// A text-only answer is the STRING, never `{ text }` alone — that shape is a
+// route table keyed "text", and `StubGenerateRoutes` makes it a compile error.
+const answerer = stubGenerate("The documented answer.");
 ```
 
 ***
@@ -2479,6 +2504,15 @@ await run("add_item", { item: "apple" }, ctx);
 expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
 ```
 
+**A runner over an agent with NO tools is refused HERE**, rather than at the
+first `run(...)`. A tool is a file, so `agent.ts`'s default export declares an
+empty table and every call through such a runner fails identically — the
+mistake is the argument on this line, and reporting it at a call site several
+dozen lines away names the symptom instead. It is the one shape that cannot be
+a legitimate runner: a runner exists to reach tools by name, and there are no
+names to reach. Reach for [toolOf](#toolof) or [runTool](#runtool) directly if a spec
+really means to assert on an empty table.
+
 ## Interfaces
 
 ### ScriptedToolContext
@@ -2991,8 +3025,7 @@ The workflow's return type, when the caller names it.
 type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
   delegate?:   | Readonly<Record<string, StubDelegateRoute>>
      | StubDelegateRoute;
-  generate?:   | Readonly<Record<string, StubGenerateRoute>>
-     | StubGenerateRoute;
+  generate?: StubGenerateScript;
 };
 ```
 
@@ -3025,12 +3058,12 @@ The script `stubDelegate` takes — routes keyed by subagent name, or one route.
 ##### generate?
 
 ```ts
-optional generate?: 
-  | Readonly<Record<string, StubGenerateRoute>>
-  | StubGenerateRoute;
+optional generate?: StubGenerateScript;
 ```
 
-The script `stubGenerate` takes — routes keyed by system prompt, or one route.
+The script `stubGenerate` takes — routes keyed by system prompt, or one
+route. Named through [StubGenerateScript](#stubgeneratescript) rather than restated, so the
+`{ text }`-only misuse arm that type refuses is refused here too.
 
 ***
 
@@ -3232,6 +3265,64 @@ How a route answers: a fixed reply, or a function of the call.
 
 The function form is what a route with a QUEUE needs — a grader asked once per
 document, an executor asked once per turn — since it can shift its own script.
+
+***
+
+### StubGenerateRoutes
+
+```ts
+type StubGenerateRoutes = Readonly<Record<string, StubGenerateRoute>> & {
+  text?: "a bare `{ text }` is read as a route TABLE keyed \"text\", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both";
+};
+```
+
+A table of routes keyed by system prompt — with the one key that cannot mean
+what it looks like typed as the RULE it breaks.
+
+The `text` arm is a misuse message, on the same pattern as `AgentParams`'
+misuse arms and `SyncMutationMisuse`: a string literal type nothing an author
+can pass satisfies, so the offending literal is unassignable and the rule
+itself is what `tsc` prints. It is written INLINE rather than as its own
+exported alias, because a misuse arm is machinery an author meets as a
+message and never by name — the argument `packages/aai/typedoc.json`'s
+`intentionallyNotExported` makes for the twenty-odd others.
+
+The misuse it names is the one `isRouteTable` cannot see. A record
+without an `object` key IS a route table, so `stubGenerate({ text: "…" })`
+type-checked as a table with one route named `text` — a system prompt no tool
+carries — and then rejected every call with "no route for this call's system
+prompt". Nothing about that failure points at the literal that caused it, and
+the documentation page spent four lines teaching readers to remember the
+discriminator instead.
+
+The cost is that a route table can no longer be keyed by a system prompt whose
+whole text is `"text"`, which is not a system prompt, and which the runtime
+guard in [stubGenerate](#stubgenerate-1) refuses anyway.
+
+#### Type Declaration
+
+##### text?
+
+```ts
+readonly optional text?: "a bare `{ text }` is read as a route TABLE keyed \"text\", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both";
+```
+
+***
+
+### StubGenerateScript
+
+```ts
+type StubGenerateScript = 
+  | StubGenerateRoutes
+  | StubGenerateRoute;
+```
+
+Everything [stubGenerate](#stubgenerate-1) accepts: a table of routes, or one route.
+
+Named because it is written down in three places — that function, the
+`generate` field of `createToolContext`'s overrides, and
+`ScriptedToolContextOptions` — and a union restated at each of them is a union
+that drifts.
 
 ***
 
@@ -4042,6 +4133,8 @@ The content type the step declared, or `""`.
 
 ```ts
 type TestToolContext = ToolContext & {
+  desk: StubDelegate;
+  model: StubGenerate;
   sent: SentEvent[];
 };
 ```
@@ -4052,6 +4145,29 @@ Assignable to `ToolContext` wherever one is required, so it passes straight
 to `execute`.
 
 #### Type Declaration
+
+##### desk
+
+```ts
+readonly desk: StubDelegate;
+```
+
+The `ctx.delegate` fake — `desk.calls` is every subagent run the tools asked
+for. Present and wired on the same terms as `TestToolContext.model`.
+
+##### model
+
+```ts
+readonly model: StubGenerate;
+```
+
+The `ctx.generate` fake — `model.calls` is every prompt the tools sent.
+
+Present on every context, so an assertion needs no null check, and WIRED
+whenever `generate` arrived as a script or as a fake. Given a bare function
+(or nothing at all) it is a fake nothing reaches: `model.calls` stays empty
+for the same reason `TestToolContext.sent` does when a test brings its
+own `send` spy — the seam belongs to the caller, and so does the log.
 
 ##### sent
 
@@ -4091,7 +4207,16 @@ readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 ### ToolContextOverrides
 
 ```ts
-type ToolContextOverrides = { [K in keyof ToolContext]?: ToolContext[K] };
+type ToolContextOverrides = { [K in Exclude<keyof ToolContext, "generate" | "delegate">]?: ToolContext[K] } & {
+  delegate?:   | ToolContext["delegate"]
+     | Readonly<Record<string, StubDelegateRoute>>
+     | StubDelegateReply;
+  desk?: StubDelegate;
+  generate?:   | ToolContext["generate"]
+     | StubGenerateRoutes
+     | StubGenerateReply;
+  model?: StubGenerate;
+};
 ```
 
 What [createToolContext](#createtoolcontext) accepts: any field of a [ToolContext](index.md#toolcontext),
@@ -4114,6 +4239,70 @@ signature was teaching the pattern its gates refuse. Adding `| undefined` to
 every field costs nothing (an explicit `undefined` and an absent key
 both fall through to the default, because [createToolContext](#createtoolcontext) takes the
 overrides through `omitUndefined` before spreading them) and strictly widens what compiles.
+
+The two MODEL seams are widened rather than mapped, because each also accepts
+the SCRIPT its fake is built from — see their own docs below.
+
+#### Type Declaration
+
+##### delegate?
+
+```ts
+optional delegate?: 
+  | ToolContext["delegate"]
+  | Readonly<Record<string, StubDelegateRoute>>
+  | StubDelegateReply;
+```
+
+A real `ctx.delegate`, or `stubDelegate`'s own SCRIPT — a table of routes
+keyed by subagent name, or one reply. A function is the seam, on the same
+rule as `generate` above; the fake comes back on
+`TestToolContext.desk`.
+
+##### desk?
+
+```ts
+optional desk?: StubDelegate;
+```
+
+The `stubDelegate` twin of `ToolContextOverrides.model`.
+
+##### generate?
+
+```ts
+optional generate?: 
+  | ToolContext["generate"]
+  | StubGenerateRoutes
+  | StubGenerateReply;
+```
+
+A real `ctx.generate`, or `stubGenerate`'s own SCRIPT — a table of routes
+keyed by system prompt, a bare string, or one `{ text, object }` reply.
+
+A script is built into the fake here, so the two-step every spec wrote —
+`stubGenerate(script)`, destructure, `createToolContext({ generate })` — is
+one call, and the fake comes back on `TestToolContext.model`.
+
+**A FUNCTION in this position is the seam itself**, never a top-level
+function route: `GenerateFn` and `(call) => StubGenerateReply` are both
+`(x) => y` and nothing at runtime can tell them apart. A spec that wants a
+computed single route builds the fake and passes both halves —
+`createToolContext({ generate: model.generate, model })` — which is what
+`scriptedToolContext` does.
+
+##### model?
+
+```ts
+optional model?: StubGenerate;
+```
+
+A fake this spec built itself, to be exposed as `TestToolContext.model`
+— and, unless `generate` also names a function, INSTALLED as the seam.
+
+The escape hatch under the script sugar: a caller holding a `stubGenerate`
+it wants to share across two contexts, or one built from a top-level
+function route, names it here rather than leaving `ctx.model` pointing at a
+fake nothing reaches.
 
 ***
 

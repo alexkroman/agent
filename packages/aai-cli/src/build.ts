@@ -26,10 +26,14 @@ import {
   SECRET_NAME_PLACEHOLDER,
   TARGET_OUTPUTS,
 } from "./_build-target.ts";
-import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
+import { buildAgentBundle, evalWorkerBundle, evalWorkerConfig } from "./_bundler.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
 import { emitModalOutput } from "./_modal-output.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
+// TYPE-only, so this costs nothing at startup: `_preflight.ts` pulls in the
+// SDK's runtime barrel, which is why every value it exports is reached through
+// a lazy `await import` here and in `deploy.ts`.
+import type { PreflightConfig } from "./_preflight.ts";
 import { DEPLOY_ENV_DECLARATION_FILE, declaredEnvNames } from "./_server-common.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
@@ -204,7 +208,29 @@ export async function executeBuild(opts: {
   // Same posture as the two warning classes above, one layer out: a declared
   // variable with no value on the host is legal, builds green, and fails at the
   // first session as an opaque provider auth error. See `missingDeployEnv`.
-  const missingEnv = await missingDeployEnv(cwd, target);
+  //
+  // `__aaiConfig`, not the `agentDef` above, and the difference is the whole
+  // point of reading it: the export is `toAgentConfig(def)`, so an author
+  // shorthand (`llm: "gpt-5"`) has been normalized into a descriptor whose
+  // credential is derivable. `descriptorKind` reads a raw string as no kind at
+  // all, so deriving from the def would silently omit that provider's key —
+  // `_preflight.ts` carries the argument, and `aai deploy` reads the same
+  // export for the same reason.
+  //
+  // It costs a SECOND evaluation of the user's bundle, so it is skipped for a
+  // target that deploys nowhere — which is every ordinary local build, `node`
+  // being the default and `missingDeployEnv` returning nothing for it anyway.
+  const deployConfig = output.dir === undefined ? undefined : await evalWorkerConfig(bundle.worker);
+  const missingEnv = await missingDeployEnv(
+    cwd,
+    target,
+    process.env,
+    // `evalWorkerConfig` answers `unknown` — the export is the USER's SDK's —
+    // and nothing at all for a bundle old enough not to emit it. Truthiness is
+    // the narrowing `aai deploy` applies to the same value, and a falsy one
+    // means "nothing to derive", never an error.
+    deployConfig || undefined,
+  );
   for (const warning of missingEnvWarnings(missingEnv, target, agentDef.name)) {
     notify("warn", warning);
   }
@@ -303,6 +329,27 @@ async function emitTargetFiles(
  * Which variables the DEPLOYMENT declares that this build's host has no value
  * for — the check behind the warning `aai build` prints for a host target.
  *
+ * ## Where the DECLARATIONS come from
+ *
+ * Two sources, and for a long time only the first: `.env.example`, the one
+ * dotenv file that ships, plus — when the caller has the built bundle's
+ * normalized config — {@link requiredEnvNames}, i.e. the provider credentials
+ * the stt/llm/tts/s2s descriptors imply and the agent's own `requiredEnv`.
+ *
+ * The example file alone was the wrong half of a pair. `anywhere.md` told
+ * authors to "list what your tools read in `requiredEnv`" and promised the
+ * build would warn by name about anything the deployment was missing, which was
+ * true of the MANAGED path (`_preflight.ts`, which has always derived both) and
+ * false here — so an agent declaring `requiredEnv: ["ORDERS_API_KEY"]` and no
+ * matching example entry got neither the warning nor the `env add` step the
+ * `perSecret` sequence expands from this same list. Both paths now read one
+ * derivation.
+ *
+ * `.env.example` stays a source rather than becoming redundant: it is where a
+ * variable that nothing static can see gets declared — one a tool reads
+ * straight off `process.env`, or a host setting like `PORT` — and it is what a
+ * user editing a deployment's configuration actually reads.
+ *
  * ## Why the host environment and not `resolveServerEnv`
  *
  * The obvious implementation resolves {@link DEPLOY_ENV_FILES} the way the
@@ -335,11 +382,16 @@ async function emitTargetFiles(
  *
  * @param env - Where values are read from. Defaults to the build's own
  *   environment; a parameter so a spec need not mutate `process.env`.
+ * @param config - The built bundle's `__aaiConfig`, when the caller has it.
+ *   Omitted, only `.env.example` is read — which is what a spec asserting the
+ *   file-declaration half wants, and what an older bundle carrying no such
+ *   export leaves the caller with.
  */
 export async function missingDeployEnv(
   cwd: string,
   target: BuildTarget,
   env: Record<string, string | undefined> = process.env,
+  config?: PreflightConfig,
 ): Promise<string[]> {
   // A target with no output directory deploys nowhere, and `node` is the only
   // one: the deployment is a process someone starts, which reads `.env` at boot
@@ -347,12 +399,17 @@ export async function missingDeployEnv(
   // `withHostCredentialFallback`. A blank there is a developer mid-setup, so
   // warning would fire on every ordinary local build and teach nothing.
   if (TARGET_OUTPUTS[target].dir === undefined) return [];
+  // Lazily, and only on a path that already returned above for the default
+  // target: `_preflight.ts` pulls in the SDK's runtime barrel for
+  // `requiredProviderEnvVars` (~320ms, ~35MB), which `aai deploy` deliberately
+  // keeps off its startup path for the same reason.
+  const derived = config ? (await import("./_preflight.ts")).requiredEnvNames(config) : [];
   const declared = await declaredEnvNames(cwd, [DEPLOY_ENV_DECLARATION_FILE]);
   // An empty value counts as missing for the reason `resolveServerEnv` drops
   // it: `BRAVE_API_KEY=` is how the declaration says "you need to set this",
   // and a provider handed `""` authenticates with it instead of reporting the
   // credential as absent.
-  return declared.filter((name) => {
+  return [...new Set([...declared, ...derived])].filter((name) => {
     const value = env[name];
     return value === undefined || value === "";
   });

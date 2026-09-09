@@ -9,16 +9,17 @@ npm i -g @alexkroman1/aai-cli
 
 A scaffolded project also exposes `dev`, `build`, `eval`, `start` and
 `publish:agent` as `npm run <name>`, using the project's own copy of the CLI.
-Its `npm test` runs vitest directly; `npm run test:agent` is `aai test`.
+Its `npm test` is `aai test`, which runs the whole suite; `npm run test:agent`
+narrows that to `agent.test.ts`.
 
 ## Building
 
 | Command | What it does |
 | --- | --- |
-| `aai init [dir]` | Scaffold a new agent project. `--template <name>` picks one. |
+| `aai init [dir]` | Scaffold a new agent project and install its dependencies with your package manager (pnpm, npm, bun or yarn). `--template <name>` picks a template. |
 | `aai templates` | List available project templates. |
-| `aai dev` | Start a local development server. `--port`, `--watch`. |
-| `aai test` | Run `agent.test.ts`. `--all` runs every spec in the project. |
+| `aai dev` | Start a local development server. `--port`; watches for file changes at a terminal, `--watch=false` (or `AAI_DEV_WATCH=0`) to turn that off. |
+| `aai test` | Run every non-eval spec in the project. `--only` narrows it to `agent.test.ts`. |
 | `aai eval` | Run behaviour evals against a live model. |
 | `aai build` | Bundle without deploying. `--target node\|vercel\|deno\|modal`, `--skip-tests`, `--skip-typecheck`. |
 | `aai start` | Serve the built agent. `--port`, `--host`. |

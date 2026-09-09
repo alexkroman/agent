@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { stubGenerate } from "./testing-generate.ts";
+import { type StubGenerateScript, stubGenerate } from "./testing-generate.ts";
 
 const GRADER = "You grade documents.";
 const ANSWERER = "You answer questions.";
@@ -79,6 +79,28 @@ describe("stubGenerate", () => {
   test("an unrouted call with NO system prompt says that, rather than printing undefined", async () => {
     const model = stubGenerate({ [GRADER]: "graded" });
     await expect(model.generate({ prompt: "x" })).rejects.toThrow("It carried: (none).");
+  });
+
+  test("refuses a `{ text }`-only script at BIND, with the sentence the type carries", () => {
+    // The misuse `isRouteTable` cannot see: a record with no `object` key IS a
+    // route table, so this used to be read as one route named "text" — a system
+    // prompt no tool carries — and every call then rejected with "no route for
+    // this call's system prompt", which names neither this literal nor the fix.
+    // The TYPE refuses it too (`StubGenerateRoutes`); this is the same sentence
+    // for a caller with no compiler.
+    // A single narrowing assertion, not a laundering double cast: the whole
+    // point is that this literal does not type-check on its own.
+    const misuse = { text: "A short summary." } as StubGenerateScript;
+    expect(() => stubGenerate(misuse)).toThrow(
+      /a bare `\{ text \}` is read as a route TABLE keyed "text"/,
+    );
+    expect(() => stubGenerate(misuse)).toThrow(/pass the string on its own/);
+  });
+
+  test("`{ text, object }` is still a REPLY, so the guard reads `object` first", async () => {
+    // The bind-time refusal must not catch the legal shape one key away from it.
+    const model = stubGenerate({ text: "spoken", object: { score: "no" } });
+    expect((await model.generate({ prompt: "x" })).text).toBe("spoken");
   });
 
   test("a long system prompt is shortened to its first line in the error", async () => {

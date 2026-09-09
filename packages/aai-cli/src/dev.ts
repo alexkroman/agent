@@ -16,7 +16,7 @@ type DevData = { url: string };
 export async function executeDev(opts: {
   cwd: string;
   port: string;
-  /** `--watch`. Undefined leaves the decision to `AAI_DEV_WATCH`. */
+  /** `--watch`. Undefined leaves it to `AAI_DEV_WATCH`, then to the TTY pair. */
   watch?: boolean | undefined;
 }): Promise<CommandResult<DevData>> {
   const port = parsePort(opts.port);

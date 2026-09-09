@@ -12,13 +12,24 @@
  * for exactly that reason; this is the rest of the same subtraction.
  *
  * `DEFAULT_SYSTEM_PROMPT` is the one that stays, and it stays by PASSING the
- * root barrel's membership test rather than as a leftover.
- * `agent({ systemPrompt })` replaces ~10,000 characters of measured voice rules
- * wholesale, so naming this constant is the only way to keep them and add
- * domain rules on top — the recipe the constant documents and
- * `check:doc-examples` compiles. Its VALUE changing is a behaviour change for
- * every agent that omitted the field and for every agent that composed against
- * it, which is what a capability is for.
+ * root barrel's membership test rather than as a leftover — but NOT for the
+ * reason written here until now, which was the false premise itself:
+ * "`agent({ systemPrompt })` replaces ~10,000 characters of measured voice
+ * rules wholesale, so naming this constant is the only way to keep them and
+ * add domain rules on top". It replaces nothing. `buildSystemPrompt` always
+ * emits its sections and APPENDS the author's prompt last, so the recipe that
+ * sentence licensed — interpolating the constant into your own prompt — ships
+ * the default twice: ~10,000 duplicate characters on every turn.
+ * `stripDefaultPrefix` repairs a LEADING copy silently and, deliberately, not
+ * a mid-string one, which is exactly the shape the advice produced; both cases
+ * now warn (`_prompt-duplicate-warning.ts`). The docs and the shipped
+ * authoring guide were corrected with it.
+ *
+ * What the export is for is READING the default, not composing against it: a
+ * spec asserting on what the agent is actually told, or an author inspecting
+ * the rules their prompt is being added to. That is a real member, and its
+ * VALUE changing is still a behaviour change for every agent that omitted the
+ * field, which is what a capability is for.
  *
  * The capability is therefore kept rather than retired: it has a real member,
  * and retiring it would delete the epoch record of three decisions

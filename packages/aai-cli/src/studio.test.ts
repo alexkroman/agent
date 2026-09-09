@@ -15,10 +15,22 @@ vi.mock("./_agent.ts", () => ({
   getMonorepoRoot: vi.fn().mockReturnValue(null),
 }));
 
-vi.mock("./_ui.ts", async () => ({
-  log: (await import("./_test-utils.ts")).makeMockLog(),
-  fmtUrl: (url: string) => url,
+// A HOLDER rather than an inline set of `vi.fn()`s, so the roster stays
+// `makeMockLog`'s: a method added to `log` that this factory did not know about
+// would be a TypeError in whichever command called it, not a failed assertion.
+const uiLog = vi.hoisted(() => ({
+  current: undefined as ReturnType<typeof import("./_test-utils.ts").makeMockLog> | undefined,
 }));
+vi.mock("./_ui.ts", async () => {
+  const log = (await import("./_test-utils.ts")).makeMockLog();
+  uiLog.current = log;
+  return { log, fmtUrl: (url: string) => url };
+});
+
+/** Everything the command said through `log.info`, one string per call. */
+function infoLines(): string[] {
+  return (uiLog.current?.info.mock.calls ?? []).map((call) => String(call[0]));
+}
 
 const mockApiRequest = vi.hoisted(() => vi.fn());
 // Only `apiRequest` is faked. The response GUARDS (`checkedResponse`,
@@ -43,6 +55,9 @@ beforeEach(() => {
 afterEach(() => {
   mockApiRequest.mockReset();
   resolveDeployTarget.mockReset();
+  // The mock log is created once per MODULE, not per test, so its calls
+  // accumulate across them — cleared here or `infoLines()` reads a neighbour's.
+  for (const fn of Object.values(uiLog.current ?? {})) fn.mockClear();
 });
 
 /** Route apiRequest by URL suffix — the commands compose multiple calls. */
@@ -432,7 +447,12 @@ describe("executePublish", () => {
           order.push("push");
           return { sourceHash: "h2", created: false };
         },
-        "PUT /proj/secret": (opts: { body: Record<string, string> }) => {
+        // The PROJECT route, spelled in full. `routeApi` matches by suffix, so
+        // `PUT /proj/secret` — what this used to say — is satisfied by the
+        // per-SLUG route too, and which of the two publish calls is the whole
+        // question: only the project route reaches a project with nothing
+        // deployed yet.
+        "PUT /studio/projects/proj/secret": (opts: { body: Record<string, string> }) => {
           order.push("secrets");
           expect(opts.body).toEqual({ MY_SECRET: "shh" });
           return { ok: true };
@@ -542,7 +562,19 @@ describe("executePublish", () => {
     });
   });
 
-  test("first publish syncs .env after the slug exists", async () => {
+  test("a FIRST publish syncs .env before the deploy, on the project route", async () => {
+    // The bug, and the highest-value one in the docs review: the sync was gated
+    // on `pushed.slug` — "has this project ever been deployed" — so every
+    // brand-new agent's first deployment ran with NO credentials, and the
+    // publish then printed "They apply on the next `aai publish`". Nothing
+    // required that: `syncEnvSecrets` PUTs the PROJECT route, whose row
+    // `pushProject` has just created, and the server holds a project-level
+    // secret record precisely so a value can be saved before anything is
+    // deployed — `reconcileProjectSecrets` is the post-deploy hook that floors
+    // a newly minted slug from it (see `studio-secrets.ts`).
+    //
+    // So `secrets` BEFORE `deploy`, exactly as on a re-publish, and exactly
+    // once: the old post-deploy re-sync is gone with the gate.
     await withTempDir(async (dir) => {
       const cwd = path.join(dir, "fresh-agent");
       await fs.mkdir(cwd);
@@ -556,15 +588,69 @@ describe("executePublish", () => {
           order.push("deploy");
           return { ok: true, slug: "fresh-agent", url: "/fresh-agent/", output: "ok" };
         },
-        "PUT /fresh-agent/secret": () => {
+        // Spelled in full for the reason above: a suffix-matching
+        // `PUT /fresh-agent/secret` would also accept the per-slug route, which
+        // is the one that cannot work before a deploy.
+        "PUT /studio/projects/fresh-agent/secret": (opts: { body: Record<string, string> }) => {
           order.push("secrets");
+          expect(opts.body).toEqual({ K: "v" });
           return { ok: true };
         },
       });
 
       const result = await executePublish({ cwd, skipTypecheck: true });
       expect(result.ok).toBe(true);
-      expect(order).toEqual(["deploy", "secrets"]);
+      expect(order).toEqual(["secrets", "deploy"]);
+    });
+  });
+
+  test("does not tell the user to publish twice", async () => {
+    // The message was the symptom the docs copied. There is no second publish
+    // to wait for, so nothing may say there is — and `log.info` is silenced in
+    // JSON mode, which is how studio Publish runs this, so a stray line here
+    // would also be invisible to the surface most likely to show it.
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "fresh-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(cwd, ".env"), "K=v");
+      routeApi({
+        "GET /studio/projects/fresh-agent": null,
+        "PUT /studio/projects/fresh-agent/source": { sourceHash: "h1", created: true },
+        "PUT /studio/projects/fresh-agent/secret": { ok: true },
+        "POST /studio/projects/fresh-agent/deploy": {
+          ok: true,
+          slug: "fresh-agent",
+          url: "/fresh-agent/",
+          output: "ok",
+        },
+      });
+
+      expect((await executePublish({ cwd, skipTypecheck: true })).ok).toBe(true);
+      const said = infoLines().join("\n");
+      expect(said).not.toContain("next `aai publish`");
+    });
+  });
+
+  test("syncs nothing when the project has no .env", async () => {
+    // The unconditional call must not become an empty PUT: `routeApi` rejects
+    // an unrouted request, so a secret call here fails the test.
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "fresh-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      routeApi({
+        "GET /studio/projects/fresh-agent": null,
+        "PUT /studio/projects/fresh-agent/source": { sourceHash: "h1", created: true },
+        "POST /studio/projects/fresh-agent/deploy": {
+          ok: true,
+          slug: "fresh-agent",
+          url: "/fresh-agent/",
+          output: "ok",
+        },
+      });
+
+      expect((await executePublish({ cwd, skipTypecheck: true })).ok).toBe(true);
     });
   });
 });

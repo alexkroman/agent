@@ -38,21 +38,19 @@ import {
  * annotation is what types `candidate` in both members and what would catch a
  * `describe` that returned something other than a string.
  *
- * The scorer is this desk's own vocabulary, and it is deliberately not a fuzzy
- * distance: a whole word of the label, matched in the caller's words, is one
- * point — so "late checkout fee" finds `Late checkout` and "room" alone ties
- * `Room (3 nights)` with `Room service` and is refused as ambiguous, which is
- * the outcome a receptionist wants.
+ * The matching is `resolveOne`'s own `match` — a whole word of the label, said
+ * by the caller, is one point, and deliberately not a fuzzy distance: "late
+ * checkout fee" finds `Late checkout`, and "room" alone ties `Room (3 nights)`
+ * with `Room service` and is refused as ambiguous, which is the outcome a
+ * receptionist wants. The label's own split-and-filter used to be written here;
+ * it was one of four incompatible copies across the templates, and the one
+ * behaviour that changed in adopting the built-in is the right one — a word is
+ * matched as a WORD now, not as a substring of whatever the caller said.
  */
 export const LINE_ITEM_PICK: ResolveOneOptions<LineItem> = {
   label: "invoice line",
   describe: (item) => `${item.label} (${speakUsd(item.amount)})`,
-  score: (item, text) =>
-    item.label
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((word) => word.length > 2)
-      .filter((word) => text.includes(word)).length,
+  match: (item) => item.label,
 };
 
 export type DisputeAction =
