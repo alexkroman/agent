@@ -330,7 +330,7 @@ voice agents without the CLI:
   every tool is wrapped in a 120s timeout resolving to an error tool
   result, and `bash` has its own wall-clock kill (60s default, 300s max)
   with capped, tail-kept output. The client side of a hung turn is the
-  composer's **Stop button** (`chat.tsx`): `useChat().stop()` aborts the
+  composer's **Stop button** (`panes/chat.tsx`): `useChat().stop()` aborts the
   SSE fetch to the sandbox, whose request-close handler aborts
   `streamText` and in-flight tools in the guest.
 - **A turn's delivery has three rules, all in `aai-guest/studio-turn-stream.ts`**,

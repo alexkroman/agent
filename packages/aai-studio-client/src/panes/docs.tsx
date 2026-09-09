@@ -16,16 +16,16 @@
 // session.
 
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./api.ts";
-import { AgentApiDocs } from "./components/api-docs.tsx";
-import { PhoneCard } from "./components/phone-card.tsx";
-import { Card } from "./components/settings-card.tsx";
-import { Snippet } from "./components/snippet.tsx";
-import { WORKFLOW_API_TOKEN_SECRET } from "./docs-content.ts";
-import { PaneShell } from "./pane-shell.tsx";
-import { platformOrigin } from "./platform-origin.ts";
-import { apiDocsPath } from "./project-route.ts";
-import { queryKeys } from "./query-keys.ts";
+import { api } from "../api.ts";
+import { AgentApiDocs } from "../components/api-docs.tsx";
+import { PhoneCard } from "../components/phone-card.tsx";
+import { Card } from "../components/settings-card.tsx";
+import { Snippet } from "../components/snippet.tsx";
+import { WORKFLOW_API_TOKEN_SECRET } from "../docs-content.ts";
+import { PaneShell } from "../pane-shell.tsx";
+import { platformOrigin } from "../platform-origin.ts";
+import { apiDocsPath } from "../project-route.ts";
+import { queryKeys } from "../query-keys.ts";
 
 type DocsPaneProps = {
   bearer: string;

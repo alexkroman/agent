@@ -26,12 +26,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, parseSecrets } from "./api.ts";
-import { errorText } from "./api-error.ts";
-import { isEnterSubmit } from "./components/send-button.tsx";
-import { Card } from "./components/settings-card.tsx";
-import { PaneShell } from "./pane-shell.tsx";
-import { queryKeys } from "./query-keys.ts";
+import { api, parseSecrets } from "../api.ts";
+import { errorText } from "../api-error.ts";
+import { isEnterSubmit } from "../components/send-button.tsx";
+import { Card } from "../components/settings-card.tsx";
+import { PaneShell } from "../pane-shell.tsx";
+import { queryKeys } from "../query-keys.ts";
 
 /**
  * Secrets the PLATFORM manages, which this pane neither lists, deletes, nor

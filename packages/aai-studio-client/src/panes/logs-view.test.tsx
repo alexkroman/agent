@@ -3,8 +3,8 @@
 
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { button, installResizeObserver } from "./_test-utils.ts";
-import type { AgentLogsPage } from "./api-types.ts";
+import { button, installResizeObserver } from "../_test-utils.ts";
+import type { AgentLogsPage } from "../api-types.ts";
 import { LogsView } from "./logs-view.tsx";
 
 /** One page, with the fields a caller does not care about filled in. */

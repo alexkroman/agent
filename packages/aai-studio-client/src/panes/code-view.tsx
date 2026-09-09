@@ -9,8 +9,8 @@ import { useFlash } from "@alexkroman1/aai-ui";
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
 import clsx from "clsx";
-import { errorText } from "./api-error.ts";
-import type { FileBufferState } from "./file-drafts.ts";
+import { errorText } from "../api-error.ts";
+import type { FileBufferState } from "../file-drafts.ts";
 
 const extensions = [javascript({ typescript: true })];
 

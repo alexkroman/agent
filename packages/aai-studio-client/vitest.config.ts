@@ -10,7 +10,7 @@ export default defineConfig({
     // package.json name).
     name: "aai-studio-client",
     // Most tests render via react-dom/server in node; interaction tests
-    // (app.test.tsx, code-view.test.tsx) opt into jsdom with a per-file
+    // (app.test.tsx, panes/code-view.test.tsx) opt into jsdom with a per-file
     // `@vitest-environment` pragma.
     include: ["**/*.test.{ts,tsx}"],
     // Both slow-tier infixes, per the convention in the root guide — excluded
@@ -48,9 +48,9 @@ export default defineConfig({
         "src/app.tsx",
         "src/project-view.tsx",
         "src/components/gates.tsx",
-        "src/chat.tsx",
-        "src/code-view.tsx",
-        "src/preview.tsx",
+        "src/panes/chat.tsx",
+        "src/panes/code-view.tsx",
+        "src/panes/preview.tsx",
         "vite.config.ts",
       ],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals

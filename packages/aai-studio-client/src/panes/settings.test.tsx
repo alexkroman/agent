@@ -5,12 +5,12 @@
 // A change here writes nothing into the conversation — the transcript is the
 // user's. Every section works with no published slug, and they run in a fixed
 // order (Work locally, Danger zone). Secrets used to sit between them and are
-// their own pane now (secrets.test.tsx); the Database switch is gone with the
+// their own pane now (panes/secrets.test.tsx); the Database switch is gone with the
 // per-app databases it turned on.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { renderWithClient, stubFetch } from "./_test-utils.ts";
+import { renderWithClient, stubFetch } from "../_test-utils.ts";
 import { SettingsPane } from "./settings.tsx";
 
 /**

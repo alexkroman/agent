@@ -21,7 +21,7 @@ import {
   renderWithClient,
   stubFetch,
   textarea,
-} from "./_test-utils.ts";
+} from "../_test-utils.ts";
 import { SecretsPane } from "./secrets.tsx";
 
 /** How many requests this mock saw for one path. */

@@ -10,7 +10,7 @@
 
 import { screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
+import { jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { WorkflowsPane } from "./workflows.tsx";
 
 afterEach(() => {

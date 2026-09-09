@@ -24,7 +24,7 @@
 
 import { screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
+import { jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { DocsPane } from "./docs.tsx";
 
 const SECRETS = "/studio/projects/demo/secret";

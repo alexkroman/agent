@@ -21,7 +21,7 @@
 //
 // What per-tab `sessionStorage` bought here, and why it was given up: it did NOT
 // protect against the studio's own Live pane, which iframes `/:slug/`
-// same-origin (preview.tsx) — a same-origin iframe shares the tab's storage
+// same-origin (panes/preview.tsx) — a same-origin iframe shares the tab's storage
 // either way and can script the parent, so a hostile published client.tsx owned
 // the studio session under both. The delta was a malicious agent page opened in
 // a SEPARATELY-opened tab, and a session that did not survive a tab close.

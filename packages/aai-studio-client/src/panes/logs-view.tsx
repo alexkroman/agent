@@ -19,9 +19,9 @@
 import { AutoScroll } from "@alexkroman1/aai-ui";
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { type AgentLogLine, type AgentLogsPage, api } from "./api.ts";
-import { errorText } from "./api-error.ts";
-import { SEG_GROUP, segItemClass } from "./segmented.ts";
+import { type AgentLogLine, type AgentLogsPage, api } from "../api.ts";
+import { errorText } from "../api-error.ts";
+import { SEG_GROUP, segItemClass } from "../segmented.ts";
 
 /**
  * How often the pane asks for what is new.

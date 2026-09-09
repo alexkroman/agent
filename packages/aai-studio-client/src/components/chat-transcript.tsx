@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The transcript half of the chat panel: one message renderer and the scroll
-// container. Split from chat.tsx for file-size discipline — and because it is
+// container. Split from panes/chat.tsx for file-size discipline — and because it is
 // rendered TWICE: by the restored history shown the moment a project opens,
 // and by the live conversation that replaces it once the sandbox is brokered.
 // Sharing the layout is what makes that swap invisible; two hand-matched copies

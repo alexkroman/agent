@@ -3,7 +3,7 @@
 //
 // A class pair rather than a `<Segmented>` component, because the three call
 // sites disagree about the ELEMENT and cannot be one widget: the pane switcher
-// (top-bar.tsx) is buttons, the log target picker (logs-view.tsx) is buttons
+// (top-bar.tsx) is buttons, the log target picker (panes/logs-view.tsx) is buttons
 // that can be disabled, and the home hero's "what to build" (components/home.tsx) is a
 // `fieldset` of real radios so arrow keys move between them. What they share is
 // the look — and that had been copy-pasted three times, with the active/inactive

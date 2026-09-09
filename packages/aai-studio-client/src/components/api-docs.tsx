@@ -16,7 +16,7 @@
 // already unauthenticated on a deployed agent — so the public page discloses
 // nothing a `curl` at the agent did not already. What is NOT here is the half
 // that would: the project's secrets and the carrier webhook live in the studio
-// pane (docs.tsx), which passes them in.
+// pane (panes/docs.tsx), which passes them in.
 //
 // **Each half is offered only to the agents it is TRUE for.** A workflow app is
 // not shown the carrier webhook — `page: "static"` declines `/websocket` and
@@ -327,7 +327,7 @@ export type AgentApiDocsProps = {
 /**
  * The cards that are true of an agent whoever is reading them.
  *
- * Split out of `docs.tsx` when the same body had to serve the public page: the
+ * Split out of `panes/docs.tsx` when the same body had to serve the public page: the
  * two callers differ only in what they can additionally say (the studio knows
  * the project's secrets and its carrier webhook; the public page knows the
  * link it is at), and everything else is a function of what the agent answers.

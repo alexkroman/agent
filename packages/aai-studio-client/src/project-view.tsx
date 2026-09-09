@@ -17,19 +17,19 @@ import { lazy, Suspense, useCallback, useState } from "react";
 import { api, type ChatSession, type ProjectData, type StudioStatus } from "./api.ts";
 import { errorText, isTransientError } from "./api-error.ts";
 import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
-import { ChatPanel } from "./chat.tsx";
-import { DocsPane } from "./docs.tsx";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 import { hasGithubResult } from "./github-result.ts";
 import { type StreamHandlers, useEventStream } from "./hooks/use-event-stream.ts";
-import { LogsView } from "./logs-view.tsx";
-import { PreviewPane } from "./preview.tsx";
+import { ChatPanel } from "./panes/chat.tsx";
+import { DocsPane } from "./panes/docs.tsx";
+import { LogsView } from "./panes/logs-view.tsx";
+import { PreviewPane } from "./panes/preview.tsx";
+import { SecretsPane } from "./panes/secrets.tsx";
+import { SettingsPane } from "./panes/settings.tsx";
+import { WorkflowsPane } from "./panes/workflows.tsx";
 import { queryKeys } from "./query-keys.ts";
-import { SecretsPane } from "./secrets.tsx";
-import { SettingsPane } from "./settings.tsx";
 import { lazyRetry } from "./stale-build.ts";
 import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
-import { WorkflowsPane } from "./workflows.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
 // default (UI) path shouldn't pay for it.
@@ -40,7 +40,7 @@ import { WorkflowsPane } from "./workflows.tsx";
 // user clicks Code hours later and, unhandled, `lazy` throws into a tree with
 // no boundary — a blank studio. See stale-build.ts.
 const CodeView = lazy(
-  lazyRetry(() => import("./code-view.tsx").then((m) => ({ default: m.CodeView }))),
+  lazyRetry(() => import("./panes/code-view.tsx").then((m) => ({ default: m.CodeView }))),
 );
 
 /** Stable identity while the workspace loads, so nothing churns on `{}`. */

@@ -11,7 +11,7 @@
 // 404 body.
 
 import { useEffect, useRef, useState } from "react";
-import { api } from "./api.ts";
+import { api } from "../api.ts";
 
 /**
  * How often a slug the platform doesn't serve yet is re-probed. Polling

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The chat composer: the textarea pinned to the bottom of the chat panel, the
 // queued-follow-up rows above it, and the send/stop button. Split from
-// chat.tsx for file-size discipline; its two callers are the live
+// panes/chat.tsx for file-size discipline; its two callers are the live
 // conversation and the pre-sandbox view that precedes it.
 
 import clsx from "clsx";

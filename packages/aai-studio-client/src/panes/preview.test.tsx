@@ -8,7 +8,7 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, stubFetch } from "./_test-utils.ts";
+import { jsonResponse, stubFetch } from "../_test-utils.ts";
 import {
   PROBE_FAILURES_BEFORE_WAKE,
   PROBE_RETRY_MS,

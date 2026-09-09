@@ -14,12 +14,12 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChatSession, StudioStatus } from "./api.ts";
-import { errorText } from "./api-error.ts";
-import { EmptyStateBody, Transcript } from "./components/chat-transcript.tsx";
-import { Composer } from "./components/composer.tsx";
-import { useMessageQueue } from "./hooks/use-message-queue.ts";
-import { createSandboxTransport } from "./sandbox-transport.ts";
+import type { ChatSession, StudioStatus } from "../api.ts";
+import { errorText } from "../api-error.ts";
+import { EmptyStateBody, Transcript } from "../components/chat-transcript.tsx";
+import { Composer } from "../components/composer.tsx";
+import { useMessageQueue } from "../hooks/use-message-queue.ts";
+import { createSandboxTransport } from "../sandbox-transport.ts";
 
 type ChatPanelProps = {
   /**

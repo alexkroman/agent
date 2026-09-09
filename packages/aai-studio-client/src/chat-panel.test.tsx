@@ -11,7 +11,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installResizeObserver, stubFetch, textarea } from "./_test-utils.ts";
 import type { ChatSession } from "./api.ts";
-import { ChatPanel } from "./chat.tsx";
+import { ChatPanel } from "./panes/chat.tsx";
 
 const SANDBOX_URL = "http://sandbox.test/studio/chat";
 

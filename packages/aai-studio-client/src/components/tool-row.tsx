@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Tool-call rendering for the chat transcript: aai-ui's shared ToolCallRow
 // (the same console row the deployed agent UI uses) fed from AI SDK message
-// parts, plus the part→block grouping helpers. Split from chat.tsx for
+// parts, plus the part→block grouping helpers. Split from panes/chat.tsx for
 // file-size discipline.
 
 import { isRecord } from "@alexkroman1/aai/utils";

@@ -2,7 +2,7 @@
 // "Phone number" — the carrier webhook URLs for this project's published
 // agent, one per carrier, each with a copy button and its signing secret.
 //
-// It renders on the API pane (`docs.tsx`) rather than in Settings, where it
+// It renders on the API pane (`panes/docs.tsx`) rather than in Settings, where it
 // used to sit: a webhook URL is how a CARRIER calls this agent, which is that
 // pane's subject, and it was the one card in Settings documenting a request
 // instead of configuring the project. The signing-secret hints therefore point

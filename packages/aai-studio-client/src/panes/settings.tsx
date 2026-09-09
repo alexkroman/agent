@@ -7,9 +7,9 @@
 // The sections run in the order a project needs them: the CLI round-trip
 // (components/cli-commands.tsx) first, and the delete-project button last. Two subjects have LEFT this pane for panes of
 // their own, and both left for the same reason — a card is the wrong size for
-// them. The carrier webhook URLs went to the API pane (docs.tsx): they
+// them. The carrier webhook URLs went to the API pane (panes/docs.tsx): they
 // document how something CALLS this agent. Secrets went to a pane of their own
-// (secrets.tsx): one textarea of `KEY=value` lines was the whole UI for the
+// (panes/secrets.tsx): one textarea of `KEY=value` lines was the whole UI for the
 // piece of project configuration people come back to most.
 //
 // Every section here works from the moment a project exists — no publish, no
@@ -17,10 +17,10 @@
 // outcome beside the control that did it (see "No studio action writes into
 // the transcript" in the package guide).
 
-import { CliCommands } from "./components/cli-commands.tsx";
-import { GithubCard, type GithubSyncState } from "./components/github-card.tsx";
-import { Card } from "./components/settings-card.tsx";
-import { PaneShell } from "./pane-shell.tsx";
+import { CliCommands } from "../components/cli-commands.tsx";
+import { GithubCard, type GithubSyncState } from "../components/github-card.tsx";
+import { Card } from "../components/settings-card.tsx";
+import { PaneShell } from "../pane-shell.tsx";
 
 /**
  * No slug of any kind: every card left here works from the moment a project

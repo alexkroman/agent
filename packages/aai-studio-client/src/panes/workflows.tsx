@@ -14,8 +14,8 @@
 // reasoning about reading the agent's own brokered API, the preview fallback,
 // and why the refresh is manual.
 
-import { WorkflowsCard } from "./components/workflows-card.tsx";
-import { PaneShell } from "./pane-shell.tsx";
+import { WorkflowsCard } from "../components/workflows-card.tsx";
+import { PaneShell } from "../pane-shell.tsx";
 
 type WorkflowsPaneProps = {
   /** The project's published slug, if it has one. */
