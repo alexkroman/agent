@@ -1,0 +1,67 @@
+{
+  "_generated": "GENERATED FILE — do not edit. Source: packages/aai-studio-client/src/starters.ts (STARTERS). Regenerate: node scripts/sync-studio-prompt.mjs",
+  "agent": [
+    {
+      "label": "A pizza counter that keeps a real cart",
+      "prompt": "Use the pizza-ordering-agent template."
+    },
+    {
+      "label": "A problem solver that writes and runs code",
+      "prompt": "Use the code-interpreter-agent template."
+    },
+    {
+      "label": "A web researcher that cites its sources",
+      "prompt": "Use the web-research-agent template."
+    },
+    {
+      "label": "A drug-interaction checker that queries openFDA",
+      "prompt": "Use the medication-safety-agent template."
+    },
+    {
+      "label": "A dispatch desk that runs a live incident board",
+      "prompt": "Use the emergency-dispatch-agent template."
+    },
+    {
+      "label": "A retail support line that manages real orders",
+      "prompt": "Use the retail-orders-agent template."
+    },
+    {
+      "label": "A text adventure narrator in the style of Infocom",
+      "prompt": "Use the text-adventure-agent template."
+    },
+    {
+      "label": "A tabletop RPG narrator with dice and a story oracle",
+      "prompt": "Use the tabletop-rpg-agent template."
+    },
+    {
+      "label": "A late-night picker for movies, music, and books",
+      "prompt": "Use the entertainment-picks-agent template."
+    }
+  ],
+  "workflow": [
+    {
+      "label": "A transcription desk that takes an uploaded recording",
+      "prompt": "Use the transcription-workflow template."
+    },
+    {
+      "label": "A link digest that summarizes any URL",
+      "prompt": "Use the link-digest-workflow template."
+    },
+    {
+      "label": "A recording summarizer that reads its answer back aloud",
+      "prompt": "Use the spoken-summary-workflow template."
+    },
+    {
+      "label": "A batch enricher that works through a list of companies",
+      "prompt": "Build a workflow app: a form takes a list of company domains, the run enriches each one, and the page shows the finished table."
+    },
+    {
+      "label": "An overnight reporter you submit to and come back to",
+      "prompt": "Build a workflow app: a form starts a report for a date range, the run gathers and summarizes the data, and the page shows the report when it is ready."
+    },
+    {
+      "label": "A document pipeline that parks on a provider callback",
+      "prompt": "Build a workflow app: a form submits a document for processing, the run parks on a webhook until the provider calls back, and the page shows the extracted fields."
+    }
+  ]
+}

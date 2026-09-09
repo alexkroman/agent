@@ -27,6 +27,36 @@
 import { describe, expect, test } from "vitest";
 import { GATE_WIRING, numericConstant, repoPathOf, sole } from "./_gate-support.ts";
 
+/**
+ * The gate's real decisions, imported rather than re-derived.
+ *
+ * This file used to carry its own copy of the exemptions, so declaring a
+ * product tree in the gate failed the gate's OWN spec — and that failure said
+ * nothing about whether the declaration was right, only that two hand-kept
+ * lists had diverged. `_package-layout-scope.mjs` imports nothing, which is
+ * what makes it reachable from a package whose tsconfig has no node types; the
+ * typed glob is `deploy-changeset-gate.test.ts`'s shape, and it is a glob
+ * rather than a static import because a `.mjs` has no declaration file.
+ */
+const scope = sole(
+  import.meta.glob<{
+    ROOT_CONFIGS: Set<string>;
+    PRODUCT_TREES: Record<string, string[]>;
+    isAllowedOutsideSrc: (file: string) => boolean;
+  }>("../../../scripts/_package-layout-scope.mjs", { eager: true }),
+);
+// A THROW rather than `scope?.` at each site: an unresolved glob would make
+// every assertion below a check of `undefined`, which passes for the `not.` and
+// `every` shapes — the vacuous-green hazard this package's specs are written
+// against. Failing here names the cause instead.
+if (scope === undefined) {
+  throw new Error(
+    "scripts/_package-layout-scope.mjs did not load: the glob matched nothing, so " +
+      "every exemption assertion below would have checked `undefined` and passed.",
+  );
+}
+const { isAllowedOutsideSrc, PRODUCT_TREES, ROOT_CONFIGS } = scope;
+
 const script = sole(
   import.meta.glob("../../../scripts/check-package-layout.mjs", {
     query: "?raw",
@@ -111,24 +141,28 @@ describe("check:package-layout", () => {
     // These are resolved by name from the package directory by tools that are
     // not ours. A pattern (`*.config.ts`) would quietly exempt anything a
     // future author named that way.
-    for (const name of ["vitest.config.ts", "vite.config.ts", "tsdown.config.ts"]) {
-      expect(source).toContain(`"${name}"`);
-    }
-    expect(source).toContain("ROOT_CONFIGS = new Set");
+    expect([...ROOT_CONFIGS].toSorted()).toEqual(
+      ["tsdown.config.ts", "vite.config.ts", "vitest.config.ts"].toSorted(),
+    );
+    // A NAME, so a sibling that merely matches the shape is not exempt.
+    expect(isAllowedOutsideSrc("packages/aai-guest/vitest.config.ts")).toBe(true);
+    expect(isAllowedOutsideSrc("packages/aai-guest/rollup.config.ts")).toBe(false);
   });
 
   test("the product-tree exemption is per package AND per directory", () => {
     // A repo-wide `**\/templates/**` would exempt any future directory taking
     // the name. Keyed by package, the exemption is a reviewable line.
-    expect(source).toContain("PRODUCT_TREES");
-    expect(source).toMatch(/"aai-templates":\s*\["templates",\s*"scaffold"\]/);
-    expect(source).not.toMatch(/\*\*\/templates/);
+    expect(PRODUCT_TREES["aai-templates"]).toEqual(["templates", "scaffold"]);
+    // Keyed by PACKAGE: the same directory name in another package is not
+    // exempt, which a repo-wide glob could not express.
+    expect(isAllowedOutsideSrc("packages/aai-templates/templates/x/agent.ts")).toBe(true);
+    expect(isAllowedOutsideSrc("packages/aai-server/templates/x/agent.ts")).toBe(false);
   });
 
   test("the exempted product trees really exist", () => {
     // An exemption for a directory that is gone is an exemption that will be
     // inherited by whatever next takes the path — and it reads as deliberate.
-    for (const dir of ["templates", "scaffold"]) {
+    for (const dir of Object.values(PRODUCT_TREES).flat()) {
       expect(
         repoFiles.some((f) => f.startsWith(`packages/aai-templates/${dir}/`)),
         `packages/aai-templates/${dir} is exempt but holds no TypeScript`,
@@ -141,15 +175,8 @@ describe("check:package-layout", () => {
     // globs rather than `git ls-files`) so the two agree only when the tree
     // really is what both believe.
     const outside = repoFiles.filter((f) => {
-      const parts = f.split("/");
-      if (parts[2] === "src") return false;
-      if (
-        parts.length === 3 &&
-        ["vitest.config.ts", "vite.config.ts", "tsdown.config.ts"].includes(parts[2] ?? "")
-      ) {
-        return false;
-      }
-      return !(parts[1] === "aai-templates" && ["templates", "scaffold"].includes(parts[2] ?? ""));
+      if (f.split("/")[2] === "src") return false;
+      return !isAllowedOutsideSrc(f);
     });
     expect(outside).toEqual([]);
   });

@@ -49,10 +49,15 @@ import { repoPathOf, sole } from "./_gate-support.ts";
 /**
  * The config files a package may keep at its root.
  *
- * Duplicated from `scripts/check-package-layout.mjs` rather than imported — the
+ * Duplicated from `scripts/_package-layout-scope.mjs` rather than imported — the
  * rule this package's guide states, and the same reason `byCodeUnit` is
  * duplicated: a gate spec may not import the script it guards. The test below
  * asserts the two lists are still the same, so the copy cannot drift silently.
+ *
+ * The declaration moved out of `check-package-layout.mjs` into that
+ * dependency-free scope module when a THIRD copy of it turned up: the layout
+ * gate's own spec was restating the exemptions too, so declaring a product tree
+ * failed that spec for reasons that said nothing about the declaration.
  */
 const ROOT_CONFIGS = ["vitest.config.ts", "vite.config.ts", "tsdown.config.ts"];
 
@@ -73,7 +78,7 @@ const rootConfigsPresent = Object.keys(
 ).map(repoPathOf);
 
 const layoutGate = sole(
-  import.meta.glob("../../../scripts/check-package-layout.mjs", {
+  import.meta.glob("../../../scripts/_package-layout-scope.mjs", {
     query: "?raw",
     import: "default",
     eager: true,
@@ -114,9 +119,9 @@ describe("typecheck coverage", () => {
     }
   });
 
-  test("the ROOT_CONFIGS copy still matches check-package-layout.mjs", () => {
+  test("the ROOT_CONFIGS copy still matches _package-layout-scope.mjs", () => {
     // The duplication is deliberate (see the constant), so it needs a tie. If
-    // the layout gate starts exempting a fourth root config, this list has to
+    // the layout scope starts exempting a fourth root config, this list has to
     // learn about it or the new one becomes the next unchecked file.
     for (const name of ROOT_CONFIGS) {
       expect(layoutGate ?? "").toContain(`"${name}"`);

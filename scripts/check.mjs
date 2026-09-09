@@ -174,6 +174,12 @@ const GATES = [
     why: "The authoring guide also ships INSIDE the @alexkroman1/aai tarball, so a project that updated its SDK reads guidance matching the version it resolved rather than the copy `aai init` froze in. Same silent-staleness shape as the toolchain lockfile.",
   },
   {
+    script: "check:studio-prompt",
+    phase: "ratchets",
+    fatal: false,
+    why: "The fourth copy in this shape, and the one a MEASUREMENT rests on: packages/aai-guest's coding-agent eval runs the studio's shipped system prompt from these committed copies, because importing aai-studio-server would close the cycle aai-guest -> aai-studio-server -> aai-server -> aai-guest. A stale copy does not fail — it grades a prompt nobody deploys and reports green, which is the failure mode the whole eval tier is written against.",
+  },
+  {
     script: "check:scaffold",
     phase: "ratchets",
     fatal: false,
