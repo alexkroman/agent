@@ -28,10 +28,10 @@ The value is read from **stdin**, not from an argument — passing it as one
 is refused, because it would land in your shell history. On a terminal you can
 just run `aai secret put NAME` and be prompted, masked.
 
-`aai publish` syncs `.env` into the agent's secrets for you, so a key that
-works locally works deployed. On your **first** publish the slug does not exist
-yet, so the sync happens after the deploy and applies from the next one.
-`aai secret list` and `aai secret delete NAME` manage them after that.
+`aai publish` syncs `.env` into the agent's secrets **before** it deploys, so a
+key that works locally works deployed — on the first publish as much as on
+every later one. There is no publish-twice step. `aai secret list` and
+`aai secret delete NAME` manage them after that.
 
 Declare the keys your tools read on the agent, and a missing one is **warned
 about by name** at deploy time instead of being discovered by a caller:

@@ -434,8 +434,10 @@ linked project's workspace file map atomically
 `studioSourceHash` recorded in `.aai/project.json` — a 409 means the studio
 edited since the last pull; `--force` overwrites), `aai publish` pushes then
 runs the studio's Publish route (the in-sandbox `aai deploy`), syncing
-`.env` into the agent's secrets via the standard secret routes (before the
-deploy when the slug already exists, after it on a first publish), and
+`.env` into the agent's secrets via the standard secret routes (always
+before the deploy, first publish included — the PROJECT route needs only the
+row `pushProject` just created, and the broker's post-deploy hook floors a
+newly minted slug from that record), and
 `aai pull <project>` materializes a workspace locally, layering the shipped
 scaffold underneath (never overwriting workspace files) so the result runs
 under `aai dev`. **package.json is MERGED rather than skipped**

@@ -27,18 +27,27 @@ You have to name the ones you use.
 
 ## Pointing a number at it
 
-Set the phone number's **incoming-call webhook** to your published agent's URL
-with `/phone` appended — `aai publish` prints the URL, and you add the path:
+**The deploy prints the URL to paste, one per carrier you declared**, with the
+`?carrier=` parameter already filled in — copy it into the phone number's
+**incoming-call webhook** field:
 
 ```text
-https://<your-agent-url>/phone                  # Twilio
-https://<your-agent-url>/phone?carrier=telnyx   # Telnyx
+telnyx webhook (paste into the phone number's config): https://<your-agent-url>/phone?carrier=telnyx
 ```
 
-The `?carrier=telnyx` matters: the route assumes Twilio otherwise, and a
-Telnyx number framed as Twilio will not connect. The platform answers that
-webhook with the markup that opens the media stream — that part is not
-something you configure.
+It is on the `--json` result too, as `webhooks`, so a script that deploys can
+configure the number without re-deriving either half.
+
+Nothing here has to be assembled by hand, and it is worth not assembling: the
+route assumes Twilio when the parameter is absent, so a Telnyx number
+configured without it is verified against the wrong scheme and every call is
+refused with `403 Invalid webhook signature` — a failure that names the
+signature rather than the missing parameter. The platform cannot infer the
+carrier for you; it stores no description of your agent, which is why the CLI,
+which has your `telephony` declaration in hand, is what prints this.
+
+The platform answers that webhook with the markup that opens the media stream —
+that part is not something you configure.
 
 ## Check the signature
 
@@ -53,3 +62,18 @@ printf %s "$TWILIO_AUTH_TOKEN" | aai secret put TWILIO_AUTH_TOKEN
 Set neither and the route is as open as any other — anyone who learns the URL
 can make your agent answer. See [Publish](/agent/deploy/publish/) for how
 secrets work.
+
+**You do not have to remember this either.** A declared carrier whose secret is
+missing from the env being uploaded is warned about by name at deploy time,
+beside the provider-credential warning:
+
+```text
+telephony declares telnyx but TELNYX_PUBLIC_KEY is not set — the telnyx webhook
+will be served with signature verification OFF, so anyone who knows the URL can
+start a call.
+```
+
+It is a warning and not a refusal, for the same reason the credential check is:
+the CLI sees the env it is about to upload and cannot see what an earlier
+`aai secret put` already stored against the agent, so a secret the platform
+holds looks missing from here.

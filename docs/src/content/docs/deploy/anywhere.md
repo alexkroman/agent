@@ -74,7 +74,19 @@ modal serve .aai/modal/app.py          # modal
 
 Whichever host you pick, list what your tools read in `requiredEnv` — see
 [Publish](/agent/deploy/publish/). The build warns by name about anything the
-deployment will be missing.
+deployment will be missing, and expands the printed secret step once per name,
+so a key you declared is a line you can run rather than one you have to write.
+
+Three things count as declared, and the build reads all three:
+
+- the provider credentials your `stt`/`llm`/`tts`/`s2s` choices imply
+- everything in `requiredEnv`
+- everything named in `.env.example`
+
+`.env.example` is the one dotenv file that **ships** with the deployment — it
+is what declares which variables become `ctx.env`, and it is the place to name
+a variable nothing else can see: one a tool reads straight off `process.env`,
+or a host setting like `PORT`.
 
 Your `.env` is never uploaded to the host. The secret step in the printed
 sequence is how the values get there.
