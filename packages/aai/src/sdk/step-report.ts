@@ -111,8 +111,7 @@ export function publishStepReporter(reporter: StepReporter | undefined): void {
  * running without a page open.
  *
  * **Call it from a STEP, never from the workflow body.** A body replays from the
- * top on every resume, so a line written there is re-emitted on each one — the
- * same rule `ctx.db` follows.
+ * top on every resume, so a line written there is re-emitted on each one.
  *
  * Failures are swallowed: narration must never fail a run. It resolves either
  * way, so awaiting it is safe and is what keeps the ordering of a step's own

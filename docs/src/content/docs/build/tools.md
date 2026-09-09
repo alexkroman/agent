@@ -39,12 +39,15 @@ Three fields:
 `execute` can call `fetch` directly, and it works the same in `aai dev` as it
 does deployed.
 
-**Shape the result.** Whatever you return is serialized into the conversation
-and re-sent to the model on every later turn of the call, so returning
-`await res.json()` puts a whole API response in the prompt for the rest of the
-turn — slower, more expensive, and more for the model to misread. Return the
-few fields the answer needs. A result over 4000 characters is warned about once
-per tool in the server log.
+**Return only the few fields the answer needs**, not the whole API response.
+
+:::caution[A big return value stays in the prompt]
+Whatever you return is serialized into the conversation and re-sent to the
+model on every later turn of the call. So `return await res.json()` leaves an
+entire API response in the prompt for the rest of the call: slower, more
+expensive, and more for the model to misread. A result over 4000 characters is
+warned about once per tool in the server log.
+:::
 
 ## Secrets and cancellation
 
@@ -63,18 +66,19 @@ export default tool({
       // Pass this to anything slow. It aborts when the caller interrupts.
       signal: ctx.signal,
     });
-    return await res.json();
+    const order = (await res.json()) as { status?: string; eta?: string };
+    return { id, status: order.status, eta: order.eta };
   },
 });
 ```
 
-`ctx.env` holds the keys from your `.env` locally and your agent secrets in
+`ctx.env` holds the keys from your `.env` locally, and your agent secrets in
 production. `requireEnv(ctx, "KEY")` fails by name instead of sending
 `undefined` into a header.
 
-`ctx.signal` aborts when the caller interrupts or the call ends. Forwarding
-it stops work nobody is waiting for any more. It is always present, so no
-`?.` is needed.
+`ctx.signal` aborts when the caller interrupts or the call ends. Forwarding it
+stops work nobody is waiting for any more. It is always present, so no `?.` is
+needed.
 
 The rest of `ctx` — conversation history, one-shot model calls, subagents,
 pushing events to the browser, starting background runs — is in the
@@ -83,8 +87,8 @@ pushing events to the browser, starting background runs — is in the
 ## Matching what a caller said
 
 Callers don't say ids. They say "cancel my second order" or "the blue medium
-one". `resolveOne` picks the one they meant, or — when it can't tell — hands
-the model a message listing the choices so it can ask:
+one". `resolveOne` picks the one they meant. When it can't tell, it hands the
+model a message listing the choices so the agent can ask:
 
 ```ts
 import { isToolFailure, resolveOne, tool } from "@alexkroman1/aai";
@@ -115,18 +119,34 @@ export default tool({
 });
 ```
 
-"The second one" always wins. A tie between two candidates asks rather than
-guessing.
+Two things you get without configuring them: "the second one" picks by
+position, ahead of any word matching, and a tie between two candidates asks
+rather than guessing.
 
-Three ways to say which one, and you can declare more than one:
+### The three ways to match
 
-- **`code`** — an id, a booking reference, an order number. Compared with the
-  punctuation and case stripped, so "order W zero seven one" finds `W071`.
-- **`match`** — the candidate's own words ("the Northwind invoice", "Priya").
-  Every word the caller also said scores one, so more words win and a word two
-  candidates share asks instead of picking.
-- **`score`** — your own scorer, for the domain knowledge neither of those
-  holds. It adds to `match`, so it can break a tie the words leave.
+Declare whichever apply. They can be combined.
+
+**`code` — an identifier the caller reads back.** An order number, a booking
+reference, an id. Spacing, punctuation and case are stripped from both sides,
+so "order w-071", "order W 071" and "W 0 7 1" all find `W071`. It is tried
+before the position and before the words: a caller who reads an id out has
+named exactly one thing.
+
+:::caution[Digits spoken as words are not converted]
+"order W zero seven one" does not find `W071` — nothing turns `zero` into `0`.
+A code shorter than four characters after that stripping is ignored too,
+because containment in a whole utterance would match by accident.
+:::
+
+**`match` — the candidate's own words.** "the Northwind invoice", "Priya".
+Every word of three or more characters the caller also said scores one point,
+so a candidate matching more words wins. Shorter words never score, so "Ng"
+does not find `Ida Ng`. A word two candidates share is a tie, and a tie asks.
+
+**`score` — your own scorer.** For domain knowledge the other two can't
+express. Its result is added to `match`'s score, so it can break a tie the
+words leave.
 
 ## Next
 

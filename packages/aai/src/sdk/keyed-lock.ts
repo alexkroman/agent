@@ -6,8 +6,8 @@
  * The recurring shape it reifies is "serialize the async work touching one
  * entity" — one agent session's state, one project's workspace row, one slug's
  * mutations. It matters most inside an agent because **the LLM loop runs a
- * step's tool calls CONCURRENTLY**: two `async` mutators of the same
- * `ctx.state` interleave at every `await`, so each can read what the other
+ * step's tool calls CONCURRENTLY**: two `async` mutators of the same session
+ * slot interleave at every `await`, so each can read what the other
  * half-applied. That is the bug this exists to make unwriteable, and it is
  * why the primitive is public rather than framework-internal — every author
  * of a stateful multi-tool agent meets it.

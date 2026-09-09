@@ -280,7 +280,7 @@ export async function executeToolCall(
   // turn signal AND fires when the call settles exceptionally — above all on
   // timeout, which the turn signal alone never covered: pTimeout only settles
   // the await, so a timed-out tool kept running (and kept mutating shared
-  // ctx.state) after its error result was already committed to the turn, with
+  // session slots) after its error result was already committed to the turn, with
   // no way to even notice it had timed out.
   const turnSignal = options.signal;
   const callController = new AbortController();

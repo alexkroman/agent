@@ -3,7 +3,7 @@
  * The `ctx.generate` capability contract — one-shot LLM text/object
  * generation available to tool `execute` functions.
  *
- * Like `ctx.db`, generation always executes wherever the runtime runs —
+ * Generation always executes wherever the runtime runs —
  * in-process under `aai dev`, inside the guest sandbox on the platform —
  * through one implementation (`host/generate.ts`), so dev and prod cannot
  * drift. This module holds only the shared, Node-free contract.

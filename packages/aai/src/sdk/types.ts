@@ -282,41 +282,41 @@ export interface AgentDef extends PipelineVoiceTuning {
    * Project per-session state to the browser client, so a custom UI can
    * render it without the agent hand-rolling a sync channel.
    *
-   * One {@link SessionSlot.projection} per slot the client should see, or an
-   * array of them — the `agent_state` frame carries the merge. A slot the agent
-   * does not project never leaves the server, which is the point: session state
-   * routinely holds things a browser should not have, so the author decides what
-   * leaves, and whatever a projection returns is exactly what `useAgentState`
-   * receives.
+   * One projection per slot the client should see, or an array of them — the
+   * `agent_state` frame carries the merge. A slot the agent does not project
+   * never leaves the server, which is the point: session state routinely holds
+   * things a browser should not have, so the author decides what leaves, and
+   * whatever a projection returns is exactly what `useAgentState` receives.
+   * Pushed after every tool call, and only when a projection actually changed:
+   * most turns touch no state, and this shares a socket with 384 kbps of PCM.
    *
-   * Pushed after every tool call, and only when a projection actually changed —
-   * most turns do not touch state, and this shares a socket with 384 kbps of
-   * PCM.
+   * **Declare the view on the slot and pass {@link SessionSlot.projected}.**
+   * One object the agent pushes with and the page renders with, so the frame
+   * shown before the first tool call cannot describe a different view from the
+   * ones after it. A slot with more than one audience keeps
+   * {@link SessionSlot.projection}, a second view over the same slot;
+   * `syncState` takes an array.
    *
    * ```ts
    * import { agent, sessionSlot } from "@alexkroman1/aai";
    * type Item = { sku: string; qty: number };
-   *
-   * const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }));
-   *
+   * // `staffPin` has no view, so it stays server-side.
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
+   *   view: (s) => ({ items: s.items }),
+   * });
+   * agent({ name: "Cart", syncState: cartSlot.projected });
+   * // Two audiences over the one slot:
    * agent({
    *   name: "Cart",
-   *   // staffPin stays server-side
-   *   syncState: cartSlot.projection((s) => ({ items: s.items })),
+   *   syncState: [cartSlot.projected, cartSlot.projection((s) => ({ count: s.items.length }))],
    * });
    * ```
    *
    * @remarks
-   * It took a `(state: S) => unknown` over the whole state bag until the bag was
-   * removed. A projection now names its own slot, which is what lets the runtime
-   * render a session that has run no tool yet — the projection carries the
-   * slot's default — and so what let `AgentDef.state` be deleted rather than
-   * remembered.
-   *
-   * Without any of this, the pattern agents reach for is: return a state
-   * snapshot from every tool, declare a result type describing it, and mirror it
-   * into `useState` via `useToolResult`. Measured across generated agents, 58%
-   * built some version of that by hand.
+   * A projection names its own slot, so the runtime can render a session that
+   * has run no tool yet — which is what let `AgentDef.state` be deleted rather
+   * than remembered. Without it, agents hand-roll a snapshot returned from every
+   * tool and mirrored into `useState`; 58% of generated agents built one.
    */
   syncState?: StateProjection | readonly StateProjection[];
   /**

@@ -185,7 +185,8 @@ export const HostConfigSchema = z.object({
    * Only names in `ALL_PROVIDER_ENV_VARS` are accepted, and the handshake is
    * rejected outright when an unlisted one appears — this record is merged
    * into the per-connection runtime's env, so an unbounded one would let a
-   * client set `DATABASE_URL` and point `ctx.db` at a server it controls.
+   * client set `DATABASE_URL` and point the runtime's own stores — session slots,
+   * the workflow journal and its key index — at a server it controls.
    */
   credentials: z.record(z.string(), z.string().min(1)).optional(),
   /**

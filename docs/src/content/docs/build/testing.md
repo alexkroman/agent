@@ -3,8 +3,11 @@ title: Testing
 description: Tools are plain functions. aai test is vitest.
 ---
 
+A test settles what your code does. An [eval](/agent/build/evals/) settles what
+the agent did. This page is the first one.
+
 `aai test` runs every non-eval spec in the project with vitest. Nothing about
-testing an agent is special — a tool is a function, so you call it and assert on
+testing an agent is special: a tool is a function, so you call it and assert on
 what comes back.
 
 ```sh
@@ -12,10 +15,9 @@ aai test          # every spec in the project
 aai test --only   # agent.test.ts alone, for the fast inner loop
 ```
 
-`--only` is the narrowing, and it names the spec files it skipped rather than
-reporting a green run over them — so a pass never hides an untested file either
-way. Behaviour evals are a separate command (`aai eval`) and neither run reaches
-them.
+`--only` names the spec files it skipped rather than reporting a green run over
+them, so a pass never hides an untested file. Behaviour evals are a separate
+command, `aai eval`, and neither run reaches them.
 
 ## Reaching a tool by the name the model uses
 
@@ -34,25 +36,38 @@ describe("get_weather", () => {
     const ctx = createToolContext();
     const out = await run("get_weather", { city: "Denver" }, ctx);
     expect(out).toMatchObject({
-      current_condition: expect.anything(),
+      city: "Denver",
+      tempF: expect.any(String),
     });
   });
 });
 ```
 
-**Import the agent from `virtual:aai/agent`, not from `./agent.ts`.** A tool is
-a *file*, so `agent.ts`'s own default export carries no tools at all —
-`tools/get_weather.ts` becomes the tool `get_weather` when `aai build` lowers
-the project, and `virtual:aai/agent` is that lowered agent: your `tools/`
-directory discovered and your `system-prompt.md` applied. Hand a runner the
-authored def instead and it says so on the spot, because a runner over zero
-tools can only ever be this mistake. On a runner other than vitest, reach for
-`deployedAgent(def, { tools: import.meta.glob("./tools/*.ts", { eager: true }) })`.
+**Assert on what the tool returns, not on what the API it called returned.**
+The scaffold's `get_weather` narrows wttr.in's response to
+`{ city, tempF, conditions }` before handing it back, so those are the fields a
+spec has to name — see [Tools](/agent/build/tools/).
 
-`createToolContext()` gives the tool a fake `ctx`: nothing it does escapes
-the test. Pass overrides for whatever the tool actually uses — `ctx.generate`
-and `ctx.delegate` reject until you do, naming themselves, so a tool that makes
-a model call tells you rather than silently passing.
+**Import the agent from `virtual:aai/agent`, not from `./agent.ts`.**
+
+The reason: a tool is a *file*, so `agent.ts`'s own default export carries no
+tools at all. `tools/get_weather.ts` becomes the tool `get_weather` when
+`aai build` lowers the project, and `virtual:aai/agent` is that lowered agent —
+your `tools/` directory discovered, your `system-prompt.md` applied.
+
+Hand a runner the authored def instead and it says so on the spot. A runner over
+zero tools can only ever be this mistake.
+
+:::note[Not running vitest?]
+`virtual:aai/agent` is a Vite module. On another runner, lower the agent
+yourself with
+`deployedAgent(def, { tools: import.meta.glob("./tools/*.ts", { eager: true }) })`.
+:::
+
+`createToolContext()` gives the tool a fake `ctx`, and nothing it does escapes
+the test. Pass overrides for whatever the tool actually uses. `ctx.generate` and
+`ctx.delegate` reject until you do, naming themselves, so a tool that makes a
+model call tells you rather than silently passing.
 
 ## Checking the agent itself
 
@@ -70,7 +85,7 @@ test("is deployable", () => {
 ```
 
 `aai build` runs your whole suite before it bundles. `aai publish` only
-type-checks — run `aai build` first if you want the tests to gate a ship.
+type-checks, so run `aai build` first if you want the tests to gate a ship.
 
 ## Session state in a spec
 
@@ -93,23 +108,32 @@ expect(await run("list_cart", {}, bob)).toEqual([]);
 
 ## Driving the model
 
-Tools that call `ctx.generate` take a stub rather than a live key:
+Tools that call `ctx.generate` take a stub rather than a live key. What you pass
+depends on what the tool reads back:
+
+| Pass | For |
+| --- | --- |
+| a bare string | a text answer |
+| `{ object: … }` | structured output. Add `text` when the tool reads both |
+| a record keyed by system prompt | a tool that plays more than one model role |
 
 ```ts
 import { createToolContext } from "@alexkroman1/aai/testing";
 
-// A bare string answers every call. Pass a table keyed by system prompt when
-// the tool plays more than one model role. `ctx.model.calls` records what it
-// was asked; `ctx.desk` is the same thing for `ctx.delegate`.
 const ctx = createToolContext({ generate: "A short summary." });
+// `ctx.model.calls` records what the model was asked.
+// `ctx.desk` is the same thing for `ctx.delegate`.
 ```
 
-Note the bare string: a text answer is the string on its own. `{ text: "…" }` is
-a *route table* keyed `"text"`, which is a compile error naming the rule —
-write `{ text, object }` when the tool reads both.
+:::caution[Don't wrap a text answer in `{ text: "…" }`]
+It does not compile, but the compiler's advice is misleading: it reports that
+`object` is missing and invites you to add one. Adding `object` is the wrong
+fix if all you wanted was text. Pass the bare string instead, and reach for
+`{ text, object }` only when the tool really reads both.
+:::
 
 `scriptedToolContext({ generate, delegate })` is the same call under a name that
-says both seams are scripted, and hands back `{ ctx, model, desk }` if you would
+says both seams are scripted. It hands back `{ ctx, model, desk }` if you would
 rather read the two fakes by name.
 
 The full set — `stubGateway`, guardrails, workflow contexts, upload fixtures,
@@ -119,17 +143,18 @@ run snapshots — is in the [SDK reference](/agent/reference/) under
 ## What a test cannot settle
 
 Everything here runs your code without a model. That settles what a tool does
-with the arguments it is given, and it says nothing about whether the agent
-reached for that tool, with the arguments the caller actually said. For that
-there is a second command:
+with the arguments it is given. It says nothing about whether the agent reached
+for that tool, with the arguments the caller actually said.
+
+For that there is a second command:
 
 ```sh
 aai eval          # agent.eval.test.ts
 ```
 
-An eval drives a real session — your prompt, your tools, the real event
-stream, with only the microphone and the speaker faked — and asserts on what
-the agent did. See [Evals](/agent/build/evals/).
+An eval drives a real session — your prompt, your tools, the real event stream,
+with only the microphone and the speaker faked — and asserts on what the agent
+did. See [Evals](/agent/build/evals/).
 
 ## Next
 

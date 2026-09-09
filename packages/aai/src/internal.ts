@@ -136,8 +136,9 @@ export {
   TOOL_RESULT_TRUNCATION_MARKER,
   WS_OPEN,
 } from "./sdk/constants.ts";
-// The two budgets around `ctx.db`. A tool body reads the handle; the row cap
-// and the not-enabled message are what the driver and the guest mirror enforce.
+// The row cap around `Db`. Tool code never sees that handle — it backs the
+// runtime's OWN stores; the cap is what the driver and the guest mirror
+// enforce.
 export { type Db, MAX_DB_RESULT_ROWS } from "./sdk/db.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export {

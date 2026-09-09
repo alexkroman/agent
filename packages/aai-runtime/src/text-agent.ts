@@ -38,7 +38,7 @@
  * - `builtinTools` works, so the keyless web builtins are a name in the agent
  *   definition rather than a hand-written adapter;
  * - tool calls get argument coercion, Standard Schema validation, `ctx`
- *   (`env`/`state`/`db`/`generate`/`messages`/`signal`), the per-call
+ *   (`env`/`slots`/`generate`/`messages`/`signal`), the per-call
  *   deadline, and failure-shaped-as-a-tool-result;
  * - the step budget spends its last step with `toolChoice: "none"`, so a
  *   capped turn answers instead of stopping mid-chain (see
@@ -119,7 +119,12 @@ export interface TextAgentOptions {
    * sends the model).
    */
   model?: LanguageModel;
-  /** `ctx.db`. Absent makes `ctx.db` throw with the enablement guidance. */
+  /**
+   * Accepted and currently UNUSED — a text agent's tools receive no database.
+   * There is no `ctx.db`: the context this builds carries the same eleven
+   * fields a voice session's tools get, none of them a SQL handle. Kept on the
+   * options bag so a caller that already passes one still compiles.
+   */
   db?: Db | undefined;
   /** `ctx.workflows`. Absent substitutes a client that rejects with the reason. */
   workflows?: WorkflowClient | undefined;
@@ -149,9 +154,9 @@ export interface TextAgentOptions {
    */
   onEvent?: (event: SessionEvent) => void;
   /**
-   * Conversation identity for `ctx.sessionId` and the session's `ctx.state`.
+   * Conversation identity for `ctx.sessionId` and the session's `slots`.
    * Defaults to a fresh id per text agent — one instance is one conversation,
-   * which is what makes `state` mean the same thing here as in a session.
+   * which is what makes a slot mean the same thing here as in a session.
    */
   sessionId?: string;
   /**

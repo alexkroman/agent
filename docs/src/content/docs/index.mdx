@@ -25,9 +25,10 @@ cd my-agent
 aai dev
 ```
 
-That prints a URL you can open and talk to. Requires Node.js 24, 25, or 26
-— the range a scaffolded project declares — and an `ASSEMBLYAI_API_KEY`: one
-key covers listening, thinking, and speaking.
+`aai dev` prints a URL. Open it and talk to your agent.
+
+You need Node.js 24, 25, or 26, and an `ASSEMBLYAI_API_KEY`. That one key
+covers listening, thinking, and speaking.
 
 ## A whole agent
 
@@ -57,16 +58,24 @@ import { z } from "zod";
 export default tool({
   description: "Get current weather for a city",
   inputSchema: z.object({ city: z.string().describe("City name") }),
-  execute: async ({ city }) => {
+  execute: async ({ city }, ctx) => {
     const where = encodeURIComponent(city);
-    const res = await fetch(`https://wttr.in/${where}?format=j1`);
-    return await res.json();
+    // `ctx.signal` is the call's deadline — pass it to anything slow.
+    const res = await fetch(`https://wttr.in/${where}?format=j1`, {
+      signal: ctx.signal,
+    });
+    const report = (await res.json()) as {
+      current_condition?: { temp_F?: string; weatherDesc?: { value?: string }[] }[];
+    };
+    const now = report.current_condition?.[0];
+    // Return what the agent will SAY, not the whole response.
+    return { city, tempF: now?.temp_F, conditions: now?.weatherDesc?.[0]?.value };
   },
 });
 ```
 
 There is no registration step. A file in `tools/` is a tool because it is in
-`tools/`, and `system-prompt.md` is the system prompt because it exists.
+`tools/`. `system-prompt.md` is the system prompt because it exists.
 
 <CardGrid>
   <Card title="Start here" icon="rocket">
@@ -74,8 +83,8 @@ There is no registration step. A file in `tools/` is a tool because it is in
     agent in about five minutes.
   </Card>
   <Card title="What a project looks like" icon="open-book">
-    [How it works](/agent/start/how-it-works/) is the one page that explains why the
-    project looks the way it does.
+    [How it works](/agent/start/how-it-works/) explains why a project is shaped
+    the way it is.
   </Card>
   <Card title="Give it abilities" icon="setting">
     [Tools](/agent/build/tools/) are ordinary async functions. The model decides when

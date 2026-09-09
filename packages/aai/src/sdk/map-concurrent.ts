@@ -129,8 +129,11 @@
  *
  * @example
  * ```ts no-check
- * // In a workflow body: one step per segment, four in flight.
- * const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
+ * // In a workflow body: one step per segment, four in flight. The callback
+ * // issues its `ctx.step` immediately, under ONE literal name.
+ * const cleaned = await mapConcurrent(segments, 4, (text) =>
+ *   ctx.step("postProcess", () => postProcess(text)),
+ * );
  * ```
  *
  * @public
