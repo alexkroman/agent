@@ -8,7 +8,7 @@
     "packages/aai-runtime/src/_pipeline-test-fakes.ts": 1,
     "packages/aai-runtime/src/eval-barrel.ts": 1,
     "packages/aai-runtime/src/eval/describe-workflows.ts": 1,
-    "packages/aai-runtime/src/eval/describe.ts": 2,
+    "packages/aai-runtime/src/eval/describe.ts": 3,
     "packages/aai-runtime/src/eval/session.ts": 1,
     "packages/aai-runtime/src/eval/vm-run-code.ts": 1,
     "packages/aai-runtime/src/eval/workflows.ts": 3,

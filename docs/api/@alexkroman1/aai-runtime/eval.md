@@ -2097,11 +2097,19 @@ The LAST rather than the first, because a repeated call is the agent settling
 on an answer and the settled one is what the caller was told.
 
 ```ts
-import { lastToolResultIn, toolCallsInTurns } from "@alexkroman1/aai-runtime/eval";
+import {
+  type EvalTurn,
+  lastToolResultIn,
+  toolCallsInTurns,
+} from "@alexkroman1/aai-runtime/eval";
+import { z } from "zod";
 
-const calls = toolCallsInTurns(turns);
-// The score as it finally stood, even if the narrator awarded twice.
-const scored = lastToolResultIn(calls, "game_state_score", Scored);
+export function finalScore(turns: readonly EvalTurn[]): number {
+  const calls = toolCallsInTurns(turns);
+  // The score as it finally stood, even if the narrator awarded twice.
+  const scored = lastToolResultIn(calls, "game_state_score", z.object({ score: z.number() }));
+  return scored.score;
+}
 ```
 
 Use [toolResultIn](#toolresultin) when "exactly once" is part of the claim. This is for
