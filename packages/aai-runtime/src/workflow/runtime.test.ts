@@ -13,7 +13,7 @@ import type { Db } from "@alexkroman1/aai/internal";
 import type { WorkflowBody } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../_test-utils.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { buildWorkflowClient } from "./runtime.ts";
 
 function body(): WorkflowBody {

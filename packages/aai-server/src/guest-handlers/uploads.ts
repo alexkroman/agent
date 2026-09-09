@@ -30,17 +30,17 @@
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
-import { isOneOf, requiredSize, requiredString } from "./_body-fields.ts";
-import type { AppContext } from "./context.ts";
-import { createLogger } from "./logger.ts";
+import { isOneOf, requiredSize, requiredString } from "../_body-fields.ts";
+import type { AppContext } from "../context.ts";
+import { createLogger } from "../logger.ts";
 import {
   guestSlug,
   guestTrace,
   notConfigured,
   type PlatformCall,
   withReserved,
-} from "./platform/_route.ts";
-import type { AdminDb } from "./platform/lock.ts";
+} from "../platform/_route.ts";
+import type { AdminDb } from "../platform/lock.ts";
 import {
   claimUpload,
   finishUpload,
@@ -50,7 +50,7 @@ import {
   type PlatformUploadRecord,
   readUpload,
   updateUpload,
-} from "./platform/uploads.ts";
+} from "../platform/uploads.ts";
 
 const log = createLogger("uploads.records");
 

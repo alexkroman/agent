@@ -15,8 +15,8 @@ import { openSessionWiring } from "./runtime-session-controls.ts";
 import type { RuntimeSessionState } from "./runtime-session-state.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
-import { createMemoryStateBackend, createSessionStateStore } from "./session-state-store.ts";
-import { createStateSweeps } from "./session-state-sweeps.ts";
+import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
+import { createStateSweeps } from "./session-state/sweeps.ts";
 import type { Transport } from "./transports/types.ts";
 
 const SID = "s-1";

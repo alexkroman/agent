@@ -19,7 +19,7 @@ import type { WorkflowContext } from "@alexkroman1/aai";
 import { publishStepInfoReader } from "@alexkroman1/aai/host-internal";
 import { type StepInfo, stepInfo } from "@alexkroman1/aai/step";
 import { describe, expect, onTestFinished, test } from "vitest";
-import { createMemoryJournal } from "../journal/memory.ts";
+import { createMemoryJournal } from "../journal/backends/memory.ts";
 import type { JournalStore, RunRecord } from "../journal/types.ts";
 import { replayRun } from "../replay.ts";
 import { createStepInfoReader } from "../report.ts";

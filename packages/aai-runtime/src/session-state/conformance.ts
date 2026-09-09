@@ -162,11 +162,8 @@
  * @internal
  */
 
-import { sessionStateEventConformance } from "./session-state-conformance-events.ts";
-import {
-  type SessionStateArm,
-  sessionStateSlotConformance,
-} from "./session-state-conformance-slots.ts";
+import { sessionStateEventConformance } from "./conformance-events.ts";
+import { type SessionStateArm, sessionStateSlotConformance } from "./conformance-slots.ts";
 
 // The arm vocabulary is declared in the leaf case module and re-exported BY NAME
 // here, so a caller wiring an arm imports one module and never has to know the
@@ -179,7 +176,7 @@ export {
   type SessionStateArm,
   sessionStateIds,
   slots,
-} from "./session-state-conformance-slots.ts";
+} from "./conformance-slots.ts";
 
 /**
  * One registered backend.
@@ -219,14 +216,14 @@ export type SessionStateBackendEntry = {
 export const SESSION_STATE_BACKENDS: readonly SessionStateBackendEntry[] = [
   {
     backend: "memory",
-    module: "session-state-memory.ts",
+    module: "memory.ts",
     factory: "createMemoryStateBackend",
     /** The reference. Unit tier, unconditionally, on every machine. */
     tier: "unit",
   },
   {
     backend: "platform",
-    module: "session-state-platform.ts",
+    module: "platform.ts",
     factory: "createPlatformStateBackend",
     /**
      * Unit tier, over the handler-shaped fake transport. The platform's SQL half
@@ -241,7 +238,7 @@ export const SESSION_STATE_BACKENDS: readonly SessionStateBackendEntry[] = [
   },
   {
     backend: "postgres",
-    module: "session-state-postgres.ts",
+    module: "postgres.ts",
     factory: "createPostgresStateBackend",
     /** Scenario tier: `jsonb`, `on conflict do nothing` and a `bigint` are the point. */
     tier: "scenario",

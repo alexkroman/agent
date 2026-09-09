@@ -29,7 +29,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { json, meaningOfEvents, type SessionStateArm } from "./session-state-conformance-slots.ts";
+import { json, meaningOfEvents, type SessionStateArm } from "./conformance-slots.ts";
 
 /** One event at an index, as the log records it. */
 const at = (index: number, type: string) => ({ index, json: json({ type }) });

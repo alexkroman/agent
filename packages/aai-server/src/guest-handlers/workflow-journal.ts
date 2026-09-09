@@ -61,18 +61,18 @@ import {
   requiredInt,
   requiredSize,
   requiredString,
-} from "./_body-fields.ts";
-import type { AppContext } from "./context.ts";
-import { createLogger } from "./logger.ts";
+} from "../_body-fields.ts";
+import type { AppContext } from "../context.ts";
+import { createLogger } from "../logger.ts";
 import {
   guestSlug,
   guestTrace,
   notConfigured,
   type PlatformCall,
   withReserved,
-} from "./platform/_route.ts";
-import type { AdminDb } from "./platform/lock.ts";
-import * as journal from "./platform/workflow-journal.ts";
+} from "../platform/_route.ts";
+import type { AdminDb } from "../platform/lock.ts";
+import * as journal from "../platform/workflow-journal.ts";
 
 const log = createLogger("workflow.journal");
 

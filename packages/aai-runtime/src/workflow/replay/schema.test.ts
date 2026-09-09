@@ -29,7 +29,7 @@
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { createMemoryJournal } from "../journal/memory.ts";
+import { createMemoryJournal } from "../journal/backends/memory.ts";
 import type { JournalStore, RunRecord } from "../journal/types.ts";
 import { type ReplayOutcome, replayRun } from "../replay.ts";
 

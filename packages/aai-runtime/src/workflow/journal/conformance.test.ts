@@ -62,14 +62,14 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
+import { createMemoryJournal } from "./backends/memory.ts";
+import { createPlatformJournal } from "./backends/platform.ts";
 import {
   JOURNAL_BACKENDS,
   type JournalArm,
   journalConformance,
   journalIds,
 } from "./conformance.ts";
-import { createMemoryJournal } from "./memory.ts";
-import { createPlatformJournal } from "./platform.ts";
 import type { JournalStore, RunRecord, RunStatus, StepEntry } from "./types.ts";
 import { JournalConflictError } from "./types.ts";
 
@@ -434,9 +434,19 @@ journalConformance({
  * does not, so it is a test rather than a `guard-invariants` rule.
  */
 describe("the journal conformance registry", () => {
-  const HERE = import.meta.dirname;
+  // The BACKENDS directory, not this one. Giving the three implementations a
+  // directory of their own is what let `workflow-journal-backends` drop seven
+  // of its eight exclusions — every non-backend that used to match its glob is
+  // simply somewhere else now — so this scan follows them down.
+  const HERE = path.join(import.meta.dirname, "backends");
   const FILES = readdirSync(HERE).filter((f) => f.endsWith(".ts"));
   const READ = new Map(FILES.map((f) => [f, readFileSync(path.join(HERE, f), "utf-8")]));
+  // The CASE modules stay beside this file.
+  const CASE_DIR = import.meta.dirname;
+  const CASE_FILES = readdirSync(CASE_DIR).filter((f) => f.endsWith(".ts"));
+  const READ_CASES = new Map(
+    CASE_FILES.map((f) => [f, readFileSync(path.join(CASE_DIR, f), "utf-8")]),
+  );
   const isTest = (file: string) => /\.test(-d)?\.ts$/.test(file);
 
   /** `export function foo` in one module. */
@@ -450,7 +460,7 @@ describe("the journal conformance registry", () => {
   test("every journal backend module in the tree is registered", () => {
     // Discovery is by DIRECTORY plus exported factory, which is what
     // `konsistent.json`'s `workflow-journal-backends` convention makes sound: it
-    // requires a `workflow/journal/<backend>.ts` to export
+    // requires a `workflow/journal/backends/<backend>.ts` to export
     // `create<Backend>Journal`, so a fourth backend cannot arrive somewhere this
     // scan does not look. The filename prefix this used to key on became the
     // directory when the package grew a `workflow/` tree — the scan is strictly
@@ -502,8 +512,10 @@ describe("the journal conformance registry", () => {
     // The CASE modules only. The registry beside them names every factory as a
     // string by construction — that IS the registration — so it is not a case
     // list and is not scanned.
-    for (const file of FILES.filter((f) => f.startsWith("conformance-") && !isTest(f))) {
-      const code = (READ.get(file) ?? "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    for (const file of CASE_FILES.filter((f) => f.startsWith("conformance-") && !isTest(f))) {
+      const code = (READ_CASES.get(file) ?? "")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
       expect.soft(code.split("\n").filter(isFactoryCall), file).toEqual([]);
     }
   });

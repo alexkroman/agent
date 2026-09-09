@@ -19,7 +19,7 @@ import {
   createPostgresStateBackend,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
-} from "./session-state-postgres.ts";
+} from "./postgres.ts";
 
 /** A `Db` that records what it was asked and answers with what it was given. */
 function recordingDb(rows: Record<string, unknown>[] = []) {

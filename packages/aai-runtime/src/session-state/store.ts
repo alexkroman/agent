@@ -67,9 +67,9 @@
 import type { SlotStore } from "@alexkroman1/aai";
 import { freezeStorable, MAX_SESSION_STATE_BYTES } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { getOrCreate } from "./_get-or-create.ts";
-import type { StateSyncSession } from "./_state-sync.ts";
-import type { Logger } from "./runtime-config.ts";
+import { getOrCreate } from "../_get-or-create.ts";
+import type { StateSyncSession } from "../_state-sync.ts";
+import type { Logger } from "../runtime-config.ts";
 
 /** One retained session event: its index in the session's log, and its JSON. */
 export type StoredSessionEvent = {
@@ -212,7 +212,7 @@ type SessionEntry = {
  * why it left — the conformance registry's one-file-per-backend grammar, and
  * this file's 500-line cap.
  */
-export { createMemoryStateBackend } from "./session-state-memory.ts";
+export { createMemoryStateBackend } from "./backends/memory.ts";
 
 /**
  * Install one stored slot into the cache, or drop it with a warning.

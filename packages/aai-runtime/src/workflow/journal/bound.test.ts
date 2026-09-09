@@ -16,8 +16,8 @@ import type { Mock } from "vitest";
 import { describe, expect, test, vi } from "vitest";
 import type { Logger } from "../../runtime-config.ts";
 import { replayRun } from "../replay.ts";
+import { createMemoryJournal } from "./backends/memory.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS, WORKFLOW_JOURNAL_WARN_STEPS } from "./bound.ts";
-import { createMemoryJournal } from "./memory.ts";
 import type { JournalStore, StepEntry } from "./types.ts";
 
 const RUN_ID = "wrun_bound";

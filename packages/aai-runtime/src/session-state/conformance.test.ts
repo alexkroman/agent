@@ -65,15 +65,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
+import { createMemoryStateBackend } from "./backends/memory.ts";
+import { createPlatformStateBackend } from "./backends/platform.ts";
 import {
   SESSION_STATE_BACKENDS,
   type SessionStateArm,
   sessionStateConformance,
   sessionStateIds,
-} from "./session-state-conformance.ts";
-import { createMemoryStateBackend } from "./session-state-memory.ts";
-import { createPlatformStateBackend } from "./session-state-platform.ts";
-import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
+} from "./conformance.ts";
+import type { SessionStateBackend, StoredSessionEvent } from "./store.ts";
 
 /* -------------------------------------------------------------------------- */
 /* The memory arm                                                             */
@@ -236,9 +236,19 @@ sessionStateConformance({
  * test rather than a `guard-invariants` rule.
  */
 describe("the session-state conformance registry", () => {
-  const HERE = import.meta.dirname;
+  // The BACKENDS directory, not this one. The three implementations got a
+  // directory of their own so `session-state-backends` could drop three of its
+  // four exclusions — every non-backend that used to match its glob is
+  // somewhere else now — so this scan follows them down.
+  const HERE = path.join(import.meta.dirname, "backends");
   const FILES = readdirSync(HERE).filter((f) => f.endsWith(".ts"));
   const READ = new Map(FILES.map((f) => [f, readFileSync(path.join(HERE, f), "utf-8")]));
+  // The CASE modules stay beside this file; only the backends moved down.
+  const CASE_DIR = import.meta.dirname;
+  const CASE_FILES = readdirSync(CASE_DIR).filter((f) => f.endsWith(".ts"));
+  const READ_CASES = new Map(
+    CASE_FILES.map((f) => [f, readFileSync(path.join(CASE_DIR, f), "utf-8")]),
+  );
   const isTest = (file: string) => /\.test(-d)?\.ts$/.test(file);
 
   /** `export function foo` in one module. */
@@ -286,7 +296,13 @@ describe("the session-state conformance registry", () => {
     // The assertion the whole exercise is about. A case list constructed but
     // never handed to `sessionStateConformance`, or handed to it from no file at
     // all, looks identical to one that runs.
-    const armFiles = [...READ].filter(([, source]) => source.includes("sessionStateConformance("));
+    // The ARMS are in the case directory beside this file, not in `backends/`:
+    // an arm is a spec that HANDS the case list to a backend, so it lives with
+    // the list rather than with the implementation. Reading the backends map
+    // here found zero of them and the floor below said so.
+    const armFiles = [...READ_CASES].filter(([, source]) =>
+      source.includes("sessionStateConformance("),
+    );
     expect(armFiles.length).toBeGreaterThan(0);
     for (const backend of SESSION_STATE_BACKENDS) {
       if (backend.conformance === false) continue;
@@ -309,12 +325,14 @@ describe("the session-state conformance registry", () => {
     // The CASE modules only. The registry beside them names every factory as a
     // string by construction — that IS the registration — so it is not a case
     // list and is not scanned.
-    const cases = FILES.filter(
-      (f) => f.startsWith("session-state-conformance-") && !isTest(f) && !f.includes("scenario"),
+    const cases = CASE_FILES.filter(
+      (f) => f.startsWith("conformance-") && !isTest(f) && !f.includes("scenario"),
     );
     expect(cases.length).toBeGreaterThan(0);
     for (const file of cases) {
-      const code = (READ.get(file) ?? "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      const code = (READ_CASES.get(file) ?? "")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
       expect.soft(code.split("\n").filter(isFactoryCall), file).toEqual([]);
     }
   });

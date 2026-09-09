@@ -50,9 +50,9 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
-import { platformResult } from "./platform-rpc.ts";
-import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint } from "../../platform-endpoint.ts";
+import { platformResult } from "../../platform-rpc.ts";
+import type { SessionStateBackend, StoredSessionEvent } from "../store.ts";
 
 /**
  * How long one call may take.

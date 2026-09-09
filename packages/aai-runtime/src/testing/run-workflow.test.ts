@@ -17,7 +17,7 @@
 import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../workflow/journal/memory.ts";
+import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { runWorkflow } from "./run-workflow.ts";
 
 /** A day, which is the point: no spec may wait one and none has to. */

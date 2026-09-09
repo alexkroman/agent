@@ -24,7 +24,7 @@
 
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/memory.ts";
+import { createMemoryJournal } from "../journal/backends/memory.ts";
 import type { JournalStore } from "../journal/types.ts";
 import { replayRun } from "../replay.ts";
 

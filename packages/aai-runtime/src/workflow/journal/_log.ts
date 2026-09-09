@@ -40,7 +40,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { createMemoryJournal } from "./memory.ts";
+import { createMemoryJournal } from "./backends/memory.ts";
 import type {
   HookRecord,
   JournalStore,

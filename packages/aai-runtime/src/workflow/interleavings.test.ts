@@ -79,7 +79,7 @@ import { hookCloseRace } from "./interleavings/hook-close-race.ts";
 import type { Interleaving } from "./interleavings/interleaving.ts";
 import { overlappingStepAppend } from "./interleavings/overlapping-step-append.ts";
 import { checkJournalInvariants } from "./journal/_invariants.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 
 /**
  * Every kept interleaving.

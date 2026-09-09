@@ -28,7 +28,7 @@ import {
   type SessionEventHookDeps,
 } from "./session-emitter.ts";
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
-import { createMemoryStateBackend } from "./session-state-store.ts";
+import { createMemoryStateBackend } from "./session-state/store.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 import { createUsageMeter, type UsageMeter, type UsageSnapshot } from "./usage-meter.ts";
 

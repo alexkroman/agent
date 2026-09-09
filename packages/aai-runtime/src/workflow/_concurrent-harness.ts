@@ -57,7 +57,7 @@ import {
 import { byCodeUnit, createTally, type JournalOutcome, journalOutcome } from "./_tally-harness.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./engine.ts";
 import { type JournalWrite, recordJournal } from "./journal/_log.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { isTerminalStatus, type JournalStore, type RunStatus } from "./journal/types.ts";
 import { createMemoryStreams } from "./streams.ts";
 

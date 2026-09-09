@@ -26,7 +26,7 @@ import { makeLogger, silentLogger } from "../_test-utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createWorkflowClient, type WdkAdapter } from "./client.ts";
 import { createWorkflowEngine } from "./engine.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { createMemoryKeyStore } from "./keys.ts";
 import { createMemoryStreams } from "./streams.ts";
 

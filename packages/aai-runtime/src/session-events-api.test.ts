@@ -10,7 +10,7 @@ import {
   type SessionEventsRequest,
   type SessionEventsResponse,
 } from "./session-events-api.ts";
-import { createMemoryStateBackend } from "./session-state-store.ts";
+import { createMemoryStateBackend } from "./session-state/store.ts";
 
 const SID = "s-1";
 const TOKEN = "tok";

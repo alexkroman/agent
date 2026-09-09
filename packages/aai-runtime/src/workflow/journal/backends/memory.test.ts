@@ -24,12 +24,12 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { recordingDb } from "../../_test-utils.ts";
+import { recordingDb } from "../../../_test-utils.ts";
+import type { JournalStore, RunRecord, StepEntry } from "../types.ts";
+import { isResumableJournal } from "../types.ts";
 import { createMemoryJournal } from "./memory.ts";
 import { createPlatformJournal } from "./platform.ts";
 import { createPostgresJournal } from "./postgres.ts";
-import type { JournalStore, RunRecord, StepEntry } from "./types.ts";
-import { isResumableJournal } from "./types.ts";
 
 /** `createRun`'s bag, with only the parts a case varies spelled out. */
 function runRecord(runId: string, over: Partial<RunRecord> = {}): RunRecord {

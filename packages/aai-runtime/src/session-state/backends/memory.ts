@@ -29,7 +29,7 @@
  * still takes it from the module that declares the interface.
  */
 
-import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
+import type { SessionStateBackend, StoredSessionEvent } from "../store.ts";
 
 /**
  * Session state in this process's heap.

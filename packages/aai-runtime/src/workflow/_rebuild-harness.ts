@@ -73,7 +73,7 @@ import type { Scenario } from "./_resume-harness.ts";
 import { type Program, type Recorder, runProgram, WAIT_MS } from "./_resume-program.ts";
 import { createTally, journalOutcome } from "./_tally-harness.ts";
 import { createInProcessWorkflowEngine } from "./in-process.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { isTerminalStatus, type JournalStore } from "./journal/types.ts";
 
 /**

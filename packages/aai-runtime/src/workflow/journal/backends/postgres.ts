@@ -70,9 +70,9 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
-import { decodeStorageJson } from "../typed-json.ts";
-import { claimAttemptLease, releaseAttemptLease } from "./_attempts.ts";
-import { firstWriteWins } from "./_claim.ts";
+import { decodeStorageJson } from "../../typed-json.ts";
+import { claimAttemptLease, releaseAttemptLease } from "../_attempts.ts";
+import { firstWriteWins } from "../_claim.ts";
 import {
   encodedOrNull,
   type RunRow,
@@ -81,15 +81,15 @@ import {
   toRunRecord,
   toSleepRecord,
   toStepEntry,
-} from "./_postgres-rows.ts";
-import { resumableRuns } from "./_resumable.ts";
+} from "../_postgres-rows.ts";
+import { resumableRuns } from "../_resumable.ts";
 import {
   WORKFLOW_ATTEMPT_TABLE,
   WORKFLOW_HOOK_TABLE,
   WORKFLOW_RUN_TABLE,
   WORKFLOW_SLEEP_TABLE,
   WORKFLOW_STEP_TABLE,
-} from "./schema.ts";
+} from "../schema.ts";
 import type {
   HookRecord,
   JournalStore,
@@ -99,8 +99,8 @@ import type {
   SleepEntry,
   SleepRecord,
   StepEntry,
-} from "./types.ts";
-import { isTerminalStatus, JournalConflictError } from "./types.ts";
+} from "../types.ts";
+import { isTerminalStatus, JournalConflictError } from "../types.ts";
 
 /** Every column a {@link StepEntry} is rebuilt from — ONE list, so the two reads below cannot drift. */
 const SELECT_STEP = `select key, name, status, output::text as output, error, attempts, started_at, finished_at from ${WORKFLOW_STEP_TABLE}`;

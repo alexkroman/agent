@@ -67,7 +67,7 @@ import {
   rebuildJournal,
   recordJournal,
 } from "./journal/_log.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { isTerminalStatus, type JournalStore } from "./journal/types.ts";
 import { createMemoryStreams } from "./streams.ts";
 

@@ -15,7 +15,7 @@ import type { WorkflowContext } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/memory.ts";
+import { createMemoryJournal } from "../journal/backends/memory.ts";
 import type { JournalStore, RunRecord } from "../journal/types.ts";
 import { replayRun } from "../replay.ts";
 

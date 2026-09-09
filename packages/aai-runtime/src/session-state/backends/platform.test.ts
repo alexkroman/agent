@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { createPlatformStateBackend } from "./session-state-platform.ts";
+import { createPlatformStateBackend } from "./platform.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";

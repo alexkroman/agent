@@ -36,7 +36,7 @@ import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { harness } from "./_engine-harness.ts";
 import type { JournalWrite } from "./journal/_log.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { replayRun } from "./replay.ts";
 
 /** How many polls the body takes before it is done. */

@@ -24,8 +24,8 @@ import {
   deployAgent,
   fakeAdminDbOver,
   type TestFetch,
-} from "./test-utils.ts";
-import { MAX_ENQUEUE_BODY_BYTES } from "./workflow-enqueue-handler.ts";
+} from "../test-utils.ts";
+import { MAX_ENQUEUE_BODY_BYTES } from "./workflow-enqueue.ts";
 
 const SLUG = "my-agent";
 const OTHER = "other-agent";

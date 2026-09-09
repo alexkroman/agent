@@ -74,7 +74,7 @@ import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,
 } from "../workflow/in-process.ts";
-import { createMemoryJournal } from "../workflow/journal/memory.ts";
+import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { isTerminalStatus, type JournalStore } from "../workflow/journal/types.ts";
 import { type DeterminismKind, isDeterminismKey } from "../workflow/replay/determinism.ts";
 import type {

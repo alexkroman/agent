@@ -49,8 +49,8 @@ import {
   createMemoryStateBackend,
   createSessionStateStore,
   type SessionStateBackend,
-} from "./session-state-store.ts";
-import { createStateSweeps } from "./session-state-sweeps.ts";
+} from "./session-state/store.ts";
+import { createStateSweeps } from "./session-state/sweeps.ts";
 
 const SID = "s-1";
 

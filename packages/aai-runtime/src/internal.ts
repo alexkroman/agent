@@ -67,7 +67,7 @@
 // type-only, so the case module it is declared in — and the `vitest` import at
 // the top of that module — is erased rather than bundled; see "Why this is a
 // LOADER" at the foot of this file.
-import type { SessionStateArm } from "./session-state-conformance-slots.ts";
+import type { SessionStateArm } from "./session-state/conformance-slots.ts";
 // One backend under test, as the shared `JournalStore` conformance suite names
 // it — imported for the signature of `JournalConformanceSuite` at the foot of
 // this file and deliberately NOT re-exported: nothing imports the NAME (an arm
@@ -187,7 +187,7 @@ export { createSessionEventStream, stampSessionEvent } from "./session-event-str
 // the only thing anywhere that exercises this client and the platform's own SQL
 // together (its unit arm's transport is a fake over the memory reference). Not
 // an embedder's to call — `createRuntime` selects a backend from the boot env.
-export { createPlatformStateBackend } from "./session-state-platform.ts";
+export { createPlatformStateBackend } from "./session-state/backends/platform.ts";
 // Session state's Postgres backend. `createRuntime` wires it itself, so what a
 // consumer needs is the TABLE NAME: the platform's TTL sweep reads it out of
 // every app schema, and spelling it here rather than in that sweep is what
@@ -202,11 +202,11 @@ export {
   // shape is the SDK's and there must be one copy of it, or the schema the
   // platform creates and the tables this backend queries can disagree.
   sessionStateDdl,
-} from "./session-state-postgres.ts";
+} from "./session-state/backends/postgres.ts";
 // The cache in front of both backends. `SessionStateBackend` and
 // `SessionStateStore` — the shapes a host implementing a backend of its own has
 // to name — are contracted, on the root barrel.
-export { createSessionStateStore } from "./session-state-store.ts";
+export { createSessionStateStore } from "./session-state/store.ts";
 // Running one tool call. `ExecuteTool`/`ExecuteToolOptions` — the shapes a host
 // substituting an executor names — are contracted, on the root barrel.
 export { executeToolCall } from "./tool-executor.ts";
@@ -246,7 +246,7 @@ export { firstWriteWins } from "./workflow/journal/_claim.ts";
  * host does with this is pass it as `RuntimeOptions.journal`; nothing else here
  * builds a store by hand.
  */
-export { createMemoryJournal } from "./workflow/journal/memory.ts";
+export { createMemoryJournal } from "./workflow/journal/backends/memory.ts";
 /**
  * The journal's PLATFORM backend — the HTTP client `aai-server` serves.
  *
@@ -258,7 +258,7 @@ export { createMemoryJournal } from "./workflow/journal/memory.ts";
  * testable at all. Nothing an embedder calls: `createAgentServer` chooses a
  * journal from the boot env.
  */
-export { createPlatformJournal } from "./workflow/journal/platform.ts";
+export { createPlatformJournal } from "./workflow/journal/backends/platform.ts";
 /**
  * The durable JOURNAL and its schema.
  *
@@ -268,7 +268,7 @@ export { createPlatformJournal } from "./workflow/journal/platform.ts";
  * `aai-server` that drives the real arm. A host embedding this runtime is handed
  * a journal by `createAgentServer`; it does not build one.
  */
-export { createPostgresJournal } from "./workflow/journal/postgres.ts";
+export { createPostgresJournal } from "./workflow/journal/backends/postgres.ts";
 export {
   applyWorkflowJournalDdl,
   workflowJournalDdl,
@@ -420,7 +420,7 @@ export type SessionStateConformanceSuite = {
 };
 export async function loadSessionStateConformance(): Promise<SessionStateConformanceSuite> {
   const { sessionStateConformance, sessionStateIds } = await import(
-    "./session-state-conformance.ts"
+    "./session-state/conformance.ts"
   );
   return { sessionStateConformance, sessionStateIds };
 }

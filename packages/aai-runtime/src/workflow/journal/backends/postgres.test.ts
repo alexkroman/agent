@@ -30,9 +30,9 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
-import { type IssuedStatement, recordingDb } from "../../_test-utils.ts";
+import { type IssuedStatement, recordingDb } from "../../../_test-utils.ts";
+import { isResumableJournal } from "../types.ts";
 import { createPostgresJournal } from "./postgres.ts";
-import { isResumableJournal } from "./types.ts";
 
 /** `recordingDb` under this file's older name, returning the two halves apart. */
 function recorder(rows: readonly Record<string, unknown>[][] = []) {

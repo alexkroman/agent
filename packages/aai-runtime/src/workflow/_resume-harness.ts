@@ -53,7 +53,7 @@ import {
 } from "./_resume-program.ts";
 import { createTally, type JournalOutcome, journalOutcome } from "./_tally-harness.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./engine.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { isTerminalStatus, type JournalStore, type RunStatus } from "./journal/types.ts";
 import { createMemoryStreams } from "./streams.ts";
 

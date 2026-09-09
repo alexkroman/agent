@@ -25,7 +25,7 @@ import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
-import type { SessionStateStore } from "./session-state-store.ts";
+import type { SessionStateStore } from "./session-state/store.ts";
 import { createSubagentRunner } from "./subagent.ts";
 import {
   createToolDispatcher,

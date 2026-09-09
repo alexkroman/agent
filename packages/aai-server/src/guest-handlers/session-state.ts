@@ -25,17 +25,17 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
-import { isOneOf, requiredInt, requiredString } from "./_body-fields.ts";
-import type { AppContext } from "./context.ts";
-import { createLogger } from "./logger.ts";
+import { isOneOf, requiredInt, requiredString } from "../_body-fields.ts";
+import type { AppContext } from "../context.ts";
+import { createLogger } from "../logger.ts";
 import {
   guestSlug,
   guestTrace,
   notConfigured,
   type PlatformCall,
   withReserved,
-} from "./platform/_route.ts";
-import type { AdminDb } from "./platform/lock.ts";
+} from "../platform/_route.ts";
+import type { AdminDb } from "../platform/lock.ts";
 import {
   appendEvents,
   commitSlots,
@@ -44,7 +44,7 @@ import {
   nextEventIndex,
   type PlatformSessionEvent,
   readEvents,
-} from "./platform/session-state.ts";
+} from "../platform/session-state.ts";
 
 const log = createLogger("session.state");
 

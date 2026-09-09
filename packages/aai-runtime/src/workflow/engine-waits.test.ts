@@ -18,7 +18,7 @@ import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
 import { harness } from "./_engine-harness.ts";
 import { createWorkflowEngine } from "./engine.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { createMemoryStreams } from "./streams.ts";
 
 describe("durable sleep", () => {

@@ -36,7 +36,7 @@ import {
 } from "../_engine-harness.ts";
 import { checkJournalInvariants } from "./_invariants.ts";
 import { type JournalWrite, rebuildJournal, recordJournal } from "./_log.ts";
-import { createMemoryJournal } from "./memory.ts";
+import { createMemoryJournal } from "./backends/memory.ts";
 import type { RunRecord, StepEntry } from "./types.ts";
 
 /** A run record, with only the field a case is about spelled out. */

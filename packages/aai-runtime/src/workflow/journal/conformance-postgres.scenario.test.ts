@@ -34,8 +34,8 @@
 import { afterAll, beforeAll } from "vitest";
 import { describeWithPg, pgUrl } from "../../_pg-test-utils.ts";
 import { createPostgresDb } from "../../postgres-db.ts";
+import { createPostgresJournal } from "./backends/postgres.ts";
 import { journalConformance, journalIds } from "./conformance.ts";
-import { createPostgresJournal } from "./postgres.ts";
 import { applyWorkflowJournalDdl } from "./schema.ts";
 import type { JournalStore } from "./types.ts";
 

@@ -22,8 +22,8 @@ import {
   deployAgent,
   fakeAdminDbOver,
   type TestFetch,
-} from "./test-utils.ts";
-import { MAX_WORKFLOW_KEY_LOOKUP_LIMIT } from "./workflow-keys-handler.ts";
+} from "../test-utils.ts";
+import { MAX_WORKFLOW_KEY_LOOKUP_LIMIT } from "./workflow-keys.ts";
 
 const MINE = "mine-agent";
 const THEIRS = "theirs-agent";

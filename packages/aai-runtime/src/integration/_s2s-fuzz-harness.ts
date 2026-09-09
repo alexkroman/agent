@@ -28,7 +28,7 @@ import { silentLogger } from "../runtime-config.ts";
 import { createSessionCore, type ServerSession } from "../session-core.ts";
 import { createSessionEmitter } from "../session-emitter.ts";
 import { createSessionEventStream } from "../session-event-stream.ts";
-import { createMemoryStateBackend } from "../session-state-store.ts";
+import { createMemoryStateBackend } from "../session-state/store.ts";
 import { createS2sTransport } from "../transports/s2s-transport.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
 import { createFakeS2sLink, type FakeS2sLink } from "./_s2s-fuzz-model.ts";

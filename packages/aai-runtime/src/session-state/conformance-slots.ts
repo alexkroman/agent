@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
+import type { SessionStateBackend, StoredSessionEvent } from "./store.ts";
 
 /**
  * One backend under test.

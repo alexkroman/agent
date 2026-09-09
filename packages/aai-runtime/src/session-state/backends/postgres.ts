@@ -50,9 +50,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { Db } from "@alexkroman1/aai/internal";
-import { createPostgresDb } from "./postgres-db.ts";
-import type { Logger } from "./runtime-config.ts";
-import type { SessionStateBackend } from "./session-state-store.ts";
+import { createPostgresDb } from "../../postgres-db.ts";
+import type { Logger } from "../../runtime-config.ts";
+import type { SessionStateBackend } from "../store.ts";
 
 /**
  * The table session state lives in — the ONE contract both ends derive from.

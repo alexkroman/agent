@@ -19,9 +19,9 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
+import type { StepEntry } from "../types.ts";
+import { isResumableJournal } from "../types.ts";
 import { createPlatformJournal } from "./platform.ts";
-import type { StepEntry } from "./types.ts";
-import { isResumableJournal } from "./types.ts";
 
 /** One call the journal made. */
 type Sent = { method: string; body: Record<string, unknown> };

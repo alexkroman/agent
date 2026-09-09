@@ -13,7 +13,7 @@ import {
   createMemoryStateBackend,
   type SessionStateBackend,
   type StoredSessionEvent,
-} from "./session-state-store.ts";
+} from "./session-state/store.ts";
 
 const SID = "s-1";
 

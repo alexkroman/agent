@@ -34,8 +34,8 @@ import {
   deploy,
   fakeAdminDbOver,
   type TestFetch,
-} from "./test-utils.ts";
-import { MAX_WORKFLOW_JOURNAL_LIST_LIMIT } from "./workflow-journal-handler.ts";
+} from "../test-utils.ts";
+import { MAX_WORKFLOW_JOURNAL_LIST_LIMIT } from "./workflow-journal.ts";
 
 const MINE = "journal-mine";
 const THEIRS = "journal-theirs";

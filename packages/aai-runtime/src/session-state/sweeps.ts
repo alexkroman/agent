@@ -20,7 +20,7 @@
  */
 
 import { SESSION_RESUME_GRACE_MS } from "@alexkroman1/aai/host-internal";
-import type { SessionStateStore } from "./session-state-store.ts";
+import type { SessionStateStore } from "./store.ts";
 
 export type StateSweeps = {
   /** Reclaim `sessionId`'s state after the grace window (replaces any pending sweep). */

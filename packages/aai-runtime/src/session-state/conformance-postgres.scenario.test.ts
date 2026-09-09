@@ -34,11 +34,11 @@
  */
 
 import { afterAll, beforeAll } from "vitest";
-import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { createPostgresDb } from "./postgres-db.ts";
-import { sessionStateConformance, sessionStateIds } from "./session-state-conformance.ts";
-import { createPostgresStateBackend, sessionStateDdl } from "./session-state-postgres.ts";
-import type { SessionStateBackend } from "./session-state-store.ts";
+import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
+import { createPostgresDb } from "../postgres-db.ts";
+import { createPostgresStateBackend, sessionStateDdl } from "./backends/postgres.ts";
+import { sessionStateConformance, sessionStateIds } from "./conformance.ts";
+import type { SessionStateBackend } from "./store.ts";
 
 /**
  * NOT app-shaped (`app_` + 16 hex): the platform's TTL sweep walks every

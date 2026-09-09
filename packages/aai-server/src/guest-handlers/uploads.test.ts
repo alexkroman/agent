@@ -22,7 +22,7 @@ import {
   deployAgent,
   fakeAdminDbOver,
   type TestFetch,
-} from "./test-utils.ts";
+} from "../test-utils.ts";
 
 const MINE = "mine-upl";
 const THEIRS = "theirs-upl";

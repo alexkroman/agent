@@ -17,7 +17,7 @@ import {
   deployAgent,
   fakeAdminDbOver,
   type TestFetch,
-} from "./test-utils.ts";
+} from "../test-utils.ts";
 
 const MINE = "mine-agent";
 const THEIRS = "theirs-agent";

@@ -14,7 +14,7 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger, tick } from "../_test-utils.ts";
 import { createInProcessWorkflowEngine, type InProcessWorkflowEngine } from "./in-process.ts";
-import { createMemoryJournal } from "./journal/memory.ts";
+import { createMemoryJournal } from "./journal/backends/memory.ts";
 import type { JournalStore } from "./journal/types.ts";
 import { watchRun } from "./run-reads.ts";
 

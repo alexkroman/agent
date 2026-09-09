@@ -24,7 +24,7 @@
  * exists to close.
  */
 
-import { codeUnit, newestFirst, settledFirst, soonestFirst } from "./_order.ts";
+import { codeUnit, newestFirst, settledFirst, soonestFirst } from "../_order.ts";
 import type {
   HookRecord,
   JournalStore,
@@ -34,8 +34,8 @@ import type {
   SleepEntry,
   SleepRecord,
   StepEntry,
-} from "./types.ts";
-import { isTerminalStatus, JournalConflictError } from "./types.ts";
+} from "../types.ts";
+import { isTerminalStatus, JournalConflictError } from "../types.ts";
 
 /** One run's mutable state, kept together so a run is one map lookup. */
 type Slot = {
