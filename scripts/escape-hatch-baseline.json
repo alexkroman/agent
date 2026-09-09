@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
     "packages/aai-ui/src/default-client.tsx": 1,
     "packages/aai-ui/src/types.test.ts": 2,
@@ -97,6 +97,7 @@
     "packages/aai/src/host/agent-tools.ts": 2,
     "packages/aai/src/sdk/_internal-types.test.ts": 1,
     "packages/aai/src/sdk/config-rules.test.ts": 1,
-    "packages/aai/src/sdk/define.test.ts": 1
+    "packages/aai/src/sdk/define.test.ts": 1,
+    "packages/aai/src/sdk/providers/tts/assemblyai.test.ts": 1
   }
 }

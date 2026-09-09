@@ -73,7 +73,8 @@ project stops calling the command, the command's default is wrong.
 
 What the narrow contract was FOR survives as `--only`: one documented file, so
 a spec that is slow or wants credentials is not dragged into every save.
-What did not stand is the verdict the old default printed over the difference. It answered
+What did not stand is the verdict the old default printed over the
+difference. It answered
 `{"ok":true,"data":{"passed":true}}` with **exit 0** while naming the files it
 had skipped in a warning printed *after* the green summary — so the scaffold's
 `"test": "aai test"`, which is what users wire into CI, could report a passing

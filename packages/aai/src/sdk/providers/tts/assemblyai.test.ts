@@ -10,12 +10,31 @@
 // on it until `toAgentConfig` desugars one.
 
 import { describe, expect, test, vi } from "vitest";
+import { agent } from "../../define.ts";
 import type { AgentConfig } from "../../manifest-barrel.ts";
 import { toAgentConfig } from "../../manifest-barrel.ts";
+import type { TtsProvider } from "../../providers.ts";
+import type { AssemblyAITtsVoice } from "./assemblyai.ts";
 import { assemblyAITts, assemblyAIVoiceWarning } from "./assemblyai.ts";
 
-function config(fields: Record<string, unknown>): AgentConfig {
-  return toAgentConfig({ name: "x", systemPrompt: "p", ...fields } as never);
+/**
+ * Build a config the way an AUTHOR does — through `agent()` — rather than by
+ * handing `toAgentConfig` a raw object.
+ *
+ * The raw path needs a cast, and not for a reason the spec should absorb:
+ * `toAgentConfig` normalizes the author conveniences (`voice`, `system`, a
+ * string `llm`) at runtime, but `AgentConfigSource` does not declare them, so
+ * the SDK casts internally to call its own normalizer. Going through `agent()`
+ * tests the shape these cases are actually about — the shorthand the docs lead
+ * with — and needs no cast at all.
+ */
+function config(voice: AssemblyAITtsVoice): AgentConfig {
+  return toAgentConfig(agent({ name: "x", systemPrompt: "p", voice }));
+}
+
+/** The descriptor path, which `voice` desugars INTO. */
+function configTts(tts: TtsProvider): AgentConfig {
+  return toAgentConfig(agent({ name: "x", systemPrompt: "p", tts }));
 }
 
 describe("assemblyAIVoiceWarning", () => {
@@ -58,7 +77,7 @@ describe("toAgentConfig warns about the voice on EVERY authoring path", () => {
     // `voice: "michal"` built clean, deployed, connected, reported ready and
     // never spoke.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    config({ voice: "michal" });
+    config("michal");
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toContain('"michal"');
     expect(warn.mock.calls[0]?.[0]).toContain('Did you mean "michael"');
@@ -70,7 +89,7 @@ describe("toAgentConfig warns about the voice on EVERY authoring path", () => {
     // return, so it ran for almost nobody — the server infers the language
     // from the voice, so hardly any config sets one.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    config({ tts: assemblyAITts({ voice: "estele" }) });
+    configTts(assemblyAITts({ voice: "estele" }));
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toContain('Did you mean "estelle"');
     warn.mockRestore();
@@ -78,22 +97,22 @@ describe("toAgentConfig warns about the voice on EVERY authoring path", () => {
 
   test("once per sentence — a config is rebuilt per session, not per build", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    config({ voice: "michalx" });
-    config({ voice: "michalx" });
+    config("michalx");
+    config("michalx");
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
 
   test("a WARNING and never a throw — a voice shipped after this release still runs", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    expect(() => config({ voice: "voice-shipped-last-week" })).not.toThrow();
+    expect(() => config("voice-shipped-last-week")).not.toThrow();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
 
   test("says nothing about a listed voice", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    config({ voice: "michael" });
+    config("michael");
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -101,7 +120,7 @@ describe("toAgentConfig warns about the voice on EVERY authoring path", () => {
   test("the language rules still THROW — only the voice check is a warning", () => {
     // The early return for the language half is unmoved: this is the
     // translation this SDK owns, so a code it cannot send is a refusal.
-    expect(() => config({ tts: assemblyAITts({ language: "xx" } as never) })).toThrow(
+    expect(() => configTts(assemblyAITts({ language: "xx" as never }))).toThrow(
       /unsupported language/,
     );
   });

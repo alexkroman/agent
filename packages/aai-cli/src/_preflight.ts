@@ -32,7 +32,7 @@
  * config is unpacked.
  */
 
-import type { TelephonyAccess, TelephonyCarrier } from "@alexkroman1/aai";
+import type { TelephonyCarrier } from "@alexkroman1/aai";
 import { TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
 import { plural } from "@alexkroman1/aai/utils";
 import { CARRIER_PARAM, requiredProviderEnvVars, TELEPHONY_PATH } from "@alexkroman1/aai-runtime";
@@ -60,8 +60,16 @@ export type PreflightConfig = Parameters<typeof requiredProviderEnvVars>[0] & {
    * `AgentDef.telephony`, for {@link missingTelephonySecrets} and
    * {@link telephonyWebhooks}. Serializable like `page` is, so it survives the
    * trip through `__aaiConfig` — see `packages/aai/src/sdk/telephony-config.ts`.
+   *
+   * `readonly string[]` rather than `TelephonyAccess`'s carrier union, and
+   * deliberately: this value was JSON on the way here, written by whichever
+   * SDK built the bundle, so a name this build has never heard of is a case
+   * that HAPPENS rather than one a cast has to manufacture.
+   * {@link declaredCarriers} filters against `TELEPHONY_CARRIERS` for exactly
+   * that reason, and typing the field narrower than the data made its own
+   * test unwritable without erasing the type.
    */
-  telephony?: TelephonyAccess | undefined;
+  telephony?: boolean | readonly string[] | undefined;
 };
 
 /**

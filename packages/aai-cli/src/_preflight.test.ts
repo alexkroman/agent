@@ -138,7 +138,7 @@ describe("declaredCarriers", () => {
   test("drops a carrier this build ships no codec for", () => {
     // A stored config may have been written by a newer SDK. Dropping serves the
     // carriers we know; refusing the lot would take a working number down.
-    const config = { telephony: ["twilio", "vonage"] } as unknown as PreflightConfig;
+    const config: PreflightConfig = { telephony: ["twilio", "vonage"] };
     expect(declaredCarriers(config)).toEqual(["twilio"]);
   });
 });
