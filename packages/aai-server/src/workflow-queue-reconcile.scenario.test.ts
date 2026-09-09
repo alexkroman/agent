@@ -162,7 +162,7 @@ describeWithPg("re-enqueueing a stalled run", () => {
   });
 
   test("a PENDING run counts too, which is a start whose enqueue failed", async () => {
-    // `workflow-platform-dispatch.ts` logs that case and cannot do more: the run
+    // `workflow/platform-dispatch.ts` logs that case and cannot do more: the run
     // has a journal row and no message, and never left `pending`.
     await seedRun("wrun_never_started", "pending");
     expect(await stalledIds()).toEqual(["wrun_never_started"]);
@@ -243,7 +243,7 @@ describeWithPg("re-enqueueing a stalled run", () => {
   test("leaves a run PARKED on an UNTIMED hook alone — the approval workflow", async () => {
     // `await ctx.waitFor(token)` with no `timeoutMs` is not a stalled run, it is
     // the steady state of the human-approval workflow the SDK documents:
-    // `workflow-replay.ts` suspends with `wakeAt: undefined` and
+    // `workflow/replay.ts` suspends with `wakeAt: undefined` and
     // `workflow-engine.ts` dispatches only when `wakeAt !== undefined` ("a HOOK
     // does not [schedule its own delivery] … dispatching anyway would poll a run
     // that may be parked for a week"). So `running` + no queue row is EXACTLY

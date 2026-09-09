@@ -128,7 +128,7 @@ describe("POST /:slug/workflow-enqueue", () => {
       //   bearer and answers 401 — the case this route's own client doc describes.
       //   So the only way here is a delete, and a delete has no later.
       // - **The guest cannot tell a 4xx from a 5xx on this route.**
-      //   `workflow-platform-queue.ts` posts through `platformPost` with no
+      //   `workflow/platform-queue.ts` posts through `platformPost` with no
       //   `errorFor`, so every non-2xx becomes one generic `Error` naming the
       //   status. Nothing reads it. The retry that module relies on is the
       //   PLATFORM's delivery sweep, which re-runs the failed delivery and never

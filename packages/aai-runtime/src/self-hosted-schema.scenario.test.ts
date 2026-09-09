@@ -16,14 +16,14 @@
  * `sessionState: postgres, durable: true` and `runStore: "postgres"`, and then
  * the first session died with `relation "aai_session_events" does not exist`
  * and the first run with `42P01 relation "aai_workflow_runs" does not exist`.
- * `workflow-journal-schema.ts` records that as already-shipped, in the words
+ * `workflow/journal/schema.ts` records that as already-shipped, in the words
  * this suite exists to keep true: **the boot line said durable and nothing
  * was.**
  *
  * ## Why this needs a real database, and what none of the neighbours can say
  *
  * The claim is that seven tables EXIST after `listen()` resolves, which is a
- * claim about a catalog. `workflow-journal-schema.test.ts` and
+ * claim about a catalog. `workflow/journal/schema.test.ts` and
  * `session-state-postgres.test.ts` assert the statement LIST and the
  * warn-rather-than-throw posture against a `Db` double — right for the
  * appliers, and blind to a door that calls neither. `agent-server.test.ts`
@@ -64,7 +64,7 @@ import {
   WORKFLOW_RUN_TABLE,
   WORKFLOW_SLEEP_TABLE,
   WORKFLOW_STEP_TABLE,
-} from "./workflow-journal-schema.ts";
+} from "./workflow/journal/schema.ts";
 
 /**
  * NOT app-shaped (`app_` + 16 hex): the platform's TTL sweep walks every

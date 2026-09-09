@@ -17,7 +17,7 @@ import { DEFAULT_STEP_MAX_ATTEMPTS } from "./workflow-ctx-options.ts";
 describe("with nothing published", () => {
   test("answers undefined rather than throwing, which is what a spec needs", () => {
     // The DevKit's `getStepMetadata()` threw here, which is why its
-    // `workflow-report.ts` wrapped every call in a try/catch. An exported step
+    // `workflow/report.ts` wrapped every call in a try/catch. An exported step
     // is also an ordinary async function and every template's tests call one
     // directly, so absence has to be an answer.
     publishStepInfoReader(undefined);

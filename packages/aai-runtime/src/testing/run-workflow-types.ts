@@ -11,8 +11,8 @@
 
 import type { WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../runtime-config.ts";
-import type { JournalStore } from "../workflow-journal-types.ts";
-import type { DeterminismKind } from "../workflow-replay-determinism.ts";
+import type { JournalStore } from "../workflow/journal/types.ts";
+import type { DeterminismKind } from "../workflow/replay/determinism.ts";
 
 /**
  * One journaled determinism read — what `ctx.now()`, `ctx.random()` or

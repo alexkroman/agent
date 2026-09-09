@@ -36,7 +36,7 @@
  * ## What IS the code a deployment runs
  *
  * Everything above the engine. This module implements {@link WdkAdapter} — the
- * seam `workflow-client.ts` was already written against so its own specs need no
+ * seam `workflow/client.ts` was already written against so its own specs need no
  * world — and `openEvalWorkflows` hands it to the real
  * `createWorkflowClient`. So the input validation, the def→name mapping, the
  * correlation-key index, the snapshot discriminated union, `find`/`recent`'s
@@ -107,8 +107,8 @@ import type {
   WorkflowContext,
   WorkflowDef,
 } from "@alexkroman1/aai/workflow-api";
-import { checkedStepOutput } from "../workflow-replay-schema.ts";
-import type { WdkAdapter, WdkRunRecord } from "../workflow-wdk-types.ts";
+import { checkedStepOutput } from "../workflow/replay/schema.ts";
+import type { WdkAdapter, WdkRunRecord } from "../workflow/wdk-types.ts";
 
 import type {
   EvalBody,
@@ -336,7 +336,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
    *
    * Absent is the whole stream, negative counts back from the end (`-1` is the
    * newest alone), and a non-negative value is an INCLUSIVE floor — the first
-   * index the reader wants. `workflow-streams.ts`'s `read` is the definition and
+   * index the reader wants. `workflow/streams.ts`'s `read` is the definition and
    * its own doc carries the argument, which is short: every consumer of this
    * cursor counts what it consumed and re-sends that count, and a count IS the
    * first unread index.
@@ -346,7 +346,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
    * agree — on the wrong semantic — which is worth recording, because agreement
    * between two implementations is exactly what a differential spec looks for and
    * it is not the same claim as either of them being right. The oracle that
-   * settled it is `workflow-stream-cursor.test.ts`: it holds this adapter against
+   * settled it is `workflow/stream-cursor.test.ts`: it holds this adapter against
    * the memory store AND both against a poll loop that has to reconstruct its
    * own log, and only the third property could tell the two candidates apart.
    *

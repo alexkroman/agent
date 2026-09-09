@@ -45,7 +45,7 @@ import { requestPath, requestQuery } from "@alexkroman1/aai/internal";
 import { decodePathSegment } from "./_path-decode.ts";
 import type { Logger } from "./runtime-config.ts";
 import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "./session-event-stream.ts";
-import { bearerMatches, claimUnder, type JsonResponse, sendJson } from "./workflow-api-http.ts";
+import { bearerMatches, claimUnder, type JsonResponse, sendJson } from "./workflow/api/http.ts";
 
 /** Path prefix this surface lives under. */
 export const SESSION_EVENTS_PATH = "/session-events";
@@ -53,7 +53,7 @@ export const SESSION_EVENTS_PATH = "/session-events";
 /**
  * The request members this route reads, named so a test double can satisfy them.
  *
- * The same reasoning as `EventSink` in `workflow-api-events.ts`: an
+ * The same reasoning as `EventSink` in `workflow/api/events.ts`: an
  * `http.IncomingMessage` has ~40 members and this reads two, so a spec forced to
  * produce one casts — and a cast stops reporting when the shape changes, which
  * is the opposite of what a test is for.

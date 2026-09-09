@@ -727,7 +727,7 @@ DEFERS resolving those providers instead of doing it at construction (the
 runtime: `resolveLlm` throws on a missing key, so a workflow app could not boot
 at all — under `aai dev` it never started, and deployed it is a 500 on the
 workflow API of an app whose workflows are fine, which is the case
-`workflow-api.ts`'s `engine` doc names). Both templates ship exactly this shape,
+`workflow/api.ts`'s `engine` doc names). Both templates ship exactly this shape,
 so `aai init -t link-digest-workflow && aai dev` is the reproduction.
 
 The check keys off `page` rather than the descriptors because by the time a
@@ -1380,7 +1380,7 @@ A WDK run record's `workflowName` is the COMPILER's identifier —
 which the DevKit's own docs call machine-readable and hand to
 `parseWorkflowName()` before showing anyone. Ours is the key in
 `agent({ workflows })`, which is what `WorkflowRunBase.workflow` promises.
-`workflow-client.ts` translates in both directions, and both were once missing:
+`workflow/client.ts` translates in both directions, and both were once missing:
 the keyless read (`GET /workflows/runs` with no `key`, i.e. `ctx.workflows
 .recent`) filtered by the DECLARED name, which matches no stored run, so it
 answered `[]` for every workflow and `aai workflow runs <name>` printed "No runs
@@ -1390,7 +1390,7 @@ was
 unaffected: it goes through our own key index, which is keyed by declared name.
 
 Neither could be caught by a stub, which is the reusable part: a fake adapter
-answers with whatever name the test wrote, so `workflow-client.test.ts`'s fake
+answers with whatever name the test wrote, so `workflow/client.test.ts`'s fake
 now stores runs under the compiler id and filters by it.
 
 ### Watching a run

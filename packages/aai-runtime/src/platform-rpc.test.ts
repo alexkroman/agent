@@ -26,7 +26,7 @@ import { PLATFORM_ROUTES } from "./platform-endpoint.ts";
 import { platformBearer, platformPost, platformResult } from "./platform-rpc.ts";
 import { PLATFORM_SOCKET_UNAVAILABLE_CODE } from "./platform-socket.ts";
 import { closePlatformSockets, ensurePlatformSocket } from "./platform-socket-registry.ts";
-import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "./workflow/api/error-status.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";

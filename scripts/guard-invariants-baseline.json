@@ -52,7 +52,7 @@
     "packages/aai-runtime/src/_test-utils.ts": 1,
     "packages/aai-runtime/src/providers/stt/elevenlabs.ts": 1,
     "packages/aai-runtime/src/transports/pipeline-llm-trace.ts": 1,
-    "packages/aai-runtime/src/workflow-report.ts": 2,
+    "packages/aai-runtime/src/workflow/report.ts": 2,
     "packages/aai-server/src/guest-forward.ts": 1,
     "packages/aai-server/src/modal-agent-sandbox.test.ts": 1,
     "packages/aai-server/src/supabase-auth.test.ts": 2,

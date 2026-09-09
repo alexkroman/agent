@@ -242,7 +242,7 @@ function isCounterBump(node) {
   if (node.type === "UpdateExpression") return node.argument?.type === "MemberExpression";
   // `seen.set(what, (seen.get(what) ?? 0) + 1)` — the Map spelling of the same
   // tally, and the third of the three in this tree.
-  // `workflow-typed-json-property.test.ts` is the one that uses it, and it was
+  // `workflow/typed-json-property.test.ts` is the one that uses it, and it was
   // classified value-level until this arm existed.
   if (node.type === "CallExpression") {
     return (

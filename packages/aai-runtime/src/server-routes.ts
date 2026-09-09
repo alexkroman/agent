@@ -25,7 +25,7 @@
  * composition that does not exist — a `createRuntimeServer` with no `request` hook
  * serves the first set and none of the second.
  *
- * The precedent is `WORKFLOW_API_METHODS` in `workflow-api.ts`, which already
+ * The precedent is `WORKFLOW_API_METHODS` in `workflow/api.ts`, which already
  * derives itself from that module's own `ROUTES` array for exactly this reason,
  * and whose doc records the platform table having "twice grown a verb it did not
  * have". This generalizes the move to the paths.
@@ -36,9 +36,9 @@
 import { CLIENT_CONFIG_METHODS, CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
 import { SESSION_EVENTS_PATH } from "./session-events-api.ts";
 import { TELEPHONY_PATH } from "./telephony/telephony-server.ts";
-import { WORKFLOW_API_METHODS, WORKFLOW_API_PREFIX } from "./workflow-api.ts";
-import { WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
-import { WORKFLOW_WEBHOOK_PATH } from "./workflow-serve.ts";
+import { WORKFLOW_API_METHODS, WORKFLOW_API_PREFIX } from "./workflow/api.ts";
+import { WORKFLOW_QUEUE_PATH } from "./workflow/queue-dispatch.ts";
+import { WORKFLOW_WEBHOOK_PATH } from "./workflow/serve.ts";
 
 /**
  * Readiness. The one route with no constant of its own before this module,

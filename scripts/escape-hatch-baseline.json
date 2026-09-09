@@ -89,7 +89,7 @@
     "packages/aai-guest/src/harness-crash-guards.test.ts": 1,
     "packages/aai-guest/src/harness.test.ts": 1,
     "packages/aai-runtime/src/transports/pipeline-stream.test.ts": 3,
-    "packages/aai-runtime/src/workflow-notify.test.ts": 2,
+    "packages/aai-runtime/src/workflow/notify.test.ts": 2,
     "packages/aai-server/src/delete.test.ts": 2,
     "packages/aai-server/src/orchestrator-key-auth.test.ts": 1,
     "packages/aai-server/src/realtime-events.test.ts": 1,

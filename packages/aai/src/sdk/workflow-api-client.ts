@@ -327,7 +327,7 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
  * would put a route's implementation detail on the surface a CALLER is written
  * against — the split `workflow-api-barrel.ts`'s module doc argues at length.
  * What keeps the two honest is a test rather than a shared constant:
- * `workflow-api-runs.test.ts` drives this client against the real route at
+ * `workflow/api/runs.test.ts` drives this client against the real route at
  * exactly the boundary in both directions, in the one package that legitimately
  * depends on both halves.
  */

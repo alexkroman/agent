@@ -77,7 +77,7 @@ export function toStepError(cause: unknown, message?: string): Error {
     // below carry theirs: what a caller has left otherwise is a sentence, and
     // the headers and the status it was derived FROM are what a reader debugs
     // with. It is not journaled — the log's codec keeps a message and nothing
-    // else (`workflow-replay-step.ts` says so) — so this is for the process
+    // else (`workflow/replay/step.ts` says so) — so this is for the process
     // that threw it, and `stepFetchOrFail` has already read the body by the time it
     // gets here.
     if (!isTransientStatus(cause.status)) return new FatalError(sentence, { cause });

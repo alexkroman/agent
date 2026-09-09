@@ -161,7 +161,7 @@ describe("routing", () => {
   test("forwards an upload's raw body, name and declared type", async () => {
     // The one route on this surface whose body is MEANT to be large: the bytes
     // are the file, the filename rides in `?name=` and the type in the header
-    // (see `workflow-api-uploads.ts`). It is also the route whose deadline the
+    // (see `workflow/api/uploads.ts`). It is also the route whose deadline the
     // proxy got wrong — the guest answers 201 only once the last byte is
     // stored, so the bound has to be `"activity"`; `guest-forward.test.ts` is
     // where that is asserted, and this is that the route exists at all.

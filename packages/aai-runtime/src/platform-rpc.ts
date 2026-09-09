@@ -6,7 +6,7 @@
  * `platform-endpoint.ts` collapsed the credential pair and the five paths. What it
  * left behind was four `call()` bodies — `session-state-platform.ts`,
  * `uploads-platform.ts`, `workflow-platform-storage.ts` and
- * `workflow-platform-queue.ts` — each spelling out the same seven steps: resolve
+ * `workflow/platform-queue.ts` — each spelling out the same seven steps: resolve
  * the fetch seam, build the URL, set `authorization` and `content-type`, wrap the
  * whole thing in `pTimeout`, read the body, throw on non-2xx with the status and a
  * 500-character slice of the reply, and unwrap `result`. Four copies of a
@@ -71,7 +71,7 @@ import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./platfo
 import { isPlatformSocketUnavailable } from "./platform-socket.ts";
 import { platformSocketFor } from "./platform-socket-registry.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "./workflow/api/error-status.ts";
 
 /** One POST to the platform, as its caller declares it. */
 export type PlatformCall = {
@@ -269,7 +269,7 @@ async function send(
  */
 function statusError(label: string, status: number, detail: string): Error {
   const err = new Error(`${label} answered HTTP ${status}: ${detail.slice(0, 500)}`);
-  // A property rather than a subclass, for the reason `workflow-run-reads.ts`
+  // A property rather than a subclass, for the reason `workflow/run-reads.ts`
   // spells out: this module has one instance per copy of the package in a
   // deployed guest, so a class declared here would have two identities and the
   // harness's copy could not recognise what the bundle's copy threw. Every

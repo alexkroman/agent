@@ -3,7 +3,7 @@
  * The upload store's CONTRACT: its types, its invariants, and the helpers the
  * store and its byte backend share.
  *
- * Split from `workflow-uploads.ts` because that module builds the store and the
+ * Split from `workflow/uploads.ts` because that module builds the store and the
  * store needs these names — an import cycle, and biome says so.
  *
  * ORIGINAL CONTEXT — where an uploaded file lives between the form that sent it and

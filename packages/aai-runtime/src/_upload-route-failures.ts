@@ -3,14 +3,14 @@
  * The one place an upload failure becomes a STATUS.
  *
  * Its own module because both halves of the upload surface answer with it — the
- * writes in `workflow-api-uploads.ts` and the reads in
- * `workflow-api-uploads-read.ts` — and a second copy is a second place for the
+ * writes in `workflow/api/uploads.ts` and the reads in
+ * `workflow/api/uploads-read.ts` — and a second copy is a second place for the
  * 409, the 413 and the 501 to drift apart. It is the store's error vocabulary
  * translated once; nothing here decides anything else.
  */
 
 import type http from "node:http";
-import { sendJson } from "./workflow-api-http.ts";
+import { sendJson } from "./workflow/api/http.ts";
 import {
   UnknownUploadError,
   UploadCompleteError,
@@ -18,7 +18,7 @@ import {
   UploadPartError,
   UploadsUnavailableError,
   UploadTooLargeError,
-} from "./workflow-uploads.ts";
+} from "./workflow/uploads.ts";
 
 /**
  * Answer an upload failure this route can name, or decline so the caller re-throws.

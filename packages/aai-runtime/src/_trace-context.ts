@@ -38,7 +38,7 @@
  * delivery's journal calls are NOT tied together, and a run's whole walk is not
  * one trace — which is the more useful thing and needs more than a header: the
  * trace would have to be minted where the delivery arrives and carried through
- * the run context (`workflow-run-context.ts`) so every step's calls inherit it.
+ * the run context (`workflow/run-context.ts`) so every step's calls inherit it.
  * That is worth doing and is deliberately not done here; a per-call span is what
  * the question above actually needs, and it is the half that cannot be wrong.
  *

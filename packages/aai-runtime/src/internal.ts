@@ -63,17 +63,17 @@
  * @module internal
  */
 
-// One backend under test, as the shared `JournalStore` conformance suite names
-// it — imported for the signature of `JournalConformanceSuite` at the foot of
-// this file and deliberately NOT re-exported: nothing imports the NAME (an arm
-// is written as a literal at its one call site), and this subpath's rule is that
-// a name here owes an importer. A consumer that wants it can have the line.
-import type { JournalArm } from "./journal-conformance-cases.ts";
 // The same, for the `SessionStateBackend` contract's own suite type below. Also
 // type-only, so the case module it is declared in — and the `vitest` import at
 // the top of that module — is erased rather than bundled; see "Why this is a
 // LOADER" at the foot of this file.
 import type { SessionStateArm } from "./session-state-conformance-slots.ts";
+// One backend under test, as the shared `JournalStore` conformance suite names
+// it — imported for the signature of `JournalConformanceSuite` at the foot of
+// this file and deliberately NOT re-exported: nothing imports the NAME (an arm
+// is written as a literal at its one call site), and this subpath's rule is that
+// a name here owes an importer. A consumer that wants it can have the line.
+import type { JournalArm } from "./workflow/journal/conformance-cases.ts";
 
 export {
   CONTAINED_ENV,
@@ -88,17 +88,6 @@ export {
 // above it, because the shorter of the two decides and a client value above the
 // server's reaps nothing — see `HTTP_KEEP_ALIVE_TIMEOUT_MS` there.
 export { EGRESS_KEEP_ALIVE_MS } from "./_egress-fetch.ts";
-/**
- * The three-attempt retry every FIRST-WRITE-WINS journal claim needs.
- *
- * Here because `aai-server`'s platform journal makes the same claims against
- * the same statement shape and used to carry a BYTE-IDENTICAL copy of this
- * function, each file's doc calling the other "the twin". That is the package
- * boundary reporting a cost rather than a design; `_journal-claim.ts` carries
- * the merged argument, both halves of the measurement, and why the retry is
- * not about latency.
- */
-export { firstWriteWins } from "./_journal-claim.ts";
 /**
  * The W3C trace-context parser, so the two sides of the platform hop agree.
  *
@@ -229,13 +218,24 @@ export type { UsageMeter, UsageSnapshot } from "./usage-meter.ts";
 // The workflow HTTP API's method list, which the platform's guest-route table
 // has to agree with. The HANDLER is not here: `createRuntimeServer` mounts the route
 // itself, so nothing outside this package wires one by hand.
-export { WORKFLOW_API_METHODS } from "./workflow-api.ts";
+export { WORKFLOW_API_METHODS } from "./workflow/api.ts";
 // Where a LOCAL deployment keeps a workflow's on-disk state. The READER
 // (`localWorkflowDataDir`) is not here — every reader is inside this package —
 // but the one WRITER is `aai dev`, which had spelled the key out by hand
 // because it reached no barrel. A disagreement between the two is silent:
 // uploads under one directory, runs under another, and no error anywhere.
-export { WORKFLOW_DATA_DIR_ENV } from "./workflow-data-dir.ts";
+export { WORKFLOW_DATA_DIR_ENV } from "./workflow/data-dir.ts";
+/**
+ * The three-attempt retry every FIRST-WRITE-WINS journal claim needs.
+ *
+ * Here because `aai-server`'s platform journal makes the same claims against
+ * the same statement shape and used to carry a BYTE-IDENTICAL copy of this
+ * function, each file's doc calling the other "the twin". That is the package
+ * boundary reporting a cost rather than a design; `workflow/journal/_claim.ts` carries
+ * the merged argument, both halves of the measurement, and why the retry is
+ * not about latency.
+ */
+export { firstWriteWins } from "./workflow/journal/_claim.ts";
 /**
  * A run journal in this process's memory, for a host that must hold one across
  * a rebuild.
@@ -246,11 +246,11 @@ export { WORKFLOW_DATA_DIR_ENV } from "./workflow-data-dir.ts";
  * host does with this is pass it as `RuntimeOptions.journal`; nothing else here
  * builds a store by hand.
  */
-export { createMemoryJournal } from "./workflow-journal-memory.ts";
+export { createMemoryJournal } from "./workflow/journal/memory.ts";
 /**
  * The journal's PLATFORM backend — the HTTP client `aai-server` serves.
  *
- * Here for the same reason `createPostgresJournal` above is: `workflow-runtime.ts`
+ * Here for the same reason `createPostgresJournal` above is: `workflow/runtime.ts`
  * picks it, and the conformance arm in `aai-server` builds one to drive the real
  * route with. That arm is the only thing anywhere that exercises this client and
  * the platform's own SQL together — its unit arm's transport is a fake over the
@@ -258,24 +258,24 @@ export { createMemoryJournal } from "./workflow-journal-memory.ts";
  * testable at all. Nothing an embedder calls: `createAgentServer` chooses a
  * journal from the boot env.
  */
-export { createPlatformJournal } from "./workflow-journal-platform.ts";
+export { createPlatformJournal } from "./workflow/journal/platform.ts";
 /**
  * The durable JOURNAL and its schema.
  *
  * On `/internal` rather than the root barrel because a name is here when
  * something IMPORTS it and it is not authoring API: the two consumers are
- * `workflow-runtime.ts`, which picks a backend, and the scenario suite in
+ * `workflow/runtime.ts`, which picks a backend, and the scenario suite in
  * `aai-server` that drives the real arm. A host embedding this runtime is handed
  * a journal by `createAgentServer`; it does not build one.
  */
-export { createPostgresJournal } from "./workflow-journal-postgres.ts";
+export { createPostgresJournal } from "./workflow/journal/postgres.ts";
 export {
   applyWorkflowJournalDdl,
   workflowJournalDdl,
-} from "./workflow-journal-schema.ts";
+} from "./workflow/journal/schema.ts";
 // Asking the PLATFORM to queue a message for one of this guest's own runs.
 // `aai-server`'s enqueue handler is the other end.
-export { createPlatformQueueSend, type PlatformQueueOptions } from "./workflow-platform-queue.ts";
+export { createPlatformQueueSend, type PlatformQueueOptions } from "./workflow/platform-queue.ts";
 // The CLASSIFIER over the queue-name grammar. It began as the DevKit's
 // (`parseQueueName` in `@workflow/world`) and is ours now. It is a declared
 // dependency of THIS package and not of `aai-server`, so a second spelling on
@@ -293,7 +293,7 @@ export { createPlatformQueueSend, type PlatformQueueOptions } from "./workflow-p
 // `20260903010000_workflow_queue_run_kind_columns.sql` carries what it bought
 // (a busy tick 516 ms -> 20 ms) and why the column is not GENERATED from the
 // grammar in the DDL instead.
-export { queueNameKind, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
+export { queueNameKind, WORKFLOW_QUEUE_PATH } from "./workflow/queue-dispatch.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
 //
@@ -302,11 +302,11 @@ export { queueNameKind, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts
 // env, which the agent env never carries), and it must not learn the webhook path
 // in order to publish a minter over it. What it fills is the step slot a workflow
 // BODY reads through `stepWebhookUrl`.
-export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow-serve.ts";
+export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow/serve.ts";
 // Standing an upload store up. The store TYPE, the two blob implementations and
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.
-export { createUploadStore } from "./workflow-uploads.ts";
+export { createUploadStore } from "./workflow/uploads.ts";
 // Wiring a socket up under a session. `SessionWebSocket` — the minimal socket
 // shape a host supplies — is contracted, on the root barrel.
 export { wireSessionSocket } from "./ws-handler.ts";
@@ -315,7 +315,7 @@ export { wireSessionSocket } from "./ws-handler.ts";
  * The {@link JournalStore} CONFORMANCE suite, loaded on demand.
  *
  * One case list, run over every arm a run really journals into
- * (`journal-conformance.ts` carries the argument). Two of the three arms live in
+ * (`workflow/journal/conformance.ts` carries the argument). Two of the three arms live in
  * this package; the third is `createPlatformJournal` wired to the platform's REAL
  * handler and a real Postgres, which can only be stood up in `aai-server` — so
  * the case list has to cross the package boundary, and this is the subpath that
@@ -368,7 +368,7 @@ export type JournalConformanceSuite = {
   journalIds: (label: string) => () => string;
 };
 export async function loadJournalConformance(): Promise<JournalConformanceSuite> {
-  const { journalConformance, journalIds } = await import("./journal-conformance.ts");
+  const { journalConformance, journalIds } = await import("./workflow/journal/conformance.ts");
   return { journalConformance, journalIds };
 }
 

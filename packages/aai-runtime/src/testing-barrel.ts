@@ -112,7 +112,7 @@ export type {
   SleepEntry,
   SleepRecord,
   StepEntry,
-} from "./workflow-journal-records.ts";
+} from "./workflow/journal/records.ts";
 // The two types those name and this subpath did not publish. `journal` is the
 // documented seam for running a spec against a real store rather than the
 // memory one, which is unusable if the store's shape has no name here; and
@@ -125,5 +125,5 @@ export {
   JournalConflictError,
   type JournalStore,
   type RunStatus,
-} from "./workflow-journal-types.ts";
-export type { DeterminismKind } from "./workflow-replay-determinism.ts";
+} from "./workflow/journal/types.ts";
+export type { DeterminismKind } from "./workflow/replay/determinism.ts";

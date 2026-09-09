@@ -35,7 +35,7 @@ const {
   STEP_FETCH_PIPELINING,
 } = await import("@alexkroman1/aai/host-internal");
 const { TRANSCRIBE_SYNC_TIMEOUT_MS } = await import("@alexkroman1/aai/step");
-const { withRunContext } = await import("./workflow-run-context.ts");
+const { withRunContext } = await import("./workflow/run-context.ts");
 
 describe("createStepFetch", () => {
   test("pins HTTP/1.1 — the one option the whole module exists for", () => {

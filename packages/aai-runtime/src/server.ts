@@ -29,11 +29,11 @@ import { serveStatic } from "./server-static.ts";
 import { declineSocket } from "./session-decline.ts";
 import { createSessionEventsApi, SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
 import { enabledCarriers, handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
-import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
-import { answerHandlerFailure, sendJson } from "./workflow-api-http.ts";
-import { serveFetch } from "./workflow-http-adapter.ts";
-import { installWorkflowSupport } from "./workflow-install.ts";
-import { createWebhookHandler, MAX_WEBHOOK_BODY_BYTES, webhookToken } from "./workflow-webhook.ts";
+import { answerHandlerFailure, sendJson } from "./workflow/api/http.ts";
+import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow/api.ts";
+import { serveFetch } from "./workflow/http-adapter.ts";
+import { installWorkflowSupport } from "./workflow/install.ts";
+import { createWebhookHandler, MAX_WEBHOOK_BODY_BYTES, webhookToken } from "./workflow/webhook.ts";
 import { asSessionWebSocket } from "./ws-handler.ts";
 
 export type {

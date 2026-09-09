@@ -230,7 +230,7 @@ sessionStateConformance({
  * A conformance table listing two of three arms reports the same green as one
  * listing all three, and a backend nobody registered reports nothing at all —
  * the silent-success shape `store-conformance-registry.test.ts` exists for one
- * package over, and `journal-conformance.test.ts` beside this one. Everything
+ * package over, and `workflow/journal/conformance.test.ts` beside this one. Everything
  * here is a TEXT scan, for the same reason it is there: a set comparison over
  * declarations is not a pattern a line either matches or does not, so it is a
  * test rather than a `guard-invariants` rule.

@@ -60,7 +60,7 @@ import { type AgentServer, createRuntimeServer, type SharedServerOptions } from 
 import { agentServerEnv } from "./server-env.ts";
 import { routeMatches, SERVER_ROUTES, type ServerRoute } from "./server-routes.ts";
 import { enabledCarriers } from "./telephony/telephony-server.ts";
-import { handleWorkflowRequest } from "./workflow-serve.ts";
+import { handleWorkflowRequest } from "./workflow/serve.ts";
 
 /**
  * `HEAD /health` — the verb the health route did not answer.

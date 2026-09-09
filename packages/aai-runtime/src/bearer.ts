@@ -4,7 +4,7 @@
  * that parse's return type obliges every caller to check ({@link isBlankSecret}).
  *
  * There were THREE copies of this line — `aai-server/_bearer.ts`,
- * `workflow-api-http.ts`'s `bearerMatches` and `aai-guest/harness-auth.ts`'s
+ * `workflow/api/http.ts`'s `bearerMatches` and `aai-guest/harness-auth.ts`'s
  * `bearerToken` — and all three matched the scheme CASE-SENSITIVELY, so a client
  * sending the spec-legal `authorization: bearer <key>` resolved to nothing and
  * every gate refused it. `aai-server`'s copy was fixed first and could not be
@@ -13,7 +13,7 @@
  *
  * It lives in `aai-runtime` rather than in `@alexkroman1/aai/host-internal`
  * because that is the NARROWEST home that reaches both remaining call sites —
- * `workflow-api-http.ts` is in this package, and `aai-guest` already depends on
+ * `workflow/api/http.ts` is in this package, and `aai-guest` already depends on
  * it and imports nine other names from `@alexkroman1/aai-runtime/internal`.
  * Putting it in the SDK would publish it to every package in the repo, including
  * the two browser bundles that have no `Authorization` header to parse.

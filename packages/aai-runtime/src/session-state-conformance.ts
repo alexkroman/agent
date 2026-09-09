@@ -3,7 +3,7 @@
  * ONE {@link SessionStateBackend} contract, asserted ONCE, over every backend a
  * session's durable state really lands in.
  *
- * This is `journal-conformance.ts` a second time and `aai-server`'s
+ * This is `workflow/journal/conformance.ts` a second time and `aai-server`'s
  * `store-conformance.ts` a third: read either for the argument behind the
  * pattern, which is not restated here. What this module adds is the registry and
  * the entry point; the cases are `session-state-conformance-slots.ts` (`load`,

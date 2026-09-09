@@ -167,7 +167,7 @@ export const STORE_CONTRACTS = [
     // it was the worst of the three.** It said the memory arm's unit spec lives
     // in `packages/aai`, which may import no sibling. Both
     // `createMemoryKeyStore` and `createPostgresKeyStore` are declared in ONE
-    // FILE in `aai-runtime` (`workflow-keys.ts`) — so unlike session state and
+    // FILE in `aai-runtime` (`workflow/keys.ts`) — so unlike session state and
     // the journal, which at least had a boundary between their implementations,
     // nothing structural ever stood between this contract and a shared table.
     // It was simply owed.
@@ -176,7 +176,7 @@ export const STORE_CONTRACTS = [
     // once and `WORKFLOW_KEY_STORES` there is its registry, the same pattern as
     // this file. TWO arms run it — memory (the reference, unit) and
     // `createPostgresKeyStore` against a real database
-    // (`workflow-keys-conformance-postgres.scenario.test.ts`). There is no third
+    // (`workflow/keys-conformance-postgres.scenario.test.ts`). There is no third
     // and no fourth: this index lives in the app's own `ctx.db` schema, so there
     // is no platform route to drive and no platform SQL to be blind to.
     //
@@ -199,7 +199,7 @@ export const STORE_CONTRACTS = [
     memory: "createMemoryKeyStore",
     pg: "createPostgresKeyStore",
     conformance: false,
-    why: "both factories live in one module in aai-runtime (workflow-keys.ts), so this registry cannot pair them — the shared case list is workflow-keys-conformance.ts there, with its own registry (WORKFLOW_KEY_STORES) and two arms; the schema and plan claims stay in workflow-keys.scenario.test.ts here",
+    why: "both factories live in one module in aai-runtime (workflow/keys.ts), so this registry cannot pair them — the shared case list is workflow/keys-conformance.ts there, with its own registry (WORKFLOW_KEY_STORES) and two arms; the schema and plan claims stay in workflow-keys.scenario.test.ts here",
   },
   {
     // The durable JOURNAL — what makes a run outlive its process. Same
@@ -241,7 +241,7 @@ export const STORE_CONTRACTS = [
     memory: "createMemoryJournal",
     pg: "createPostgresJournal",
     conformance: false,
-    why: "SDK tier: both factories live in aai-runtime, so this registry cannot pair them — the shared case list is journal-conformance.ts there, with its own registry (JOURNAL_BACKENDS) and four arms, one of which is journal-conformance-platform.scenario.test.ts here",
+    why: "SDK tier: both factories live in aai-runtime, so this registry cannot pair them — the shared case list is workflow/journal/conformance.ts there, with its own registry (JOURNAL_BACKENDS) and four arms, one of which is journal-conformance-platform.scenario.test.ts here",
   },
   {
     contract: "upload-bytes",
@@ -272,7 +272,7 @@ export const STORE_CONTRACTS = [
     // **So this entry is NOT a fourth table owed, and that is the difference
     // from the two above.** Those two were exempt on a boundary that had stopped
     // existing, and both now have a shared case list a package over
-    // (`session-state-conformance.ts`, `workflow-keys-conformance.ts`), leaving
+    // (`session-state-conformance.ts`, `workflow/keys-conformance.ts`), leaving
     // only the mechanical fact that THIS registry pairs by factory name. Here
     // the blocker is the arm, not the boundary: a case list would have exactly
     // one implementation to run against until `supabase/config.toml` declares a

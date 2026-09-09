@@ -253,7 +253,7 @@ export interface Transport {
    * does, so the reply that follows is an ordinary turn and is interruptible
    * like one.
    *
-   * **The only caller so far is a durable run finishing** (`workflow-notify.ts`):
+   * **The only caller so far is a durable run finishing** (`workflow/notify.ts`):
    * research takes minutes, the caller is on the line, and without this the
    * agent knows the answer and has no way to say so — the user has to think to
    * ask again. Anything else that learns something a caller is waiting for

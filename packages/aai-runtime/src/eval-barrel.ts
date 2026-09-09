@@ -94,7 +94,7 @@
 // and nothing else.
 //
 // That is not a convenience. `@alexkroman1/aai-runtime`'s root barrel reaches
-// `agent-server.ts` → `server.ts` → `workflow-install.ts` → `step-fetch.ts`, so
+// `agent-server.ts` → `server.ts` → `workflow/install.ts` → `step-fetch.ts`, so
 // a template eval that imports the root for one type drags the runtime's
 // node-reaching modules into a program that may have no node types — three
 // `BodyInit`/`exactOptionalPropertyTypes` errors in files the eval never calls.

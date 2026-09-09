@@ -53,7 +53,7 @@ function call(n = 0): [string, RequestInit | undefined] {
  * correct cursor from an off-by-one, which is exactly how the re-open spec below
  * asserted `startIndex=1` for months while the server it talks to would have
  * answered that with chunk 1 skipped. So this serves out of a log the way
- * `workflow-api-stream.ts` does: an absent or non-negative `startIndex` is an
+ * `workflow/api/stream.ts` does: an absent or non-negative `startIndex` is an
  * INCLUSIVE floor, and the read is bounded by the tail at the moment it arrived.
  *
  * `packages/aai-runtime/src/workflow-stream-cursor.test.ts` is the property over

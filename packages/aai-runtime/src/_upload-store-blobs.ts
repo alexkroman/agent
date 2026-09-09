@@ -7,7 +7,7 @@
  * record (who the upload is, how much of it is readable, whether that is all of
  * it, and which objects hold which windows) and {@link UploadBackend} for the bytes.
  * Each has two implementations, and the pairing is decided once — in
- * `workflow-uploads.ts` — by whether the deployment has a `DATABASE_URL`: the
+ * `workflow/uploads.ts` — by whether the deployment has a `DATABASE_URL`: the
  * app's own database plus a bucket when it does, the local workflow world's data
  * directory when it does not (`_upload-files.ts`, which carries why that is not
  * the file backend this store used to have).

@@ -209,7 +209,7 @@ export function applyStepOp(t: Tables, op: StepOp, targets: Targets): Answer {
       };
     case "claimAttempt": {
       // ONE statement over ONE row, holding a MAP of holder to when it claimed —
-      // `_workflow-journal-attempts.ts` carries the shape. What the model has to
+      // `workflow/journal/_attempts.ts` carries the shape. What the model has to
       // reproduce is that a re-claim by a holder that already holds one answers
       // the SAME number, which a counter cannot.
       //

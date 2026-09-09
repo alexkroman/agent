@@ -617,7 +617,7 @@ gone with `createHook`. **A BODY and its steps reach the same URL as
 `workflowApp()` with no tools has: a `Symbol.for` slot a host fills with a
 minter that already knows the route. Its own doc carries the one-claim-per-run
 rule and what `aai dev` can and cannot do. The three load-bearing properties are
-in `packages/aai-runtime/CLAUDE.md` — the package where `workflow-client.ts`
+in `packages/aai-runtime/CLAUDE.md` — the package where `workflow/client.ts`
 lives.
 
 ## A run can tell the caller it finished
@@ -1154,8 +1154,8 @@ guest is what the rule is about, and this guide is at its cap.
 ## A request-path decode never throws
 
 **`decodePathSegment` (`host/_path-decode.ts`) is the one spelling**, applied at
-all five decode sites (`workflow-api.ts` x2, `server-static.ts`,
-`workflow-serve.ts`, `session-events-api.ts`). `decodeURIComponent` THROWS a
+all five decode sites (`workflow/api.ts` x2, `server-static.ts`,
+`workflow/serve.ts`, `session-events-api.ts`). `decodeURIComponent` THROWS a
 `URIError` on a malformed escape and a request target is attacker-supplied:
 `GET /.well-known/workflow/v1/webhook/%` is a legal HTTP request that nothing in
 the stack rejects before a handler cuts the path apart. Those five sites sat in

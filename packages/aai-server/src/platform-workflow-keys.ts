@@ -24,7 +24,7 @@
  *
  * That module holds the self-hosted store, and the three backends agreeing is
  * what lets the memory one be a valid double for the other two
- * (`workflow-keys-conformance.ts` there is the shared case list). Three of its
+ * (`workflow/keys-conformance.ts` there is the shared case list). Three of its
  * choices are load-bearing and reproduced here with their reasons:
  *
  * - **`on conflict … do nothing`, keyed on the RUN.** A run id is unique by

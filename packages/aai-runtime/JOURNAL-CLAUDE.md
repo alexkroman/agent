@@ -392,7 +392,7 @@ holding the guest open.
 
 The claims are of four different kinds, which is why there are four files:
 
-- **`workflow-journal-platform.test.ts`** — our side of the wire. The CODEC (a
+- **`workflow/journal/platform.test.ts`** — our side of the wire. The CODEC (a
   `Uint8Array` in a step's output crosses as an envelope, not as an index map,
   which `JSON.stringify` produces with no error), and three answers REFUSED
   rather than invented: `claimAttempt` on a non-number (a made-up ceiling does
@@ -430,7 +430,7 @@ the JSON, found only by a real server.
 
 ## The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
 
-`journal-conformance.ts` declares ONE case list and `JOURNAL_BACKENDS` registers
+`workflow/journal/conformance.ts` declares ONE case list and `JOURNAL_BACKENDS` registers
 the backends. Three arms run it from this package; the fourth cannot, and it is
 the one that finds platform bugs:
 
@@ -524,12 +524,12 @@ unavailable moment killed a healthy run permanently, discarded a step that had
 already SUCCEEDED (unjournaled, so a retry has nothing to answer from), and
 showed a caller the store's "connection reset" as their own workflow's error.
 
-**`workflow-replay-journal-failure.ts` closes it and carries the argument** — why
+**`workflow/replay/journal-failure.ts` closes it and carries the argument** — why
 a wrapper around the store rather than a check at each of seven methods across
 five files, why the body SWALLOWING the rejection is the quieter half, and why
 its one exemption is `JournalConflictError` (`claimHook`'s token conflict: a
 verdict about the run, so it must still fail it — without the exemption
-`workflow-engine-waits.test.ts` retries a conflicted run forever). Every backend
+`workflow/engine-waits.test.ts` retries a conflicted run forever). Every backend
 owes that type for that case; the platform arm maps its route's 409, scoped to
 `claimHook` because postgres refuses a duplicate run id with a raw primary-key
 violation and a type only one arm keeps is worse than none.
@@ -567,12 +567,12 @@ term. Nothing reported it: every call SUCCEEDED, so a log shows a run getting
 slower.
 
 `JournalStore.readSleeps` is the missing half — one bulk read, taken beside
-`readSteps` in `workflow-engine.ts` and handed down as `ReplayOptions.sleeps`.
+`readSteps` in `workflow/engine.ts` and handed down as `ReplayOptions.sleeps`.
 
 **What a snapshot may answer is NARROWER than for a step, and that is the whole
 of the correctness argument.** `claimSleep` is a CLAIM, not a read: it creates
 the record when there is none. So `overInSnapshot`
-(`workflow-replay-waits.ts`) answers `true` only when the record is IN the
+(`workflow/replay/waits.ts`) answers `true` only when the record is IN the
 snapshot — the claim has already happened — AND the wait is over by a MONOTONIC
 test: `woken` is set once and never cleared, and `wakeAt` is fixed on the first
 reach (first write wins) so a past deadline stays past. Everything else
@@ -597,7 +597,7 @@ Three things not to relitigate:
   lazy read would save that at the price of putting the read on the critical
   path of the first wait of every polling run, which is the case that matters.
 
-`workflow-wait-snapshot.test.ts` is the regression, and its module doc carries
+`workflow/wait-snapshot.test.ts` is the regression, and its module doc carries
 the A/B: with the snapshot arm removed, claims per delivery go
 `[1, 2, 3, 4, 5, 5]` against the flat `[1, 1, 1, 1, 1, 0]` it asserts.
 
@@ -620,7 +620,7 @@ ABANDONMENT.
 It used to be a bare tally, and one number served two budgets that pull in
 opposite directions — how many times to TRY (the author's `maxAttempts`) and how
 many workers may die holding this step. A property harness
-(`workflow-concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
+(`workflow/concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
 under three deliveries: a `ctx.step` whose body sleeps — a shape the engine now
 REFUSES outright, see "A step body may not WAIT" above — all three
 suspending
@@ -632,7 +632,7 @@ pre-body refusal is no longer a journal entry at all
 (`StepAbandonedError`, classified like a divergence: a verdict about the walk,
 never about the step). **A step that succeeded is never journaled `failed`,
 because only a walk whose own body threw may write a `failed` entry.**
-`workflow-replay-step.ts`'s module doc carries the rest.
+`workflow/replay/step.ts`'s module doc carries the rest.
 
 **The residual that account ends on is the rest of this section.** It read: a
 charge cannot tell an abandoned attempt from a LIVE one, so `maxAttempts`
@@ -652,7 +652,7 @@ than over minutes.
   answers the same number rather than a higher one. The engine claims once per
   walk per key, so this is a defence rather than a fix — but a claim is a
   non-idempotent write over an at-least-once transport, and
-  `workflow-journal-platform.ts` had to carry a rule about it ("must not soften
+  `workflow/journal/platform.ts` had to carry a rule about it ("must not soften
   it by retrying the call itself — a retried claim would burn two").
 - **A charge can EXPIRE**, which is the half that fixes a real defect. A scalar
   counter cannot: the charge a dead walk left was indistinguishable from a live
@@ -677,7 +677,7 @@ Measured on a real Postgres — three concurrent claims answered **`[1, 1, 3]`**
 against a contract that no two ever agree, caught by the conformance suite's
 "two concurrent claims never hand out the same number".
 
-`_workflow-journal-attempts.ts` holds the statement and the three cases its
+`workflow/journal/_attempts.ts` holds the statement and the three cases its
 `case` expression gets right; the platform twin is in
 `aai-server/platform-workflow-journal.ts` with a `slug` added to the key.
 
@@ -708,7 +708,7 @@ what the `case` in the statement is for, and an unconditional add would delete
 it silently.
 
 It is pinned twice, and the conformance half is exact rather than coarse. The
-recorder tests in `workflow-journal-postgres.test.ts` and
+recorder tests in `workflow/journal/postgres.test.ts` and
 `platform-workflow-journal.test.ts` assert the branch with no clock in them at
 all. The conformance case OWNS the clock instead of racing it: it spies
 `Date.now` to stamp the first claim half an hour ago, re-claims now, and reads
@@ -748,3 +748,30 @@ a Supabase stack and skips without one, which is why this was caught in CI's
 creates, alters and indexes; it replays `drop table if exists` now, which applies
 nothing yet and is pre-positioned for the contract release the ledger entry
 guarantees.
+
+## The journal is a DIRECTORY now, and three scans discovered it by filename
+
+`workflow-journal-*.ts` is `workflow/journal/*.ts`, moved with the rest of the
+`workflow-*` prefix when it reached 166 files (`CLAUDE.md`, "Layout"). Two
+things came with it that never carried the prefix: `journal-conformance*` is
+`workflow/journal/conformance*`, because it is the `JournalStore` contract and
+imports the backends directly, and the `_workflow-journal-*` harnesses are
+`workflow/journal/_*`.
+
+**What the move cost is the part worth keeping, because the next prefix split
+will pay it again.** Three suites discover their own subject by FILENAME —
+`workflow/journal/conformance.test.ts`, `conformance-arms.test.ts` beside it,
+and `workflow/keys-conformance.test.ts` — so a `startsWith("workflow-journal-")`
+scan matches nothing the moment that prefix becomes a directory, and a registry
+comparing "what is in the tree" against "what is registered" then compares two
+empty sets. All three failed LOUDLY, and only for one reason: each carries an
+`expect(found.length).toBeGreaterThan(0)` floor under its scan. That floor is
+the whole difference between a red suite and a green one asserting nothing — the
+failure shape this repo keeps paying for, and here the thing that caught it.
+
+The journal scan keys on the DIRECTORY plus a `create*Journal` export now, which
+is strictly wider than what it replaced: a backend can no longer arrive under a
+NAME the scan fails to recognise, only in a directory it does not read.
+`konsistent.json`'s `workflow-journal-backends` moved with the files and owes
+two exclusions it did not before — the conformance suite and the `_*` helpers
+became its neighbours, and they match `{backendId}.ts` for no other reason.

@@ -393,7 +393,7 @@ LAST, so enabling storage silently beat whatever the author had set.
 three things the app database held are the platform's now, reached over HTTP
 with the sandbox's own bearer: durable workflow runs (the queue, storage and
 streamer as `aai_platform` tables; the guest's world is
-`workflow-platform-world.ts`), turn-level durability (`session_slots` /
+`workflow/platform-world.ts`), turn-level durability (`session_slots` /
 `session_events`, behind the runtime's third `SessionStateBackend`), and
 workflow upload RECORDS (`workflow_uploads`, behind its third `UploadRecords` —
 `platform-uploads.ts`).

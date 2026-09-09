@@ -241,10 +241,10 @@ documented in that package's guide, not here:
 
 Five in `aai-runtime` are the exception that proves the rule, and they are
 listed here because that package's guide is AT the 120,000-char cap and cannot
-take a pointer: `_workflow-journal-log.ts` (every durable write as a log, and a
+take a pointer: `workflow/journal/_log.ts` (every durable write as a log, and a
 world rebuilt from a PREFIX of one — never the log with a hole in it),
-`_workflow-journal-invariants.ts` (what a log must satisfy, re-derived rather
-than re-asked of the store that wrote it), `_workflow-engine-harness.ts` (both
+`workflow/journal/_invariants.ts` (what a log must satisfy, re-derived rather
+than re-asked of the store that wrote it), `workflow/_engine-harness.ts` (both
 of those as an `onTestFinished` post-condition, so every engine spec is also a
 durability spec), `workflow-interleavings/` (shrunk counterexamples frozen as
 `fc.schedulerFor` orderings, each naming the guard whose removal it catches) and

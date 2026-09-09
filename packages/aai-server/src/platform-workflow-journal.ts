@@ -18,7 +18,7 @@
  * A `workflow_run_owner` mapping table used to carry this beside the DevKit's
  * journal, whose fixed schema had no such column. Both are gone.
  *
- * ## The statements mirror `workflow-journal-schema.ts`, deliberately
+ * ## The statements mirror `workflow/journal/schema.ts`, deliberately
  *
  * That is the self-hosted store, and the two being one contract is what lets a
  * scenario test over either be evidence about both. Four of its choices are
@@ -332,7 +332,7 @@ export async function readStep(
 /**
  * Charge one attempt, and answer how many are OUTSTANDING.
  *
- * The platform twin of `_workflow-journal-attempts.ts`, which carries the whole
+ * The platform twin of `workflow/journal/_attempts.ts`, which carries the whole
  * argument — why ONE row per key rather than one per holder (the row lock is the
  * atomicity, and a row per holder measured `[1, 1, 3]` on three concurrent
  * claims), the three cases the `case` gets right, why a live holder's instant

@@ -9,7 +9,7 @@
  * ```ts no-check
  * new Promise((resolve) => setTimeout(resolve, ms))            // ×13, inline
  * function sleep(ms) { setTimeout(resolve, ms).unref?.() }     // aai-server/_sleep.ts
- * function delay(ms) { setTimeout(resolve, ms).unref?.() }     // workflow-api-wait.ts
+ * function delay(ms) { setTimeout(resolve, ms).unref?.() }     // workflow/api/wait.ts
  * function sleep(ms) { … }                                    // host/workflow-notify.ts
  * function delayOrAbort(ms, signal) { … }                      // host/_fake-llm.ts
  * import { setTimeout as sleep } from "node:timers/promises"   // ×4

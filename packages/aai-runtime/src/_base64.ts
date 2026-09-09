@@ -8,7 +8,7 @@
  * `Buffer.from(s, "base64")` is LENIENT: it drops every character outside the
  * alphabet and returns whatever the survivors decode to, so
  * `"not base64 at all!!"` came back as ten arbitrary bytes with nothing
- * raised. That is the identical defect `workflow-typed-json.ts`'s
+ * raised. That is the identical defect `workflow/typed-json.ts`'s
  * `bytesFromBase64` records and fixed one module over, and it matters more
  * here: `telephony/telephony-bridge.ts` decodes a payload a CARRIER chose, so
  * a malformed frame put noise into a caller's ear and was indistinguishable
@@ -178,7 +178,7 @@ const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
  * `"loose"` accepts an unpadded final chunk (`"aGVsbG8"`) and non-zero
  * trailing bits (`"AAB="`), each of which has exactly one decoding; the far
  * end is a third party, and refusing a sloppy spelling would drop real audio.
- * `"strict"` refuses both, which is what `workflow-typed-json.ts` wants of a
+ * `"strict"` refuses both, which is what `workflow/typed-json.ts` wants of a
  * value we encoded ourselves.
  */
 export type LastChunkHandling = "loose" | "strict";

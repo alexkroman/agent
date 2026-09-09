@@ -33,7 +33,7 @@
  * ## It is the DevKit's `getStepMetadata()`, with two differences
  *
  * That function threw outside a step, which is why the DevKit-era
- * `workflow-report.ts` wrapped every call in a try/catch. This answers
+ * `workflow/report.ts` wrapped every call in a try/catch. This answers
  * `undefined` instead, for the reason {@link stepEnv} and `stepReport()` do: an
  * exported step is also an ordinary async function, and every workflow
  * template's tests call one directly with no run anywhere. A body that must

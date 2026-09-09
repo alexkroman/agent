@@ -196,7 +196,7 @@ test("round-trips", () => {
   test("recognises a counter in each of the three spellings the tree uses", () => {
     // The other half of the obligation trigger. Four suites walk a machine
     // through a SYNC fc.property, so no API marks them stateful; what they have
-    // is a tally. The Map form is `workflow-typed-json-property.test.ts`, which
+    // is a tally. The Map form is `workflow/typed-json-property.test.ts`, which
     // was classified value-level until that arm existed.
     for (const bump of [
       "reached.opened++;",

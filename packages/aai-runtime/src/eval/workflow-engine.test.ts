@@ -147,7 +147,7 @@ describe("createEvalWorkflowEngine", () => {
     // rather than the whole log.
     expect(await drain(active.adapter.readStream(runId, { startIndex: -1 }))).toEqual(["done"]);
     // A NON-NEGATIVE `startIndex` is an INCLUSIVE floor — the first index the
-    // reader wants — which is `workflow-streams.ts`'s reading and so the contract
+    // reader wants — which is `workflow/streams.ts`'s reading and so the contract
     // this adapter is a second implementation of. Read exclusively, a default
     // poll never delivered chunk 0.
     expect(await drain(active.adapter.readStream(runId, { startIndex: 0 }))).toEqual([

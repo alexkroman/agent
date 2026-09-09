@@ -34,7 +34,7 @@ import {
   type SubagentRunner,
 } from "./tool-executor.ts";
 import type { UsageMeter } from "./usage-meter.ts";
-import { type RunNotifier, withNotify } from "./workflow-notify.ts";
+import { type RunNotifier, withNotify } from "./workflow/notify.ts";
 
 /**
  * Merge the agent's builtins with the tools a mode dispatches itself — the
