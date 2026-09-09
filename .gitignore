@@ -73,7 +73,10 @@ packages/aai-evals/.eval-workspaces/
 # Agent scratch: reproductions and probes, never committed.
 zz-*
 .zz-*
-# TypeDoc renders the generated SDK reference here; `astro build` copies it
-# into docs/dist/reference. Both are build output.
-docs/public/reference/
+# `starlight-typedoc` renders the generated SDK reference into the content
+# collection at build time, so this is build output that happens to live under
+# `src/`. Ignoring it also keeps it out of `assertEveryDocsPageListed`
+# (`scripts/_docs-site-pages.mjs`), which lists the site's pages from
+# `git ls-files --exclude-standard`.
+docs/src/content/docs/reference/
 docs/.astro/

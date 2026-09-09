@@ -307,7 +307,7 @@ const NOT_RUN_BY_LOCAL = [
   ["check:integration", "multiple modules in memory — the fast-check harnesses"],
   ["check:scenario", "a real subprocess, port, bundler, or Postgres (pnpm test:pg)"],
   ["check:e2e", "full process spawn + Playwright"],
-  ["docs", "TypeDoc, with treatWarningsAsErrors"],
+  ["docs", "the site: TypeDoc into Starlight, with treatWarningsAsErrors"],
 ];
 
 // ---------------------------------------------------------------------------

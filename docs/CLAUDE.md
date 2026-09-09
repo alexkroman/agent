@@ -25,35 +25,90 @@ section, and `packages/aai-runtime/CLAUDE.md` its "The published surface is
 versioned in epochs". Those say what a bump means for that package; this says
 how the mechanism works.
 
-## The site is two trees in one `dist/`
+## One Astro build renders both halves
 
 `docs/dist` is what `.github/workflows/docs.yml` uploads to GitHub Pages, and
-two independent builds fill it:
+one build fills it:
 
 | Command | Output | What it is |
 | --- | --- | --- |
-| `pnpm --filter aai-docs docs:reference` | `docs/public/reference/**` | TypeDoc HTML — the GENERATED reference |
-| `pnpm --filter aai-docs exec astro build` | `docs/dist/**` | Astro + Starlight — the HANDWRITTEN guide, which copies `public/` through verbatim |
-| `pnpm docs:api` | both, in that order | what CI and the turbo `docs` task run |
+| `pnpm --filter aai-docs docs` (`astro build`) | `docs/dist/**` | the whole site — the HANDWRITTEN guide plus the generated reference at `/reference/` |
+| `pnpm docs:api` | the same, from the repo root | what CI and the turbo `docs` task run |
 | `pnpm docs:md` | `docs/api/**` (markdown, **committed**) | agents and anything reading the repo as files |
 
-`pnpm --filter aai-docs docs:dev` serves the guide with hot reload; it does NOT
-re-render the reference, so run `docs:reference` once if you need `/reference/`
-to resolve locally.
+`pnpm --filter aai-docs docs:dev` serves it with hot reload, reference
+included; nothing has to be rendered first.
 
-**`/reference/` belongs entirely to TypeDoc.** That is why the handwritten CLI
-page sits at `/cli/` and not under it: an authored page and a generated tree
+**Starlight does not extract anything — TypeDoc still does.** Starlight is a
+theme over a content collection with no TypeScript analysis of its own, and
+nothing else in this repo carries the doc COMMENTS (the API reports strip them
+by design). What `starlight-typedoc` replaces is TypeDoc's HTML THEME: it runs
+the same converter with `typedoc-plugin-markdown` inside Starlight's
+`config:setup` hook, writes the pages into the content collection at
+`docs/src/content/docs/reference/`, and builds their sidebar group from the
+reflections. So the reference is Starlight pages, `astro build` is the whole
+site, and `docs:reference` and `docs/public/reference/` are gone.
+
+**The gain that paid for the change is LINK VALIDATION.** `public/` is copied
+after the content collection is built, so a `public/reference/` tree was
+invisible to `starlight-links-validator` and every guide link into it was
+excluded from the check — the links most likely to rot were the ones nothing
+looked at. Inside the collection they are checked, and the first run found 45
+broken ones across 14 pages, in three classes: anchor mismatches of the
+`#dialogposition-1` shape described under "The markdown rendering is COMMITTED"
+below, package overview pages the plugin's own `readme` default had deleted, and
+twelve copies of `/agent/reference/` itself. All three are FIXED at the source
+rather than excluded — `useHTMLAnchors`, `readme` and `entryFileName`, each
+argued where it is set in `astro.config.mjs`.
+
+**The reference render is configured in `astro.config.mjs`, and it reads
+`docs/typedoc.json` by ABSOLUTE path.** TypeDoc would find it by name from the
+working directory, which is right whenever `astro` runs from `docs/` and
+silently renders a different surface when it is not. Two things about that
+config the plugin does NOT inherit, because it passes its own defaults as
+PROGRAMMATIC options and those beat a config file:
+
+- **`readme`**, which the plugin sets to `none`. Left alone, TypeDoc's packages
+  strategy emits each package overview as a bare index that the plugin then
+  deletes, and the reference root links to three pages that do not exist.
+  `home.md` is passed explicitly.
+- **`out`**, which is why `docs/typedoc.json` no longer declares one: the
+  plugin owns the site's output path and `scripts/docs-markdown.mjs` passes
+  `--out` for the committed artifact.
+
+Everything else — entry points, `treatWarningsAsErrors`, `excludeInternal`, the
+`packageOptions` block — is declared once, there, and reaches both renderings.
+
+**`/reference/` still belongs entirely to the generator.** That is why the
+handwritten CLI page sits at `/cli/`: an authored page and a generated tree
 sharing a URL prefix collide the first time an entry point is named like one of
-the pages, and nothing would report it — Astro would emit both and one would
-win. Keep authored pages out of `/reference/`.
+the pages, and now they would collide inside ONE collection. Keep authored
+pages out of `/reference/`.
 
-**Two things are load-bearing about the split.** Astro copies `public/`
-untouched, so the reference keeps the tuned TypeDoc config below and every gate
-that reads it — nothing about adding the site changed what TypeDoc renders. And
-Pagefind indexes only elements Starlight marks with `data-pagefind-body`, so
-site search covers the ~15 guide pages and not the ~780 reference files; that is
-deliberate, and a `data-pagefind-body` appearing in the TypeDoc theme would
-quietly drown the guide in symbol pages.
+**Pagefind now indexes the reference, which is why it renders one page per
+MODULE.** Site search used to cover the ~15 guide pages only, because
+`public/` carried no `data-pagefind-body`. As collection pages they are all
+indexed, and the plugin's per-symbol default would have put ~780 symbol pages
+against 15 guide pages — the guide would be a rounding error in its own search
+results. `outputFileStrategy: "modules"` makes it 28, the same shape
+`typedoc.markdown.json` already chose, so a reader who follows a heading link
+in one artifact lands in the same place in the other.
+
+**The generated pages are gitignored, and that is load-bearing twice.** They are
+build output that happens to live under `src/`; ignoring them also keeps them
+out of `assertEveryDocsPageListed` (`scripts/_docs-site-pages.mjs`), which
+lists the site's pages with `git ls-files --exclude-standard` — otherwise every
+generated page would demand a `MARKDOWN_FILES` entry and have its fences
+compiled a second time, at the copy rather than the source.
+
+**A package overview page opens with a duplicated `<h1>`, hidden in
+`theme.css`.** The page is the package's published README, whose own
+`# @alexkroman1/aai` is right where npm renders it and is also the Starlight
+page title. `home.md` avoids this by carrying no heading at all (see "Code
+examples in docs compile"); a README is not ours to strip, so
+`.sl-markdown-content > h1:first-child` is display:none — narrow by
+construction, since a Starlight page takes its title from frontmatter and no
+authored page here starts its body with a heading.
 
 **Every page of the guide is compiled.** `docs/src/content/docs/**` is listed in
 `MARKDOWN_FILES` (`scripts/check-doc-examples.mjs`), so every ` ```ts ` fence on
@@ -69,8 +124,11 @@ that population small, and prefer making an example self-contained. The gate
 earns its keep — the first run of these pages caught `createRuntimeServer` and
 `stubGenerate` being called with signatures neither has.
 
-**The site's own sidebar is the one hand-kept list.** `docs/astro.config.mjs`
-names each page; a new page that nobody adds to it is built and unreachable.
+**The GUIDE's sidebar is the one hand-kept list left.** `docs/astro.config.mjs`
+names each authored page; a new page that nobody adds to it is built and
+unreachable. The reference's group is not in it — `typeDocSidebarGroup` is a
+placeholder the plugin fills from the reflections, so a new subpath export
+reaches the nav without an edit.
 
 Both cover the same surface from the built `dist/*.d.ts`: all of `aai` and
 `aai-ui`, and **three of `aai-runtime`'s five subpaths** — `/eval`,
@@ -713,17 +771,20 @@ user-facing markdown outside it. It carried
 exact misuse `AgentParams` declares a string-literal type to reject, so the
 most-read example in the project taught the thing the type system exists to
 prevent, and contradicted `packages/aai/README.md` two screens away. Nothing
-downstream regenerates when it changes: the markdown rendering sets
-`readme: "none"`, so `home.md` reaches `docs/dist` only.
+downstream regenerates when it changes: the committed markdown rendering sets
+`readme: "none"`, so `home.md` reaches `docs/dist` only — as `/reference/`,
+which is what the twelve guide links to it resolve to.
 
 **And it opens with NO heading at all, deliberately — hence the
-`markdownlint-disable-next-line MD041` on its first line.** TypeDoc renders the
-project `name` as the reference landing page's own `<h1>`, plus the toolbar link
-and the `<title>`, so a `# AAI SDK` in the readme body produced two identical
-`<h1>AAI SDK</h1>` elements stacked at the top of it. Verified by reading the
-built page before and after (`docs/public/reference/index.html`, which Astro
-copies to `docs/dist/reference/`): two `<h1>` down to one, with the `<title>`,
-the toolbar and every `##` heading unchanged.
+`markdownlint-disable-next-line MD041` on its first line.** Whatever renders
+this file titles the page from the model: TypeDoc's HTML theme used the project
+`name`, and Starlight now takes the `title` its plugin writes into frontmatter,
+so a `# AAI SDK` in the body produces two identical `<h1>AAI SDK</h1>` elements
+stacked at the top. Measured under both renderers (`docs/dist/reference/index.html`
+is the current one): two `<h1>` down to one, with the `<title>` and every `##`
+heading unchanged. The generated package overview pages hit the same wall from
+the other side and are handled in CSS — see "One Astro build renders both
+halves".
 
 That disable comment is why `check:markdown` passes without an `ignores` entry
 for the file, which is the outcome worth having: MD041 is off for one LINE and
