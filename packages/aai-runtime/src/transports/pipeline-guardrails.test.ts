@@ -26,60 +26,84 @@ function recorder() {
 }
 
 describe("createSpeechGate", () => {
-  test("disabled, it IS the underlying send", () => {
+  test("disabled, it IS the underlying send", async () => {
     // Not merely equivalent: the shipped path for every agent that declares no
     // output guardrail must be the same function object it always was.
     const sink = recorder();
     const gate = createSpeechGate(false, sink.send);
     expect(gate.send).toBe(sink.send);
-    gate.hold();
-    gate.send("spoken anyway");
+    await gate.withHold(async () => {
+      gate.send("spoken anyway");
+    });
     expect(sink.sent.map((s) => s.text)).toEqual(["spoken anyway"]);
   });
 
-  test("a hold buffers recordable sends and release speaks them in order", () => {
+  test("a hold buffers recordable sends and release speaks them in order", async () => {
     const sink = recorder();
     const gate = createSpeechGate(true, sink.send);
     gate.send("before");
-    gate.hold();
-    gate.send("one");
-    gate.send("two");
-    expect(sink.sent.map((s) => s.text)).toEqual(["before"]);
-    gate.release();
+    await gate.withHold(async () => {
+      gate.send("one");
+      gate.send("two");
+      expect(sink.sent.map((s) => s.text)).toEqual(["before"]);
+      gate.release();
+    });
     expect(sink.sent.map((s) => s.text)).toEqual(["before", "one", "two"]);
   });
 
-  test("discard drops the held text unspoken", () => {
+  test("discard drops the held text unspoken", async () => {
     const sink = recorder();
     const gate = createSpeechGate(true, sink.send);
-    gate.hold();
-    gate.send("the blocked reply");
-    gate.discard();
-    gate.send("after");
+    await gate.withHold(async () => {
+      gate.send("the blocked reply");
+      gate.discard();
+      gate.send("after");
+    });
     expect(sink.sent.map((s) => s.text)).toEqual(["after"]);
   });
 
-  test("FILLER passes straight through a hold", () => {
+  test("FILLER passes straight through a hold", async () => {
     // The dead-air cover is what covers the silence a hold creates. Buffering it
     // would mean the caller hears nothing at all while a reply is judged.
     const sink = recorder();
     const gate = createSpeechGate(true, sink.send);
-    gate.hold();
-    gate.send("held", { record: true });
-    gate.send("Still working on that.", { record: false });
-    expect(sink.sent.map((s) => s.text)).toEqual(["Still working on that."]);
-    gate.discard();
+    await gate.withHold(async () => {
+      gate.send("held", { record: true });
+      gate.send("Still working on that.", { record: false });
+      expect(sink.sent.map((s) => s.text)).toEqual(["Still working on that."]);
+      gate.discard();
+    });
     expect(sink.sent.map((s) => s.text)).toEqual(["Still working on that."]);
   });
 
-  test("release with nothing held is a no-op, and a second one cannot re-speak", () => {
+  test("release with nothing held is a no-op, and a second one cannot re-speak", async () => {
     const sink = recorder();
     const gate = createSpeechGate(true, sink.send);
-    gate.hold();
-    gate.send("one");
-    gate.release();
-    gate.release();
+    await gate.withHold(async () => {
+      gate.send("one");
+      gate.release();
+      gate.release();
+    });
     expect(sink.sent.map((s) => s.text)).toEqual(["one"]);
+  });
+
+  test("a body that THROWS leaves the gate open, and drops what it held", async () => {
+    // The hold is session-lifetime state on a gate every collaborator shares,
+    // so a turn that threw between holding and deciding used to shut the funnel
+    // for the rest of the CALL. Two halves, and both are the bug: the words the
+    // crashed turn had buffered are unjudged and must not be spoken, and
+    // everything AFTER it must be.
+    const sink = recorder();
+    const gate = createSpeechGate(true, sink.send);
+    await expect(
+      gate.withHold(async () => {
+        gate.send("half a reply");
+        throw new Error("the turn crashed");
+      }),
+    ).rejects.toThrow("the turn crashed");
+    expect(sink.sent).toEqual([]);
+    gate.send("the next thing the agent says");
+    expect(sink.sent.map((s) => s.text)).toEqual(["the next thing the agent says"]);
   });
 });
 

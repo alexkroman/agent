@@ -11,6 +11,7 @@ import {
   inFlightReplyScript,
   llmCalls,
   makeOpts,
+  noopToolSchema,
   useVirtualTime,
 } from "./_pipeline-transport-harness.ts";
 import type { DialogTurnKnobs } from "./pipeline-dialog-knobs.ts";
@@ -112,6 +113,44 @@ describe("a state's toolChoice and temperature", () => {
     });
 
     expect(llmCalls(opts).calls[0]?.temperature).toBe(0.9);
+    await t.stop();
+  });
+
+  test("beat an agent-level `required` on EVERY step, not just the first", async () => {
+    // Three scopes on one key, and the middle one is the state's. An agent-level
+    // demanding `toolChoice` is put back to `"auto"` after step 0
+    // (`resetToolChoiceAfterFirstStep`), which shares the key this preparer
+    // writes — so composed in the wrong order the reset wins from step 1 on and
+    // a state that pins a tool silently stops meaning it after the first step
+    // of every turn. `ToolChoice`'s scope list is what says the state wins:
+    // agent → turn → dialog state → forced final step.
+    const { opts, stt } = makeOpts({
+      llm: createFakeLanguageModel({
+        steps: [
+          [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
+          [{ type: "tool-call", toolCallId: "tc-2", toolName: "lookup", input: "{}" }],
+          [{ type: "text", text: "all set" }],
+        ],
+      }),
+      toolChoice: "required",
+      toolSchemas: [noopToolSchema],
+      executeTool: async () => "ok",
+      dialogTurn: () => ({ toolChoice: { type: "tool", toolName: "lookup" } }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.fireFinal("look it up");
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(3);
+    });
+
+    // maxSteps defaults to 10, so `forceFinalAnswer` fires on none of these —
+    // every step here is the state's to pin.
+    const pinned = { type: "tool", toolName: "lookup" };
+    expect(llmCalls(opts).calls[0]?.toolChoice).toEqual(pinned);
+    expect(llmCalls(opts).calls[1]?.toolChoice).toEqual(pinned);
+    expect(llmCalls(opts).calls[2]?.toolChoice).toEqual(pinned);
     await t.stop();
   });
 });

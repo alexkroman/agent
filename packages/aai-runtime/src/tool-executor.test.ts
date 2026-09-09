@@ -2,6 +2,7 @@
 
 import type { ToolDef } from "@alexkroman1/aai";
 import { toolFailure } from "@alexkroman1/aai/utils";
+import { TimeoutError } from "p-timeout";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
@@ -445,6 +446,54 @@ describe("executeToolCall — onError classifies a THROW", () => {
     // Settles with the ordinary cancellation failure rather than rejecting.
     expect(JSON.parse(await promise)).toMatchObject({ error: expect.stringMatching(/abort/i) });
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  test("a DEADLINE never reaches onError either — a timeout is not a tool fault", async () => {
+    // The fourth cancellation source, and the only one the per-call controller
+    // cannot report: `pTimeout` rejects the deadline without aborting anything,
+    // so `cancelled` read from the signal alone was `false` for a timeout. An
+    // `onError` written as "rethrow anything I do not recognise" — the natural
+    // way to write one, and what `topic-briefing-agent` ships — then turned a
+    // transient timeout into a `FatalToolError` that killed the turn.
+    const onError = vi.fn((err: unknown) => {
+      throw err;
+    });
+    vi.useFakeTimers();
+    try {
+      const tool = makeTool({
+        execute: () =>
+          new Promise<never>(() => {
+            /* never resolves */
+          }),
+        onError,
+      });
+      const promise = run("slow", {}, tool);
+      await vi.advanceTimersByTimeAsync(30_000);
+      // The ordinary timeout failure the model has always read, not a rejection.
+      expect(await promise).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a slow tool's OWN TimeoutError still reaches onError — the deadline is matched by IDENTITY", async () => {
+    // The other half of the rule above. A tool that runs its own `pTimeout`
+    // inside `execute` throws the same CLASS the executor's deadline does, and
+    // that one is the tool's own failure — classified, not swallowed. An
+    // `instanceof TimeoutError` test here would have taken it for the executor's
+    // deadline and silently skipped the handler.
+    const onError = vi.fn(() => toolFailure("The orders service is slow; try again."));
+    const tool = makeTool({
+      execute: async () => {
+        await sleep(5);
+        throw new TimeoutError("inner orders lookup timed out after 5ms");
+      },
+      onError,
+    });
+    const result = await run("lookup_order", {}, tool, { timeoutMs: 1000 });
+    expect(JSON.parse(result)).toEqual({ error: "The orders service is slow; try again." });
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });
 

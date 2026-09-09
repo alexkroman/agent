@@ -176,7 +176,15 @@ reason.
    describes the runtime, not the tool, so `onError` is not consulted at all.
    Otherwise every handler would have to filter aborts before it could classify
    anything, and a handler that forgot would turn an ordinary interruption into
-   a fatal failure.
+   a fatal failure. **The DEADLINE is the one the abort signal cannot report**:
+   `pTimeout` settles the await without touching the per-call controller, so
+   `executeToolCall` mints its own `TimeoutError` up front and the catch
+   recognises that instance BY IDENTITY. Not `instanceof` — a tool running its
+   own `pTimeout` inside `execute` throws the same class, and that one is the
+   tool's own failure and must still reach the handler. While the identity test
+   was missing, a blanket-rethrow `onError` (`topic-briefing-agent` ships one,
+   and it is the natural way to write one) turned every transient tool timeout
+   into a `FatalToolError` that killed the turn.
 2. **`undefined` means "not handled".** A handler written to log and nothing
    else returns nothing, and stringifying that would hand the model the string
    `null` as the tool's answer. It falls through to the default instead.

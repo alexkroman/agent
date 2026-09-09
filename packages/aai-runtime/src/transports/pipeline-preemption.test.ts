@@ -9,6 +9,7 @@ import type { ModelMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { flush } from "../_test-utils.ts";
+import { createUsageMeter } from "../usage-meter.ts";
 import {
   llmCalls,
   makeOpts,
@@ -160,6 +161,13 @@ describe("preemptive generation — adoption", () => {
       const { opts, stt, callbacks } = makeOpts({
         preemptiveGeneration,
         llm: createFakeLanguageModel({ script }),
+        // Two of today's `streamText` settings that the speculative assembly
+        // reached one release LATE, which is what put both request assemblies
+        // behind ONE `SharedLlmRequest` object. Only the cap is observable
+        // through the fake — `maxRetries` is consumed by the SDK's retry
+        // wrapper and never reaches `doStream` — but they travel together now.
+        maxOutputTokens: 256,
+        maxRetries: 0,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -181,9 +189,71 @@ describe("preemptive generation — adoption", () => {
     // Compared field by field rather than whole-object: `abortSignal` and
     // `includeRawChunks`-style handles are per-run objects that can never be
     // equal, while everything that DECIDES the generation must be.
-    for (const key of ["prompt", "tools", "toolChoice", "temperature"]) {
+    for (const key of ["prompt", "tools", "toolChoice", "temperature", "maxOutputTokens"]) {
       expect(adopted[key]).toStrictEqual(plain[key]);
     }
+  });
+
+  test("an adopted speculation's tokens reach the session METER", async () => {
+    // A speculation nobody adopts must not move a budget the author reasons
+    // about per turn, so its reported usage is held back — and it used to be
+    // held back for ever, adoption included. But an adopted speculation IS the
+    // turn: dropping its steps made `usage.updated` under-report the session
+    // and left `usageLimits` unable to trip on tokens really spent.
+    const usage = createUsageMeter({ onUpdate: () => undefined });
+    const { opts, stt, callbacks } = makeOpts({
+      preemptiveGeneration: true,
+      usage,
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "Your order shipped." }] }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    stt.last()?.fireFinal(UTTERANCE);
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
+    });
+
+    // One request, so exactly one step — the head start is not billed twice,
+    // and it is not free either.
+    expect(llmCalls(opts).calls).toHaveLength(1);
+    expect(usage.snapshot().steps).toBe(1);
+    await t.stop();
+  });
+
+  test("a DISCARDED speculation's tokens do not", async () => {
+    // The other half, and the reason the meter is fed at adoption rather than
+    // at `onStepFinish`: the caller revised what they said, so nothing that run
+    // produced is ever spoken or recorded, and a per-turn budget must not be
+    // spent by a turn that never happened.
+    const usage = createUsageMeter({ onUpdate: () => undefined });
+    const { opts, stt, callbacks } = makeOpts({
+      preemptiveGeneration: true,
+      usage,
+      llm: createFakeLanguageModel({
+        steps: [[{ type: "text", text: "Speculated." }], [{ type: "text", text: "Real." }]],
+      }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    stt.last()?.fireFinal(`${UTTERANCE} for the blue one`);
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
+    });
+
+    // Two requests were billed by the provider; one turn happened.
+    expect(llmCalls(opts).calls).toHaveLength(2);
+    expect(usage.snapshot().steps).toBe(1);
+    await t.stop();
   });
 });
 

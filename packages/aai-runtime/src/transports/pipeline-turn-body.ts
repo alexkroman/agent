@@ -82,13 +82,18 @@ export function createTurnBody(deps: {
 
   /**
    * Everything between the user message landing in history and the request
-   * going out: the input guardrail, the token budget, and the speech hold.
+   * going out: the input guardrail and the token budget.
    *
    * Answers `undefined` to mean "carry on"; a boolean is the turn's `spoke`
-   * result and the caller returns it untouched. Its own function because all
-   * three are refusals of the same kind — reasons this turn never reaches the
-   * model — and because `runTurn` reads as one story only while the branches
-   * that end it early are somewhere else.
+   * result and the caller returns it untouched. Its own function because both
+   * are refusals of the same kind — reasons this turn never reaches the model —
+   * and because `runTurn` reads as one story only while the branches that end
+   * it early are somewhere else.
+   *
+   * It runs OUTSIDE the speech hold, and that is load-bearing for the first
+   * branch: an input refusal is the agent's answer for this turn and no output
+   * guardrail is going to judge it, so buffering it would mean holding a
+   * sentence nothing will ever release.
    */
   async function beforeModel(userText: string, signal: AbortSignal): Promise<boolean | undefined> {
     // BEFORE the model, which is the whole point of an input guardrail: a
@@ -111,10 +116,6 @@ export function createTurnBody(deps: {
       emitError("internal", exhausted);
       return false;
     }
-    // Hold every recordable send until the reply can be judged whole. A no-op
-    // unless this session declares an output guardrail; filler still passes
-    // straight through, so the caller hears the dead-air cover during the wait.
-    if (guardrails.holdsSpeech) speech.hold();
     return undefined;
   }
 
@@ -175,51 +176,58 @@ export function createTurnBody(deps: {
       const stopped = await beforeModel(userText, signal);
       if (stopped !== undefined) return stopped;
 
-      let accumulated = "";
-      // Portion of `accumulated` already inside persisted step messages.
-      let persistedLen = 0;
-      const onDelta = (delta: string): void => {
-        accumulated += delta;
-      };
-      const { messages: responseMessages, failed } = await consumeLlmStream(
-        signal,
-        onDelta,
-        () => {
-          persistedLen = accumulated.length;
-        },
-        // Re-parented onto this turn's signal here and not at claim time: a
-        // barge-in on the adopted reply must kill the request the speculation
-        // started, and until this line nothing owns it.
-        claimed?.adopt(signal),
-        // A poisoned adoption restarts the run from scratch, so everything
-        // accumulated from the abandoned one is about to be regenerated —
-        // including, when the model spoke before calling its tool, an opening
-        // the caller hears twice. The audio is unavoidable; recording it twice
-        // is not. `heard` starts a new reply for the same reason: its spans
-        // index THIS string, and the still-playing preamble stays honest
-        // because `startReply` deliberately leaves the playback clock alone.
-        () => {
-          accumulated = "";
-          persistedLen = 0;
-          heard.startReply();
-        },
-      );
+      // Hold every recordable send until the reply can be judged whole. A
+      // no-op unless this session declares an output guardrail; filler still
+      // passes straight through, so the caller hears the dead-air cover during
+      // the wait. A SCOPE rather than a `hold()` call so that a throw anywhere
+      // below cannot leave the funnel shut — see {@link SpeechGate.withHold}.
+      return await speech.withHold(async () => {
+        let accumulated = "";
+        // Portion of `accumulated` already inside persisted step messages.
+        let persistedLen = 0;
+        const onDelta = (delta: string): void => {
+          accumulated += delta;
+        };
+        const { messages: responseMessages, failed } = await consumeLlmStream(
+          signal,
+          onDelta,
+          () => {
+            persistedLen = accumulated.length;
+          },
+          // Re-parented onto this turn's signal here and not at claim time: a
+          // barge-in on the adopted reply must kill the request the speculation
+          // started, and until this line nothing owns it.
+          claimed?.adopt(signal),
+          // A poisoned adoption restarts the run from scratch, so everything
+          // accumulated from the abandoned one is about to be regenerated —
+          // including, when the model spoke before calling its tool, an opening
+          // the caller hears twice. The audio is unavoidable; recording it twice
+          // is not. `heard` starts a new reply for the same reason: its spans
+          // index THIS string, and the still-playing preamble stays honest
+          // because `startReply` deliberately leaves the playback clock alone.
+          () => {
+            accumulated = "";
+            persistedLen = 0;
+            heard.startReply();
+          },
+        );
 
-      if (signal.aborted) {
-        // Nothing held may be spoken into a turn the caller talked over.
-        speech.discard();
-        outcome.persistBargeIn({
-          historyEpoch,
-          accumulated,
-          heardChars: heard.heard().recordableChars,
-          persistedLen,
-          stepMessages: responseMessages,
-          syntheticPrompt,
-        });
-        return false;
-      }
+        if (signal.aborted) {
+          // Nothing held may be spoken into a turn the caller talked over.
+          speech.discard();
+          outcome.persistBargeIn({
+            historyEpoch,
+            accumulated,
+            heardChars: heard.heard().recordableChars,
+            persistedLen,
+            stepMessages: responseMessages,
+            syntheticPrompt,
+          });
+          return false;
+        }
 
-      return await afterModel(signal, accumulated, responseMessages, failed);
+        return await afterModel(signal, accumulated, responseMessages, failed);
+      });
     });
   };
 }

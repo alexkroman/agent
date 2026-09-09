@@ -18,7 +18,7 @@ import { createEmitError } from "./pipeline-error.ts";
 import { createSpeechGate, NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
-import { createTurnLlmRunner } from "./pipeline-llm-stream.ts";
+import { createTurnLlmRunner, type SharedLlmRequest } from "./pipeline-llm-stream.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createPipelineSpeculation } from "./pipeline-speculation.ts";
 import { flushTtsAndWait } from "./pipeline-stream.ts";
@@ -157,7 +157,28 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     now: opts.heardNow,
   });
 
-  // PREEMPTIVE GENERATION (on by default). Constructed before the speech
+  // Everything a `streamText` request carries that a turn and a speculation
+  // must AGREE on, built once and spread into both — see `SharedLlmRequest`.
+  // Two assemblies meant two lists to keep in sync, and they had already
+  // drifted by three fields: `maxOutputTokens`, `maxRetries` and `onUsage`
+  // reached the turn and not the speculation, so an ADOPTED one ran uncapped,
+  // on the vendor's default retries, and off this session's meter.
+  const llmRequest: SharedLlmRequest = {
+    llm: opts.llm,
+    toolChoice,
+    resetToolChoice,
+    temperature: opts.temperature,
+    maxOutputTokens: opts.maxOutputTokens,
+    maxRetries: opts.maxRetries,
+    onUsage: usage === undefined ? undefined : (reported) => usage.record(reported),
+    dialogStep: knobs.dialogStep,
+    maxSteps,
+    contextBudget,
+    log,
+    sid: opts.sid,
+  };
+
+  // PREEMPTIVE GENERATION (OFF by default). Constructed before the speech
   // handlers because they drive it, and deliberately NOT wired into `turns` or
   // the turn chain: a speculation occupies no turn, so every barge-in gate
   // below behaves exactly as it does with the flag off. See
@@ -168,21 +189,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // state that pins a tool would make every speculation end at the tool
     // boundary and be discarded, with the gate still believing it is free.
     enabled: preemptiveGeneration && knobs.dialogStep === undefined,
-    toolChoice,
+    request: llmRequest,
     toolSchemas,
-    llm: opts.llm,
     systemPrompt,
-    temperature: opts.temperature,
-    maxSteps,
-    // The SAME preparer the real turn gets: a speculation is adopted into a
-    // turn, and request parity is the premise adoption rests on.
-    contextBudget,
     history,
     sessionSignal: sessionAbort.signal,
     // "The floor is free": no turn running and nothing still playing out.
     isIdle: () => !(turns.inFlight() || heard.pending()),
-    log,
-    sid: opts.sid,
   });
 
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
@@ -331,20 +344,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   });
 
   const consumeLlmStream = createTurnLlmRunner({
-    llm: opts.llm,
+    ...llmRequest,
     systemPrompt,
     messages: history.llm,
     tools,
-    toolChoice,
-    resetToolChoice,
-    temperature: opts.temperature,
-    maxOutputTokens: opts.maxOutputTokens,
-    maxRetries: opts.maxRetries,
-    onUsage: usage === undefined ? undefined : (reported) => usage.record(reported),
     fatalTool,
-    dialogStep: knobs.dialogStep,
-    maxSteps,
-    contextBudget,
     deadAirCoverMs,
     // An open speech edge means an utterance is in progress (0 when not).
     callerSpeaking: () => speechEdges.durationMs() > 0,

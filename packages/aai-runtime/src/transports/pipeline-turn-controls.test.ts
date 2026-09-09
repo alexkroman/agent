@@ -123,6 +123,63 @@ describe("PipelineTransport — an OUTPUT guardrail", () => {
   });
 });
 
+describe("PipelineTransport — a turn that CRASHES under the hold", () => {
+  const GREETING = "Hi, you're through to the pharmacy.";
+
+  /**
+   * A guardrail seam whose OUTPUT check rejects.
+   *
+   * The one throw injectable into the region between the hold and the verdict,
+   * and the transport must not depend on that region being throw-free:
+   * `TurnGuardrails` is an interface the transport is handed, `createTurnGuardrails`
+   * is only today's implementation of it, and everything else under the hold —
+   * the stream drain, the history writes, the outcome — is code a future change
+   * can make throw.
+   */
+  const throwingOutputCheck = {
+    holdsSpeech: true,
+    checkInput: (): Promise<string | undefined> => Promise.resolve(undefined),
+    checkOutput: (): Promise<string | undefined> =>
+      Promise.reject(new Error("guardrail backend unreachable")),
+  };
+
+  test("does not mute the rest of the CALL", async () => {
+    // The hold is session-lifetime state, so a turn that threw between holding
+    // and deciding used to leave the funnel shut with `logTurnCrash` the only
+    // trace: every later recordable send — the greeting a `reset()` replays
+    // among them — was buffered and never heard. Only an agent declaring
+    // `outputGuardrails` builds a gate that can hold, which is why no other
+    // spec here could see it.
+    const { opts, stt, tts, callbacks } = makeOpts({
+      sessionConfig: { systemPrompt: "s", greeting: GREETING },
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "Take 400 mg." }] }),
+      guardrails: throwingOutputCheck,
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
+    });
+
+    stt.last()?.fireFinal("how much should I take");
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    // The crashed turn's words are unjudged, so they stay unspoken — that half
+    // was never in doubt, and it is what makes the next assertion meaningful.
+    await vi.advanceTimersByTimeAsync(50);
+    expect(spoken(tts)).not.toContain("400 mg");
+
+    // "New Conversation": the greeting is a recordable send made outside any
+    // turn, so a gate still holding swallows the agent's own opening line.
+    t.reset?.();
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.filter((c) => c === GREETING)).toHaveLength(2);
+    });
+    await t.stop();
+  });
+});
+
 describe("PipelineTransport — an INPUT guardrail", () => {
   test("refuses before the model, so no request is made at all", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({

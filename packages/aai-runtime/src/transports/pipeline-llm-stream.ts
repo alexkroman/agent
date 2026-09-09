@@ -60,6 +60,7 @@ export type {
   ConsumeLlmStreamParams,
   LlmRequest,
   LlmStreamResult,
+  SharedLlmRequest,
   StartedLlmStream,
   StepResult,
   TapeEntry,
@@ -103,16 +104,28 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // `maxSteps` bounds TOOL-CALLING steps; the budget is one larger so the
     // forced answer step below has somewhere to run. See forceFinalAnswer.
     stopWhen: stepCountIs(req.maxSteps + 1),
-    // ONE slot, TWO things to say — see `_prepare-step.ts`. The budget decides
-    // which messages this step may send and must keep them; `forceFinalAnswer`
-    // goes last and wins on `toolChoice`, the one key it sets. Writing either
-    // straight into the slot deletes the other, silently.
+    // ONE slot, FOUR things to say — see `_prepare-step.ts`. Last writer wins
+    // per key, so the ORDER is `ToolChoice`'s documented scope precedence
+    // (agent → turn → dialog state → forced final step) written out:
+    //
+    // 1. the context budget, which owns `messages` and shares no key with the
+    //    three below;
+    // 2. the AGENT-scoped reset, which puts a demanding `toolChoice` back to
+    //    `"auto"` after step 0;
+    // 3. the DIALOG STATE's knobs, which beat the agent's for exactly as long
+    //    as the conversation is in that state — so this must come AFTER the
+    //    reset. It used to come before, and the reset then overwrote a state's
+    //    pin with `"auto"` from step 1 on: a state that must call a tool (or
+    //    must not) silently stopped meaning it after the first step of every
+    //    turn, on every agent whose own `toolChoice` demands something;
+    // 4. `forceFinalAnswer`, which owns the same key on the one step the budget
+    //    reserved and must win there over all three.
+    //
+    // Writing any of them straight into the slot deletes the others, silently.
     prepareStep: composePrepareStep(
       req.contextBudget,
-      req.dialogStep,
-      // Before `forceFinalAnswer`, which owns the same key on the reserved
-      // step and must win there — see `_prepare-step.ts`.
       resetToolChoiceAfterFirstStep(req.toolChoice, req.resetToolChoice ?? true),
+      req.dialogStep,
       forceFinalAnswer(req.maxSteps, req.log, req.sid),
     ),
     abortSignal: req.signal,

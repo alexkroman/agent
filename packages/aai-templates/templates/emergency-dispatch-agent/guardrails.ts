@@ -63,9 +63,24 @@ const MOVING = /\b(?:on (?:the|their) way|en ?route|rolling|responding|inbound|u
  * Words that make the same sentence a denial, a condition or a plan rather than
  * a claim — "no units are en route yet", "once Medic-1 is rolling", "I'll get
  * someone responding".
+ *
+ * **The contractions sit OUTSIDE the leading `\b`, and that is not a style
+ * choice.** `\bn't\b` can never match: `\b` is a boundary between a word
+ * character and a non-word one, and there is none between the `n` and the `'`
+ * of "isn't". The alternative was dead for as long as it was written that way,
+ * so "Medic-1 isn't en route" read as a CLAIM and the desk was corrected for
+ * saying the true thing — the exact inversion of this file's stated bias. Every
+ * other alternative begins and ends with a word character, so the shared `\b`
+ * pair is right for them; `n't` and `'ll` carry the boundary they actually
+ * have, which is the trailing one. The curly apostrophe is accepted too: a model
+ * writes "isn’t" often enough, and a guardrail that misses the typographic form
+ * is the same bug in a different font.
+ *
+ * `n['’]t` also covers "won't", "can't" and "doesn't", none of which any other
+ * alternative here reaches.
  */
 const NOT_A_CLAIM =
-  /\b(?:no|not|n't|none|nothing|never|nobody|yet|once|when|if|until|before|after|will|'ll|going to|need|should|about to)\b/i;
+  /(?:\b(?:no|not|none|nothing|never|nobody|yet|once|when|if|until|before|after|will|going to|need|should|about to)|n['’]t|['’]ll)\b/i;
 
 /**
  * Does this reply tell the room that units are already moving?

@@ -56,19 +56,16 @@
  * {@link SpeculationController.take}.
  */
 
-import type { ToolChoice } from "@alexkroman1/aai";
 import {
   MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE,
   PREEMPTIVE_CONFIDENCE_THRESHOLD,
 } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
-import type { LanguageModel } from "ai";
 import type { Logger } from "../runtime-config.ts";
 import { toDeclaredTools } from "../to-vercel-tools.ts";
 import { createToolCallRepair } from "../tool-call-repair.ts";
-import type { ContextBudgetPreparer } from "./pipeline-context-budget.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";
-import type { AdoptedLlmStream } from "./pipeline-llm-stream.ts";
+import type { AdoptedLlmStream, SharedLlmRequest } from "./pipeline-llm-stream.ts";
 import { type SpeculativeStream, startSpeculativeStream } from "./pipeline-speculative-stream.ts";
 import { normalizeUtterance } from "./pipeline-text.ts";
 import { resolveSystemPrompt, type SystemPromptOption } from "./types.ts";
@@ -304,32 +301,32 @@ export function createPipelineSpeculation(deps: {
   /** The author's `preemptiveGeneration`. */
   enabled: boolean;
   /**
-   * Tool selection policy. Anything other than `"auto"`/`"none"` makes the
-   * whole feature inert: a required or pinned tool means every speculation ends
-   * at the tool boundary and is discarded whole, so it would be pure cost.
+   * Everything the speculative request shares with the real one, as ONE object
+   * the transport also spreads into `createTurnLlmRunner` — see
+   * {@link SharedLlmRequest}.
+   *
+   * A single value rather than a field per setting, because request parity is
+   * the premise adoption rests on and a per-field list is a thing to keep in
+   * sync. It carried `llm`, `toolChoice`, `temperature`, `maxSteps` and
+   * `contextBudget` and NOT `maxOutputTokens`, `maxRetries` or `onUsage`, all
+   * three of which the real turn had — so an adopted speculation ran uncapped,
+   * on the vendor's default retries, and off the session's meter. Sharing the
+   * `contextBudget` INSTANCE also shares what it has learned, and its prefix
+   * check keeps two concurrent streams from mis-calibrating each other.
+   *
+   * `toolChoice` is read here for a second purpose: anything other than
+   * `"auto"`/`"none"` makes the whole feature inert, since a required or
+   * pinned tool means every speculation ends at the tool boundary and is
+   * discarded whole.
    */
-  toolChoice: ToolChoice;
+  request: SharedLlmRequest;
   toolSchemas: readonly ToolSchema[];
-  llm: LanguageModel;
   /**
    * The session's prompt option — a string, or the runtime's per-turn resolver.
    * Resolved once per speculation and once more at adoption; see
    * `SpeculationControllerDeps.systemPrompt` for what the second read decides.
    */
   systemPrompt: SystemPromptOption;
-  temperature: number | undefined;
-  maxSteps: number;
-  /**
-   * The session's context-budget preparer — see `pipeline-context-budget.ts`.
-   *
-   * Passed through unchanged because request parity is what makes adopting a
-   * speculation into a real turn legitimate: a speculation that trimmed on a
-   * different rule would be adopted as a turn the model never saw the context
-   * of. Sharing one instance also shares what it has learned, and its prefix
-   * check is what keeps two concurrent streams from mis-calibrating each other
-   * (a mismatch skips the calibration rather than trusting it).
-   */
-  contextBudget: ContextBudgetPreparer | undefined;
   history: PipelineHistory;
   /**
    * Session-lifetime signal. Parents every speculative request (see
@@ -337,14 +334,14 @@ export function createPipelineSpeculation(deps: {
    */
   sessionSignal: AbortSignal;
   isIdle(): boolean;
-  log: Logger;
-  sid: string;
 }): SpeculationController {
   // The SAME declarations with no `execute` — the structural half of "a
   // speculation never runs a tool". See toDeclaredTools.
   const tools = toDeclaredTools(deps.toolSchemas);
+  const { request } = deps;
+  const { log, sid, toolChoice, llm } = request;
   return createSpeculationController({
-    enabled: deps.enabled && (deps.toolChoice === "auto" || deps.toolChoice === "none"),
+    enabled: deps.enabled && (toolChoice === "auto" || toolChoice === "none"),
     isIdle: deps.isIdle,
     historyRevision: deps.history.revision.current,
     historyIsCurrent: deps.history.revision.isCurrent,
@@ -352,7 +349,7 @@ export function createPipelineSpeculation(deps: {
     start: (userText, systemPrompt) =>
       startSpeculativeStream(
         {
-          llm: deps.llm,
+          ...request,
           // The string the controller resolved, not a second read of the
           // option: `startLlmStream` resolves a `SystemPromptOption` to itself
           // when it is already a string, so the request and the recorded
@@ -364,22 +361,16 @@ export function createPipelineSpeculation(deps: {
           // the adoption when one did.
           messages: [...deps.history.llm, { role: "user", content: userText }],
           tools,
-          toolChoice: deps.toolChoice,
-          temperature: deps.temperature,
           // Never reached — the tool set cannot execute, so there is no call to
           // repair — but it is part of the request, and request parity is the
           // premise adoption rests on.
-          repairToolCall: createToolCallRepair(deps.llm, deps.log, () => deps.sessionSignal),
-          maxSteps: deps.maxSteps,
-          contextBudget: deps.contextBudget,
-          log: deps.log,
-          sid: deps.sid,
+          repairToolCall: createToolCallRepair(llm, log, () => deps.sessionSignal),
         },
         userText,
-        deps.log,
+        log,
         deps.sessionSignal,
       ),
-    log: deps.log,
-    sid: deps.sid,
+    log,
+    sid,
   });
 }

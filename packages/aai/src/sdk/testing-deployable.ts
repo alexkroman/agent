@@ -38,7 +38,9 @@
  * @module testing-deployable
  */
 
+import { createToolContext } from "./_testing-context.ts";
 import { type AgentConfig, type AgentConfigSource, toAgentConfig } from "./agent-config.ts";
+import { systemPromptResolver } from "./agent-instructions.ts";
 import type { BuiltinTool } from "./builtin-tools.ts";
 import { isRecord } from "./is-record.ts";
 import { BuiltinToolSchema } from "./type-schemas.ts";
@@ -215,6 +217,17 @@ function isBuiltin(name: string): name is BuiltinTool {
  * that a particular builtin is among the commanded ones, or that the prompt
  * commands exactly the set the template is about.
  *
+ * **It reads what the CONFIG carries, which for a RESOLVER is nothing.**
+ * `AgentDef.systemPrompt` may be a function, and `toAgentConfig` cannot
+ * serialize one — it drops the field and the schema fills in
+ * `DEFAULT_SYSTEM_PROMPT` — so a config converted from a resolver-based agent
+ * hands this function the FRAMEWORK's prompt and gets `[]` back, which is a
+ * true answer to the wrong question. Nothing here can tell that config from one
+ * whose author simply wrote no prompt; the def can, which is why the check that
+ * refuses is {@link expectPromptBuiltinsDeclared} and not this reader. To scan a
+ * resolver's own text, resolve it and substitute it:
+ * `commandedBuiltins({ ...toAgentConfig(def), systemPrompt: resolver(ctx) })`.
+ *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
  * import { toAgentConfig } from "@alexkroman1/aai/manifest";
@@ -257,6 +270,21 @@ export function commandedBuiltins(config: AgentConfig): BuiltinTool[] {
  * mentions is an ordinary edit, and the model learns about it from its own tool
  * schema rather than from the prose.
  *
+ * **A RESOLVER is CALLED, and refused when it cannot be.** `systemPrompt` may be
+ * a function, and `toAgentConfig` drops one rather than putting it on the wire —
+ * so scanning the converted config would read the FRAMEWORK's default prompt and
+ * report on a prompt this agent never sends. That is the one outcome a check may
+ * not have: the default names no builtin, so scanning it fails for the wrong
+ * reason — pointing at an unapplied `system-prompt.md` that is not the problem —
+ * and PASSES the day the default happens to name one. So the resolver is
+ * called with a bare {@link createToolContext} — a fresh session id, no env, an
+ * empty slot store — and its answer is what gets scanned. That is enough for the
+ * prose half, which is a `?raw` import closed over by the function and does not
+ * vary with session state. A resolver that cannot answer from a bare context
+ * (it reads an env var, or a slot it expects seeded) THROWS, and this refuses by
+ * name rather than falling back to the default: seed a context and scan the text
+ * yourself with {@link commandedBuiltins}, or assert on `builtinTools` directly.
+ *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
  * import { expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
@@ -274,12 +302,13 @@ export function commandedBuiltins(config: AgentConfig): BuiltinTool[] {
  * @param def - The agent under test, converted through `toAgentConfig` so the
  *   scan reads the prompt a deploy carries.
  * @returns The commanded builtins, for a spec that wants to say more about them.
- * @throws When the prompt names no builtin, or names one `builtinTools` lacks.
+ * @throws When the prompt names no builtin, when it names one `builtinTools`
+ * lacks, or when a `systemPrompt` resolver cannot answer from a bare context.
  *
  * @public
  */
 export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinTool[] {
-  const config = toAgentConfig(def);
+  const config = withResolvedPrompt(def, toAgentConfig(def));
   const commanded = commandedBuiltins(config);
   if (commanded.length === 0) {
     // Composed from short pieces: Biome's `noSecrets` reads one long,
@@ -307,4 +336,54 @@ export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinToo
     );
   }
   return commanded;
+}
+
+/**
+ * The config to SCAN: the converted one, or a copy carrying what the agent's
+ * `systemPrompt` resolver answers.
+ *
+ * Separate from {@link commandedBuiltins} because only a caller holding the DEF
+ * can tell "this agent has a resolver" from "this agent declared no prompt" —
+ * the two arrive at `toAgentConfig` differently and leave it identical.
+ *
+ * @throws When the def carries a resolver that cannot answer from a bare
+ * context. Refusing is the point: the alternative is scanning
+ * `DEFAULT_SYSTEM_PROMPT` and reporting on a prompt the agent never sends.
+ */
+function withResolvedPrompt(def: AgentConfigSource, config: AgentConfig): AgentConfig {
+  const resolver = systemPromptResolver(def.systemPrompt);
+  if (resolver === undefined) return config;
+  let resolved: unknown;
+  try {
+    // A bare session: a fresh id, no env, an empty slot store. Every slot read
+    // answers with its declared initial value, which is what a resolver sees on
+    // the first request of a real session too.
+    resolved = resolver(createToolContext());
+  } catch (cause) {
+    throw new Error(refusal(`calling it threw — ${errorMessage(cause)}`), { cause });
+  }
+  if (typeof resolved !== "string" || resolved.trim() === "") {
+    throw new Error(refusal(`it answered ${JSON.stringify(resolved)} rather than a prompt`));
+  }
+  return { ...config, systemPrompt: resolved };
+}
+
+/**
+ * Both refusals above: what went wrong, and the way out of either.
+ *
+ * Composed from short pieces and reading the function's own name off it, for the
+ * reason the vacuity message does: `noSecrets` reads a long punctuation-dense
+ * literal, and a bare mixed-case identifier, as high-entropy secrets.
+ */
+function refusal(what: string): string {
+  const head = [expectPromptBuiltinsDeclared.name, ": this agent's `systemPrompt` is a "].join("");
+  const out = [
+    "There is nothing to scan, and the converted config carries the FRAMEWORK's",
+    "default prompt rather than yours — checking that one would report on a prompt",
+    "this agent never sends. Seed a context, call the resolver yourself, and scan",
+    "its text — hand `commandedBuiltins` a config of your own, built as",
+    "`toAgentConfig(def)` with that text as its `systemPrompt`.",
+    "Or assert on `builtinTools` directly.",
+  ].join(" ");
+  return `${head}resolver and ${what}. ${out}`;
 }

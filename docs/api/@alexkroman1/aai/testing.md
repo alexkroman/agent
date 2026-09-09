@@ -102,6 +102,17 @@ claim most specs want. This is exported for the spec that wants to say more:
 that a particular builtin is among the commanded ones, or that the prompt
 commands exactly the set the template is about.
 
+**It reads what the CONFIG carries, which for a RESOLVER is nothing.**
+`AgentDef.systemPrompt` may be a function, and `toAgentConfig` cannot
+serialize one — it drops the field and the schema fills in
+`DEFAULT_SYSTEM_PROMPT` — so a config converted from a resolver-based agent
+hands this function the FRAMEWORK's prompt and gets `[]` back, which is a
+true answer to the wrong question. Nothing here can tell that config from one
+whose author simply wrote no prompt; the def can, which is why the check that
+refuses is [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) and not this reader. To scan a
+resolver's own text, resolve it and substitute it:
+`commandedBuiltins({ ...toAgentConfig(def), systemPrompt: resolver(ctx) })`.
+
 ```ts
 import { agent } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
@@ -1328,6 +1339,21 @@ The converse is deliberately NOT asserted: declaring a builtin the prompt never
 mentions is an ordinary edit, and the model learns about it from its own tool
 schema rather than from the prose.
 
+**A RESOLVER is CALLED, and refused when it cannot be.** `systemPrompt` may be
+a function, and `toAgentConfig` drops one rather than putting it on the wire —
+so scanning the converted config would read the FRAMEWORK's default prompt and
+report on a prompt this agent never sends. That is the one outcome a check may
+not have: the default names no builtin, so scanning it fails for the wrong
+reason — pointing at an unapplied `system-prompt.md` that is not the problem —
+and PASSES the day the default happens to name one. So the resolver is
+called with a bare [createToolContext](#createtoolcontext) — a fresh session id, no env, an
+empty slot store — and its answer is what gets scanned. That is enough for the
+prose half, which is a `?raw` import closed over by the function and does not
+vary with session state. A resolver that cannot answer from a bare context
+(it reads an env var, or a slot it expects seeded) THROWS, and this refuses by
+name rather than falling back to the default: seed a context and scan the text
+yourself with [commandedBuiltins](#commandedbuiltins), or assert on `builtinTools` directly.
+
 ```ts
 import { agent } from "@alexkroman1/aai";
 import { expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
@@ -1359,7 +1385,8 @@ The commanded builtins, for a spec that wants to say more about them.
 
 #### Throws
 
-When the prompt names no builtin, or names one `builtinTools` lacks.
+When the prompt names no builtin, when it names one `builtinTools`
+lacks, or when a `systemPrompt` resolver cannot answer from a bare context.
 
 ***
 

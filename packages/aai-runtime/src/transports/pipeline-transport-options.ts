@@ -163,9 +163,14 @@ export interface PipelineTransportOptions {
   /** Tool selection policy passed to `streamText`. Defaults to `"auto"`. */
   toolChoice?: ToolChoice | undefined;
   /**
-   * Put `toolChoice` back to `"auto"` after the first step of a reply — see
-   * {@link AgentModelTuning.resetToolChoice}. Defaults to `true`, and is inert
-   * unless `toolChoice` demands a call.
+   * Put the AGENT's `toolChoice` back to `"auto"` after the first step of a
+   * reply — see {@link AgentModelTuning.resetToolChoice}. Defaults to `true`,
+   * and is inert unless `toolChoice` demands a call.
+   *
+   * Agent-scoped, so a dialog state's own `toolChoice` overrides it on every
+   * step rather than being reset alongside the agent's: the preparers are
+   * composed in that order, and `pipeline-llm-stream.ts` spells the whole
+   * precedence out.
    */
   resetToolChoice?: boolean | undefined;
   /**

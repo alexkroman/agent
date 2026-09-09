@@ -56,8 +56,26 @@ type HeldSend = { readonly text: string; readonly options: SendTtsOptions | unde
 export interface SpeechGate {
   /** The `sendTtsText` every collaborator is given. */
   readonly send: SendTtsText;
-  /** Buffer recordable sends from here until `release` or `discard`. */
-  hold(): void;
+  /**
+   * Buffer recordable sends for the duration of `body`, and stop holding
+   * however `body` ends.
+   *
+   * **A SCOPE rather than a `hold()`, because the release cannot be left to a
+   * caller.** The hold is session-lifetime state on a gate every collaborator
+   * shares, so a turn that threw between holding and deciding left the funnel
+   * shut for the rest of the CALL: the next greeting after a `reset()`, and any
+   * refusal spoken before the following turn re-holds, were buffered and never
+   * heard, with `logTurnCrash` the only trace. A `try`/`finally` at the one call
+   * site would have closed it; a shape where forgetting is not expressible
+   * closes it for the next call site too.
+   *
+   * The body still chooses BETWEEN {@link release} and {@link discard} — that
+   * is the guardrail's verdict and not something a scope can know. What the
+   * scope decides is the case the body did not reach: anything still held when
+   * it returns or throws is DROPPED, because a reply no output guardrail
+   * judged is exactly what must not be spoken.
+   */
+  withHold<T>(body: () => Promise<T>): Promise<T>;
   /** Speak everything held, in order, and stop holding. */
   release(): void;
   /** Drop everything held unspoken, and stop holding. */
@@ -68,17 +86,20 @@ export interface SpeechGate {
  * Wrap a send so a turn can hold it.
  *
  * With `enabled: false` — every session that declares no output guardrail —
- * `hold` is a no-op and `send` is the underlying function, so the shipped path
- * is unchanged rather than merely equivalent.
+ * `withHold` runs its body against nothing and `send` is the underlying
+ * function, so the shipped path is unchanged rather than merely equivalent.
  *
  * @internal
  */
 export function createSpeechGate(enabled: boolean, send: SendTtsText): SpeechGate {
   if (!enabled) {
     const noop = (): void => undefined;
-    return { send, hold: noop, release: noop, discard: noop };
+    return { send, withHold: (body) => body(), release: noop, discard: noop };
   }
   let held: HeldSend[] | undefined;
+  const discard = (): void => {
+    held = undefined;
+  };
   return {
     send(text: string, options?: SendTtsOptions): void {
       // Filler passes straight through: it is not the agent's words, nothing
@@ -89,17 +110,24 @@ export function createSpeechGate(enabled: boolean, send: SendTtsText): SpeechGat
       }
       held.push({ text, options });
     },
-    hold(): void {
+    async withHold<T>(body: () => Promise<T>): Promise<T> {
       held = [];
+      try {
+        return await body();
+      } finally {
+        // Whatever the body decided has already run (`release` empties the
+        // buffer, `discard` drops it), so this is a no-op on every ordinary
+        // path. What it catches is the path with no decision at all — a throw
+        // — where leaving the gate shut would mute the session.
+        discard();
+      }
     },
     release(): void {
       const pending = held ?? [];
       held = undefined;
       for (const item of pending) send(item.text, item.options);
     },
-    discard(): void {
-      held = undefined;
-    },
+    discard,
   };
 }
 

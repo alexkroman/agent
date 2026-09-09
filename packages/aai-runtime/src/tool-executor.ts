@@ -35,14 +35,14 @@ import {
   serializeToolFailure,
 } from "@alexkroman1/aai/host-internal";
 import {
-  MAX_TOOL_RESULT_CHARS,
   rejectingWorkflows,
   TOOL_EXECUTION_TIMEOUT_MS,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "@alexkroman1/aai/internal";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
-import pTimeout from "p-timeout";
+import pTimeout, { TimeoutError } from "p-timeout";
+import { stringifyResult, warnOversizedResult } from "./_tool-result-text.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 import { resolveToolError } from "./tool-error-policy.ts";
@@ -246,59 +246,6 @@ function buildToolContext(
 }
 
 /**
- * Tool names already warned about by {@link warnOversizedResult}, so a chatty
- * tool costs one line for the life of the process rather than one per call.
- *
- * Process-wide rather than per session, deliberately: tool bodies run in the
- * agent's OWN guest sandbox (or its `aai dev` / self-hosted runtime), one agent
- * per process, so a name here cannot suppress another tenant's first warning.
- * Bounded by the tool roster, which is fixed at deploy time.
- */
-const warnedOversizedTools = new Set<string>();
-
-/**
- * Say — once per tool — that a result is larger than the cap, because the cap
- * does not apply to the copy that matters.
- *
- * `MAX_TOOL_RESULT_CHARS` bounds the CLIENT's `tool.completed` frame
- * (`capToolResult`, in `session-tool-steps.ts` and the pipeline stream) and
- * nothing else. The string this module returns goes to the provider WHOLE and
- * is appended to the conversation, so it is re-sent on every later turn of the
- * call: an unshaped `await res.json()` is the whole response, in the prompt,
- * for the rest of the turn. Two published docs promised the cap applied to both
- * sides, which is what made that shape look free.
- *
- * A warning rather than a cap: the framework cannot tell a deliberately large
- * result (a transcript a subagent summarizes, a table a later step reads) from a
- * forgotten projection, and silently trimming the first would corrupt data an
- * author is relying on — the same argument `assemblyAIVoiceWarning` makes for
- * saying something about a voice it may not refuse. Capping here is a behaviour
- * change and needs a decision, not a patch.
- *
- * Logged, not emitted as a session error: nothing is broken, and the reader is
- * whoever is watching the build or the server log.
- */
-function warnOversizedResult(name: string, result: string, logger: Logger | undefined): void {
-  if (result.length <= MAX_TOOL_RESULT_CHARS || warnedOversizedTools.has(name)) return;
-  warnedOversizedTools.add(name);
-  const message =
-    `Tool "${name}" returned ${result.length} characters, over MAX_TOOL_RESULT_CHARS ` +
-    `(${MAX_TOOL_RESULT_CHARS}). The model receives the WHOLE result and re-reads it on every ` +
-    "later turn of this call; only the client's tool.completed frame is truncated. If this is an " +
-    "unshaped API response, return the fields the model needs.";
-  if (logger) logger.warn(message, { tool: name, chars: result.length });
-  else console.warn(`[tool-executor] ${message}`);
-}
-
-function stringifyResult(result: unknown): string {
-  if (result == null) return "null";
-  if (typeof result === "string") return result;
-  // JSON.stringify returns undefined for functions/symbols — fall back to
-  // String() so the provider always gets a string, never `undefined`.
-  return JSON.stringify(result) ?? String(result);
-}
-
-/**
  * Turn a throw out of `execute` into this call's answer — or into a rejection.
  *
  * The three arms {@link resolveToolError} chooses between, plus the reporting
@@ -400,6 +347,25 @@ export async function executeToolCall(
   if (turnSignal?.aborted) followTurn();
   else turnSignal?.addEventListener("abort", followTurn, { once: true });
 
+  // Resolved BEFORE the context is built, because the context carries it:
+  // `ctx.deadlineAt` is what lets a tool budget under its own deadline rather
+  // than be cut off by it. Read here rather than at the `pTimeout` below, so
+  // the instant a tool is told is a hair EARLIER than the one it is held to —
+  // the safe direction for a budget.
+  const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
+  // The deadline is MINTED here so the catch can recognise it BY IDENTITY.
+  // `pTimeout` rejects a deadline without aborting anything, so the `cancelled`
+  // read below could not see one: a timeout reached `tool.onError` as though the
+  // tool had faulted, and an `onError` written as "rethrow anything I do not
+  // recognise" — the natural way to write one — turned a transient timeout into
+  // a `FatalToolError` that killed the turn. Rule 1 in `tool-error-policy.ts`
+  // says the deadline is not a tool fault; this is what makes that true.
+  //
+  // Identity, not `instanceof TimeoutError`: a tool that runs its own `pTimeout`
+  // inside `execute` throws that class too, and THAT one is the tool's own
+  // failure — `onError` must still see it.
+  const deadlineError = new TimeoutError(`Tool "${name}" timed out after ${timeoutMs}ms`);
+
   // Declared outside the try because the CATCH needs it: `tool.onError` is
   // handed the same context `execute` ran with, so a handler can read
   // `ctx.env` to tell a missing credential from a rejected one. It stays
@@ -408,12 +374,6 @@ export async function executeToolCall(
   // "default" for it rather than calling a handler with half a context.
   let ctx: ToolContext | undefined;
   try {
-    // Resolved BEFORE the context is built, because the context carries it:
-    // `ctx.deadlineAt` is what lets a tool budget under its own deadline rather
-    // than be cut off by it. Read here rather than at the `pTimeout` below, so
-    // the instant a tool is told is a hair EARLIER than the one it is held to —
-    // the safe direction for a budget.
-    const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
     ctx = buildToolContext({
       ...options,
       signal: callController.signal,
@@ -427,7 +387,7 @@ export async function executeToolCall(
     // underlying execute keeps running unless it observes ctx.signal itself.
     const result = await pTimeout(Promise.resolve(tool.execute(parsed.value, ctx)), {
       milliseconds: timeoutMs,
-      message: `Tool "${name}" timed out after ${timeoutMs}ms`,
+      message: deadlineError,
       signal: callController.signal,
     });
     await yieldTick();
@@ -440,9 +400,11 @@ export async function executeToolCall(
   } catch (err: unknown) {
     // Read BEFORE the abort below, or every failure would look like one: an
     // already-aborted controller means something else cut this call — a
-    // barge-in, a reset, `stop()`, or the deadline — and that describes the
-    // runtime rather than the tool.
-    const cancelled = callController.signal.aborted;
+    // barge-in, a reset or `stop()` — and that describes the runtime rather
+    // than the tool. The DEADLINE is the fourth such source and the only one
+    // the controller cannot report, since `pTimeout` settles the await without
+    // touching it; see `deadlineError` above.
+    const cancelled = callController.signal.aborted || err === deadlineError;
     // The call is over (timeout or failure): fire the per-call signal so a
     // still-running execute can observe ctx.signal and stop its side effects.
     callController.abort(err);

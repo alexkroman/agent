@@ -206,6 +206,32 @@ export interface StartedLlmStream {
   steps: Promise<readonly StepResult[]>;
 }
 
+/**
+ * The part of an {@link LlmRequest} a speculation and the turn that may adopt
+ * it MUST agree on — everything except the fields that deliberately differ.
+ *
+ * **Derived by SUBTRACTION, and the transport builds exactly one of these**, so
+ * the two request assemblies cannot drift: a new field on {@link LlmRequest} is
+ * either named in the `Omit` below (a deliberate difference, with the reason at
+ * the call site that supplies it) or it lands on both paths at once. Listing
+ * the shared fields instead is what let `maxOutputTokens`, `maxRetries` and
+ * `onUsage` reach the real turn and not the speculative one — so an ADOPTED
+ * speculation ran uncapped, on the vendor's default retry budget, and spent
+ * tokens the session meter never saw.
+ *
+ * The five that differ, all of them structural to what a speculation IS:
+ * `messages` (an interim transcript, not the committed final) and `tools`
+ * (declared, not executable) are the two the module doc of
+ * `pipeline-speculation.ts` names; `systemPrompt` is resolved once by the
+ * controller so the recorded parity key is the string the request carries;
+ * `repairToolCall` holds the SESSION signal, there being no turn to hold;
+ * `signal` and `onStep` are per-run plumbing.
+ */
+export type SharedLlmRequest = Omit<
+  LlmRequest,
+  "systemPrompt" | "messages" | "tools" | "repairToolCall" | "signal" | "onStep"
+>;
+
 /** The request half of {@link ConsumeLlmStreamParams} — see {@link startLlmStream}. */
 export type LlmRequest = Pick<
   ConsumeLlmStreamParams,

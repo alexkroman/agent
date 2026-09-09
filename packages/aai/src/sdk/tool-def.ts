@@ -198,7 +198,10 @@ export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<Return
  * one overriding the ones above it:
  *
  * 1. **The agent** — `agent({ toolChoice })` is the standing default for every
- *    request the agent makes, and what an unset field falls back to.
+ *    request the agent makes, and what an unset field falls back to. A
+ *    DEMANDING value is put back to `"auto"` after the reply's first step
+ *    unless `resetToolChoice: false` says otherwise — see the `"required"`
+ *    arm below.
  * 2. **The turn** — in text mode a caller may override it for one turn
  *    (`stream({ toolChoice })`). A voice session has no such caller.
  * 3. **The dialog state** — a `dialog()` state may carry `toolChoice`, read
@@ -217,16 +220,20 @@ export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<Return
  * - `"auto"` — the model decides whether to call a tool on this request
  *   (the default, and what an unset field resolves to).
  * - `"required"` — the model must call at least one tool on this request.
- *   **Set at agent level it applies to EVERY step of every reply**, not just
- *   the first: each step is its own request, so the model is obliged to call a
- *   tool again after each result, and a reply reaches `maxSteps` on every turn
- *   before the forced final step lets it answer. That is bounded — the reply
- *   still ends with an answer — but it spends the whole budget and the latency
- *   that goes with it. Prefer `"auto"` at agent level and reach for
- *   `"required"` on a dialog state, where its scope is the state rather than
- *   the conversation. (Some SDKs reset the choice to `"auto"` after the first
- *   step for this reason; this one does not, so an agent-level `"required"`
- *   means what it says on every step.)
+ *   **By default it lasts ONE step, not the whole reply.** Each step is its own
+ *   request, so a demand left standing re-obliges the model to call a tool after
+ *   it already has, and again after that, until the reply has spent its whole
+ *   `maxSteps` budget and the forced final step rescues it — bounded, but the
+ *   caller waits through every round trip it had no use for. What `"required"`
+ *   almost always means is "start by calling something", which is exactly one
+ *   step, so `agent({ resetToolChoice })` — `true` unless you set it, the same
+ *   default as OpenAI's Agents SDK ships as `reset_tool_choice` — puts the
+ *   choice back to `"auto"` from the second step on. `resetToolChoice: false`
+ *   is how an agent that really does want a tool call on every step says so,
+ *   and it is the only way to get that behaviour. The reset applies to the
+ *   demand resolved from scope 1 or 2; a dialog state's `toolChoice` (scope 3)
+ *   is re-read on every step and holds for as long as the conversation is in
+ *   that state, and scope 4 still wins over both.
  * - `"none"` — the model may not call a tool on this request. It is not a
  *   session-wide switch, and cannot be one: a later request in the same session
  *   is resolved again from whatever scope applies to it.

@@ -547,4 +547,30 @@ describe("the desk's own output guardrail", () => {
     // Per SENTENCE, so a hedge in one clause does not excuse the next.
     expect(claimsUnitsMoving("No one is assigned yet. Ladder-2 is inbound.")).toBe(true);
   });
+
+  test("a NEGATED claim is not a claim — the contraction is the whole hedge", () => {
+    // `\bn't\b` cannot match: there is no word boundary between the `n` and the
+    // `'` of "isn't", so that alternative was dead and every one of these read
+    // as a claim — the guardrail speaking a correction over a dispatcher who
+    // said the true thing, which inverts this file's stated bias. Each sentence
+    // here carries the contraction and NO other hedge, so a `NOT_A_CLAIM` that
+    // cannot see one fails on it.
+    expect(claimsUnitsMoving("Medic-1 isn't en route.")).toBe(false);
+    expect(claimsUnitsMoving("Engine-7 wasn't rolling.")).toBe(false);
+    expect(claimsUnitsMoving("I can't confirm anyone is responding.")).toBe(false);
+    expect(claimsUnitsMoving("We don't have anyone inbound.")).toBe(false);
+    // The typographic apostrophe a model writes as readily as the straight one.
+    expect(claimsUnitsMoving("Medic-1 isn\u2019t en route.")).toBe(false);
+  });
+
+  test("the desk can say a negated one out loud, on a board with nothing assigned", async () => {
+    const ctx = createToolContext();
+    await createIncidentFor(ctx);
+
+    // The end-to-end shape of the same bug: a true sentence, spoken over. No
+    // other hedge in either — take the contraction out and the desk is
+    // corrected for reporting the board accurately.
+    expect(say(ctx, "Negative — Medic-1 isn't en route.")).toBe(true);
+    expect(say(ctx, "We don't have anyone inbound.")).toBe(true);
+  });
 });
