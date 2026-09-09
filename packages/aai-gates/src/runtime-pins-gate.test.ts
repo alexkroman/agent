@@ -125,6 +125,37 @@ const RUNS_THE_SUITE = "AAI_REQUIRE_NODE";
 const gatedRuntimes = (): { flag: string; bin: string }[] =>
   declaredRuntimes().filter((runtime) => runtime.flag !== RUNS_THE_SUITE);
 
+/**
+ * A runtime's declared FLOOR, read out of the suite, when it declares one.
+ *
+ * Sliced per runtime rather than scanned whole: the file declares a
+ * `minVersion` twice for the same runtime (once on the gate, once on the arm),
+ * and a flat scan could not say which binary either belonged to. The chunk
+ * between one `bin:` and the next is that runtime's own text.
+ */
+const floorOf = (bin: string): string | undefined => {
+  const source = matrixSuite ?? "";
+  const at = source.indexOf(`bin: "${bin}"`);
+  if (at === -1) return undefined;
+  const rest = source.slice(at + 1);
+  const next = rest.indexOf('bin: "');
+  const chunk = next === -1 ? rest : rest.slice(0, next);
+  return /minVersion:\s*"(\d+\.\d+\.\d+)"/.exec(chunk)?.[1];
+};
+
+/** `x.y.z` as numbers, for an ordering comparison rather than a string one. */
+const asNumbers = (version: string): number[] => version.split(".").map(Number);
+
+/** `a` is at least `b`. */
+const atLeast = (a: readonly number[], b: readonly number[]): boolean => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const left = a[i] ?? 0;
+    const right = b[i] ?? 0;
+    if (left !== right) return left > right;
+  }
+  return true;
+};
+
 describe("the runtime matrix's CI pins", () => {
   test("the sources are readable and the suite declares several runtimes", () => {
     // A floor, for the reason every gate in this package carries one: every
@@ -195,6 +226,27 @@ describe("the runtime matrix's CI pins", () => {
         expect(step, `the setup-${bin} step does not pin an exact ${bin} version`).toMatch(
           new RegExp(`${bin}-version: "\\d+\\.\\d+\\.\\d+"`),
         );
+      });
+
+      test("is pinned at or above the version the suite says it measured", () => {
+        // The floor and the pin are two numbers in two files, and only one of
+        // them is a measurement. Bun's is the worked case: below 1.4.0 the
+        // emitted deployment cannot complete a WebSocket upgrade at all, so a
+        // pin below the floor installs a runtime the suite then SKIPS — a
+        // green job over an arm that did not run, which is this whole file's
+        // subject. Not asserted equal: a newer pin is the ordinary case, and
+        // requiring equality would make every upstream bump a two-file edit.
+        const floor = floorOf(bin);
+        if (floor === undefined) return;
+        const install = stepAt(new RegExp(`uses: [\\w-]+/setup-${bin}@`));
+        const pinned = new RegExp(`${bin}-version: "(\\d+\\.\\d+\\.\\d+)"`).exec(
+          jobSteps()[install] ?? "",
+        )?.[1];
+        expect(pinned, `the setup-${bin} step pins no readable version`).toBeTypeOf("string");
+        expect(
+          atLeast(asNumbers(pinned ?? "0.0.0"), asNumbers(floor)),
+          `CI pins ${bin} ${String(pinned)}, below the ${floor} the suite measured — every arm would skip`,
+        ).toBe(true);
       });
 
       test("turns a SKIP into a failure, only after the binary answered", () => {

@@ -1338,44 +1338,50 @@ no `node_modules`, serves `/health` + `/client-config` + `/`, dials
   `ERR_UNKNOWN_BUILTIN_MODULE` and never requires; the spec pins that guard by
   refusing it as a static import, since Deno does not ship it at all.
 
-**Two things were found by running it, and both are Bun's.**
+**What running it found is a Bun FLOOR, and both halves of it are upstream.**
+Under Bun 1.3.x the emit did not work in two separate ways, neither visible to
+anything else here. It died on IMPORT: undici assigns
+`webidl.util.markAsUncloneable` unguarded from `node:worker_threads`, which Bun
+did not implement, and undici's own `CacheStorage` calls it at module scope.
+Past that, the `/websocket` upgrade never reached the client — our handler
+logged `WS upgrade /websocket`, `ws`'s `handleUpgrade` callback ran, a session
+was created, and then nothing was written. Measured with a raw socket: an
+upgrade request to a Bun-hosted `ws` server received **zero bytes**, no `101`
+and no error, so a browser sat in CONNECTING until it gave up.
 
-**One is fixed here.** undici 8.10.1 assigns
-`webidl.util.markAsUncloneable = markAsUncloneable`, destructured from
-`node:worker_threads` with no guard. Node has had that symbol since 21; **Bun
-does not implement it**, and undici's own `CacheStorage` calls it in a
-constructor that runs at module scope — so the emitted server died on IMPORT
-under `bun ./server.mjs`, before any of our code. `guardUndiciMarkAsUncloneable`
-(`_target-bundle.ts`) gives it a destructuring default, which costs nothing
-where the symbol exists. The plugin FAILS THE BUILD if undici's webidl module is
-in the graph and the pinned line is not, because a pinned string is only
-load-bearing while it matches and the alternative is shipping the crash
-silently.
+Both close at **1.4.0**:
 
-**The other is not, and it is why `bun` is not a supported self-hosting runtime
-today.** With that fix Bun boots the emit, serves all three routes and drains on
-SIGTERM with exit 0 — and the `/websocket` upgrade never reaches the client. The
-server side gets further than it looks: our handler logs `WS upgrade
-/websocket`, `ws`'s `handleUpgrade` callback runs, a session is created. Then
-nothing is written. Measured with a raw socket: an upgrade request to a
-Bun-hosted `ws` server receives **zero bytes** — no `101`, no error — so a
-browser sits in CONNECTING until it gives up.
+| Bun | `markAsUncloneable` | `ws` upgrade |
+| --- | --- | --- |
+| 1.3.11, 1.3.12, 1.3.14 | absent | zero bytes |
+| 1.4.0, 1.4.2 | present | completes |
 
-It is not a general gap in Bun's `node:http`. A nine-line `ws` + `node:http`
-server works perfectly under Bun when `ws` is imported by NAME, because **Bun
-substitutes its own native implementation for the `ws` package** — and fails
-identically to the emit when the same script imports ws's real JavaScript by
+So the fix was a version floor and no code of ours. It is declared as
+`minVersion` on the bun arm, CI pins 1.4.2, and `runtime-pins-gate.test.ts`
+fails if that pin ever drops below the floor — a pin below it would install a
+runtime the suite then SKIPS, which is a green job over an arm that did not
+run. A binary below the floor is treated as an ABSENT one rather than run
+(announced, skipped, a hard failure under `AAI_REQUIRE_BUN`): the arms would
+otherwise fail on the old behaviour three assertions deep instead of saying the
+version is too old.
+
+**A bundler plugin for undici's line is GONE, and that is the right outcome to
+record.** While 1.3.x was the pin, `bundleTargetEntry` carried a transform
+giving that assignment a destructuring default — enough to boot, and the
+`/websocket` half stayed dead, so what it bought was a deployment that served
+its own UI and could not take a call. Above the floor it is a no-op patch on a
+third-party library, and the honest failure for someone below the floor is the
+import-time crash rather than a healthy-looking server. Do not restore it to
+support an older Bun; raise or restate the floor instead.
+
+**The `ws` half is worth remembering for its SHAPE, not its fix.** It was never
+a general gap in Bun's `node:http`: the same nine-line `ws` + `node:http`
+server worked under Bun 1.3.11 when `ws` was imported by NAME, because Bun
+substitutes its own native implementation for the `ws` package — and failed
+identically to the emit when the same script imported ws's real JavaScript by
 path. A bundle inlines that JavaScript, so the substitution never happens and
-ws's write to the hijacked socket goes nowhere. Closing it means either Bun
-writing those bytes or the runtime growing a Bun-native socket path
-(`Bun.serve`), which would be a second server implementation in `aai-runtime`
-rather than anything this package can do.
-
-So the bun arm asserts the GAP rather than skipping the leg — a voice agent that
-serves its own UI and accepts no call is not a working deployment, and a suite
-that quietly declined to look would let "runs on Bun" be said. A failure there
-is good news: it means the bytes are arriving, and `acceptsSessions` flips with
-the evidence attached.
+only the real library runs. Any future "works outside a bundle, not inside it"
+report on Bun starts there.
 
 **There is deliberately no `--target bun`.** `TARGET_OUTPUTS` is host-shaped —
 every target owes the command that ships it, and `_build-target.test.ts` holds a

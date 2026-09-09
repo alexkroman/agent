@@ -30,7 +30,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { invariant } from "@alexkroman1/aai/internal";
-import { build, type Plugin, type Rollup } from "vite";
+import { build, type Rollup } from "vite";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 
 /**
@@ -177,82 +177,6 @@ export const PORTABLE_NODE_BUILTINS: readonly string[] = [
  */
 export const FEATURE_DETECTED_NODE_BUILTINS: readonly string[] = ["sqlite"];
 
-/** undici's webidl module, whose one unguarded line the plugin below repairs. */
-const UNDICI_WEBIDL = "undici/lib/web/webidl/index.js";
-
-/** The line as undici 8.10.1 writes it, and as this plugin requires it to still be. */
-const UNDICI_MARK = "const { markAsUncloneable } = require('node:worker_threads')";
-
-/**
- * Give undici's `markAsUncloneable` a fallback, so the emitted bundle BOOTS
- * under Bun.
- *
- * ## The failure, measured
- *
- * undici assigns `webidl.util.markAsUncloneable = markAsUncloneable` with no
- * guard, destructured from `node:worker_threads`. Node has had that symbol
- * since 21; **Bun's `node:worker_threads` does not implement it**, so the
- * property is `undefined`, and undici's own `CacheStorage` calls it in its
- * constructor at module scope. The emitted server therefore died on IMPORT
- * under `bun ./server.mjs`:
- *
- *     TypeError: webidl.util.markAsUncloneable is not a function
- *       at new CacheStorage (server.mjs:33500)
- *
- * A destructuring default is the whole repair (`= () => {}`), and the fallback
- * costs nothing where the symbol exists: it marks objects as non-cloneable for
- * `postMessage`, and nothing in this deployment posts a `CacheStorage` to a
- * worker. Verified both ways — with the patch, Bun boots the emit and serves
- * `/health`, `/client-config` and `/`; without it, neither.
- *
- * ## Why a plugin rather than an alias on the builtin
- *
- * The alternative is aliasing `node:worker_threads` to a shim that re-exports
- * the builtin plus a fallback. That shim's own import of the builtin resolves
- * through the same alias, so it either recurses or needs a second escape
- * specifier — and it would reroute the builtin for every consumer in the
- * bundle to fix one line in one of them. This is the narrow tool: one file, one
- * string.
- *
- * ## It FAILS the build rather than silently not applying
- *
- * A pinned string is only load-bearing while it matches. If undici's webidl
- * module is in the graph and the line is not, the pattern has moved and the
- * emit would go out crashing under Bun with nothing to say so — so the build
- * stops and names the file to look at. A graph that never reaches undici is not
- * an error; nothing was there to patch.
- */
-function guardUndiciMarkAsUncloneable(): Plugin {
-  let seen = false;
-  let patched = false;
-  return {
-    name: "aai:guard-undici-mark-as-uncloneable",
-    transform(code, id) {
-      if (!id.replaceAll("\\", "/").endsWith(UNDICI_WEBIDL)) return null;
-      seen = true;
-      if (!code.includes(UNDICI_MARK)) return null;
-      patched = true;
-      return {
-        code: code.replace(
-          UNDICI_MARK,
-          "const { markAsUncloneable = () => {} } = require('node:worker_threads')",
-        ),
-        map: null,
-      };
-    },
-    buildEnd() {
-      if (!seen || patched) return;
-      throw new Error(
-        `${UNDICI_WEBIDL} is in the bundle but no longer contains\n  ${UNDICI_MARK}\n` +
-          "so the Bun boot guard did not apply. Re-read that file: if undici now " +
-          "guards the assignment itself, delete this plugin and its spec; if the line " +
-          "merely moved, update UNDICI_MARK. Shipping unpatched crashes the emit on " +
-          "import under Bun.",
-      );
-    },
-  };
-}
-
 /** Bundle `source` as if it were a module in `cwd`, and answer the code. */
 export async function bundleTargetEntry(
   cwd: string,
@@ -270,8 +194,6 @@ export async function bundleTargetEntry(
         root: cwd,
         logLevel: "silent",
         configFile: false,
-        // One plugin, for one upstream line — see the function's own doc.
-        plugins: [guardUndiciMarkAsUncloneable()],
         // Bundle everything except `node:` builtins — see this module's doc.
         ssr: { noExternal: true },
         build: {

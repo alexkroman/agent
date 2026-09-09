@@ -204,6 +204,33 @@ export interface BinaryGate {
   readonly howTo: string;
   /** Args that make it print its version. Defaults to `--version`. */
   readonly versionArgs?: readonly string[];
+  /**
+   * The oldest version whose behaviour the suite asserts, as `x.y.z`.
+   *
+   * A binary that ANSWERS but is older is not the same case as one that is
+   * absent, and conflating them is how a floor gets discovered twice: the arms
+   * would fail on whatever the old version does differently, three assertions
+   * deep, rather than saying the version is below the floor. So it is treated
+   * like an absent binary — announced, skipped, and turned into a hard failure
+   * by {@link BinaryGate.requireEnv} — with the floor named either way.
+   */
+  readonly minVersion?: string;
+}
+
+/** The first `x.y.z` in `--version` output, as numbers. */
+function parseVersion(printed: string): number[] | undefined {
+  const found = /(\d+)\.(\d+)\.(\d+)/.exec(printed);
+  return found === null ? undefined : [Number(found[1]), Number(found[2]), Number(found[3])];
+}
+
+/** `a` is at least `b`, comparing numerically per component. */
+function atLeast(a: readonly number[], b: readonly number[]): boolean {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const left = a[i] ?? 0;
+    const right = b[i] ?? 0;
+    if (left !== right) return left > right;
+  }
+  return true;
 }
 
 /**
@@ -214,8 +241,30 @@ export interface BinaryGate {
  * skip, so the gate has to be decided at COLLECTION time to be a gate at all.
  */
 export function hasBinary(gate: BinaryGate): boolean {
+  return binaryState(gate).kind === "ok";
+}
+
+/** What is on PATH: nothing, something too old, or a usable binary. */
+export type BinaryState =
+  | { kind: "ok"; version?: string }
+  | { kind: "absent" }
+  | { kind: "old"; version: string };
+
+export function binaryState(gate: BinaryGate): BinaryState {
   const args = [...(gate.versionArgs ?? ["--version"])];
-  return spawnSync(gate.bin, args, { stdio: "ignore" }).status === 0;
+  const probe = spawnSync(gate.bin, args, { encoding: "utf-8" });
+  if (probe.status !== 0) return { kind: "absent" };
+  const printed = `${probe.stdout ?? ""}${probe.stderr ?? ""}`.trim();
+  if (gate.minVersion === undefined) return { kind: "ok" };
+  const found = parseVersion(printed);
+  const floor = parseVersion(gate.minVersion);
+  // An unparsable version passes: a custom build printing something we cannot
+  // read is a machine the developer chose, and refusing it would be this
+  // helper deciding a version question it has no answer to.
+  if (found === undefined || floor === undefined) return { kind: "ok", version: printed };
+  return atLeast(found, floor)
+    ? { kind: "ok", version: found.join(".") }
+    : { kind: "old", version: found.join(".") };
 }
 
 // Biome's `noSkippedTests` flags the `describe.skip(…)` CALL form, so the gated
@@ -242,13 +291,18 @@ const skipSuite = describe.skip;
  * strips it before the task starts and the enforcement silently does nothing.
  */
 export function describeWithBinary(gate: BinaryGate, name: string, body: () => void): void {
-  if (hasBinary(gate)) {
+  const state = binaryState(gate);
+  if (state.kind === "ok") {
     describe(name, body);
     return;
   }
+  const why =
+    state.kind === "old"
+      ? `${gate.bin} ${state.version} is older than the ${String(gate.minVersion)} this suite asserts`
+      : `no ${gate.bin} was found`;
   if ((process.env[gate.requireEnv] ?? "") !== "") {
-    throw new Error(`${gate.requireEnv} is set but no ${gate.bin} was found.\n${gate.howTo}`);
+    throw new Error(`${gate.requireEnv} is set but ${why}.\n${gate.howTo}`);
   }
-  console.warn(`\n[skipped: no ${gate.bin}] ${name}\n${gate.howTo}\n`);
+  console.warn(`\n[skipped: ${why}] ${name}\n${gate.howTo}\n`);
   skipSuite(name, body);
 }

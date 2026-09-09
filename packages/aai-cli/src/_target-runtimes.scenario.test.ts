@@ -41,31 +41,39 @@
  * `_target-entry.test.ts` pins the two real entries to this same body modulo a
  * banner and a port, so a claim proved here is a claim about both.
  *
- * ## Bun serves, and cannot be dialled
+ * ## Bun needed a FLOOR, and the matrix is what found it
  *
- * The matrix found it, so it is recorded where the matrix is. Under `bun` the
- * emit boots, serves `/health`, `/client-config` and `/`, and drains on
- * SIGTERM with exit 0 — and the `/websocket` upgrade never reaches the client.
- * The server side gets FURTHER than it looks: our own handler logs `WS upgrade
- * /websocket`, `ws`'s `handleUpgrade` callback runs, and a session is created.
- * Then nothing is written. Measured with a raw socket: an upgrade request to a
- * Bun-hosted `ws` server receives **zero bytes** — no `101`, no error — so a
- * browser sits in CONNECTING until it gives up.
+ * Under Bun 1.3.x the emit did not work, in two separate ways, and neither was
+ * visible to anything else here. It died on IMPORT — undici assigns
+ * `webidl.util.markAsUncloneable` unguarded from `node:worker_threads`, which
+ * Bun did not implement, and undici's own `CacheStorage` calls it at module
+ * scope. Past that, the `/websocket` upgrade never reached the client: our
+ * handler logged `WS upgrade /websocket`, `ws`'s `handleUpgrade` callback ran,
+ * a session was created — and then nothing was written. Measured with a raw
+ * socket: an upgrade request to a Bun-hosted `ws` server received ZERO bytes,
+ * no `101` and no error, so a browser sat in CONNECTING until it gave up.
  *
- * It is not a general gap in Bun's `node:http`. The same nine-line `ws` +
- * `node:http` server works perfectly under Bun when `ws` is imported by NAME,
+ * Both close at **1.4.0**, which is why `minVersion` is a declaration here
+ * rather than a note somewhere:
+ *
+ * | Bun | `markAsUncloneable` | `ws` upgrade |
+ * | --- | --- | --- |
+ * | 1.3.11, 1.3.12, 1.3.14 | absent | zero bytes |
+ * | 1.4.0, 1.4.2 | present | completes |
+ *
+ * The second one is worth remembering for the shape rather than the fix. It was
+ * never a general gap in Bun's `node:http`: the same nine-line `ws` +
+ * `node:http` server worked under Bun 1.3.11 when `ws` was imported by NAME,
  * because **Bun substitutes its own native implementation for the `ws`
- * package** — and it fails, identically to the emit, when the same script
- * imports ws's real JavaScript by path. A bundle inlines that JavaScript, so
- * the substitution never happens and ws's write to the hijacked socket goes
- * nowhere.
+ * package** — and failed identically to the emit when the same script imported
+ * ws's real JavaScript by path. A bundle inlines that JavaScript, so the
+ * substitution never happens and only the real library runs. Any future
+ * "works outside a bundle, not inside it" report on Bun starts there.
  *
- * That is why `acceptsSessions` is a property of the runtime here rather than a
- * skipped leg: a voice agent that serves its own UI and accepts no call is not
- * a working deployment, and a suite that quietly declined to look would let
- * "runs on Bun" be said. The assertion below states the gap, so the day Bun
- * writes those bytes — or the day the runtime grows a Bun-native socket path —
- * this file fails and the flag flips with the evidence attached.
+ * A binary below the floor is treated as an ABSENT one (announced, skipped,
+ * and a hard failure under `AAI_REQUIRE_BUN`) rather than run — see
+ * `BinaryGate.minVersion`. Discovering the floor a second time, three
+ * assertions deep, is what that avoids.
  */
 
 import { spawn } from "node:child_process";
@@ -107,10 +115,13 @@ interface Runtime {
   readonly port: number;
   /**
    * Whether a browser can DIAL this runtime, i.e. whether the `/websocket`
-   * upgrade completes. False for exactly one runtime, and the arm below carries
-   * the measurement rather than skipping the leg.
+   * upgrade completes. True for all three now; it was Bun's floor that made
+   * this a per-runtime field, and the field stays because the next runtime's
+   * answer is a measurement rather than an assumption.
    */
   readonly acceptsSessions: boolean;
+  /** The oldest version this arm asserts, when the runtime needs a floor. */
+  readonly minVersion?: string;
 }
 
 const RUNTIMES: readonly Runtime[] = [
@@ -153,14 +164,18 @@ const RUNTIMES: readonly Runtime[] = [
     gate: {
       bin: "bun",
       requireEnv: "AAI_REQUIRE_BUN",
+      minVersion: "1.4.0",
       howTo:
         "Install Bun (`brew install oven-sh/bun/bun`, or `curl -fsSL https://bun.sh/install | bash`).\n" +
         "CI's integration-and-scenario job pins one via oven-sh/setup-bun.",
     },
     argv: (file) => [file],
     port: 8823,
-    // FALSE, and measured — see "Bun serves, and cannot be dialled" below.
-    acceptsSessions: false,
+    // 1.4.0 is where both of Bun's gaps close, and the table in this file's
+    // header is the measurement. Below it the arms would fail on the older
+    // behaviour rather than on the version, so the gate skips instead.
+    minVersion: "1.4.0",
+    acceptsSessions: true,
   },
 ];
 
@@ -358,23 +373,19 @@ for (const runtime of RUNTIMES) {
       expect(probes.get("/")?.status).toBe(200);
       expect(probes.get("/")?.body).toContain("<html");
 
-      if (runtime.acceptsSessions) {
-        // The upgrade completed and the runtime configured a session on it.
-        // The handshake frame is what separates a real accept from a socket
-        // that opens and then dies: it arrives even though the provider key is
-        // a placeholder, because configuring the session is the runtime's own
-        // work. No credential is spent here.
-        expect(probes.get("/websocket")?.status).toBe(101);
-        expect(probes.get("/websocket")?.body).toContain("session.configured");
-        return;
-      }
-
-      // The gap, asserted rather than skipped — see "Bun serves, and cannot be
-      // dialled" in this file's header for the mechanism and the raw-socket
-      // measurement. A failure HERE is good news: it means the bytes are
-      // arriving now, and this runtime's `acceptsSessions` should become true.
-      expect(probes.get("/websocket")?.status).toBe(0);
-      expect(probes.get("/websocket")?.body).toContain("no-frame");
+      // The upgrade completed and the runtime configured a session on it. The
+      // handshake frame is what separates a real accept from a socket that
+      // opens and then dies: it arrives even though the provider key is a
+      // placeholder, because configuring the session is the runtime's own
+      // work. No credential is spent here.
+      //
+      // Branching on `acceptsSessions` rather than asserting it flat, because
+      // this is the assertion a new runtime is most likely to fail — see the
+      // header's table — and the branch is what makes such a runtime state its
+      // answer instead of quietly not being dialled.
+      expect(runtime.acceptsSessions, `${runtime.gate.bin} is declared undiallable`).toBe(true);
+      expect(probes.get("/websocket")?.status).toBe(101);
+      expect(probes.get("/websocket")?.body).toContain("session.configured");
     }, 180_000);
 
     test("closes the server on SIGTERM instead of dropping the process", async () => {
