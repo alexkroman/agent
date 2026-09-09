@@ -2,8 +2,9 @@
 /**
  * Postgres-backed implementation of the SDK's {@link Db} capability.
  *
- * Wraps the `postgres` npm package behind the one-method `Db` contract that
- * tool `execute` code sees as `ctx.db`. `prepare: false` keeps the client
+ * Wraps the `postgres` npm package behind the one-method `Db` contract the
+ * runtime's own stores take — session slots, the workflow journal and its
+ * correlation-key index. `prepare: false` keeps the client
  * compatible with transaction-mode connection poolers (Supabase's Supavisor,
  * PgBouncer), which the platform fronts every app schema with.
  */
@@ -162,8 +163,9 @@ export type CreatePostgresDbOptions = {
   connectTimeoutSeconds?: number;
   /**
    * Client-side deadline, in milliseconds, for a query on a POOLED connection.
-   * Unset leaves queries unbounded (the historic behaviour, correct for a
-   * tenant `ctx.db`). On a stall the query rejects with a `QUERY_TIMEOUT`-coded
+   * Unset leaves queries unbounded — the historic behaviour, which was correct
+   * for the tenant `ctx.db` this used to back. On a stall the query rejects with
+   * a `QUERY_TIMEOUT`-coded
    * error — the only bound that survives a network partition, where a server
    * `statement_timeout`'s cancellation notice is blackholed with everything
    * else. RESERVED connections are bounded separately, by
@@ -336,7 +338,7 @@ async function buildPostgresDb(options: CreatePostgresDbOptions): Promise<Closea
   const queryOn =
     (on: Pick<postgres.Sql, "unsafe">, timeoutMs?: number) =>
     async <T = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]> => {
-      // The driver types parameters as its serializable union; `ctx.db` keeps
+      // The driver types parameters as its serializable union; `Db` keeps
       // the caller-facing contract at `unknown[]` and lets the driver reject
       // non-serializable values at runtime.
       const run = on.unsafe(query, (params ?? []) as postgres.ParameterOrJSON<never>[]);

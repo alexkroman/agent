@@ -21,7 +21,8 @@ export type StartOptions = {
    * after the caller hangs up. So the run outlives the session and the only
    * handle to it does not. Passing `key: ctx.sessionId` (or a phone number, an
    * account id, an upload id) means the next turn — or the next CALL — can find
-   * the run again without the agent maintaining its own index in `ctx.db`.
+   * the run again without the agent maintaining an index of its own in a database
+   * it brought.
    *
    * Not unique: starting twice with one key is legal and `find` returns the
    * newest first. Deduplicating is a decision only the caller can make.

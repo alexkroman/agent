@@ -10,8 +10,9 @@
  *
  * Why that question has to be answerable at all is in
  * `StartOptions.key`'s doc, and it is specifically a VOICE problem: a run
- * outlives the session that started it, while `ctx.state` — the obvious place to
- * keep a `runId` — is swept `SESSION_RESUME_GRACE_MS` after the caller hangs up.
+ * outlives the session that started it, while a `sessionSlot` — the obvious place
+ * to keep a `runId` — is swept `SESSION_RESUME_GRACE_MS` after the caller hangs
+ * up.
  * Without an index the durable run is unreachable from the next call, which is
  * the case the whole feature is for.
  *

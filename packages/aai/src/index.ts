@@ -66,9 +66,11 @@
  * arithmetic on them that must not go through the host's time zone.
  */
 export * from "./sdk/calendar.ts";
-// By NAME: that module also declares `MAX_DB_RESULT_ROWS` and
-// `STORAGE_DISABLED_MESSAGE`, two framework budgets on `@alexkroman1/aai/internal`
-// — a tool body reads `ctx.db`, never the cap the driver enforces around it.
+// By NAME: that module also declares `MAX_DB_RESULT_ROWS`, a framework budget
+// on `@alexkroman1/aai/internal` — a cap the DRIVER enforces, which no
+// `agent.ts` names. Tool code reaches no database at all; the `Db` it bounds is
+// the runtime's own.
+
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**

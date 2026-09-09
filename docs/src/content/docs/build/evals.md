@@ -51,8 +51,9 @@ body is its assertions and nothing else.
 
 **Import the agent from `virtual:aai/agent`, not from `./agent.ts`.** That is
 the agent as `aai build` lowers it, with `tools/` discovered and
-`system-prompt.md` applied. An eval that imported the authored file would be
-asking the model to reach for tools the agent does not have.
+`system-prompt.md` applied. Get it wrong and the suite says so: a `stubReply`
+naming a tool the agent does not declare fails at declaration, listing the
+tools it does declare.
 
 ## What a turn hands back
 

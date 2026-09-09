@@ -8,7 +8,7 @@ import { requestQuery } from "./request-url.ts";
  * Every id a client can legitimately present was minted by the server as a
  * UUIDv4 and handed back in the `config` frame, so this is deliberately
  * narrow. It is a validation boundary, not a formatting preference: the id
- * becomes the key of the runtime's live-session and `ctx.state` maps, and
+ * becomes the key of the runtime's live-session and session-slot maps, and
  * presenting it is what claims (and evicts) that session — so it is
  * attacker-reachable input on a PUBLIC, auth-free endpoint.
  *

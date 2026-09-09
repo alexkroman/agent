@@ -353,8 +353,7 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
  * Inside a real sandbox the screen protects nothing a tenant cannot bypass in
  * one line — their own tool code has open egress by design, so a guard on
  * `visit_webpage` constrains the model, not the author. The container is the
- * boundary, it holds no platform credentials, and `ctx.db` goes through host
- * RPC.
+ * boundary and it holds no platform credentials.
  *
  * Everywhere else the host IS someone's machine — `aai dev` runs these same
  * builtins in the developer's own process, where a model-controlled URL can

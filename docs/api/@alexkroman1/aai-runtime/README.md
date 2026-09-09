@@ -85,7 +85,12 @@ Four things worth knowing before you copy it:
   as-is — no build step, and no second copy of your agent in JavaScript to
   drift from the one you deploy.
 - **Tools run in this process, on your credentials.** `ctx.env` is the `env`
-  you assembled and `ctx.db` is whatever `Db` you passed.
+  you assembled, and that is the whole of what a tool receives from you — the
+  platform hands tool code no database, so a tool that needs SQL brings its own
+  client and its own credential from `ctx.env`. The optional `db` on
+  `RuntimeOptions` is infrastructure, not an authoring surface: the runtime
+  spends it on session-slot storage and on the workflow run journal and
+  correlation-key store.
 - **`listen()` binds loopback**, because the server has no request
   authentication of its own. Expose it deliberately —
   `listen(port, "0.0.0.0")` behind your own proxy and auth.
@@ -108,8 +113,8 @@ Two properties are what make that safe to expose self-serve, and both are
 structural rather than configured. `createHostServer()` with no `env` has no
 credential to leak and none to spend, so cost lands on whoever opened the
 connection; credential names are screened against `ALL_PROVIDER_ENV_VARS`, so a
-caller cannot smuggle in a `DATABASE_URL` and have the server open `ctx.db`
-against a Postgres it controls. And schemas are not code: each `tool_call` is
+caller cannot smuggle in a `DATABASE_URL` and have the server open a Postgres
+it controls. And schemas are not code: each `tool_call` is
 relayed back over the socket for the caller to execute, so no tenant code runs
 in this process and none of it needs a sandbox.
 

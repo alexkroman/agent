@@ -127,7 +127,11 @@ export interface AgentServerOptions extends SharedServerOptions {
    * pass `defaultClientDir` from `@alexkroman1/aai-ui/client-dir`.
    */
   clientDir?: string;
-  /** SQL handle exposed to tool code as `ctx.db` — see `RuntimeOptions.db`. */
+  /**
+   * SQL database backing the runtime's OWN stores — session slots, the workflow
+   * journal and its key index. Never handed to tool code; see
+   * `RuntimeOptions.db`.
+   */
   db?: Db | undefined;
   /**
    * The durable-run journal this deployment OWNS — see `RuntimeOptions.journal`.

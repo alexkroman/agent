@@ -85,7 +85,8 @@ function selectBackend(options: {
  *    platform's own database, over HTTP. It wins over a `DATABASE_URL` for the same
  *    reason the platform WORLD does: a deployed agent's durability should not depend
  *    on whether it happens to have provisioned a database.
- * 2. **Postgres** against `ctx.db` — a self-hosted server, or `aai dev` with one.
+ * 2. **Postgres** against the runtime's own `db` — a self-hosted server, or `aai
+ *    dev` with one.
  * 3. **Memory**, where a restart forgets the turn. `aai dev` with no database.
  *
  * @internal
