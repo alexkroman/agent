@@ -76,14 +76,23 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
     throw new Error(
       declared.length > 0
         ? `The agent declares no tool named ${name}. It declares: ${declared.join(", ")}.`
-        : `The agent declares no tool named ${name}. It declares: (none). ` +
-            "A tool is a FILE, so an agent.ts default export carries none of them — " +
-            'import the agent as DEPLOYED instead: `import agentDef from "virtual:aai/agent"` ' +
-            "under vitest, or `deployedAgent` from @alexkroman1/aai/testing under any other runner.",
+        : `The agent declares no tool named ${name}. It declares: (none). ${AUTHORED_DEF_HINT}`,
     );
   }
   return def;
 }
+
+/**
+ * Why an agent declares NO tools, and what to import instead.
+ *
+ * Shared rather than copied because {@link toolRunner} says it at BIND, where
+ * this function says it at the first miss: one sentence for one mistake, and the
+ * two cannot drift into describing different remedies.
+ */
+const AUTHORED_DEF_HINT =
+  "A tool is a FILE, so an agent.ts default export carries none of them — " +
+  'import the agent as DEPLOYED instead: `import agentDef from "virtual:aai/agent"` ' +
+  "under vitest, or `deployedAgent` from @alexkroman1/aai/testing under any other runner.";
 
 /** What was passed, for a message that can say so without printing it. */
 function describe(value: unknown): string {
@@ -236,8 +245,26 @@ export type ToolRunner = (
  * expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
  * ```
  *
+ * **A runner over an agent with NO tools is refused HERE**, rather than at the
+ * first `run(...)`. A tool is a file, so `agent.ts`'s default export declares an
+ * empty table and every call through such a runner fails identically — the
+ * mistake is the argument on this line, and reporting it at a call site several
+ * dozen lines away names the symptom instead. It is the one shape that cannot be
+ * a legitimate runner: a runner exists to reach tools by name, and there are no
+ * names to reach. Reach for {@link toolOf} or {@link runTool} directly if a spec
+ * really means to assert on an empty table.
+ *
  * @public
  */
 export function toolRunner(agent: ToolBearingAgent): ToolRunner {
+  const given: unknown = agent;
+  // Not an agent at ALL is left to the first call: `toolOf` already has a
+  // sentence for each way that happens, and both need the tool NAME to say it.
+  if (isRecord(given) && isRecord(given.tools) && Object.keys(given.tools).length === 0) {
+    throw new Error(
+      "toolRunner(agent) was handed an agent that declares no tools, so every run(…) " +
+        `would fail the same way. ${AUTHORED_DEF_HINT}`,
+    );
+  }
   return async (name, argsOrCtx, ctx) => await runTool(agent, name, argsOrCtx, ctx);
 }

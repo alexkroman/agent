@@ -138,6 +138,23 @@ describe("toolRunner", () => {
     );
   });
 
+  test("refuses an agent with NO tools at BIND, naming the authored-def mistake", () => {
+    // The bug the documentation page shipped for as long as it had fences: every
+    // example bound a runner to `./agent.ts`'s default export, whose tool table
+    // is empty because a tool is a FILE, so every `run(...)` on the page threw
+    // "It declares: (none)" — a sentence about the call rather than about the
+    // import that caused it. A runner over zero tools is always that mistake.
+    expect(() => toolRunner({ tools: {} })).toThrow(/declares no tools, so every run/);
+    expect(() => toolRunner({ tools: {} })).toThrow(/virtual:aai\/agent/);
+  });
+
+  test("leaves a non-agent to the first call, which knows the tool name", () => {
+    // `toolOf` has a sentence for each way that happens and both quote the name,
+    // so binding cannot say it. The runner is still returned.
+    const missing: unknown = undefined;
+    expect(() => toolRunner(missing as { tools: Record<string, ToolDef> })).not.toThrow();
+  });
+
   test("two runners over two agents stay bound to their own", async () => {
     const other: ToolDef = { description: "Other", execute: () => ({ from: "other" }) };
     const runOne = toolRunner(agentDef);
