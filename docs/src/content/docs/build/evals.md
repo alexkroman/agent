@@ -14,10 +14,44 @@ aai eval          # agent.eval.test.ts
 An eval is an ordinary vitest file. Everything in it is real — your prompt, your
 tools, the session's own event stream — except the microphone and the speaker.
 
-A [background job](/agent/more/background-jobs/) has no session, so it is
-covered separately, in [Workflow evals](/agent/more/workflow-evals/).
-
 ## Your first eval
+
+```ts
+import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import agentDef from "virtual:aai/agent";
+import { expect } from "vitest";
+
+describeEval(agentDef, (test) => {
+  test(
+    "answers in its own voice",
+    async ({ session }) => {
+      const turn = await session.say("What is the capital of France?");
+      expect(turn.text).toMatch(/paris/i);
+    },
+    { stubReply: "Paris is the capital of France." },
+  );
+});
+```
+
+Three things are going on:
+
+- `describeEval` opens a session for each case and closes it afterwards, so the
+  body is its assertions and nothing else.
+- `session.say()` hands back **that turn** — the reply, its tool calls, its
+  events.
+- `stubReply` is what a scripted model answers with when the suite runs without
+  a provider key. With a key, the real model answers instead. See
+  [Live model, or scripted](#live-model-or-scripted).
+
+**Import the agent from `virtual:aai/agent`, not from `./agent.ts`.** That is
+the agent as `aai build` lowers it, with `tools/` discovered and
+`system-prompt.md` applied — the same rule as in
+[Testing](/agent/build/testing/).
+
+## Asserting the agent used a tool
+
+The reply is half of it. The other half is what the agent *did* before it
+spoke:
 
 ```ts
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -28,14 +62,11 @@ describeEval(agentDef, (test) => {
   test(
     "looks the order up before answering",
     async ({ session }) => {
-      // `say()` hands back THAT turn — the reply, its tool calls, its events.
       const turn = await session.say("Where is order W1234?");
 
       expect(turn.toolCalls.map((call) => call.name)).toContain("look_up_order");
       expect(turn.text).toMatch(/shipped/i);
-      expect(turn.completed).toBe(true);
     },
-    // What a scripted model answers with when there is no key — see below.
     {
       stubReply: [
         { tool: "look_up_order", args: { order_id: "W1234" } },
@@ -46,14 +77,8 @@ describeEval(agentDef, (test) => {
 });
 ```
 
-`describeEval` opens a session for the case and closes it afterwards, so the
-body is its assertions and nothing else.
-
-**Import the agent from `virtual:aai/agent`, not from `./agent.ts`.** That is
-the agent as `aai build` lowers it, with `tools/` discovered and
-`system-prompt.md` applied. Get it wrong and the suite says so: a `stubReply`
-naming a tool the agent does not declare fails at declaration, listing the
-tools it does declare.
+A `stubReply` naming a tool the agent does not declare fails at declaration,
+listing the tools it does declare.
 
 ## What a turn hands back
 
@@ -94,7 +119,18 @@ is a question, not a verdict.
 ### Writing a stubReply
 
 A bare string is a line the agent says. An array is a sequence — one entry per
-model call, `{ tool, args }` for a call, the last line repeating:
+model call, `{ tool, args }` for a call, the last line repeating.
+
+Choose a `stubReply` the case's own assertions still hold against. The point of
+a scripted run is that the case really executes, and a stub the case then fails
+against measures nothing.
+
+### Cases that only make sense in one mode
+
+| Marker | Skipped when | Reach for it when |
+| --- | --- | --- |
+| `{ live: true }` | scripted | no script can satisfy the claim: a tool the model has to choose for itself, a refusal, a judgement |
+| `{ scripted: true }` | live | a competent model will not take the path — usually watching a guard refuse, since something has to call the gated tool before you can see it say no |
 
 ```ts
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -102,15 +138,6 @@ import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
 
 describeEval(agentDef, (test) => {
-  test(
-    "answers in its own voice",
-    async ({ session }) => {
-      const turn = await session.say("What is the capital of France?");
-      expect(turn.text).toMatch(/paris/i);
-    },
-    { stubReply: "Paris is the capital of France." },
-  );
-
   test(
     "refuses a size the kitchen does not make",
     async ({ session }) => {
@@ -123,17 +150,6 @@ describeEval(agentDef, (test) => {
   );
 });
 ```
-
-Choose a `stubReply` the case's own assertions still hold against. The point of
-a scripted run is that the case really executes, and a stub the case then fails
-against measures nothing.
-
-### Cases that only make sense in one mode
-
-| Marker | Skipped when | Reach for it when |
-| --- | --- | --- |
-| `{ live: true }` | scripted | no script can satisfy the claim: a tool the model has to choose for itself, a refusal, a judgement |
-| `{ scripted: true }` | live | a competent model will not take the path — usually watching a guard refuse, since something has to call the gated tool before you can see it say no |
 
 :::note[Keep one case each mode can run]
 A suite where every case ends up skipped fails rather than reporting green. The
@@ -150,10 +166,22 @@ and it is the one check a pipeline with no key can make for free.
 
 ## Reading what happened
 
-`@alexkroman1/aai-runtime/eval` publishes the readers. Use them over a
-hand-written `find`, because **they throw when they have nothing to read**, and
-name what actually happened. A `find` that misses answers `undefined`, and a
-case asserting against `undefined` passes quietly.
+`@alexkroman1/aai-runtime/eval` publishes readers for the event stream. Use them
+over a hand-written `find`, because **they throw when they have nothing to
+read**, and name what actually happened. A `find` that misses answers
+`undefined`, and a case asserting against `undefined` passes quietly.
+
+| Reader | Answers |
+| --- | --- |
+| `toolNames(calls)` | The names called, in call order |
+| `toolArgsIn(calls, name, schema)` | What one call was given |
+| `toolResultIn(calls, name, schema)` | What one call answered — `toolResultsIn` for several |
+| `saidIn(events)` / `errorsIn(events)` | The replies / what the runtime said went wrong |
+| `lastStateIn(events, schema)` / `statesIn` | What `syncState` pushed to the page |
+| `expectToolBeforeSpeech(turn)` | It acted before it spoke |
+| `describeTurn(turn)` / `describeToolCalls(calls)` | A message for an assertion that fails |
+
+A realistic case using three of them:
 
 ```ts
 import { errorsIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
@@ -174,8 +202,7 @@ describeEval(agentDef, (test) => {
 
       // Parsed, so a result that stopped matching fails naming the field.
       const priced = z.object({ total: z.string() });
-      const result = toolResultIn(turn.toolCalls, "add_pizza", priced);
-      expect(result.total).toBe("$18.00");
+      expect(toolResultIn(turn.toolCalls, "add_pizza", priced).total).toBe("$18.00");
 
       // Over the whole session: a failure prints the errors themselves.
       expect(errorsIn(session.events())).toEqual([]);
@@ -189,16 +216,6 @@ describeEval(agentDef, (test) => {
   );
 });
 ```
-
-| Reader | Answers |
-| --- | --- |
-| `toolNames(calls)` | The names called, in call order |
-| `toolArgsIn(calls, name, schema)` | What one call was given |
-| `toolResultIn(calls, name, schema)` | What one call answered — `toolResultsIn` for several |
-| `saidIn(events)` / `errorsIn(events)` | The replies / what the runtime said went wrong |
-| `lastStateIn(events, schema)` / `statesIn` | What `syncState` pushed to the page |
-| `expectToolBeforeSpeech(turn)` | It acted before it spoke |
-| `describeTurn(turn)` / `describeToolCalls(calls)` | A message for an assertion that fails |
 
 The rest — `runCodeIn`, `customEventsIn`, `openEvalSession` for a harness of
 your own — is in the [SDK reference](/agent/reference/) under
@@ -225,8 +242,7 @@ describeEval(agentDef, (test) => {
       // The turn it staged in, whichever that turned out to be.
       const staging = turnCalling(turns, "cancel_order");
       const staged = z.object({ state: z.string() });
-      const result = toolResultIn(staging.toolCalls, "cancel_order", staged);
-      expect(result.state).toBe("pending");
+      expect(toolResultIn(staging.toolCalls, "cancel_order", staged).state).toBe("pending");
     },
     {
       stubReply: [
@@ -255,6 +271,9 @@ your own voice are what check that.
 **And one run is not a verdict.** A model is probabilistic, so the same code, on
 the same cases, does not always score the same. Re-run before believing either
 answer, and prefer a harder case to a weaker assertion.
+
+A [background job](/agent/more/background-jobs/) has no session, so it is
+covered separately, in [Workflow evals](/agent/more/workflow-evals/).
 
 ## Next
 

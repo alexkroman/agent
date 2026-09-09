@@ -6,57 +6,47 @@ description: Tools are plain functions. aai test is vitest.
 A test settles what your code does. An [eval](/agent/build/evals/) settles what
 the agent did. This page is the first one.
 
-`aai test` runs every non-eval spec in the project with vitest. Nothing about
-testing an agent is special: a tool is a function, so you call it and assert on
-what comes back.
-
 ```sh
-aai test          # every spec in the project
-aai test --only   # agent.test.ts alone, for the fast inner loop
+aai test
 ```
 
-`--only` names the spec files it skipped rather than reporting a green run over
-them, so a pass never hides an untested file. Behaviour evals are a separate
-command, `aai eval`, and neither run reaches them.
+`aai test` runs every spec in the project with vitest — everything but the
+evals, which have their own command. A tool is a plain function, so a spec
+calls it and asserts on what comes back. No model, no session, no server.
 
-## Reaching a tool by the name the model uses
+## Your first test
 
-`toolRunner` gives you the same tool table a published agent runs, so a spec
-calls a tool by the name the model calls it by:
+`toolRunner` reaches a tool by the name the model calls it by:
 
 ```ts
 import agentDef from "virtual:aai/agent";
-import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
-import { describe, expect, test } from "vitest";
+import { toolRunner } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
 
 const run = toolRunner(agentDef);
 
-describe("get_weather", () => {
-  test("returns the current conditions", async () => {
-    const ctx = createToolContext();
-    const out = await run("get_weather", { city: "Denver" }, ctx);
-    expect(out).toMatchObject({
-      city: "Denver",
-      tempF: expect.any(String),
-    });
-  });
+test("get_weather answers for the city it was given", async () => {
+  const out = await run("get_weather", { city: "Denver" });
+  expect(out).toMatchObject({ city: "Denver" });
 });
 ```
+
+That is a complete spec. Put it in `agent.test.ts` and run `aai test`.
 
 **Assert on what the tool returns, not on what the API it called returned.**
 The scaffold's `get_weather` narrows wttr.in's response to
 `{ city, tempF, conditions }` before handing it back, so those are the fields a
-spec has to name — see [Tools](/agent/build/tools/).
+spec names — see [Tools](/agent/build/tools/).
 
-**Import the agent from `virtual:aai/agent`, not from `./agent.ts`.**
+## Import the agent from `virtual:aai/agent`
 
-The reason: a tool is a *file*, so `agent.ts`'s own default export carries no
-tools at all. `tools/get_weather.ts` becomes the tool `get_weather` when
-`aai build` lowers the project, and `virtual:aai/agent` is that lowered agent —
-your `tools/` directory discovered, your `system-prompt.md` applied.
+A tool is a *file*, so `agent.ts`'s own default export carries no tools at all.
+`tools/get_weather.ts` becomes the tool `get_weather` when `aai build` lowers
+the project, and `virtual:aai/agent` is that lowered agent — your `tools/`
+directory discovered, your `system-prompt.md` applied.
 
-Hand a runner the authored def instead and it says so on the spot. A runner over
-zero tools can only ever be this mistake.
+Hand a runner the authored def instead and it says so on the spot: a runner
+over zero tools can only ever be this mistake.
 
 :::note[Not running vitest?]
 `virtual:aai/agent` is a Vite module. On another runner, lower the agent
@@ -64,14 +54,9 @@ yourself with
 `deployedAgent(def, { tools: import.meta.glob("./tools/*.ts", { eager: true }) })`.
 :::
 
-`createToolContext()` gives the tool a fake `ctx`, and nothing it does escapes
-the test. Pass overrides for whatever the tool actually uses. `ctx.generate` and
-`ctx.delegate` reject until you do, naming themselves, so a tool that makes a
-model call tells you rather than silently passing.
+## Checking the agent is shippable
 
-## Checking the agent itself
-
-`expectDeployable` checks that an agent is actually shippable, and names what
+`expectDeployable` checks that an agent is actually deployable, and names what
 is missing when it is not:
 
 ```ts
@@ -84,38 +69,36 @@ test("is deployable", () => {
 });
 ```
 
-`aai build` runs your whole suite before it bundles. `aai publish` only
-type-checks, so run `aai build` first if you want the tests to gate a ship.
+## Giving a tool a context
 
-## Session state in a spec
-
-Each `createToolContext()` gets its own detached slot store, so two contexts
-are two callers:
+Each call above got a fresh `ctx` of its own. Pass one explicitly when a tool
+needs something from it, or when two calls are supposed to share a session:
 
 ```ts
 import agentDef from "virtual:aai/agent";
 import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
-import { expect } from "vitest";
+import { expect, test } from "vitest";
 
 const run = toolRunner(agentDef);
 
-const alice = createToolContext();
-const bob = createToolContext();
+test("the cart belongs to one caller", async () => {
+  const alice = createToolContext();
+  const bob = createToolContext();
 
-await run("add_to_cart", { sku: "A1", qty: 1 }, alice);
-expect(await run("list_cart", {}, bob)).toEqual([]);
+  await run("add_to_cart", { sku: "A1", qty: 1 }, alice);
+  expect(await run("list_cart", bob)).toEqual([]);
+});
 ```
 
-## Driving the model
+`createToolContext()` is a fake `ctx`, and nothing it does escapes the test. It
+gets its own detached slot store, so two contexts are two callers. Pass
+overrides for whatever the tool actually uses. `ctx.generate` and `ctx.delegate`
+reject until you do, naming themselves, so a tool that makes a model call tells
+you rather than silently passing.
 
-Tools that call `ctx.generate` take a stub rather than a live key. What you pass
-depends on what the tool reads back:
+## Stubbing the model
 
-| Pass | For |
-| --- | --- |
-| a bare string | a text answer |
-| `{ object: … }` | structured output. Add `text` when the tool reads both |
-| a record keyed by system prompt | a tool that plays more than one model role |
+Tools that call `ctx.generate` take a stub rather than a live key:
 
 ```ts
 import { createToolContext } from "@alexkroman1/aai/testing";
@@ -124,6 +107,14 @@ const ctx = createToolContext({ generate: "A short summary." });
 // `ctx.model.calls` records what the model was asked.
 // `ctx.desk` is the same thing for `ctx.delegate`.
 ```
+
+What you pass depends on what the tool reads back:
+
+| Pass | For |
+| --- | --- |
+| a bare string | a text answer |
+| `{ object: … }` | structured output. Add `text` when the tool reads both |
+| a record keyed by system prompt | a tool that plays more than one model role |
 
 :::caution[Don't wrap a text answer in `{ text: "…" }`]
 It does not compile, but the compiler's advice is misleading: it reports that
@@ -139,6 +130,22 @@ rather read the two fakes by name.
 The full set — `stubGateway`, guardrails, workflow contexts, upload fixtures,
 run snapshots — is in the [SDK reference](/agent/reference/) under
 `@alexkroman1/aai/testing`.
+
+## Running the suite
+
+```sh
+aai test          # every spec in the project
+aai test --only   # agent.test.ts alone, for the fast inner loop
+```
+
+`--only` names the spec files it skipped rather than reporting a green run over
+them, so a pass never hides an untested file.
+
+`aai build` runs your whole suite before it bundles. `aai publish` only
+type-checks, so run `aai build` first if you want the tests to gate a ship.
+
+Behaviour evals are a separate command, `aai eval`, and neither run above
+reaches them.
 
 ## What a test cannot settle
 

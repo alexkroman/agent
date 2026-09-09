@@ -3,11 +3,14 @@ title: Your own UI
 description: Every agent gets a voice UI for free. Replace a panel, or the page.
 ---
 
-You do not need a `client.tsx`. Every agent gets a working browser page without
-one — a voice client for a voice agent, and a form per declared workflow for a
-[workflow app](/agent/more/background-jobs/).
+Every agent already has a working browser page: a voice client for a voice
+agent, and a form per declared workflow for a
+[workflow app](/agent/more/background-jobs/). Come here when you want to show
+something of your own beside it — a cart, an order, a live form — or replace the
+page entirely.
 
-Add the file and you get the same shell with your own panel:
+You do that by adding a `client.tsx`. Add the file and you get the same shell
+with your own panel in it:
 
 ```tsx
 // client.tsx
@@ -31,11 +34,11 @@ function CartPanel() {
 mountClient({ sidebar: CartPanel });
 ```
 
-`aai dev` builds it, and `aai publish` ships it, with no extra step.
+`aai dev` builds it and `aai publish` ships it, with no extra step.
 
-`useAgentState` reads whatever the agent projects with `syncState`. Declare a
-slot first, or there is nothing to receive — see
-[Remembering things](/agent/build/state/).
+A **slot** is a named piece of session state. `useAgentState` reads whatever the
+agent projects from one with `syncState`, so declare a slot first or there is
+nothing to receive — see [Remembering things](/agent/build/state/).
 
 :::note[No slot to hand?]
 A page that cannot import the slot — a client kept apart from the agent — passes
@@ -55,20 +58,28 @@ no empty frame to write and no type to restate.
 | `useToolResult(name, cb)` | A card per tool call |
 | `useEvent(name, cb)` | Whatever a tool pushed with `ctx.send` |
 
+`mountClient` takes more than a `sidebar`: `component` replaces the whole page,
+and `name`, `subtitle`, `icon`, `theme`, `buttonText` and `sidebarPosition`
+dress the default shell. The full list is in the
+[SDK reference](/agent/reference/) under `@alexkroman1/aai-ui`.
+
 For a non-React client, `createBrowserSession({ platformUrl })` is the same
-session as a plain store. Components, styling, and the full hook surface are in
-the [SDK reference](/agent/reference/) under `@alexkroman1/aai-ui`.
+session as a plain store, with no components attached.
 
 ## A page for a background job
 
-Building a page for a [background job](/agent/more/background-jobs/) rather than
-a conversation? That calls `mountPage()` instead of `mountClient()`.
+A [workflow app](/agent/more/background-jobs/) has no session, so its page calls
+`mountPage()` instead of `mountClient()`.
 
-Its `component` is optional the same way. `mountPage({ name: "Digest" })` gets
-you a form built from each workflow's own input schema, the run's progress, and
-its result.
+Every option is optional. `mountPage({ name: "Digest" })` gets you a form built
+from each workflow's own input schema, the run's progress, and its result.
 
 Pass a `component` when you want to lay the result out yourself. The pieces the
 default is made of — `useWorkflows`, `<WorkflowFields>`, `useWorkflowSubmit`,
 `<WorkflowProgress>`, `<WorkflowRunError>` — are all exported, so replacing the
 shell is not starting over.
+
+## Next
+
+- [Remembering things](/agent/build/state/) — declaring the slot this reads
+- [Background jobs](/agent/more/background-jobs/) — what `mountPage()` fronts

@@ -4,10 +4,10 @@ description: Work that outlives a turn — a file to transcribe, an archive to s
 ---
 
 Some work takes minutes. Transcribing an hour of audio, say. That is too long to
-keep a caller on the line, so it goes in `workflows/` instead.
-
-A workflow run survives the process it started in. Restart a sixty-segment job
-at segment 41 and the first forty are not re-done.
+keep a caller on the line, so it goes in a **workflow**: a function whose
+progress is recorded step by step, so the work survives the process it started
+in. Restart a sixty-segment job at segment 41 and the first forty are not
+re-done.
 
 ## The shape
 
@@ -17,29 +17,17 @@ A workflow body is an ordinary exported async function of its input and a
 ```ts
 // workflows/transcribe.ts
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { mapConcurrent } from "@alexkroman1/aai/step";
 
-type Segment = { index: number };
-declare function planSegments(recording: string): Promise<Segment[]>;
-declare function transcribeSegment(segment: Segment): Promise<{ text: string }>;
+declare function fetchAudio(recording: string): Promise<Uint8Array>;
+declare function transcribe(audio: Uint8Array): Promise<string>;
 
 export async function transcribeFlow(
   input: { recording: string },
   ctx: WorkflowContext,
 ) {
-  const { recording } = input;
-  // A step is where the whole Node runtime is available: fetch, a model
-  // call, a database. Not in the body.
-  const segments = await ctx.step("plan", () => planSegments(recording));
-
-  // Four at a time, each its own step: a dropped connection costs one
-  // segment, not the run. One NAME for all of them — see "Naming your
-  // steps" below.
-  const parts = await mapConcurrent(segments, 4, (seg) =>
-    ctx.step("transcribeSegment", () => transcribeSegment(seg)),
-  );
-
-  return { text: parts.map((part) => part.text).join(" ") };
+  const audio = await ctx.step("fetch", () => fetchAudio(input.recording));
+  const text = await ctx.step("transcribe", () => transcribe(audio));
+  return { text };
 }
 ```
 
@@ -47,28 +35,33 @@ export async function transcribeFlow(
 
 The body is re-run from the top on every resume. Each step that already finished
 returns its recorded value instead of running again. That replay is what makes a
-run survive a restart.
+run survive a restart, and it is why the real work goes inside a step: the whole
+Node runtime is available in there — `fetch`, a model call, a database — and
+none of it is available in the body.
 
 ## Naming your steps
 
 A step is recorded under its name plus the number of times this run has already
-reached that name: `transcribeSegment#0`, `transcribeSegment#1`, and so on,
-counted per name. Two rules follow from that.
+reached that name: `transcribe#0`, `transcribe#1`, and so on, counted per name.
+Two rules follow from that.
 
 ### Use ONE name for a loop or a fan-out
 
-A fan-out of any size stays one literal: sixty segments would be sixty distinct
-records under `transcribeSegment`. That is exactly what the occurrence counter
-is for.
+`mapConcurrent(items, limit, fn)` from `@alexkroman1/aai/step` runs a fan-out
+with a ceiling on how many are in flight at once. A fan-out of any size stays
+one literal name: sixty segments are sixty records under `transcribeSegment`,
+which is exactly what the occurrence counter is for.
 
-So do not build a name per item. `` ctx.step(`segment-${seg.index}`, …) ``
-looks like the careful version and is the bug.
+So do not build a name per item. `` ctx.step(`segment-${index}`, …) `` looks
+like the careful version and is the bug.
 
 :::caution[An interpolated step name breaks the replay]
 An interpolated name is computed at run time, so a replay mints a key no earlier
 attempt reached — and the step either runs a second time or the run is refused.
 Measured on a one-line body: 7 of 10 runs ran the side effect twice, all 10
-reporting `completed`. `aai build` and `aai publish` scan for this and warn.
+reporting `completed`. The type refuses a name that has widened to `string`,
+but a template literal is not `string` and slips through it — so `aai build`
+scans for one and warns.
 :::
 
 **Your fan-out callback must call `ctx.step` as its first act.**
@@ -109,10 +102,11 @@ so keep it as a convention: one name per call site, one call site per name.
 
 `ctx.sleep("settle", 6 * 60 * 60 * 1000)` suspends rather than blocks. The
 container is free to exit, and the run resumes when the sleep comes due. Six
-hours costs the same as ten seconds.
+hours costs the same as ten seconds. The second argument is a duration in
+milliseconds, or a `Date` to wait until.
 
 A sleep's label, and `ctx.waitFor(token)`'s token, are journal keys on the same
-(name, occurrence) scheme — so both naming rules above apply to them too.
+name-plus-occurrence scheme, so both naming rules above apply to them too.
 
 ## What a body may not do
 
@@ -146,6 +140,9 @@ export default tool({
 });
 ```
 
+`start` resolves to a run id as soon as the run is created. It does not wait for
+the run to finish.
+
 ## When there is no call at all
 
 Sometimes the audio arrives as a file and there is no microphone in the story.
@@ -171,12 +168,12 @@ export const transcribe = workflow({
 export default workflowApp({
   name: "Transcription Desk",
   workflows: { transcribe },
-  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });
 ```
 
 A body lives in `workflows/`, but unlike a tool it is not picked up by being
-there. The `workflows` map above registers it, under the name you give it.
+there. The `workflows` map above registers it, under the name you give it —
+`transcribe` here, which is the name `aai workflow runs` and `app.run()` take.
 
 `aai dev`, `aai build`, and `aai publish` treat this like any other agent. The
 voice fields — `systemPrompt`, the provider stages, the voice options — are not
@@ -189,5 +186,6 @@ Retries, webhooks, signals, `wake`, and the full step vocabulary are in the
 
 ## Next
 
+- [Workflow evals](/agent/more/workflow-evals/) — testing one
 - [Your own UI](/agent/more/custom-ui/) — the browser side
 - [Publish](/agent/deploy/publish/) — shipping it

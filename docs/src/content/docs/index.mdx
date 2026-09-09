@@ -27,10 +27,12 @@ aai dev
 
 `aai dev` prints a URL. Open it and talk to your agent.
 
-You need Node.js 24, 25, or 26, and an `ASSEMBLYAI_API_KEY`. That one key
-covers listening, thinking, and speaking.
+You need Node.js 24, 25, or 26 and an `ASSEMBLYAI_API_KEY`. That one key covers
+listening, thinking, and speaking.
 
 ## A whole agent
+
+Three files. None of them imports another.
 
 ```ts
 // agent.ts
@@ -38,7 +40,7 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Weather Line",
-  greeting: "Weather line — which city are you asking about?",
+  greeting: "Which city are you asking about?",
   voice: "michael",
 });
 ```
@@ -46,52 +48,43 @@ export default agent({
 ```md
 <!-- system-prompt.md -->
 You help callers plan around the weather.
-Answer in one or two sentences — this is a phone call, not a paragraph.
+Answer in one or two sentences. This is a phone call.
 ```
 
 ```ts
 // tools/get_weather.ts
-// The model calls this `get_weather`.
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 export default tool({
-  description: "Get current weather for a city",
-  inputSchema: z.object({ city: z.string().describe("City name") }),
-  execute: async ({ city }, ctx) => {
-    const where = encodeURIComponent(city);
-    // `ctx.signal` is the call's deadline — pass it to anything slow.
-    const res = await fetch(`https://wttr.in/${where}?format=j1`, {
-      signal: ctx.signal,
-    });
-    const report = (await res.json()) as {
-      current_condition?: { temp_F?: string; weatherDesc?: { value?: string }[] }[];
-    };
-    const now = report.current_condition?.[0];
-    // Return what the agent will SAY, not the whole response.
-    return { city, tempF: now?.temp_F, conditions: now?.weatherDesc?.[0]?.value };
+  description: "Get the current weather for a city",
+  inputSchema: z.object({ city: z.string() }),
+  execute: async ({ city }) => {
+    const res = await fetch(`https://wttr.in/${city}?format=3`);
+    return { report: await res.text() };
   },
 });
 ```
 
-There is no registration step. A file in `tools/` is a tool because it is in
-`tools/`. `system-prompt.md` is the system prompt because it exists.
+The model can call that tool, and it calls it `get_weather`. There is no
+registration step: a file in `tools/` is a tool because it is in `tools/`, and
+`system-prompt.md` is the system prompt because it exists.
 
 <CardGrid>
   <Card title="Start here" icon="rocket">
-    [Quickstart](/agent/start/quickstart/) builds and publishes a working
-    agent in about five minutes.
+    [Quickstart](/agent/start/quickstart/) — a working agent, published, in
+    about five minutes.
   </Card>
   <Card title="What a project looks like" icon="open-book">
-    [How it works](/agent/start/how-it-works/) explains why a project is shaped
-    the way it is.
+    [How it works](/agent/start/how-it-works/) — the files, and what happens on
+    a call.
   </Card>
   <Card title="Give it abilities" icon="setting">
-    [Tools](/agent/build/tools/) are ordinary async functions. The model decides when
-    to call them.
+    [Tools](/agent/build/tools/) are ordinary async functions. The model decides
+    when to call them.
   </Card>
   <Card title="Every option" icon="document">
-    The [SDK reference](/agent/reference/) is generated from the source, and
-    documents every field, provider, and helper.
+    The [SDK reference](/agent/reference/) is generated from the source. Every
+    field, provider, and helper is in it.
   </Card>
 </CardGrid>

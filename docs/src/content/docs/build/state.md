@@ -3,25 +3,24 @@ title: Remembering things
 description: Session state that survives concurrent tool calls, a crash, and a redeploy.
 ---
 
-To remember something across a conversation, declare a `sessionSlot`. One
+A `sessionSlot` is how tools remember something across a conversation. One
 declaration holds the name, the starting value, and the type. Unlike a
-module-level variable, a slot is safe when tools run concurrently.
+module-level variable, a slot is safe when two tools run at once.
 
 ## Declare the slot
 
 ```ts
 // shared.ts
-// The one place the shape is written down.
 import { sessionSlot } from "@alexkroman1/aai";
 
-export type Item = { sku: string; qty: number };
-export type Cart = { items: Item[] };
+export type Cart = { items: string[] };
 
-// The return annotation is what types the value — no `[] as Item[]` cast.
 export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }));
 ```
 
-There is nothing to declare on `agent()`. The slot owns its own default.
+There is nothing to declare on `agent()` — the slot owns its own default. The
+`: Cart` annotation is what types it: an empty array cannot say on its own what
+it will hold.
 
 ## Read it with `slot.tool()`
 
@@ -34,8 +33,7 @@ import { cartSlot } from "../shared.ts";
 
 export default cartSlot.tool({
   description: "List what's in the cart",
-  // `cart` is typed from the slot's default — no annotation needed.
-  execute: (_args, cart) => cart.items,
+  execute: (_args, cart) => ({ items: cart.items }),
 });
 ```
 
@@ -51,9 +49,9 @@ import { cartSlot } from "../shared.ts";
 
 export default cartSlot.updateTool({
   description: "Add an item to the cart",
-  inputSchema: z.object({ sku: z.string(), qty: z.number() }),
-  execute: ({ sku, qty }, cart) => {
-    cart.items.push({ sku, qty });
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }, cart) => {
+    cart.items.push(item);
     return { count: cart.items.length };
   },
 });
@@ -61,22 +59,21 @@ export default cartSlot.updateTool({
 
 ## Four rules
 
-- **`tool` reads, `updateTool` writes.** A read is readonly all the way down,
-  so `cart.items.push(item)` inside a `tool` is a compile error at every depth,
-  not a write that silently goes nowhere. A caller with no types gets a
-  `TypeError` at run time instead.
+- **`tool` reads, `updateTool` writes.** What a `tool` is handed is readonly all
+  the way down, so `cart.items.push(item)` inside one is a compile error rather
+  than a write that silently goes nowhere.
+- **Hold plain data.** Objects, arrays, strings, numbers, booleans, null. A
+  `Map`, `Set`, `Date`, or class instance is refused with the field named,
+  because none of them survives being stored.
 - **An `updateTool` body cannot `await`.** Whatever it leaves on the draft is
   stored the moment it returns, and that is what keeps two concurrent tools
   from overwriting each other. To fetch something first, use a plain `tool()`:
   its `execute` gets `ctx` as a second argument, so it can call
-  `slot.update(ctx, …)` once the data is in hand.
-- **Hold plain data.** Objects, arrays, strings, numbers, booleans, null. A
-  `Map`, `Set`, `Date`, or class instance is refused with the field named,
-  because none of them survives being stored.
+  `cartSlot.update(ctx, …)` once the data is in hand.
 - **It is stored for you.** On the platform, a crash or a redeploy no longer
   loses the cart. Under `aai dev` it lives in memory, unless you point a
   `DATABASE_URL` at your own Postgres in `.env`. The code is the same either
-  way, which is what the three constraints above buy.
+  way, which is what the three rules above buy.
 
 ## Showing it to the browser
 
@@ -89,7 +86,7 @@ slot carries it as `slot.projected`:
 // shared.ts, again — the view belongs with the slot.
 import { sessionSlot } from "@alexkroman1/aai";
 
-export type Cart = { items: { sku: string; qty: number }[] };
+export type Cart = { items: string[] };
 
 export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
   view: (cart) => ({ count: cart.items.length }),
@@ -134,7 +131,7 @@ projections with `slot.projection(view)`:
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-type Cart = { items: { sku: string; qty: number }[] };
+type Cart = { items: string[] };
 
 const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
   view: (cart) => ({ count: cart.items.length }),
@@ -144,7 +141,7 @@ export default agent({
   name: "Store",
   syncState: [
     cartSlot.projected, // { count }
-    cartSlot.projection((cart) => ({ skus: cart.items.map((item) => item.sku) })),
+    cartSlot.projection((cart) => ({ items: [...cart.items] })),
   ],
 });
 ```
