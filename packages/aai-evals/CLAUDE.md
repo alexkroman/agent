@@ -430,27 +430,49 @@ versioned wire surface plus a second encoding of arguments and results already
 on the stream. **Recommendation: do not.** Revisit if a case needs to grade a
 `ctx.send` or an uncaught tool throw from outside the sandbox.
 
-### A SECOND, in-process studio eval belongs in `aai-guest`, not here
+### The SECOND, in-process studio eval is BUILT — in `aai-guest`
 
-`createStudioAgent(session, deps)` returns a plain `AgentDef` with
-`text: true` — exactly what `openEvalTextAgent` takes — so an in-process eval of
-the coding agent is mechanically one call away. It cannot be one from HERE:
-`StudioSession` carries a real workspace `dir` and `StudioAgentDeps` is
-`HarnessBundleAccess & { typecheck }`, all of which live in `aai-guest`, which
-`evals-package-boundary` denies this package by name and for a stated reason
-("aai-guest would have it inspect the sandbox rather than the session"). Widening
-that boundary to reach a composition root is the wrong trade for a convenience.
+`packages/aai-guest/src/studio-agent.eval.test.ts`, nine cases on
+`_studio-eval-harness.ts`. This section used to argue for it and say where it
+would have to live; both halves held.
 
-Two further things to weigh before building it there. The tools only MEAN
-anything against an installed toolchain and a workspace the CLI can type-check
-— `aai-guest`'s own studio scenario tier already stands one up — so an
-in-process eval without that measures tool CHOICE and not the verification loop
-the tool arms exist to grade. And it would not replace the HTTP target: what
-that one measures is the DEPLOYED path (the broker, the per-sandbox token, the
-guest chat route, the end-of-turn workspace sync), which is precisely where the
-harness it replaced had rotted — `run.mjs` sent the account key and got a 401,
-so it could not have run at all. **Keep both if the cheap one is built; convert
-nothing.**
+It could not be built from HERE. `createStudioAgent(session, deps)` returns a
+plain `AgentDef` with `text: true` — exactly what `openEvalTextAgent` takes, so
+the eval really was one call away — but `StudioSession` carries a real workspace
+`dir` and `StudioAgentDeps` is `HarnessBundleAccess & { typecheck }`, all of
+which live in `aai-guest`, which `evals-package-boundary` denies this package by
+name and for a stated reason ("aai-guest would have it inspect the sandbox
+rather than the session"). Widening that boundary to reach a composition root
+was the wrong trade then and is the wrong trade now.
+
+Two predictions this section made, and how they came out:
+
+- **"An in-process eval without an installed toolchain measures tool CHOICE and
+  not the verification loop."** Correct, and the reason it was built with one:
+  the cases run `initStudioSession` and hand `createStudioAgent` the real
+  `typecheckWorkspaceDir`, so the post-write diagnostics are a real compiler and
+  four cases end by asking the workspace — `typecheck()` and `runTests()`,
+  called by the CASE — rather than reading a tool result. That is the class of
+  assertion a model cannot satisfy with prose, and it is what this package's own
+  five regexes over tool-output text are a substitute for.
+- **"It would not replace the HTTP target; keep both, convert nothing."** Held.
+  `starter.eval.test.ts` measures the DEPLOYED path — the broker, the
+  per-sandbox token, the guest chat route, the end-of-turn workspace sync —
+  which is where the harness it replaced had rotted. Nothing was converted.
+
+**One thing the argument missed, and it is the limit on everything that eval
+reports: the system prompt.** The studio's is `studioSystemPrompt(kind)` in
+`aai-studio-server`, and `guest-package-boundary` denies the guest that import
+just as firmly. So the guest-side eval runs on a harness prompt plus the real,
+guest-owned `toolchainPromptSection()`, and adjudicates the tool set, the tool
+descriptions, each tool's own result prose and the model. **The shipped prompt is
+graded by the HTTP target here and by nothing there** — which is a stronger
+reason to keep both than the deployed-path one, and the reason a prompt change
+still has to be measured through a live studio. See "The coding agent has an eval
+of its own" in `packages/aai-guest/CLAUDE.md`.
+
+Note the two packages that see the two halves: only `aai-evals`, over HTTP, sees
+prompt AND tools together. Nothing in the workspace can import both.
 
 ## The template behaviour contract (opt-in)
 

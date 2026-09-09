@@ -716,6 +716,32 @@ prevent, and contradicted `packages/aai/README.md` two screens away. Nothing
 downstream regenerates when it changes: the markdown rendering sets
 `readme: "none"`, so `home.md` reaches `docs/dist` only.
 
+**And it opens with NO heading at all, deliberately — hence the
+`markdownlint-disable-next-line MD041` on its first line.** TypeDoc renders the
+project `name` as the reference landing page's own `<h1>`, plus the toolbar link
+and the `<title>`, so a `# AAI SDK` in the readme body produced two identical
+`<h1>AAI SDK</h1>` elements stacked at the top of it. Verified by reading the
+built page before and after (`docs/public/reference/index.html`, which Astro
+copies to `docs/dist/reference/`): two `<h1>` down to one, with the `<title>`,
+the toolbar and every `##` heading unchanged.
+
+That disable comment is why `check:markdown` passes without an `ignores` entry
+for the file, which is the outcome worth having: MD041 is off for one LINE and
+every other rule still reads the ~90 lines of real prose below it. A
+whole-file ignore was the alternative, on the precedent
+`.markdownlint-cli2.jsonc` sets for the root `CLAUDE.md`.
+
+**A comment in this file reaches the rendered page, so keep markdown
+characters out of it.** TypeDoc's markdown pass does not strip an HTML comment
+— it passes it through, which is invisible in HTML and is exactly why the
+disable directive above is harmless. But the parser still reads the comment's
+CONTENTS: a first attempt at this note lived here as a multi-line comment
+quoting `# AAI SDK` in backticks, and the backticks became a `<code>` element
+that broke the comment open and leaked the explanation into the page as a
+second `<h1>` — reproducing the exact defect it was there to explain. Measured
+both ways; the one-line, character-free directive renders as
+`<!-- markdownlint-disable-next-line MD041 -->` and nothing else.
+
 ## Rendering `aai-runtime` is a docs decision, and it cannot be half-made
 
 There is no `typedoc.json` in `packages/aai-runtime`, and its absence is now a

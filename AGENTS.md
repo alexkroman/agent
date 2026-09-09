@@ -224,7 +224,7 @@ rather than here:
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
 | `packages/aai-gates/CLAUDE.md` | The meta-gate suite: what a gate spec may share, adding a `guard-invariants` rule, `check.yml`'s push list and concurrency group |
-| `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
+| `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels. It is not the only package with `*.eval.test.ts` — `aai-templates` ships 25 and `aai-guest` one |
 
 One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the
 `aai-docs` workspace — the narrative documentation SITE (Astro + Starlight
@@ -233,7 +233,7 @@ and the `typescript@6` pin — **and, because they answer three versions of one
 question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-Twelve files sit outside the table for a different reason — SIBLINGS of their
+Thirteen files sit outside the table for a different reason — SIBLINGS of their
 package's guide rather than second package guides:
 
 | Sibling | Covers |
@@ -243,6 +243,7 @@ package's guide rather than second package guides:
 | `packages/aai-runtime/DIALOG-CLAUDE.md` | What each dialog voice knob can and cannot do |
 | `packages/aai-runtime/JOURNAL-CLAUDE.md` | The workflow journal |
 | `packages/aai-runtime/TEXT-AGENT-CLAUDE.md` | Text mode |
+| `packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md` | Testing the studio coding agent: the agent-level unit spec through `runTextAgent`, and the agent's own EVAL — what is real in a case, the one thing that is not (the system prompt), and why it lives in `aai-guest` rather than `aai-evals` |
 | `packages/aai-server/MODAL-CLAUDE.md` | Modal sandboxes and backends |
 | `packages/aai-server/PLATFORM-SOCKET-CLAUDE.md` | The platform session socket |
 | `packages/aai-server/SCHEMA-CLAUDE.md` | The platform database schema |

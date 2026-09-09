@@ -76,7 +76,7 @@ import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
 import { mainAgent } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
-import { emptyHarnessState, type HarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
+import { emptyHarnessState, type HarnessState, lazyRuntime } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
 import { installLeakWatch } from "./harness-leak-watch.ts";
 import { captureGuestOutput } from "./harness-logs.ts";
@@ -93,12 +93,12 @@ import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "./harness-
 
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
 import { withBuildDir } from "./studio-build.ts";
+import { studioBundleAccess } from "./studio-bundle-access.ts";
 import { handleStudioRequest } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
 import { initStudioSession } from "./studio-session.ts";
 import { handleSessionInitRequest, SessionInitParamsSchema } from "./studio-session-init.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
-import { executeTool } from "./trial.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
 
@@ -310,20 +310,12 @@ export function main(): void {
   });
 
   // The studio chat surface's view of this harness's own loader + trial
-  // executor — test_agent loads and trials bundles in-place.
-  const studioDeps = {
-    loadBundle: (code: string) => loadBundle(state, { code, env: {} }),
-    executeTool: async (name: string, args: Record<string, unknown>) => {
-      if (!state.agent) return "Tool error: agent not loaded";
-      const response = await executeTool(
-        state.agent,
-        { name, args, sessionId: "studio-trial", state: null },
-        { env: state.env },
-      );
-      if (response.error) return `Tool error: ${response.error}`;
-      return response.result ?? "(no result)";
-    },
-  };
+  // executor — test_agent loads and trials bundles in-place. Built by
+  // `studio-bundle-access.ts` rather than here: the studio eval harness needs
+  // the same REAL pair, and the two rules inside it (an inspection load carries
+  // an empty env; a trial answers in prose a model can read) are not the kind
+  // that should exist twice.
+  const studioDeps = studioBundleAccess(state);
 
   // The dev server's HTTP+WS surface (health, client-config, /websocket
   // sessions), with the control channel claimed first via the upgrade hook
