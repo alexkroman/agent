@@ -284,7 +284,7 @@
     },
     {
       "name": "studio-server-package-boundary",
-      "description": "aai-studio-server had NO convention at all, which made it the largest unguarded package in the repo: it is the composition root every deployment runs, so an import it should not have is the one that reaches production. Its one legitimate workspace edge downward is aai-server — the repo's biggest, 158 import sites across all 36 of that package's subpath exports — plus the SDK, the host runtime and aai-ui. Everything else is denied for a reason of its own: aai-guest is the sandbox harness, which this package must LAUNCH as a built artifact and never link against (the same rule server-package-boundary states from the other side, and the reason the guest is its own package); aai-studio-client is a browser bundle whose modules assume a DOM and whose `dist/` this package serves rather than imports; the CLI ships to users, and the studio reaches its build hooks through the GUEST, which is where that edge is declared; and aai-templates is shipped product source a user scaffolds, not a library — the studio materializes a template by writing files, so an import would make a user’s starting point a runtime dependency of the platform. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
+      "description": "aai-studio-server had NO convention at all, which made it the largest unguarded package in the repo: it is the composition root every deployment runs, so an import it should not have is the one that reaches production. Its one legitimate workspace edge downward is aai-server — the repo's biggest, 158 import sites across all 36 of that package's subpath exports — plus the SDK, the host runtime and aai-ui. aai-evals joined that list when the studio starter eval moved into this package: the eval FRAMEWORK (the recording runner, the spread report, the key gate, the env vocabulary) stays there and is imported by subpath from this package's `studio-eval-*` / `studio-starter-*` / `studio-template-contract` modules, while everything that names the studio — its HTTP origin, its chat route, its step cap, its starter prompts' expectations — lives here. The edge is one-way and cannot close a cycle: aai-evals depends on the SDK and the host runtime and on nothing else in the workspace, which `evals-package-boundary` is what keeps true. Everything else is denied for a reason of its own: aai-guest is the sandbox harness, which this package must LAUNCH as a built artifact and never link against (the same rule server-package-boundary states from the other side, and the reason the guest is its own package); aai-studio-client is a browser bundle whose modules assume a DOM and whose `dist/` this package serves rather than imports; the CLI ships to users, and the studio reaches its build hooks through the GUEST, which is where that edge is declared; and aai-templates is shipped product source a user scaffolds, not a library — the studio materializes a template by writing files, so an import would make a user’s starting point a runtime dependency of the platform. The BARE `aai-studio-client` specifier is denied while its subpaths are not, the same asymmetry guest-package-boundary carries and for the same reason: the edge is ONE subpath, `aai-studio-client/starters` — the starter list the studio itself ships, so the starter eval grades the same set the product offers rather than a copy that drifts — konsistent has no allow-list form, and denying the bare name is the strongest half of that available here. That deny used to name the subpaths too, and it moved with the eval: the exception was `evals-package-boundary`'s while the starter eval was. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-templates is on this list because of that test rather than because anyone tried the import.",
       "paths": [
         "packages/aai-studio-server/src/*.ts",
         "packages/aai-studio-server/src/**/*.ts"
@@ -293,14 +293,11 @@
         "importFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
-          "aai-evals",
-          "aai-evals/*",
           "aai-gates",
           "aai-gates/*",
           "aai-guest",
           "aai-guest/*",
           "aai-studio-client",
-          "aai-studio-client/*",
           "aai-templates",
           "aai-templates/*"
         ]
@@ -308,7 +305,7 @@
     },
     {
       "name": "evals-package-boundary",
-      "description": "aai-evals is the behaviour eval tier: it drives a real agent through the published surface and grades what comes back, which is only evidence about what a USER gets if it reaches the agent the way a user does. Its legitimate edges are the SDK, `@alexkroman1/aai-runtime/eval`, and `aai-studio-client/starters` — the starter list the studio itself ships, so the starter evals grade the same set the product offers rather than a copy that drifts. Everything else is denied because reaching past the published surface is how an eval starts passing for the wrong reason: importing aai-server or aai-studio-server would let it assert against platform internals no agent author can see, aai-guest would have it inspect the sandbox rather than the session, and the CLI would let it drive a build instead of an agent. The bare `aai-studio-client` specifier is denied while its subpaths are not, the same asymmetry guest-package-boundary carries and for the same reason: the edge is ONE subpath, konsistent has no allow-list form, and denying the bare name is the strongest half of that available here. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
+      "description": "aai-evals is the eval FRAMEWORK and the behaviour tier built on it: it drives a real agent through the published surface and grades what comes back, which is only evidence about what a USER gets if it reaches the agent the way a user does. Its legitimate edges are the SDK and `@alexkroman1/aai-runtime/eval`, and that is now the whole list — `aai-studio-client/starters` came off it when the studio starter eval moved to aai-studio-server, taking the only thing here that had ever named a product surface with it. So the subpath exception this rule used to carry is gone and the deny is total: bare AND `aai-studio-client/*`. That is the load-bearing half of the split, not a tidy-up. A package that may import the studio's starter list is a package that can grow a second studio-shaped eval, and the reason the last one had to move — an eval framework that knows a product's HTTP origin, chat route and step cap is one whose assertions are about that product rather than about agents — reads exactly as persuasively the second time. Everything else is denied because reaching past the published surface is how an eval starts passing for the wrong reason: importing aai-server or aai-studio-server would let it assert against platform internals no agent author can see, aai-guest would have it inspect the sandbox rather than the session, and the CLI would let it drive a build instead of an agent. aai-studio-server is the one denial that now has traffic in the other direction — it imports `aai-evals/gate`, `/register`, `/runner` and `/report` — and denying it from here is what keeps that edge one-way and the workspace acyclic. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half — it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": [
         "packages/aai-evals/src/*.ts",
         "packages/aai-evals/src/**/*.ts"
@@ -326,6 +323,7 @@
           "aai-server",
           "aai-server/*",
           "aai-studio-client",
+          "aai-studio-client/*",
           "aai-studio-server",
           "aai-studio-server/*",
           "aai-templates",
@@ -2004,13 +2002,26 @@
     },
     {
       "name": "eval-case-registration",
-      "description": "Every eval file registers its cases through `registerEvalCases` from `./_register.ts`, and that indirection is MECHANICAL rather than stylistic. Biome's `noMisplacedAssertion` accepts an `expect` only inside a literal `test(` call, so a case reached through an alias — `const run = matches ? test : test.skip`, or `test.skipIf(…)(…)`, which is exactly what a tier that skips without a live key needs — is a lint error at every assertion in the file. `_register.ts` holds that alias once, so a case body keeps its `expect`s. The selection logic rides along and has to: `AAI_EVAL_ONLY` is ONE variable across the whole tier, and a file it selects nothing from must WARN (naming what it could have matched) rather than fail, because each eval file sees only its own cases in its own vitest worker — so a second copy of that rule would answer the same filter differently in one file than in the next, which reads as the filter working.",
+      "description": "Every eval file registers its cases through `registerEvalCases` from `./register.ts`, and that indirection is MECHANICAL rather than stylistic. Biome's `noMisplacedAssertion` accepts an `expect` only inside a literal `test(` call, so a case reached through an alias — `const run = matches ? test : test.skip`, or `test.skipIf(…)(…)`, which is exactly what a tier that skips without a live key needs — is a lint error at every assertion in the file. `register.ts` holds that alias once, so a case body keeps its `expect`s. The selection logic rides along and has to: `AAI_EVAL_ONLY` is ONE variable across the whole tier, and a file it selects nothing from must WARN (naming what it could have matched) rather than fail, because each eval file sees only its own cases in its own vitest worker — so a second copy of that rule would answer the same filter differently in one file than in the next, which reads as the filter working. The module was `_register.ts` until this package became importable, and the underscore had to go with that: an internal name is the one thing a subpath export cannot honestly point at. `studio-eval-case-registration` is the same rule for the one eval file outside this package, which reaches the same module as `aai-evals/register` — a SECOND convention rather than a widened `paths`, because konsistent matches the specifier literally and the two spellings of one module are what the rule is about.",
       "paths": "packages/aai-evals/src/*.eval.test.ts",
       "must": {
         "import": [
           {
             "name": "registerEvalCases",
-            "from": "./_register.ts"
+            "from": "./register.ts"
+          }
+        ]
+      }
+    },
+    {
+      "name": "studio-eval-case-registration",
+      "description": "`eval-case-registration` for the studio starter eval, which lives in aai-studio-server and so spells the same module `aai-evals/register`. Read that rule for the argument — Biome's `noMisplacedAssertion` is the mechanical half, and the `AAI_EVAL_ONLY` warn-rather-than-fail rule is the reason the selection logic has to ride along with the registration rather than being re-derived per file. Two conventions rather than one `paths` list because konsistent matches an import SPECIFIER literally: a relative `./register.ts` and a package `aai-evals/register` are different strings for one module, and a single rule could only require one of them, which would exempt whichever package it did not name.",
+      "paths": "packages/aai-studio-server/src/*.eval.test.ts",
+      "must": {
+        "import": [
+          {
+            "name": "registerEvalCases",
+            "from": "aai-evals/register"
           }
         ]
       }
@@ -2038,25 +2049,36 @@
     },
     {
       "name": "eval-gate-is-not-unit-tier",
-      "description": "`_gate.ts` may not be imported by anything the UNIT tier loads. Importing it RESOLVES a credential and ANNOUNCES at import time — or, under `AAI_REQUIRE_EVAL`, throws — so a unit-tested module reading one setting from there fails its whole file on any machine with that variable set and no key. Verified before it landed, and it is why the tier's side-effect-free settings live in `_env.ts` (`envValue` / `envFlag` / `envInt`, plus `evalStepCapHint`) while `_gate.ts` keeps only the POLICY: which precondition a tier has, what a missing one means, and when a skip becomes a failure. The two files that may import it are the two the unit tier never loads — an `*.eval.test.ts`, excluded by this package's `vitest.config.ts` and selected only by `test:eval`, and `_register.ts`, which nothing but those files imports. That pair is also why neither has a co-located spec; see `eval-module-has-unit-test`. Note konsistent sees a STATIC import only, so a module reaching the gate through `await import(\"./_gate.ts\")` is invisible here — which is a reason not to write one, since the announce happens on evaluation either way.",
+      "description": "`gate.ts` may not be imported by anything the UNIT tier loads. Importing it RESOLVES a credential and ANNOUNCES at import time — or, under `AAI_REQUIRE_EVAL`, throws — so a unit-tested module reading one setting from there fails its whole file on any machine with that variable set and no key. Verified before it landed, and it is why the tier's side-effect-free settings live in `env.ts` (`envValue` / `envFlag` / `envInt`) while `gate.ts` keeps only the POLICY: which precondition a tier has, what a missing one means, and when a skip becomes a failure. The two files that may import it are the two the unit tier never loads — an `*.eval.test.ts`, excluded by this package's `vitest.config.ts` and selected only by `test:eval`, and `register.ts`, which nothing but those files imports. That pair is also why neither has a co-located spec; see `eval-module-has-unit-test`. Note konsistent sees a STATIC import only, so a module reaching the gate through `await import(\"./gate.ts\")` is invisible here — which is a reason not to write one, since the announce happens on evaluation either way. The rule has a second half in `studio-eval-gate-is-not-unit-tier`, because the settings that moved out of here with the studio starter eval (`evalOrigin`, `evalContracts`, `evalStepCapHint`) took the hazard with them: `studio-starter-grade.ts` is unit-tested and reads one of them.",
       "paths": [
         "packages/aai-evals/src/*.ts",
         "!packages/aai-evals/src/*.eval.test.ts",
-        "!packages/aai-evals/src/_gate.ts",
-        "!packages/aai-evals/src/_register.ts"
+        "!packages/aai-evals/src/gate.ts",
+        "!packages/aai-evals/src/register.ts"
       ],
       "mustNot": {
-        "importFrom": "./_gate.ts"
+        "importFrom": "./gate.ts"
+      }
+    },
+    {
+      "name": "studio-eval-gate-is-not-unit-tier",
+      "description": "`eval-gate-is-not-unit-tier`, from the package on the other side of the import. `aai-evals/gate` resolves a credential and ANNOUNCES at import time, so anything the UNIT tier loads must not reach it — and this package's eval modules each carry a co-located spec (`check:module-tests`, whose ratchet refuses to add a new entry), which is exactly the combination that fails a whole spec file on a machine with `AAI_REQUIRE_EVAL` set and no key. Verified in this repo before the rule landed: adding a `sayFromHarness` import to `studio-starter-grade.ts` is reported here. The `*.eval.test.ts` file is the one exemption, for the reason the sibling rule gives: it is excluded by this package's `vitest.config.ts` and selected only by `test:eval`. The settings a graded module legitimately needs are `studio-eval-env.ts`, which reads the environment through `aai-evals/env` — a module with no import-time side effect at all — and that is the whole shape of the split: POLICY behind the gate, SETTINGS in front of it.",
+      "paths": [
+        "packages/aai-studio-server/src/*.ts",
+        "!packages/aai-studio-server/src/*.eval.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": "aai-evals/gate"
       }
     },
     {
       "name": "eval-module-has-unit-test",
-      "description": "Every module in this package has a co-located `*.test.ts`, because the one that did not was the one deciding what all the others MEANT. `gradeStarter` — which chooses which expectation functions run, under what label, and holds the failure taxonomy — sat in `starter.eval.test.ts`, a file `vitest.config.ts` excludes, so every function it called was unit-tested while the thing calling them was not. The labels are the load-bearing part: they are the keys `EvalReport.unstable` reports and the strings `AAI_EVAL_ONLY` matches, so renaming one silently resets an assertion's flip history with nothing red. The same shape one level down is why the corpus moved INTO the package: as `scripts/starter-eval/expectations.mjs` its eval-only half (`parseLoadedConfig`, `checkMode`, `checkWorkflowShape`, `checkUi`) was in no coverage report at all, exercised only by a run that needed a live key AND a live studio, and it cost the package `allowJs` plus two `turbo.json` input overrides to hash a corpus living outside the package that read it. `_gate.ts` and `_register.ts` are the two exceptions, and they are really one: a spec for either would import `_gate.ts`, which is what `eval-gate-is-not-unit-tier` forbids the unit tier to load. Note this asserts the FILE exists, not that it tests anything — `check:test-assertions` owns the assertion floor and `check:coverage-per-file` the coverage one.",
+      "description": "Every module in this package has a co-located `*.test.ts`, because the one that did not was the one deciding what all the others MEANT. `gradeStarter` — which chooses which expectation functions run, under what label, and holds the failure taxonomy — sat in an `*.eval.test.ts`, a file `vitest.config.ts` excludes, so every function it called was unit-tested while the thing calling them was not. The labels are the load-bearing part: they are the keys `EvalReport.unstable` reports and the strings `AAI_EVAL_ONLY` matches, so renaming one silently resets an assertion's flip history with nothing red. The same shape one level down is why the starter corpus moved out of `scripts/`: as `scripts/starter-eval/expectations.mjs` its eval-only half (`parseLoadedConfig`, `checkMode`, `checkWorkflowShape`, `checkUi`) was in no coverage report at all, exercised only by a run that needed a live key AND a live studio, and it cost a package `allowJs` plus two `turbo.json` input overrides to hash a corpus living outside the package that read it. Both of those modules are in aai-studio-server now, where the repo-wide `check:module-tests` ratchet carries the floor — its `--update` removes an entry that gained a test and REFUSES to add one, so a further module of that eval shipping without a spec fails in the diff that lands it. This convention stays scoped to THIS package because it is the stronger claim: a blanket konsistent rule over aai-studio-server would report several hundred pre-existing modules and be turned off. `gate.ts` and `register.ts` are the two exceptions here, and they are really one: a spec for either would import `gate.ts`, which is what `eval-gate-is-not-unit-tier` forbids the unit tier to load. Note this asserts the FILE exists, not that it tests anything — `check:test-assertions` owns the assertion floor and `check:coverage-per-file` the coverage one.",
       "paths": [
         "packages/aai-evals/src/{mod}.ts",
         "!packages/aai-evals/src/*.test.ts",
-        "!packages/aai-evals/src/_gate.ts",
-        "!packages/aai-evals/src/_register.ts"
+        "!packages/aai-evals/src/gate.ts",
+        "!packages/aai-evals/src/register.ts"
       ],
       "must": {
         "haveType": "file",

@@ -1377,22 +1377,29 @@ works.
 The LLM-judge codegen suite (`studio-eval.test.ts`, vitest-evals) was
 removed in favour of a harness that drives the studio's REAL surface —
 create project, broker a sandbox session, stream a chat turn to the guest —
-rather than calling the codegen path directly. It is a case of the repo's
-**eval tier** now (`packages/aai-evals/src/starter.eval.test.ts`), which owns the
-runner, the repeats and the report:
+rather than calling the codegen path directly. It is **in this package**
+(`src/studio-starter.eval.test.ts` and the five `studio-*` modules beside it),
+on the shared eval framework `aai-evals` publishes — the recording runner, the
+repeats and the report:
 
 ```sh
-pnpm dev:aai-server                                 # in another shell
-pnpm test:eval                                      # every starter
-AAI_EVAL_ONLY=pizza AAI_EVAL_REPEAT=3 pnpm test:eval
+pnpm dev:aai-server                                       # in another shell
+pnpm --filter aai-studio-server test:eval                 # every starter
+AAI_EVAL_ONLY=pizza AAI_EVAL_REPEAT=3 pnpm --filter aai-studio-server test:eval
 ```
 
 Its own second runner — `run.mjs`/`report.mjs`/`regrade.mjs`, 745 lines of case
 loop, verdict and reporter — is deleted, and so is the rest of
 `scripts/starter-eval/`. What survived is the GRADING, which is a different job
-from a case loop: it is
-`packages/aai-evals/src/starter-expectations.ts` today. See
-`packages/aai-evals/CLAUDE.md` for the runner and why the tier does not gate.
+from a case loop: it is `src/studio-starter-expectations.ts` today.
+
+**[`STARTER-EVAL-CLAUDE.md`](STARTER-EVAL-CLAUDE.md) is the reference** — the
+five files and why they are in this package rather than in `aai-evals`, the port
+that found `run.mjs` could no longer authenticate, the five tool-output regexes
+and what would actually retire them, the second in-process eval in `aai-guest`
+and the one thing only this package's eval can see (the shipped system prompt),
+and the opt-in template behaviour contract. `packages/aai-evals/CLAUDE.md` owns
+the runner and why a live eval reports rather than gates.
 
 It spends real tokens on the caller's own key, so it is not in CI. Three
 things it measures that the judge suite did not:
@@ -1400,7 +1407,7 @@ things it measures that the judge suite did not:
 - **Shippable, not just green.** The agent writes its own tests, so "the
   tests passed" is a measure it can satisfy by weakening an assertion. The
   primary verdict is instead whether the built agent covers the capabilities
-  the PROMPT enumerated (`packages/aai-evals/src/starter-expectations.ts`), checked
+  the PROMPT enumerated (`src/studio-starter-expectations.ts`), checked
   against the loaded config and agent.ts — neither of which the agent can
   edit to make the check pass.
 - **Cost**: tool calls, repair rounds (failed `test_agent` runs), wall

@@ -21,9 +21,9 @@ import { agent, tool } from "@alexkroman1/aai";
 import { withTools } from "@alexkroman1/aai/manifest";
 import { openEvalSession } from "@alexkroman1/aai-runtime/eval";
 import { z } from "zod";
-import { describeEvalTier, evalKeyEnv } from "./_gate.ts";
-import { registerEvalCases } from "./_register.ts";
 import { scopeOf } from "./assertions.ts";
+import { describeEvalTier, evalKeyEnv } from "./gate.ts";
+import { registerEvalCases } from "./register.ts";
 
 /** The two orders the fixture agent knows about. */
 const ORDERS: Record<string, { status: string; item: string }> = {

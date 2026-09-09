@@ -20,12 +20,19 @@
  *
  * This was `scripts/starter-eval/expectations.mjs`, the last surviving file of
  * the second test runner the eval tier replaced — JavaScript, outside
- * `packages/`, and reached by both of this package's starter suites through a
- * `../../scripts/` specifier. Its neighbours were deleted as dead chains; it was
+ * `packages/`, and reached by both starter suites through a `../../scripts/`
+ * specifier. Its neighbours were deleted as dead chains; it was
  * kept because it is the ASSERTION half, which is a different job from the case
- * loop. Moving it in is what retires the last nested `.mjs` under `scripts/`,
- * the package's `allowJs`, and the two `turbo.json` input overrides that existed
- * to hash a corpus living outside the package that reads it.
+ * loop. Moving it into a package is what retired the last nested `.mjs` under
+ * `scripts/`, an `allowJs`, and the two `turbo.json` input overrides that
+ * existed to hash a corpus living outside the package that reads it.
+ *
+ * The package it landed in was `aai-evals` and is `aai-studio-server`, which is
+ * the same argument applied one turn further: these are facts about the STUDIO's
+ * starter prompts — which capabilities each named, which builtins, which mode —
+ * and the eval framework has no business knowing any of them. The prompts
+ * themselves are `aai-studio-client/starters`, which this package already
+ * depends on.
  *
  * @module
  */
@@ -107,7 +114,7 @@ export const EXPECTATIONS: readonly Expectation[] = [
     // the over-specification bug this file has been bitten by four times.
     //
     // It is the LAST `builtinDelegation` starter, which is why the sweep in
-    // `starter-expectations.test.ts` that proves prose alone cannot pass has
+    // `studio-starter-expectations.test.ts` that proves prose alone cannot pass has
     // a floor of one rather than two: the two prompt-only starters beside it
     // (a math tutor and a finance helper) were the near-duplicate templates
     // they scaffolded from, and both went with them.

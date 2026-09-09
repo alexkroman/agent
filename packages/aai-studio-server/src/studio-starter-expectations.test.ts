@@ -23,8 +23,8 @@ import {
   EXPECTATIONS,
   type Expectation,
   parseLoadedConfig,
-} from "./starter-expectations.ts";
-import { templateNamed } from "./template-contract.ts";
+} from "./studio-starter-expectations.ts";
+import { templateNamed } from "./studio-template-contract.ts";
 
 /** Every starter, flattened across the hero's two switcher positions. */
 const starters = Object.values(STARTERS).flat();
@@ -36,7 +36,7 @@ const starters = Object.values(STARTERS).flat();
  *
  * Reads {@link templateNamed} rather than restating its pattern: the same
  * question decides which starters this suite exempts AND which ones
- * `template-contract.ts` holds to a behaviour contract, so two copies that drift
+ * `studio-template-contract.ts` holds to a behaviour contract, so two copies that drift
  * grade one starter twice and another not at all.
  */
 const referencesTemplate = (prompt: string): boolean => templateNamed(prompt) !== undefined;
@@ -143,7 +143,7 @@ describe("starter expectations", () => {
  * The half of the grader only the EVAL tier used to reach.
  *
  * `parseLoadedConfig`, `checkMode`, `checkWorkflowShape` and `checkUi` are
- * called from `starter.eval.test.ts` and nowhere else, so for as long as this
+ * called from `studio-starter.eval.test.ts` and nowhere else, so for as long as this
  * corpus lived under `scripts/` — outside any package's coverage report — they
  * were exercised only by a run that needs a live key and a live studio. They are
  * pure string functions; every case below is a behaviour the file's own comments
