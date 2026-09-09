@@ -1,11 +1,11 @@
 ---
 title: Deploy anywhere
-description: One flag builds for Vercel, Deno Deploy, Modal, or a plain Node process — and prints the commands to ship it.
+description: One flag builds for Vercel, Deno Deploy, Modal, or plain Node.
 ---
 
-`aai publish` ships to the managed platform. When you'd rather own the
-hosting, `aai build --target <host>` emits a deployment for one of four, and
-prints the exact sequence to deploy it:
+[`aai publish`](/agent/deploy/publish/) ships to the managed platform. When
+you'd rather own the hosting, `aai build --target <host>` emits a deployment
+for one of four, and prints the exact sequence to deploy it:
 
 ```sh
 aai build --target vercel
@@ -46,16 +46,12 @@ Deploy it with:
 Re-run `aai build --target deno` before every deploy.
 ```
 
-Three things that sequence encodes, each of which is a deploy that fails
-without it:
+Two things worth noticing:
 
-- **Some steps run once.** Creating the app, on the hosts that need it.
-- **Secrets come first.** Modal resolves `Secret.from_name` at deploy time, so
-  a deploy without the secret dies rather than starting and failing later. The
-  step is named per variable your agent declares.
-- **Rebuild before every deploy.** Both hosts upload the emitted directory as
-  it stands, so a forgotten rebuild ships the *previous* bundle and reports
-  success.
+- **Set the secrets before the first deploy.** Some hosts fail the deploy
+  outright when one is missing, rather than starting and failing later.
+- **Re-run `aai build` before every deploy.** The host uploads whatever is in
+  the emitted directory, so a stale build ships and reports success.
 
 `<ORG>`, `<APP>` and `<value>` stay as placeholders: they are account state and
 secrets, and the build knows neither.
@@ -74,21 +70,11 @@ cd .aai/deno && deno task start        # deno
 modal serve .aai/modal/app.py          # modal
 ```
 
-## Declare your keys
+## Declaring your keys
 
-Whichever host you pick, declare what your tools read. The build checks the
-declaration against what it can see and warns by name about anything the
-deployment will be missing:
+Whichever host you pick, list what your tools read in `requiredEnv` — see
+[Publish](/agent/deploy/publish/). The build warns by name about anything the
+deployment will be missing.
 
-```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "Support Line",
-  requiredEnv: ["ASSEMBLYAI_API_KEY", "ORDERS_API_KEY"],
-});
-```
-
-Your `.env` is not shipped — it reaches a host's build workspace and stops
-there, deliberately. The `perSecret` step in the printed sequence is how the
-values get to the deployment.
+Your `.env` is never uploaded to the host. The secret step in the printed
+sequence is how the values get there.

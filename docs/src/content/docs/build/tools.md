@@ -60,9 +60,9 @@ export default tool({
 production. `requireEnv(ctx, "KEY")` fails by name instead of sending
 `undefined` into a header.
 
-`ctx.signal` aborts on barge-in, on reset, and on session stop. Forwarding it
-is what makes a tool stop work the caller has already moved on from. It is
-always present — no `?.` needed.
+`ctx.signal` aborts when the caller interrupts or the call ends. Forwarding
+it stops work nobody is waiting for any more. It is always present, so no
+`?.` is needed.
 
 The rest of `ctx` — conversation history, one-shot model calls, subagents,
 pushing events to the browser, starting background runs — is in the
@@ -70,10 +70,9 @@ pushing events to the browser, starting background runs — is in the
 
 ## Matching what a caller said
 
-Tool arguments don't arrive as ids over a phone line. They arrive as "cancel my
-second order", "the blue medium one", "eight six four two". `resolveOne` picks
-one candidate, or fails in the one shape a model can recover from on its own
-turn — a message listing the choices:
+Callers don't say ids. They say "cancel my second order" or "the blue medium
+one". `resolveOne` picks the one they meant, or — when it can't tell — hands
+the model a message listing the choices so it can ask:
 
 ```ts
 import { isToolFailure, resolveOne, tool } from "@alexkroman1/aai";
@@ -103,8 +102,7 @@ export default tool({
 });
 ```
 
-A caller who counts ("the second one") is unambiguous even when nothing else
-matches, so a position wins outright. A scoring tie *fails* rather than
+"The second one" always wins. A tie between two candidates asks rather than
 guessing.
 
 ## Next

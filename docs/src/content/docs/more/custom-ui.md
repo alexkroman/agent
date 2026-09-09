@@ -13,16 +13,21 @@ Add the file and you get the same shell with your own panel:
 import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 
-type CartView = { count: number };
+// Module scope, not inline in the render body — it has to be a stable
+// reference across renders.
+const EMPTY = { count: 0 };
 
 function CartPanel() {
-  // Server state, projected by the agent's `syncState` after every tool call.
-  const cart = useAgentState<CartView>({ count: 0 });
+  const cart = useAgentState(EMPTY);
   return <p>{cart.count} items</p>;
 }
 
 mountClient({ sidebar: CartPanel });
 ```
+
+`useAgentState` reads whatever the agent projects with `syncState` — declare
+one first, or there is nothing to receive. See
+[Remembering things](/agent/build/state/).
 
 `aai dev` builds it, and `aai publish` ships it, with no extra step.
 
@@ -36,9 +41,9 @@ mountClient({ sidebar: CartPanel });
 | `useToolResult(name, cb)` | A card per tool call |
 | `useEvent(name, cb)` | Whatever a tool pushed with `ctx.send` |
 
-`useUserTranscript` distinguishing those two is not a detail — a live caption
-is a beat late if you collapse them.
+For a non-React client, `createBrowserSession({ platformUrl })` is the same
+session as a plain store. Components, styling, and the full hook surface are in
+the [SDK reference](/agent/reference/) under `@alexkroman1/aai-ui`.
 
-For a non-React client, `createBrowserSession()` is the same session as a plain
-store. Components, styling, and the full hook surface are in the
-[SDK reference](/agent/reference/) under `@alexkroman1/aai-ui`.
+Building a page for a [background job](/agent/more/background-jobs/) rather
+than a conversation? That calls `mountPage()` instead of `mountClient()`.

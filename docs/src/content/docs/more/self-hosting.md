@@ -3,8 +3,14 @@ title: Self-hosting
 description: Agents don't require the managed platform.
 ---
 
-`@alexkroman1/aai-runtime` is the same engine `aai dev` runs. Define an agent,
-build a runtime, and serve voice sessions from your own Node process:
+Most people don't need this page. `npm start` already serves the agent on a
+port ([Run it locally](/agent/deploy/local/)), and `aai build --target <host>`
+covers Vercel, Deno Deploy, and Modal
+([Deploy anywhere](/agent/deploy/anywhere/)).
+
+Reach for `createAgentServer()` when you need to own the boot: your own routes,
+your own auth, your own process. `@alexkroman1/aai-runtime` is the same engine
+`aai dev` runs:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -32,17 +38,9 @@ await server.listen(3000);
 
 The runnable version is
 [`examples/self-hosted-server`](https://github.com/alexkroman/agent/tree/main/examples/self-hosted-server)
-— about seventy lines.
+— about sixty lines.
 
-## The simpler option first
-
-If you just want the agent on a port, `npm start` in a scaffolded project
-already does that — see [Run it locally](/agent/deploy/local/). If you want it
-on Vercel, Deno Deploy, or Modal, `aai build --target <host>` emits the
-deployment and prints the commands — see
-[Deploy anywhere](/agent/deploy/anywhere/). Reach for `createAgentServer()`
-when you need to own the boot: your own routes, your own auth, your own
-process.
+## In between
 
 `createProjectServer` from `@alexkroman1/aai-cli/start` sits between the two.
 It builds the server and binds nothing, so you decide how it is served.

@@ -1,14 +1,15 @@
 ---
 title: CLI
-description: Every aai subcommand, and what it is for.
+description: The aai subcommands you will use, and what each is for.
 ---
 
 ```sh
 npm i -g @alexkroman1/aai-cli
 ```
 
-A scaffolded project also exposes `dev`, `build`, `test`, `eval`, and `start`
-as `npm run <name>`, which use the project's own copy of the CLI.
+A scaffolded project also exposes `dev`, `build`, `eval`, `start` and
+`publish:agent` as `npm run <name>`, using the project's own copy of the CLI.
+Its `npm test` runs vitest directly; `npm run test:agent` is `aai test`.
 
 ## Building
 
@@ -27,7 +28,7 @@ as `npm run <name>`, which use the project's own copy of the CLI.
 | Command | What it does |
 | --- | --- |
 | `aai login` | Link your account and save your API key. Do this once. |
-| `aai publish` | Push this project and deploy it to production. |
+| `aai publish` | Bundle, upload, and deploy this project to production. |
 | `aai push` | Sync source to the studio workspace without deploying. |
 | `aai pull <project>` | Materialize a project into a local directory. |
 | `aai list` | List your projects. |
@@ -38,9 +39,15 @@ as `npm run <name>`, which use the project's own copy of the CLI.
 
 | Command | What it does |
 | --- | --- |
-| `aai secret put NAME` | Set a secret. |
+| `aai secret put NAME` | Set a secret. The value is read from stdin. |
 | `aai secret list` | List secret names. |
 | `aai secret delete NAME` | Remove one. |
+
+The value never goes in argv — it would land in your shell history:
+
+```sh
+printf %s "$VALUE" | aai secret put NAME
+```
 
 `aai publish` already syncs your `.env` into the agent's secrets, so these are
 for changing one afterwards.
@@ -50,6 +57,10 @@ for changing one afterwards.
 | Command | What it does |
 | --- | --- |
 | `aai workflow list` | List the workflows this agent declares. |
-| `aai workflow` | Inspect and steer durable runs. |
+| `aai workflow runs` | List recent runs of one workflow, newest first. |
+| `aai workflow show` | Show one run, including its output. |
+| `aai workflow cancel` | Stop a running workflow run. |
 
-Run any command with `--help` for its full options.
+Run any command with `--help` for its full options — this table names the ones
+you will reach for, not every flag. Field-level options for `agent()` are in
+the [SDK reference](/agent/reference/).

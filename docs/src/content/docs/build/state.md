@@ -3,9 +3,9 @@ title: Remembering things
 description: Session state that survives concurrent tool calls, a crash, and a redeploy.
 ---
 
-Tools run concurrently, so a module-level variable is not where conversation
-state goes. A `sessionSlot` is — one declaration that owns a key, its default,
-and its type:
+To remember something across a conversation, declare a `sessionSlot`. One
+declaration holds the name, the starting value, and the type — and unlike a
+module-level variable it is safe when tools run concurrently:
 
 ```ts
 // shared.ts
@@ -51,14 +51,14 @@ export default cartSlot.updateTool({
 
 There is nothing to declare on `agent()`. The slot owns its own default.
 
-## Four rules, each an error if you get it wrong
+## Four rules
 
-- **`tool` reads, `updateTool` writes.** A read is handed a frozen value, so
-  mutating it throws rather than quietly going nowhere.
-- **A write is synchronous.** Your body's result is stored the moment it
-  returns, which is what makes a read-modify-write atomic with no lock — so an
-  `updateTool` body may not `await`. When you need a fetch or a model call
-  first, do it in an ordinary `tool()` and then call `slot.update(ctx, …)`.
+- **`tool` reads, `updateTool` writes.** A read gets a frozen copy, so
+  mutating it throws instead of silently doing nothing.
+- **An `updateTool` body cannot `await`.** Whatever it leaves on the draft is
+  stored the moment it returns, which is what keeps two tools from overwriting
+  each other. If you need to fetch something first, use a plain `tool()` — its
+  `execute` gets `ctx` as a second argument — and call `slot.update(ctx, …)`.
 - **Hold plain data.** Objects, arrays, strings, numbers, booleans, null. A
   `Map`, `Set`, `Date`, or class instance is refused with the field named,
   because none of them survives being stored.
@@ -72,6 +72,7 @@ There is nothing to declare on `agent()`. The slot owns its own default.
 `syncState` projects a slot to your own UI after every tool call:
 
 ```ts no-check
+// agent.ts
 import { agent } from "@alexkroman1/aai";
 import { cartSlot } from "./shared.ts";
 
@@ -81,7 +82,9 @@ export default agent({
 });
 ```
 
-Read it with `useAgentState()` — see [Your own UI](/agent/more/custom-ui/).
+Read it with `useAgentState(cartSlot.projection(view))` in the browser — see
+[Your own UI](/agent/more/custom-ui/). Without a `syncState` there is nothing
+for that hook to receive.
 
 ## Next
 

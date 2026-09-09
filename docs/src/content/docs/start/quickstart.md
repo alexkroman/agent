@@ -3,8 +3,8 @@ title: Quickstart
 description: Build, run, and publish a working voice agent in about five minutes.
 ---
 
-You need Node.js 24+ and an AssemblyAI API key. One key covers all three
-stages of the default pipeline — speech-to-text, the model, and text-to-speech.
+You need Node.js 24+ and an AssemblyAI API key. That one key covers
+listening, thinking, and speaking.
 
 ## 1. Create a project
 
@@ -14,18 +14,23 @@ aai init my-agent
 cd my-agent
 ```
 
-`aai init` scaffolds from a template and writes a `.env` for your
-`ASSEMBLYAI_API_KEY`. Run `aai templates` to see the other starting points —
+`aai init` scaffolds from a template and writes a `.env` with an empty
+`ASSEMBLYAI_API_KEY=`. **Fill it in** — paste your key there, or run
+`aai login` to store one globally.
+
+Run `aai templates` to see the other starting points;
 `--template pizza-ordering-agent` picks one.
 
 ## 2. Talk to it
 
 ```sh
-aai dev
+aai dev --watch
 ```
 
-That starts a local server and opens a browser voice client. Click the
-microphone and talk. Edit a file and it rebuilds — no restart.
+That starts a local server and prints a URL. Open it, click the microphone,
+and talk.
+
+`--watch` rebuilds when you save; without it, restart to pick up an edit.
 
 ## 3. Change what it says
 
@@ -46,11 +51,12 @@ And `system-prompt.md` is the prompt. It is markdown, and nothing imports it —
 the build finds it because it sits beside `agent.ts`:
 
 ```md
+<!-- system-prompt.md -->
 You help callers plan around the weather.
 Answer in one or two sentences — this is a phone call, not a paragraph.
 ```
 
-Save either one and `aai dev` picks it up.
+Save either one and `aai dev --watch` picks it up.
 
 ## 4. Give it something to do
 
@@ -73,18 +79,22 @@ export default tool({
 });
 ```
 
-There is no `tools` field on `agent()` and nothing to register. Ask the agent
-about the weather in Denver and it will call this.
+Ask the agent about the weather in Denver and it will call this. There is
+nothing to register.
 
 ## 5. Ship it
 
 ```sh
+aai login      # once
 aai publish
 ```
 
-That bundles the project, uploads it, syncs the keys from your `.env` as
-agent secrets, and prints a URL you can share. See
-[Publish](/agent/deploy/publish/) for what happens to your secrets, and
+That uploads your source, builds it on the platform, deploys, and prints a
+URL you can share.
+
+On your **first** publish the secrets from `.env` are attached after the
+deploy, so run `aai publish` once more to pick them up. See
+[Publish](/agent/deploy/publish/) for the details, and
 [Phone calls](/agent/deploy/phone/) for putting it on a phone number.
 
 ## Next

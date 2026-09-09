@@ -22,8 +22,8 @@ speech-to-text, the model, and text-to-speech.
 ```sh
 aai init my-agent
 cd my-agent
-aai dev        # local dev server + browser voice client
-aai publish    # ship it
+aai dev --watch   # local dev server; prints a URL to open
+aai publish       # ship it
 ```
 
 `aai init` scaffolds from a template (`aai templates` lists them) and writes a
@@ -97,13 +97,13 @@ Each of these is one page in the docs:
 | | |
 | --- | --- |
 | [Tools](https://alexkroman.github.io/agent/build/tools/) | Ordinary async functions, plus `resolveOne` for matching what a caller *said* |
-| [Session state](https://alexkroman.github.io/agent/build/state/) | `sessionSlot()` — durable across a crash or a redeploy |
+| [Remembering things](https://alexkroman.github.io/agent/build/state/) | `sessionSlot()` — session state, durable across a crash or a redeploy |
 | [Testing](https://alexkroman.github.io/agent/build/testing/) | `aai test` is vitest; `@alexkroman1/aai/testing` supplies the collaborators |
-| [Voices and models](https://alexkroman.github.io/agent/more/voices-and-models/) | Swap STT, the LLM, TTS — or all three for one speech-to-speech socket |
+| [Voices and models](https://alexkroman.github.io/agent/more/voices-and-models/) | Swap speech-to-text, the model, or text-to-speech — or all three for one socket |
 | [Phone calls](https://alexkroman.github.io/agent/deploy/phone/) | Twilio and Telnyx; nothing below the bridge knows it's a phone call |
 | [Background jobs](https://alexkroman.github.io/agent/more/background-jobs/) | Durable, journaled workflows for work that outlives a turn |
 | [Your own UI](https://alexkroman.github.io/agent/more/custom-ui/) | React hooks and components, or a framework-agnostic session |
-| [Deploy anywhere](https://alexkroman.github.io/agent/deploy/anywhere/) | `aai build --target vercel\|deno\|modal\|node`, and the commands to ship it |
+| [Deploy anywhere](https://alexkroman.github.io/agent/deploy/anywhere/) | `aai build --target node\|vercel\|deno\|modal`, and the commands to ship it |
 | [Self-hosting](https://alexkroman.github.io/agent/more/self-hosting/) | The same runtime in your own Node process |
 
 ## Packages

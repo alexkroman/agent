@@ -8,12 +8,11 @@ aai login      # once — links your AssemblyAI account
 aai publish    # from the project directory
 ```
 
-`aai publish` bundles the project, uploads it, syncs the keys in your `.env`
-as agent secrets, and prints a URL.
+`aai publish` type-checks the project, uploads your **source**, builds it on
+the platform, deploys, and prints a URL.
 
-The project is type-checked before it deploys. Run `aai build` first if you
-want the full test suite to gate it too — that is what `aai build` does, and
-it emits the same artifact.
+It does not run your tests. Run `aai build` first if you want them to gate a
+ship.
 
 ## Secrets
 
@@ -22,15 +21,20 @@ Never hardcode a key in agent code.
 | Where | How |
 | --- | --- |
 | Local | `.env` in the project root |
-| Production | `aai secret put NAME` |
+| Production | `printf %s "$VALUE" \| aai secret put NAME` |
 | In a tool | `ctx.env.MY_KEY`, or `requireEnv(ctx, "MY_KEY")` |
 
-`aai publish` syncs `.env` into the agent's secrets for you, so a key that
-works locally works deployed. `aai secret list` and `aai secret delete NAME`
-manage them after that.
+The value is read from **stdin**, not from an argument — passing it as one
+is refused, because it would land in your shell history. On a terminal you can
+just run `aai secret put NAME` and be prompted, masked.
 
-Declare the keys your tools read on the agent, and a missing one is named at
-publish time instead of discovered by a caller:
+`aai publish` syncs `.env` into the agent's secrets for you, so a key that
+works locally works deployed. On your **first** publish the slug does not exist
+yet, so the sync happens after the deploy and applies from the next one.
+`aai secret list` and `aai secret delete NAME` manage them after that.
+
+Declare the keys your tools read on the agent, and a missing one is **warned
+about by name** at deploy time instead of being discovered by a caller:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -56,6 +60,9 @@ aai delete     # remove it
 `aai pull <project>` materializes a published project locally so it runs under
 `aai dev` again.
 
-Not using the managed platform? `aai build --target vercel|deno|modal|node`
+Every command takes `--help`; see the [CLI reference](/agent/cli/) for the
+full list.
+
+Not using the managed platform? `aai build --target node|vercel|deno|modal`
 emits a deployment for your own host and prints the commands to ship it — see
 [Deploy anywhere](/agent/deploy/anywhere/).

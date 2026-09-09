@@ -21,7 +21,11 @@ my-agent/
 
 That is the whole idea: **a file in `tools/` is a tool because it is in
 `tools/`.** There is no `tools` array to keep in sync, no import list to
-forget, and adding an ability is adding a file.
+forget, and adding an ability is adding a file. The same goes for
+`system-prompt.md` and `client.tsx`.
+
+(`workflows/` is the exception: a body lives there, but you register it by
+name on `agent()`. See [Background jobs](/agent/more/background-jobs/).)
 
 ## What runs where
 
@@ -41,30 +45,33 @@ speech-to-speech socket. See [Voices and models](/agent/more/voices-and-models/)
 
 ## What you don't have to build
 
-A spoken conversation has failure modes that a chat UI doesn't, and the
-runtime handles them with measured defaults so that a first agent behaves
-reasonably before you have tuned anything:
+Voice conversations go wrong in ways a chat UI never does. The runtime
+already handles these, so your first agent behaves sensibly with no tuning:
 
 - A cough or an "mm-hm" doesn't cut the agent off mid-sentence.
 - If room noise does trip an interruption and no real turn follows, the reply
   picks up where the caller stopped hearing it.
 - A slow tool doesn't leave the caller in silence — the agent says something
   short while it waits.
-- An interrupted reply is recorded as the words the caller actually *heard*,
-  so the model doesn't think it already told them something it didn't.
+- If the agent is cut off mid-sentence, the conversation history records only
+  what the caller actually heard.
 - A provider blip is spoken aloud rather than becoming a dead line.
 
-Each of those is a field on `agent()` when you disagree with the default. They
-are listed in the [SDK reference](/agent/reference/) — you don't need any of
-them to start.
+Four of those are fields on `agent()` when you disagree with the default —
+listed in the [SDK reference](/agent/reference/), and you don't need any of
+them to start. The history truncation is not tunable.
 
-## The two front doors
+## Agents and background jobs
 
-Most of these docs are about `agent()` — a live conversation with a
-microphone on the other end.
+Most of these docs are about `agent()`: a live conversation with a microphone
+on the other end.
 
-There is a second one. When the audio arrives as a *file* and the job takes
-minutes rather than seconds — transcribe this recording, redact this call,
-summarize this archive — you declare a `workflowApp()` instead and get an
-ordinary web page over the same runtime, with no session and no model loop.
-See [Background jobs](/agent/more/background-jobs/).
+There is a second kind. When the audio is a file and the job takes minutes —
+transcribe this recording, summarize this archive — you declare a
+`workflowApp()` instead and get a web page instead of a conversation. See
+[Background jobs](/agent/more/background-jobs/).
+
+## Next
+
+- [Your agent](/agent/build/agent/) — the fields and the system prompt
+- [Tools](/agent/build/tools/) — giving it something to do

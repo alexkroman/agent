@@ -31,7 +31,7 @@ A bare id routes through the AssemblyAI LLM gateway on your existing key. A
 
 ## A whole stage
 
-Import a factory from the stage's subpath and pass the descriptor:
+Import the provider you want and pass it to the matching field:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -46,15 +46,26 @@ export default agent({
 });
 ```
 
-| Subpath | Factories |
-| --- | --- |
-| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt` |
-| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `gatewayLlm` |
-| `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts` |
+| Factory | From | Key it reads |
+| --- | --- | --- |
+| `assemblyAIStt`, `assemblyAITts`, `assemblyAILlm` | `/stt`, `/tts`, `/llm` | `ASSEMBLYAI_API_KEY` |
+| `deepgramStt` | `@alexkroman1/aai/stt` | `DEEPGRAM_API_KEY` |
+| `elevenLabsStt` | `@alexkroman1/aai/stt` | `ELEVENLABS_API_KEY` |
+| `sonioxStt` | `@alexkroman1/aai/stt` | `SONIOX_API_KEY` |
+| `cartesiaTts` | `@alexkroman1/aai/tts` | `CARTESIA_API_KEY` |
+| `rimeTts` | `@alexkroman1/aai/tts` | `RIME_API_KEY` |
+| `anthropicLlm` | `@alexkroman1/aai/llm` | `ANTHROPIC_API_KEY` |
+| `openAILlm` | `@alexkroman1/aai/llm` | `OPENAI_API_KEY` |
+| `googleLlm` | `@alexkroman1/aai/llm` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `mistralLlm` | `@alexkroman1/aai/llm` | `MISTRAL_API_KEY` |
+| `xAILlm` | `@alexkroman1/aai/llm` | `XAI_API_KEY` |
+| `groqLlm` | `@alexkroman1/aai/llm` | `GROQ_API_KEY` |
+| `openRouterLlm` | `@alexkroman1/aai/llm` | `OPENROUTER_API_KEY` |
+| `gatewayLlm` | `@alexkroman1/aai/llm` | `AI_GATEWAY_API_KEY` |
 
-These factories return plain descriptors — serializable data, not SDK clients.
-No provider SDK and no secret ever enters your bundle; credentials resolve
-server-side from the agent's own environment. Each factory's options are in the
+Put that key in `.env` locally and in your agent's secrets in production —
+see [Publish](/agent/deploy/publish/). It is read on the server and never
+reaches the browser. Each factory's options are in the
 [SDK reference](/agent/reference/).
 
 ## Speech-to-speech
@@ -70,13 +81,11 @@ import { openAIS2s } from "@alexkroman1/aai/s2s";
 export default agent({ name: "My Agent", s2s: openAIS2s() });
 ```
 
-Build the cascaded pipeline unless you specifically want this. The pipeline is
-where the interruption handling, the endpointing knobs, and the resume
-behaviour live, because those are decisions a service-side loop makes for you.
+Prefer the three-stage default unless you specifically want this. It gives
+you more control over how interruptions and pauses are handled.
 
 ## Tuning the conversation
 
-The runtime's defaults for interruption, endpointing, dead air, and silence are
-measured, and each is a field on `agent()` when you disagree. They are listed
-in the [SDK reference](/agent/reference/) — reach for them when you have heard
-a specific problem, not before.
+How the agent handles interruptions, pauses, and silence is tuned by fields
+on `agent()`. They are in the [SDK reference](/agent/reference/) — reach for
+them once you have heard a specific problem, not before.

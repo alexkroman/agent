@@ -1,6 +1,6 @@
 ---
 title: Your agent
-description: The agent.ts file, the system prompt, and the handful of fields worth knowing on day one.
+description: The agent.ts file, the system prompt, and the fields worth knowing first.
 ---
 
 `agent.ts` exports one call. The only required field is a name:
@@ -30,15 +30,14 @@ export default agent({
 
 | Field | What it does |
 | --- | --- |
-| `name` | Display name. Required. |
-| `greeting` | The first thing the agent says. |
-| `voice` | Which voice speaks, e.g. `"michael"`, `"paul"`. |
-| `llm` | A model id, e.g. `"claude-sonnet-4-6"`. Defaults to AssemblyAI's. |
-| `requiredEnv` | Keys your tools read. Checked at publish, not mid-call. |
+| `name` | Display name — the only required field |
+| `greeting` | The first thing the agent says |
+| `voice` | Which voice speaks, e.g. `"michael"`, `"paul"` |
+| `llm` | A model id, e.g. `"claude-sonnet-4-6"`; defaults to AssemblyAI's |
+| `requiredEnv` | Keys your tools read — a missing one is warned about at deploy |
 
-Everything else — provider swaps, interruption tuning, endpointing, step
-limits — is documented in the [SDK reference](/agent/reference/). You do not
-need any of it to build something good.
+Every other field is in the [SDK reference](/agent/reference/). You do not
+need any of them to build something good.
 
 ## The system prompt is a file
 
@@ -46,25 +45,19 @@ Write it in `system-prompt.md`, beside `agent.ts`. Nothing imports it and no
 field points at it — the build finds it because it is there:
 
 ```md
+<!-- system-prompt.md -->
 You are a concise, friendly assistant.
 
 - Keep replies to one or two sentences.
 - Never read a URL aloud.
 ```
 
-It is a file rather than a string because a prompt is a *document*. Inline, it
-becomes `\n\n` and `\n-` escapes inside one string literal, with no wrapping,
-no preview, and a one-line diff no matter which bullet changed. Editing the
-prompt is the main loop of building an agent, so it belongs somewhere you can
-read it.
+Editing this file is most of building an agent, so it gets to be a real
+markdown file you can read.
 
-Three things are errors rather than surprises:
-
-- `system-prompt.md` exists *and* `agent.ts` declares a different
-  `systemPrompt` → the build fails. "I edited the prompt and nothing changed"
-  is the failure this prevents.
-- An empty `system-prompt.md` → an error, not a silent fall-through.
-- A `system-prompt/` directory → rejected. One file, no ordering to guess.
+Write the prompt in one place. If `system-prompt.md` exists and `agent.ts`
+also sets `systemPrompt`, the build stops and tells you, rather than letting
+you edit a file that is being ignored.
 
 Declare neither and you get `DEFAULT_SYSTEM_PROMPT`, which is exported so you
 can read what you are replacing:

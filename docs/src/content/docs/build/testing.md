@@ -11,9 +11,8 @@ aai test          # agent.test.ts
 aai test --all    # every spec in the project
 ```
 
-A narrowed run does not report itself as a pass: if the project has spec files
-the run did not cover, it fails and names them, rather than printing a green
-line that says nothing about `tools/*.test.ts`.
+If the project has other spec files that `aai test` did not run, it fails and
+names them, so a green run never hides an untested file.
 
 ## Reaching a tool by the name the model uses
 
@@ -38,15 +37,15 @@ describe("get_weather", () => {
 });
 ```
 
-`createToolContext()` builds a `ToolContext` with inert defaults — a recording
-`ctx.send`, a detached slot store, a stub `ctx.generate`. Pass overrides for
-whatever the tool under test actually uses.
+`createToolContext()` gives the tool a fake `ctx`: nothing it does escapes
+the test. Pass overrides for whatever the tool actually uses — `ctx.generate`
+and `ctx.delegate` reject until you do, naming themselves, so a tool that makes
+a model call tells you rather than silently passing.
 
 ## Checking the agent itself
 
-`expectDeployable` asserts the three things every agent owes — the config
-converts, the platform can name it, and every stage its mode needs is filled —
-and fails naming the one that went:
+`expectDeployable` checks that an agent is actually shippable, and names what
+is missing when it is not:
 
 ```ts no-check
 import { expectDeployable } from "@alexkroman1/aai/testing";
@@ -58,8 +57,8 @@ test("is deployable", () => {
 });
 ```
 
-`aai build` runs your tests before it bundles, so this is also what stops a
-broken config reaching a deploy.
+`aai build` runs your whole suite before it bundles. `aai publish` only
+type-checks — run `aai build` first if you want the tests to gate a ship.
 
 ## Session state in a spec
 
@@ -87,12 +86,21 @@ Tools that call `ctx.generate` take a stub rather than a live key:
 ```ts
 import { createToolContext, stubGenerate } from "@alexkroman1/aai/testing";
 
-// One reply for every call, or a table keyed by the system prompt when the
-// tool makes more than one. `calls` records what it was asked.
-const { generate, calls } = stubGenerate({ text: "A short summary." });
+// A bare string answers every call. Pass a table keyed by system prompt when
+// the tool makes more than one. `calls` records what it was asked.
+const { generate, calls } = stubGenerate("A short summary.");
 const ctx = createToolContext({ generate });
 ```
+
+Note the bare string. A record without an `object` key is read as a *route
+table*, so `stubGenerate({ text: "…" })` type-checks and then rejects every
+call at runtime.
 
 The full set — `stubGateway`, guardrails, workflow contexts, upload fixtures,
 run snapshots — is in the [SDK reference](/agent/reference/) under
 `@alexkroman1/aai/testing`.
+
+## Next
+
+- [Run it locally](/agent/deploy/local/) — `aai dev`, then a plain Node process
+- [Publish](/agent/deploy/publish/) — ship it, and where your secrets go
