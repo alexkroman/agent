@@ -14,6 +14,7 @@
 
 import { workflow } from "@alexkroman1/aai";
 import { stepEmit, stepEnv, stepInfo, stepReport } from "@alexkroman1/aai/step";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createEvalWorkflowEngine, type EvalWorkflowEngine } from "./workflow-engine.ts";
@@ -245,7 +246,7 @@ describe("stepAttempt", () => {
     engine = createEvalWorkflowEngine({
       workflows: { branching },
       env: {},
-      ...(stepAttempt === undefined ? {} : { stepAttempt }),
+      ...omitUndefined({ stepAttempt }),
     });
     const runId = await engine.adapter.start("branching", [{}]);
     const record = engine.record(runId);
