@@ -44,7 +44,7 @@ default from. Only [assemblyAILlm](#assemblyaillm) has a default
 Two vendors here are AGGREGATORS rather than model owners, addressed as
 `"creator/model"`: [openRouterLlm](#openrouterllm) and [gatewayLlm](#gatewayllm). A third,
 [assemblyAILlm](#assemblyaillm), fronts AssemblyAI's own gateway — its ids are
-[AssemblyAIGatewayModel](#assemblyaigatewaymodel), and the CATALOG behind that union (which
+[AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel), and the CATALOG behind that union (which
 model streams, calls tools, serves the EU) is on
 `@alexkroman1/aai/host-internal`, since its readers are the studio's model
 selection and this repo's own gate rather than an `agent.ts`.
@@ -135,7 +135,7 @@ export default agent({
 
 Every option is optional: `assemblyAILlm()` runs
 [ASSEMBLYAI\_LLM\_DEFAULT\_MODEL](#assemblyai_llm_default_model). `region: "eu"` selects the EU
-gateway; [AssemblyAIGatewayModel](#assemblyaigatewaymodel) is the id set.
+gateway; [AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel) is the id set.
 
 ***
 
@@ -485,7 +485,7 @@ optional model?:
   | AssemblyAIGatewayModel;
 ```
 
-Gateway model id — [AssemblyAIGatewayModel](#assemblyaigatewaymodel) is the generated union
+Gateway model id — [AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel) is the generated union
 of what `/v1/models` advertises. (The catalog BEHIND it, recording which
 models stream, call tools and serve the EU region, is
 `ASSEMBLYAI_GATEWAY_MODELS` on `@alexkroman1/aai/host-internal`; an
@@ -928,46 +928,6 @@ from, and an id invented on its behalf fails at the first session.
 
 ## Type Aliases
 
-### AssemblyAIGatewayModel
-
-```ts
-type AssemblyAIGatewayModel = 
-  | "claude-haiku-4-5-20251001"
-  | "claude-opus-4-5-20251101"
-  | "claude-opus-4-6"
-  | "claude-opus-4-7"
-  | "claude-opus-4-8"
-  | "claude-sonnet-4-5-20250929"
-  | "claude-sonnet-4-6"
-  | "claude-sonnet-5"
-  | "gemini-2.5-flash"
-  | "gemini-2.5-flash-lite"
-  | "gemini-2.5-pro"
-  | "gemini-3.1-flash-lite"
-  | "gemini-3.5-flash"
-  | "gemini-3.5-flash-lite"
-  | "gemini-3.6-flash"
-  | "gpt-4.1"
-  | "gpt-5"
-  | "gpt-5-mini"
-  | "gpt-5-nano"
-  | "gpt-5.1"
-  | "gpt-5.2"
-  | "gpt-5.5"
-  | "gpt-5.6-luna"
-  | "gpt-5.6-terra"
-  | "gpt-oss-120b"
-  | "gpt-oss-20b"
-  | "kimi-k2.5"
-  | "qwen3-32B"
-  | "qwen3-next-80b-a3b"
-  | "qwen3.5-4b-32k-experimental";
-```
-
-An id the gateway advertises.
-
-***
-
 ### AssemblyAIReasoningEffort
 
 ```ts
@@ -1039,6 +999,12 @@ const OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1" = "https://openrouter.
 OpenRouter's OpenAI-compatible API endpoint.
 
 ## References
+
+### AssemblyAIGatewayModel
+
+Re-exports [AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel)
+
+***
 
 ### LlmProvider
 

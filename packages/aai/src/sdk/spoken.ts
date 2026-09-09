@@ -202,7 +202,7 @@ export interface ResolveOneOptions<T> {
    * it. Return the fields worth matching on and nothing else ("a body match on
    * 'meeting' would tie half the inbox").
    *
-   * Every candidate word of at least {@link MIN_MATCH_WORD} characters that the
+   * Every candidate word of at least `MIN_MATCH_WORD` (3) characters that the
    * utterance also says scores one, so "Priya Raman" beats "Priya" alone and
    * "room" ties `Room (3 nights)` with `Room service` — a tie being a REFUSAL
    * that asks, which is the outcome a desk wants.
@@ -233,7 +233,7 @@ export interface ResolveOneOptions<T> {
    * Tried FIRST, before a position and before the words: a caller who reads an
    * id out has named exactly one thing, even in an utterance that also says
    * "the first one". The candidate's code must be at least
-   * {@link MIN_CODE_CHARS} characters after normalization — below that,
+   * `MIN_CODE_CHARS` (4) characters after normalization — below that,
    * containment in a whole utterance is noise rather than a match.
    *
    * **A code that matches NOTHING is not a refusal here**, it falls through to

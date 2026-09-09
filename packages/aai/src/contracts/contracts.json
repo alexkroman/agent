@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "builtins": {
@@ -65,13 +65,13 @@
     "dropped": {}
   },
   "spoken": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "state": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "step": {
@@ -100,8 +100,8 @@
     "dropped": {}
   },
   "testing": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "tool": {

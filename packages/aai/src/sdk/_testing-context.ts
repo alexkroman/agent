@@ -63,13 +63,13 @@ export type TestToolContext = ToolContext & {
    * Present on every context, so an assertion needs no null check, and WIRED
    * whenever `generate` arrived as a script or as a fake. Given a bare function
    * (or nothing at all) it is a fake nothing reaches: `model.calls` stays empty
-   * for the same reason {@link TestToolContext.sent} does when a test brings its
+   * for the same reason `TestToolContext.sent` does when a test brings its
    * own `send` spy — the seam belongs to the caller, and so does the log.
    */
   readonly model: StubGenerate;
   /**
    * The `ctx.delegate` fake — `desk.calls` is every subagent run the tools asked
-   * for. Present and wired on the same terms as {@link TestToolContext.model}.
+   * for. Present and wired on the same terms as `TestToolContext.model`.
    */
   readonly desk: StubDelegate;
 };
@@ -110,7 +110,7 @@ export type ToolContextOverrides = {
    *
    * A script is built into the fake here, so the two-step every spec wrote —
    * `stubGenerate(script)`, destructure, `createToolContext({ generate })` — is
-   * one call, and the fake comes back on {@link TestToolContext.model}.
+   * one call, and the fake comes back on `TestToolContext.model`.
    *
    * **A FUNCTION in this position is the seam itself**, never a top-level
    * function route: `GenerateFn` and `(call) => StubGenerateReply` are both
@@ -124,7 +124,7 @@ export type ToolContextOverrides = {
    * A real `ctx.delegate`, or `stubDelegate`'s own SCRIPT — a table of routes
    * keyed by subagent name, or one reply. A function is the seam, on the same
    * rule as `generate` above; the fake comes back on
-   * {@link TestToolContext.desk}.
+   * `TestToolContext.desk`.
    */
   delegate?:
     | ToolContext["delegate"]
@@ -132,7 +132,7 @@ export type ToolContextOverrides = {
     | StubDelegateReply
     | undefined;
   /**
-   * A fake this spec built itself, to be exposed as {@link TestToolContext.model}
+   * A fake this spec built itself, to be exposed as `TestToolContext.model`
    * — and, unless `generate` also names a function, INSTALLED as the seam.
    *
    * The escape hatch under the script sugar: a caller holding a `stubGenerate`
@@ -141,7 +141,7 @@ export type ToolContextOverrides = {
    * fake nothing reaches.
    */
   model?: StubGenerate | undefined;
-  /** The `stubDelegate` twin of {@link ToolContextOverrides.model}. */
+  /** The `stubDelegate` twin of `ToolContextOverrides.model`. */
   desk?: StubDelegate | undefined;
 };
 
@@ -218,7 +218,7 @@ const UNSTUBBED_DELEGATE: ToolContext["delegate"] = () =>
  * The `ctx.generate` to install, from what the caller named.
  *
  * Three cases in the order they win: a FUNCTION is the seam itself (see
- * {@link ToolContextOverrides.generate} for why a top-level function route
+ * `ToolContextOverrides.generate` for why a top-level function route
  * cannot be), a script or a caller-built `model` installs the fake, and naming
  * none of the three leaves {@link UNSTUBBED_GENERATE} in place.
  */

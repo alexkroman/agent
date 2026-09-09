@@ -70,7 +70,7 @@ export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) =>
  * message and never by name — the argument `packages/aai/typedoc.json`'s
  * `intentionallyNotExported` makes for the twenty-odd others.
  *
- * The misuse it names is the one {@link isRouteTable} cannot see. A record
+ * The misuse it names is the one `isRouteTable` cannot see. A record
  * without an `object` key IS a route table, so `stubGenerate({ text: "…" })`
  * type-checked as a table with one route named `text` — a system prompt no tool
  * carries — and then rejected every call with "no route for this call's system

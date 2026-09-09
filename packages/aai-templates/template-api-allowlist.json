@@ -108,6 +108,7 @@
     "tracingEndpoint"
   ],
   "@alexkroman1/aai-ui": [
+    "AgentClient",
     "AgentCustomEvent",
     "AudioResultCaptions",
     "AudioResultProps",
@@ -188,7 +189,9 @@
     "useWorkflowRun",
     "useWorkflows"
   ],
-  "@alexkroman1/aai-ui/client-dir": ["defaultClientDir"],
+  "@alexkroman1/aai-ui/client-dir": [
+    "defaultClientDir"
+  ],
   "@alexkroman1/aai/channels": [
     "CHANNEL_POST_TIMEOUT_MS",
     "Channel",
@@ -216,8 +219,12 @@
     "transcodeToWav"
   ],
   "@alexkroman1/aai/html": [],
-  "@alexkroman1/aai/llm": ["ProviderCredentialOptions"],
-  "@alexkroman1/aai/s2s": ["ProviderCredentialOptions"],
+  "@alexkroman1/aai/llm": [
+    "ProviderCredentialOptions"
+  ],
+  "@alexkroman1/aai/s2s": [
+    "ProviderCredentialOptions"
+  ],
   "@alexkroman1/aai/step": [
     "MultipartBody",
     "MultipartPart",
@@ -249,14 +256,18 @@
     "stepTranscribeUpload",
     "stripJsonFence"
   ],
-  "@alexkroman1/aai/step-errors": ["RetryableErrorOptions"],
+  "@alexkroman1/aai/step-errors": [
+    "RetryableErrorOptions"
+  ],
   "@alexkroman1/aai/step-files": [
     "ReadUploadToFileOptions",
     "STEP_FILE_READ_CONCURRENCY",
     "STEP_FILE_WINDOW_BYTES",
     "WriteUploadFromFileOptions"
   ],
-  "@alexkroman1/aai/stt": ["ProviderCredentialOptions"],
+  "@alexkroman1/aai/stt": [
+    "ProviderCredentialOptions"
+  ],
   "@alexkroman1/aai/testing": [
     "ProjectFiles",
     "RecordedSleep",
@@ -299,9 +310,15 @@
     "stubTranscribe",
     "stubUploads"
   ],
-  "@alexkroman1/aai/testing/vitest": ["StubWorkflowsOptions"],
-  "@alexkroman1/aai/tools": ["UntypedJsonBody"],
-  "@alexkroman1/aai/tts": ["ProviderCredentialOptions"],
+  "@alexkroman1/aai/testing/vitest": [
+    "StubWorkflowsOptions"
+  ],
+  "@alexkroman1/aai/tools": [
+    "UntypedJsonBody"
+  ],
+  "@alexkroman1/aai/tts": [
+    "ProviderCredentialOptions"
+  ],
   "@alexkroman1/aai/utils": [
     "errorDetail",
     "failable",

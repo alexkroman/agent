@@ -1424,13 +1424,21 @@ The order is deliberate and is the part worth reusing:
 
 1. **No candidates** — say so, rather than reporting a failed match against an
    empty list.
-2. **A position** ("the second one", "the last one") — a caller who counts is
+2. **A code** ([ResolveOneOptions.code](#code)), when one is declared — an id
+   read aloud names exactly one thing, so it wins even over a position in the
+   same sentence. A miss falls through rather than failing.
+3. **A position** ("the second one", "the last one") — a caller who counts is
    unambiguous even when nothing else is, and this is the case a scorer alone
    cannot see.
-3. **The scorer**, when one is given. A single best candidate wins; a tie
-   fails, listing the tied ones only.
-4. **Exactly one candidate left** — it is what they meant.
-5. **Anything else is ambiguous**, and the failure lists the candidates.
+4. **The words** — [ResolveOneOptions.match](#match) overlap plus
+   [ResolveOneOptions.score](#score), summed, whichever are given. A single best
+   candidate wins; a tie fails, listing the tied ones only.
+5. **Exactly one candidate left** — it is what they meant.
+6. **Anything else is ambiguous**, and the failure lists the candidates.
+
+Steps 2 and 4 are the two shapes every caller of this used to write by hand
+(five shipped templates, four incompatible word splitters between them);
+`score` stays for the scorers a domain really owns.
 
 The caller is expected to have narrowed first — by an id, by a status word,
 by whatever its domain says an utterance can mean. This resolves what is
@@ -1562,11 +1570,11 @@ Parse JSON, returning `undefined` on malformed input. JSON cannot encode
 ### sessionSlot()
 
 ```ts
-function sessionSlot<K extends string, T, After = void>(
+function sessionSlot<K extends string, T, After = void, V = DeepReadonly<T>>(
    key: K, 
    create: () => T, 
-   options?: SessionSlotOptions<T, After>
-): SessionSlot<K, T>;
+   options?: SessionSlotOptions<T, After, V>
+): SessionSlot<K, T, V>;
 ```
 
 Declare a named slot of per-session state.
@@ -1595,6 +1603,10 @@ module needs neither an annotated context nor a `slot.get(ctx)` line.
 
 `After` = `void`
 
+##### V
+
+`V` = [`DeepReadonly`](#deepreadonly)\<`T`\>
+
 #### Parameters
 
 ##### key
@@ -1617,20 +1629,27 @@ Factory for a fresh value. Called once per session on first
 
 ##### options?
 
-[`SessionSlotOptions`](#sessionslotoptions)\<`T`, `After`\>
+[`SessionSlotOptions`](#sessionslotoptions)\<`T`, `After`, `V`\>
+
+See [SessionSlotOptions](#sessionslotoptions). `view` is the one worth
+  knowing about up front: it declares what the BROWSER sees, so
+  [SessionSlot.projected](#projected) is the one object `agent({ syncState })` and
+  `useAgentState` both take.
 
 #### Returns
 
-[`SessionSlot`](#sessionslot)\<`K`, `T`\>
+[`SessionSlot`](#sessionslot)\<`K`, `T`, `V`\>
 
 #### Examples
 
 ```ts
-// shared.ts — the one place the slot is declared.
+// shared.ts — the one place the slot is declared, view included.
 import { sessionSlot } from "@alexkroman1/aai";
 
 export type Cart = { items: string[] };
-export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }));
+export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
+  view: (cart) => ({ count: cart.items.length }),
+});
 ```
 
 ```ts no-check
@@ -5060,6 +5079,39 @@ Options for [resolveOne](#resolveone).
 
 #### Properties
 
+##### code?
+
+```ts
+optional code?: (candidate: T) => string;
+```
+
+The candidate's CODE, if it has one — an order number, a policy number, a
+booking reference. Compared through [spokenAlphanumeric](#spokenalphanumeric), so
+`#W5866402` is found in "that's order W 586-6402" however STT spaced,
+punctuated or cased it.
+
+Tried FIRST, before a position and before the words: a caller who reads an
+id out has named exactly one thing, even in an utterance that also says
+"the first one". The candidate's code must be at least
+`MIN_CODE_CHARS` (4) characters after normalization — below that,
+containment in a whole utterance is noise rather than a match.
+
+**A code that matches NOTHING is not a refusal here**, it falls through to
+the rest of the ladder. Whether an id-shaped utterance is a closed question
+("that order is not on this account") is the caller's knowledge, not this
+function's — `retail-orders-agent` keeps its own branch for exactly that
+sentence.
+
+###### Parameters
+
+###### candidate
+
+`T`
+
+###### Returns
+
+`string`
+
 ##### describe
 
 ```ts
@@ -5088,6 +5140,48 @@ optional label?: string;
 What the candidates are called, for the failure sentences. Defaults to
 `"option"`. Singular: the plural is formed with `s`.
 
+##### match?
+
+```ts
+optional match?: (candidate: T) => string;
+```
+
+The candidate's own text, for the WORD-OVERLAP scorer this module ships —
+how a caller names a thing when they are not reading an id: by the words in
+it. Return the fields worth matching on and nothing else ("a body match on
+'meeting' would tie half the inbox").
+
+Every candidate word of at least `MIN_MATCH_WORD` (3) characters that the
+utterance also says scores one, so "Priya Raman" beats "Priya" alone and
+"room" ties `Room (3 nights)` with `Room service` — a tie being a REFUSAL
+that asks, which is the outcome a desk wants.
+
+It exists because four shipped templates had each written this scorer with
+four different splitting rules (`/\s+/` vs `[^a-z0-9]+` vs a `{3,}` match;
+a two-character floor vs three; one filler list vs none), so the same
+utterance resolved differently in each. Matching is on whole WORDS both
+ways rather than `text.includes(word)`, which is the rule three of those
+four intended and one of them got: a substring test lets a candidate word
+match inside an unrelated one.
+
+What it does NOT do is stemming, so a plural in the utterance does not
+match a singular field ("books" ≠ "book"). A domain where that matters
+wants `score` — see `entertainment-picks-agent`, which scores two named
+fields against a listener's plural.
+
+Combines with [ResolveOneOptions.score](#score) by SUM when both are given,
+so a domain scorer can break a tie the words leave.
+
+###### Parameters
+
+###### candidate
+
+`T`
+
+###### Returns
+
+`string`
+
 ##### score?
 
 ```ts
@@ -5097,6 +5191,11 @@ optional score?: (candidate: T, text: string) => number;
 How well a candidate matches the utterance — higher wins, `0` means no
 match at all. Optional: with no scorer, an utterance that names no position
 resolves only when there is exactly one candidate.
+
+For the DOMAIN scorers a built-in cannot express — a status word, two named
+fields weighted apart, a distance over prices. Reach for
+[ResolveOneOptions.match](#match) first: plain word overlap is what most
+callers wrote this by hand to get.
 
 `text` is the utterance lower-cased, since every scorer wants that.
 
@@ -5133,6 +5232,14 @@ The key this slot occupies in the session's state.
 `T`
 
 The value's shape.
+
+##### V
+
+`V` = [`DeepReadonly`](#deepreadonly)\<`T`\>
+
+What [SessionSlot.projected](#projected) projects to — the return of
+  [SessionSlotOptions.view](#view), or the whole value when no view was
+  declared.
 
 #### Methods
 
@@ -5176,11 +5283,16 @@ Every write goes through [SessionSlot.update](#update). See
 ##### projection()
 
 ```ts
-projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
+projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
 ```
 
 A `syncState` projection over this slot: read the value (defaulting when
 the session has not touched it), then project.
+
+**Reach for [SessionSlot.projected](#projected) first** — one view, declared with
+the slot, passed by both ends. This is the multi-view case: `syncState`
+takes an array, so an agent that shows one slot to two audiences composes a
+second projection here.
 
 The result is CALLABLE as well as declarable, which is what lets a client
 derive its own empty state from the same function the server pushes —
@@ -5193,19 +5305,19 @@ for the moment before the first tool call.
 
 ###### Type Parameters
 
-###### V
+###### P
 
-`V`
+`P`
 
 ###### Parameters
 
 ###### project
 
-(`value`: [`DeepReadonly`](#deepreadonly)\<`T`\>) => `V`
+(`value`: [`DeepReadonly`](#deepreadonly)\<`T`\>) => `P`
 
 ###### Returns
 
-[`StateProjection`](#stateprojection)\<`V`\>
+[`StateProjection`](#stateprojection)\<`P`\>
 
 ###### Example
 
@@ -5475,6 +5587,41 @@ readonly key: K;
 
 The store key this slot occupies. Two slots must not share one.
 
+##### projected
+
+```ts
+readonly projected: StateProjection<V>;
+```
+
+This slot's declared view as a `syncState` projection — built ONCE, here,
+so both ends can pass the same object.
+
+`agent({ syncState: cartSlot.projected })` on the server and
+`useAgentState(cartSlot.projected)` in the browser are then the SAME
+projection by construction, and the frame rendered before the first push
+cannot describe a different view than the frames pushed after it. Composing
+`slot.projection(view)` at each end is what could: the two expressions have
+to name the same view and nothing checks that they do.
+
+Being built at declaration also makes it identity-stable, which
+`useAgentState` memoizes its empty frame on — so this spelling cannot
+produce the fresh-object-per-render an inline `slot.projection(view)` does.
+
+With no [SessionSlotOptions.view](#view), this projects the whole value.
+Declare one to narrow it.
+
+###### Example
+
+```ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+
+const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
+  view: (cart) => ({ count: cart.items.length }),
+});
+
+export default agent({ name: "Shop", syncState: cartSlot.projected });
+```
+
 ***
 
 ### SessionSlotOptions
@@ -5490,6 +5637,14 @@ Options for [sessionSlot](#sessionslot-1).
 ##### After
 
 `After` = `void`
+
+##### V
+
+`V` = [`DeepReadonly`](#deepreadonly)\<`T`\>
+
+What [SessionSlotOptions.view](#view) projects to, inferred from
+  the view itself. Defaults to the whole value, which is what
+  [SessionSlot.projected](#projected) projects when no view is declared.
 
 #### Properties
 
@@ -5585,6 +5740,59 @@ somebody has to remember to skip. Note `get` on a virtual slot returns the
 live value: there is nothing to protect it from, since nothing is going to
 store a copy of it.
 
+##### view?
+
+```ts
+optional view?: (value: DeepReadonly<T>) => V;
+```
+
+What this slot shows the BROWSER — declared here so it is written once and
+read from both ends as [SessionSlot.projected](#projected).
+
+`agent({ syncState: cartSlot.projected })` and
+`useAgentState(cartSlot.projected)` are then the same object, so the frame
+the server pushes and the frame the page renders before the first push
+cannot disagree. That drift is what this field exists to remove:
+[SessionSlot.projection](#projection-1) is a METHOD, so the projection is a value
+somebody has to name, export and import at both ends — and every shipped
+example that got it right did so by exporting
+`export const cartProjection = cartSlot.projection(cartView)` from a
+`shared.ts`, eight of them also hand-writing the `StateProjection<V>`
+annotation that follows from the view.
+
+It also makes the memoization caveat on `useAgentState` evaporate for this
+path: `projected` is built ONCE, at declaration, so it is identity-stable
+for the life of the module and a projection spelled inline in a render body
+is not something this spelling can express.
+
+**Absent, the WHOLE value is projected.** Declare a view to narrow it — to
+what the page renders, rather than to whatever the slot happens to hold.
+
+A slot with more than one audience keeps
+[SessionSlot.projection](#projection-1): `syncState` takes an array, so a second view
+is a second projection over the same slot.
+
+```ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+
+type Cart = { items: string[]; nextId: number };
+export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [], nextId: 1 }), {
+  view: (cart) => ({ count: cart.items.length }),
+});
+
+export default agent({ name: "Shop", syncState: cartSlot.projected });
+```
+
+###### Parameters
+
+###### value
+
+[`DeepReadonly`](#deepreadonly)\<`T`\>
+
+###### Returns
+
+`V`
+
 ***
 
 ### SlotToolDef
@@ -5672,7 +5880,8 @@ See [ToolDef.inputSchema](#inputschema-2).
 ### StateProjection()
 
 One slot's contribution to the `agent_state` frame — what
-[SessionSlot.projection](#projection-1) returns and what `agent({ syncState })` takes.
+[SessionSlot.projected](#projected) and [SessionSlot.projection](#projection-1) are, and what
+`agent({ syncState })` takes.
 
 It is a FUNCTION carrying the two facts the runtime needs, rather than a
 plain record, and the callable half is load-bearing at both ends. The server
@@ -6608,6 +6817,46 @@ take no event (`receive`, `timeout`, `voiceConfig`, `position`), never has an
 
 ***
 
+### AssemblyAIGatewayModel
+
+```ts
+type AssemblyAIGatewayModel = 
+  | "claude-haiku-4-5-20251001"
+  | "claude-opus-4-5-20251101"
+  | "claude-opus-4-6"
+  | "claude-opus-4-7"
+  | "claude-opus-4-8"
+  | "claude-sonnet-4-5-20250929"
+  | "claude-sonnet-4-6"
+  | "claude-sonnet-5"
+  | "gemini-2.5-flash"
+  | "gemini-2.5-flash-lite"
+  | "gemini-2.5-pro"
+  | "gemini-3.1-flash-lite"
+  | "gemini-3.5-flash"
+  | "gemini-3.5-flash-lite"
+  | "gemini-3.6-flash"
+  | "gpt-4.1"
+  | "gpt-5"
+  | "gpt-5-mini"
+  | "gpt-5-nano"
+  | "gpt-5.1"
+  | "gpt-5.2"
+  | "gpt-5.5"
+  | "gpt-5.6-luna"
+  | "gpt-5.6-terra"
+  | "gpt-oss-120b"
+  | "gpt-oss-20b"
+  | "kimi-k2.5"
+  | "qwen3-32B"
+  | "qwen3-next-80b-a3b"
+  | "qwen3.5-4b-32k-experimental";
+```
+
+An id the gateway advertises.
+
+***
+
 ### AssemblyAITtsVoice
 
 ```ts
@@ -7432,7 +7681,10 @@ The role of the message sender.
 
 ```ts
 type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-  llm?: LlmProvider | string;
+  llm?:   | LlmProvider
+     | AssemblyAIGatewayModel
+     | `${string}/${string}`
+     | string & Record<never, never>;
   page?: "voice" | StaticFrontDoorMisuse;
   s2s?: undefined;
   text?: undefined;
@@ -7468,11 +7720,30 @@ the rule.
 ##### llm?
 
 ```ts
-optional llm?: LlmProvider | string;
+optional llm?: 
+  | LlmProvider
+  | AssemblyAIGatewayModel
+  | `${string}/${string}`
+| string & Record<never, never>;
 ```
 
-See [AgentDef.llm](#llm); a string is gateway model-id shorthand.
-Unset → the default AssemblyAI LLM Gateway model.
+See [AgentDef.llm](#llm); a string is gateway model-id shorthand —
+[AssemblyAIGatewayModel](#assemblyaigatewaymodel) for a bare id on the AssemblyAI LLM
+Gateway, `"creator/model"` for the Vercel AI Gateway. Unset → the default
+AssemblyAI LLM Gateway model.
+
+**Typed against the generated union so a typo is caught where it is
+written**, which is the same job `assemblyAILlm({ model })` has done all
+along — `from-string.ts` desugars this field straight into that factory,
+so one field had two types and only the longer spelling checked anything.
+A bare `string` here made `llm: "claude-sonnet-4-6"` a name with no
+autocomplete and a typo a gateway 400 at the first live session.
+
+The `string & Record<never, never>` arm keeps it a WIDENING: the catalog
+is a snapshot of a service that ships models faster than this package
+releases, so every id that compiled before still compiles — see
+[AssemblyAITtsVoice](#assemblyaittsvoice), which is autocomplete over its catalog for
+exactly the same reason and with the same non-guarantee.
 
 ##### page?
 
@@ -8229,7 +8500,10 @@ A phone carrier that can open a media stream against an agent.
 
 ```ts
 type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
-  llm?: LlmProvider | string;
+  llm?:   | LlmProvider
+     | AssemblyAIGatewayModel
+     | `${string}/${string}`
+     | string & Record<never, never>;
   maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   page?: "voice" | StaticFrontDoorMisuse;
@@ -8261,12 +8535,21 @@ so a knob added to [PipelineVoiceTuning](#pipelinevoicetuning) is rejected here 
 ##### llm?
 
 ```ts
-optional llm?: LlmProvider | string;
+optional llm?: 
+  | LlmProvider
+  | AssemblyAIGatewayModel
+  | `${string}/${string}`
+| string & Record<never, never>;
 ```
 
 See [AgentDef.llm](#llm); a string is gateway model-id shorthand. Unset →
 the default AssemblyAI LLM Gateway model. The one provider stage a text
 agent has.
+
+Typed exactly as the pipeline arm's `llm` — read the argument there. The
+two are one field to an author, and typing them differently is how the
+shorthand would come to autocomplete on a voice agent and not on a text
+one.
 
 ##### maxTurnSilenceMs?
 
@@ -8740,10 +9023,19 @@ What `execute` returns, inferred at the [tool](#tool-2) call and
 execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 ```
 
-Function that executes the tool and returns a result. The result is
-JSON-serialized for the LLM and the client, and capped at
-`MAX_TOOL_RESULT_CHARS` (4000) characters — longer results are
-trimmed and end with a `[truncated]` marker.
+Function that executes the tool and returns a result, JSON-serialized for
+the LLM and the client.
+
+**The model gets it WHOLE; only the client's copy is capped.**
+`MAX_TOOL_RESULT_CHARS` (4000) bounds the `tool.completed` frame — a longer
+result is trimmed there and ends with a `[truncated]` marker — and bounds
+nothing on the provider side, where the full string is appended to the
+conversation and re-sent on every later turn of the call. This doc used to
+say the cap applied to both, which made an unshaped `await res.json()` look
+free: it is the whole response, in the prompt, for the rest of the turn.
+Return the fields the model needs. A result over the cap is warned about
+once per tool (see `warnOversizedResult` in `aai-runtime`'s
+`tool-executor.ts`).
 
 ###### Parameters
 

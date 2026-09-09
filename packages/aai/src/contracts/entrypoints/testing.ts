@@ -97,6 +97,8 @@ export {
   type StubGenerateCall,
   type StubGenerateReply,
   type StubGenerateRoute,
+  type StubGenerateRoutes,
+  type StubGenerateScript,
   type StubReporter,
   type StubSpeech,
   type StubSpeechCall,
