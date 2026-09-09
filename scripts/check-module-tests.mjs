@@ -14,10 +14,10 @@
  * sounds like it already answers this. It does not: a module can be dragged
  * over the floor INCIDENTALLY, by a test written for something else. Four
  * modules in `aai-guest` had no test file of their own —
- * `studio-agent.ts`, `studio-session.ts`, `studio-http.ts`,
- * `studio-tool-descriptions.ts` — and the first was at **85.71%** lines and the
- * last two at **100%**, purely because `studio-chat.test.ts` and
- * `studio-session-init.test.ts` reach through them. So nothing in the repo
+ * `studio/agent.ts`, `studio/session.ts`, `studio/http.ts`,
+ * `studio/tool-descriptions.ts` — and the first was at **85.71%** lines and the
+ * last two at **100%**, purely because `studio/chat.test.ts` and
+ * `studio/session-init.test.ts` reach through them. So nothing in the repo
  * noticed, and the module where the coding agent's whole tool registry is
  * assembled had no assertion of its own about what it contains.
  *
@@ -148,7 +148,7 @@ const EXCLUSIONS = [
  * Whether a file exports anything that exists at runtime.
  *
  * Read rather than guessed from the name: `sdk/tool-def.ts` sounds like it
- * exports `tool()` and exports three types, while `harness-types.ts` sounds
+ * exports `tool()` and exports three types, while `harness/types.ts` sounds
  * type-only and would still be in scope the moment it grew a helper. Comments
  * are stripped first, because these files carry long doc blocks that quote
  * declarations in prose.

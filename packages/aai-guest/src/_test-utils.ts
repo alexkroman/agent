@@ -12,9 +12,9 @@ import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
 import { executeToolCall } from "@alexkroman1/aai-runtime/internal";
 import { afterEach, beforeEach, type MockInstance, vi } from "vitest";
-import { handleHostResponse, setHostSend } from "./harness-rpc.ts";
-import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "./harness-types.ts";
-import type { runNpm } from "./studio-spawn.ts";
+import { handleHostResponse, setHostSend } from "./harness/rpc.ts";
+import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "./harness/types.ts";
+import type { runNpm } from "./studio/spawn.ts";
 
 /**
  * Stub `process.exit` and hand back the spy, so a spec can assert on whether the
@@ -78,7 +78,7 @@ export async function runTool(
  *
  * Call it at module or `describe` scope; it registers its own hooks, which is
  * the whole point. Six suites open-coded `mkdtemp` + `rm` in three styles and
- * one of them leaked: `studio-project-shape.test.ts` shared a single `let dir`
+ * one of them leaked: `studio/project-shape.test.ts` shared a single `let dir`
  * across two `describe` blocks, so the second block's `afterEach` re-`rm`'d a
  * path the first had already deleted while its own directories were never
  * removed at all. Creating the directory and registering its cleanup in one

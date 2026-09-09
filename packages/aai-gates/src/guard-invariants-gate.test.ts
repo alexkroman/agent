@@ -297,7 +297,7 @@ const SAMPLES: Record<string, RuleSamples> = {
       // Ordinary narrowing of a union the compiler ALREADY knows, which is why
       // the `!== null` half is in the pattern. Both are real lines: the first is
       // `server.address()`'s `AddressInfo | string | null`, the second a
-      // declared `exports` entry in `studio-build.ts`. Matching either would put
+      // declared `exports` entry in `studio/build.ts`. Matching either would put
       // permanent noise in the baseline for checks that are not duck-typing.
       '        listenPort = typeof addr === "object" && addr ? addr.port : port;',
       '  return typeof root === "object" ? root.types : undefined;',

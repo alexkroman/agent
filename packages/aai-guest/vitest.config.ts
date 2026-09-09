@@ -32,7 +32,7 @@ export default defineConfig({
       "src/.workspaces/**",
       "**/*.integration.test.ts",
       "**/*.scenario.test.ts",
-      // The EVAL tier, by the same naming convention — `studio-agent.eval.test.ts`
+      // The EVAL tier, by the same naming convention — `studio/agent.eval.test.ts`
       // drives the coding agent against a live model over a real workspace, and
       // `test:eval` is what selects it. Without this glob it would also run here
       // under a 5s budget with no credential gate.

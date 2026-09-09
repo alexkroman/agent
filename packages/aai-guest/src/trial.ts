@@ -9,7 +9,7 @@
 import { Worker } from "node:worker_threads";
 import { errorMessage, isToolFailure } from "@alexkroman1/aai";
 import pTimeout from "p-timeout";
-import type { AgentDef, ToolContext } from "./harness-types.ts";
+import type { AgentDef, ToolContext } from "./harness/types.ts";
 import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // ---- run_code builtin -------------------------------------------------------

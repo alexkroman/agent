@@ -15,17 +15,17 @@ still owns `_test-utils.ts`, the tier violations and the scenario-tier split.
 ## The coding agent is tested at the AGENT level too
 
 Three suites tested the coding agent from both ends and nothing in the middle,
-which is the gap `studio-agent-turns.test.ts` closes with the SDK's own
+which is the gap `studio/agent-turns.test.ts` closes with the SDK's own
 framework — `runTextAgent` + `scriptedTextModel`
 (`@alexkroman1/aai-runtime/testing`):
 
 | | what it drives |
 | --- | --- |
-| `studio-agent.test.ts` | what the DEFINITION declares |
-| `studio-tools.test.ts` | the studio's own half of the tool set through `runTool` — the syntax gate, the post-write diagnostics, the scrubbed `bash` env, `test_agent`. The nine workspace tools are the SDK's and are covered there (`coding-tools.test.ts`) |
-| `studio-chat.scenario.test.ts` | the HTTP SURFACE, over a real port and real disk |
-| **`studio-agent-turns.test.ts`** | **one TURN of `createTextAgent` over the real definition** |
-| `studio-agent.eval.test.ts` | a LIVE model over a real workspace |
+| `studio/agent.test.ts` | what the DEFINITION declares |
+| `studio/tools.test.ts` | the studio's own half of the tool set through `runTool` — the syntax gate, the post-write diagnostics, the scrubbed `bash` env, `test_agent`. The nine workspace tools are the SDK's and are covered there (`coding-tools.test.ts`) |
+| `studio/chat.scenario.test.ts` | the HTTP SURFACE, over a real port and real disk |
+| **`studio/agent-turns.test.ts`** | **one TURN of `createTextAgent` over the real definition** |
+| `studio/agent.eval.test.ts` | a LIVE model over a real workspace |
 
 **`runTextAgent` had no caller in the repo before this**, and the coding agent
 is the only text agent there is — its own doc says it "builds a fresh text agent
@@ -57,10 +57,10 @@ tool that closes over nothing and touches no disk, so every claim is made in
 memory and the session fixture points at a path that does not exist —
 `createStudioAgent` performs no I/O, and a real directory there would invite a
 disk-touching claim into a 5s budget. A turn that writes files belongs to the
-scenario tier, where `studio-chat.scenario.test.ts` already drives one.
+scenario tier, where `studio/chat.scenario.test.ts` already drives one.
 
 **And the definition now makes the claim every shipped template opens with**:
-`expectDeployable` (`@alexkroman1/aai/testing`) in `studio-agent.test.ts`. It
+`expectDeployable` (`@alexkroman1/aai/testing`) in `studio/agent.test.ts`. It
 runs `toAgentConfig` — the conversion `aai build` runs — and asserts per derived
 MODE; for a text agent that is "no audio path", which is the one worth having,
 because this is the repo's only definition assembled in CODE rather than
@@ -77,12 +77,12 @@ own `__aaiConfig` rather than off anything reachable from this definition.
 
 ## The coding agent has an eval of its own
 
-`studio-agent.eval.test.ts` + `_studio-eval-harness.ts`. Ten cases that drive
+`studio/agent.eval.test.ts` + `studio/_eval-harness.ts`. Ten cases that drive
 `createStudioAgent` over a REAL workspace and ask the question none of this
 package's other suites can: given this instruction and this tree, did the agent
 reach for the right tool, in the right order, and leave something that
-compiles. `studio-agent.test.ts` asserts what the definition DECLARES,
-`studio-tools.test.ts` drives each tool directly, `studio-chat.scenario.test.ts`
+compiles. `studio/agent.test.ts` asserts what the definition DECLARES,
+`studio/tools.test.ts` drives each tool directly, `studio/chat.scenario.test.ts`
 drives the HTTP surface with a scripted model — all three are about parts, and
 the whole was unmeasured on this side of the boundary.
 
@@ -134,7 +134,7 @@ graph cycle, since `aai-server` depends on `aai-guest` — so for a while every
 case ran on `STUDIO_EVAL_PROMPT` and no result here could be reported as
 covering the studio's own text.
 
-`_studio-eval-prompt.ts` closes that: `scripts/sync-studio-prompt.mjs` commits
+`studio/_eval-prompt.ts` closes that: `scripts/sync-studio-prompt.mjs` commits
 the composed prompt per kind under `studio-prompts/`, `check:studio-prompt`
 holds the copies current, and a case that passes `studioPrompt` runs the shipped
 text as DATA — which is what it is in production too, since the host puts it in
@@ -177,11 +177,11 @@ grading the shipped prompt — five words carry nothing else.
 therefore synced, gated and unmeasured in process; the three "Build a workflow
 app" starters are the from-scratch cases that would grade it, and they are the
 obvious next ones to add. `shippedStudioPrompt("workflow")` is reached only by
-`_studio-eval-prompt.test.ts` today.
+`studio/_eval-prompt.test.ts` today.
 
-Also absent: `studio-chat.ts`'s turn shaping — the wall-clock `stopWhen`,
+Also absent: `studio/chat.ts`'s turn shaping — the wall-clock `stopWhen`,
 compaction's `prepareStep`, the mid-turn checkpoints and the end-of-turn sync.
-Those belong to the HTTP surface and `studio-chat.scenario.test.ts` exercises
+Those belong to the HTTP surface and `studio/chat.scenario.test.ts` exercises
 them.
 
 ### GROUND TRUTH is what makes these cases worth running
@@ -217,7 +217,7 @@ ANSWER: whether the sentence the tool sends back is one a model can act on (the
 syntax rejection has to say nothing was saved, not to run `test_agent` first,
 and to stop over-escaping; an unknown template has to list the real names).
 
-**The harness has a spec of its own** (`_studio-eval-harness.test.ts`), which
+**The harness has a spec of its own** (`studio/_eval-harness.test.ts`), which
 `check:module-tests` obliges and which turns out to be the right place for the
 one regression nothing else could catch: it asserts that `STUDIO_EVAL_PROMPT`
 mentions neither templates, nor tests, nor deleting, nor type-checking. A
@@ -232,7 +232,7 @@ down.
 Two mechanical notes for whoever adds the eleventh case:
 
 - **A helper may not call `expect`** — `noMisplacedAssertion` matches lexical
-  position, not the call graph (the same trap `studio-chat.test.ts` hit). Both
+  position, not the call graph (the same trap `studio/chat.test.ts` hit). Both
   shared claims here THROW instead, which is also the convention the published
   readers follow: the finding is a sentence naming the file that was abandoned,
   and a `toBe(true)` over a boolean loses it.
@@ -243,7 +243,7 @@ Two mechanical notes for whoever adds the eleventh case:
 ### `AAI_EVAL_STUDIO_MODEL`, and the literal it overrides
 
 A live case runs the coding agent on `gpt-5.5`, a literal in
-`_studio-eval-harness.ts`, because the shipped default is `studioLlmModelId()`
+`studio/_eval-harness.ts`, because the shipped default is `studioLlmModelId()`
 in `aai-studio-server` and this package may not import it. **That literal will
 drift when the studio changes model**, and it is the cheaper of the two failures
 available: a drifted default measures the coding agent on a model the studio no
@@ -309,7 +309,7 @@ it had none — an inspection load carries an EMPTY env, and a trial answers in
 PROSE (`Tool error: …`, `(no result)`, `agent not loaded`) because its consumer
 is a model reading a tool result. A second caller wanting the REAL pair rather
 than a double is where an inline object becomes a copy, so it is
-`studio-bundle-access.ts` now, with its own spec. The one thing that spec pins
+`studio/bundle-access.ts` now, with its own spec. The one thing that spec pins
 which a reader would not guess: it reads `state.agent` at CALL time, because the
 access object is built once per session and `test_agent` loads and then trials
 inside one tool call.

@@ -2,7 +2,7 @@
 /**
  * Slot-cache semantics. Idle reclamation is deliberately NOT here: the
  * GUEST owns idleness (agent-mode self-exit — see aai-guest's
- * harness-agent-mode.test.ts), and its exit reaches the slot through
+ * harness/agent-mode.test.ts), and its exit reaches the slot through
  * `onSandboxLost` → `terminateSlot` (covered in sandbox.test.ts /
  * sandbox/resolve.test.ts).
  */

@@ -37,7 +37,7 @@ export const MAX_STUDIO_MESSAGE_BYTES = 600_000;
  * workspace, not because the agent was lost but because it ran out of room.
  * opencode allows ~1000 and summarizes as it approaches the context limit;
  * this is the same trade at a more conservative ceiling, paired with
- * compaction in the guest (studio-compaction.ts) so the extra steps are
+ * compaction in the guest (studio/compaction.ts) so the extra steps are
  * actually reachable.
  *
  * A runaway turn is still bounded — by this cap, by each tool's own deadline,

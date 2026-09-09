@@ -26,8 +26,8 @@
  * screen at a reader who will never have an account.
  */
 
-import { AgentApiDocs } from "./api-docs.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
+import { AgentApiDocs } from "./components/api-docs.tsx";
 import { PaneShell } from "./pane-shell.tsx";
 
 export function PublicApiPage({ slug }: { slug: string }) {

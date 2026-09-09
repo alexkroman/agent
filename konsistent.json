@@ -1850,10 +1850,12 @@
     },
     {
       "name": "studio-client-cleanup-is-setup",
-      "description": "No suite in this package imports Testing Library's `cleanup`: `afterEach(cleanup)` is registered once, in `src/_test-setup.ts`. Testing Library registers its own automatic cleanup only when the runner exposes globals, and this package deliberately does not set `globals: true` — so before the setup file, sixteen suites hand-wrote the hook and the seventeenth (`use-event-stream.test.ts`) leaned on a per-test `unmount()`, which an assertion failing above that line SKIPS: the hook stays mounted holding a pending fake timer into the next test, and the failure surfaces in an unrelated suite. Registering it centrally is the only version a new suite cannot forget, and it runs last (vitest stacks `afterEach` hooks outermost-last), which is what a suite restoring timers or globals in its own hook wants. A `cleanup` import is therefore always one of two mistakes — a re-registered hook, or a mid-test call standing in for a second test case. `github-card.test.tsx` had the second and was split into two cases rather than exempted.",
+      "description": "No suite in this package imports Testing Library's `cleanup`: `afterEach(cleanup)` is registered once, in `src/_test-setup.ts`. Testing Library registers its own automatic cleanup only when the runner exposes globals, and this package deliberately does not set `globals: true` — so before the setup file, sixteen suites hand-wrote the hook and the seventeenth (`hooks/use-event-stream.test.ts`) leaned on a per-test `unmount()`, which an assertion failing above that line SKIPS: the hook stays mounted holding a pending fake timer into the next test, and the failure surfaces in an unrelated suite. Registering it centrally is the only version a new suite cannot forget, and it runs last (vitest stacks `afterEach` hooks outermost-last), which is what a suite restoring timers or globals in its own hook wants. A `cleanup` import is therefore always one of two mistakes — a re-registered hook, or a mid-test call standing in for a second test case. `components/github-card.test.tsx` had the second and was split into two cases rather than exempted.",
       "paths": [
         "packages/aai-studio-client/src/{suite}.test.tsx",
-        "packages/aai-studio-client/src/{suite}.test.ts"
+        "packages/aai-studio-client/src/{suite}.test.ts",
+        "packages/aai-studio-client/src/**/{suite}.test.tsx",
+        "packages/aai-studio-client/src/**/{suite}.test.ts"
       ],
       "mustNot": {
         "import": [

@@ -5,9 +5,9 @@
 // switching lives in the home sidebar (brand → home), not here.
 
 import clsx from "clsx";
-import { ACCOUNT_MENU_ID, ACCOUNT_TOGGLE_ATTR } from "./account-menu.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
-import { DropdownPanel } from "./dropdown-panel.tsx";
+import { ACCOUNT_MENU_ID, ACCOUNT_TOGGLE_ATTR } from "./components/account-menu.tsx";
+import { DropdownPanel } from "./components/dropdown-panel.tsx";
 import { agentUrl } from "./platform-origin.ts";
 import { SEG_GROUP, segItemClass } from "./segmented.ts";
 

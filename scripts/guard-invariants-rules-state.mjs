@@ -70,7 +70,7 @@ export const STATE_RULES = [
       "Use `join(tmpdir(), …)` from node:os + node:path.\n" +
       "On Windows a bare `/tmp/x` is DRIVE-RELATIVE — it resolves to `D:\\tmp\\x`,\n" +
       "which does not exist — so every write there fails with ENOENT. Two shipped\n" +
-      "modules had it (`workflow/serve.ts`, `harness-bundle.ts`) and both run on\n" +
+      "modules had it (`workflow/serve.ts`, `harness/bundle.ts`) and both run on\n" +
       "the developer's own machine under `aai dev`, not only in the Linux guest.\n" +
       "Baseline an occurrence only when the path is INSIDE a container by\n" +
       "construction — `modal/agent-sandbox.ts`'s remote paths name a location in\n" +

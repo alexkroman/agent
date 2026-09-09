@@ -1,14 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
 // toBlocks owns React key stability for streamed messages — a key collision
 // makes tool rows swap expanded/collapsed state mid-stream. The pre-project
-// states (hero prompt box, status unknown vs. no key) live in home.test.tsx.
+// states (hero prompt box, status unknown vs. no key) live in components/home.test.tsx.
 
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { ChatPanel } from "./chat.tsx";
-import { Composer } from "./composer.tsx";
-import { toBlocks } from "./tool-row.tsx";
+import { Composer } from "./components/composer.tsx";
+import { toBlocks } from "./components/tool-row.tsx";
 
 function message(parts: Record<string, unknown>[]): UIMessage {
   return { id: "m1", role: "assistant", parts } as UIMessage;

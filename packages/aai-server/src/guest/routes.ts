@@ -62,7 +62,7 @@ export const GUEST_ROUTES = {
    * Studio session install, bearer-gated by the PER-SANDBOX HOST TOKEN. The
    * HTTP twin of the `studio/session-init` RPC, for the replica that does not
    * hold this guest's single control socket (see aai-guest/
-   * studio-session-init.ts and studio-session-registry.ts).
+   * studio/session-init.ts and studio-session-registry.ts).
    */
   studioSessionInit: "/studio/session-init",
   /** PUBLIC readiness probe (the SDK server's own /health). */

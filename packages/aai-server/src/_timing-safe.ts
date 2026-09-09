@@ -5,7 +5,7 @@
  * `node:crypto`'s `timingSafeEqual` THROWS on a length mismatch, so every caller
  * has to guard the lengths first — and every caller had written that guard
  * itself: `phone-signature.ts` as a private `equals`, `aai-guest`'s
- * `harness-auth.ts` as its own copy across a package boundary it cannot import
+ * `harness/auth.ts` as its own copy across a package boundary it cannot import
  * across. This is the aai-server half, spelled once.
  *
  * Comparing lengths first leaks the length of a value the CALLER already chose,

@@ -123,7 +123,7 @@ voice agents without the CLI:
   workspace naming a foreign slug is never a deletion oracle.
 - **Projects are created from the chat, not a dialog.** The client has no
   new-project modal: typing the first message (the home hero's prompt box,
-  `home.tsx`) posts it as `prompt` to
+  `components/home.tsx`) posts it as `prompt` to
   `POST /studio/projects`, and the SERVER mints the name — prompt-derived
   base + random suffix, v0-style (`contact-form-x7k2mq`), via the same
   `aai-server/slug-generate.ts` generator slugless CLI deploys use (those
@@ -202,7 +202,7 @@ voice agents without the CLI:
   server: opencode's post-edit-diagnostics loop without a ~200 MB
   language-server process in a memory-capped sandbox. The write is never
   rejected on type errors (mid-refactor states are legitimate — the
-  syntax gate in `studio-syntax.ts` owns the unrecoverable class), and a
+  syntax gate in `studio/syntax.ts` owns the unrecoverable class), and a
   slow or missing compiler degrades to the plain write result. This
   replaced the standalone `check_types` tool — evals showed agents
   thrashing on it (sixteen checks, zero builds); `test_agent` is the one
@@ -283,7 +283,7 @@ voice agents without the CLI:
   `node_modules/@alexkroman1/aai` instead of assuming an offset, emits
   absolute paths (the only form that survives a `bash` call with an
   unexpected cwd), and returns `""` rather than naming paths it could not
-  resolve. `studio-build.test.ts` asserts every path the section emits
+  resolve. `studio/build.test.ts` asserts every path the section emits
   exists.
 - **The workspace manifest declares what the agent may import.**
   `ensureProjectShape` writes a `package.json` whose `dependencies` mirror
@@ -902,9 +902,9 @@ key↔account mapping — stay in that guide's "Auth" block.
 
 ### Sync to GitHub
 
-`studio-github-*.ts` plus the client's `github-card.tsx`: a signed-in account
-connects a **GitHub App installation**, picks a repository, and pushes a
-project's workspace to a branch as ONE commit.
+`studio-github-*.ts` plus the client's `components/github-card.tsx`: a
+signed-in account connects a **GitHub App installation**, picks a repository,
+and pushes a project's workspace to a branch as ONE commit.
 
 - **A GitHub App, not the GitHub OAuth the studio already signs in with.**
   Supabase Auth stays the identity layer; this is authorization to write
@@ -1008,7 +1008,7 @@ project's workspace to a branch as ONE commit.
   attempt: a 409 still standing after it is not an empty repository, and a loop
   around a refusal is the shape this module already removed once.
 - **The picker lists the installation NEWEST-FIRST** (`pickerOrder` in
-  `github-card.tsx`). GitHub answers `GET /installation/repositories`
+  `components/github-card.tsx`). GitHub answers `GET /installation/repositories`
   oldest-first, so the repository a user just made in order to sync into it —
   the one entry they are certain of, and the one the bootstrap above exists for
   — sat at the bottom of a list that runs to a thousand. Reversed rather than
@@ -1705,7 +1705,7 @@ down, like the file-length allowlist.
   routing point, so from that instant no NEW session can reach it and the
   slug is free to rebuild — then FIRE-AND-FORGETS one deadline-carrying
   `POST /manage/drain` to the guest. The GUEST owns the drain from there
-  (`harness-agent-mode.ts`): it refuses new direct-dial sessions, exits the
+  (`harness/agent-mode.ts`): it refuses new direct-dial sessions, exits the
   instant its last session ends, and exits at the deadline
   (`SANDBOX_RETIRE_DRAIN_MS`, 10 min, env overridable; 0 terminates
   immediately) regardless — a retired sandbox is a billed guest running

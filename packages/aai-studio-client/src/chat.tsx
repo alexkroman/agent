@@ -2,7 +2,7 @@
 // Chat panel (design 1b): eyebrow header, welcome bubble + starter prompts
 // when the project's conversation is empty, composer pinned at the bottom.
 // Mounted only once a project exists — the pre-project state is the HomeHero
-// (home.tsx), whose first prompt auto-creates a project.
+// (components/home.tsx), whose first prompt auto-creates a project.
 
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
@@ -16,10 +16,10 @@ import {
 } from "react";
 import type { ChatSession, StudioStatus } from "./api.ts";
 import { errorText } from "./api-error.ts";
-import { EmptyStateBody, Transcript } from "./chat-transcript.tsx";
-import { Composer } from "./composer.tsx";
+import { EmptyStateBody, Transcript } from "./components/chat-transcript.tsx";
+import { Composer } from "./components/composer.tsx";
+import { useMessageQueue } from "./hooks/use-message-queue.ts";
 import { createSandboxTransport } from "./sandbox-transport.ts";
-import { useMessageQueue } from "./use-message-queue.ts";
 
 type ChatPanelProps = {
   /**

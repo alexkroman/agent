@@ -3,7 +3,7 @@
  * The ONE answer to "the server rejected this bearer".
  *
  * There used to be three call sites and two opposite conclusions. The event
- * stream refreshed (`use-event-stream.ts` → `onAuthFailure`); the account gate
+ * stream refreshed (`hooks/use-event-stream.ts` → `onAuthFailure`); the account gate
  * refreshed, with a comment explaining at length why signing out there was
  * wrong; and the app's REST queries called `signOut()` with no scope. That last
  * one is the bug the other two were written to avoid: supabase-js runs its

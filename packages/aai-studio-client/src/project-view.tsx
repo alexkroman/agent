@@ -21,6 +21,7 @@ import { ChatPanel } from "./chat.tsx";
 import { DocsPane } from "./docs.tsx";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 import { hasGithubResult } from "./github-result.ts";
+import { type StreamHandlers, useEventStream } from "./hooks/use-event-stream.ts";
 import { LogsView } from "./logs-view.tsx";
 import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
@@ -28,7 +29,6 @@ import { SecretsPane } from "./secrets.tsx";
 import { SettingsPane } from "./settings.tsx";
 import { lazyRetry } from "./stale-build.ts";
 import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
-import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 import { WorkflowsPane } from "./workflows.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the

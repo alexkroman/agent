@@ -297,7 +297,7 @@ function LogsBody(props: {
  * work: `append` spreads the previous array and pushes the parsed page objects
  * themselves, and `slice` preserves identity, so only genuinely new rows have a
  * new `row` reference. Same pattern and same argument as `MessageView` in
- * chat-transcript.tsx.
+ * components/chat-transcript.tsx.
  */
 const LogRow = memo(function LogRow(props: { row: Row }) {
   const { row } = props;

@@ -199,7 +199,7 @@
       "includeEntryExports": true,
       // These are declared so a STUDIO WORKSPACE can resolve them, not because
       // this package imports them: they are the third-party half of
-      // `WORKSPACE_DEPENDENCIES` (`studio-project-shape.ts`), and declaring them
+      // `WORKSPACE_DEPENDENCIES` (`studio/project-shape.ts`), and declaring them
       // here is what lets `sync-guest-toolchain.mjs` read the version this
       // checkout installed — which is the only thing keeping the baked toolchain
       // and the toolchain the repo builds and tests with from drifting.

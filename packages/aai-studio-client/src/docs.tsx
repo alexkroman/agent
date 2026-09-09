@@ -2,7 +2,7 @@
 // The API pane — this project's own HTTP API, written by the project rather
 // than about it.
 //
-// Almost all of it is `AgentApiDocs` (api-docs.tsx), which reads the agent's
+// Almost all of it is `AgentApiDocs` (components/api-docs.tsx), which reads the agent's
 // own public routes and is shared with the public page at
 // `/studio/api/<slug>`. What lives HERE is the half only the studio can say:
 // the project's secrets (whether the workflow API is closed by a bearer), the
@@ -17,15 +17,15 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api.ts";
-import { AgentApiDocs } from "./api-docs.tsx";
+import { AgentApiDocs } from "./components/api-docs.tsx";
+import { PhoneCard } from "./components/phone-card.tsx";
+import { Card } from "./components/settings-card.tsx";
+import { Snippet } from "./components/snippet.tsx";
 import { WORKFLOW_API_TOKEN_SECRET } from "./docs-content.ts";
 import { PaneShell } from "./pane-shell.tsx";
-import { PhoneCard } from "./phone-card.tsx";
 import { platformOrigin } from "./platform-origin.ts";
 import { apiDocsPath } from "./project-route.ts";
 import { queryKeys } from "./query-keys.ts";
-import { Card } from "./settings-card.tsx";
-import { Snippet } from "./snippet.tsx";
 
 type DocsPaneProps = {
   bearer: string;

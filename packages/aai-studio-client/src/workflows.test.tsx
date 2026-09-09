@@ -3,7 +3,7 @@
 // The Workflows pane — the page frame around the card that does the reading.
 //
 // The card's own behaviour (the brokered read, the preview fallback, Stop on a
-// live run) is covered by workflows-card.test.tsx. What is worth pinning here
+// live run) is covered by components/workflows-card.test.tsx. What is worth pinning here
 // is the thing the promotion out of Settings could silently undo: the pane
 // passes BOTH slugs through, so a project with a preview and no publish still
 // has something to show.

@@ -2,7 +2,7 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
-    // `studio-project-shape.test.ts` is a DRIFT GATE over files in another
+    // `studio/project-shape.test.ts` is a DRIFT GATE over files in another
     // package: it reads `aai-templates/scaffold/package.json` and
     // `scaffold/tsconfig.json` to hold `WORKSPACE_DEPENDENCIES` and
     // `workspaceTsconfig()` against the scaffold a laptop project is built
@@ -27,7 +27,7 @@
     // the `$TURBO_ROOT$` prefix. A task named here REPLACES the root's
     // definition rather than merging with it, so `env` and `outputs` are
     // restated verbatim — dropping either is silent.
-    // `build` (own, not just `^build`): `harness-externals.test.ts` asserts on
+    // `build` (own, not just `^build`): `harness/externals.test.ts` asserts on
     // `dist/harness.mjs` — that a `neverBundle` package is really external in the
     // ARTIFACT, which a config assertion cannot show. A test that skipped itself
     // when the harness was absent would be the silent-skip failure this repo

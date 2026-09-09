@@ -62,7 +62,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type AuthConfig, api } from "./api.ts";
 import { NO_PROVIDERS, readSignInMethods, type SignInMethods } from "./auth-methods.ts";
-import { loadFailureText } from "./gate-card.tsx";
+import { loadFailureText } from "./components/gate-card.tsx";
 
 export type { SignInMethods } from "./auth-methods.ts";
 

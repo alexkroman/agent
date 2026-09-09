@@ -13,7 +13,7 @@
  * shipped `tabletop-rpg-agent` client while `pnpm typecheck` stayed green. Those came
  * from the scaffold ALSO setting `noImplicitAny: false`, which disables
  * evolving-array inference — a setting since reversed (see
- * `studio-project-shape.ts`), and the gap it opened is the reason this gate
+ * `studio/project-shape.ts`), and the gap it opened is the reason this gate
  * exists rather than a reason it can now be retired: the two configs still
  * differ, and the next divergence will not announce itself either.
  *

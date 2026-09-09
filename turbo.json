@@ -470,10 +470,10 @@
         // template case skipping with a key exported right there in the shell.
         "ASSEMBLYAI_API_KEY",
         // Which gateway model the STUDIO coding agent's eval runs on
-        // (`aai-guest`'s `studio-agent.eval.test.ts`). It selects what the task
+        // (`aai-guest`'s `studio/agent.eval.test.ts`). It selects what the task
         // measures, so it belongs here rather than in `globalPassThroughEnv` —
         // and the default it overrides is a literal in
-        // `_studio-eval-harness.ts`, because `guest-package-boundary` denies the
+        // `studio/_eval-harness.ts`, because `guest-package-boundary` denies the
         // guest the host constant (`studioLlmModelId`) that owns the real one.
         "AAI_EVAL_STUDIO_MODEL",
         "AAI_EVAL_ORIGIN",

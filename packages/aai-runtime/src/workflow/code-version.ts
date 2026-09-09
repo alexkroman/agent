@@ -57,7 +57,7 @@
 /**
  * The bundle hash the platform bakes into a guest's exec env.
  *
- * The same key `harness-agent-mode.ts` verifies the downloaded bundle against,
+ * The same key `harness/agent-mode.ts` verifies the downloaded bundle against,
  * which is what makes it a code IDENTITY rather than a label: the guest refuses
  * to boot a bundle whose bytes do not hash to it, so a recorded version names
  * exactly one program.

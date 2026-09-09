@@ -8,16 +8,16 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AccountMenu } from "./account-menu.tsx";
 import { api, type ProjectKind, type StudioStatus } from "./api.ts";
 import { errorText } from "./api-error.ts";
 import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
-import { HomeHero, HomeSidebar } from "./home.tsx";
+import { AccountMenu } from "./components/account-menu.tsx";
+import { HomeHero, HomeSidebar } from "./components/home.tsx";
+import { type StreamHandlers, useEventStream } from "./hooks/use-event-stream.ts";
 import { useProjectRoute } from "./project-route.ts";
 import { ProjectView } from "./project-view.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { TopBar } from "./top-bar.tsx";
-import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 
 type AppProps = {
   bearer: string;

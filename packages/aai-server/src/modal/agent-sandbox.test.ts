@@ -17,7 +17,7 @@
  * The complementary halves are covered elsewhere and deliberately not
  * duplicated here: the guest's side of the boot contract (hash mismatch, env
  * scrub, manage surface, drain, idle exit) is `aai-guest/
- * harness-agent-mode.test.ts`; `raceGuestExit` in isolation is
+ * harness/agent-mode.test.ts`; `raceGuestExit` in isolation is
  * `guest/readiness.test.ts`; slot attach/detach is `sandbox.test.ts`.
  */
 
@@ -281,7 +281,7 @@ describe("spawnModalAgentServer", () => {
 
   it("forwards the bundle digest the guest verifies against", async () => {
     // A guest whose delivered bundle does not match this digest refuses to
-    // boot (harness-agent-mode.test.ts). That guard is worth nothing if the
+    // boot (harness/agent-mode.test.ts). That guard is worth nothing if the
     // host forwards the wrong digest, or none.
     const { sb } = await spawn();
     expect(execEnv(sb).AAI_BUNDLE_SHA256).toBe(SHA);

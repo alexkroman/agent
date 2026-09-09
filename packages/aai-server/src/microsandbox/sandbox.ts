@@ -17,7 +17,7 @@
  *   rather than V8's `--max-old-space-size` (a JS-heap bound only), and
  *   `SANDBOX_CPU_LIMIT` has an analog at last.
  * - **Production's toolchain.** Guests BUILD workspaces (`aai-guest/
- *   studio-build.ts` runs the CLI's own bundlers), and `subprocess` resolves
+ *   studio/build.ts` runs the CLI's own bundlers), and `subprocess` resolves
  *   that toolchain from aai-guest's own darwin/pnpm `node_modules` while
  *   production resolves `/opt/aai`, an `npm ci` tree on `node:26-slim`. A build
  *   failure caused by the toolchain tree is unreproducible locally under
@@ -102,7 +102,7 @@ export const LOCAL_GUEST_IMAGE_TAG = "aai-guest-harness:local";
  *
  * So the number has to cover the PEAK, and the peak is MEASURED: building the
  * `link-digest-workflow` template in a guest (typecheck, then both bundles, as
- * `studio-build.ts` runs them) peaks at **1219 MB**, and it is the WORKER
+ * `studio/build.ts` runs them) peaks at **1219 MB**, and it is the WORKER
  * bundle that gets there — 106 MB after the typecheck, ~1200 MB after
  * `buildWorker`. That corroborates the 1.29 GB wedge `aai-server/CLAUDE.md`
  * records, and it means 480 MiB was never survivable.
@@ -141,7 +141,7 @@ export const DEFAULT_GUEST_CPUS = 4;
  * the rayon pool underneath. Nothing in our bundler wrappers exposes a thread
  * count, so the env is the seam.
  *
- * `studio-build.ts` already serializes the two Rolldown passes for exactly this
+ * `studio/build.ts` already serializes the two Rolldown passes for exactly this
  * reason ("two concurrent Rolldown passes peak at roughly the SUM of their
  * native allocations"); this is the same argument one level down, inside a
  * single pass.

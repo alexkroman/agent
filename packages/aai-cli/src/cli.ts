@@ -222,7 +222,7 @@ const build = defineExec({
 
 // INTERNAL: the raw bundle-upload path. Not a user command — the studio's
 // Publish route runs it inside the project's sandbox (aai-guest/
-// studio-publish.ts), which is the only production deploy path. Users go
+// studio/publish.ts), which is the only production deploy path. Users go
 // through `aai publish`.
 const deploy = defineExec({
   meta: { name: "deploy", description: "(internal) used by studio Publish", hidden: true },

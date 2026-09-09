@@ -5,6 +5,25 @@ The Node entrypoint that runs the complete agent inside each Modal Sandbox
 `packages/aai-server/CLAUDE.md`; the studio coding agent that runs in studio
 mode is in `packages/aai-studio-server/CLAUDE.md`.
 
+## Layout
+
+Two directories, because this package is two things: `harness/` (24 files —
+the sandbox entry and its modes) and `studio/` (60 — the coding agent). The
+prefix became the path, so `studio-build.ts` is `studio/build.ts`.
+`src/harness.ts` stays at the root BESIDE `harness/`: it is tsdown's one entry
+(`entry: ["src/harness.ts"]`), and moving it would change the bundle's input
+path for no gain. `limits.ts`, `trial.ts` and `_test-utils.ts` stay too —
+`trial.ts` is the `run_code` executor and belongs to neither half.
+
+**Four `import.meta.dirname` bases needed deepening, and one is the trap worth
+remembering: a directory URL must keep its TRAILING SLASH.**
+`new URL("../studio-prompts/", import.meta.url)` became
+`"../../studio-prompts/"`; written without the slash, `new URL("agent.md", …)`
+REPLACES the last segment instead of appending to it, so the shipped prompts
+resolved to `packages/aai-guest/agent.md` and every eval that asked for one
+failed naming a path nobody wrote. A path-rewriting sweep loses that slash by
+construction, `path.relative` not preserving it.
+
 ## The harness: one binary, two modes
 
 The Node guest entry point (runs inside a Modal Sandbox) runs the COMPLETE
@@ -15,7 +34,7 @@ delivers):
   from files delivered at exec time and serves only the public session
   surfaces — `/websocket` for browsers and `/phone` for carrier media streams,
   both from the SDK's own `createRuntimeServer` — plus the token-gated
-  `/manage/status` + `/manage/drain` pair (`harness-agent-mode.ts`);
+  `/manage/status` + `/manage/drain` pair (`harness/agent-mode.ts`);
   **studio mode** serves
   `/ws` (bearer-token host control channel — JSON-RPC
   `workspace/deploy` (Publish's in-guest `aai deploy`), `status`,
@@ -33,18 +52,18 @@ delivers):
   socket (see
   `packages/aai-studio-server/CLAUDE.md`, "One studio sandbox per project,
   fleet-wide").
-  `harness.ts` (servers + dispatch), `harness-agent-mode.ts` (agent-server
+  `harness.ts` (servers + dispatch), `harness/agent-mode.ts` (agent-server
   boot, manage surface, idle/drain lifecycle), `trial.ts` (run_code
-  executor + one-shot tool trials), `harness-rpc.ts` (guest→host request
-  proxy), `studio-session-init.ts` (the HTTP install route + the guest's own
-  (scope, project) identity pin), `studio-http.ts` (shared CORS + bounded
+  executor + one-shot tool trials), `harness/rpc.ts` (guest→host request
+  proxy), `studio/session-init.ts` (the HTTP install route + the guest's own
+  (scope, project) identity pin), `studio/http.ts` (shared CORS + bounded
   body read for both `/studio/*` surfaces),
-  `studio-agent.ts`/`studio-chat.ts`/`studio-tools.ts`
+  `studio/agent.ts`/`studio/chat.ts`/`studio/tools.ts`
   (the in-guest coding agent — its nine WORKSPACE tools are the SDK's
   now, `@alexkroman1/aai/coding-tools`, and what is left here is the three
   seams the studio fills and `test_agent`; see "The coding agent is an
-  ordinary `agent()`" below), `studio-build.ts` (in-guest workspace
-  builds through the aai CLI bundlers), `studio-publish.ts` (Publish =
+  ordinary `agent()`" below), `studio/build.ts` (in-guest workspace
+  builds through the aai CLI bundlers), `studio/publish.ts` (Publish =
   the literal `aai deploy` CLI, run in-sandbox), `limits.ts` (constants —
   import-free except the workspace caps, re-exported from
   `@alexkroman1/aai/workspace-files` so the CLI's push, this sync and
@@ -59,8 +78,8 @@ delivers):
 
 **Error text comes from the SDK's `errorMessage`, never a local copy.** This
 package had three implementations of it at once: a local `errMsg` in
-`harness-rpc.ts` used at 33 sites, a hand-inlined ternary in
-`studio-session-init.ts`, and — in `harness-crash-guards.ts` — the real
+`harness/rpc.ts` used at 33 sites, a hand-inlined ternary in
+`studio/session-init.ts`, and — in `harness/crash-guards.ts` — the real
 `errorMessage` from `@alexkroman1/aai`, imported under an alias. The local
 one was strictly weaker: `errorMessage` also unwraps a non-`Error` object
 carrying a string `message`, which is exactly what a thrown value looks like
@@ -70,7 +89,7 @@ covered once in `sdk/utils.test.ts`.
 
 **The two files a Publish writes for the CLI come from the CLI'S OWN
 writers** (`@alexkroman1/aai-cli/project-config` — `writeConfigHome` and
-`updateProjectConfig`). `studio-publish.ts` used to `JSON.stringify` both the
+`updateProjectConfig`). `studio/publish.ts` used to `JSON.stringify` both the
 dir-local config home and `.aai/project.json`, so their shapes agreed with the
 schemas the CLI parses them back with only by coincidence — and the two
 properties that matter are not visible in the JSON at all: the config home
@@ -86,7 +105,7 @@ the CLI to read belongs in that subpath too, not in a `JSON.stringify` here.
 ## The coding agent is an ordinary `agent()`
 
 The studio builds voice agents with this SDK, and for a long time it was the
-one agent in the repo that did not use it. `studio-chat.ts` assembled a
+one agent in the repo that did not use it. `studio/chat.ts` assembled a
 `streamText` call by hand: it resolved the LLM descriptor itself, adapted the
 SDK's web builtins into AI SDK tools through a context whose `db` and
 `generate` both rejected, wrapped every tool in its own 120s deadline, carried
@@ -96,9 +115,9 @@ those is something `agent()` plus `createTextAgent`
 of a shipped rule, free to drift from it, in the process whose whole job is to
 demonstrate the SDK.
 
-`studio-agent.ts` is the definition now (`text: true`, the session's system
+`studio/agent.ts` is the definition now (`text: true`, the session's system
 prompt, the gateway model, `maxSteps`, `builtinTools`, and the four tool
-families), and `studio-chat.ts` is the HTTP surface plus one turn's delivery.
+families), and `studio/chat.ts` is the HTTP surface plus one turn's delivery.
 What that moved into the SDK, in the order it bites:
 
 - **Tools are SDK `ToolDef`s** (`tool()` from `@alexkroman1/aai`), so they run
@@ -131,9 +150,9 @@ to answer. (Same rule and same code as the voice pipeline; see
 `DEFAULT_MAX_STEPS` in `packages/aai/CLAUDE.md`.)
 
 Two things stayed here, because they are genuinely the studio's: the
-**wall-clock turn budget** (`studio-turn-budget.ts`, passed as an extra
+**wall-clock turn budget** (`studio/turn-budget.ts`, passed as an extra
 `stopWhen` — the agent's step cap still applies alongside it) and
-**compaction** (`studio-compaction.ts`, in the turn's `prepareStep`, which the
+**compaction** (`studio/compaction.ts`, in the turn's `prepareStep`, which the
 SDK composes its reserved final-answer step over rather than replacing).
 
 **Compaction is TWO TIERS, and the cheap one is the SDK's `pruneMessages`.** The
@@ -169,12 +188,12 @@ stayed.** `createCodingTools` (`@alexkroman1/aai/coding-tools`) is
 `read_file`/`write_file`/`edit_file`/`delete_file`/`list_files`/`glob`/`grep`/
 `bash`/`todo_write` over one directory; `studio-edit.ts` and `studio-grep.ts`
 moved with them (`coding-edit.ts`, `coding-grep.ts`), as did the capped
-child-process runner, which this package's `studio-spawn.ts` re-exports so npm,
+child-process runner, which this package's `studio/spawn.ts` re-exports so npm,
 Publish and the workspace test run keep one import path. Nothing about a file
 tool was ever studio-shaped. What IS studio-shaped is the three seams the
 factory takes, and each is a rule this package argues elsewhere in this guide:
-`validate` is the write-time syntax gate (`studio-syntax.ts`), `afterWrite` is
-the post-write type check (`studio-write-diagnostics.ts`), and `env` is
+`validate` is the write-time syntax gate (`studio/syntax.ts`), `afterWrite` is
+the post-write type check (`studio/write-diagnostics.ts`), and `env` is
 `workspaceChildEnv()` — the SDK's default is the process's own environment,
 which is right for a CLI on a laptop and wrong for a guest holding a
 control-channel bearer. `test_agent` stays here whole: it is the one tool that
@@ -195,14 +214,14 @@ adjudicate nothing, inside a 45s budget, and a `Tests: FAILED` on a workspace
 whose actual tests pass. Both halves were wrong and both are fixed: `testFiles`
 drops the tier by infix (a workspace holding ONLY an eval used to report `ran`),
 and the discovered files are passed as positional filters, without which the
-discovery does nothing. Covered in `studio-test.scenario.test.ts` by a fixture
+discovery does nothing. Covered in `studio/test.scenario.test.ts` by a fixture
 eval that FAILS if it is ever collected.
 
 **The DESCRIPTIONS split the same way.** `CODING_TOOL_DESCRIPTIONS` is the
 SDK's, `STUDIO_CODING_TOOL_DESCRIPTIONS` overrides the three whose prose is
 about THIS host (a write is type-checked, dependencies have their own tools, a
 workspace syncs back), and `STUDIO_TOOL_DESCRIPTIONS` describes the tools only
-the studio has. `studio-tool-descriptions.test.ts` asserts the three maps
+the studio has. `studio/tool-descriptions.test.ts` asserts the three maps
 together cover the agent's real tool set exactly, and that an override names a
 tool the SDK actually describes — an override of nothing is prose the model
 never reads.
@@ -218,14 +237,14 @@ doc promises "worst case two checks, never one per file". Pass the CHECKER down,
 never the `typecheck` function.
 
 **The scripts a check can speak for are one set**, `isScriptFile` in
-`studio-syntax.ts`. It was written out three times — the syntax gate, the
+`studio/syntax.ts`. It was written out three times — the syntax gate, the
 post-write diagnostics, the post-copy check — two of them commented as mirroring
 one of the others, which is the shape a set takes just before it stops
 mirroring.
 
 **A "toolchain unavailable" verdict is never remembered.** `loadTransformer`
 memoizes the resolve and CLEARS the memo on rejection, exactly as `loadToolchain`
-does in `studio-build.ts` — and for a sharper reason than "the image might have
+does in `studio/build.ts` — and for a sharper reason than "the image might have
 no toolchain", which is permanent anyway: `createRequire` is anchored at the
 WORKSPACE, which a session re-install deletes and rebuilds, so a resolve racing
 one can fail transiently. Caching that `null` disabled the write-time syntax gate
@@ -235,7 +254,7 @@ by a test: vitest patches `createRequire`, so `require.resolve("vite")` succeeds
 from any directory and the failure cannot be provoked in that tier.
 
 **Every child that runs workspace-authored code gets a scrubbed env.**
-`workspaceChildEnv()` (`studio-spawn.ts`) is a 24-name ALLOW-list, and `bash`,
+`workspaceChildEnv()` (`studio/spawn.ts`) is a 24-name ALLOW-list, and `bash`,
 `runNpm` and the workspace TEST RUN all take it; the in-guest deploy child takes
 `cliChildEnv()`, which is stricter still — `PATH` plus the three names
 `os.tmpdir()` reads, that last part being what keeps the CLI bundler's ~8 MB
@@ -259,7 +278,7 @@ lives in this package rather than in `aai-evals`.
 
 ## One claim on the workspace at a time — turns AND re-installs
 
-`createTurnGate` (`studio-turn-stream.ts`) holds a single process-wide claim,
+`createTurnGate` (`studio/turn-stream.ts`) holds a single process-wide claim,
 taken through `enterTurn()`. TWO things take it, and the second is the one that
 was missing: a chat turn, and `initStudioSession`.
 
@@ -298,7 +317,7 @@ closes both directions, which is why `TurnGate` is now `enter()` alone.
 
 ## A workspace's own package.json is REIFIED, not just read
 
-`studio-workspace-deps.ts` runs `npm install --omit=dev` in the workspace when
+`studio/workspace-deps.ts` runs `npm install --omit=dev` in the workspace when
 anything its `dependencies` declare is missing, and it runs wherever a workspace
 is prepared to be built: `initStudioSession`, `deployWorkspaceDir` (Publish),
 and `buildWorkspaceDir` (`test_agent`).
@@ -320,7 +339,7 @@ shape that failure could take.
 
 **The whole mechanism is one `npm install`, and that is only viable because the
 workspace manifest declares nothing but the workspace's own packages.** The
-platform's six (`WORKSPACE_DEPENDENCIES` in `studio-project-shape.ts`) resolve
+platform's six (`WORKSPACE_DEPENDENCIES` in `studio/project-shape.ts`) resolve
 from the toolchain `node_modules` above every workspace, and leaving them
 undeclared is what keeps this cheap: npm reifies whatever manifest it reads, so
 adding one small package costs **451ms and 28 KB** without them against **25s
@@ -368,7 +387,7 @@ What remains, and why:
   the reader to skip the line.
 
 **A missing dependency's first symptom is TS2307, and it has a hint**
-(`studio-diagnostics.ts`). `Cannot find module 'date-fns'` fires at the
+(`studio/diagnostics.ts`). `Cannot find module 'date-fns'` fires at the
 typecheck gate before the bundler says anything, and the hint names
 `add_dependency` — because installing is only half of what that tool does, and
 the half that matters here is RECORDING the package in package.json, which is
@@ -423,7 +442,7 @@ have written that file itself.
 
 ## Why the buffer lives in the guest
 
-`harness-logs.ts` tees both process streams into a bounded, cursor-indexed ring
+`harness/logs.ts` tees both process streams into a bounded, cursor-indexed ring
 (`createLogBuffer`, `@alexkroman1/aai-runtime`) and `GET /manage/logs` serves
 it — the source behind the studio's Logs pane and `aai logs`.
 
@@ -445,7 +464,7 @@ the server binds, so its stderr is only in the host log; the studio reports that
 case through `previewError` instead.
 
 **The coding agent reads ANOTHER guest's ring, and never its own.** `read_logs`
-(`studio-logs-tool.ts`) is the studio agent's window onto the agent it is
+(`studio/logs-tool.ts`) is the studio agent's window onto the agent it is
 BUILDING — a tool throwing on a live call, a missing provider key, the
 `console.error` on the branch nobody exercised, none of which `test_agent` can
 see, because it loads the bundle in this sandbox. It is a host RPC
@@ -603,7 +622,7 @@ is built on the first session — a `test_agent` load carries an empty env).
 The runtime itself comes from the BUNDLE (see "User-shipped runtime"
 below), so dev and prod run the identical SDK version: the one in the
 user's lockfile. In agent mode the bundle arrives at exec time — a file or
-a signed URL, hash-verified either way (`harness-bundle-source.ts`); the
+a signed URL, hash-verified either way (`harness/bundle-source.ts`); the
 studio's test_agent loads its build in-guest through the same loader.
 There is **no deploy-time inspection mode**: the platform stores no agent
 config and never asks a bundle to describe itself (see "The platform stores
@@ -1127,10 +1146,10 @@ and stays lazy. The fix is the repo's one pnpm patch
 (`patches/@workflow__world-local@4.2.4.patch`, pinned in `pnpm-workspace.yaml`),
 returning the real version from a constant with no disk read. Two things keep it
 honest: pnpm fails the install outright if the patch stops applying, and
-`harness-externals.test.ts` asserts the sentinel is absent from the built
+`harness/externals.test.ts` asserts the sentinel is absent from the built
 artifact.
 
-`harness-externals.test.ts` pins both halves, and `aai-guest#test` declares its
+`harness/externals.test.ts` pins both halves, and `aai-guest#test` declares its
 own `build` so it asserts on the real artifact — a suite that skipped itself
 without one would be the silent skip that let this ship. Verified by A/B:
 removing the `neverBundle` entry fails the import assertion. Note the
@@ -1539,7 +1558,7 @@ exists because the thing it replaces had gone wrong at least once:
 - **`materialize(dir, files)`** — `withBuildDir`'s middle argument, inlined five
   times in one file and defined a sixth in another.
 
-**A turn's settle outlives its response, so `studio-chat.scenario.test.ts`
+**A turn's settle outlives its response, so `studio/chat.scenario.test.ts`
 drains before unhooking the host channel.** `onFinish` fires, then
 `snapshotWorkspace` walks the tree, then two host RPCs go out — all after
 `serve().close()` has returned.
@@ -1569,9 +1588,9 @@ examples, and what they taught is worth copying:
   floor.** Moving both files whole took the package from 83.88/75.58/84.49/85.79
   to 81.26/72.97/82.27/83.03 — still over every floor, but with 0.03 points of
   line headroom, which is a landmine rather than a pass. Splitting each file on
-  what it TOUCHES put it back: `studio-build.test.ts` keeps `scrubDir`,
+  what it TOUCHES put it back: `studio/build.test.ts` keeps `scrubDir`,
   `formatBuildFailure` and `toolchainModules` (a filesystem READ is unit-legal),
-  `studio-test.test.ts` keeps `formatTestRun`, and only the build-dir lifecycle,
+  `studio/test.test.ts` keeps `formatTestRun`, and only the build-dir lifecycle,
   the typecheck gate and the real vitest spawns are scenario. That is the tier
   rule applied properly, and it lands at 81.73/74.41/82.59/83.48. Floors do not
   move.
@@ -1590,8 +1609,8 @@ examples, and what they taught is worth copying:
   turn **82.81/77.29/83.00/84.19** — every floor clear, against a pre-split
   83.24/77.52/84.12/84.53. Floors do not move.
 - **Incidental coverage is not coverage, and the per-file gate is what says
-  so.** `studio-turn-settle.ts` had no spec at all — every line of it was
-  reached by `studio-chat.test.ts`'s real turns — so the move dropped it to
+  so.** `studio/turn-settle.ts` had no spec at all — every line of it was
+  reached by `studio/chat.test.ts`'s real turns — so the move dropped it to
   35.2% and `check:coverage-per-file` failed on it alone, which the package
   average could never have shown. It has its own unit spec now, with
   `snapshotWorkspace` MOCKED: what that module decides is which RPCs go out
@@ -1599,7 +1618,7 @@ examples, and what they taught is worth copying:
   off), how a walk's warnings are reported, that a burst of checkpoints
   coalesces to one trailing run, and that a failed checkpoint is logged rather
   than thrown into an otherwise-fine reply. Walking a real tree is
-  `studio-workspace-fs.ts`'s subject.
+  `studio/workspace-fs.ts`'s subject.
 - **Two Node details are worth knowing before writing another one of these.** A
   detached `ServerResponse` needs `assignSocket` to be writable at all, and it
   never emits `finish` — the bytes arrive, the event does not — so anchor on the

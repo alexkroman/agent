@@ -181,7 +181,7 @@ export const SHAPE_RULES = [
     // The null half is still what makes this a duck-type rather than a narrow.
     // `typeof addr === "object" && addr` (an `AddressInfo | string | null` from
     // `server.address()`) and `typeof root === "object"` (a declared union in
-    // `studio-build.ts`) are ordinary union narrowing over a type the compiler
+    // `studio/build.ts`) are ordinary union narrowing over a type the compiler
     // already knows, and none of the four alternatives matches either — which is
     // the whole reason this rule can run without an allowlist of them.
     re:

@@ -29,7 +29,7 @@
  *
  * **The prompt is already data, not code.** The guest never imports it in
  * production either: `studio-session-ensure.ts` puts `studioSystemPrompt(kind)`
- * in the session-init payload and `studio-session.ts` appends
+ * in the session-init payload and `studio/session.ts` appends
  * `toolchainPromptSection()` to whatever arrives over the wire. The guest is the
  * thing that RUNS that string. Handing the same string to the eval is the
  * runtime arrangement, not a new privilege.

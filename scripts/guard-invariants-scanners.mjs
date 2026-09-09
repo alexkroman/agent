@@ -100,7 +100,7 @@ export function scanUnpinnedActions() {
  * source, so the table cannot be derived from the thing it mirrors.
  *
  * It had already drifted. `GET /studio/tools` is a real guest route
- * (`studio-chat.ts`) that was in neither table, so the `satisfies` could not
+ * (`studio/chat.ts`) that was in neither table, so the `satisfies` could not
  * catch it — that compile error only fires for a KEY with no exposure entry,
  * never for a route nobody wrote down. The studio client reached it by doing
  * URL surgery on another route's URL (`sessionUrl.replace(/\/chat$/, "/tools")`),

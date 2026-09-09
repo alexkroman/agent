@@ -10,12 +10,12 @@
 // up appears in neither — so it is worth a tab of its own, beside the API pane
 // that documents how to start one.
 //
-// The card itself (`workflows-card.tsx`) is unchanged and still carries the
+// The card itself (`components/workflows-card.tsx`) is unchanged and still carries the
 // reasoning about reading the agent's own brokered API, the preview fallback,
 // and why the refresh is manual.
 
+import { WorkflowsCard } from "./components/workflows-card.tsx";
 import { PaneShell } from "./pane-shell.tsx";
-import { WorkflowsCard } from "./workflows-card.tsx";
 
 type WorkflowsPaneProps = {
   /** The project's published slug, if it has one. */

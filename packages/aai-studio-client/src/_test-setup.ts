@@ -23,7 +23,7 @@
  * its own automatic cleanup only when the runner exposes globals, and this
  * package deliberately does not set `globals: true` — so before this, sixteen
  * files hand-wrote `afterEach(cleanup)` and the seventeenth
- * (`use-event-stream.test.ts`) leaned on a per-test `unmount()`, which an
+ * (`hooks/use-event-stream.test.ts`) leaned on a per-test `unmount()`, which an
  * assertion failing above that line skips: the hook stays mounted holding a
  * pending fake timer into the next test. Registering it here is the only
  * version a new suite cannot forget. It runs LAST (vitest stacks `afterEach`

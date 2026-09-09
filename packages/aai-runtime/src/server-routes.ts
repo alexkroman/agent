@@ -146,7 +146,7 @@ export const SERVER_ROUTES = {
  *
  * Separate from {@link SERVER_ROUTES} because the composition really is
  * separate: `aai dev` (`_dev-server.ts`) and the guest harness
- * (`harness-manage.ts`) each install it, and a self-hosted `createRuntimeServer` with
+ * (`harness/manage.ts`) each install it, and a self-hosted `createRuntimeServer` with
  * no hook answers none of these.
  *
  * @internal

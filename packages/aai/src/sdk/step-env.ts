@@ -10,7 +10,7 @@
  * fixture with a comment explaining why. `AgentDef.requiredEnv`'s own doc said a
  * step "reads keys like any other Node code", which was a claim about
  * `process.env` and false in the two places it mattered: the guest reads the
- * agent env into memory and DELETES the file (`harness-agent-mode.ts`), and
+ * agent env into memory and DELETES the file (`harness/agent-mode.ts`), and
  * `aai dev` resolves `.env` without exporting it.
  *
  * ## Why a global slot rather than a module-level one

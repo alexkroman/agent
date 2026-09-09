@@ -55,7 +55,7 @@ export class WorkflowRequestError extends Error {
    * A guest runs TWO copies of this SDK, by design: the harness bundles its own
    * (`aai-guest/harness.mjs`), and the agent's runtime comes from the BUNDLE —
    * "so a deployed agent runs exactly the SDK version it was built and tested
-   * against; the harness embeds no runtime" (`harness-bundle.ts`). Two copies of
+   * against; the harness embeds no runtime" (`harness/bundle.ts`). Two copies of
    * a class are two identities, so an `instanceof` spanning them is false for a
    * value that is, in every sense the code cares about, the thing being tested
    * for.

@@ -107,7 +107,7 @@ import {
   type QueueEvent,
   type QueueIo,
   runQueueEvent,
-} from "./use-message-queue.ts";
+} from "./hooks/use-message-queue.ts";
 
 /**
  * The world the queue sits in: its own state, the composer, the transcript,

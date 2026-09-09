@@ -10,8 +10,7 @@ import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionWebSocket } from "@alexkroman1/aai-runtime";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { type FakeHostChannel, installFakeHostChannel } from "./_test-utils.ts";
-import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
-import { bearerToken } from "./harness-auth.ts";
+import { bearerToken } from "./harness/auth.ts";
 import {
   emptyHarnessState,
   ensureRuntime,
@@ -19,9 +18,10 @@ import {
   harnessBundleDir,
   lazyRuntime,
   loadBundle,
-} from "./harness-bundle.ts";
-import { hostRequest, rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
-import type { AgentDef, JsonRpcMessage } from "./harness-types.ts";
+} from "./harness/bundle.ts";
+import { hostRequest, rejectAllPendingHostRequests, setHostSend } from "./harness/rpc.ts";
+import type { AgentDef, JsonRpcMessage } from "./harness/types.ts";
+import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
 import { executeTool, runCode } from "./trial.ts";
 
 let host: FakeHostChannel;
@@ -318,7 +318,7 @@ describe("loadBundle", () => {
 
     const loaded = await loadBundle(state, { code, env: {} });
 
-    // The directory `harness-bundle.ts` itself lives in — `dist/` beside
+    // The directory `harness/bundle.ts` itself lives in — `dist/` beside
     // `harness.mjs` once bundled, this package's root when running from source.
     const { dir } = (loaded as { config: { dir: string } }).config;
     expect(dir).toBe(harnessBundleDir());
