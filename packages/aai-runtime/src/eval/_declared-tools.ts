@@ -82,7 +82,16 @@ export function checkStubReplyTools(
   script: StubScript | undefined,
 ): void {
   if (script === undefined) return;
-  const declared = Object.keys(agent.tools ?? {});
+  // An MCP server's tools are discovered from the LIVE server and attached by
+  // `withMcpTools` at host start; a lowered `virtual:aai/agent` carries none of
+  // them. So an agent that declares a server is one this check cannot reason
+  // about, and staying quiet is the only honest answer.
+  if (Object.keys(agent.mcpServers ?? {}).length > 0) return;
+  // The model's tool table is `tools` PLUS `builtinTools` — the union
+  // `mergeBuiltinSurface` serves. Reading only `tools` made every builtin a
+  // false positive: three shipped templates script `run_code`/`visit_webpage`
+  // against a `builtinTools` entry, and the guard called each one undeclared.
+  const declared = [...Object.keys(agent.tools ?? {}), ...(agent.builtinTools ?? [])];
   const missing = toolsNamedBy(script).find((name) => !declared.includes(name));
   if (missing === undefined) return;
   throw new Error(
@@ -95,7 +104,7 @@ export function checkStubReplyTools(
       // non-empty one that misses a name is a rename or a typo, and the hint
       // would be a non-sequitur. `toolOf` splits its own message the same way.
       (declared.length > 0
-        ? `Fix the name in stubReply, or add tools/${missing}.ts.`
+        ? `Fix the name in stubReply, add tools/${missing}.ts, or name it in builtinTools.`
         : AUTHORED_DEF_HINT),
   );
 }

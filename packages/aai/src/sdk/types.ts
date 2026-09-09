@@ -313,13 +313,10 @@ export interface AgentDef extends PipelineVoiceTuning {
    * ```
    *
    * @remarks
-   * It took a `(state: S) => unknown` over the whole state bag until the bag was
-   * removed. A projection now names its own slot, which lets the runtime render
-   * a session that has run no tool yet (the projection carries the slot's
-   * default) and so let `AgentDef.state` be deleted rather than remembered.
-   * Without it, agents reach for: a state snapshot returned from every tool, a
-   * result type for it, mirrored into `useState` via `useToolResult`. Measured
-   * across generated agents, 58% built some version of that by hand.
+   * A projection names its own slot, so the runtime can render a session that
+   * has run no tool yet — which is what let `AgentDef.state` be deleted rather
+   * than remembered. Without it, agents hand-roll a snapshot returned from every
+   * tool and mirrored into `useState`; 58% of generated agents built one.
    */
   syncState?: StateProjection | readonly StateProjection[];
   /**

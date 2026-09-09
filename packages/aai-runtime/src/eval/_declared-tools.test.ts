@@ -90,6 +90,50 @@ describe("checkStubReplyTools", () => {
     expect(() => checkStubReplyTools(authored, "ok", "just a line")).not.toThrow();
     expect(() => checkStubReplyTools(authored, "ok", undefined)).not.toThrow();
   });
+
+  /**
+   * The false positive this guard shipped with. A builtin is servable — the
+   * model's table is `tools` PLUS `builtinTools`, the union
+   * `mergeBuiltinSurface` assembles — and reading only `tools` called every one
+   * of them undeclared. Three shipped templates script exactly this shape, and
+   * all three went red: `code-interpreter-agent` and `entertainment-picks-agent`
+   * on `run_code`, `web-research-agent` on `visit_webpage`.
+   */
+  test("a builtin the agent declares is servable, so scripting one passes", () => {
+    const coder = agent({ name: "Coda", builtinTools: ["run_code"] });
+    expect(() =>
+      checkStubReplyTools(coder, "works it out in code", [
+        { tool: "run_code", args: { code: "1 + 1" } },
+        "That's two.",
+      ]),
+    ).not.toThrow();
+
+    // Both sources at once, and a name in neither still throws.
+    const both = withTools(agent({ name: "Desk", builtinTools: ["run_code"] }), {
+      look_up_order: lookUpOrder,
+    });
+    expect(() => checkStubReplyTools(both, "ok", [{ tool: "look_up_order" }])).not.toThrow();
+    expect(() => checkStubReplyTools(both, "ok", [{ tool: "run_code" }])).not.toThrow();
+    expect(() => checkStubReplyTools(both, "ok", [{ tool: "nope" }])).toThrow(
+      /does not declare.*run_code/s,
+    );
+  });
+
+  /**
+   * An MCP server's tools are discovered from the live server by
+   * `withMcpTools` at host start, so a lowered def carries none of their names
+   * and this check has nothing to compare against. Staying quiet is the only
+   * honest answer — the alternative refuses a case that would have passed.
+   */
+  test("an agent declaring an MCP server is not second-guessed", () => {
+    const withMcp = agent({
+      name: "Desk",
+      mcpServers: { docs: { url: "https://mcp.example.com/sse" } },
+    });
+    expect(() =>
+      checkStubReplyTools(withMcp, "reads the docs", [{ tool: "docs_search" }]),
+    ).not.toThrow();
+  });
 });
 
 describe("announceToollessAgent", () => {
