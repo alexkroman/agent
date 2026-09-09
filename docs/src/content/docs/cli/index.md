@@ -20,8 +20,8 @@ are `npm run <name>`. Its `npm test` is `aai test`, which runs the whole suite;
 | `aai templates` | List the available project templates. |
 | `aai dev` | Start a local development server and print a URL to talk to. `--port` sets the port; it rebuilds on save unless you pass `--watch=false` (or set `AAI_DEV_WATCH=0`). |
 | `aai test` | Run every non-eval spec in the project. `--only` narrows it to `agent.test.ts`. |
-| `aai eval` | Run the behaviour evals against a live model. |
-| `aai build` | Bundle the project without deploying it. `--target node\|vercel\|deno\|modal`, `--skip-tests`, `--skip-typecheck`. |
+| `aai eval` | Run the behaviour evals. Each suite runs against a live model when a provider key resolves, and against the scripted model when none does — see [Evals](/agent/build/evals/). |
+| `aai build` | Bundle the project without deploying it. `--target node\|vercel\|deno\|modal`, `--skip-tests`, `--skip-typecheck` (`--help` spells the last two `--skipTests`/`--skipTypecheck`; both forms work). |
 | `aai start` | Serve the built agent. `--port`, `--host`. |
 
 ## Shipping
@@ -40,7 +40,7 @@ are `npm run <name>`. Its `npm test` is `aai test`, which runs the whole suite;
 
 | Command | What it does |
 | --- | --- |
-| `aai secret put NAME` | Set a secret. The value is read from stdin. |
+| `aai secret put NAME` | Set a secret. The value is read from stdin, or prompted for, masked, when stdin is a terminal. |
 | `aai secret list` | List the secret names. |
 | `aai secret delete NAME` | Delete a secret. |
 

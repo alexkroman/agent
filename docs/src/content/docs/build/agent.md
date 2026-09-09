@@ -41,16 +41,11 @@ need any of them to build something good.
 
 ### About `voice` and `llm`
 
-Both autocomplete the ids this SDK release knows about. Neither is checked by
-the compiler: each catalog belongs to the service, so an id added after your
-release still has to work. See
-[Voices and models](/agent/more/voices-and-models/).
-
-:::caution[A wrong id fails when the session opens, not when you build]
-A wrong `voice` leaves an agent that never speaks. A wrong `llm` is a gateway
-error on the first turn. `aai build` and `aai dev` warn about a voice they do
-not recognise, which catches most of it before you deploy.
-:::
+Both autocomplete the ids this SDK release knows about, and neither is checked
+by the compiler — so a wrong id fails when the session opens rather than when
+you build. See
+[Voices and models](/agent/more/voices-and-models/) for what each one accepts
+and how a wrong one shows up.
 
 ## The system prompt is a file
 
@@ -98,7 +93,7 @@ import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 console.log(DEFAULT_SYSTEM_PROMPT); // what your rules are added to
 ```
 
-When part of your prompt is computed — a menu, a catalogue — build that string
+When part of your prompt is computed — a menu, a catalog — build that string
 and pass it as `systemPrompt`. It is still only your own rules. Today's date is
 already in every prompt, so that is not one of the reasons to compute one.
 

@@ -53,10 +53,18 @@ The runnable version is
 [`examples/self-hosted-server`](https://github.com/alexkroman/agent/tree/main/examples/self-hosted-server)
 — under thirty lines of code.
 
-## In between
+## Keeping the project's boot but owning the socket
 
 `createProjectServer` from `@alexkroman1/aai-cli/start` sits between the two. It
 builds the server and binds nothing, so you decide how it is served.
+
+Reach for it rather than `createAgentServer()` when what you want to own is the
+listening, not the wiring: it loads the artifact `aai build` left, resolves
+`.env`, picks up your built `client.tsx`, and creates the Postgres tables — the
+whole of `npm start` except the last line. That is the shape a serverless host
+needs, since it owns the socket and hands you a request; `aai build --target
+vercel` emits an entry that does exactly this. Use `createAgentServer()` instead
+when you want to compose the agent in code, as above.
 
 ## Durability is yours to provision
 
@@ -96,3 +104,8 @@ someone else's server.
 Everything else — tools, state, workflows, telephony, your own UI — runs the
 same code, against infrastructure you supply. The section above is the whole
 list of what that means in practice.
+
+## Next
+
+- [CLI reference](/agent/cli/) — `aai build`, and the flags that feed this
+- [Deploy anywhere](/agent/deploy/anywhere/) — when a generated target is enough

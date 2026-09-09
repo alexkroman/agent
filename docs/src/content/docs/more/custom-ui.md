@@ -11,15 +11,20 @@ Add the file and you get the same shell with your own panel:
 
 ```tsx
 // client.tsx
+import { sessionSlot } from "@alexkroman1/aai";
 import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 
-// Module scope, not inline in the render body — it has to be a stable
-// reference across renders.
-const EMPTY = { count: 0 };
+// In your project this is one line — `import { cartSlot } from "./shared.ts"`.
+// The slot is declared once, beside the agent, and both ends read the same
+// object.
+type Cart = { items: { sku: string; qty: number }[] };
+const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
+  view: (cart) => ({ count: cart.items.length }),
+});
 
 function CartPanel() {
-  const cart = useAgentState(EMPTY);
+  const cart = useAgentState(cartSlot.projected);
   return <p>{cart.count} items</p>;
 }
 
@@ -32,9 +37,12 @@ mountClient({ sidebar: CartPanel });
 slot first, or there is nothing to receive — see
 [Remembering things](/agent/build/state/).
 
-:::tip[Pass `slot.projected` instead of a fallback]
-When the slot declares a `view`, `cartSlot.projected` is the same object the
-agent pushes with. There is no empty frame to write and no type to restate.
+:::note[No slot to hand?]
+A page that cannot import the slot — a client kept apart from the agent — passes
+a fallback object instead: `useAgentState(EMPTY)`, declared at module scope so
+the reference is stable across renders. Reach for the slot whenever you have
+it: `cartSlot.projected` is the same object the agent pushes with, so there is
+no empty frame to write and no type to restate.
 :::
 
 ## The hooks

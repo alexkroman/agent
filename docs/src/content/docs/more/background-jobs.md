@@ -63,8 +63,9 @@ counted per name. Two rules follow from that.
 
 ### Use ONE name for a loop or a fan-out
 
-The sixty calls in the example above are sixty distinct records under a single
-literal. That is exactly what the occurrence counter is for.
+A fan-out of any size stays one literal: sixty segments would be sixty distinct
+records under `transcribeSegment`. That is exactly what the occurrence counter
+is for.
 
 So do not build a name per item. `` ctx.step(`segment-${seg.index}`, …) ``
 looks like the careful version and is the bug.
@@ -76,13 +77,33 @@ Measured on a one-line body: 7 of 10 runs ran the side effect twice, all 10
 reporting `completed`. `aai build` and `aai publish` scan for this and warn.
 :::
 
-Fan-out is safe under one name because the order the calls are **issued** in
-depends only on the list. `mapConcurrent` hands the next item to whichever slot
-is free, and nothing in a journal key depends on which slot that was.
+**Your fan-out callback must call `ctx.step` as its first act.**
 
-That asks one thing of your callback: issue its step immediately. Awaiting
-something first, or issuing two steps in a row, makes issue order depend on
-completion order.
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { mapConcurrent } from "@alexkroman1/aai/step";
+
+declare const ctx: WorkflowContext;
+declare const segments: { index: number }[];
+declare function fetchAudio(segment: { index: number }): Promise<string>;
+declare function transcribe(audio: string): Promise<{ text: string }>;
+
+// ✅ The step is issued straight away, so the order is the list's.
+await mapConcurrent(segments, 4, (seg) =>
+  ctx.step("transcribeSegment", async () => transcribe(await fetchAudio(seg))),
+);
+
+// ❌ The await comes first, so the order is whichever fetch happened to land.
+await mapConcurrent(segments, 4, async (seg) => {
+  const audio = await fetchAudio(seg);
+  return ctx.step("transcribeSegment", () => transcribe(audio));
+});
+```
+
+Journal keys are handed out in the order steps are **issued**. Issue
+immediately and that order is the list's — the same on every replay, whichever
+slot `mapConcurrent` happened to run the item in. Await first and it becomes
+the order things finished in, which is a different order each run.
 
 ### Use a DIFFERENT name for each call site
 

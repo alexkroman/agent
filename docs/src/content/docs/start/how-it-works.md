@@ -14,11 +14,16 @@ my-agent/
     get_weather.ts
   workflows/          # long-running jobs (optional); registered by name
   client.tsx          # your own browser UI (optional, React)
-  shared.ts           # types and state shared by both of those
+  shared.ts           # declarations imported by more than one of the above
   agent.test.ts       # ordinary vitest — `aai test`
   agent.eval.test.ts  # does it BEHAVE — `aai eval`
   .env                # local secrets; `aai publish` syncs them
 ```
+
+`aai init` writes five of these — `agent.ts`, `system-prompt.md`, one tool, and
+the two test files — plus the usual `package.json`, `tsconfig.json`, and `.env`.
+`workflows/`, `client.tsx`, and `shared.ts` are files you add when you need
+them, and each starts working the moment it exists.
 
 That is the whole idea: **a file in `tools/` is a tool because it is in
 `tools/`.** There is no `tools` array to keep in sync and no import list to
@@ -58,9 +63,13 @@ already handles these, so your first agent behaves sensibly with no tuning:
   what the caller actually heard.
 - A provider blip is spoken aloud rather than becoming a dead line.
 
-You need none of them to start. Four are fields on `agent()` for when you
-disagree with the default, listed in the [SDK reference](/agent/reference/).
-The history truncation is not tunable.
+You need none of them to start. Four of the five are fields on `agent()` for
+when you disagree with the default — `minBargeInWords` and
+`interruptionMinDurationMs` for what counts as an interruption,
+`resumeFalseInterruption` for picking the reply back up,
+`deadAirCoverMs` for the wait, and `errorPhrase` for the blip. Each one is in
+the [SDK reference](/agent/reference/). The history truncation is the one that
+is not tunable.
 
 ## Agents and background jobs
 

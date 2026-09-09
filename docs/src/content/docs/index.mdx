@@ -58,9 +58,18 @@ import { z } from "zod";
 export default tool({
   description: "Get current weather for a city",
   inputSchema: z.object({ city: z.string().describe("City name") }),
-  execute: async ({ city }) => {
-    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
-    return await res.json();
+  execute: async ({ city }, ctx) => {
+    const where = encodeURIComponent(city);
+    // `ctx.signal` is the call's deadline — pass it to anything slow.
+    const res = await fetch(`https://wttr.in/${where}?format=j1`, {
+      signal: ctx.signal,
+    });
+    const report = (await res.json()) as {
+      current_condition?: { temp_F?: string; weatherDesc?: { value?: string }[] }[];
+    };
+    const now = report.current_condition?.[0];
+    // Return what the agent will SAY, not the whole response.
+    return { city, tempF: now?.temp_F, conditions: now?.weatherDesc?.[0]?.value };
   },
 });
 ```

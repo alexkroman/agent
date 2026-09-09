@@ -119,20 +119,30 @@ export default tool({
 });
 ```
 
-Two things you get without configuring them: "the second one" always wins, and
-a tie between two candidates asks rather than guessing.
+Two things you get without configuring them: "the second one" picks by
+position, ahead of any word matching, and a tie between two candidates asks
+rather than guessing.
 
 ### The three ways to match
 
 Declare whichever apply. They can be combined.
 
 **`code` — an identifier the caller reads back.** An order number, a booking
-reference, an id. Punctuation and case are stripped before comparing, so "order
-W zero seven one" finds `W071`.
+reference, an id. Spacing, punctuation and case are stripped from both sides,
+so "order w-071", "order W 071" and "W 0 7 1" all find `W071`. It is tried
+before the position and before the words: a caller who reads an id out has
+named exactly one thing.
+
+:::caution[Digits spoken as words are not converted]
+"order W zero seven one" does not find `W071` — nothing turns `zero` into `0`.
+A code shorter than four characters after that stripping is ignored too,
+because containment in a whole utterance would match by accident.
+:::
 
 **`match` — the candidate's own words.** "the Northwind invoice", "Priya".
-Every word the caller also said scores one point, so a candidate matching more
-words wins. A word two candidates share is a tie, and a tie asks.
+Every word of three or more characters the caller also said scores one point,
+so a candidate matching more words wins. Shorter words never score, so "Ng"
+does not find `Ida Ng`. A word two candidates share is a tie, and a tie asks.
 
 **`score` — your own scorer.** For domain knowledge the other two can't
 express. Its result is added to `match`'s score, so it can break a tie the

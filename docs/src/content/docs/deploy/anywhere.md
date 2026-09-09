@@ -18,8 +18,8 @@ aai build --target node     # the default
 | --- | --- | --- |
 | `node` | nothing extra — just the worker | `aai start`, in any container |
 | `vercel` | a prebuilt deployment in `.vercel/output/` | `vercel deploy --prebuilt` |
-| `deno` | a self-contained `.aai/deno/` | `deno deploy --prod` |
-| `modal` | a self-contained `.aai/modal/` with an `app.py` | `modal deploy` |
+| `deno` | a self-contained `.aai/deno/` | `cd .aai/deno && deno deploy --prod` (plus `--org`/`--app`) |
+| `modal` | a self-contained `.aai/modal/` with an `app.py` | `modal deploy .aai/modal/app.py` |
 
 ## The flag is usually optional
 
@@ -73,9 +73,14 @@ modal serve .aai/modal/app.py          # modal
 ## Declaring your keys
 
 Whichever host you pick, list what your tools read in `requiredEnv` — see
-[Publish](/agent/deploy/publish/). The build warns by name about anything the
-deployment will be missing, and expands the printed secret step once per name.
-A key you declared is a line you can run rather than one you have to write.
+[Publish](/agent/deploy/publish/). For every target but `node`, the build warns
+by name about anything the deployment will be missing, and expands the printed
+secret step once per name. A key you declared is a line you can run rather than
+one you have to write.
+
+`node` emits no directory, so there is no deployment to warn about: what runs
+is a process you start, reading `.env` at boot. A blank there is a developer
+mid-setup, and the warning would fire on every ordinary local build.
 
 Three things count as declared, and the build reads all three:
 

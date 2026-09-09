@@ -36,11 +36,17 @@ describe("get_weather", () => {
     const ctx = createToolContext();
     const out = await run("get_weather", { city: "Denver" }, ctx);
     expect(out).toMatchObject({
-      current_condition: expect.anything(),
+      city: "Denver",
+      tempF: expect.any(String),
     });
   });
 });
 ```
+
+**Assert on what the tool returns, not on what the API it called returned.**
+The scaffold's `get_weather` narrows wttr.in's response to
+`{ city, tempF, conditions }` before handing it back, so those are the fields a
+spec has to name — see [Tools](/agent/build/tools/).
 
 **Import the agent from `virtual:aai/agent`, not from `./agent.ts`.**
 

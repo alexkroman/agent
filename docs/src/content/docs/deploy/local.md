@@ -10,10 +10,12 @@ container.
 ## `aai dev`
 
 ```sh
-aai dev --watch
+aai dev
 ```
 
 Starts a local server and prints a URL — open it and click the microphone.
+
+### Watching and restarts
 
 Watching is on when you run it at a terminal. An edit to `system-prompt.md`, a
 tool, or `agent.ts` rebuilds and replaces the server. `--watch=false` (or
@@ -24,12 +26,19 @@ and wrong while something drives the agent for twenty minutes — so a harness o
 process supervisor, which has no TTY, gets no watcher unless it sets
 `AAI_DEV_WATCH=1`.
 
-Secrets come from `.env` in the project root. Only keys declared there are
-visible to your tools as `ctx.env`.
+### What the dev server can see
 
-Session state lives in memory for the life of the process. Point a
-`DATABASE_URL` at your own Postgres in `.env` and it becomes durable — same code
-either way. See [Remembering things](/agent/build/state/).
+Two things behave differently here than they do deployed, and both are worth
+knowing before you go looking for a bug that isn't one.
+
+Secrets come from `.env` in the project root. Only keys declared there are
+visible to your tools as `ctx.env` — on the platform the same keys come from the
+agent's secrets, which `aai publish` syncs from that same file.
+
+Session state lives in memory for the life of the process, so a restart forgets
+it; deployed, it is stored for you. Point a `DATABASE_URL` at your own Postgres
+in `.env` and it becomes durable here too — same code either way. See
+[Remembering things](/agent/build/state/).
 
 ## `npm start`
 
@@ -65,3 +74,9 @@ declaration and ships. A variable nothing declares never reaches `ctx.env`.
 
 For Vercel, Deno Deploy, or Modal rather than a container, see
 [Deploy anywhere](/agent/deploy/anywhere/).
+
+## Next
+
+- [Publish](/agent/deploy/publish/) — the managed platform, in two commands
+- [Deploy anywhere](/agent/deploy/anywhere/) — Vercel, Deno Deploy, Modal
+- [Self-hosting](/agent/more/self-hosting/) — owning the startup yourself

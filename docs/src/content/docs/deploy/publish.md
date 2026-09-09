@@ -70,3 +70,8 @@ list.
 Not using the managed platform? `aai build --target node|vercel|deno|modal`
 emits a deployment for your own host and prints the commands to ship it — see
 [Deploy anywhere](/agent/deploy/anywhere/).
+
+## Next
+
+- [Phone calls](/agent/deploy/phone/) — putting the published agent on a number
+- [Deploy anywhere](/agent/deploy/anywhere/) — Vercel, Deno Deploy, Modal

@@ -27,16 +27,16 @@ have to name the ones you use.
 
 ## Pointing a number at it
 
-Paste the URL the deploy prints into the phone number's **incoming-call
-webhook** field. There is one per carrier you declared, with the `?carrier=`
-parameter already filled in:
+Paste the URL `aai publish` prints into the phone number's **incoming-call
+webhook** field. There is one line per carrier you declared, with the
+`?carrier=` parameter already filled in:
 
 ```text
-telnyx webhook (paste into the phone number's config): https://<your-agent-url>/phone?carrier=telnyx
+telnyx webhook: https://<your-agent-url>/phone?carrier=telnyx
 ```
 
-It is on the `--json` result too, as `webhooks`, so a script that deploys can
-configure the number without re-deriving either half.
+`aai publish --json` carries the same lines in its `output` field, so a script
+that publishes does not have to re-derive either half.
 
 :::caution[Do not assemble the URL by hand]
 The route assumes Twilio when `?carrier=` is absent, so a Telnyx number
@@ -73,7 +73,8 @@ provider-credential warning:
 ```text
 telephony declares telnyx but TELNYX_PUBLIC_KEY is not set — the telnyx webhook
 will be served with signature verification OFF, so anyone who knows the URL can
-start a call.
+start a call. Declare TELNYX_PUBLIC_KEY in .env and redeploy (already set on
+the platform with `aai secret put`? then this is already handled).
 ```
 
 It is a warning rather than a refusal, for the same reason the credential check

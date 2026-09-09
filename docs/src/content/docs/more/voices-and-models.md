@@ -25,7 +25,7 @@ service, so a voice added after your SDK release still has to work.
 
 :::caution[A misspelled voice id is refused after the socket opens]
 That leaves an agent that connects, reports ready, and never speaks. So
-`aai build` and `aai dev` warn about an id they do not recognise, and name the
+`aai build` and `aai dev` warn about an id they do not recognize, and name the
 ones it is closest to.
 :::
 
@@ -46,8 +46,13 @@ A bare id routes through the AssemblyAI LLM gateway on your existing key. A
 Bare ids autocomplete from `AssemblyAIGatewayModel` (`@alexkroman1/aai`), the
 union generated from what the gateway advertises. Like `voice`, it is
 autocomplete rather than a guard — a model shipped after your SDK release still
-works — so an id the gateway does not carry is a 400 on the first turn rather
-than a build error.
+works.
+
+:::caution[A wrong model id is a gateway error on the first turn]
+Nothing catches it at build time the way a voice id is caught: an id the
+gateway does not carry comes back as a 400 the first time the agent tries to
+think, so the session opens and then fails on the caller's first sentence.
+:::
 
 ## A whole stage
 
@@ -101,11 +106,23 @@ import { openAIS2s } from "@alexkroman1/aai/s2s";
 export default agent({ name: "My Agent", s2s: openAIS2s() });
 ```
 
-Prefer the three-stage default unless you specifically want this. It gives you
-more control over how interruptions and pauses are handled.
+What you buy is one round trip instead of three hops: the service hears, thinks,
+and speaks without handing a transcript between stages. What you give up is the
+seams. You can no longer mix providers — the whole conversation belongs to that
+one service — and the interruption, pause, and dead-air fields below are
+implemented by the three-stage pipeline alone, so setting one on an S2S agent is
+a compile error rather than a silent no-op.
+
+So: stay on the three-stage default unless response time is the specific problem
+you are trying to fix, and you are willing to give up tuning it by hand.
 
 ## Tuning the conversation
 
 How the agent handles interruptions, pauses, and silence is tuned by fields on
 `agent()`. They are in the [SDK reference](/agent/reference/) — reach for them
 once you have heard a specific problem, not before.
+
+## Next
+
+- [Your agent](/agent/build/agent/) — the other fields on `agent()`
+- [Publish](/agent/deploy/publish/) — where a provider key goes in production

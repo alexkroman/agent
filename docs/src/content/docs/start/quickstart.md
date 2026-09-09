@@ -4,7 +4,9 @@ description: Build, run, and publish a working voice agent in about five minutes
 ---
 
 You need Node.js 24, 25, or 26 and an AssemblyAI API key. That one key covers
-listening, thinking, and speaking.
+listening, thinking, and speaking — get one from the
+[AssemblyAI dashboard](https://www.assemblyai.com/dashboard) if you don't have
+one already.
 
 ## 1. Create a project
 
@@ -20,7 +22,8 @@ with whichever package manager you ran it from.
 :::caution[Fill in your API key first]
 The scaffold writes a `.env` with an empty `ASSEMBLYAI_API_KEY=`. Paste your
 key there, or run `aai login` to store one globally. Nothing will run until you
-do.
+do. Keys live at
+[www.assemblyai.com/dashboard](https://www.assemblyai.com/dashboard).
 :::
 
 The agent it writes is five files:

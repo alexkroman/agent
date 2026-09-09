@@ -76,7 +76,7 @@ export default cartSlot.updateTool({
 - **It is stored for you.** On the platform, a crash or a redeploy no longer
   loses the cart. Under `aai dev` it lives in memory, unless you point a
   `DATABASE_URL` at your own Postgres in `.env`. The code is the same either
-  way, which is what the three rules above buy.
+  way, which is what the three constraints above buy.
 
 ## Showing it to the browser
 
