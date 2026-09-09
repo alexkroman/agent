@@ -38,10 +38,28 @@ export type TestRunResult =
   | { ran: false; reason: string }
   | { ran: true; passed: boolean; output: string };
 
-/** Test files at the workspace root (studio workspaces are flat). */
+/**
+ * Test files at the workspace root (studio workspaces are flat), EVAL TIER
+ * EXCLUDED.
+ *
+ * The exclusion is the same one `aai test` makes, by the same infix
+ * (`projectSpecFiles` in `aai-cli/_vitest-runner.ts`), and it has to be made
+ * here rather than left to the spawn because both halves were wrong: this
+ * predicate counted `agent.eval.test.ts` as a test file, so a workspace holding
+ * only an eval reported `ran` instead of "no test files".
+ *
+ * An eval is a LIVE-MODEL measurement that reports and does not gate — the
+ * tier's own rule — and the env this run gets is scrubbed
+ * (`workspaceChildEnv()`), so an eval reached from here can only ever run on a
+ * scripted model: minutes of agent boots that adjudicate nothing, inside a
+ * 45-second budget, and a `Tests: FAILED` on a workspace whose actual tests
+ * pass. Twelve of the fifteen shipped starters copy a template and every
+ * template ships an `agent.eval.test.ts`, so this was the common case and not
+ * an edge one.
+ */
 async function testFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir).catch(() => [] as string[]);
-  return entries.filter((f) => /\.test\.tsx?$/.test(f));
+  return entries.filter((f) => /\.test\.tsx?$/.test(f) && !f.includes(".eval.test."));
 }
 
 /**
@@ -80,7 +98,16 @@ export async function runWorkspaceTests(dir: string): Promise<TestRunResult> {
   let output: string;
   try {
     // `run` (never watch) and `--root` so vitest cannot escape the workspace.
-    const result = await runCapped(process.execPath, [bin, "run", "--root", dir], {
+    //
+    // The files are passed as POSITIONAL FILTERS, which is what actually keeps
+    // the eval tier out: `testFiles` decides what this run covers, and without
+    // naming them vitest applies its own default include glob and finds
+    // `agent.eval.test.ts` regardless of what we discovered. Same mechanism
+    // `aai test` uses and same property — a filter is matched as a substring
+    // against the paths vitest already found, and `agent.test.ts` is not a
+    // substring of `agent.eval.test.ts`, so the two tiers stay disjoint without
+    // either side listing the other's filenames.
+    const result = await runCapped(process.execPath, [bin, "run", "--root", dir, ...files], {
       cwd: dir,
       // Scrubbed like every other child that executes workspace-authored code
       // (`bash`, `runNpm`, the deploy CLI): the files vitest runs here are the

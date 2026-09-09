@@ -55,6 +55,18 @@
     // satisfied without turning it into a second copy of the guide — which is
     // the exact failure `check:claude-md` pins it against.
     "CLAUDE.md",
-    "packages/aai-templates/templates/**/system-prompt.md"
+    "packages/aai-templates/templates/**/system-prompt.md",
+    // Materialized studio WORKSPACES — gitignored scratch (see
+    // packages/aai-guest/.gitignore), and a tenant's files rather than this
+    // repo's. `materializeWorkspace` keys its root on the pid and `rm -rf`s it
+    // at the START of an install, so whatever the last case of a run left
+    // behind survives that process; the eval's own template case copies a
+    // shipped template, and every template ships a `system-prompt.md`. So a
+    // live `pnpm test:eval --filter aai-guest` reddened `check:markdown` on
+    // eight findings in a file the agent under eval had written — the same
+    // shape as the orphaned `.aai/` directories that used to fail the
+    // filesystem-walking gates, and the reason to ignore the path rather than
+    // to remember to sweep it.
+    "**/.workspaces/**"
   ]
 }
