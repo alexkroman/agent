@@ -81,8 +81,8 @@ before touching either:
   mean a second set of readers and a second set of assertions above them, and
   the one thing worse than an ungradeable agent is two vocabularies that
   disagree about what a tool call is. The measured cost of having neither is
-  `aai-studio-server/src/studio-eval-target.ts`, which grades an `agent({ text: true })`
-  definition with five REGEXES over tool-output text.
+  `aai-studio-server/src/studio-eval-target.ts`, which grades an
+  `agent({ text: true })` definition with five REGEXES over tool-output text.
 - **`session.configured` is refused for want of an honest field**, and it is the
   only member refused on those grounds: it requires `audioFormat`, `sampleRate`
   and `ttsSampleRate`, `0` fails the schema, and any real number is a lie a
