@@ -11,10 +11,12 @@ aai dev --watch
 
 Starts a local server and prints a URL — open it and click the microphone.
 
-Watching is opt-in: with `--watch` (or `AAI_DEV_WATCH=1`) an edit to
-`system-prompt.md`, a tool, or `agent.ts` rebuilds and replaces the server.
-Without it, restart to pick up a change. A restart ends any voice session in
-flight, which is why it is not the default.
+Watching is on when you run it at a terminal: an edit to `system-prompt.md`, a
+tool, or `agent.ts` rebuilds and replaces the server. `--watch=false` (or
+`AAI_DEV_WATCH=0`) turns it off. A restart ends any voice session in flight,
+which is right while you are editing and wrong while something drives the agent
+for twenty minutes — so a harness or process supervisor, which has no TTY, gets
+no watcher unless it sets `AAI_DEV_WATCH=1`.
 
 Secrets come from `.env` in the project root. Only keys declared there are
 visible to your tools as `ctx.env`.

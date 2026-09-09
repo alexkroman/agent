@@ -5,6 +5,12 @@ import { styleText } from "node:util";
 import * as p from "@clack/prompts";
 import { execa } from "execa";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
+import {
+  PACKAGE_MANAGERS,
+  type PackageManager,
+  type PackageManagerInfo,
+  runInit,
+} from "./_init.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { listTemplates } from "./_templates.ts";
 import { log, unwrapCancel } from "./_ui.ts";
@@ -15,7 +21,7 @@ type InitData = {
   template: string;
   /**
    * Diagnostics a human sees as `log.warn` lines — today only a failed
-   * `pnpm install`.
+   * dependency install.
    *
    * They have to ride the result for the same reason `PushOutcome.warnings`
    * does — `log.warn` is silenced in JSON mode and JSON mode is AUTO-DETECTED
@@ -120,16 +126,6 @@ export async function promptTemplate(
   );
 }
 
-/** Best-effort corepack enable so pnpm is available (scaffold declares packageManager: pnpm). */
-async function ensurePnpm(): Promise<void> {
-  // Failure is fine (already enabled, or — on Node >= 25, half the range the
-  // scaffold's engines allow — corepack is not installed at all, since Node
-  // stopped shipping it in its official distributions). This only ever helps
-  // the Node 24 end of the range; `pnpm install` fails with a clear error
-  // otherwise, and the warning below says how to get pnpm without corepack.
-  await execa("corepack", ["enable"], { reject: false });
-}
-
 /** Check if the project has any dependencies to install. */
 async function hasDeps(cwd: string): Promise<boolean> {
   if (await fileExists(path.join(cwd, "node_modules"))) return false;
@@ -142,56 +138,170 @@ async function hasDeps(cwd: string): Promise<boolean> {
   return deps.length > 0 || devDeps.length > 0;
 }
 
+/**
+ * A version string fit for the manifest's `packageManager` field.
+ *
+ * That field takes `name@version` and corepack REFUSES a value it cannot parse,
+ * so anything a `--version` probe prints that is not a plain version (a banner,
+ * a warning line, `?`) must produce no pin rather than an unusable one.
+ */
+const VERSION_RE = /^\d+\.\d+\.\d+\S*$/;
+
+/** The first token of an `npm_config_user_agent`: `pnpm/10.29.3 npm/? node/v24…`. */
+const USER_AGENT_HEAD = /^([a-z]+)\/(\S+)/;
+
+function isPackageManager(name: string | undefined): name is PackageManager {
+  return PACKAGE_MANAGERS.includes(name as PackageManager);
+}
+
+/**
+ * The manager that INVOKED this process, from `npm_config_user_agent`.
+ *
+ * Every one of the four sets it when it runs a binary or a script, so this is
+ * the strongest signal available and it is checked first: a user who followed
+ * the documented `npm i -g @alexkroman1/aai-cli` and then ran `npx aai init`
+ * has said which manager they use, and the old code installed with pnpm
+ * regardless. An unrecognized head (`deno/…`, nothing at all) falls through to
+ * the PATH probe rather than guessing.
+ */
+export function packageManagerFromUserAgent(
+  ua: string | undefined = process.env.npm_config_user_agent,
+): PackageManagerInfo | undefined {
+  const match = USER_AGENT_HEAD.exec(ua?.trim() ?? "");
+  const name = match?.[1];
+  if (!isPackageManager(name)) return undefined;
+  const version = match?.[2];
+  return version !== undefined && VERSION_RE.test(version) ? { name, version } : { name };
+}
+
+/**
+ * A manager's own version, or `undefined` when it is not on PATH at all.
+ *
+ * An empty string means "present, but it did not print a version I can pin" —
+ * the two outcomes have to stay distinguishable, because the first decides
+ * which manager RUNS and the second only decides whether the manifest gets a
+ * `packageManager` pin.
+ */
+async function binVersion(cmd: string): Promise<string | undefined> {
+  // `reject: false` covers a non-zero exit and a missing binary, and the
+  // `catch` covers everything left — this probe runs BEFORE the scaffold, so a
+  // throw here would fail `aai init` outright rather than fall back to the next
+  // manager, which is a worse outcome than any answer it could give.
+  const result = await execa(cmd, ["--version"], { reject: false }).catch(() => undefined);
+  const { failed, stdout } = result ?? { failed: true, stdout: "" };
+  if (failed) return undefined;
+  const first = String(stdout ?? "")
+    .trim()
+    .split("\n", 1)[0]
+    ?.trim();
+  return first !== undefined && VERSION_RE.test(first) ? first : "";
+}
+
+/**
+ * Which package manager `aai init` installs with.
+ *
+ * It used to be pnpm, unconditionally, reached through `corepack enable` — and
+ * corepack is absent from Node >= 25, half the range the scaffold's `engines`
+ * allow, so on a current Node the documented install path (`npm i -g
+ * @alexkroman1/aai-cli`) produced a scaffold whose install step needed a
+ * manager the user had never been asked to have. The generated README then said
+ * `npm install` beside the pnpm lockfile.
+ *
+ * Two signals, in order, and pnpm stays the preference in the second: the
+ * manager that invoked us, then the first of {@link PACKAGE_MANAGERS} that is
+ * really on PATH. npm is the last resort because every Node install ships one,
+ * so the install command is at worst attempted rather than skipped.
+ *
+ * Note what this does NOT do: enable corepack, or install a manager. Running
+ * only something that answered `--version` is what makes the corepack call
+ * unnecessary, and it is the whole reason this function exists.
+ */
+export async function detectPackageManager(
+  ua: string | undefined = process.env.npm_config_user_agent,
+  // Injectable for tests, which must not depend on what is installed on the
+  // machine running them — and, under vitest, `npm_config_user_agent` is set by
+  // whatever ran the suite.
+  probe: (name: PackageManager) => Promise<string | undefined> = binVersion,
+): Promise<PackageManagerInfo> {
+  const declared = packageManagerFromUserAgent(ua);
+  if (declared) return declared;
+  for (const name of PACKAGE_MANAGERS) {
+    const version = await probe(name);
+    if (version === undefined) continue;
+    return version ? { name, version } : { name };
+  }
+  return { name: "npm" };
+}
+
 /** Check whether the safe-chain binary is on PATH. */
 async function hasSafeChain(): Promise<boolean> {
   const { failed } = await execa("safe-chain", ["--version"], { reject: false });
   return !failed;
 }
 
-/** Build the command + args for running pnpm, routing through safe-chain when available. */
-export async function resolvePnpmCommand(
+/**
+ * Build the command + args that install `pm`'s dependencies.
+ *
+ * The safe-chain routing is pnpm-only and stays that way: it is what this repo
+ * installs with, `--safe-chain-skip-minimum-package-age` exists because the
+ * scaffold pins freshly published `@alexkroman1/*` versions, and safe-chain's
+ * other wrappers are not what anything here was verified against. npm has no
+ * such quarantine to skip, so nothing is lost on that path.
+ */
+export async function resolveInstallCommand(
+  pm: PackageManager,
   checkSafeChain: () => Promise<boolean> = hasSafeChain,
 ): Promise<{ cmd: string; args: string[] }> {
+  if (pm !== "pnpm") return { cmd: pm, args: [] };
   if (await checkSafeChain()) {
     return { cmd: "safe-chain", args: ["pnpm", "--safe-chain-skip-minimum-package-age"] };
   }
   return { cmd: "pnpm", args: [] };
 }
 
-/** Run pnpm install and warn on failure. */
-async function runPnpmInstall(cwd: string): Promise<void> {
-  const { cmd, args } = await resolvePnpmCommand();
-  // In dev mode, allow workspace resolution so workspace deps link to local source.
-  // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
-  const pnpmArgs = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
+/** Run the install and warn on failure. */
+async function runInstall(cwd: string, pm: PackageManager): Promise<void> {
+  const { cmd, args } = await resolveInstallCommand(pm);
+  // `--ignore-workspace` is pnpm's, and only outside dev mode: in dev mode
+  // workspace resolution is what links the SDK to local source, and for every
+  // other manager the scaffold's `pnpm-workspace.yaml` means nothing anyway —
+  // so a flag for one of them would just be an unknown argument.
+  const workspaceArgs = pm === "pnpm" && !isDevMode() ? ["--ignore-workspace"] : [];
   // execa errors already include stderr + stdout in their message, so the
   // user sees what actually went wrong (pnpm writes failures to stdout).
-  await execa(cmd, [...args, ...pnpmArgs], { cwd });
+  await execa(cmd, [...args, "install", ...workspaceArgs], { cwd });
 }
 
 /**
- * Install deps with pnpm, reporting a failure through `warn` rather than
+ * Install deps with `pm`, reporting a failure through `warn` rather than
  * throwing: the project is scaffolded either way, and the two warnings say how
  * to finish the install by hand. Nothing downstream branches on the outcome —
  * `init` stops here — so it returns nothing.
  */
-async function installDeps(cwd: string, warn: Warn, silent?: boolean): Promise<void> {
+async function installDeps(
+  cwd: string,
+  pm: PackageManager,
+  warn: Warn,
+  silent?: boolean,
+): Promise<void> {
   if (!(await hasDeps(cwd))) return;
-  await ensurePnpm();
 
   try {
     await withSpinner(
       silent,
       {
-        start: "Installing dependencies with pnpm",
+        start: `Installing dependencies with ${pm}`,
         done: "Dependencies installed",
         failed: "Dependency install failed",
       },
-      () => runPnpmInstall(cwd),
+      () => runInstall(cwd, pm),
     );
   } catch (err: unknown) {
-    warn(`pnpm install failed: ${errorMessage(err)}`);
-    warn("Install pnpm (`npm install -g pnpm`), then run `pnpm install` in the project.");
+    warn(`${pm} install failed: ${errorMessage(err)}`);
+    // Names the manager that actually ran. It used to say "Install pnpm
+    // (`npm install -g pnpm`)" whatever had failed, which for an npm user was
+    // advice to install a second manager to work around a bug in this command.
+    warn(`Finish the install by hand: cd ${cwd} && ${pm} install`);
   }
 }
 
@@ -220,18 +330,25 @@ function collectWarnings(): { warn: Warn; warnings: string[] } {
   };
 }
 
-/** Scaffold the project, optionally showing a spinner. */
+/**
+ * Scaffold the project, optionally showing a spinner.
+ *
+ * `packageManager` is passed rather than re-detected inside `runInit`: the two
+ * files it writes that name a manager — the README and the manifest's
+ * `packageManager` pin — have to name the one {@link installDeps} is about to
+ * run, and a second detection is a second chance to disagree.
+ */
 async function scaffoldProject(
   dir: string,
   cwd: string,
   template: string,
+  pm: PackageManagerInfo,
   silent?: boolean,
 ): Promise<void> {
-  const { runInit } = await import("./_init.ts");
   await withSpinner(
     silent,
     { start: `Creating ${dir}`, done: "Project created", failed: `Could not create ${dir}` },
-    () => runInit({ targetDir: cwd, template }),
+    () => runInit({ targetDir: cwd, template, packageManager: pm }),
   );
 }
 
@@ -273,13 +390,16 @@ export async function executeInit(
     opts.template ?? (opts.yes || suppressUi ? DEFAULT_TEMPLATE : await promptTemplate());
   const { warn, warnings } = collectWarnings();
 
-  await scaffoldProject(dir, cwd, template, suppressUi);
+  // Detected BEFORE the scaffold, because the README and the manifest it writes
+  // both name the manager — see `scaffoldProject`.
+  const pm = await detectPackageManager();
+  await scaffoldProject(dir, cwd, template, pm, suppressUi);
   // `init` SCAFFOLDS: it deliberately does not publish. Deploying to
   // production is an outward-facing act, and doing it as a side effect of
   // creating a directory means a fresh `aai init` reached for credentials the
   // author may not have yet, and shipped a template agent nobody had run.
   // `aai publish` is the explicit step, once `aai dev` says the agent works.
-  await installDeps(cwd, warn, suppressUi);
+  await installDeps(cwd, pm.name, warn, suppressUi);
 
   if (!suppressUi) {
     printPostInitInfo(cwd, monorepoRoot);

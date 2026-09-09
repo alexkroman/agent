@@ -193,6 +193,26 @@ describe("JSON mode keeps stdout to one result line", () => {
   });
 });
 
+describe("aai test's flags", () => {
+  /**
+   * `--all` was the widening the old `incomplete_run` failure told people to
+   * put in CI, and running every non-eval spec is the DEFAULT now — so the flag
+   * has to keep PARSING or that instruction becomes a usage error on upgrade.
+   * `assertKnownArgv` refuses an undeclared flag, which is what makes this a
+   * behaviour rather than a comment.
+   */
+  test.each(["--all", "--only"])("%s is accepted rather than refused as unknown", async (flag) => {
+    await withTempDir(async (dir) => {
+      const { exitCode, stdout } = await runBin(["test", flag], dir);
+      // Both fail here, but on the agent gate — not on the flag.
+      expect(exitCode).toBe(1);
+      const parsed = JSON.parse(stdout.trim()) as { code?: string; error?: string };
+      expect(parsed.code).not.toBe("usage");
+      expect(parsed.error).toContain("No agent.ts found");
+    });
+  });
+});
+
 describe("aai test requires an agent project", () => {
   // It was the one project-scoped command calling `setup()` bare rather than
   // `setup({ agent: true })`. With no agent.ts it found no test file, reported

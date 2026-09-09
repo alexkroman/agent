@@ -174,17 +174,20 @@ describe("runVitest", () => {
 
 describe("runVitest announces what it did not run", () => {
   test("a caller that reports nothing of its own gets the notice by default", async () => {
-    // `aai build`'s pre-build gate is that caller: it calls `runVitest(cwd)` and
-    // prints "Build complete", so a build gated on one file out of eight said so
-    // nowhere. The default is what closes it without the gate having to know.
+    // `aai build`'s pre-build gate was that caller: it called `runVitest(cwd)`
+    // and printed "Build complete", so a build gated on one file out of eight
+    // said so nowhere. Both gates pass `all` now — this is `aai test --only`'s
+    // notice — but the DEFAULT is what closed it without a caller having to know.
     await writeFile(path.join(tempDir, "agent.test.ts"), "");
     await writeFile(path.join(tempDir, "store.test.ts"), "");
     runVitest(tempDir, { candidates });
     const [level, message] = notify.mock.calls.at(-1) as [string, string];
     expect(level).toBe("warn");
     expect(message).toContain("store.test.ts");
-    // The remedy, not just the finding.
-    expect(message).toContain("aai test --all");
+    // The remedy, not just the finding — and it is a bare `aai test` now,
+    // because running every non-eval spec is what that does.
+    expect(message).toContain("`aai test`");
+    expect(message).not.toContain("--all");
   });
 
   test("a complete run says nothing", async () => {
@@ -201,8 +204,8 @@ describe("runVitest announces what it did not run", () => {
   });
 
   test("`all` runs every non-eval spec, and the eval tier stays disjoint", async () => {
-    // Still a FILTER list rather than an include glob, which is what keeps
-    // `aai test --all` from reaching `agent.eval.test.ts`.
+    // Still a FILTER list rather than an include glob, which is what keeps a
+    // widened run from reaching `agent.eval.test.ts`.
     await writeFile(path.join(tempDir, "agent.test.ts"), "");
     await writeFile(path.join(tempDir, "agent.eval.test.ts"), "");
     await mkdir(path.join(tempDir, "tools"), { recursive: true });
