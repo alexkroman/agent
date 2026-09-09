@@ -17,6 +17,8 @@ import { lastStateIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/e
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
+import { isCorrectGuess } from "./guess.ts";
+import { allWords } from "./words.ts";
 
 /** The scoreboard, as these cases read it. */
 const Board = z.object({
@@ -27,8 +29,29 @@ const Board = z.object({
   wrongGuesses: z.array(z.string()),
 });
 
-/** A scripted player who is always wrong — the word is random, so a script cannot be right. */
-const WRONG_PLAYER = ['{"guess":"zebra crossing","remark":"Is it a zebra crossing?"}'];
+/**
+ * A scripted player who is always wrong.
+ *
+ * The old guess here was "zebra crossing", under the reasoning that "the word is
+ * random, so a script cannot be right". That reasoning does not hold, and the
+ * case failed in CI on it: `isCorrectGuess` rules a guess correct when the WORD
+ * appears as a whole word INSIDE it (`containsWord`, so that "Is it a giraffe?"
+ * relayed whole still scores), `zebra` is one of the 220 words, and
+ * `pickWords` draws the round's word at random — so roughly one run in 220 drew
+ * `zebra`, matched it inside "zebra crossing", and scored the wrong guess
+ * correct.
+ *
+ * A guess is only reliably wrong if NO word in the list matches it, which is a
+ * fact about the list rather than a thing to eyeball — {@link wrongEverywhere}
+ * below asserts it, so a future word list that adds "wombat" fails this case
+ * loudly instead of flaking once every few hundred runs.
+ */
+const WRONG_GUESS = "purple wombat";
+const WRONG_PLAYER = [`{"guess":"${WRONG_GUESS}","remark":"Is it a ${WRONG_GUESS}?"}`];
+
+/** Every word this guess would be scored CORRECT against — must be none. */
+const wrongEverywhere = (): string[] =>
+  allWords().filter((word) => isCorrectGuess(WRONG_GUESS, word));
 
 describeEval(agentDef, (test) => {
   test(
@@ -100,10 +123,13 @@ describeEval(agentDef, (test) => {
       // the script rather than the agent — which is how this case used to fail
       // on "Is it a zebra?" being a perfectly good wrong guess.
       if (mode === "stub") {
+        // The claim this case rests on, checked rather than assumed — see
+        // WRONG_GUESS for the run that proved assuming it is not enough.
+        expect(wrongEverywhere()).toEqual([]);
         expect(relayed.result).toMatchObject({
           verdict: "wrong",
-          playerSaid: "Is it a zebra crossing?",
-          guess: "zebra crossing",
+          playerSaid: `Is it a ${WRONG_GUESS}?`,
+          guess: WRONG_GUESS,
           score: 0,
         });
       }
@@ -116,7 +142,7 @@ describeEval(agentDef, (test) => {
           tool: "relay_description",
           args: { description: "an animal with black and white stripes, lives in Africa" },
         },
-        "The player asks: is it a zebra crossing?",
+        `The player asks: is it a ${WRONG_GUESS}?`,
       ],
       stubGenerate: WRONG_PLAYER,
     },
