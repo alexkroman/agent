@@ -61,6 +61,73 @@ const typedocConfig = url.fileURLToPath(new URL("./typedoc.json", import.meta.ur
  */
 const typedocReadme = url.fileURLToPath(new URL("./home.md", import.meta.url));
 
+/**
+ * Whether a sidebar entry is a GROUP — the only shape that can hold children.
+ * A link, a `slug` entry and an `autogenerate` directive all carry no `items`.
+ */
+const isSidebarGroup = (item) => typeof item === "object" && item !== null && "items" in item;
+
+/** How many groups a sidebar holds, at any depth. */
+const countGroups = (items) =>
+  (items ?? []).reduce(
+    (total, item) => (isSidebarGroup(item) ? total + 1 + countGroups(item.items) : total),
+    0,
+  );
+
+/** Recursively drop sidebar groups that hold nothing a reader can click. */
+const pruneLinklessGroups = (items) =>
+  (items ?? []).flatMap((item) => {
+    if (!isSidebarGroup(item)) return [item];
+    const prunedItems = pruneLinklessGroups(item.items);
+    return prunedItems.length === 0 ? [] : [{ ...item, items: prunedItems }];
+  });
+
+/**
+ * Delete the generated sidebar entries that lead NOWHERE.
+ *
+ * `starlight-typedoc` gives every module its own collapsible group and fills
+ * it from the reflection GROUPS — Functions, Classes, Interfaces — each of
+ * which it expects to find as a directory of per-symbol pages. With
+ * `outputFileStrategy: "modules"` no such directory exists, so all 24 module
+ * groups came out with zero children: a chevron that expands to nothing under
+ * every package. Twenty-four dead ends is most of what the reference's nav
+ * showed.
+ *
+ * Nothing becomes unreachable. Each module page is still built, and each
+ * package's Overview page ends in a Modules list linking to all of them — so
+ * the reader navigates the package from its own page, which is where the
+ * module's one-line description is anyway. The sidebar keeps the entries that
+ * work: the reference root and one Overview per package.
+ *
+ * It runs as a plugin rather than as an edit to the sidebar below because the
+ * group there is a PLACEHOLDER — the real items are computed inside
+ * `starlight-typedoc`'s own `config:setup` hook. Starlight runs plugins in
+ * order and hands each one the config the previous plugins left, so this has
+ * to stay AFTER `starlightTypeDoc()` in the list.
+ *
+ * The rule is "no clickable descendants", not a list of labels, so a future
+ * plugin version that fills those groups in keeps them.
+ */
+const pruneLinklessSidebarGroups = () => ({
+  name: "prune-linkless-sidebar-groups",
+  hooks: {
+    "config:setup"({ config, logger, updateConfig }) {
+      const sidebar = pruneLinklessGroups(config.sidebar);
+      // Announced, because a no-op is the failure mode worth hearing about: it
+      // means either the generator stopped emitting the empty groups (good, and
+      // this plugin can go) or the sidebar it hands over no longer has the shape
+      // walked above (bad, and the nav quietly fills with dead ends again).
+      const removed = countGroups(config.sidebar) - countGroups(sidebar);
+      if (removed === 0) {
+        logger.warn("No linkless sidebar groups found — starlight-typedoc may no longer emit any.");
+      } else {
+        logger.info(`Removed ${removed} sidebar group(s) with nothing to click.`);
+        updateConfig({ sidebar });
+      }
+    },
+  },
+});
+
 export default defineConfig({
   site: "https://alexkroman.github.io",
   base,
@@ -128,6 +195,8 @@ export default defineConfig({
             typeDeclarationVisibility: "compact",
           },
         }),
+        // Runs after the generator, on the sidebar it produced. See above.
+        pruneLinklessSidebarGroups(),
         // A broken cross-link is the failure these pages are most exposed to —
         // fifteen documents that route the reader to each other constantly,
         // plus a generated reference they link INTO — and Astro does not check

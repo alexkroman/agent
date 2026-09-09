@@ -130,6 +130,31 @@ unreachable. The reference's group is not in it — `typeDocSidebarGroup` is a
 placeholder the plugin fills from the reflections, so a new subpath export
 reaches the nav without an edit.
 
+**What the plugin fills it with is PRUNED afterwards, because two dozen of the
+entries led nowhere.** `starlight-typedoc` gives every module its own
+collapsible group and fills it from the reflection groups — Functions, Classes,
+Interfaces — each of which it expects to find as a DIRECTORY of per-symbol
+pages. Under `outputFileStrategy: "modules"` (see Pagefind, above) no such
+directory exists, so all 24 module groups came out with zero children: a
+chevron that expands to nothing, under every package, which was most of what
+the reference's nav showed. `pruneLinklessSidebarGroups()` in
+`docs/astro.config.mjs` drops every group with no clickable descendant, leaving
+the reference root and one Overview per package.
+
+Nothing becomes unreachable — every module page is still built, and each
+package's Overview page ends in a Modules list linking to all of them, which is
+also where the module's one-line description is. Three things about it are
+deliberate: it is a PLUGIN, because the items are computed inside
+`starlight-typedoc`'s own `config:setup` hook and the group in the sidebar
+array is still a placeholder when that array is written (Starlight runs plugins
+in order and hands each the config the previous ones left, so it has to stay
+AFTER `starlightTypeDoc()`); the rule is "no clickable descendants" rather than
+a list of labels, so a future plugin version that fills those groups in keeps
+them; and a no-op is ANNOUNCED as a warning, since that means either the
+generator stopped emitting empty groups (good — the plugin can go) or the
+sidebar no longer has the shape it walks (bad — the nav quietly refills with
+dead ends).
+
 Both cover the same surface from the built `dist/*.d.ts`: all of `aai` and
 `aai-ui`, and **three of `aai-runtime`'s five subpaths** — `/eval`,
 `/eval/vitest` and `/testing`. **The line is the READER, not the package.**
