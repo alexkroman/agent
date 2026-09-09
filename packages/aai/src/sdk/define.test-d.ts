@@ -13,6 +13,7 @@ import {
 } from "./define.ts";
 import type { AssemblyAIGatewayModel } from "./providers/llm/shared/gateway-models.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type { SessionEventContext } from "./session-events.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
@@ -667,4 +668,27 @@ test("an agent guardrail answers a GuardrailVerdict", () => {
   >().toExtend<AgentGuardrail>();
   // A verdict that is neither an acceptance nor a reason is not a verdict.
   expectTypeOf<(text: string, ctx: AgentSessionContext) => false>().not.toExtend<AgentGuardrail>();
+});
+
+/**
+ * The twins may not DRIFT, and this is what makes that a compile error.
+ *
+ * {@link AgentSessionContext} (what a `systemPrompt` resolver and both
+ * guardrails are handed) and `SessionEventContext` (what an `events` handler is
+ * handed) are deliberately the same shape and deliberately two declarations:
+ * they are read by different audiences and their per-field docs argue different
+ * things — a resolver runs on every request, where a handler's write is
+ * committed after it returns. Collapsing one into an alias of the other would
+ * make that drift unrepresentable at the cost of the second reference page, so
+ * the drift is pinned here instead.
+ *
+ * Mutual assignability BOTH ways is the assertion: one direction alone passes
+ * while the other side gains a field, which is exactly the drift to catch. A
+ * capability added to one belongs on the other unless there is a reason it does
+ * not — and that reason is a deliberate edit to this test.
+ */
+test("AgentSessionContext and SessionEventContext are the same shape", () => {
+  expectTypeOf<AgentSessionContext>().toExtend<SessionEventContext>();
+  expectTypeOf<SessionEventContext>().toExtend<AgentSessionContext>();
+  expectTypeOf<keyof AgentSessionContext>().toEqualTypeOf<keyof SessionEventContext>();
 });

@@ -102,7 +102,7 @@ describe("openSessionWiring", () => {
     // The meter is built with `onUpdate` pointed at the emitter, which is why
     // the emitter has to exist first. Measured usage that never reached the
     // client would be a control nobody can audit.
-    const { usage, events } = wire();
+    const { usage, events } = wire({ limits: { totalTokens: 1000 } });
     usage.record({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
     expect(eventsOf(events, "usage.updated")[0]).toMatchObject({
       inputTokens: 10,
@@ -119,13 +119,58 @@ describe("openSessionWiring", () => {
     expect(usage.exhausted()).toContain("budget of 12");
   });
 
-  test("a session with no limit is metered anyway, and never exhausted", () => {
-    // Usage is measured and reported whether or not a limit is declared — an
-    // agent watching `usage.updated` needs the numbers either way.
+  test("a budget is enforced from the RECORD, not from the event", () => {
+    // The gate below decides who hears about a step; it must not decide whether
+    // one was counted. An agent with a cap and no `events` handler still trips
+    // it — that is the whole feature, and it is enforced off `snapshot()`.
+    const { usage, events } = wire({ limits: { totalTokens: 12 } });
+    usage.record({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+    expect(usage.snapshot().totalTokens).toBe(15);
+    expect(usage.exhausted()).toContain("budget of 12");
+    // And it is announced, because a declared budget is a reader.
+    expect(eventsOf(events, "usage.updated")).toHaveLength(1);
+  });
+
+  test("an UNOBSERVED session is metered and announces NOTHING", () => {
+    // `record()` runs once per model STEP — every step of every turn, plus
+    // every `ctx.generate` and every step of every `ctx.delegate` — so a
+    // default `maxSteps: 10` tool turn would mint eleven ULIDs, append eleven
+    // entries to the retained stream and send eleven frames competing with
+    // audio, for an event that is cumulative and that nothing here reads.
     const { usage, events } = wire({ limits: undefined });
     usage.record({ inputTokens: 1_000_000, outputTokens: 1_000_000, totalTokens: 2_000_000 });
+    // Still MEASURED: `snapshot()` is what `ctx.generate` and a subagent read.
+    expect(usage.snapshot()).toMatchObject({ totalTokens: 2_000_000, steps: 1 });
     expect(usage.exhausted()).toBeUndefined();
+    expect(eventsOf(events, "usage.updated")).toEqual([]);
+  });
+
+  test("a declared `usage.updated` handler is a reader, and turns the frames back on", () => {
+    const seen: number[] = [];
+    const { usage, events } = wire({
+      agent: makeAgent({
+        events: { "usage.updated": (event) => void seen.push(event.totalTokens) },
+      }),
+    });
+    usage.record({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+    expect(seen).toEqual([15]);
     expect(eventsOf(events, "usage.updated")).toHaveLength(1);
+  });
+
+  test('a `"*"` handler counts as one too — it receives every type by declaration', () => {
+    const { usage, events } = wire({
+      agent: makeAgent({ events: { "*": () => undefined } }),
+    });
+    usage.record({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+    expect(eventsOf(events, "usage.updated")).toHaveLength(1);
+  });
+
+  test("a handler for some OTHER event is not a reader of this one", () => {
+    const { usage, events } = wire({
+      agent: makeAgent({ events: { "tool.called": () => undefined } }),
+    });
+    usage.record({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+    expect(eventsOf(events, "usage.updated")).toEqual([]);
   });
 
   test("a BLOCK is published as `guardrail.blocked`, with its direction", () => {
@@ -166,10 +211,12 @@ describe("openSessionWiring", () => {
     expect(eventsOf(events, "guardrail.blocked")).toEqual([]);
   });
 
-  test("an s2s agent gets a meter that counts nothing and an EMPTY guardrail set", async () => {
+  test("an s2s agent gets an UNCAPPED meter and an empty guardrail set", async () => {
     // Both are refused at config time (`assertSamplingScope`,
     // `assertGuardrailScope`), so neither is built conditionally here — an
-    // agent that declared none gets exactly what its declarations say.
+    // agent that declared none gets exactly what its declarations say. The
+    // meter is real, and every tool call carries it: what s2s cannot feed it is
+    // the conversational loop's tokens, not a tool's `ctx.generate`.
     const { usage, guardrails } = wire({ agent: makeAgent() });
     expect(usage.exhausted()).toBeUndefined();
     expect(guardrails.holdsSpeech).toBe(false);

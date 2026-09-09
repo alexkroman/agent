@@ -353,7 +353,8 @@ export async function executeToolCall(
   // the instant a tool is told is a hair EARLIER than the one it is held to —
   // the safe direction for a budget.
   const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
-  // The deadline is MINTED here so the catch can recognise it BY IDENTITY.
+  // Set by the `fallback` below, which `pTimeout` runs on the deadline and on
+  // nothing else. It is what tells the catch that THIS call timed out.
   // `pTimeout` rejects a deadline without aborting anything, so the `cancelled`
   // read below could not see one: a timeout reached `tool.onError` as though the
   // tool had faulted, and an `onError` written as "rethrow anything I do not
@@ -361,10 +362,14 @@ export async function executeToolCall(
   // a `FatalToolError` that killed the turn. Rule 1 in `tool-error-policy.ts`
   // says the deadline is not a tool fault; this is what makes that true.
   //
-  // Identity, not `instanceof TimeoutError`: a tool that runs its own `pTimeout`
-  // inside `execute` throws that class too, and THAT one is the tool's own
-  // failure — `onError` must still see it.
-  const deadlineError = new TimeoutError(`Tool "${name}" timed out after ${timeoutMs}ms`);
+  // A FLAG rather than an error minted up front and matched by identity: the
+  // error was constructed on every call including the ones that succeed — a V8
+  // stack capture per tool call, and a step runs its calls concurrently — and it
+  // is only ever read on the one path that throws it. It also retires a
+  // subtlety: a tool that runs its own `pTimeout` inside `execute` throws the
+  // same CLASS, and that one is the tool's own failure which `onError` must
+  // still see. Raised only in here, it cannot be confused with one from there.
+  let timedOut = false;
 
   // Declared outside the try because the CATCH needs it: `tool.onError` is
   // handed the same context `execute` ran with, so a handler can read
@@ -387,7 +392,12 @@ export async function executeToolCall(
     // underlying execute keeps running unless it observes ctx.signal itself.
     const result = await pTimeout(Promise.resolve(tool.execute(parsed.value, ctx)), {
       milliseconds: timeoutMs,
-      message: deadlineError,
+      // Runs on the deadline and never otherwise, so the throw and the flag it
+      // sets are both free on every call that answers in time.
+      fallback: (): never => {
+        timedOut = true;
+        throw new TimeoutError(`Tool "${name}" timed out after ${timeoutMs}ms`);
+      },
       signal: callController.signal,
     });
     await yieldTick();
@@ -403,8 +413,8 @@ export async function executeToolCall(
     // barge-in, a reset or `stop()` — and that describes the runtime rather
     // than the tool. The DEADLINE is the fourth such source and the only one
     // the controller cannot report, since `pTimeout` settles the await without
-    // touching it; see `deadlineError` above.
-    const cancelled = callController.signal.aborted || err === deadlineError;
+    // touching it; see `timedOut` above.
+    const cancelled = callController.signal.aborted || timedOut;
     // The call is over (timeout or failure): fire the per-call signal so a
     // still-running execute can observe ctx.signal and stop its side effects.
     callController.abort(err);

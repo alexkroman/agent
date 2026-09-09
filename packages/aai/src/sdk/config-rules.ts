@@ -11,6 +11,7 @@
  * not providers.
  */
 
+import { GUARDRAIL_FIELDS, type GuardrailField } from "./agent-guardrails.ts";
 import { MODEL_TUNING_FIELDS, type ModelTuningField } from "./agent-model-tuning.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import {
@@ -22,6 +23,9 @@ import { ASSEMBLYAI_STT_KIND, type AssemblyAISttOptions } from "./providers/stt/
 
 /** {@link MODEL_TUNING_FIELDS}' keys, in declaration order. @internal */
 const MODEL_TUNING_FIELD_NAMES = Object.keys(MODEL_TUNING_FIELDS) as readonly ModelTuningField[];
+
+/** {@link GUARDRAIL_FIELDS}' keys, in declaration order. @internal */
+const GUARDRAIL_FIELD_NAMES = Object.keys(GUARDRAIL_FIELDS) as readonly GuardrailField[];
 
 /**
  * Session mode derived from which provider fields are set.
@@ -250,11 +254,18 @@ export function assertSamplingScope(
  * costs exactly the thing it was declared to prevent. `agent-guardrails.ts`
  * carries what the pipeline and text implementations do and do not prevent.
  *
+ * The field list is DERIVED from {@link GUARDRAIL_FIELDS}, whose `satisfies`
+ * makes it total over {@link AgentGuardrails} — the same mechanism the two
+ * gates above use, and here for the strongest version of the same reason. This
+ * one was a pair of string literals, so a third guardrail field would have been
+ * accepted in s2s and text and silently done nothing, which is the exact
+ * failure the neighbouring tables exist to make impossible.
+ *
  * @internal
  */
 export function assertGuardrailScope(
   mode: SessionMode,
-  guardrails: { inputGuardrails?: unknown; outputGuardrails?: unknown },
+  guardrails: { [K in GuardrailField]?: unknown },
 ): void {
   if (mode === "pipeline") return;
   const why =
@@ -265,11 +276,12 @@ export function assertGuardrailScope(
       : "A text agent hands its caller the model stream directly (`createTextAgent().stream()` " +
         "returns the AI SDK's own result), so this runtime owns no point between the model and " +
         "the caller at which it could hold a reply back. Gate the stream in your own caller.";
-  for (const field of ["inputGuardrails", "outputGuardrails"] as const) {
+  for (const field of GUARDRAIL_FIELD_NAMES) {
     if (guardrails[field] === undefined) continue;
     throw new Error(
-      `${field} requires pipeline mode (stt, llm and tts all set). ${why} Remove it, or run ` +
-        "this agent on the pipeline.",
+      `${field} requires pipeline mode (stt, llm and tts all set) — it judges ` +
+        `${GUARDRAIL_FIELDS[field]}, and this mode reaches no moment at which that check ` +
+        `could act. ${why} Remove it, or run this agent on the pipeline.`,
     );
   }
 }

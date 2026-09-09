@@ -9,19 +9,19 @@
  * its own states. `claimMachine` is duplicated below rather than shared,
  * because the point of the last test is that the TWO forms agree — a fixture
  * imported from the other file would make that a tautology about one object.
+ *
+ * That argument covers the FIXTURE and nothing else. `runToolDef` — the same
+ * `execute({}, ctx)` both files were calling a tool through — is shared from
+ * `_test-utils.ts`, because a call convention is not a thing two files can
+ * usefully disagree about.
  */
 import { describe, expect, test } from "vitest";
 import { setup } from "xstate";
 import { z } from "zod";
+import { runToolDef } from "./_test-utils.ts";
 import { dialog } from "./dialog.ts";
 import { createToolContext } from "./testing.ts";
-import type { ToolContext, ToolDef } from "./types.ts";
 import { isToolFailure } from "./utils.ts";
-
-/** Run a tool the way the runtime does, and hand back whatever it answered. */
-async function run(tool: ToolDef, ctx: ToolContext): Promise<unknown> {
-  return await tool.execute({}, ctx);
-}
 
 /** The machine form of `claimSpec`, for the equivalence test at the end. */
 function claimMachine() {
@@ -156,10 +156,10 @@ describe("the plain-spec form", () => {
       execute: () => ({ premium: 500 }),
     });
     const ctx = createToolContext();
-    const refused = await run(quote, ctx);
+    const refused = await runToolDef(quote, ctx);
     expect(isToolFailure(refused)).toBe(true);
     claim.send(ctx, { type: "VERIFIED" });
-    expect(await run(quote, ctx)).toEqual({
+    expect(await runToolDef(quote, ctx)).toEqual({
       state: "settled",
       done: true,
       result: { premium: 500 },

@@ -2,7 +2,13 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { AgentDef, ToolContext, ToolDef, ToolErrorHandler } from "@alexkroman1/aai";
+import type {
+  AgentDef,
+  AgentSessionContext,
+  ToolContext,
+  ToolDef,
+  ToolErrorHandler,
+} from "@alexkroman1/aai";
 import { createSeededRandom, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { type Db, rejectingWorkflows, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
@@ -24,6 +30,7 @@ import {
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
 import { createMemoryStateBackend } from "./session-state-store.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
+import { createUsageMeter, type UsageMeter, type UsageSnapshot } from "./usage-meter.ts";
 
 /** Yield to the microtask queue so pending promises settle. */
 export function flush(): Promise<void> {
@@ -305,6 +312,41 @@ export type TestLogger = Record<LogLevel, Mock<LogFn>> & Logger;
 /** Fresh logger with per-call `vi.fn()` spies. Use whenever you assert on log output. */
 export function makeLogger(): TestLogger {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+}
+
+/**
+ * A {@link UsageMeter} plus the snapshots it announced.
+ *
+ * The pair IS the observable surface — a meter with no captured `onUpdate` can
+ * only be asserted on through `snapshot()`, which says nothing about whether a
+ * step was announced — so the factory was written three times with three
+ * different key names (`meterWith`, `metered`, and an inline variant), one of
+ * them dropping the updates array entirely. One shape here so a spec asserting
+ * on a delegated run's spend and one asserting on the meter itself are reading
+ * the same thing.
+ */
+export function makeUsageMeter(limits?: { totalTokens?: number } | undefined): {
+  meter: UsageMeter;
+  updates: UsageSnapshot[];
+} {
+  const updates: UsageSnapshot[] = [];
+  const meter = createUsageMeter({ limits, onUpdate: (snapshot) => void updates.push(snapshot) });
+  return { meter, updates };
+}
+
+/**
+ * What a per-session author FUNCTION is handed — a `systemPrompt` resolver, a
+ * guardrail, a dialog's instruction.
+ *
+ * A DETACHED slot store, which is what makes this safe to share: it is backed
+ * by nothing, so two specs holding one cannot see each other's writes. Four
+ * suites had declared this same three-field literal, two of them byte-identical
+ * down to a four-line comment.
+ */
+export function makeSessionContext(
+  overrides: Partial<AgentSessionContext> = {},
+): AgentSessionContext {
+  return { sessionId: "s-1", env: {}, slots: createDetachedSlotStore(), ...overrides };
 }
 
 // ─── Fixture replay helpers ──────────────────────────────────────────────────

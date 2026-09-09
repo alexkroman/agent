@@ -1,13 +1,18 @@
 // Copyright 2026 the AAI authors. MIT license.
 // `runAgentGuardrails` is the ONE implementation of "first refusal wins, a
-// throw fails open" — three callers share it precisely so none of them can get
-// the throw rule backwards, which makes this file the only place that rule is
-// claimed. The types beside it carry no runtime, so what is asserted here is
-// the runner and the vocabulary it answers in.
+// throw fails open" — both directions share it precisely so neither can get the
+// throw rule backwards, which makes this file the only place that rule is
+// claimed. Its one production caller binds it per direction and lives in
+// another package (`createTurnGuardrails`, the pipeline transport), so nothing
+// downstream asserts the rule either.
+//
+// `GUARDRAIL_FIELDS` is here for the other half: the runner decides what a
+// verdict MEANS, and that table is what decides which fields the mode gate
+// reads — a guardrail field missing from it would never be checked at all.
 
 import { describe, expect, test, vi } from "vitest";
 import type { AgentGuardrail } from "./agent-guardrails.ts";
-import { runAgentGuardrails } from "./agent-guardrails.ts";
+import { GUARDRAIL_FIELDS, runAgentGuardrails } from "./agent-guardrails.ts";
 import type { AgentSessionContext } from "./agent-session-context.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 
@@ -139,6 +144,29 @@ describe("runAgentGuardrails", () => {
     // Not merely equal: a guardrail counting strikes across a call needs the
     // session's OWN slots, not a copy of them.
     expect(seen[0]?.ctx.slots).toBe(CTX.slots);
+  });
+});
+
+describe("GUARDRAIL_FIELDS", () => {
+  test("holds exactly the two fields, in the order the interface declares them", () => {
+    // Pinned rather than derived from the interface, which has no runtime form.
+    // The `satisfies` refuses a field missing from the table AND an entry with
+    // no field behind it, so this line is what makes a THIRD guardrail field a
+    // deliberate edit here as well as a compile error there — and the thing a
+    // missed edit would cost is a safety control silently accepted in s2s.
+    expect(Object.keys(GUARDRAIL_FIELDS)).toEqual(["inputGuardrails", "outputGuardrails"]);
+  });
+
+  test("every entry is a distinct noun phrase, because the refusal reads it aloud", () => {
+    // `assertGuardrailScope` splices the value into "it judges ${…}". An empty
+    // or duplicated one would make two different refusals indistinguishable.
+    const judged = Object.values(GUARDRAIL_FIELDS);
+    for (const what of judged) {
+      expect(what).not.toBe("");
+      // A noun phrase, not a sentence: it is spliced mid-clause.
+      expect(what).not.toMatch(/^[A-Z]|\.$/);
+    }
+    expect(new Set(judged).size).toBe(judged.length);
   });
 });
 

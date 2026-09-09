@@ -2510,7 +2510,7 @@ are resolved to their final values with defaults applied. Optional fields
 (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
 optional — `undefined` means "not configured."
 
-Three groups of fields live on interfaces this extends, each because the
+Four groups of fields live on interfaces this extends, each because the
 group shares ONE rule that is derived from the declaration rather than
 restated beside it: [PipelineVoiceTuning](#pipelinevoicetuning) (pipeline transport or
 nothing), [AgentModelTuning](#agentmodeltuning) (this runtime assembles the request, so
@@ -3433,8 +3433,11 @@ Bound what one session may spend — see [UsageLimits](#usagelimits-2).
 
 ###### Default Value
 
-unset — no cap. Usage is still measured and reported on the
-session event stream (`usage.updated`) whether or not a limit is declared.
+unset — no cap. Usage is still MEASURED either way; whether it
+is also reported on the session event stream depends on whether anything
+reads it. Declaring a limit turns `usage.updated` on, and so does an
+`agent({ events })` handler for `usage.updated` or `"*"` — an unobserved
+session emits nothing rather than spending a durable event per model step.
 
 ###### Inherited from
 
@@ -3654,8 +3657,11 @@ Bound what one session may spend — see [UsageLimits](#usagelimits-2).
 
 ###### Default Value
 
-unset — no cap. Usage is still measured and reported on the
-session event stream (`usage.updated`) whether or not a limit is declared.
+unset — no cap. Usage is still MEASURED either way; whether it
+is also reported on the session event stream depends on whether anything
+reads it. Declaring a limit turns `usage.updated` on, and so does an
+`agent({ events })` handler for `usage.updated` or `"*"` — an unobserved
+session emits nothing rather than spending a durable event per model step.
 
 ***
 

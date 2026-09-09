@@ -326,8 +326,11 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
     tools,
     sessionId,
     stream(turn: TextTurnOptions): TextTurnResult {
-      const turnFatal = createFatalToolLatch();
-      const turnTools = toolsFor(toContextMessages(turn.messages), turnFatal);
+      // One latch per RUN here, where the pipeline keeps one per session: a text
+      // agent's turns are not serialized (two `stream()` calls may overlap), so
+      // a shared latch would let one run's fatal tool abort another's request.
+      const fatalTool = createFatalToolLatch();
+      const turnTools = toolsFor(toContextMessages(turn.messages), fatalTool);
       // Opened before the request, so the turn's own user transcript is the
       // first event of it. `undefined` when nothing is listening, which is what
       // keeps an unobserved turn from installing a per-part callback at all.
@@ -335,10 +338,6 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
       const maxSteps = turn.maxSteps ?? agent.maxSteps ?? DEFAULT_MAX_STEPS;
       const forceFinal = forceFinalAnswer(maxSteps, logger, sessionId);
       const toolChoice = turn.toolChoice ?? agent.toolChoice ?? "auto";
-      // One latch per RUN here, where the pipeline keeps one per session: a text
-      // agent's turns are not serialized (two `stream()` calls may overlap), so
-      // a shared latch would let one run's fatal tool abort another's request.
-      const fatalTool = turnFatal;
       // The budget, checked where the request is about to be made — see
       // `usage-meter.ts`. A throw rather than a silently empty stream: this
       // door's caller is code, not a person on a phone, and it can act on one.

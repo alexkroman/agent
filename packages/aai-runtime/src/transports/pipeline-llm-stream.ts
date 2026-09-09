@@ -21,9 +21,8 @@ import {
   forceFinalAnswer,
   resetToolChoiceAfterFirstStep,
 } from "../_prepare-step.ts";
-import type { Logger } from "../runtime-config.ts";
 import { createToolCallRepair } from "../tool-call-repair.ts";
-import { type FatalToolLatch, withFatalSignal } from "../tool-error-policy.ts";
+import { withFatalSignal } from "../tool-error-policy.ts";
 import { drainEntries, partsAsEntries } from "./pipeline-llm-drain.ts";
 import { createTurnTrace } from "./pipeline-llm-trace.ts";
 import type {
@@ -44,7 +43,6 @@ import {
   type StreamPart,
   type StreamPartHandler,
 } from "./pipeline-stream-parts.ts";
-import type { EmitError } from "./types.ts";
 import { resolveSystemPrompt } from "./types.ts";
 
 /**
@@ -213,27 +211,13 @@ export function createTurnLlmRunner(deps: TurnLlmRunnerDeps): TurnLlmRunner {
 }
 
 /**
- * The turn ended because a tool declared its own failure unrecoverable.
- *
- * Reported as a `tool` error rather than an `llm` one — the model did nothing
- * wrong — and NON-fatally, on this transport's standing rule that a failing
- * turn is not a failing session. `failed: true` is what makes the outcome speak
- * the recovery phrase, so the caller is handed the conversation back instead of
- * hearing the agent stop.
- *
- * A module-level function rather than a closure inside {@link consumeLlmStream}
- * because that function is at its cognitive-complexity ceiling and this is the
- * one branch in it that is about a policy rather than about the stream.
- */
-/**
  * One pass's entry stream and step promise: the adopted tape's, or a freshly
  * launched request's.
  *
- * A function rather than an `if`/`else` inside {@link consumeLlmStream} for the
- * reason {@link reportFatalTool} is one — that function sits at its
- * cognitive-complexity ceiling, and this branch is the most self-contained
- * thing in it. `launch` is a thunk so the request is assembled only on the arm
- * that needs one.
+ * A function rather than an `if`/`else` inside {@link consumeLlmStream} because
+ * that function sits at its cognitive-complexity ceiling, and this branch is
+ * the most self-contained thing in it. `launch` is a thunk so the request is
+ * assembled only on the arm that needs one.
  */
 function openPass(
   adopted: AdoptedLlmStream | undefined,
@@ -242,27 +226,6 @@ function openPass(
   if (adopted) return { entries: adopted.entries(), steps: adopted.steps() };
   const started = launch();
   return { entries: partsAsEntries(started.fullStream), steps: started.steps };
-}
-
-function reportFatalTool(args: {
-  fatalTool: FatalToolLatch | undefined;
-  collected: ModelMessage[];
-  log: Logger;
-  emitError: EmitError;
-  sid: string;
-  /** Release buffered TTS text, so speech matches the transcript already accumulated. */
-  flush: () => void;
-}): LlmStreamResult | undefined {
-  const err = args.fatalTool?.error();
-  if (err === undefined) return undefined;
-  args.flush();
-  args.log.error("Tool failed fatally; turn stopped", {
-    tool: err.toolName,
-    error: err.message,
-    sid: args.sid,
-  });
-  args.emitError("tool", err.message, { fatal: false });
-  return { messages: args.collected, failed: true };
 }
 
 /**
@@ -300,18 +263,6 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // `AbortSignal.any` holds its sources weakly, so a settled turn leaves no
   // listener behind on either.
   const requestSignal = withFatalSignal(signal, fatalTool);
-  /** The fatal outcome, with the buffered TTS tail flushed so speech matches the transcript. */
-  const fatalOutcome = (): LlmStreamResult | undefined =>
-    reportFatalTool({
-      fatalTool,
-      collected,
-      log,
-      emitError,
-      sid,
-      // A thunk, because the coalescer is REPLACED on a poisoned-adoption
-      // restart — a captured reference would flush the abandoned run's buffer.
-      flush: () => ttsText.flush(),
-    });
   // Batch word-granularity deltas into fewer TTS provider sends; the
   // transcript path (onDelta) keeps full delta granularity.
   let ttsText = createTtsTextCoalescer(sendTtsText);
@@ -429,8 +380,26 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // reporting below: what reaches here is the `AbortError` this module raised
     // on itself (aborting `requestSignal` rejects `result.steps`, which the
     // happy path awaits), whose message names neither the tool nor the reason.
-    const fatal = fatalOutcome();
-    if (fatal) return fatal;
+    //
+    // Reported as a `tool` error rather than an `llm` one — the model did
+    // nothing wrong — and NON-fatally, on this transport's standing rule that a
+    // failing turn is not a failing session. `failed: true` is what makes the
+    // outcome speak the recovery phrase, so the caller is handed the
+    // conversation back instead of hearing the agent stop. The flush comes
+    // first, so speech matches the transcript already accumulated; it reads
+    // `ttsText` HERE rather than through a captured reference, because the
+    // coalescer is REPLACED on a poisoned-adoption restart.
+    const fatalErr = fatalTool?.error();
+    if (fatalErr !== undefined) {
+      ttsText.flush();
+      log.error("Tool failed fatally; turn stopped", {
+        tool: fatalErr.toolName,
+        error: fatalErr.message,
+        sid,
+      });
+      emitError("tool", fatalErr.message, { fatal: false });
+      return { messages: collected, failed: true };
+    }
     // Flush buffered TTS text so speech matches the transcript already
     // accumulated via onDelta for the pre-error portion of the turn.
     ttsText.flush();

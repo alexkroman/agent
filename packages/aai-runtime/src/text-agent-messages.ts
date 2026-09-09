@@ -14,13 +14,7 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import type {
-  AssistantModelMessage,
-  ModelMessage,
-  ToolModelMessage,
-  ToolResultPart,
-  UserModelMessage,
-} from "ai";
+import type { ModelMessage, ToolModelMessage, ToolResultPart } from "ai";
 import { toolResultMessage } from "./_tool-result-message.ts";
 
 /**
@@ -46,7 +40,10 @@ export function toolOutputText(output: ToolResultPart["output"]): string {
     case "error-json":
       return JSON.stringify(output.value);
     case "content":
-      return output.value.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+      // The same "keep the text parts, join them" rule the message bodies get
+      // — one function, so a part shape that starts counting as words counts
+      // in both places.
+      return textOf(output.value);
     default:
       // `execution-denied` — no result exists, so the reason IS the result.
       return output.reason ?? "Tool execution denied.";
@@ -106,8 +103,20 @@ function toolResultsOf(content: ToolModelMessage["content"]): Message[] {
   return out;
 }
 
-/** The words of a user or assistant message, joined across its parts. */
-function textOf(content: UserModelMessage["content"] | AssistantModelMessage["content"]): string {
+/**
+ * A part of a message body, as far as reading its WORDS is concerned.
+ *
+ * Structural rather than one of the SDK's unions, because {@link textOf} is
+ * asked the same question about three of them — a user body, an assistant body,
+ * and a `content` tool output, whose `media` arm belongs to none of the other
+ * two. Every one of them is "parts, some of which are text".
+ */
+type TextualPart = { readonly type: string; readonly text?: string | undefined };
+
+/** The words of a message body, joined across its parts. */
+function textOf(content: string | readonly TextualPart[]): string {
   if (typeof content === "string") return content;
-  return content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+  return content
+    .flatMap((part) => (part.type === "text" && part.text !== undefined ? [part.text] : []))
+    .join("");
 }

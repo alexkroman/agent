@@ -20,8 +20,16 @@
  * The two are not unified into one exported name because they are read by
  * different audiences and their docs argue different things — a handler's
  * context explains why observing may not become driving, and this one explains
- * what a resolver is allowed to know. They must not DRIFT, though: a capability
- * added to one belongs on the other unless there is a reason it does not.
+ * what a resolver is allowed to know, down to the per-field level (`slots` here
+ * warns that a resolver runs on every request; over there it warns that a
+ * handler's write is committed only after it returns). An alias would make one
+ * of those two pages disappear.
+ *
+ * **They must not DRIFT, and that is CHECKED rather than asked for.**
+ * `define.test-d.ts` asserts mutual assignability and equal key sets in both
+ * directions, so a capability added to one is a compile error until it is added
+ * to the other or the pin is deliberately edited. It used to be this paragraph
+ * alone, which states the burden without carrying any of it.
  */
 
 import type { SlotStore } from "./session-state.ts";

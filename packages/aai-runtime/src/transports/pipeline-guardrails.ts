@@ -160,15 +160,44 @@ export interface TurnGuardrailDeps {
 }
 
 /**
+ * The one refusal-free answer, allocated once.
+ *
+ * A fresh `Promise.resolve(undefined)` per check was a promise object per piece
+ * of text on the path that decides time-to-first-word, for a value that is the
+ * same every time and that nothing can mutate.
+ */
+const NO_REFUSAL: Promise<string | undefined> = Promise.resolve(undefined);
+
+/** A session with no guardrails at all — the overwhelming majority. @internal */
+export const NO_GUARDRAILS: TurnGuardrails = {
+  holdsSpeech: false,
+  checkInput: () => NO_REFUSAL,
+  checkOutput: () => NO_REFUSAL,
+};
+
+/**
  * Bind a session's guardrails once.
  *
  * `holdsSpeech` is read at construction rather than per turn because it decides
  * how the transport's funnel is built, and a session cannot gain a guardrail
  * mid-call.
  *
+ * **A session that declared none gets {@link NO_GUARDRAILS} itself**, and that
+ * is what makes the fast path real rather than merely documented. The runtime
+ * wires this for every session (`runtime-session-controls.ts`), so
+ * `pipeline-transport.ts`'s `opts.guardrails ?? NO_GUARDRAILS` never once took
+ * its right-hand arm: every turn of every agent awaited two nested async frames
+ * on the time-to-first-word path to discover there was nothing to run. Deciding
+ * HERE is the only place that can, since this is where the lists are seen — and
+ * `onError`/`onBlocked` are dropped with the rest, which is sound because
+ * neither can fire when no guardrail runs.
+ *
  * @internal
  */
 export function createTurnGuardrails(deps: TurnGuardrailDeps): TurnGuardrails {
+  const holdsSpeech = (deps.outputGuardrails?.length ?? 0) > 0;
+  const checksInput = (deps.inputGuardrails?.length ?? 0) > 0;
+  if (!(holdsSpeech || checksInput)) return NO_GUARDRAILS;
   const check = async (
     direction: "input" | "output",
     list: readonly AgentGuardrail[] | undefined,
@@ -181,15 +210,8 @@ export function createTurnGuardrails(deps: TurnGuardrailDeps): TurnGuardrails {
     return refusal;
   };
   return {
-    holdsSpeech: (deps.outputGuardrails?.length ?? 0) > 0,
+    holdsSpeech,
     checkInput: (text) => check("input", deps.inputGuardrails, text),
     checkOutput: (text) => check("output", deps.outputGuardrails, text),
   };
 }
-
-/** A session with no guardrails at all — the overwhelming majority. @internal */
-export const NO_GUARDRAILS: TurnGuardrails = {
-  holdsSpeech: false,
-  checkInput: () => Promise.resolve(undefined),
-  checkOutput: () => Promise.resolve(undefined),
-};

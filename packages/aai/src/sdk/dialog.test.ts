@@ -2,9 +2,9 @@
 import { describe, expect, test } from "vitest";
 import { setup } from "xstate";
 import { z } from "zod";
+import { runToolDef } from "./_test-utils.ts";
 import { dialog } from "./dialog.ts";
 import { createToolContext } from "./testing.ts";
-import type { ToolContext, ToolDef } from "./types.ts";
 import { isToolFailure, toolFailure } from "./utils.ts";
 
 /**
@@ -51,11 +51,6 @@ function nestedMachine() {
       },
     },
   });
-}
-
-/** Run a tool the way the runtime does, and hand back whatever it answered. */
-async function run(tool: ToolDef, ctx: ToolContext): Promise<unknown> {
-  return await tool.execute({}, ctx);
 }
 
 describe("position", () => {
@@ -161,7 +156,7 @@ describe("tool gating", () => {
       send: { type: "QUOTED" },
       execute: () => ({ premium: 42 }),
     });
-    const out = await run(quote, createToolContext());
+    const out = await runToolDef(quote, createToolContext());
     expect(isToolFailure(out)).toBe(true);
     expect(out).toMatchObject({ error: expect.stringContaining('"verifying"') });
   });
@@ -173,7 +168,7 @@ describe("tool gating", () => {
       when: "quoting",
       execute: () => ({ premium: 42 }),
     });
-    const out = await run(quote, createToolContext());
+    const out = await runToolDef(quote, createToolContext());
     expect(out).toMatchObject({
       error: expect.stringContaining("Get the caller's policy number and verify it."),
     });
@@ -189,7 +184,7 @@ describe("tool gating", () => {
     });
     const bare = dialog("bare", machine);
     const gated = bare.tool({ description: "Only at the end", when: "end", execute: () => "ran" });
-    const out = await run(gated, createToolContext());
+    const out = await runToolDef(gated, createToolContext());
     expect(out).toMatchObject({ error: expect.stringContaining("reach end first") });
   });
 
@@ -204,7 +199,7 @@ describe("tool gating", () => {
         return {};
       },
     });
-    await run(quote, createToolContext());
+    await runToolDef(quote, createToolContext());
     expect(ran).toBe(false);
   });
 
@@ -218,7 +213,7 @@ describe("tool gating", () => {
     });
     const ctx = createToolContext();
     claim.send(ctx, { type: "VERIFIED" });
-    const out = await run(quote, ctx);
+    const out = await runToolDef(quote, ctx);
     expect(out).toMatchObject({ state: "settled", done: true, result: { premium: 42 } });
   });
 
@@ -230,9 +225,9 @@ describe("tool gating", () => {
       execute: () => "noted",
     });
     const ctx = createToolContext();
-    expect(await run(note, ctx)).toMatchObject({ state: "verifying", result: "noted" });
+    expect(await runToolDef(note, ctx)).toMatchObject({ state: "verifying", result: "noted" });
     claim.send(ctx, { type: "VERIFIED" });
-    expect(await run(note, ctx)).toMatchObject({ state: "quoting", result: "noted" });
+    expect(await runToolDef(note, ctx)).toMatchObject({ state: "quoting", result: "noted" });
   });
 
   test("a tool declaring neither send nor sendFrom leaves the position alone", async () => {
@@ -243,7 +238,7 @@ describe("tool gating", () => {
       execute: () => "read",
     });
     const ctx = createToolContext();
-    expect(await run(read, ctx)).toMatchObject({ state: "verifying", result: "read" });
+    expect(await runToolDef(read, ctx)).toMatchObject({ state: "verifying", result: "read" });
     expect(claim.position(ctx).state).toBe("verifying");
   });
 
@@ -255,7 +250,7 @@ describe("tool gating", () => {
       send: { type: "VERIFIED" },
       execute: () => "ok",
     });
-    const out = await run(verify, createToolContext());
+    const out = await runToolDef(verify, createToolContext());
     expect(out).toMatchObject({ instruction: "Read the excess disclosure, then quote." });
   });
 });
@@ -270,7 +265,7 @@ describe("tool transitions", () => {
       execute: () => toolFailure("That policy number is not on file."),
     });
     const ctx = createToolContext();
-    const out = await run(verify, ctx);
+    const out = await runToolDef(verify, ctx);
     expect(isToolFailure(out)).toBe(true);
     // The whole point: a tool that failed did not do the thing, so every later
     // gate would be wrong if the conversation had moved on.
@@ -284,7 +279,7 @@ describe("tool transitions", () => {
       when: "verifying",
       execute: () => toolFailure("nope"),
     });
-    expect(await run(verify, createToolContext())).toEqual({ error: "nope" });
+    expect(await runToolDef(verify, createToolContext())).toEqual({ error: "nope" });
   });
 
   test("forwards onError, so a gated tool can call a failure fatal", () => {
@@ -323,7 +318,7 @@ describe("tool transitions", () => {
       onError: () => toolFailure("The policy service is unavailable right now."),
     });
     const ctx = createToolContext();
-    await expect(run(verify, ctx)).rejects.toThrow(boom);
+    await expect(runToolDef(verify, ctx)).rejects.toThrow(boom);
     expect(claim.position(ctx).state).toBe("verifying");
     expect(verify.onError?.(boom, ctx)).toEqual({
       error: "The policy service is unavailable right now.",
@@ -340,7 +335,7 @@ describe("tool transitions", () => {
       execute: () => ({ ok: false }),
     });
     const ctx = createToolContext();
-    expect(await run(verify, ctx)).toMatchObject({ state: "closed", done: true });
+    expect(await runToolDef(verify, ctx)).toMatchObject({ state: "closed", done: true });
   });
 
   test("sendFrom returning undefined stays put", async () => {
@@ -352,7 +347,7 @@ describe("tool transitions", () => {
       execute: () => "ok",
     });
     const ctx = createToolContext();
-    expect(await run(verify, ctx)).toMatchObject({ state: "verifying" });
+    expect(await runToolDef(verify, ctx)).toMatchObject({ state: "verifying" });
     expect(claim.position(ctx).state).toBe("verifying");
   });
 
@@ -368,7 +363,7 @@ describe("tool transitions", () => {
       },
     });
     const ctx = createToolContext();
-    expect(await run(verify, ctx)).toMatchObject({
+    expect(await runToolDef(verify, ctx)).toMatchObject({
       state: "quoting",
       result: { checked: true },
     });
@@ -386,7 +381,7 @@ describe("tool transitions", () => {
       },
     });
     const ctx = createToolContext();
-    const out = await run(verify, ctx);
+    const out = await runToolDef(verify, ctx);
     expect(isToolFailure(out)).toBe(true);
     expect(claim.position(ctx).state).toBe("verifying");
   });
@@ -403,7 +398,7 @@ describe("tool transitions", () => {
         return { ok: true };
       },
     });
-    expect(await run(verify, createToolContext())).toMatchObject({ state: "quoting" });
+    expect(await runToolDef(verify, createToolContext())).toMatchObject({ state: "quoting" });
   });
 
   test("a non-advancing tool reports the position as of when it SETTLED", async () => {
@@ -421,7 +416,7 @@ describe("tool transitions", () => {
     const ctx = createToolContext();
     // A concurrent sibling moves the dialog while this body is awaiting.
     advance = () => void claim.send(ctx, { type: "VERIFIED" });
-    expect(await run(read, ctx)).toMatchObject({ state: "quoting", result: "read" });
+    expect(await runToolDef(read, ctx)).toMatchObject({ state: "quoting", result: "read" });
   });
 
   test("preserves the tool's inputSchema", () => {

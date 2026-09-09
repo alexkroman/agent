@@ -3,16 +3,12 @@
 // guardrail that make a block real rather than a report after the fact.
 
 import type { AgentGuardrail, AgentSessionContext } from "@alexkroman1/aai";
-import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
+import { makeSessionContext } from "../_test-utils.ts";
 import { createSpeechGate, createTurnGuardrails, NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import type { SendTtsOptions } from "./types.ts";
 
-const CONTEXT: AgentSessionContext = {
-  sessionId: "s-1",
-  env: {},
-  slots: createDetachedSlotStore(),
-};
+const CONTEXT = makeSessionContext();
 
 /** A recording sink standing in for the transport's `sendTtsText`. */
 function recorder() {
@@ -110,15 +106,47 @@ describe("createSpeechGate", () => {
 describe("createTurnGuardrails", () => {
   const accept: AgentGuardrail = () => true;
 
-  test("no guardrails means no hold and no refusals", async () => {
+  test("no guardrails means no hold and no refusals — and it IS `NO_GUARDRAILS`", async () => {
+    // Identity, not equivalence. The runtime wires this for every session, so
+    // `pipeline-transport.ts`'s `opts.guardrails ?? NO_GUARDRAILS` never took
+    // its right-hand arm and every turn of every agent awaited two nested async
+    // frames on the time-to-first-word path to learn there was nothing to run.
     const guardrails = createTurnGuardrails({
       context: CONTEXT,
       onError: () => undefined,
       onBlocked: () => undefined,
     });
+    expect(guardrails).toBe(NO_GUARDRAILS);
     expect(guardrails.holdsSpeech).toBe(false);
     await expect(guardrails.checkOutput("anything")).resolves.toBeUndefined();
-    expect(NO_GUARDRAILS.holdsSpeech).toBe(false);
+  });
+
+  test("EMPTY lists are no guardrails either — a declaration of nothing", async () => {
+    expect(
+      createTurnGuardrails({
+        inputGuardrails: [],
+        outputGuardrails: [],
+        context: CONTEXT,
+        onError: () => undefined,
+        onBlocked: () => undefined,
+      }),
+    ).toBe(NO_GUARDRAILS);
+  });
+
+  test("an INPUT guardrail alone still gets a real runner, and holds no speech", async () => {
+    // The fast path is "neither list", not "no output list": returning
+    // `NO_GUARDRAILS` here would silently stop checking what the caller said.
+    const blocked = vi.fn();
+    const guardrails = createTurnGuardrails({
+      inputGuardrails: [() => "I can't help with that."],
+      context: CONTEXT,
+      onError: () => undefined,
+      onBlocked: blocked,
+    });
+    expect(guardrails).not.toBe(NO_GUARDRAILS);
+    expect(guardrails.holdsSpeech).toBe(false);
+    await expect(guardrails.checkInput("ssn?")).resolves.toBe("I can't help with that.");
+    expect(blocked).toHaveBeenCalledWith("input", "I can't help with that.");
   });
 
   test("the FIRST refusal wins and the rest are not consulted", async () => {

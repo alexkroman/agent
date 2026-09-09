@@ -2,21 +2,12 @@
 // Specs for the two halves of a session's system prompt: the base cached per
 // calendar day, and the per-turn suffix the `dialog()` integration will install.
 
-import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { makeSessionContext } from "./_test-utils.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 
-/**
- * What a per-session author function would be handed. Inert here: nothing in
- * these specs declares a `systemPrompt` resolver, and `forSession` only passes
- * this through to one.
- */
-const TEST_SESSION_CONTEXT = {
-  sessionId: "s-1",
-  env: {},
-  slots: createDetachedSlotStore(),
-};
+const TEST_SESSION_CONTEXT = makeSessionContext();
 
 function resolverFor(systemPrompt = "Be brief."): ReturnType<typeof createSystemPromptResolver> {
   return createSystemPromptResolver({

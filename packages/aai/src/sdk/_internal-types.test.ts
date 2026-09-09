@@ -8,6 +8,7 @@ import {
   type HostOnlyAgentField,
   toAgentConfig,
 } from "./_internal-types.ts";
+import { rawConfig } from "./_test-utils.ts";
 import type { AgentDef, ToolDef } from "./types.ts";
 
 // The single subtraction the config-mapping design rests on: every AgentDef
@@ -121,17 +122,6 @@ test("agentToolsToSchemas - names the removed `parameters` field rather than shi
     /Tool "get_weather" uses the removed `parameters` field — rename it to `inputSchema`\./,
   );
 });
-
-/**
- * `toAgentConfig` over a RAW record — one seam rather than a laundering cast per
- * assertion. `AgentConfigSource` `Omit`s `mode` precisely so a typed caller
- * cannot supply one, and these tests cover what the runtime does when a raw
- * object (a hand-written `export default {...}`, or a config round-tripped
- * through the wire) carries one anyway.
- */
-function rawConfig(fields: Record<string, unknown>): AgentConfig {
-  return toAgentConfig(fields as never);
-}
 
 describe("AgentConfigSchema", () => {
   const base = { name: "a", systemPrompt: "p", greeting: "g" };

@@ -8,10 +8,9 @@
 // refusal, and that every entry in it produces a usable sentence.
 
 import { describe, expect, test } from "vitest";
+import { rawConfig } from "./_test-utils.ts";
 import type { AgentModelTuning, ModelTuningField } from "./agent-model-tuning.ts";
 import { MODEL_TUNING_FIELDS } from "./agent-model-tuning.ts";
-import type { AgentConfig } from "./manifest-barrel.ts";
-import { toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 
 /** A legal value for each knob, so a case can set the field it names. */
@@ -22,11 +21,6 @@ const SAMPLE: { [K in ModelTuningField]: AgentModelTuning[K] } = {
   resetToolChoice: false,
   usageLimits: { totalTokens: 10_000 },
 };
-
-/** A config built from a RAW object, skipping `agent()`'s authoring types. */
-function rawConfig(fields: Record<string, unknown>): AgentConfig {
-  return toAgentConfig(fields as Parameters<typeof toAgentConfig>[0]);
-}
 
 const FIELDS = Object.keys(MODEL_TUNING_FIELDS) as ModelTuningField[];
 
@@ -73,12 +67,35 @@ describe("the table is what makes the s2s refusal un-skippable", () => {
     test(`${field} survives to a PIPELINE config — the rule is s2s-only`, () => {
       expect(rawConfig({ name: "Line", [field]: SAMPLE[field] })[field]).toEqual(SAMPLE[field]);
     });
+
+    test(`${field} survives to a TEXT config too — none of these is voice-specific`, () => {
+      // The rule is "this runtime assembles the request", and a text agent
+      // assembles its own — so text is the arm that tells the shared rule apart
+      // from the pipeline-only voice knobs next door.
+      expect(rawConfig({ name: "Docs", text: true, [field]: SAMPLE[field] })[field]).toEqual(
+        SAMPLE[field],
+      );
+    });
   }
 
   test("an s2s agent that sets none of them is legal", () => {
     // The refusal is per FIELD, not per interface: the loop above must not be
     // reachable for an agent that declared nothing.
     expect(() => rawConfig({ name: "Line", s2s: assemblyAIS2s() })).not.toThrow();
+  });
+
+  test("`maxRetries: 0` survives — a `??` default would swallow it", () => {
+    // Covered by the loop above (its sample IS 0) and named anyway: the value
+    // most worth setting on a live call is the one an accidental `?? DEFAULT`
+    // replaces with the vendor's own backoff, and a named case is what makes
+    // that regression readable rather than a loop iteration going red.
+    expect(rawConfig({ name: "Line", maxRetries: 0 }).maxRetries).toBe(0);
+  });
+
+  test("`resetToolChoice` is absent by default, so the runtime owns the default", () => {
+    // It defaults TRUE, and the default lives in the runtime's step preparer —
+    // a config that materialized `false` here would invert it silently.
+    expect(rawConfig({ name: "Line" }).resetToolChoice).toBeUndefined();
   });
 });
 

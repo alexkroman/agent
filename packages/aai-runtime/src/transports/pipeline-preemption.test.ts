@@ -14,6 +14,7 @@ import {
   llmCalls,
   makeOpts,
   noopToolSchema,
+  spoken,
   useVirtualTime,
 } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
@@ -115,7 +116,7 @@ describe("preemptive generation — guardrail 2: nothing speculative executes a 
       expect(executeTool).toHaveBeenCalledTimes(1);
     });
     await vi.waitFor(() => {
-      expect((tts.last()?.textChunks ?? []).join("")).toContain("It shipped yesterday.");
+      expect(spoken(tts)).toContain("It shipped yesterday.");
     });
     // The real turn re-ran the request from scratch, against the FINAL text.
     expect(llmCalls(opts).calls.length).toBeGreaterThanOrEqual(2);
@@ -146,7 +147,7 @@ describe("preemptive generation — adoption", () => {
 
     // The head start was real generation, not a second request.
     expect(llmCalls(opts).calls).toHaveLength(1);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");
+    expect(spoken(tts)).toContain("Your order shipped.");
     expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
     await t.stop();
   });
@@ -284,8 +285,8 @@ describe("preemptive generation — mismatch", () => {
 
     expect(llmCalls(opts).calls).toHaveLength(2);
     expect(userTexts(llmCalls(opts).calls[1] as { prompt?: unknown })).toContain(final);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Real answer.");
-    expect((tts.last()?.textChunks ?? []).join("")).not.toContain("Speculated answer.");
+    expect(spoken(tts)).toContain("Real answer.");
+    expect(spoken(tts)).not.toContain("Speculated answer.");
     // The client sees exactly one reply.
     expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
     await t.stop();
@@ -406,7 +407,7 @@ describe("preemptive generation — OFF by default", () => {
       expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
     });
     expect(llmCalls(opts).calls).toHaveLength(1);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");
+    expect(spoken(tts)).toContain("Your order shipped.");
     await t.stop();
   });
 
@@ -459,9 +460,9 @@ describe("preemptive generation — the SYSTEM PROMPT is part of request parity"
     // A SECOND request — the head start was thrown away rather than adopted…
     expect(llmCalls(opts).calls).toHaveLength(2);
     // …and what the caller heard came from it, under the phase that is current.
-    const spoken = (tts.last()?.textChunks ?? []).join("");
-    expect(spoken).toContain("regenerated");
-    expect(spoken).not.toContain("speculated");
+    const said = spoken(tts);
+    expect(said).toContain("regenerated");
+    expect(said).not.toContain("speculated");
     await t.stop();
   });
 
@@ -487,7 +488,7 @@ describe("preemptive generation — the SYSTEM PROMPT is part of request parity"
     });
 
     expect(llmCalls(opts).calls).toHaveLength(1);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");
+    expect(spoken(tts)).toContain("Your order shipped.");
     await t.stop();
   });
 });

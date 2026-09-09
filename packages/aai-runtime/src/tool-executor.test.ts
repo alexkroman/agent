@@ -6,10 +6,9 @@ import { TimeoutError } from "p-timeout";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
-import { makeTool, malformedOnError, sleep } from "./_test-utils.ts";
+import { makeLogger, makeTool, makeUsageMeter, malformedOnError, sleep } from "./_test-utils.ts";
 import { createGenerateFn } from "./generate.ts";
 import { executeToolCall, type FatalToolError, isFatalToolError } from "./tool-executor.ts";
-import { createUsageMeter, type UsageSnapshot } from "./usage-meter.ts";
 
 function run(
   name: string,
@@ -364,7 +363,7 @@ describe("executeToolCall — onError classifies a THROW", () => {
   });
 
   test("a fatal call logs at error level, not warn", async () => {
-    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const logger = makeLogger();
     const tool = makeTool({
       execute: () => {
         throw new Error("no key");
@@ -662,8 +661,7 @@ describe("ctx.generate spends on the session's meter", () => {
 
   test("one generation from a tool body moves the meter", async () => {
     const { generate } = generating();
-    const updates: UsageSnapshot[] = [];
-    const usage = createUsageMeter({ onUpdate: (snapshot) => updates.push(snapshot) });
+    const { meter: usage, updates } = makeUsageMeter();
 
     expect(await run("ask", {}, asking, { generate, usage })).toBe("first");
 
@@ -675,7 +673,7 @@ describe("ctx.generate spends on the session's meter", () => {
 
   test("a generation past the cap is REFUSED, and the model is never dialled", async () => {
     const { model, generate } = generating();
-    const usage = createUsageMeter({ limits: { totalTokens: 2 }, onUpdate: () => undefined });
+    const { meter: usage } = makeUsageMeter({ totalTokens: 2 });
 
     // The first call reaches the cap; the rule is that the request in flight
     // finishes and the NEXT one is refused, so this one answers.

@@ -19,13 +19,13 @@ import {
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
-import { makeAgent } from "./_test-utils.ts";
+import { makeAgent, makeUsageMeter } from "./_test-utils.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import { createSessionEmitter, type SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state-store.ts";
-import { createUsageMeter, type UsageMeter } from "./usage-meter.ts";
+import type { UsageMeter } from "./usage-meter.ts";
 
 /** The counter these cases bump — declared once, so both sinks project the same slot. */
 const countSlot = sessionSlot("count", () => ({ count: 0 }));
@@ -314,7 +314,7 @@ describe("self-hosted tool surface: a tool's model call finds its session's mete
     const fakes = registerFakeProviders({ llm: model });
     if (!fakes.llm) throw new Error("fake llm descriptor missing");
     const meters = createOwnedMap<string, UsageMeter>();
-    const usage = createUsageMeter({ onUpdate: () => undefined });
+    const { meter: usage } = makeUsageMeter();
     meters.claim(SID, usage);
 
     const agent = makeAgent({

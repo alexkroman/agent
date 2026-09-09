@@ -157,13 +157,43 @@ export interface AgentGuardrails {
 }
 
 /**
+ * Both {@link AgentGuardrails} fields, with the text each one judges.
+ *
+ * The one declaration `assertGuardrailScope` (`config-rules.ts`) derives its
+ * field list from, so the mode check cannot fall behind the interface. The
+ * `satisfies` is what makes that real: it makes the object TOTAL over
+ * {@link AgentGuardrails}, so a third guardrail field added to the interface
+ * and not to this table is a compile error here rather than a SAFETY control
+ * an s2s or text agent may declare and never have honoured.
+ *
+ * Same mechanism, and the same lesson, as `MODEL_TUNING_FIELDS` and
+ * `PIPELINE_ONLY_TUNING` — the two neighbouring gates this one was written as a
+ * pair of string literals beside. The lesson is `startFailurePhrase`, which
+ * slipped past the pipeline gate exactly that way; the cost of the same slip
+ * here is the one thing this SDK refuses to pay silently, because a guardrail
+ * that is accepted and does nothing costs precisely what it was declared to
+ * prevent.
+ *
+ * @internal
+ */
+export const GUARDRAIL_FIELDS = {
+  inputGuardrails: "what the caller said",
+  outputGuardrails: "what the agent is about to say",
+} as const satisfies Record<keyof AgentGuardrails, string>;
+
+/** One {@link AgentGuardrails} field name. @internal */
+export type GuardrailField = keyof typeof GUARDRAIL_FIELDS;
+
+/**
  * Run a list of guardrails in order and answer the first refusal.
  *
- * One implementation for both directions and all three callers (the two
- * pipeline sites and the text agent), because "first refusal wins, a throw
- * fails open" is the contract rather than each caller's own loop — and a
+ * One implementation for both directions, because "first refusal wins, a throw
+ * fails open" is the contract rather than each direction's own loop — and a
  * caller that wrote the loop itself is a caller that can get the throw rule
- * backwards.
+ * backwards. There is ONE production caller today, `createTurnGuardrails` in
+ * `aai-runtime`'s pipeline transport, which binds it once per direction; the
+ * other two modes never reach it, because `assertGuardrailScope` refuses a
+ * guardrail on an s2s or text agent at config time.
  *
  * `onError` is how the fail-open throw is REPORTED; a guardrail that fails
  * silently is a guardrail nobody knows has stopped working.
@@ -185,7 +215,13 @@ export async function runAgentGuardrails(
       onError(err);
       continue;
     }
-    if (verdict !== true && typeof verdict === "string" && verdict !== "") return verdict;
+    // `typeof === "string"` already excludes `true`, the only other arm of
+    // `GuardrailVerdict`. The `""` check is deliberate and not a truthiness
+    // shortcut: the empty string is what a guardrail returns when it MEANT to
+    // accept and reached for the wrong falsy value, and refusing a turn into
+    // silence — the caller hears nothing at all — is the one outcome worse than
+    // letting the text through. So it reads as acceptance.
+    if (typeof verdict === "string" && verdict !== "") return verdict;
   }
   return undefined;
 }

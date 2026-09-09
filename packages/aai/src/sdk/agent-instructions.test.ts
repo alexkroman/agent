@@ -51,13 +51,18 @@ describe("the two halves are EXCLUSIVE — exactly one answers for any prompt", 
     expect(systemPromptResolver("")).toBeUndefined();
   });
 
-  test("anything else is neither — the narrowings take `unknown` deliberately", () => {
-    // They run at the config boundary, which a hand-written `export default
-    // {...}` also crosses, so a number or an object must fall out rather than
-    // reach `buildSystemPrompt`.
-    for (const value of [42, null, {}, [], true]) {
-      expect(staticSystemPrompt(value)).toBeUndefined();
-      expect(systemPromptResolver(value)).toBeUndefined();
+  test("a raw config's junk value is neither, though the TYPE cannot say so", () => {
+    // The narrowings take `AgentSystemPrompt | undefined`, so every in-repo
+    // caller is checked — but they still run at the config boundary, which a
+    // hand-written `export default {...}` also crosses, and there a number or
+    // an object must fall out rather than reach `buildSystemPrompt`. The cast
+    // is the point of the case: it stages what only an unchecked caller can
+    // send.
+    const junk: unknown[] = [42, null, {}, [], true];
+    for (const value of junk) {
+      const raw = value as AgentSystemPrompt;
+      expect(staticSystemPrompt(raw)).toBeUndefined();
+      expect(systemPromptResolver(raw)).toBeUndefined();
     }
   });
 });

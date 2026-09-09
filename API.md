@@ -796,6 +796,9 @@ interface AgentSessionContext {
 }
 
 // @public
+type AgentSystemPrompt = string | AgentInstructions;
+
+// @public
 export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
 
 // @public (undocumented)
@@ -1740,7 +1743,7 @@ type StartOptions = {
 };
 
 // @internal
-export function staticSystemPrompt(prompt: unknown): string | undefined;
+export function staticSystemPrompt(prompt: AgentSystemPrompt | undefined): string | undefined;
 
 // @internal
 export const STEP_FETCH_CONNECTIONS = 64;
@@ -1913,7 +1916,7 @@ interface SubagentToolCall {
 }
 
 // @internal
-export function systemPromptResolver(prompt: unknown): AgentInstructions | undefined;
+export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): AgentInstructions | undefined;
 
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;

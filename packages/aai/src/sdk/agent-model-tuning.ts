@@ -172,8 +172,11 @@ export interface AgentModelTuning {
   /**
    * Bound what one session may spend — see {@link UsageLimits}.
    *
-   * @defaultValue unset — no cap. Usage is still measured and reported on the
-   * session event stream (`usage.updated`) whether or not a limit is declared.
+   * @defaultValue unset — no cap. Usage is still MEASURED either way; whether it
+   * is also reported on the session event stream depends on whether anything
+   * reads it. Declaring a limit turns `usage.updated` on, and so does an
+   * `agent({ events })` handler for `usage.updated` or `"*"` — an unobserved
+   * session emits nothing rather than spending a durable event per model step.
    */
   usageLimits?: UsageLimits;
 }

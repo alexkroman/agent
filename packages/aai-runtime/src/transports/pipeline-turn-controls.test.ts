@@ -9,17 +9,17 @@
 // not prevented anything, so a spec that reads a boolean would pass against an
 // implementation that speaks first and reports afterwards.
 
-import type { AgentSessionContext } from "@alexkroman1/aai";
-import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_ERROR_PHRASE } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
+import { makeSessionContext } from "../_test-utils.ts";
 import { FatalToolError } from "../tool-error-policy.ts";
 import { createUsageMeter } from "../usage-meter.ts";
 import {
   llmCalls,
   makeOpts,
   noopToolSchema,
+  spoken,
   useVirtualTime,
 } from "./_pipeline-transport-harness.ts";
 import { createTurnGuardrails } from "./pipeline-guardrails.ts";
@@ -27,16 +27,7 @@ import { createPipelineTransport } from "./pipeline-transport.ts";
 
 useVirtualTime();
 
-const CONTEXT: AgentSessionContext = {
-  sessionId: "test-sid",
-  env: {},
-  slots: createDetachedSlotStore(),
-};
-
-/** Everything the TTS provider was asked to say, joined. */
-function spoken(tts: { last: () => { textChunks: string[] } | undefined }): string {
-  return (tts.last()?.textChunks ?? []).join("");
-}
+const CONTEXT = makeSessionContext({ sessionId: "test-sid" });
 
 describe("PipelineTransport — an OUTPUT guardrail", () => {
   test("the blocked reply is never spoken, and the verdict is said instead", async () => {

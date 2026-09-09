@@ -15,8 +15,11 @@
  *
  * The last two are refused for an s2s agent at config time
  * (`assertSamplingScope`, `assertGuardrailScope`), so neither is built
- * conditionally: an s2s session gets a meter that counts nothing and an empty
- * guardrail set, which is exactly what its declarations say.
+ * conditionally: such a session gets a meter with no budget on it and an empty
+ * guardrail set, which is exactly what its declarations say. The meter is still
+ * REAL — every tool call carries it, so an s2s agent's `ctx.generate` and
+ * `ctx.delegate` are counted; what s2s cannot feed it is the conversational
+ * loop's own tokens (`usage-meter.ts` argues that).
  *
  * Split out of `runtime.ts` at the source-length cap. The ORDER is the reason
  * it is one function rather than four exports — the emitter needs the dialogs'
@@ -95,12 +98,31 @@ export function openSessionWiring(deps: {
     logger,
     ...omitUndefined({ hooks, commit }),
   });
+  // Does anything READ `usage.updated`? Announcing is not free: the meter
+  // records once per model STEP — every step of every turn, plus every
+  // `ctx.generate` and every step of every `ctx.delegate` — so a default
+  // `maxSteps: 10` tool turn mints up to eleven ULIDs, appends eleven entries
+  // to the retained stream (against its `MAX_SESSION_EVENTS` budget), and sends
+  // eleven client frames competing with audio, on the path this repo measures
+  // time-to-first-token on. The event is cumulative and last-write-wins, so a
+  // reader that arrives late still sees the true total and per-step granularity
+  // buys nobody anything. Wired therefore only for the two readers the SDK
+  // documents — a declared budget, and an `events` handler for this type or
+  // `"*"` — which is the treatment `text-agent-events.ts` already gives it via
+  // `NO_EVENTS.usage`. `record()` stays unconditional: it is in-memory, free,
+  // and what `usageLimits` is enforced from.
+  const readsUsage =
+    deps.limits !== undefined ||
+    agent.events?.["usage.updated"] !== undefined ||
+    agent.events?.["*"] !== undefined;
   return {
     dialogs,
     emitter,
     usage: createUsageMeter({
       limits: deps.limits,
-      onUpdate: (snapshot) => emitter.emit({ type: "usage.updated", ...snapshot }),
+      onUpdate: readsUsage
+        ? (snapshot) => emitter.emit({ type: "usage.updated", ...snapshot })
+        : undefined,
     }),
     guardrails: createTurnGuardrails({
       inputGuardrails: agent.inputGuardrails,

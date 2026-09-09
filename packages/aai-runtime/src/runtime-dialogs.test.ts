@@ -5,21 +5,12 @@ import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeConfig, makeLogger } from "./_test-utils.ts";
+import { makeConfig, makeLogger, makeSessionContext } from "./_test-utils.ts";
 import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import type { Transport } from "./transports/types.ts";
 
-/**
- * What a per-session author function would be handed. Inert here: nothing in
- * these specs declares a `systemPrompt` resolver, and `forSession` only passes
- * this through to one.
- */
-const TEST_SESSION_CONTEXT = {
-  sessionId: "s-1",
-  env: {},
-  slots: createDetachedSlotStore(),
-};
+const TEST_SESSION_CONTEXT = makeSessionContext();
 
 const SID = "s-dialog";
 

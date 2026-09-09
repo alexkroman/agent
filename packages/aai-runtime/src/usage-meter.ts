@@ -40,10 +40,17 @@
  * Named here rather than discovered, because the whole defect above was a doc
  * that promised more than the code counted:
  *
- * - **S2S counts NOTHING, and says so by being absent.** There the provider
- *   runs the whole loop and reports no token counts to the host, so no meter is
- *   built, no `usage.updated` is emitted, and `agent({ usageLimits })` is
- *   refused at config time (`assertSamplingScope`). Reporting zeroes would be
+ * - **S2S cannot count the CONVERSATIONAL LOOP, which is almost all of what it
+ *   spends.** There the provider runs the loop itself and reports no token
+ *   counts to the host, so its turns are unmeasurable and
+ *   `agent({ usageLimits })` is refused at config time
+ *   (`assertSamplingScope`) rather than accepting a budget nothing could
+ *   enforce. What is missing is the FEED, not the meter: one is built for every
+ *   session whatever its mode (`runtime-session-controls.ts`) and every tool
+ *   call carries it (`runtime-tools.ts`), so an s2s agent whose tool calls
+ *   `ctx.generate` or `ctx.delegate` really does meter those — they are
+ *   host-side model requests like any other, and rows two and three of the
+ *   table above apply unchanged. Reporting the loop's turns as zeroes would be
  *   the one outcome worse than reporting nothing: a budget that never trips
  *   reads exactly like a session under budget.
  * - **A durable WORKFLOW step is out of scope, not merely unwired.** A run
@@ -162,14 +169,23 @@ function finite(value: number | undefined): number {
  * climbs is the signature of a provider that meters nothing, which is worth
  * being able to see.
  *
+ * **It is OPTIONAL, and absent means nobody is reading.** Recording is
+ * in-memory and free, so it happens for every session; announcing is not —
+ * each snapshot is an allocation on the per-STEP path, and on the pipeline it
+ * becomes a durable event and a client frame besides (see
+ * `runtime-session-controls.ts`, which decides when a session has a reader).
+ * So the spread is paid by a meter that has a sink and by no other:
+ * `snapshot()` still answers the live total either way.
+ *
  * @internal
  */
 export function createUsageMeter(deps: {
   limits?: { totalTokens?: number | undefined } | undefined;
-  onUpdate: (snapshot: UsageSnapshot) => void;
+  onUpdate?: ((snapshot: UsageSnapshot) => void) | undefined;
 }): UsageMeter {
   const total: UsageSnapshot = { inputTokens: 0, outputTokens: 0, totalTokens: 0, steps: 0 };
   const cap = deps.limits?.totalTokens;
+  const onUpdate = deps.onUpdate;
   return {
     record(usage) {
       const input = finite(usage?.inputTokens);
@@ -181,7 +197,9 @@ export function createUsageMeter(deps: {
       // and one that reports a total including a third line item is believed.
       total.totalTokens += finite(usage?.totalTokens) || input + output;
       total.steps += 1;
-      deps.onUpdate({ ...total });
+      // The snapshot is COPIED for a reader, so it is built only when there is
+      // one — see the note on `onUpdate` above.
+      onUpdate?.({ ...total });
     },
     snapshot: () => ({ ...total }),
     exhausted() {

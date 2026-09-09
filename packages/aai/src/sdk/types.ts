@@ -25,9 +25,12 @@ import type { WorkflowDef } from "./workflow.ts";
 
 /**
  * The guardrail vocabulary `AgentDef.inputGuardrails`/`outputGuardrails` are
- * written in — the sixth split off this file, re-exported here like the other
- * five so no import moved. `agent-guardrails.ts` carries what a guardrail can
- * and cannot prevent, which is most of the design.
+ * written in — one of the three field groups split off this file at the cap
+ * alongside {@link AgentModelTuning} and {@link AgentObservation}, and
+ * re-exported here like every earlier split so no import moved. (No ordinal:
+ * three landed together, so "the sixth" was a number about nothing.)
+ * `agent-guardrails.ts` carries what a guardrail can and cannot prevent, which
+ * is most of the design.
  */
 export type {
   AgentGuardrail,
@@ -128,7 +131,7 @@ export type {
  * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
  * optional — `undefined` means "not configured."
  *
- * Three groups of fields live on interfaces this extends, each because the
+ * Four groups of fields live on interfaces this extends, each because the
  * group shares ONE rule that is derived from the declaration rather than
  * restated beside it: {@link PipelineVoiceTuning} (pipeline transport or
  * nothing), {@link AgentModelTuning} (this runtime assembles the request, so

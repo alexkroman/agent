@@ -15,9 +15,9 @@ import {
   registerFakeProviders,
   type ScriptedTurn,
 } from "./_pipeline-test-fakes.ts";
+import { makeUsageMeter } from "./_test-utils.ts";
 import { createSubagentRunner, NESTED_DELEGATE_MESSAGE } from "./subagent.ts";
 import type { ToolCallDefaults } from "./tool-executor.ts";
-import { createUsageMeter, type UsageSnapshot } from "./usage-meter.ts";
 
 let unregister: (() => void) | undefined;
 afterEach(() => {
@@ -559,15 +559,9 @@ describe("createSubagentRunner", () => {
  * so `usage.updated` under-reported and a budget bounded only the conversation.
  * They drive the real runner over a fake that really reports tokens, because a
  * spec that recorded into the meter itself would pass against either wiring.
+ * The scripted fake spends two tokens per `doGenerate`, i.e. per STEP.
  */
 describe("createSubagentRunner — the delegating session's budget", () => {
-  /** The scripted fake spends two tokens per `doGenerate`, i.e. per STEP. */
-  function metered(limits?: { totalTokens: number }) {
-    const updates: UsageSnapshot[] = [];
-    const usage = createUsageMeter({ limits, onUpdate: (snapshot) => updates.push(snapshot) });
-    return { usage, updates };
-  }
-
   it("reports EVERY step of the run, not one lump per delegation", async () => {
     // Two steps: a tool call, then the answer. A per-attempt report would say
     // one, and a fan-out's cost would then be understated by its own depth.
@@ -581,7 +575,7 @@ describe("createSubagentRunner — the delegating session's budget", () => {
       execute: () => "out",
     });
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-    const { usage, updates } = metered();
+    const { meter: usage, updates } = makeUsageMeter();
 
     const result = await run(
       subagent({ name: "researcher", systemPrompt: "Research.", tools: { lookup } }),
@@ -599,7 +593,7 @@ describe("createSubagentRunner — the delegating session's budget", () => {
   it("refuses a delegation once the budget is spent, without dialling the model", async () => {
     const { model, descriptor, env } = setup([{ text: "never asked" }]);
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-    const { usage } = metered({ totalTokens: 100 });
+    const { meter: usage } = makeUsageMeter({ totalTokens: 100 });
     usage.record({ inputTokens: 90, outputTokens: 30 });
 
     await expect(
@@ -617,7 +611,7 @@ describe("createSubagentRunner — the delegating session's budget", () => {
     // loop would let the guardrail spend the whole revision budget past it.
     const { model, descriptor, env } = setup([{ text: "first" }, { text: "second" }]);
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-    const { usage } = metered({ totalTokens: 2 });
+    const { meter: usage } = makeUsageMeter({ totalTokens: 2 });
 
     await expect(
       run(

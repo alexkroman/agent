@@ -108,17 +108,31 @@ export type AgentSystemPrompt = string | AgentInstructions;
  * SOURCE TEXT into the model's instructions, which neither the AI SDK nor
  * OpenAI Realtime rejects.
  *
+ * **Takes the union, not `unknown`.** Every caller has an
+ * `AgentDef["systemPrompt"]` in hand, and `unknown` accepted every other field
+ * on the same object too — so a call site reaching for the wrong one compiled
+ * and answered `undefined`, which is exactly the silent shape this pair exists
+ * to prevent one level down. The runtime check is unchanged: a raw
+ * `export default {...}` still crosses this boundary carrying anything at all,
+ * and a `typeof` test is what handles it either way.
+ *
  * @internal
  */
-export function staticSystemPrompt(prompt: unknown): string | undefined {
+export function staticSystemPrompt(prompt: AgentSystemPrompt | undefined): string | undefined {
   return typeof prompt === "string" ? prompt : undefined;
 }
 
 /**
  * The resolver half, or `undefined` for a plain string.
  *
+ * Narrowed for the reason above, and here it also retires this module's only
+ * cast: with the union as the parameter, `typeof prompt === "function"` IS the
+ * narrowing to {@link AgentInstructions}.
+ *
  * @internal
  */
-export function systemPromptResolver(prompt: unknown): AgentInstructions | undefined {
-  return typeof prompt === "function" ? (prompt as AgentInstructions) : undefined;
+export function systemPromptResolver(
+  prompt: AgentSystemPrompt | undefined,
+): AgentInstructions | undefined {
+  return typeof prompt === "function" ? prompt : undefined;
 }
