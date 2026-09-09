@@ -28,10 +28,10 @@ import { buildClientConfig, ClientConfigResponseSchema } from "@alexkroman1/aai/
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
-import { forwardToGuest } from "./guest-forward.ts";
-import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import { forwardToGuest } from "./guest/forward.ts";
+import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
+import { brokerSessionUrlOrThrow } from "./sandbox/broker.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 
 /**
  * Per-request cap on the guest config proxy fetch. Short: this sits on the
@@ -58,7 +58,7 @@ const GUEST_CONFIG_CACHE_TTL_MS = 10 * 60_000;
  * version is what stops a same-slug redeploy landing on the same port from
  * serving the previous build's name for up to ten minutes.
  *
- * NUL-separated for the same reason `projectKey` is (platform-events.ts): none
+ * NUL-separated for the same reason `projectKey` is (platform/events.ts): none
  * of the three parts can contain one, so no triple can spell another's key.
  */
 function memoKey(slug: string, version: number | undefined, guestOrigin: string): string {

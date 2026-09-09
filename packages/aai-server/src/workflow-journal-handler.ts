@@ -44,7 +44,7 @@
  * `workflow-storage-handler.ts` needs one because the DevKit's schema has no
  * tenant column, so five of its eleven methods are keyed by something that is not
  * a run. Here the slug is part of every primary key and every statement
- * (`platform-workflow-journal.ts`), and it is taken from the BEARER, never from
+ * (`platform/workflow-journal.ts`), and it is taken from the BEARER, never from
  * the request. There is nothing per method to decide and nothing to forget: a
  * guessed run id reaches no row, and a guessed hook token reaches no window.
  *
@@ -62,17 +62,17 @@ import {
   requiredSize,
   requiredString,
 } from "./_body-fields.ts";
+import type { AppContext } from "./context.ts";
+import { createLogger } from "./logger.ts";
 import {
   guestSlug,
   guestTrace,
   notConfigured,
   type PlatformCall,
   withReserved,
-} from "./_platform-route.ts";
-import type { AppContext } from "./context.ts";
-import { createLogger } from "./logger.ts";
-import type { AdminDb } from "./platform-lock.ts";
-import * as journal from "./platform-workflow-journal.ts";
+} from "./platform/_route.ts";
+import type { AdminDb } from "./platform/lock.ts";
+import * as journal from "./platform/workflow-journal.ts";
 
 const log = createLogger("workflow.journal");
 

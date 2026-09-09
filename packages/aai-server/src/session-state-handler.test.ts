@@ -3,7 +3,7 @@
  * `POST /:slug/session-state` — the route the guest's third backend calls.
  *
  * The store's semantics are covered against real Postgres in
- * `platform-session-state.scenario.test.ts`. What these assert is the ROUTE: that
+ * `platform/session-state.scenario.test.ts`. What these assert is the ROUTE: that
  * the bearer gates it, that the slug used in every statement comes from that bearer
  * rather than from the body, and that a malformed call is refused before the
  * database is touched.

@@ -62,7 +62,7 @@ Observed 2026-08-09: 13 failed container starts over four minutes, production
 served for the next two hours by a container that predated the deploy, and the
 only trace was a `Function modal_deploy.server is crash-looping` line in an app
 log nobody was reading. Hence two guards, at different distances:
-`modal-image-inputs.test.ts` pins the `is_local` short-circuit statically (a
+`modal/image-inputs.test.ts` pins the `is_local` short-circuit statically (a
 gate that fails in the ordinary test run), and **`ship.yml`'s verify step**
 (`scripts/verify_modal_deploy.py`) asserts after every deploy that a container
 started AFTER the deploy began and that the service answers — the general net,
@@ -84,7 +84,7 @@ input** — the yaml is copied byte-for-byte, so a declared patch not staged
 beside it fails the layer with `ENOENT: … open '/app/patches/<name>.patch'`
 while pnpm hashes it against the lockfile. Every other signal is green, the
 patch being in the tree. `_patch_paths` carries why it derives the paths and
-raises on a declaration it cannot read; `modal-image-inputs.test.ts` pins it.
+raises on a declaration it cannot read; `modal/image-inputs.test.ts` pins it.
 
 **The image also bakes the SERVER's V8 compile cache**, the same trick the
 guest snapshot bakes for the harness. After `BUILD_COMMAND`, a build step runs
@@ -98,12 +98,12 @@ Measured on the built bundle: **~600ms → ~395ms**, i.e. ~200ms off every cold
 start, for ~3.6 MB in the image. Unlike the harness's warm-up this one is
 deliberately FATAL to the build: it runs the real entry, so a non-zero exit
 means the artifact production is about to run cannot be evaluated at all.
-`modal-image-inputs.test.ts` pins the three things that must agree (entry path,
+`modal/image-inputs.test.ts` pins the three things that must agree (entry path,
 flag name, cache directory) across the recipe and the entry.
 
 Dropping `version` is safe **because every workspace dependency here is
 `workspace:*`**, which matches any version. A `workspace:^` anywhere would
-silently break that, so `modal-image-inputs.test.ts` asserts it — along with
+silently break that, so `modal/image-inputs.test.ts` asserts it — along with
 the two other ways this drifts: a workspace glob added to
 `pnpm-workspace.yaml` but not to `WORKSPACE_MANIFEST_GLOBS`, and a manifest
 that grows a dependency-declaring field (`overrides`, `resolutions`,
@@ -114,7 +114,7 @@ which is why it needs a test rather than a comment.
 
 ## The local backend is a microVM
 
-`microsandbox-sandbox.ts` boots the guest in a libkrun microVM from the SAME OCI
+`microsandbox/sandbox.ts` boots the guest in a libkrun microVM from the SAME OCI
 image production pulls: the studio agent's `bash`/`run_code` stop running as the
 server's uid, and in-guest builds resolve production's `/opt/aai` toolchain
 rather than aai-guest's darwin `node_modules`. Boot WARNS when the image is
@@ -130,7 +130,7 @@ all measured:
   is discarded — silently. The harness logs `listening on 0.0.0.0:8080` inside
   the guest while every host dial gets ECONNREFUSED, which reads as a guest that
   failed to boot. The published port therefore goes INSIDE `.network()`.
-- **A guest's `127.0.0.1` is the VM.** `microsandbox-network.ts` rewrites the
+- **A guest's `127.0.0.1` is the VM.** `microsandbox/network.ts` rewrites the
   agent env to a host alias and opens exactly the ports that rewrite needed — a
   policy opening the `host` GROUP would pass every "can it reach the database"
   test while handing tenant code the whole machine.
@@ -139,7 +139,7 @@ all measured:
   virtualization — GitHub's standard runners do not reliably provide it — and
   `AAI_REQUIRE_MICROSANDBOX=1` makes the skip a failure where they do.
 - **A name is NOT released when the sandbox dies** — Modal's property, which
-  `sandbox-directory.ts` rests on and microsandbox does not share. A SIGKILLed
+  `sandbox/directory.ts` rests on and microsandbox does not share. A SIGKILLed
   VM left its slug permanently unreachable; `createReclaimingName`'s doc has it.
 
 ## No warm pool — every spawn boots from the snapshot image
@@ -159,7 +159,7 @@ reintroduce a host-managed pool to approximate it.
 
 **Both placement sites take the SAME list.** `modal_deploy.py` passes
 `region=REGIONS` to the web function AND exports it as `MODAL_SANDBOX_REGION`
-into the shared image (`",".join(REGIONS)`), which `modal-sandbox-env.ts`
+into the shared image (`",".join(REGIONS)`), which `modal/sandbox-env.ts`
 parses into Modal's `regions` create param for every guest spawn. It is
 DERIVED rather than written twice, because a second literal is one nothing
 compares: the host would keep preferring `us-east-2` while guests drifted, on
@@ -200,7 +200,7 @@ Note the shape of that failure: it is a DEPLOY error, not a placement one, so
 the release ships nothing — a change looks merged and is not running. Which
 specific regions a workspace may name is Modal's to decide and nothing in this
 tree can derive it, so `REGIONS` is held to strings a real deploy has accepted
-(`modal-image-inputs.test.ts`), and adding an entry means having deployed it.
+(`modal/image-inputs.test.ts`), and adding an entry means having deployed it.
 Reaching for a granularity level instead of a datacenter is also what Modal's
 own guide recommends: a wider pool is what improves availability, which is the
 same property the fallback exists for.
@@ -220,7 +220,7 @@ helps — both only re-ask for a container that still cannot be placed. A
 warm floor is what makes a pin dangerous, which is why the answer was a
 fallback ORDER rather than either a bare region or no preference at all: a
 second entry makes "placed nothing" unreachable while still expressing where
-this container wants to be. `modal-image-inputs.test.ts` pins the list's
+this container wants to be. `modal/image-inputs.test.ts` pins the list's
 length, its first entry (against the database's region — a first entry that
 drifts keeps the risk and deletes the benefit), that every entry is one a
 deploy has accepted, and that the decorator really reads it; each is A/B'd
@@ -277,7 +277,7 @@ blocks in lockstep" until the second one went with the split deployment.)
 
 ## The guest snapshot image is resolved AT BOOT, not on the first spawn
 
-`prewarmModal(harnessPath)` in modal-context.ts, called from
+`prewarmModal(harnessPath)` in modal/context.ts, called from
 `assertSandboxBackendOrWarn`. Two memoized stages otherwise charged to
 whoever spawns first: the Modal app lookup (a gRPC round trip), and the
 harness image — reading the ~13 MB harness, the synchronous SHA-256 that
@@ -349,9 +349,9 @@ Four things to know before reaching for it:
 
 ## Modal sandbox notes
 
-- **Three backends, selected by `sandbox-backend.ts`.** Guest sandboxes are
-  **remote Modal Sandboxes** (`modal-sandbox.ts`) in production, a **local
-  microVM** (`microsandbox-sandbox.ts`) in local dev, and a plain **child
+- **Three backends, selected by `sandbox/backend.ts`.** Guest sandboxes are
+  **remote Modal Sandboxes** (`modal/sandbox.ts`) in production, a **local
+  microVM** (`microsandbox/sandbox.ts`) in local dev, and a plain **child
   process** (`subprocess-sandbox.ts`) only when named. The policy is three
   rules: an explicit `SANDBOX_BACKEND` always wins (unknown values throw — a
   silent fallback would look like the override not working); otherwise
@@ -365,7 +365,7 @@ Four things to know before reaching for it:
 
   That sentinel was `!SUPABASE_STORAGE_BUCKET`, which inverted the rule it
   exists for — see "Two questions, two sentinels" above, which owns the account.
-- **Every spawn failure is a `SandboxUnavailableError`** (`sandbox-errors.ts`)
+- **Every spawn failure is a `SandboxUnavailableError`** (`sandbox/errors.ts`)
   — both Modal spawners, both subprocess spawners. It is a marker class, not a
   message: the message stays the backend's technical one (`Modal sandbox spawn
   failed: Sandbox operation timed out`), and `createErrorHandler` turns the
@@ -385,7 +385,7 @@ Four things to know before reaching for it:
   is deliberately NOT one of these — it is a routing signal the broker
   catches, never an answer to a client.
 - **There IS a middle tier now, and the three objections it had to answer are
-  in `sandbox-backend.ts`'s module doc** — including the one that INVERTED (one
+  in `sandbox/backend.ts`'s module doc** — including the one that INVERTED (one
   image recipe, so no second toolchain delivery mechanism). A stale
   `SANDBOX_BACKEND=apple-container` still throws at boot.
 - **`subprocess` is opt-in now, not the local default.** It has **no isolation
@@ -417,7 +417,7 @@ Four things to know before reaching for it:
   That artifact is the guest's, so its construction, its two cache layers, and
   the split install (`npm ci` for third-party, `npm install` for
   `@alexkroman1/*`) are documented where it is owned: see "The snapshot image"
-  in `packages/aai-guest/CLAUDE.md`. The host half — `modal-harness-image.ts`,
+  in `packages/aai-guest/CLAUDE.md`. The host half — `modal/harness-image.ts`,
   the content-addressed tag, and per-deploy pinning via `harness_image_tag` —
   stays here.
 - Sandboxes are created with open egress and a bounded lifetime
@@ -433,7 +433,7 @@ Four things to know before reaching for it:
   stay two numbers, plus the measurement off a wedged production sandbox (RSS
   flat at 1.29 GB, 453 CPU-seconds, zero I/O, no progress — it reads as a hung
   build, never an OOM), is in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
-- **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
+- **Every sandbox is tagged with a `role`** (`sandbox/role.ts`: `agent`,
   `preview`, `studio`, `studio-publish`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
   a production voice agent from a preview deploy or a studio coding-agent
@@ -459,13 +459,13 @@ Four things to know before reaching for it:
   opt-in from the slug's shape would NOT have fixed it: a production Publish
   of such a project passes exactly that slug.
 - **The guest snapshot image is resolved AT BOOT, not on the first spawn**
-  (`prewarmModal(harnessPath)` in modal-context.ts) — otherwise the Modal app
+  (`prewarmModal(harnessPath)` in modal/context.ts) — otherwise the Modal app
   lookup and the harness image resolve, or right after every deploy BUILD, on
   one unlucky user's first voice session or studio chat. A spawn racing the
   prewarm joins the same memoized promise. Details in
   [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 - **Readiness is Modal's readiness PROBE**, not host-side polling
-  (`GUEST_READINESS_PROBE` in modal-context.ts): every guest sandbox is
+  (`GUEST_READINESS_PROBE` in modal/context.ts): every guest sandbox is
   created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits
   `sandbox.waitUntilReady()`. A TCP probe is exactly equivalent to the
   `/health` 200 it replaced, and that equivalence is a property of the
@@ -490,7 +490,7 @@ Four things to know before reaching for it:
   (~125ms average waste).
 - **An agent spawn's steps are ordered by what they actually depend on**, not
   by the order they read in. Two of them are only incidentally sequential and
-  must not be re-serialized (`modal-agent-sandbox.ts`):
+  must not be re-serialized (`modal/agent-sandbox.ts`):
   - The bundle write and the env write target different paths and neither
     reads the other, so they go together. Serialized, the tiny env write paid
     a full Modal round trip queued behind the ~8 MB bundle's.
@@ -532,7 +532,7 @@ Four things to know before reaching for it:
   calls are the GUEST's and sequential, ~24 ms an op out of region, ~2 ms in
   it. It was unset while a pin meant ONE region, exhausted as
   `Sandbox operation timed out`. Both outages are in
-  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md); `modal-image-inputs.test.ts` pins the
+  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md); `modal/image-inputs.test.ts` pins the
   list, its first entry, that each is deploy-accepted, that it is passed, and
   that the guest export is DERIVED.
 

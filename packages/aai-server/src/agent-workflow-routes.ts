@@ -29,17 +29,17 @@
  * carries its own argument for why that adds no reachability, while every
  * guest→platform call needs the per-sandbox bearer. See
  * `workflow-enqueue-handler.ts` for why the open-by-design argument does not extend
- * to an enqueue, and `guest-bearer.ts` for the one check the bottom five share.
+ * to an enqueue, and `guest/bearer.ts` for the one check the bottom five share.
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { HonoEnv } from "./context.ts";
-import { GUEST_ROUTE_EXPOSURE, GUEST_ROUTES } from "./guest-routes.ts";
-import type { AdminDb } from "./platform-lock.ts";
+import { GUEST_ROUTE_EXPOSURE, GUEST_ROUTES } from "./guest/routes.ts";
+import type { AdminDb } from "./platform/lock.ts";
 import type { RateLimiter } from "./rate-limit.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import {
   createSessionStateHandler,
   MAX_SESSION_STATE_BODY_BYTES,
@@ -119,9 +119,9 @@ export function registerAgentWorkflowRoutes(
   // URL resolved a run's waitpoint with `{}`. The guest gates POST now, and
   // narrowing here matters more than usual because this handler BROKERS — a
   // forwarded `GET` boots a Modal sandbox before the guest can refuse it. The
-  // subset-of-the-guest's-verbs bug guest-routes.ts exists to catch (a `DELETE`
+  // subset-of-the-guest's-verbs bug guest/routes.ts exists to catch (a `DELETE`
   // that worked in dev and 404'd deployed) is guarded from the other side:
-  // guest-routes.test.ts pins this list against the runtime's route table.
+  // guest/routes.test.ts pins this list against the runtime's route table.
   const handleWorkflowWebhook = createWorkflowWebhookHandler(opts.guestFetch);
   agents.on(
     [...GUEST_ROUTE_EXPOSURE.workflowWebhook.methods],
@@ -201,7 +201,7 @@ export function registerAgentWorkflowRoutes(
   // The guest's workflow UPLOAD records — the last piece of a guest's durable state
   // that lived on local disk. Its bytes do not come through here: those go to the
   // bucket through the upload broker. Same bearer and the same slug-in-every-
-  // statement scoping as session state; `platform-uploads.ts` has why it moved and
+  // statement scoping as session state; `platform/uploads.ts` has why it moved and
   // what keeping it on disk cost.
   agents.post(
     UPLOAD_RECORDS_ROUTE,
@@ -219,7 +219,7 @@ export function registerAgentWorkflowRoutes(
   agents.on(
     // The methods come STRAIGHT off the exposure declaration, for the same
     // reason the webhook route above does it: the guest answers GET, POST and
-    // DELETE, and a platform serving a subset is the exact bug guest-routes.ts
+    // DELETE, and a platform serving a subset is the exact bug guest/routes.ts
     // exists to catch — `api.cancel(runId)` is a DELETE.
     [...GUEST_ROUTE_EXPOSURE.workflows.methods],
     // The guest's own constant, so the two sides of the proxy cannot name

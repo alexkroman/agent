@@ -18,7 +18,7 @@
  *
  * The pass is fleet-wide by design — it repairs every agent — so against a shared
  * database its answers include whatever a sibling left there.
- * `platform-workflow-journal.scenario.test.ts` seeds runs with a `created_at` of
+ * `platform/workflow-journal.scenario.test.ts` seeds runs with a `created_at` of
  * `7` to test ordering, which is comfortably past the grace window.
  *
  * Scoping every assertion to this suite's own slug was the first answer and it

@@ -10,7 +10,7 @@
  *
  * 1. The specifier is really EXTERNAL in the built artifact.
  * 2. Something installs it beside the harness — the locked guest toolchain
- *    (`toolchain/package.json`), or `modal-harness-image.ts`'s separate
+ *    (`toolchain/package.json`), or `modal/harness-image.ts`'s separate
  *    `@alexkroman1/*` install.
  *
  * **The case that made this file necessary is gone, and it is worth keeping the
@@ -80,7 +80,7 @@ describe("the neverBundle list", () => {
     // package from the bundle without installing it beside the harness produces a
     // guest that boots and then cannot resolve it — at the first session, or (as
     // here) at the first workflow. `@alexkroman1/*` is the documented exception:
-    // its versions change per release, so modal-harness-image.ts installs those
+    // its versions change per release, so modal/harness-image.ts installs those
     // separately at exact resolved versions.
     const toolchain = JSON.parse(readFileSync(join(PKG, "toolchain/package.json"), "utf-8")) as {
       dependencies?: Record<string, string>;

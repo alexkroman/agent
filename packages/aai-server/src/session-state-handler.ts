@@ -10,7 +10,7 @@
  * ## The scoping is a SCHEMA property, not a per-method table
  *
  * The slug is part of the primary key and part of every statement
- * (`platform-session-state.ts`), so the boundary is the SLUG ARGUMENT — taken
+ * (`platform/session-state.ts`), so the boundary is the SLUG ARGUMENT — taken
  * from the bearer, never from the request. There is nothing per method to
  * decide, and nothing to forget. The DevKit's run-storage route was the
  * counter-example and is the reason this is worth stating: its schema had no
@@ -26,16 +26,16 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { isOneOf, requiredInt, requiredString } from "./_body-fields.ts";
+import type { AppContext } from "./context.ts";
+import { createLogger } from "./logger.ts";
 import {
   guestSlug,
   guestTrace,
   notConfigured,
   type PlatformCall,
   withReserved,
-} from "./_platform-route.ts";
-import type { AppContext } from "./context.ts";
-import { createLogger } from "./logger.ts";
-import type { AdminDb } from "./platform-lock.ts";
+} from "./platform/_route.ts";
+import type { AdminDb } from "./platform/lock.ts";
 import {
   appendEvents,
   commitSlots,
@@ -44,7 +44,7 @@ import {
   nextEventIndex,
   type PlatformSessionEvent,
   readEvents,
-} from "./platform-session-state.ts";
+} from "./platform/session-state.ts";
 
 const log = createLogger("session.state");
 

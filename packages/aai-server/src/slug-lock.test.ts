@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import { localSlugLock, type SlugMutationLock } from "./platform/lock.ts";
 import { authFetch, createTestOrchestrator, deploy, deployAgent } from "./test-utils.ts";
 
 test("concurrent deploy and delete are serialized", async () => {

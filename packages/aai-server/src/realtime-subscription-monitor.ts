@@ -16,7 +16,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { createLogger } from "./logger.ts";
-import type { PlatformEventsHealth } from "./platform-events.ts";
+import type { PlatformEventsHealth } from "./platform/events.ts";
 
 const log = createLogger("platform.realtime");
 

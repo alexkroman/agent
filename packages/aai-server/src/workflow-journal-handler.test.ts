@@ -2,8 +2,8 @@
 /**
  * `POST /:slug/workflow-journal` as a ROUTE — the door, not the SQL.
  *
- * `platform-workflow-journal.test.ts` covers what the statements look like and
- * `platform-workflow-journal.scenario.test.ts` covers what a real database does
+ * `platform/workflow-journal.test.ts` covers what the statements look like and
+ * `platform/workflow-journal.scenario.test.ts` covers what a real database does
  * with them. What is only visible from here is the five things the handler
  * itself decides. Four of them are ways a durable run silently stops being
  * durable; the fifth is the one way this route can hurt somebody ELSE'S run:
@@ -160,7 +160,7 @@ describe("POST /:slug/workflow-journal", () => {
    * call took one of `ADMIN_POOL_MAX` reserved admin connections, held it across
    * the read that refused the request, and gave it back. `seen` stayed empty
    * throughout — the cost was the door, not the query — which is why this needs
-   * its own spy. See `PlatformCall` in `_platform-route.ts`.
+   * its own spy. See `PlatformCall` in `platform/_route.ts`.
    */
   test("reserves no connection for a body it is going to refuse", async () => {
     const p = await platform();
@@ -259,7 +259,7 @@ describe("POST /:slug/workflow-journal", () => {
      * The trace id end to end, over the real route rather than over
      * `withReserved` alone.
      *
-     * `_platform-route.test.ts` pins that every line the frame writes carries the
+     * `platform/_route.test.ts` pins that every line the frame writes carries the
      * id; what only a route can show is that the id is READ — that the header the
      * runtime mints (`aai-runtime/platform-rpc.ts`) reaches `guestTrace` through
      * hono's own request, which is the half a middleware change can break with

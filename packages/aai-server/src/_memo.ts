@@ -113,7 +113,7 @@ export type KeyedAsyncMemo<T> = ((key: string, build: () => Promise<T>) => Promi
  * releases the key while a build is still in flight, and the next call claims
  * it — and an unguarded `memo.delete(key)` there evicts that successor. What
  * it costs is a redundant rebuild rather than a wrong answer (the successor's
- * own callers still hold its promise), but for `modal-harness-image.ts` a
+ * own callers still hold its promise), but for `modal/harness-image.ts` a
  * rebuild is a builder sandbox and a filesystem snapshot. It is reachable only
  * through `clear()` today, which is test-only — the guard is here because
  * `createSingleFlight` two functions up gets this right and a reader has no

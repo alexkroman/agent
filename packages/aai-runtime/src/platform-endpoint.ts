@@ -43,7 +43,7 @@
  * @internal
  */
 export const PLATFORM_ROUTES = {
-  /** Session slots and the session event log (`platform-session-state.ts`). */
+  /** Session slots and the session event log (`platform/session-state.ts`). */
   sessionState: "/session-state",
   /** Upload records — the metadata half; the bytes are brokered separately. */
   uploadRecords: "/upload-records",

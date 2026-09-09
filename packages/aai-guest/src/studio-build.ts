@@ -19,7 +19,7 @@
  * The toolchain is NOT bundled into the harness: it resolves at runtime
  * from the `node_modules` that live next to the harness — baked into the
  * guest snapshot image in production (see aai-server's
- * modal-harness-image.ts), this package's own dependencies in dev/tests.
+ * modal/harness-image.ts), this package's own dependencies in dev/tests.
  * Workspaces are materialized under the same root so their bare imports
  * (`@alexkroman1/aai`, `zod`, `@alexkroman1/aai-ui`, `react`) resolve by
  * the normal node_modules walk-up, exactly as in a user project.

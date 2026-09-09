@@ -57,7 +57,7 @@
  *
  * ## The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
  *
- * `platform-session-state.ts`'s statements are invisible to the three arms
+ * `platform/session-state.ts`'s statements are invisible to the three arms
  * above, and the journal's table proves that is where a real bug hides: its
  * `createRun` was `on conflict do nothing`, so the platform silently accepted a
  * duplicate run id while the fake-transport arm sat green, and only
@@ -71,7 +71,7 @@
  * case modules import `vitest` — the measurement is in that file.
  *
  * **It found no divergence on the day it landed**, unlike the journal's, which
- * is a fact about `platform-session-state.ts` rather than about the arm. What it
+ * is a fact about `platform/session-state.ts` rather than about the arm. What it
  * did do is take three claims out of the "nothing checks this" column, each
  * A/B'd by reverting the platform's SQL: dropping the `Number()` in
  * `nextEventIndex` (postgres.js hands a `bigint` back as a STRING, and the
@@ -231,7 +231,7 @@ export const SESSION_STATE_BACKENDS: readonly SessionStateBackendEntry[] = [
     /**
      * Unit tier, over the handler-shaped fake transport. The platform's SQL half
      * is out of this package's reach and has TWO arms in `aai-server`:
-     * `platform-session-state.scenario.test.ts`, which covers those statements
+     * `platform/session-state.scenario.test.ts`, which covers those statements
      * one at a time, and `session-state-conformance-platform.scenario.test.ts`,
      * which answers THIS case list from the real route over a real Postgres.
      * The second is the arm this fake is structurally blind to — see "The FOURTH

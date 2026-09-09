@@ -709,7 +709,7 @@ it silently.
 
 It is pinned twice, and the conformance half is exact rather than coarse. The
 recorder tests in `workflow/journal/postgres.test.ts` and
-`platform-workflow-journal.test.ts` assert the branch with no clock in them at
+`platform/workflow-journal.test.ts` assert the branch with no clock in them at
 all. The conformance case OWNS the clock instead of racing it: it spies
 `Date.now` to stamp the first claim half an hour ago, re-claims now, and reads
 under a ten-minute window, so 1 means the instant was kept and 2 means it was
@@ -736,12 +736,12 @@ the message's own five attempts, whose backoff totals ~380 s. A rollout longer
 than about six minutes would drop messages.
 
 So the drop is owed to a later release and `RETIRED_OBJECTS` in
-`platform-schema.test.ts` is the ledger that remembers — self-clearing, because
+`platform/schema.test.ts` is the ledger that remembers — self-clearing, because
 the entry's own assertion fails once the drop lands. `20260903160000`'s re-issued
 `sweep_terminal_workflow_runs` cleans BOTH tables for the length of the expand,
 and the `gone_attempts` arm goes with the table.
 
-Two fixture consequences. `platform-schema.scenario.test.ts` asserts the EXACT
+Two fixture consequences. `platform/schema.scenario.test.ts` asserts the EXACT
 set of `aai_platform` tables, so it lists both for one release — that suite needs
 a Supabase stack and skips without one, which is why this was caught in CI's
 `platform-stack` job rather than locally. And `ensurePlatformTables` replayed only

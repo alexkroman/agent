@@ -29,7 +29,7 @@ export const NEIGHBOUR: Record<Slug, Slug> = {
   "tenancy-beta": "tenancy-alpha",
 };
 
-/** Mirrors `platform-workflow-journal.ts`'s `TERMINAL`. */
+/** Mirrors `platform/workflow-journal.ts`'s `TERMINAL`. */
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
 /** States a run has to have REACHED, or the property is vacuous. */

@@ -313,7 +313,7 @@ describe("closeHook is a COMPARE-AND-SET, and the three backends agree on it", (
    * Postgres, a JSON value for the platform — which is the half that can drift
    * without a database in the room. What each backend does with the statement it
    * sends is `workflow-journal.scenario.test.ts`'s and
-   * `platform-workflow-journal.scenario.test.ts`'s question.
+   * `platform/workflow-journal.scenario.test.ts`'s question.
    */
   const BACKENDS: readonly {
     name: string;

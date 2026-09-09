@@ -109,7 +109,7 @@ const DECLARED_DIVERGENCES: Readonly<Record<string, { platform: string; runtime:
   "workflow_hooks.token": { platform: "text not null", runtime: "text not null unique" },
   // NOT declared anywhere, and a real drift: the platform gives `kind` a
   // DEFAULT and the runtime does not. Latent today — both stores bind the
-  // column explicitly (`platform-workflow-journal.ts` and
+  // column explicitly (`platform/workflow-journal.ts` and
   // `workflow/journal/postgres.ts` both list it in the insert) — but the
   // PLATFORM is the side to change, and the migration's own comment on this
   // column is the argument: journaling a hook's deadline as an ordinary sleep

@@ -7,10 +7,10 @@ import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { createLogger } from "./logger.ts";
-import { PlatformDbUnavailableError } from "./platform-db-errors.ts";
-import { SlugLockTimeoutError } from "./platform-lock.ts";
-import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
-import { SandboxUnavailableError } from "./sandbox-errors.ts";
+import { PlatformDbUnavailableError } from "./platform/db-errors.ts";
+import { SlugLockTimeoutError } from "./platform/lock.ts";
+import { PlatformServiceUnavailableError } from "./platform/service-errors.ts";
+import { SandboxUnavailableError } from "./sandbox/errors.ts";
 import { WorkspaceConflictError } from "./workspace-store.ts";
 
 const log = createLogger("http");
@@ -18,7 +18,7 @@ const log = createLogger("http");
 /**
  * What a caller is told when a sandbox could not be started. Authored here
  * rather than taken from the error, whose message is the backend's technical
- * one — see sandbox-errors.ts for why the two are kept apart. It is written
+ * one — see sandbox/errors.ts for why the two are kept apart. It is written
  * for a studio user reading it in the chat panel: what happened, and that
  * trying again is the move.
  */

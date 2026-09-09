@@ -31,7 +31,7 @@
  * per request at one chunk instead of one payload.
  *
  * The broker→URL→header-filter→bounded-fetch sequence itself is
- * `guest-forward.ts`, shared with the other two guest proxies; the header
+ * `guest/forward.ts`, shared with the other two guest proxies; the header
  * ALLOW-LISTS it applies are documented there.
  */
 
@@ -44,9 +44,9 @@ import {
   GUEST_API_REQUEST_HEADERS,
   GUEST_API_RESPONSE_HEADERS,
   pickHeaders,
-} from "./guest-forward.ts";
-import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { guestTokenFor } from "./guest-token.ts";
+} from "./guest/forward.ts";
+import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
+import { guestTokenFor } from "./guest/token.ts";
 import { registerLiveStream } from "./live-streams.ts";
 import {
   createRateLimiter,
@@ -58,9 +58,9 @@ import {
   AGENT_UNAVAILABLE_MESSAGE,
   brokerSessionUrlOrThrow,
   notFoundMessage,
-} from "./sandbox-broker.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+} from "./sandbox/broker.ts";
+import { agentSandboxName } from "./sandbox/directory.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import {
   GUEST_PROXY_TOKEN_HEADER,
   WORKFLOW_PROXY_TIMEOUT_MS,
@@ -196,7 +196,7 @@ export function createAgentWorkflowsHandler(
         // and the guest answers 201 only once the last byte is stored — so a
         // head deadline is transitively a deadline on the whole transfer, and
         // any total is really a claim about the caller's upstream bandwidth.
-        // `"activity"` re-arms per chunk drained instead; see `guest-forward.ts`.
+        // `"activity"` re-arms per chunk drained instead; see `guest/forward.ts`.
         bound: "activity",
       });
     } catch (cause) {

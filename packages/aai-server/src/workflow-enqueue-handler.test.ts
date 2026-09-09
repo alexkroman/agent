@@ -11,7 +11,7 @@
  * Driven through the real orchestrator rather than by calling the handler,
  * because two of the things under test are registrations: that the route exists
  * under `/:slug` (a handler that works and is not mounted is the bug
- * `guest-routes.test.ts` exists for, one layer over) and that the body limit is
+ * `guest/routes.test.ts` exists for, one layer over) and that the body limit is
  * actually applied.
  */
 
@@ -92,7 +92,7 @@ describe("POST /:slug/workflow-enqueue", () => {
     /**
      * The property that makes this route safe to exist.
      *
-     * The bearer is an HMAC over ONE sandbox name (`guest-token.ts`), so it
+     * The bearer is an HMAC over ONE sandbox name (`guest/token.ts`), so it
      * authorizes one slug. A guest that presents its own valid token for another
      * app's slug is refused by construction — the comparison is against the token
      * THAT slug's current deploy would have — rather than by a check somebody has
@@ -221,7 +221,7 @@ describe("POST /:slug/workflow-enqueue", () => {
     /**
      * This route already parsed its body before reserving, and the spec is here so
      * that stays true rather than being re-derived. Its three siblings did NOT — see
-     * `PlatformCall` in `_platform-route.ts` — so the shape is the same on all four
+     * `PlatformCall` in `platform/_route.ts` — so the shape is the same on all four
      * and one of them keeping it by accident is not the guarantee.
      */
     test("reserves no connection for a body it is going to refuse", async () => {

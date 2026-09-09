@@ -23,7 +23,7 @@
  * why platform-internal tables get their own namespace).
  */
 
-import { projectKey } from "./platform-events.ts";
+import { projectKey } from "./platform/events.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -122,7 +122,7 @@ export function createPgChatStore(sql: SqlExec): ChatStore {
  */
 export function createMemoryChatStore(): ChatStore {
   const rows = new Map<string, unknown[]>();
-  // `projectKey` (platform-events.ts) rather than a hand-rolled
+  // `projectKey` (platform/events.ts) rather than a hand-rolled
   // `${scope}/${project}`: the declared spelling is NUL-separated so no
   // (scope, project) pair can spell another's key, and a second grammar here
   // gives that up for as long as both halves happen to exclude a slash.

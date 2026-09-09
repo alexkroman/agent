@@ -100,7 +100,7 @@ export type PlatformCall = {
    * falls back to the body.
    *
    * **It reaches the HTTP fallback ONLY.** A socket frame carries a `route` the
-   * platform checks against a closed set (`platform-socket-handler.ts`), so a
+   * platform checks against a closed set (`platform/socket-handler.ts`), so a
    * segment appended there would 404 rather than decompose anything — and there
    * is nothing to decompose either way, since that handler writes no per-frame
    * line. Giving the socket path a per-call record of its own is a separate

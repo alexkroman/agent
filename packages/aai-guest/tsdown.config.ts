@@ -8,7 +8,7 @@ export default defineConfig({
   outDir: "dist",
   // Bundle everything the harness itself runs -- EXCEPT the packages that must
   // stay a runtime import resolved from the node_modules baked next to the
-  // harness (modal-harness-image.ts installs them; in dev the harness sits
+  // harness (modal/harness-image.ts installs them; in dev the harness sits
   // inside this package, whose own node_modules provide them).
   //
   // Two different reasons to be on that list, and the second one cost a feature:
@@ -34,7 +34,7 @@ export default defineConfig({
     ],
   },
   // ONE artifact: the harness is baked into the guest image as a single
-  // file (aai-server's modal-harness-image.ts), so the providers' lazy
+  // file (aai-server's modal/harness-image.ts), so the providers' lazy
   // imports must be inlined rather than emitted as sibling chunks the
   // guest can't load. (External dynamic imports -- the toolchain above --
   // stay external.)

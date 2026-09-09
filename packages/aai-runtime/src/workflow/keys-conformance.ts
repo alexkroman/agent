@@ -82,7 +82,7 @@
  * and `loadSessionStateConformance` already have, and for their measured reason:
  * the case modules pull `vitest`, an optional peer). Until it exists, the
  * platform's statements are covered by `aai-server/
- * platform-workflow-keys.scenario.test.ts` — a per-store suite over a real
+ * platform/workflow-keys.scenario.test.ts` — a per-store suite over a real
  * database including the cross-tenant reads, which is a different question from
  * "does this backend satisfy the shared contract" and does not answer it.
  *

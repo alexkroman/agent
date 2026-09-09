@@ -28,7 +28,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { AdminDb } from "./platform-lock.ts";
+import type { AdminDb } from "./platform/lock.ts";
 import { captureLogs } from "./test-utils.ts";
 import { startWorkflowQueueSweep } from "./workflow-queue-scheduler.ts";
 import {

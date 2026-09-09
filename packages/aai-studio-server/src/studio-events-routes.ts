@@ -131,7 +131,7 @@ export function registerEventRoutes(
   });
 
   // Live project state, fed by the workspace and chat rows' change streams
-  // (Supabase Realtime in production — see platform-events.ts). `chat` frames
+  // (Supabase Realtime in production — see platform/events.ts). `chat` frames
   // carry the settled conversation (the guest's end-of-turn persist), so other
   // tabs/devices see finished turns without re-opening the project.
   studio.get("/projects/:project/events", async (c) => {

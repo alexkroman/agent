@@ -86,7 +86,7 @@ export function parseLastJsonLine<T>(stdout: string): T | null {
  *
  * It was `{ ...process.env }` minus `AAI_GUEST_TOKEN` — a deny-list of one, and
  * COMPLETE when it was written: `AAI_GUEST_TOKEN` really was the only secret in
- * the studio guest's exec env (`modal-sandbox.ts` passes that token, the port,
+ * the studio guest's exec env (`modal/sandbox.ts` passes that token, the port,
  * and `guestExecBaseEnv()`, which is a cache path and a flag). The problem is
  * the polarity, not the contents. Agent mode's boot env already carries
  * `AAI_BUNDLE_URL` — a signed Storage URL — plus `AAI_PLATFORM_BASE_URL` and

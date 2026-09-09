@@ -8,7 +8,7 @@
  * NO channel to it — boot artifacts (bundle, hash, env) are delivered at
  * exec time, and the platform's only ongoing surface is the token-gated
  * `/manage/*` pair (a status probe for operators, and the drain request
- * retirement sends). See `spawnAgentServer` in sandbox-vm.ts.
+ * retirement sends). See `spawnAgentServer` in sandbox/vm.ts.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
@@ -17,7 +17,7 @@ import pTimeout from "p-timeout";
 import { emptyLogPage, LOGS_READY_TIMEOUT_MS } from "./agent-logs.ts";
 import { resolveHarnessPath, SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { createLogger } from "./logger.ts";
-import { spawnAgentServer, type WorkerSource } from "./sandbox-vm.ts";
+import { spawnAgentServer, type WorkerSource } from "./sandbox/vm.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 const log = createLogger("sandbox");
@@ -31,7 +31,7 @@ export type SandboxOptions = {
   slug: string;
   /**
    * The deploy version this sandbox runs. Half the fleet-wide sandbox NAME
-   * (see sandbox-directory.ts): Modal refuses a duplicate, so one deploy gets
+   * (see sandbox/directory.ts): Modal refuses a duplicate, so one deploy gets
    * one sandbox platform-wide with no lease table — and including the version
    * is what lets a blue-green handover boot the replacement while the old one
    * still drains.
@@ -73,7 +73,7 @@ export type Sandbox = {
    * refuse new sessions and self-exit when empty or at the deadline — the
    * GUEST enforces the deadline; the host holds no drain state. REJECTS on
    * an unreachable guest so retirement can terminate instead (see
-   * sandbox-retire.ts).
+   * sandbox/retire.ts).
    */
   drain(deadlineMs?: number): Promise<void>;
   /**

@@ -15,7 +15,7 @@
  * any other secret.
  */
 
-import { sqlState } from "./platform-db-errors.ts";
+import { sqlState } from "./platform/db-errors.ts";
 
 /**
  * The per-slug secret-name prefix.

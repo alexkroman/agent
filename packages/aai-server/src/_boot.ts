@@ -94,7 +94,7 @@ export function hasPlatformDb(env: NodeJS.ProcessEnv): boolean {
  * Whether this is an explicitly declared LOCAL run.
  *
  * It gates exactly two things, both about trust rather than about storage: the
- * isolation-free `subprocess` sandbox backend (`sandbox-backend.ts`), and
+ * isolation-free `subprocess` sandbox backend (`sandbox/backend.ts`), and
  * skipping AssemblyAI key verification (`api-key-verify.ts`). A third, narrower
  * one rides along — remembering an observed public origin
  * (`public-origin.ts`).

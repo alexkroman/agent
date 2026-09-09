@@ -11,7 +11,7 @@
  *
  * The obvious fix — buffer it host-side, next to the relay — does not work on
  * this platform, and the reason is worth writing down because it is the same
- * reason `sandbox-directory.ts` exists. A sandbox is resident on ONE replica,
+ * reason `sandbox/directory.ts` exists. A sandbox is resident on ONE replica,
  * and a replica that does not hold it never proxies for the one that does: it
  * looks the sandbox up and dials the sandbox's own tunnel (`findPeerSession`).
  * So a buffer in host memory is readable from exactly one of N replicas, chosen

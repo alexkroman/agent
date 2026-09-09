@@ -92,7 +92,7 @@ export function scanUnpinnedActions() {
  * `GUEST_ROUTE_EXPOSURE` is verified against the PLATFORM and not against the
  * guest.
  *
- * `guest-routes.test.ts` introspects the real orchestrator app and asserts
+ * `guest/routes.test.ts` introspects the real orchestrator app and asserts
  * every `proxied` method is registered under `/:slug`, plus the reverse. That
  * half is genuinely checked. The other half — that `GUEST_ROUTES` still
  * describes what the guest actually serves — is transcribed BY HAND, and by
@@ -104,7 +104,7 @@ export function scanUnpinnedActions() {
  * catch it — that compile error only fires for a KEY with no exposure entry,
  * never for a route nobody wrote down. The studio client reached it by doing
  * URL surgery on another route's URL (`sessionUrl.replace(/\/chat$/, "/tools")`),
- * which is verbatim the anti-pattern `guest-routes.ts`'s own module doc says
+ * which is verbatim the anti-pattern `guest/routes.ts`'s own module doc says
  * the table was written to eliminate.
  *
  * This is the cheap 80%: scan the guest's own source for route literals and
@@ -199,7 +199,7 @@ function guestRouteLiterals() {
  * The division of labour this restores is the point of the table:
  *
  * - A literal that a TABLE ENTRY names is declared here, because
- *   `guest-routes.test.ts` then asserts it really reaches `GUEST_ROUTES` — a
+ *   `guest/routes.test.ts` then asserts it really reaches `GUEST_ROUTES` — a
  *   comparison of values, which is strictly stronger than this grep.
  * - An INLINE literal is still undeclared, which is the gap this rule was
  *   written for: `if (url === "/metrics")` added to `server.ts` is served by
@@ -251,14 +251,14 @@ function tableDeclaredRoutes() {
 /** The paths `GUEST_ROUTES` declares, read as text — never imported. */
 function declaredGuestRoutes() {
   const source = readFileSync(
-    new URL("../packages/aai-server/src/guest-routes.ts", import.meta.url),
+    new URL("../packages/aai-server/src/guest/routes.ts", import.meta.url),
     "utf8",
   );
   const block = /export const GUEST_ROUTES = \{([\s\S]*?)\n\} as const;/.exec(source);
   if (block === null) {
     throw new Error(
       "guard-invariants rule 12: could not find `export const GUEST_ROUTES = { … } as const;` " +
-        "in packages/aai-server/src/guest-routes.ts. The scan reads it as text (the boundary " +
+        "in packages/aai-server/src/guest/routes.ts. The scan reads it as text (the boundary " +
         "forbids importing it), so a rename here silently empties the rule — fix the pattern.",
     );
   }

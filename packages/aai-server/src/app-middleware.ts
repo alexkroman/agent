@@ -13,7 +13,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { isLocalDev } from "./_boot.ts";
 import type { HonoEnv } from "./context.ts";
 import { createErrorHandler } from "./error-handler.ts";
-import type { PlatformEvents } from "./platform-events.ts";
+import type { PlatformEvents } from "./platform/events.ts";
 import { rememberPublicOrigin } from "./public-origin.ts";
 import { tracingMiddleware } from "./tracing.ts";
 

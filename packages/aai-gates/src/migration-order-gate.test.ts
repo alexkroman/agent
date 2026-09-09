@@ -122,7 +122,7 @@ describe("the comparison is lexicographic, like the remote history", () => {
   test("the tree's versions are unique and the newest is unambiguous", () => {
     // The gate reads `newestBase` as the max of the base set, so a duplicate
     // there would make the boundary it compares against ambiguous.
-    // `platform-schema.test.ts` owns the collision assertion; this is the half
+    // `platform/schema.test.ts` owns the collision assertion; this is the half
     // that says the boundary this gate depends on is well defined.
     const versions = migrations.map((name) => name.slice(0, 14));
     expect(new Set(versions).size, "two migrations share a version").toBe(versions.length);

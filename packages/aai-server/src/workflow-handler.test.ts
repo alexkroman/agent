@@ -7,7 +7,7 @@
  * `location`, so it has no broker step and its calls land here. Without the
  * route they fall through to the platform's own `notFound` and read to the user
  * as a failure of the feature ("Could not start: Not found").
- * `guest-routes.test.ts` asserts the registration; these assert the forward.
+ * `guest/routes.test.ts` asserts the registration; these assert the forward.
  *
  * The rest is what a proxy has to get right and what a diff cannot show: which
  * headers cross, that a body is not buffered, and that an event stream is
@@ -17,13 +17,13 @@
 import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
-import { guestTokenFor } from "./guest-token.ts";
+import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
+import { guestTokenFor } from "./guest/token.ts";
 import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
 import type { RateLimiter } from "./rate-limit.ts";
-import { notFoundMessage } from "./sandbox-broker.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
-import { createSlotCache, setSlot } from "./sandbox-slots.ts";
+import { notFoundMessage } from "./sandbox/broker.ts";
+import { agentSandboxName } from "./sandbox/directory.ts";
+import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import {
   createTestOrchestrator,
   deployAgent,
@@ -35,8 +35,8 @@ import { GUEST_PROXY_TOKEN_HEADER } from "./workflow-proxy-constants.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({ mockSpawnAgentServer: vi.fn() }));
 
-vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
+vi.mock("./sandbox/vm.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./sandbox/vm.ts")>()),
   spawnAgentServer: mockSpawnAgentServer,
 }));
 
@@ -163,7 +163,7 @@ describe("routing", () => {
     // are the file, the filename rides in `?name=` and the type in the header
     // (see `workflow/api/uploads.ts`). It is also the route whose deadline the
     // proxy got wrong — the guest answers 201 only once the last byte is
-    // stored, so the bound has to be `"activity"`; `guest-forward.test.ts` is
+    // stored, so the bound has to be `"activity"`; `guest/forward.test.ts` is
     // where that is asserted, and this is that the route exists at all.
     const guest = recordingGuest(() => json({ id: "upl_1", size: 5 }, 201));
     const harness = await residentHarness(guest.fetchFn);

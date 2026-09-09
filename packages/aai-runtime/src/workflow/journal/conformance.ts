@@ -11,7 +11,7 @@
  * {@link journalCodecConformance}, {@link journalWaitConformance} and
  * {@link journalResumeConformance}, split for the file-length cap at seams the
  * platform's own store already splits on
- * (`platform-workflow-journal-hooks.ts`): a run, its steps and its attempts
+ * (`platform/workflow-journal-hooks.ts`): a run, its steps and its attempts
  * answer "what has this run DONE", the sleeps and hooks answer "may this wait
  * still be answered", and the codec cases answer "did the run get back what
  * the step returned" — the one group whose subject is neither the interface nor

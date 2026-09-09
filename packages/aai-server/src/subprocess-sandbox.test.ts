@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONTAINED_ENV } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, it, vi } from "vitest";
-import { createFakeGuestSocket, type FakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
+import { createFakeGuestSocket, type FakeGuestSocket } from "./sandbox/_vm-test-utils.ts";
 import {
   _internals,
   buildHarnessSpawn,

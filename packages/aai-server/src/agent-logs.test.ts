@@ -2,9 +2,9 @@
 import type { LogPage } from "@alexkroman1/aai-runtime";
 import { describe, expect, test, vi } from "vitest";
 import { emptyLogPage, parseLogPage, readAgentLogs, readGuestLogs } from "./agent-logs.ts";
-import { GUEST_TOKEN_SECRET_ENV, guestTokenFor } from "./guest-token.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
-import { createSlotCache, setSlot } from "./sandbox-slots.ts";
+import { GUEST_TOKEN_SECRET_ENV, guestTokenFor } from "./guest/token.ts";
+import { agentSandboxName } from "./sandbox/directory.ts";
+import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import { createTestStore, fakeSandbox } from "./test-utils.ts";
 
 const ORIGIN = "wss://tunnel.test:443";

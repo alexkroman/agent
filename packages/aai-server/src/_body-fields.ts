@@ -7,7 +7,7 @@
  * `requiredString` was byte-identical in three of them, and `requiredInt` /
  * `requiredSize` differed only in whether zero is a floor. That is the
  * concentration AGENTS.md calls a missing seam — the same reasoning restated until
- * one copy drifts, which is exactly what `guest-bearer.ts` was extracted to stop
+ * one copy drifts, which is exactly what `guest/bearer.ts` was extracted to stop
  * one layer up.
  *
  * ## Why not zod, which this package already uses

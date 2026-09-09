@@ -18,7 +18,7 @@
  * - **Acquiring can carry a DEADLINE**, which is what makes a contended
  *   mutation answerable. The cross-replica half of the slug lock has always
  *   had one (`lock_timeout` on the reserved connection → `55P03` → 409), but
- *   it sits BEHIND this mutex — see platform-lock.ts — so a second mutation of
+ *   it sits BEHIND this mutex — see platform/lock.ts — so a second mutation of
  *   the same slug on the SAME replica never reached it and queued here
  *   unbounded instead.
  */

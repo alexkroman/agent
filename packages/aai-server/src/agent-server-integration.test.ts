@@ -12,9 +12,9 @@
 import pTimeout from "p-timeout";
 import { afterAll, describe, expect, test, vi } from "vitest";
 import { resolveHarnessPath } from "./constants.ts";
-import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { guestTokenFor } from "./guest-token.ts";
-import { SandboxUnavailableError } from "./sandbox-errors.ts";
+import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
+import { guestTokenFor } from "./guest/token.ts";
+import { SandboxUnavailableError } from "./sandbox/errors.ts";
 import { spawnSubprocessAgentServer } from "./subprocess-sandbox.ts";
 import { captureLogs } from "./test-utils.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";

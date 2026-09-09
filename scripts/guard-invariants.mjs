@@ -122,7 +122,7 @@ const ABSOLUTE_RULES = [
     label: "undeclared guest route",
     scan: scanUndeclaredGuestRoutes,
     remedy:
-      "Add the path to `GUEST_ROUTES` in packages/aai-server/src/guest-routes.ts and\n" +
+      "Add the path to `GUEST_ROUTES` in packages/aai-server/src/guest/routes.ts and\n" +
       "give it an exposure in `GUEST_ROUTE_EXPOSURE` (the `satisfies` makes the\n" +
       "second half a compile error once the first is done).\n\n" +
       "The exposure is decided by WHO CALLS IT: `direct-dial` when a browser or a\n" +

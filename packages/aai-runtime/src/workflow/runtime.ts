@@ -251,7 +251,7 @@ function selectKeyStore(db: Db | undefined): {
  * broken page rather than as a store that was never durable.
  *
  * The real fix is a platform-backed stream store — routes beside
- * `platform-workflow-journal.ts`, a client beside `workflow/journal/platform.ts`,
+ * `platform/workflow-journal.ts`, a client beside `workflow/journal/platform.ts`,
  * and a postgres twin for the self-hosted case. Until then the honest move is the
  * one the run store already makes: name it in the boot line, and WARN when the
  * journal beside it is durable, because that is the deployment where the two

@@ -73,7 +73,7 @@ export const STATE_RULES = [
       "modules had it (`workflow/serve.ts`, `harness-bundle.ts`) and both run on\n" +
       "the developer's own machine under `aai dev`, not only in the Linux guest.\n" +
       "Baseline an occurrence only when the path is INSIDE a container by\n" +
-      "construction — `modal-agent-sandbox.ts`'s remote paths name a location in\n" +
+      "construction — `modal/agent-sandbox.ts`'s remote paths name a location in\n" +
       "the Linux sandbox, where `/tmp` is the correct literal and `tmpdir()` would\n" +
       "wrongly describe the host.",
   },

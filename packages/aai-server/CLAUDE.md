@@ -5,6 +5,32 @@ conventions live in the root `CLAUDE.md`; the guest side of every sandbox is
 in `packages/aai-guest/CLAUDE.md`, and the studio service in
 `packages/aai-studio-server/CLAUDE.md`.
 
+## Layout
+
+Five directories under `src/`, one per cluster the filename prefixes had
+already drawn: `platform/` (the platform's own tables, locks and routes),
+`sandbox/` (the backend-independent lifecycle), `modal/` and `microsandbox/`
+(the two contained backends), and `guest/` (the platform's view of one). The
+prefix became the path — `platform-socket-handler.ts` is
+`platform/socket-handler.ts`. What stayed at the root is what belongs to no
+cluster: the seven `*-barrel.ts` files, because they ARE this package's
+published surface (see "Two packages, ONE deployment"), the handlers, the
+stores, and `subprocess-sandbox.ts`, which is deliberately not a contained
+backend.
+
+**Three shapes of path reference broke on that move, and none is a compiler
+error.** A relative import is; these are not, and each was silent in a
+different way: a spec reading a sibling by BARE filename
+(`join(import.meta.dirname, "platform-lock.ts")`), a spec whose base is
+another VARIABLE rather than its own directory (`resolve(packageDir, "../..")`
+— deepening that one is wrong, since `packageDir` moved with the file), and an
+`import.meta.glob` WILDCARD, which no existence check can resolve. Two
+directory scans also had to be rerooted at `src/` and made recursive —
+`guest/exec-env.test.ts` reads every module in the package to find a second
+`TMPDIR` setter, and would otherwise have scanned the 20 files beside it. Its
+120-file floor is what turned that into a failure instead of a rule that had
+quietly stopped covering 85% of what it names.
+
 ## Key files
 
 - `tracing.ts` — OTLP export ([`TRACING-CLAUDE.md`](TRACING-CLAUDE.md))
@@ -14,26 +40,26 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   one request), `shutdown()`. DEPLOYED AGENTS RUN AS SERVERS — the host
   holds NO channel to them (see `packages/aai-guest/CLAUDE.md`, "Agent guests
   are servers")
-- `sandbox-vm.ts` — `spawnAgentServer` (the agent-server dispatch over the
+- `sandbox/vm.ts` — `spawnAgentServer` (the agent-server dispatch over the
   three backends) and the studio-side `spawnWarmHarness` control-channel
   machinery
-- `sandbox-backend.ts` — backend selection policy (`SANDBOX_BACKEND` override,
+- `sandbox/backend.ts` — backend selection policy (`SANDBOX_BACKEND` override,
   production → `modal`, local dev → `microsandbox`, `subprocess` opt-in) plus
   the reason string the boot log prints, so "which backend am I on, and why" is
   one log line
-- `microsandbox-sandbox.ts` / `microsandbox-network.ts` — the local microVM
+- `microsandbox/sandbox.ts` / `microsandbox/network.ts` — the local microVM
   backend; see "The local backend is a microVM" below
 - `warm-harness.ts` — backend-independent guest wiring shared by all three:
   dial-with-retry, stdio draining, free-port allocation, `WarmHarness` exit and
   cleanup semantics
-- `sandbox-slots.ts` — the per-slug slot cache: `{ slug, version?, sandbox? }`
+- `sandbox/slots.ts` — the per-slug slot cache: `{ slug, version?, sandbox? }`
   plus the slug lock. NO idle machinery — idleness is the guest's own job
   (agent-mode self-exit), and its exit drops the whole SLOT via
   `onSandboxLost` — not just its sandbox, which grew the map by one shell per
   slug for the container's life; a rebuild needs nothing from an empty slot.
   **A plain `Map`, and `withSlugLock` is the exclusion** — `SlotCache`'s own
   doc has the argument
-- `guest-forward.ts` — the one platform→guest forward (`forwardToGuest`) and
+- `guest/forward.ts` — the one platform→guest forward (`forwardToGuest`) and
   its header policy, shared by the three routes that proxy into a tenant's
   sandbox (`/client-config`, `/:slug/workflows/*`, the durable-run webhook),
   which had re-derived it three times with three different filters. **A header
@@ -48,15 +74,15 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   consuming the whole body has the entire upload inside its deadline** —
   `POST /workflows/uploads` did, and a 500 MB upload 503'd at 30.3s while
   working under `aai dev`, which has no forward. Its `bound` doc has the rest
-- `modal-context.ts` — the shared Modal context every spawn path needs
+- `modal/context.ts` — the shared Modal context every spawn path needs
   first: the client, the App, the harness-baked snapshot image (built once
   per harness version, published under a content-addressed tag), and the
   harness bytes that tag is keyed on. All memoized, so a spawn racing the
   boot-time prewarm joins it
-- `modal-sandbox.ts` — Modal Sandbox backend, CONTROL-CHANNEL guest (studio):
+- `modal/sandbox.ts` — Modal Sandbox backend, CONTROL-CHANNEL guest (studio):
   creates the sandbox, execs the Node harness with a per-sandbox
   bearer token, and dials its WebSocket through the sandbox's Modal tunnel.
-  The deployed-agent spawn is `modal-agent-sandbox.ts`
+  The deployed-agent spawn is `modal/agent-sandbox.ts`
 - `packages/aai-guest/` — the guest the two backends spawn; its own private
   workspace package, resolved here only as a built artifact
   (`aai-guest/harness` → `dist/harness.mjs`). See
@@ -66,7 +92,7 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `pnpm --filter aai-server deploy:modal`. The image recipe itself is
   `scripts/modal_image.py` — see "The image is layered dependencies-first"
   below
-- `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
+- `platform/lock.ts` — cross-replica per-slug mutation lock (see "Stateless
   server" below): a Postgres ADVISORY lock on a reserved connection in
   production, the in-process keyed lock in dev/tests
 - `agent-store.ts` — the agents table (`aai_platform.agents`; memory in
@@ -75,10 +101,10 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   cross-replica invalidation signal (see "Two packages, ONE deployment"
   below). NO description of the agent — see "The platform stores no agent
   config"
-- `sandbox-resolve.ts` — slot-based slug→sandbox resolution +
+- `sandbox/resolve.ts` — slot-based slug→sandbox resolution +
   `watchAgentInvalidation`, the event-driven sandbox invalidation (split
   from sandbox.ts, which owns one sandbox's lifecycle)
-- `sandbox-broker.ts` — `brokerSessionUrl`: slug → the public session URL a
+- `sandbox/broker.ts` — `brokerSessionUrl`: slug → the public session URL a
   client dials, with the one failure taxonomy `GET /:slug/client-config` and
   the `/:slug/websocket` upgrade share. The platform's ONLY routing point
 - `workflow-webhook-handler.ts` — the durable-run webhook proxy (see
@@ -98,11 +124,11 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `phone-handler.ts` / `phone-signature.ts` — `GET/POST /:slug/phone`: the
   carrier call-answering webhook (see "Telephony" below) and its webhook
   authenticity checks
-- `sandbox-directory.ts` / `sandbox-peers.ts` — the fleet-wide answer to "is
+- `sandbox/directory.ts` / `sandbox/peers.ts` — the fleet-wide answer to "is
   some replica already serving this deploy?", which is a Modal sandbox NAME
   (`agent-<hash(slug)>-v<version>`) rather than a lease table — see "No
   horizontal sandbox scaling" below
-- `platform-events.ts` — `PlatformEvents`: cross-replica change
+- `platform/events.ts` — `PlatformEvents`: cross-replica change
   notifications (`watchAgents`, `watchWorkspace`, `watchChat`,
   `watchScopeProjects`) as SIGNALS (handlers re-read rows, never trust
   payloads); memory emitter + store decorators for dev/tests.
@@ -286,7 +312,7 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   chain the caller awaits): wrapping the returned promise costs a microtask
   turn per read, and settling one turn later is observable — it pushed the
   change stream's blue-green handover past the fixed 20-microtask drain
-  `sandbox-resolve.test.ts` settles events with.
+  `sandbox/resolve.test.ts` settles events with.
 - `blob-storage.ts` — where those blobs live: Supabase Storage through
   `@supabase/storage-js` in production (authenticated with the SAME
   `SUPABASE_SERVICE_ROLE_KEY` as Realtime — Storage has no credential of its
@@ -386,7 +412,7 @@ the `aai storage` CLI command, the studio's Database card and pane, and the
 
 **A tenant gets no database from the platform.** An author who wants one puts a
 `DATABASE_URL` in their own secrets and it reaches the guest like any other
-secret — `sandbox-resolve.ts` no longer overlays anything on top, which it did
+secret — `sandbox/resolve.ts` no longer overlays anything on top, which it did
 LAST, so enabling storage silently beat whatever the author had set.
 
 **What did NOT go is the durable state**, which is the point of the change. All
@@ -396,7 +422,7 @@ streamer as `aai_platform` tables; the guest's world is
 `workflow/platform-world.ts`), turn-level durability (`session_slots` /
 `session_events`, behind the runtime's third `SessionStateBackend`), and
 workflow upload RECORDS (`workflow_uploads`, behind its third `UploadRecords` —
-`platform-uploads.ts`).
+`platform/uploads.ts`).
 
 **A guest therefore keeps nothing durable on disk** — ephemeral scratch for
 builds and the DevKit's artifact, nothing more. Uploads were the last holdout
@@ -404,7 +430,7 @@ and the interesting one: `createUploadStore` chose an upload's home from whether
 the agent had a `ctx.db`, because "a database means durable runs". Moving the
 queue here falsified that, so a deployed guest with no `DATABASE_URL` got
 DURABLE RUNS with uploads in a directory that recycles — one sandbox filled its
-filesystem and `ENOSPC`'d every write. `platform-uploads.ts` has the account,
+filesystem and `ENOSPC`'d every write. `platform/uploads.ts` has the account,
 including the write-volume measurement and the tripwire that would change the
 design.
 
@@ -465,7 +491,7 @@ Three things the split fixed, all of them measured on a morning it cost:
   sandboxes and pushing SSE.
 - **The safe branch is the default.** The old sentinel made an EMPTY environment
   resolve the isolation-free `subprocess` backend and skip AssemblyAI key
-  verification. `AAI_LOCAL_DEV=1` inverts that; `sandbox-backend.test.ts` asserts
+  verification. `AAI_LOCAL_DEV=1` inverts that; `sandbox/backend.test.ts` asserts
   it on `{}` for exactly this reason.
 - **Local is no longer an excuse.** `assertSessionModeUrl` and
   `assertServiceRoleKey` run on every tier now — a laptop is where a publishable
@@ -497,7 +523,7 @@ hand out a narrowly scoped capability and verify the result (a content hash)
 rather than proxy the bytes. It named a SECOND path, `ctx.db` on a per-app role;
 both went with per-app databases, and run storage, the queue, session state and
 uploads are platform tables over HTTP now — so those bytes DO cross a replica,
-bounded there (`_platform-route.ts`).
+bounded there (`platform/_route.ts`).
 
 ### Where we differ from Supabase's own recommendations
 
@@ -555,7 +581,7 @@ rules:
 
 The cross-replica coordination that lives in this same Postgres:
 
-- **Per-slug mutation lock** (`platform-lock.ts`): deploy/delete/secret/
+- **Per-slug mutation lock** (`platform/lock.ts`): deploy/delete/secret/
   storage mutations for a slug run under a **Postgres advisory lock**
   (`createPgSlugLock`), injected as the `slugLock` binding. This was a lease
   table, on the reasoning that "advisory locks are connection-scoped and
@@ -573,7 +599,7 @@ The cross-replica coordination that lives in this same Postgres:
   namespace can never collide with another advisory-lock user in the
   database. It still takes the in-process `withSlugLock` first, now so a
   local waiter doesn't hold a reserved connection open while blocked.
-  `sandbox-resolve.ts` stays on the in-process lock deliberately: it guards
+  `sandbox/resolve.ts` stays on the in-process lock deliberately: it guards
   this replica's slot cache, a legitimately process-local resource.
 
   **The acquire deadline applies to BOTH halves, because the mutex is taken
@@ -585,7 +611,7 @@ The cross-replica coordination that lives in this same Postgres:
   must RESOLVE ITS PLACE IN THE CHAIN or everyone behind it blocks forever.
 
   **The connection budget is fleet-wide** (`MAX_PLATFORM_DB_CONNECTIONS`,
-  pinned by `platform-db-budget.test.ts`): these are DIRECT connections, so
+  pinned by `platform/db-budget.test.ts`): these are DIRECT connections, so
   `MAX_CONTAINERS` × the per-replica pools consumes `max_connections` outright —
   whose ceiling is an outage rather than degradation.
 
@@ -617,14 +643,14 @@ what every platform pool connects as — carries no `rolconnlimit`.
   their footprint growing afterwards is unobserved — as is a leak in one of our
   own pools.
 
-  **Boot CHECKS the claim** (`platform-db-capacity.ts`): `max_connections` plus
+  **Boot CHECKS the claim** (`platform/db-capacity.ts`): `max_connections` plus
   a `pg_stat_activity` count against `platformDbBudget()`. Its trap was that the
   claim depends on how the ADMIN pool is ROUTED and the check could not see it.
   Production ran with `PLATFORM_POOLER_URL` unset, so boot printed
   `capacity ok — 0 spare` one line under the warning naming the connections it
   was not counting, and the 53300 exhaustion arrived unwarned. The budget takes
   an env now and `modal_deploy.py` EXPORTS `MAX_CONTAINERS` (asserted by
-  `platform-db-budget.test.ts`).
+  `platform/db-budget.test.ts`).
   `MAX_PLATFORM_DB_CONNECTIONS`'s doc has the rest, including why the reading is
   a FLOOR and why it never blocks boot.
 
@@ -640,7 +666,7 @@ what every platform pool connects as — carries no `rolconnlimit`.
     and the queue sweep's `NOTIFY` listener, on a handle of its own — it rode the
     admin pool, where a subscription establishes and then receives nothing.
     `assertSessionModeUrl` refuses a pooler here. It read THREE, counting a
-    workflow world that opens none now — see `platform-db-limits.ts`.
+    workflow world that opens none now — see `platform/db-limits.ts`.
   - `PLATFORM_POOLER_URL` — Supavisor TRANSACTION mode, for the admin pool.
     Refuses a session-mode URL, which multiplexes nothing while looking set.
 
@@ -654,7 +680,7 @@ what every platform pool connects as — carries no `rolconnlimit`.
 
   Unset, `PLATFORM_POOLER_URL` means the admin pool is DIRECT and the budget
   understates a replica, so boot announces it.
-  `platform-connection-config.test.ts` pins both rules.
+  `platform/connection-config.test.ts` pins both rules.
 
   **And the admin pool bounds guest THROUGHPUT, not just connections.**
   `ADMIN_POOL_MAX` reads as a connection budget and is also a concurrency limit,
@@ -662,7 +688,7 @@ what every platform pool connects as — carries no `rolconnlimit`.
   for the whole request. So it is the number of guest platform calls a replica
   may have in flight AT ALL, and the next one queues on `reserve()`. WHICH
   routes those are, and that each takes `withReserved` from
-  `_platform-route.ts` rather than reaching the pool itself, is
+  `platform/_route.ts` rather than reaching the pool itself, is
   `konsistent.json`'s `guest-called-platform-routes` — the hand-kept list that
   used to sit in this sentence said FOUR and there are five.
 
@@ -694,7 +720,7 @@ what every platform pool connects as — carries no `rolconnlimit`.
   writes the older value back. The two writes were serialized perfectly and
   one of them still vanished, silently: a secret reverts, or a deploy drops
   a co-owner's credential hash. Invalidation belongs at lock acquisition
-  (one place, in `platform-lock.ts`) rather than per route — a route that
+  (one place, in `platform/lock.ts`) rather than per route — a route that
   forgets produces no error at all. Only the row caches are dropped: blob
   caches are content-addressed and cannot go stale. The broker path
   deliberately does NOT go through this wrapper — it mutates nothing.
@@ -756,15 +782,19 @@ no import could be called a violation because there was no boundary.
 
 That cost is what changed, not the argument. The map is SEVEN barrels now —
 `./stores`, `./sandbox`, `./platform`, `./http`, `./config`, `./logger`,
-`./test-utils` — and `platform-surface.test.ts` holds it in both directions: an
+`./test-utils` — and `platform/surface.test.ts` holds it in both directions: an
 entry nobody imports fails, and so does a module the studio reaches that no
 entry names. Widening the surface is a deliberate edit to `package.json`
 instead of a side effect of typing an import path. Seven guarded entries buy
-the same discipline a `src/platform/` + `src/studio/` split under a konsistent
-path rule would, at a fraction of the churn — and the merge would cost ~405
-file moves, 142 import rewrites, one vitest config where two disagree on pool
-(this package uses **forks** for process isolation, the studio uses threads),
-and one coverage floor over a union whose halves sit at different numbers.
+the same discipline a one-package `src/platform/` + `src/studio/` split under a
+konsistent path rule would, at a fraction of the churn — and the merge would
+cost ~405 file moves, 142 import rewrites, one vitest config where two disagree
+on pool (this package uses **forks** for process isolation, the studio uses
+threads), and one coverage floor over a union whose halves sit at different
+numbers. Note this package now HAS a `src/platform/` (see "Layout"), which does
+not weaken the argument: it is a directory INSIDE one package's source, where
+the merge case was about collapsing the package boundary that the seven barrels
+guard.
 
 So: not merging, deliberately, and the thing to defend is the SEVEN. If that
 map starts growing again — a name added because an import was convenient rather
@@ -780,7 +810,7 @@ Two rules from it that a reader of THIS package needs in front of them:
   "Durable workflows" below for the shipped instance.
 - **Deploy and delete move sandboxes; a secret change does not.** Both write the
   agents row, whose `version` is the one cross-replica invalidation signal
-  (`sandbox-invalidate.ts`); the way to apply a secret is to redeploy. A third
+  (`sandbox/invalidate.ts`); the way to apply a secret is to redeploy. A third
   mover, provisioning a database, is gone with per-app databases — and the rule
   it established is why `AgentRows.touch` is kept: a mutation that changes a
   guest's ENVIRONMENT without changing its code has to bump that row, or the
@@ -795,7 +825,7 @@ resident.
 
 ## The local backend is a microVM
 
-`microsandbox-sandbox.ts` boots the guest in a libkrun microVM from the SAME OCI
+`microsandbox/sandbox.ts` boots the guest in a libkrun microVM from the SAME OCI
 image production pulls, so the studio agent's `bash`/`run_code` stop running as
 the server's uid and in-guest builds resolve production's `/opt/aai` toolchain.
 `pnpm build:guest-image --msb` builds and loads it — **a harness edit is not
@@ -807,7 +837,7 @@ runs the real-microVM tier, which SKIPS without hardware virtualization
 **Its four measured traps are in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md)** —
 `.network()` silently discarding an earlier `.port()`, a guest's `127.0.0.1`
 being the VM, `isInstalled()` lying, and a name not being released when the
-sandbox dies (which is a Modal property `sandbox-directory.ts` rests on and
+sandbox dies (which is a Modal property `sandbox/directory.ts` rests on and
 microsandbox does not share).
 
 ## A teardown may not depend on the boot it is tearing down
@@ -851,14 +881,14 @@ the platform path ends in a parameter), `direct-dial`, `host-only`, or
 a different claim from `host-only` and worth keeping apart: `host-only` says the
 platform dials it holding a token, so writing it on a loopback-only route
 describes a gate that is not there. A missing entry is a compile error, and
-`guest-routes.test.ts` asserts every proxied method is really registered under
+`guest/routes.test.ts` asserts every proxied method is really registered under
 `/:slug` — plus the reverse, so a stale `direct-dial` declaration cannot sit
 beside a platform route that does forward. Declare the methods from the guest's
 dispatch; making the platform match is then a failing test rather than a
 production 404.
 
 **Only the PLATFORM half of that is verified by a test; the upstream half is a
-guard.** `guest-routes.test.ts` introspects the real orchestrator app, so
+guard.** `guest/routes.test.ts` introspects the real orchestrator app, so
 "declared `proxied` but not registered" and "registered but declared otherwise"
 both fail. What it cannot check is whether `GUEST_ROUTES` still describes the
 guest — that list is transcribed by hand, and it cannot be derived, because
@@ -866,7 +896,7 @@ guest — that list is transcribed by hand, and it cannot be derived, because
 `GET /studio/tools` was a real guest route in neither table, and the `satisfies`
 could not catch it (that compile error fires for a KEY with no exposure entry,
 never for a route nobody wrote down), so the studio client reached it by
-rewriting another route's URL — the exact surgery `guest-routes.ts` says the
+rewriting another route's URL — the exact surgery `guest/routes.ts` says the
 table exists to end. `guard-invariants.mjs` rule 12 closes it by reading both
 trees as TEXT, which respects the boundary the same way `sync-agent-guide.mjs`
 does. Methods stay declarative: the guest dispatches with `if (url === X)`
@@ -909,7 +939,7 @@ So the sandbox spawn, the describe mode, the nonce protocol, the `inspect`
 role, `IsolateConfigSchema` and — since
 `20260810030000_drop_agents_config.sql` — the COLUMN are all gone.
 
-**The `RETIRED_COLUMNS` ledger in `platform-schema.test.ts` is what carried
+**The `RETIRED_COLUMNS` ledger in `platform/schema.test.ts` is what carried
 that last step, and it is EMPTY now — which is the goal state, not a reason
 to delete the mechanism.** A contract migration cannot ride the same release
 as its expand (`supabase db push` runs before the deploy and old containers
@@ -960,7 +990,7 @@ would make this wrong.
 ### Modal sandbox isolation
 
 Each agent runs in its own **Modal Sandbox** — a remote, isolated container
-on Modal's infrastructure (`modal-sandbox.ts`). The guest runs a Node
+on Modal's infrastructure (`modal/sandbox.ts`). The guest runs a Node
 process executing the bundled agent code (`aai-guest/harness.ts`) — the
 COMPLETE agent: the runtime ships INSIDE the worker bundle (see
 `packages/aai-guest/CLAUDE.md`, "User-shipped runtime" — the harness embeds
@@ -1165,7 +1195,7 @@ container while `modal deploy` exits 0; the manifests must be NORMALIZED
 (`version` moves on every release, i.e. exactly when a deploy happens); a
 `patchedDependencies` entry names a file that must be STAGED; and the image
 bakes the server's V8 compile cache (~600ms → ~395ms cold start).
-`modal-image-inputs.test.ts` pins all four.
+`modal/image-inputs.test.ts` pins all four.
 
 **The full account is in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md) beside this
 file** — the four-step recipe, the 2026-08-09 outage where production served
@@ -1177,7 +1207,7 @@ step, and why `INSTALL_MANIFEST_FIELDS` is a whitelist.
 A cold agent spawn no longer moves the worker bundle through this process at
 all: the guest fetches it from a time-boxed signed Storage URL
 (`BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` → `WorkerSource` in
-`sandbox-vm.ts` → `AAI_BUNDLE_URL` in the exec env), and hash-verifies what it
+`sandbox/vm.ts` → `AAI_BUNDLE_URL` in the exec env), and hash-verifies what it
 gets against the agents row's `worker_hash`.
 
 The host-side pieces above live here. The BOOT contract — why the hash is the
@@ -1494,7 +1524,7 @@ streaming the body, with `brokerSessionUrl`'s taxonomy. Three decisions:
   a surface limit sized for a POLLING page plus a tighter one on `POST /runs`
   counted IN ADDITION — the one route whose cost OUTLIVES its request.
 - **A DELETED agent is a 404 here, not the booting agent's 503**, and the route
-  answered 503 at BOTH of its two exits until a user hit it. `guest-bearer.ts`
+  answered 503 at BOTH of its two exits until a user hit it. `guest/bearer.ts`
   now answers the same way for the same condition, and its docstring's defence of
   the 503 — that a 404 would disclose existence — failed twice: the oracle was
   already open one status over (`Bearer x` gives **401** for a slug that exists
@@ -1540,7 +1570,7 @@ sessions dial the sandbox directly, so the guest-reported session count is
 the only honest load signal, and the broker is the only routing point.
 
 **"One" means fleet-wide, not per replica — and MODAL enforces it**
-(`sandbox-directory.ts`). The slot cache is per-replica and the web service
+(`sandbox/directory.ts`). The slot cache is per-replica and the web service
 autoscales, so for a while each replica spawned its own guest for the same
 slug. That is not an edge case — Modal load-balances every request
 independently, so a page load and the project switch a minute later
@@ -1603,7 +1633,7 @@ Note what none of these can assert: isolation itself — filesystem, memory,
 network and env denial — is Modal's, not host code's, so no test here covers
 it.
 
-- `modal-sandbox.test.ts` — Modal spawn flow against an injected fake
+- `modal/sandbox.test.ts` — Modal spawn flow against an injected fake
   context: sandbox creation, tunnel dial + per-sandbox token, teardown on
   failure.
 - `aai-guest/harness.test.ts` — the guest's `run_code`
@@ -1643,7 +1673,7 @@ can hold while every sandbox fails.
 `Bearer`+`Content-Type` pair was spelled out at ~47 sites across 8 files; they
 are converted, and the `Bearer` strings left are all ones where the literal IS
 the subject — the bearer gate's own specs
-(`_bearer.test.ts`, `guest-bearer.test.ts`), `middleware.test.ts`'s
+(`_bearer.test.ts`, `guest/bearer.test.ts`), `middleware.test.ts`'s
 `resolveBearer` cases, and header ASSERTIONS in the blob-storage /
 supabase-auth / warm-harness suites.
 `deploy(fetch, { key, body })` is the same idea one level up, for the

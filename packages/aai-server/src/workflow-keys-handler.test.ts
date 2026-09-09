@@ -4,7 +4,7 @@
  * calls.
  *
  * The store's semantics are covered against a real Postgres in
- * `platform-workflow-keys.scenario.test.ts`, and the whole `WorkflowKeyStore`
+ * `platform/workflow-keys.scenario.test.ts`, and the whole `WorkflowKeyStore`
  * contract is covered over the client in
  * `aai-runtime/workflow-keys-conformance.test.ts`. What these assert is the
  * ROUTE: that the bearer gates it, that the slug in every statement comes from

@@ -464,7 +464,7 @@ def build_image(*, port: int, extra_env: dict[str, str] | None = None):
     inside a run's wall clock. Measured on a deployed run, ~24 ms an operation
     against ~2 ms in the platform's own region.
 
-    ``modal-sandbox-env.ts`` still parses it, so an operator can override the
+    ``modal/sandbox-env.ts`` still parses it, so an operator can override the
     placement per environment without a code change.
     """
     return (

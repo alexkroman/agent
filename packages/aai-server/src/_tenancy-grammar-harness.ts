@@ -12,8 +12,8 @@
  *
  * ## Every pool is shared, and that is the whole point
  *
- * `platform-workflow-journal.ts`, `platform-uploads.ts` and
- * `platform-session-state.ts` all state the same claim — "the slug is part of
+ * `platform/workflow-journal.ts`, `platform/uploads.ts` and
+ * `platform/session-state.ts` all state the same claim — "the slug is part of
  * every primary key and every statement, so a guessed id reaches nothing". The
  * ids in question are CALLER-CHOSEN: `createRun` takes `run.runId` from the
  * guest, `claimUpload` takes the upload id, `claimHook` takes the token, and

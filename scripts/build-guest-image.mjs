@@ -15,16 +15,16 @@
  *
  * | ARG              | Source                                            |
  * | ---------------- | ------------------------------------------------- |
- * | `BASE_IMAGE`     | `DEFAULT_SANDBOX_IMAGE` (modal-context.ts)         |
- * | `SYSTEM_PACKAGES`| `GUEST_SYSTEM_PACKAGES` (modal-system-packages.ts) |
- * | `SDK_SPECS`      | `SDK_PACKAGES` (modal-harness-image.ts) — as PACKED TARBALLS (the workspace's, or a release's `changeset pack` output) or `name@version`; see `resolveSdkSource` |
- * | `GUEST_ROOT`     | `GUEST_ROOT` (guest-exec-env.ts)                   |
+ * | `BASE_IMAGE`     | `DEFAULT_SANDBOX_IMAGE` (modal/context.ts)         |
+ * | `SYSTEM_PACKAGES`| `GUEST_SYSTEM_PACKAGES` (modal/system-packages.ts) |
+ * | `SDK_SPECS`      | `SDK_PACKAGES` (modal/harness-image.ts) — as PACKED TARBALLS (the workspace's, or a release's `changeset pack` output) or `name@version`; see `resolveSdkSource` |
+ * | `GUEST_ROOT`     | `GUEST_ROOT` (guest/exec-env.ts)                   |
  *
  * That last column is a copy, and it went stale exactly as a copy does —
- * `GUEST_ROOT` moved to `guest-exec-env.ts` and this table still said
- * `modal-harness-image.ts` while the build broke. The table with authority is
+ * `GUEST_ROOT` moved to `guest/exec-env.ts` and this table still said
+ * `modal/harness-image.ts` while the build broke. The table with authority is
  * `GUEST_IMAGE_CONSTANTS` in `build-guest-image-extract.mjs`; this one is prose
- * about it, and `guest-image-extractors.test.ts` asserts the two agree.
+ * about it, and `guest/image-extractors.test.ts` asserts the two agree.
  *
  * A regex read of a source file is a liability wherever it can fail QUIETLY, so
  * every extractor here throws when its declaration does not match — the same
@@ -32,10 +32,10 @@
  * nothing would surface as an ENOENT one layer later with no clue pointing back.
  * Throwing is not enough on its own, though: it moves the failure from a wrong
  * image to a broken `predev`, which is louder but still not a test.
- * `guest-image-extractors.test.ts` is the loop closed from the other side — it
+ * `guest/image-extractors.test.ts` is the loop closed from the other side — it
  * IMPORTS the real constants and asserts every extractor resolves to the same
  * value, so a MOVED or renamed constant fails a test. It exists because
- * `guest-image-dockerfile.test.ts`, which this doc used to credit with the job,
+ * `guest/image-dockerfile.test.ts`, which this doc used to credit with the job,
  * does something adjacent and weaker: it compares the Dockerfile's committed ARG
  * defaults against the constants and never calls an extractor at all, so it
  * stayed green through the move.
@@ -99,7 +99,7 @@ const DEFAULT_TAG = "aai-guest-harness:local";
  *
  * Two spellings of one filename is the ordinary hazard, and the alternative is
  * worse: this script is plain `.mjs` run by node with no bundler, so importing a
- * constant out of a TypeScript module would need a loader. `guest-image-stamp.test.ts`
+ * constant out of a TypeScript module would need a loader. `guest/image-stamp.test.ts`
  * holds the two together instead.
  */
 const GUEST_IMAGE_STAMP = ".guest-image-stamp.json";
@@ -172,8 +172,8 @@ function nextValue(argv, flag) {
 }
 
 /**
- * The pull reference for this tree, computed by `guest-image-source.ts` and
- * `modal-harness-image.ts` — never reimplemented here (see the module doc).
+ * The pull reference for this tree, computed by `guest/image-source.ts` and
+ * `modal/harness-image.ts` — never reimplemented here (see the module doc).
  *
  * A non-zero exit is fatal: the alternative is pushing an image under a tag the
  * server will never ask for, which looks like a successful publish and fails
@@ -182,8 +182,8 @@ function nextValue(argv, flag) {
 function resolveRef(registry) {
   const program = [
     'import { readFileSync } from "node:fs";',
-    'import { localHarnessImageTag } from "../packages/aai-server/src/modal-harness-image.ts";',
-    'import { guestImageRef } from "../packages/aai-server/src/guest-image-source.ts";',
+    'import { localHarnessImageTag } from "../packages/aai-server/src/modal/harness-image.ts";',
+    'import { guestImageRef } from "../packages/aai-server/src/guest/image-source.ts";',
     // `-e` puts the FIRST user argument at argv[1] — there is no script path
     // in argv at all, so this is slice(1) and not the usual slice(2).
     "const [baseTag, harness, registry] = process.argv.slice(1);",

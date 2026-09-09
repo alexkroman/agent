@@ -89,7 +89,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { abandonStalledRun, RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { createLogger } from "./logger.ts";
-import { sqlState } from "./platform-db-errors.ts";
+import { sqlState } from "./platform/db-errors.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { enqueue } from "./workflow-queue-store.ts";
 

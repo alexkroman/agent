@@ -13,7 +13,7 @@
     // be hashed, and `inputs` globs resolve relative to the PACKAGE.
     "vitest.slow.config.ts",
     // The platform schema, read by six suites — including
-    // `platform-schema.test.ts`, which is in the UNIT tier and whose whole job
+    // `platform/schema.test.ts`, which is in the UNIT tier and whose whole job
     // is to assert every `aai_platform.<table>` the source queries is declared
     // by a migration. Third instance of the rule two entries up: a repo-root
     // directory is covered by no package's `inputs`, so editing a migration

@@ -16,7 +16,7 @@
  * **Each call site keeps its own real bound where it belongs**, and neither of
  * them is a `statement_timeout` — nothing in this repository sets one, and on the
  * failure that matters (a silent partition) it could not be installed anyway; see
- * `platform-db-errors.ts`. What they actually are:
+ * `platform/db-errors.ts`. What they actually are:
  *
  * - A DELIVERY is bounded twice over — `BROKER_READY_TIMEOUT_MS` on resolving the
  *   guest and `QUEUE_DELIVERY_TIMEOUT_MS` on the POST — and each of its `ack` /

@@ -191,7 +191,7 @@ describe("handleStudioRequest dispatch", () => {
   });
 
   // `GET /studio/tools` is the second half of this surface — public, bearer
-  // gated, declared `{ via: "direct-dial" }` in guest-routes.ts — and had no
+  // gated, declared `{ via: "direct-dial" }` in guest/routes.ts — and had no
   // test anywhere. Dropping it from the `url ===` disjunction turned it into a
   // 404 the client reads as a dead sandbox, and moving the labels response
   // above `verifyBearer` leaked the tool inventory unauthenticated. Both

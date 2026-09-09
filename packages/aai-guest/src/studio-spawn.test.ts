@@ -173,7 +173,7 @@ describe("workspaceChildEnv", () => {
     // The other half of the `TMPDIR` story, and the half a test was missing:
     // the sibling below pins that an ABSENT variable stays absent, which is
     // what happens on a host that sets none. In a guest the spawner names one
-    // — `microsandbox-sandbox.ts` / `modal-sandbox.ts` set `TMPDIR` in the
+    // — `microsandbox/sandbox.ts` / `modal/sandbox.ts` set `TMPDIR` in the
     // studio exec env, because `/tmp` under the local microVM is a 512 MiB RAM
     // disk (measured) — and the allow-list forwarding it is what makes that
     // reach an `npm install` and a workspace `bash`. A real child, because

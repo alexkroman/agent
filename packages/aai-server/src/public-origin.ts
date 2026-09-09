@@ -46,7 +46,7 @@
  */
 
 import { isLocalDev, platformOwnPort } from "./_boot.ts";
-import { HOST_ALIAS } from "./microsandbox-network.ts";
+import { HOST_ALIAS } from "./microsandbox/network.ts";
 
 /** Strip the port. IPv6 hosts keep their brackets (`[::1]:8080`). */
 function hostnameOf(host: string): string {
@@ -270,7 +270,7 @@ export function agentPublicBaseUrl(
  *     guest stderr: POST /<slug>/workflow-enqueue 404
  *     Workflow API request failed { error: 'storage runs.list answered HTTP 404 }
  *
- * That is the same 404-to-itself `platformHostPort` in microsandbox-sandbox.ts
+ * That is the same 404-to-itself `platformHostPort` in microsandbox/sandbox.ts
  * documents for an in-guest `aai deploy`, and the same one the retired
  * local-container backend was retired over — third occurrence, and the first
  * where the dial side has a name of its own. `guestReachableUrl` is what

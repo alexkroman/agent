@@ -6,8 +6,8 @@
  * orchestrator-security-validation.test.ts.
  */
 import { describe, expect, test } from "vitest";
-import { loadBundleParts } from "./sandbox-resolve.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { loadBundleParts } from "./sandbox/resolve.ts";
+import { createSlotCache } from "./sandbox/slots.ts";
 import { hashApiKey } from "./secrets.ts";
 import {
   authFetch,

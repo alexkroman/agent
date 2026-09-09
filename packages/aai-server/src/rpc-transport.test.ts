@@ -2,12 +2,12 @@
 /**
  * Tests for the WebSocket JSON-RPC transport — framing, correlation,
  * timeouts, pre-listen buffering, and dead-peer semantics, all against the
- * fake socket from _sandbox-vm-test-utils.ts.
+ * fake socket from sandbox/_vm-test-utils.ts.
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { createFakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
 import { createRpcConnection } from "./rpc-transport.ts";
+import { createFakeGuestSocket } from "./sandbox/_vm-test-utils.ts";
 import { captureLogs } from "./test-utils.ts";
 
 describe("createRpcConnection", () => {

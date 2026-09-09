@@ -48,9 +48,9 @@ export {
   createMemoryPlatformEvents,
   type PlatformEvents,
   projectKey,
-} from "./platform-events.ts";
+} from "./platform/events.ts";
 export {
   createMutationLock,
   localSlugLock,
   type SlugMutationLock,
-} from "./platform-lock.ts";
+} from "./platform/lock.ts";

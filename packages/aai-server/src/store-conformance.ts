@@ -135,7 +135,7 @@ export const STORE_CONTRACTS = [
     //
     // **The FOURTH arm is no longer owed.**
     // `session-state-conformance-platform.scenario.test.ts` here runs the shared
-    // cases over `platform-session-state.ts`'s own SQL — the real route, the
+    // cases over `platform/session-state.ts`'s own SQL — the real route, the
     // guest bearer, the real statements, the platform's own tables — reached
     // through `loadSessionStateConformance()` on
     // `@alexkroman1/aai-runtime/internal`, the way `loadJournalConformance`
@@ -155,7 +155,7 @@ export const STORE_CONTRACTS = [
     // Two suites here still assert what a shared case list cannot, and stay:
     // `session-state.scenario.test.ts` (the double-encode, the grants a
     // provisioned app role gets, and the store above the backend) and
-    // `platform-session-state.scenario.test.ts` (the platform's own statements).
+    // `platform/session-state.scenario.test.ts` (the platform's own statements).
     contract: "session-state",
     memory: "createMemoryStateBackend",
     pg: "createPostgresStateBackend",
@@ -234,7 +234,7 @@ export const STORE_CONTRACTS = [
     //
     // Two suites here still assert what a shared case list cannot, and stay:
     // `workflow-journal.scenario.test.ts` (the DDL, and the self-hosted
-    // statements one at a time) and `platform-workflow-journal.scenario.test.ts`
+    // statements one at a time) and `platform/workflow-journal.scenario.test.ts`
     // (the platform's statements, and TENANCY — a claim about column values in a
     // shared table, so only a real database with two tenants' rows can test it).
     contract: "workflow-journal",
@@ -291,7 +291,7 @@ export const STORE_CONTRACTS = [
     // The two arms agree on mutual exclusion WITHIN one process and on nothing
     // else: the memory arm is an in-process keyed lock, and the interesting half
     // of the advisory-lock arm is cross-process, which no shared table of cases
-    // can express. Its own suite (`platform-lock.scenario.test.ts`) covers the
+    // can express. Its own suite (`platform/lock.scenario.test.ts`) covers the
     // cross-replica half directly.
     conformance: false,
     why: "cross-process exclusion is not expressible as a shared case list",

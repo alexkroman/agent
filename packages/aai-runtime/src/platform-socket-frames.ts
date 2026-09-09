@@ -7,7 +7,7 @@
  * and a REQUEST frame carries the same three things a `POST` carried — which
  * route, which trace, and an already-encoded body string. Nothing here re-encodes
  * a caller's payload, and nothing here knows what any route means. That is what
- * lets `platform-socket-handler.ts` turn a frame back into a `Request` and run it
+ * lets `platform/socket-handler.ts` turn a frame back into a `Request` and run it
  * through the very same Hono app the HTTP route uses, rather than growing a
  * second dispatch with a second set of statuses.
  *

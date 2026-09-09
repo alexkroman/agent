@@ -431,7 +431,7 @@ it — the source behind the studio's Logs pane and `aai logs`.
 always reached the host (`startGuestLogging` drains both streams into the
 platform's log the moment the process exists); what it could never reach is the
 person who wrote the tool. Buffering it host-side, next to that relay, fails for
-the same reason `sandbox-directory.ts` exists: a sandbox is resident on ONE
+the same reason `sandbox/directory.ts` exists: a sandbox is resident on ONE
 replica, and a replica that does not hold it never proxies for the one that does
 — it looks the sandbox up and dials the sandbox's own tunnel. So a host-side
 buffer is readable from exactly one replica of N, chosen by which one happened
@@ -672,7 +672,7 @@ the argument: **platform SDK drift can never break a deployed agent.**
 
 ## Agent guests are servers (no control channel)
 
-DEPLOYED AGENTS spawn as servers (`spawnAgentServer` in sandbox-vm.ts;
+DEPLOYED AGENTS spawn as servers (`spawnAgentServer` in sandbox/vm.ts;
 guest side in `aai-guest/harness-agent-mode.ts`). The whole
 platform↔deployed-agent contract, frozen per deploy by the harness image
 pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
@@ -769,7 +769,7 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   Only for an agent that declares workflows AND has a database: the local world's
   queue is in memory, so there is nothing outside the process to wake it for.
 - **Redeploys hand over BLUE-GREEN** (`handoverSlot` in
-  sandbox-resolve.ts): the agents-row change event boots the NEW deploy's
+  sandbox/resolve.ts): the agents-row change event boots the NEW deploy's
   sandbox and waits for its readiness before detaching the old one, so a
   redeploy never leaves an empty slot — the next caller lands warm while
   the old sandbox drains its calls in the background. A replacement that
@@ -780,7 +780,7 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
 ## The snapshot image
 
 Where the harness this package builds actually RUNS from in production. The
-host side — `modal-harness-image.ts`, the content-addressed tag, per-deploy
+host side — `modal/harness-image.ts`, the content-addressed tag, per-deploy
 pinning on `agents.harness_image_tag` — lives in
 `packages/aai-server/CLAUDE.md`; what follows is the artifact itself, which is
 this package's.
@@ -832,7 +832,7 @@ this package's.
   200ms comes back forever with nothing reporting it. It relied on the
   `AAI_GUEST_TOKEN` check to exit for us at first — true by accident, and it
   would silently rot the moment that check moved. So the mode is checked
-  before every other mode in `main()`, and `modal-harness-image.test.ts`
+  before every other mode in `main()`, and `modal/harness-image.test.ts`
   pins BOTH sides: the host asks for the warm-up before snapshotting (fake
   Modal), and the real built harness honours it with no token (real spawn).
   Note the fake sandbox had no `exec` at all when this landed, so the
@@ -909,7 +909,7 @@ resolve — it is assembled from `dockerfileCommands`, finished with a
 `images.fromName()` answers. So no local backend could run production's guest
 environment even in principle; it had to grow a SECOND toolchain delivery
 mechanism, which is the cost that sank the previous local-container attempt (see
-"Two tiers, deliberately" in `sandbox-backend.ts`). One OCI image inverts that:
+"Two tiers, deliberately" in `sandbox/backend.ts`). One OCI image inverts that:
 the local backend and Modal pull the same reference.
 
 **Two things get simpler, both because a Docker build has a build CONTEXT.** The
@@ -928,7 +928,7 @@ rather than default because nothing has published those images until
 a tag which
 does not exist yet turns a deploy into a total sandbox outage. Flipping the
 DEFAULT — and deleting the snapshot half, which is most of
-`modal-harness-image.ts` — is the follow-up.
+`modal/harness-image.ts` — is the follow-up.
 
 **PRODUCTION sets it, and this paragraph used to say the opposite** ("the
 default, including production today"), which inverts the answer to the one
@@ -998,7 +998,7 @@ image for.
 **The Dockerfile lives in `aai-server`, beside the constants it mirrors, and the
 build CONTEXT is this package.** That split is deliberate: the recipe's inputs
 (`GUEST_SYSTEM_PACKAGES`, `SDK_PACKAGES`, `GUEST_ROOT`, `DEFAULT_SANDBOX_IMAGE`)
-are the host's, and `guest-image-dockerfile.test.ts` has to be hashed by the same
+are the host's, and `guest/image-dockerfile.test.ts` has to be hashed by the same
 package as both the Dockerfile and those constants — `inputs` globs resolve
 relative to the PACKAGE, so a gate split across two packages is served from a
 stale cache exactly when the file it guards changes. The context is this package
@@ -1095,7 +1095,7 @@ dev). Two halves have to agree, and for `@workflow/world-postgres` neither did:
   rather than of the config.
 - **Something has to install it beside the harness** — the locked toolchain
   (`toolchain/package.json`, via `LOCKED_PACKAGES` in
-  `scripts/sync-guest-toolchain.mjs`), or `modal-harness-image.ts`'s separate
+  `scripts/sync-guest-toolchain.mjs`), or `modal/harness-image.ts`'s separate
   `@alexkroman1/*` install.
 
 **Bundling is not always safe, and the reason is DATA.** A package whose code
@@ -1151,7 +1151,7 @@ Supabase Storage into the replica's heap, and `spawnModalAgentServer` wrote
 those same bytes into the sandbox with `filesystem.writeText`. Neither hop
 bought anything. The guest now fetches the bundle itself from a time-boxed signed
 Storage URL (`BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` →
-`WorkerSource` in `sandbox-vm.ts` → `AAI_BUNDLE_URL` in the exec env), and both
+`WorkerSource` in `sandbox/vm.ts` → `AAI_BUNDLE_URL` in the exec env), and both
 transfers disappear.
 
 **The hash is the whole security argument, and it predates this.** Agent mode
@@ -1214,7 +1214,7 @@ container around us** (`builtinFetch` in `host/ssrf.ts`).
   the LAN, or cloud metadata. That is the case the screen exists for.
 
 Containment is **declared by the spawner**, never inferred by the guest:
-`modal-sandbox.ts` sets `AAI_SANDBOX_CONTAINED=1` in the exec env and the
+`modal/sandbox.ts` sets `AAI_SANDBOX_CONTAINED=1` in the exec env and the
 subprocess backend does not. "Am I a guest" and "am I contained" are
 different questions — the subprocess backend runs a guest with no container
 at all, so a guest-token sniff would open egress on a developer's laptop.
@@ -1357,7 +1357,7 @@ changing on every local build does not invalidate the ~700-package third-party
 layer. And `sdk-tarballs/.gitkeep` is COMMITTED although the `.tgz` files are
 ignored: a Dockerfile cannot branch, so that COPY runs for a published build
 too, and `COPY` of a missing path fails the build —
-`guest-image-dockerfile.test.ts` pins both.
+`guest/image-dockerfile.test.ts` pins both.
 
 ## Building the harness for a test run
 

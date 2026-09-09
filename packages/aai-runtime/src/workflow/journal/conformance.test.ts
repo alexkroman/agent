@@ -36,7 +36,7 @@
  *
  * One consequence used to be named here as a LIVE divergence, and it is worth
  * keeping as the worked example of what this arm cannot see rather than as a
- * standing bug report: `platform-workflow-journal.ts`'s `createRun` was
+ * standing bug report: `platform/workflow-journal.ts`'s `createRun` was
  * `on conflict (slug, run_id) do nothing` with no `returning`, so the platform
  * silently accepted a second start on an id the other two backends refuse —
  * "two racing starts on one id therefore both believed they had won and the
@@ -204,7 +204,7 @@ function statuses(body: Body, key: string): readonly RunStatus[] | undefined {
  * mirror is the SQL below it — see this file's header for why.
  */
 /**
- * One run on the wire, the shape `platform-workflow-journal.ts`'s `toRun` builds.
+ * One run on the wire, the shape `platform/workflow-journal.ts`'s `toRun` builds.
  *
  * ONE function for both read arms, because the real store has one and this fake
  * had the field list written out twice — so a field added to `getRun` and

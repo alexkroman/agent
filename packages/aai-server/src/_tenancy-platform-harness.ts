@@ -48,9 +48,9 @@ import {
   isUploadOp,
   type TenancyStore,
 } from "./_tenancy-world-harness.ts";
-import * as state from "./platform-session-state.ts";
-import * as uploads from "./platform-uploads.ts";
-import * as journal from "./platform-workflow-journal.ts";
+import * as state from "./platform/session-state.ts";
+import * as uploads from "./platform/uploads.ts";
+import * as journal from "./platform/workflow-journal.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /** `bigint` arrives as a STRING from the driver; `null` means absent. */
@@ -59,7 +59,7 @@ const text = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
 const str = (value: unknown): string => String(value);
 
-/** Mirrors `platform-uploads.ts`'s own `partsOf`, which drops anything malformed. */
+/** Mirrors `platform/uploads.ts`'s own `partsOf`, which drops anything malformed. */
 function partsOf(value: unknown): { at: number; bytes: number }[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) =>
@@ -167,7 +167,7 @@ async function applyHook(sql: SqlExec, op: HookOp): Promise<Answer> {
   }
 }
 
-/** `platform-uploads.ts`'s five. */
+/** `platform/uploads.ts`'s five. */
 async function applyUpload(sql: SqlExec, op: UploadOp): Promise<Answer> {
   switch (op.t) {
     case "claimUpload":
@@ -212,7 +212,7 @@ async function applyUpload(sql: SqlExec, op: UploadOp): Promise<Answer> {
   }
 }
 
-/** `platform-session-state.ts`'s six. */
+/** `platform/session-state.ts`'s six. */
 async function applyState(sql: SqlExec, op: SessionOp): Promise<Answer> {
   switch (op.t) {
     case "commitSlots":

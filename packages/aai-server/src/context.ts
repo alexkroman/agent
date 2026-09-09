@@ -11,7 +11,7 @@
 
 import type { Context } from "hono";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
-import type { SlugMutationLock } from "./platform-lock.ts";
+import type { SlugMutationLock } from "./platform/lock.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import type { StudioAuth } from "./supabase-auth.ts";

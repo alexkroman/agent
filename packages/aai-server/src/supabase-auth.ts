@@ -46,7 +46,7 @@ import { hash } from "node:crypto";
 import { GoTrueClient, isAuthRetryableFetchError } from "@supabase/auth-js";
 import { hasPlatformDb, isLocalDev } from "./_boot.ts";
 import { TtlCache } from "./_ttl-cache.ts";
-import { isUnavailableStatus, PlatformServiceUnavailableError } from "./platform-service-errors.ts";
+import { isUnavailableStatus, PlatformServiceUnavailableError } from "./platform/service-errors.ts";
 
 /**
  * The `service` every unavailability from this module carries, so a log line

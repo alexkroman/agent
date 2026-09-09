@@ -260,7 +260,7 @@ describe("createPostgresDb query timeout", () => {
 
   test("a RESERVED query IS bounded once reservedQueryTimeoutMs is set", async () => {
     // The hole this closes: every guest journal / session-state / uploads /
-    // enqueue call runs on a RESERVED connection (`_platform-route.ts`'s
+    // enqueue call runs on a RESERVED connection (`platform/_route.ts`'s
     // `withReserved`) and takes no advisory lock, so the exemption above left
     // them with no deadline at all — four hung reads exhaust `ADMIN_POOL_MAX`
     // and every other platform read on the replica queues behind them.
@@ -296,7 +296,7 @@ describe("createPostgresDb query timeout", () => {
     // `pg_advisory_lock` for a whole deploy — blob uploads and a sandbox spawn,
     // i.e. seconds to minutes — and a client-side deadline on it would abort
     // deploys. Its acquire wait is bounded by `lock_timeout` instead
-    // (`platform-lock.ts`), which is the deadline that belongs there.
+    // (`platform/lock.ts`), which is the deadline that belongs there.
     unsafeMock.mockReturnValueOnce(pending());
     const db = createPostgresDb({ url: "postgres://db.example/app", connectTimeoutSeconds: 10 });
     const reserved = await db.reserve();

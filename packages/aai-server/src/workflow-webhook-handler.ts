@@ -38,7 +38,7 @@
  * because the run receives it whole and a signature header is what a payment
  * provider's own verification needs — but `Cookie`, `Authorization` and
  * `X-Forwarded-*` describe the caller to US and stop here. See
- * `guest-forward.ts`.
+ * `guest/forward.ts`.
  *
  * ## What this route does NOT fix
  *
@@ -58,11 +58,11 @@ import {
   GUEST_WEBHOOK_RESPONSE_HEADERS,
   passThroughHeaders,
   pickHeaders,
-} from "./guest-forward.ts";
-import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
+} from "./guest/forward.ts";
+import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
 import { createLogger } from "./logger.ts";
-import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrl, notFoundMessage } from "./sandbox-broker.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrl, notFoundMessage } from "./sandbox/broker.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 
 const log = createLogger("workflow.webhook");
 
@@ -70,7 +70,7 @@ const log = createLogger("workflow.webhook");
  * This route's own path under `/:slug`.
  *
  * Must match `GUEST_ROUTE_EXPOSURE.workflowWebhook`'s path + `suffix` —
- * `guest-routes.test.ts` is what holds the two together, which is the same
+ * `guest/routes.test.ts` is what holds the two together, which is the same
  * check that catches a missing method.
  */
 export const WORKFLOW_WEBHOOK_ROUTE = `${GUEST_ROUTES.workflowWebhook}/:token`;

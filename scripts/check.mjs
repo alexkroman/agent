@@ -201,7 +201,7 @@ const GATES = [
     script: "check:migration-order",
     phase: "ratchets",
     fatal: false,
-    why: "The other diff-scoped one, and a merge hazard rather than an authoring one: each branch picks a plausible next timestamp against the main it can see, both apply cleanly in isolation, and the inversion exists only in the merge. `supabase db push` then REFUSES a pending file older than the last remote row — at release time, after the npm publish, on a branch that has merged and gone. It has already cost a manual re-dating of two migrations (f376585). platform-schema.test.ts catches two files claiming ONE version; nothing caught one file claiming an older one.",
+    why: "The other diff-scoped one, and a merge hazard rather than an authoring one: each branch picks a plausible next timestamp against the main it can see, both apply cleanly in isolation, and the inversion exists only in the merge. `supabase db push` then REFUSES a pending file older than the last remote row — at release time, after the npm publish, on a branch that has merged and gone. It has already cost a manual re-dating of two migrations (f376585). platform/schema.test.ts catches two files claiming ONE version; nothing caught one file claiming an older one.",
   },
   {
     script: "check:optional-peers",

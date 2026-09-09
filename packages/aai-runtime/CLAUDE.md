@@ -821,7 +821,7 @@ contiguous READABLE prefix), which is why the fix is the CUT and not the number:
 a `size` counting bytes that merely arrived would send a reader to a window that
 is not there. `windows(body, limit, grow)` doubles from `UPLOAD_CHUNK_BYTES` to
 `UPLOAD_PART_BYTES` — 1, 2, 4, 8, 8, … MiB — so a maximal upload gains three
-windows and `platform-uploads.ts`'s O(N²) `parts` tripwire is untouched, where a
+windows and `platform/uploads.ts`'s O(N²) `parts` tripwire is untouched, where a
 flat 1 MiB cut would have been eight times the windows. `grow` is exactly
 `publish`: only a published window's arrival is observable, and only a published
 cut may be non-uniform, because `create` derives its boundary list from

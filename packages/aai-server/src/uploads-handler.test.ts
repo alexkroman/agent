@@ -3,7 +3,7 @@
  * `POST /:slug/upload-records` — the route the guest's platform upload backend calls.
  *
  * The store's semantics are covered against real Postgres in
- * `platform-uploads.scenario.test.ts`. What these assert is the ROUTE: that the
+ * `platform/uploads.scenario.test.ts`. What these assert is the ROUTE: that the
  * bearer gates it, that the slug used in every statement comes from that bearer
  * rather than the body, that a malformed call is refused before the database is
  * touched, and that a CLAIMED id answers 409 rather than being flattened into a
@@ -204,7 +204,7 @@ describe("POST /:slug/upload-records", () => {
      * call took one of `ADMIN_POOL_MAX` reserved admin connections, held it across
      * the read that refused the request, and gave it back. `seen` stayed empty
      * throughout — the cost was the door, not the query — which is why this needs
-     * its own spy. See `PlatformCall` in `_platform-route.ts`.
+     * its own spy. See `PlatformCall` in `platform/_route.ts`.
      */
     test("reserves no connection for a body it is going to refuse", async () => {
       const { fetch, store, adminDb } = await platform();

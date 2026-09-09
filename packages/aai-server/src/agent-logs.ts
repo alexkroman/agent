@@ -26,11 +26,11 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import type { LogLine, LogPage, LogStream } from "@alexkroman1/aai-runtime";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
 import type { AppContext } from "./context.ts";
-import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { guestTokenFor } from "./guest-token.ts";
+import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
+import { guestTokenFor } from "./guest/token.ts";
 import { createLogger } from "./logger.ts";
-import { agentSandboxName, type SandboxDirectory } from "./sandbox-directory.ts";
-import { isLive, type SlotCache } from "./sandbox-slots.ts";
+import { agentSandboxName, type SandboxDirectory } from "./sandbox/directory.ts";
+import { isLive, type SlotCache } from "./sandbox/slots.ts";
 import type { BundleStore } from "./store-types.ts";
 
 const log = createLogger("agent.logs");
@@ -169,7 +169,7 @@ export type AgentLogsEnv = {
  * 2. **A peer's**, through the fleet-wide directory — the same lookup the
  *    broker's cold path makes. Reaching it needs the manage bearer, which is
  *    why that token is DERIVED from the sandbox name rather than drawn at
- *    random (`guest-token.ts`); before that it was unreadable from anywhere but
+ *    random (`guest/token.ts`); before that it was unreadable from anywhere but
  *    the replica that spawned it.
  */
 export async function readAgentLogs(

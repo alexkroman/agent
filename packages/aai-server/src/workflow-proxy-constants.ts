@@ -48,7 +48,7 @@ export const GUEST_PROXY_TOKEN_HEADER = "x-aai-guest-token";
  * legitimately unbounded in opposite directions — `GET /runs/:id/events` holds
  * a stream open for minutes, and `POST /workflows/uploads` carries up to
  * `MAX_WORKFLOW_UPLOAD_BYTES` — so the forward is `bound: "activity"`, whose
- * doc in `guest-forward.ts` carries the argument and the 500 MB upload this
+ * doc in `guest/forward.ts` carries the argument and the 500 MB upload this
  * number used to abort at 30.3s.
  *
  * 30s rather than something tighter because the first request through this route

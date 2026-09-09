@@ -27,7 +27,7 @@
  * @module test-utils
  */
 
-export { ensurePlatformTables } from "./platform-schema-test-utils.ts";
+export { ensurePlatformTables } from "./platform/schema-test-utils.ts";
 export {
   authFetch,
   authHeaders,

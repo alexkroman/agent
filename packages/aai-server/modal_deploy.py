@@ -5,7 +5,7 @@ The server is a Node.js app; Modal runs it behind ``@modal.web_server``,
 which proxies HTTP *and* WebSocket traffic (voice sessions are long-lived
 WebSockets) to the node process listening inside the container.
 
-Agent guest sandboxes are ALSO Modal Sandboxes (see modal-sandbox.ts), created
+Agent guest sandboxes are ALSO Modal Sandboxes (see modal/sandbox.ts), created
 by the server at runtime under the ``aai-server`` Modal App using the
 ``MODAL_TOKEN_ID``/``MODAL_TOKEN_SECRET`` from the ``aai-server`` Secret.
 
@@ -81,7 +81,7 @@ Required Modal Secret named ``aai-server`` with (at least):
   is 60 against a declared budget of 40, and two consecutive boots reported
   "4 spare" then "0 spare". Unset is SAFE in the sense that nothing silently
   misbehaves; what it costs is the headroom
-  ``platform-db-capacity.ts`` exists to protect
+  ``platform/db-capacity.ts`` exists to protect
 - ``APP_DB_POOLER_URL`` — Supavisor's SESSION-mode URL for app databases.
   Optional: with it unset, ``withPoolerHost`` leaves an app-database URL on
   whatever host ``SUPABASE_DB_URL`` names, which in production is already the
@@ -185,13 +185,13 @@ PORT = 8080
 #
 # Note the list is a SET of acceptable regions rather than an ordered
 # preference Modal promises to honour; ``us-east-2`` leads it because that is
-# where the database is, and `modal-image-inputs.test.ts` pins that intent so
+# where the database is, and `modal/image-inputs.test.ts` pins that intent so
 # a later edit cannot drift the first entry away from Supabase.
 #
 # ## Guest sandboxes take the SAME list, and they used to take nothing
 #
 # They are a separate placement site (``MODAL_SANDBOX_REGION``, read by
-# modal-sandbox-env.ts), and they were left unpinned on an argument that voice
+# modal/sandbox-env.ts), and they were left unpinned on an argument that voice
 # is what a hop costs: an agent guest holds no host channel at all — browsers
 # dial the sandbox tunnel directly — so a voice turn crosses guest→platform
 # zero times.
@@ -257,7 +257,7 @@ REGIONS = ["us-east-2", "us-east"]
 #
 # - A deployed guest opens `WS /:slug/platform-socket` once and carries every
 #   platform call (session state, upload records, the workflow journal, its key
-#   index, an enqueue) down it — `platform-socket-handler.ts` here,
+#   index, an enqueue) down it — `platform/socket-handler.ts` here,
 #   `aai-runtime/platform-socket.ts` at the other end. A WebSocket is ONE input
 #   for its whole lifetime, so that is one long-lived input per live guest where
 #   the same traffic used to be short requests any replica could serve.
@@ -275,7 +275,7 @@ REGIONS = ["us-east-2", "us-east"]
 MIN_CONTAINERS = 1  # always-warm floor: session brokering is latency-sensitive
 # Cost guard AND the multiplier on the platform's direct-connection budget:
 # MAX_CONTAINERS x platformDbConnectionsPerReplica() must fit
-# MAX_PLATFORM_DB_CONNECTIONS, which `platform-db-budget.test.ts` asserts.
+# MAX_PLATFORM_DB_CONNECTIONS, which `platform/db-budget.test.ts` asserts.
 # 3 x 4 = 12. Raise deliberately, not by incident, and check the instance's real
 # `max_connections` first — the failure at the ceiling is every platform read
 # failing at once, not degradation (see that constant).
@@ -289,7 +289,7 @@ MIN_CONTAINERS = 1  # always-warm floor: session brokering is latency-sensitive
 # each, and they are what actually scales with TENANTS (see
 # MAX_ACTIVE_APP_DATABASES). This does NOT bound how many AGENTS run: guest
 # sandboxes are Modal Sandboxes under a different Modal app
-# (DEFAULT_MODAL_APP_NAME in modal-context.ts), not containers of this function.
+# (DEFAULT_MODAL_APP_NAME in modal/context.ts), not containers of this function.
 #
 # 5 -> 3 MEASURED, which is what took it off "plausible". One replica's broker
 # held **23,000 rps at p99 22ms with 256 concurrent and zero errors**, flat from
@@ -340,13 +340,13 @@ MAX_INPUTS = 400  # concurrent-input cap per container (SSE streams included)
 # inherited. A platform socket really does live for hours, which is what makes
 # this value load-bearing rather than precautionary now: at Modal's default it
 # would cut every deployed guest's transport every five minutes. Same trap the
-# sandbox layer documents in modal-sandbox-env.ts, matched to the same 4h value.
+# sandbox layer documents in modal/sandbox-env.ts, matched to the same 4h value.
 FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 
 # ── Guest-sandbox resources ──────────────────────────────────────────────────
 #
 # One sandbox per slug per replica (per-slug horizontal scaling was deleted
-# for simplicity — see sandbox-resolve.ts). If sessions stutter at load, the
+# for simplicity — see sandbox/resolve.ts). If sessions stutter at load, the
 # playback stats (concealedSamples per turn) are the signal.
 #
 # Reservation and cap are deliberately DIFFERENT numbers, because a guest's
@@ -362,7 +362,7 @@ FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 #
 # So: reserve the idle shape, cap the build shape. The cap only has to clear
 # the bundler's peak with headroom for a co-resident session. 4096 MiB is
-# also the ceiling modal-sandbox-env.ts clamps to.
+# also the ceiling modal/sandbox-env.ts clamps to.
 SANDBOX_CPU = 1  # per-guest core reservation (Modal cpu)
 SANDBOX_CPU_LIMIT = 4  # hard per-guest core cap, for builds (Modal cpuLimit)
 SANDBOX_MEMORY_MB = 1024  # per-guest memory reservation (Modal memoryMiB)
@@ -380,26 +380,26 @@ image = build_image(
     port=PORT,
     extra_env={
         # A cap without its reservation throws at spawn (Modal rejects a bare
-        # cap), so these four move together — see modal-sandbox-env.ts.
+        # cap), so these four move together — see modal/sandbox-env.ts.
         "SANDBOX_CPU": str(SANDBOX_CPU),
         "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
         "SANDBOX_MEMORY_MB": str(SANDBOX_MEMORY_MB),
         "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
         # Guest sandboxes are placed by the SAME preference list this function
         # is pinned to — see "Guest sandboxes take the SAME list" above for the
-        # per-operation measurement, and modal-sandbox-env.ts for the parser.
+        # per-operation measurement, and modal/sandbox-env.ts for the parser.
         # Comma-separated because that is what an operator setting this by hand
         # writes, and the spill entry is not optional: a single region is what
         # produced `Sandbox operation timed out` under load.
         "MODAL_SANDBOX_REGION": ",".join(REGIONS),
         # The autoscaler ceiling, readable by the process it bounds. It is the
         # MULTIPLIER on every per-replica pool, so the boot-time capacity check
-        # cannot state the fleet's claim without it (platform-db-capacity.ts) —
+        # cannot state the fleet's claim without it (platform/db-capacity.ts) —
         # and it went unstated: boot printed "capacity ok — 0 spare" on an
         # instance the claim overran by 20, the line above it naming the very
         # connections the budget was not counting. Exported rather than copied
         # into TypeScript so this stays the one place the number is decided;
-        # `platform-db-budget.test.ts` reads it from here too.
+        # `platform/db-budget.test.ts` reads it from here too.
         "MAX_CONTAINERS": str(MAX_CONTAINERS),
     },
 )

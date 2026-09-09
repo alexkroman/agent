@@ -15,7 +15,7 @@
  * called for a new credential. It does not need one. `AAI_GUEST_TOKEN` is
  * `guestTokenFor(agentSandboxName(slug, version))` — an HMAC over the sandbox's
  * fleet-wide name, which every replica can recompute from the agents row (see
- * `guest-token.ts`, whose whole argument is that determinism). The platform hands
+ * `guest/token.ts`, whose whole argument is that determinism). The platform hands
  * it to the guest at spawn so the guest can verify requests coming IN; the same
  * value, presented outbound, lets the platform verify a request coming out. One
  * secret, checked by whichever side is receiving.
@@ -54,10 +54,10 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES, queueNameKind } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { optionalString, requiredString } from "./_body-fields.ts";
-import { guestSlug, guestTrace, notConfigured, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
-import type { AdminDb } from "./platform-lock.ts";
+import { guestSlug, guestTrace, notConfigured, withReserved } from "./platform/_route.ts";
+import type { AdminDb } from "./platform/lock.ts";
 import { enqueue } from "./workflow-queue-store.ts";
 
 const log = createLogger("workflow.enqueue");

@@ -59,7 +59,7 @@
  * The prompt is composed by TypeScript that resolves workspace packages through
  * the `@dev/source` export condition, so it is imported by a node child spawned
  * with `--conditions=@dev/source` — the same thing `build-guest-image.mjs` does
- * to reach `modal-harness-image.ts` from a `.mjs` script.
+ * to reach `modal/harness-image.ts` from a `.mjs` script.
  */
 
 import { spawnSync } from "node:child_process";

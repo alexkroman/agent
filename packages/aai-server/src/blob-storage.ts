@@ -46,7 +46,7 @@ import {
   isStorageUnavailable,
   PlatformServiceUnavailableError,
   storageFailureCause,
-} from "./platform-service-errors.ts";
+} from "./platform/service-errors.ts";
 
 const log = createLogger("storage.blob");
 

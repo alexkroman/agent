@@ -58,19 +58,19 @@ import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import { createPhoneHandler, PHONE_ROUTE } from "./phone-handler.ts";
-import type { PlatformEvents } from "./platform-events.ts";
+import type { PlatformEvents } from "./platform/events.ts";
 import {
   type AdminDb,
   createMutationLock,
   localSlugLock,
   type SlugMutationLock,
-} from "./platform-lock.ts";
+} from "./platform/lock.ts";
 import { createRateLimiter, DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "./rate-limit.ts";
-import type { SandboxDirectory } from "./sandbox-directory.ts";
-import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
-import type { SlotCache } from "./sandbox-slots.ts";
-import { currentHarnessImageTag } from "./sandbox-vm.ts";
+import type { SandboxDirectory } from "./sandbox/directory.ts";
+import { watchAgentInvalidation } from "./sandbox/invalidate.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
+import type { SlotCache } from "./sandbox/slots.ts";
+import { currentHarnessImageTag } from "./sandbox/vm.ts";
 import {
   DeployBodySchema,
   SecretKeySchema,
@@ -159,7 +159,7 @@ export type OrchestratorOpts = {
    */
   events?: PlatformEvents;
   /**
-   * Fleet-wide sandbox directory (sandbox-directory.ts). The slot cache is
+   * Fleet-wide sandbox directory (sandbox/directory.ts). The slot cache is
    * per-replica and the web service autoscales, so without this each replica
    * spawns its own guest for the same deploy. Absent (the subprocess backend,
    * tests) leaves every replica independent — correct for a single process.
@@ -213,7 +213,7 @@ export type OrchestratorOpts = {
    * sandbox, so there is nothing long-lived to refuse there. The platform
    * socket is the one upgrade this server really terminates, which is why the
    * sentence that used to end "nothing long-lived starts here" no longer holds
-   * — see `platform-socket-handler.ts`.
+   * — see `platform/socket-handler.ts`.
    */
   isDraining?: () => boolean;
 };
@@ -292,7 +292,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   });
 
   // Deploys record the harness image they ran against (per-deploy image
-  // pinning — see currentHarnessImageTag in sandbox-vm.ts).
+  // pinning — see currentHarnessImageTag in sandbox/vm.ts).
   const harnessImageTag = (): Promise<string | null> =>
     currentHarnessImageTag(resolveHarnessPath());
 
@@ -444,7 +444,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     broker: brokerOpts,
     // Upgrades on /:slug/platform-socket are a deployed guest's own RPC
     // transport. It takes the APP because a frame is dispatched back through
-    // it as a real request — see `platform-socket-handler.ts` for why that
+    // it as a real request — see `platform/socket-handler.ts` for why that
     // rather than a second dispatch over the five handlers.
     platformSocket: {
       app,

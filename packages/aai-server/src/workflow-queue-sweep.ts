@@ -61,7 +61,7 @@ import { mapConcurrent } from "./_pool.ts";
 import { RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { envCount, envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
-import type { AdminDb } from "./platform-lock.ts";
+import type { AdminDb } from "./platform/lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 import type { DeliveryBudget } from "./workflow-queue-budget.ts";
 import { claimDue } from "./workflow-queue-claim.ts";
@@ -346,7 +346,7 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // pass IN FLIGHT, not one for the replica. That is the point: the pool is
   // SHARED with every platform read
   // the replica makes (Vault, the agents row the broker needs, journal appends,
-  // session state), and `platform-db-budget.test.ts` ties `ADMIN_POOL_MAX x
+  // session state), and `platform/db-budget.test.ts` ties `ADMIN_POOL_MAX x
   // MAX_CONTAINERS` to the instance's `max_connections`. So a settle held across
   // a fan-out spends a sixteenth of the replica's whole platform-database
   // capacity for as long as one tenant's guest is unreachable.

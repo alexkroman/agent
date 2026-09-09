@@ -32,9 +32,9 @@ import {
   createPlatformSocketServer,
   type PlatformSocketOptions,
   platformSocketSlug,
-} from "./platform-socket-handler.ts";
-import { brokerSessionUrl } from "./sandbox-broker.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+} from "./platform/socket-handler.ts";
+import { brokerSessionUrl } from "./sandbox/broker.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
 
 const log = createLogger("http.ws");
@@ -74,7 +74,7 @@ export type WsUpgradeOpts = {
    *
    * This is the ONE upgrade on this server that is really terminated; every
    * other is answered with a handshake response. See
-   * `platform-socket-handler.ts`, and note the module doc below, which said the
+   * `platform/socket-handler.ts`, and note the module doc below, which said the
    * platform terminates no sessions — still true, and this is not one: it is a
    * guest's own RPC transport, carrying the five routes `PLATFORM_ROUTES`
    * declares.

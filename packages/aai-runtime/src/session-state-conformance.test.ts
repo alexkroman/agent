@@ -40,7 +40,7 @@
  * Two live consequences, named because this arm reports both as green:
  *
  * - **`discard`'s reach.** The reference drops slots AND events, and so does
- *   `platform-session-state.ts`'s CTE — they agree by luck rather than by
+ *   `platform/session-state.ts`'s CTE — they agree by luck rather than by
  *   construction, so this arm would not notice the platform dropping one table.
  *   The Postgres arm is where the third answer lives (slots only), and the
  *   interface's own "not always both" is why no case asks.
@@ -141,7 +141,7 @@ function eventList(body: Body): StoredSessionEvent[] {
  * Every arm mirrors `serve()` in `aai-server/session-state-handler.ts`: the same
  * field parsing, the same `null` for a method that answers nothing, the same
  * `{ slot: value }` object rather than a `Map` on the way out, and the same
- * early return for an empty commit or append that `platform-session-state.ts`
+ * early return for an empty commit or append that `platform/session-state.ts`
  * makes before it issues SQL. What it does NOT mirror is the SQL below it — see
  * this file's header for why.
  */

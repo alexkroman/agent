@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { requireStudioUser, resolveBearer } from "./middleware.ts";
-import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
+import { PlatformServiceUnavailableError } from "./platform/service-errors.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
 import {
   createDevAuth,

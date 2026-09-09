@@ -105,7 +105,7 @@ every task's context. AGENTS.md's "Detailed references" table points here. -->
   boot a real harness subprocess (hence that package's 20s timeout) and is a
   standing judgement call: by the membership rule it is a SCENARIO test, but it
   is the only test covering
-  `subprocess-sandbox.ts` / `warm-harness.ts` / `sandbox-vm.ts`, so promoting
+  `subprocess-sandbox.ts` / `warm-harness.ts` / `sandbox/vm.ts`, so promoting
   it drops aai-server's measured line coverage ~92% →
   88.74% and trips its 89% floor. Moving it means restoring that coverage
   first, not lowering the floor.

@@ -183,7 +183,7 @@ const TRACEPARENT_HEADER = "traceparent";
  * drift) still has exactly one implementation.
  *
  * Note what it does NOT yet buy: nothing forwards a `traceparent` INTO a guest
- * today — `guest-forward.ts` is an allow-list and does not carry it — so these
+ * today — `guest/forward.ts` is an allow-list and does not carry it — so these
  * spans root their own traces. Installing the propagator is what makes a parent
  * be honoured the day one arrives.
  */

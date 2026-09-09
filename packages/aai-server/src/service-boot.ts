@@ -21,16 +21,16 @@ import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { isLocalDev } from "./_boot.ts";
 import { resolveHarnessPath } from "./constants.ts";
-import { guestImageRegistry } from "./guest-image-source.ts";
+import { guestImageRegistry } from "./guest/image-source.ts";
 import { endLiveStreams } from "./live-streams.ts";
 import { createLogger } from "./logger.ts";
-// Statically: this module is already in the graph via sandbox-vm.ts, so a
+// Statically: this module is already in the graph via sandbox/vm.ts, so a
 // dynamic import of it splits no chunk and rolldown says so
 // (INEFFECTIVE_DYNAMIC_IMPORT). Only the SDK import below needs to be lazy —
 // that one is a native addon the bundled entry must never require at load.
-import { LOCAL_GUEST_IMAGE_TAG } from "./microsandbox-sandbox.ts";
-import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-context.ts";
-import { describeSandboxBackend } from "./sandbox-backend.ts";
+import { LOCAL_GUEST_IMAGE_TAG } from "./microsandbox/sandbox.ts";
+import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal/context.ts";
+import { describeSandboxBackend } from "./sandbox/backend.ts";
 
 const log = createLogger("service");
 const sandboxLog = createLogger("sandbox");

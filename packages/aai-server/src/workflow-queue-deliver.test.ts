@@ -19,9 +19,9 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GUEST_ROUTES } from "./guest-routes.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
-import { createSlotCache, setSlot } from "./sandbox-slots.ts";
+import { GUEST_ROUTES } from "./guest/routes.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
+import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import { captureLogs, createTestStore, fakeSandbox } from "./test-utils.ts";
 import { createQueueDeliverer } from "./workflow-queue-deliver.ts";
 import { isGuestUnreachable } from "./workflow-queue-failure.ts";
@@ -127,7 +127,7 @@ describe("createQueueDeliverer", () => {
     test("presents a bearer, which is what makes the door host-only", async () => {
       const { deliver, calls } = await resident();
       await deliver(message());
-      // The value is an HMAC over this sandbox's fleet-wide name (guest-token.ts);
+      // The value is an HMAC over this sandbox's fleet-wide name (guest/token.ts);
       // what matters here is that one is sent at all, since the guest answers 401
       // without it and the sweep would retry that to abandonment.
       expect(calls[0]?.headers.get("authorization")).toMatch(/^Bearer .+/);

@@ -26,7 +26,7 @@
  *
  * Each branch picks a plausible next timestamp against the `main` it can see,
  * both apply cleanly in isolation, and the inversion exists only in the merge —
- * exactly the shape `platform-schema.test.ts` records for version COLLISIONS,
+ * exactly the shape `platform/schema.test.ts` records for version COLLISIONS,
  * which it catches and this does not (two files claiming one version abort
  * `supabase start`; one file claiming an older version does not).
  *

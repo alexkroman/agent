@@ -83,7 +83,7 @@ export type ServerRouteMatch = "exact" | "prefix";
  * `methods` is `"any"` rather than an empty array for a route that gates no
  * verb, because an empty list satisfies every "does the platform answer these?"
  * assertion by having nothing to check — the vacuous pass
- * `guest-routes.test.ts` already guards against in the other direction. No
+ * `guest/routes.test.ts` already guards against in the other direction. No
  * route declares it today: the webhook was the one that did, and gating it on
  * POST is what stopped a crawler's `GET` from resolving a run's waitpoint.
  *

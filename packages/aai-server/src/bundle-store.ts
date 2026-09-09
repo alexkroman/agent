@@ -172,7 +172,7 @@ export function createBundleStore(
    * write and settles after it would otherwise write its PRE-mutation row
    * straight back into the cache under a fresh TTL. That matters most for
    * the deploy's own read-modify-write of `credential_hashes`, which runs
-   * right after the mutation lock's invalidate (see platform-lock.ts) — a
+   * right after the mutation lock's invalidate (see platform/lock.ts) — a
    * poisoned entry there silently drops a co-owner's hash. Blobs need no
    * guard: content-addressed keys cannot go stale.
    *

@@ -16,8 +16,8 @@
  * It is its own module rather than a function inside either store for reasons
  * both stores share: `workflow/journal/postgres.ts` is at the file-length cap,
  * and on the platform side both halves of the journal use it while one imports
- * the other (`platform-workflow-journal.ts` takes `HOOKS` from
- * `platform-workflow-journal-hooks.ts`), so it cannot live in either without a
+ * the other (`platform/workflow-journal.ts` takes `HOOKS` from
+ * `platform/workflow-journal-hooks.ts`), so it cannot live in either without a
  * cycle. In both cases the helper's argument is longer than the helper.
  *
  * ## Three attempts, and the round trip is the backoff

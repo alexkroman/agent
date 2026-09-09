@@ -4,7 +4,7 @@
  * wait still be answered".
  *
  * Split from `workflow/journal/conformance-cases.ts` at the seam the platform's own store
- * already splits on (`platform-workflow-journal-hooks.ts`). The entry point and
+ * already splits on (`platform/workflow-journal-hooks.ts`). The entry point and
  * the whole argument are in `workflow/journal/conformance.ts`.
  *
  * Two of the five drifts a review found live here, and both are about a verdict

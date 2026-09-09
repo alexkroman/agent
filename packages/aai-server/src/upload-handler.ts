@@ -7,7 +7,7 @@
  * browser → platform → guest → the app's Postgres, which cost the app's database
  * six times what file storage costs, put every upload byte in the WAL and in every
  * base backup, and shared the guest's connection pool with its own queries. Worse,
- * `guest-forward.ts` measures how fast a guest drains a body to decide whether it is
+ * `guest/forward.ts` measures how fast a guest drains a body to decide whether it is
  * alive, so an upload that was storing perfectly well read as a stall and was
  * aborted at ~121s. `aai/host/_upload-blobs.ts` has the measurements.
  *
@@ -73,7 +73,7 @@
  * **And a second indexed read says whether the upload is FINISHED**, which this
  * layer could not ask when the paragraph above was written — the record lived in the
  * app's own database and only the guest could reach it. It is
- * `aai_platform.workflow_uploads` now (`platform-uploads.ts`), keyed by the same
+ * `aai_platform.workflow_uploads` now (`platform/uploads.ts`), keyed by the same
  * `(slug, id)` this route already holds, so the question is a primary-key lookup on
  * a connection the platform has. {@link assertUploadOpen} carries what it refuses
  * and why the condition is "complete" rather than "the object exists".
@@ -98,13 +98,13 @@ import { UploadTooLargeError } from "@alexkroman1/aai-runtime";
 import { UPLOAD_TOKEN_RE } from "@alexkroman1/aai-runtime/internal";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { guestTrace, withReserved } from "./_platform-route.ts";
 import type { HonoEnv } from "./context.ts";
 import { createLogger } from "./logger.ts";
-import { callerReachableUrl } from "./microsandbox-network.ts";
-import type { AdminDb } from "./platform-lock.ts";
-import { readUpload } from "./platform-uploads.ts";
-import { notFoundMessage } from "./sandbox-broker.ts";
+import { callerReachableUrl } from "./microsandbox/network.ts";
+import { guestTrace, withReserved } from "./platform/_route.ts";
+import type { AdminDb } from "./platform/lock.ts";
+import { readUpload } from "./platform/uploads.ts";
+import { notFoundMessage } from "./sandbox/broker.ts";
 import { UPLOAD_READ_URL_TTL_SECONDS, type UploadBytes, uploadKey } from "./upload-bytes.ts";
 
 const log = createLogger("uploads.bytes");

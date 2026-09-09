@@ -112,7 +112,7 @@ export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.
 // that reaches all three; it is now the ONLY copy, that module having deleted its
 // own once it turned out it could import this subpath (it already does in five
 // others). `isBlankSecret` beside it is deliberately NOT exported: the one caller
-// outside this package, `guest-bearer.ts`, is safe by its own ordering.
+// outside this package, `guest/bearer.ts`, is safe by its own ordering.
 export { parseBearer } from "./bearer.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window
@@ -136,7 +136,7 @@ export {
   type PlatformRoute,
 } from "./platform-endpoint.ts";
 // The guest's own socket CLIENT. Its importer is `aai-server`'s
-// `platform-socket.scenario.test.ts`, which drives the real client against the
+// `platform/socket.scenario.test.ts`, which drives the real client against the
 // real platform over a real port — the one spec that can say the two ends are
 // wired to each other, and one neither package can write alone.
 export {

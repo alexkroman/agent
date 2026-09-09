@@ -7,7 +7,7 @@
  * Every ARG the guest Dockerfile takes has exactly one source of truth, and it is
  * a constant in `packages/aai-server/src/*.ts` — never a value restated in a script.
  * These two readers are how a plain `.mjs` gets at them without a TypeScript
- * loader, and `guest-image-dockerfile.test.ts` closes the loop from the other
+ * loader, and `guest/image-dockerfile.test.ts` closes the loop from the other
  * side by IMPORTING the real constants and asserting these agree.
  *
  * Both THROW on a miss rather than returning a default. A regex read of source is
@@ -22,7 +22,7 @@
  * WHICH module declares each constant is {@link GUEST_IMAGE_CONSTANTS}, one table
  * rather than a `path.join(SERVER_DIR, …)` spelled at each of the five call sites
  * across three scripts. That spread is what made a constant MOVING expensive:
- * `GUEST_ROOT` left `modal-harness-image.ts` for `guest-exec-env.ts`, the old
+ * `GUEST_ROOT` left `modal/harness-image.ts` for `guest/exec-env.ts`, the old
  * module kept a re-export so every TypeScript import and the one spec that
  * imports them stayed green, and the only thing that noticed was `predev` failing
  * a developer's `pnpm dev:aai-server`.
@@ -90,7 +90,7 @@ export function extractStringArray(file, name) {
  * text, so they see the `const`, never the name. That asymmetry is the whole
  * hazard — TypeScript follows a re-export and this does not, so a constant can
  * move with every import site and every spec still resolving it while the image
- * build stops resolving it at all. `guest-image-extractors.test.ts` is what
+ * build stops resolving it at all. `guest/image-extractors.test.ts` is what
  * turns that into a red test: it resolves this table and compares each value
  * against the constant IMPORTED from TypeScript, so a move fails there rather
  * than in someone's `predev`.
@@ -100,10 +100,10 @@ export function extractStringArray(file, name) {
  * name is what the spec can iterate.
  */
 export const GUEST_IMAGE_CONSTANTS = {
-  DEFAULT_SANDBOX_IMAGE: { module: "modal-context.ts", kind: "string" },
-  GUEST_ROOT: { module: "guest-exec-env.ts", kind: "string" },
-  GUEST_SYSTEM_PACKAGES: { module: "modal-system-packages.ts", kind: "array" },
-  SDK_PACKAGES: { module: "modal-harness-image.ts", kind: "array" },
+  DEFAULT_SANDBOX_IMAGE: { module: "modal/context.ts", kind: "string" },
+  GUEST_ROOT: { module: "guest/exec-env.ts", kind: "string" },
+  GUEST_SYSTEM_PACKAGES: { module: "modal/system-packages.ts", kind: "array" },
+  SDK_PACKAGES: { module: "modal/harness-image.ts", kind: "array" },
 };
 
 /**

@@ -10,9 +10,9 @@ import {
   PLATFORM_SERVICE_UNAVAILABLE_MESSAGE,
   SANDBOX_UNAVAILABLE_MESSAGE,
 } from "./error-handler.ts";
-import { PlatformDbUnavailableError } from "./platform-db-errors.ts";
-import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
-import { SandboxUnavailableError } from "./sandbox-errors.ts";
+import { PlatformDbUnavailableError } from "./platform/db-errors.ts";
+import { PlatformServiceUnavailableError } from "./platform/service-errors.ts";
+import { SandboxUnavailableError } from "./sandbox/errors.ts";
 import { captureLogs } from "./test-utils.ts";
 
 function throwError(err: Error): never {

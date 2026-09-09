@@ -470,7 +470,7 @@ voice agents without the CLI:
   returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`,
   and `GET /studio/projects/:project/events` streams the same payload as
   SSE (`project` frames), pushed on every workspace-row change (Supabase
-  Realtime `postgres_changes` server-side — see `platform-events.ts`; the
+  Realtime `postgres_changes` server-side — see `platform/events.ts`; the
   events are signals and the route re-reads the row per push), plus `chat`
   frames carrying the settled conversation whenever a turn persists, so
   other tabs/devices stay current. `GET /studio/events` streams the
@@ -1315,7 +1315,7 @@ works.
   dial the guest sandbox's tunnel directly, and `/:slug/websocket` upgrades
   are handshake redirects — but the studio's SSE streams sit under the same
   cap, so it stays pinned rather than inherited. The sandbox layer hit the same
-  trap first and documents it in `modal-sandbox-env.ts`.
+  trap first and documents it in `modal/sandbox-env.ts`.
 
   **The 4h ceiling is load-bearing for the studio's event streams, which is a
   trap for anyone re-splitting the deployment.** The removed studio app set 30
@@ -1360,7 +1360,7 @@ works.
   goes. It is also matched on TWO discriminators (the exception name **and**
   `_proxy_http_request` in the record), so it can never decay into swallowing
   asyncio errors: one of our own tasks dying the same way, or Modal's proxy
-  task dying of anything else, still prints in full. `modal-image-inputs.test.ts`
+  task dying of anything else, still prints in full. `modal/image-inputs.test.ts`
   pins all three properties, which is worth the ceremony because every way this
   rots is silent and in the same direction — toward eating a traceback you
   needed, in a log nobody reads until an incident.
@@ -1526,7 +1526,7 @@ One consequence to keep in mind when adding code to aai-server: **the module's
 own location is no longer where its source lives.** `createRequire(import.meta
 .url)` resolves from `packages/aai-studio-server/dist/`, whose pnpm
 `node_modules` has no `aai-guest` above it — which is why `guestPackageDir`
-(modal-harness-image.ts) falls back to deriving that package root from the
+(modal/harness-image.ts) falls back to deriving that package root from the
 harness path. Anything else that resolves a workspace sibling by module
 location owes the same fallback.
 
@@ -1572,7 +1572,7 @@ specifier check there passes through it.
 **The shared core is the `exports` map, and nothing else.** It is an
 explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
 machinery, schemas, app composition, the routes the studio reuses), and
-`platform-surface.test.ts` holds it to the imports that actually exist in
+`platform/surface.test.ts` holds it to the imports that actually exist in
 both directions — an entry nobody imports fails, and so does an import with
 no entry. It was `"./*": "./*.ts"` for a long time, which meant every one of
 the package's ~70 modules was published to the sibling: the prose above
@@ -1621,9 +1621,9 @@ down, like the file-length allowlist.
   claimed a default of "any origin": fail-closed, so never a hole, but the only
   documentation there gave the wrong answer to "is CORS open?".
 - **Cross-service invalidation is the agents row's CHANGE STREAM**
-  (`agent-store.ts` for the row; `platform-events.ts` /
+  (`agent-store.ts` for the row; `platform/events.ts` /
   `realtime-events.ts` for the stream; `watchAgentInvalidation` in
-  `sandbox-resolve.ts` for the handler). Mutation handlers ONLY write the
+  `sandbox/resolve.ts` for the handler). Mutation handlers ONLY write the
   row — deploy upserts it (bumping `version`), delete removes it — and
   every replica, the writer included, reacts to the resulting Supabase
   Realtime `postgres_changes` event: the handler drops the bundle-store
@@ -1695,7 +1695,7 @@ down, like the file-length allowlist.
   and change with the code that owns them.
   The env carries `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for the
   Realtime socket, required in production alongside `SUPABASE_DB_URL`.
-- **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
+- **A superseded sandbox is RETIRED, not terminated** (`sandbox/retire.ts`).
   A mutation replaces the code a slug runs; it says nothing about the calls
   already in flight on the old sandbox, and closing their sockets inline —
   which every mutation path used to do — meant shipping during the day
