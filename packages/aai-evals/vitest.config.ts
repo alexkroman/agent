@@ -27,24 +27,28 @@ export default defineConfig({
       "dist",
     ],
     coverage: {
-      // The studio TARGET is excluded, and this is the one exclusion in the repo
-      // that is not "test infrastructure": all but one of its functions need a
-      // live API key and a live studio, i.e. never run in the unit run, so left
-      // in it counts ~250 lines at near 0% and drags the floors below what they
-      // measure. The exception is `readTurn`, the stream-reading seam, which
-      // `studio-target.test.ts` drives with canned SSE — a file staying out of
-      // the coverage NUMBERS is not the same as it going untested, and that
-      // half is where a break would be silent.
-      // What the floors do cover is everything a unit test CAN reach — the
-      // runner, the assertion vocabulary, and the report — which is where a
-      // silent regression would actually hide. (The level-1 SESSION target is no
-      // longer here at all: it is published from
+      // `gate.ts` is excluded because importing it RESOLVES a credential and
+      // ANNOUNCES at import time, which is why nothing the unit tier loads may
+      // import it (`konsistent.json`'s `eval-gate-is-not-unit-tier`) and so why
+      // it can carry no co-located spec.
+      //
+      // The studio TARGET used to be excluded beside it — the one exclusion in
+      // the repo that was not "test infrastructure", because all but one of its
+      // functions needed a live key and a live studio. It is not in this package
+      // any more: it is `aai-studio-server/src/studio-eval-target.ts`, and that
+      // package's own config carries the exclusion and the argument.
+      //
+      // What the floors cover is everything a unit test CAN reach — the runner,
+      // the assertion vocabulary, the env vocabulary and the report — which is
+      // where a silent regression would actually hide. (The level-1 SESSION
+      // target is not here at all: it is published from
       // `@alexkroman1/aai-runtime/eval` and unit-tested in that package against
       // a scripted model.)
-      exclude: [...sharedCoverageExclude, "src/studio-target.ts", "src/_gate.ts"],
+      exclude: [...sharedCoverageExclude, "src/gate.ts"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      // Measured: 99.62 / 99.08 / 92.17 / 99.68.
+      // Measured: 99.57 / 98.92 / 96.08 / 99.63, over what is left after the
+      // studio eval moved to `aai-studio-server`.
       thresholds: { lines: 96, functions: 95, branches: 89, statements: 96 },
     },
   },

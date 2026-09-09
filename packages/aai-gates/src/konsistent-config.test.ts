@@ -147,10 +147,19 @@ const SDK_PACKAGE = "@alexkroman1/aai";
  * aai-runtime is how the harness runs an agent, and its CLI edge is the four
  * public build-hook subpaths, which is why `@alexkroman1/aai-cli` is NOT
  * allowed here — konsistent has no allow-list form, so the config denies the
- * BARE specifier and lets the subpaths through; aai-evals → aai-runtime/eval
- * plus `aai-studio-client/starters` (same bare-vs-subpath shape); aai-server
+ * BARE specifier and lets the subpaths through; aai-evals → aai-runtime/eval;
+ * aai-studio-server → aai-evals, the eval framework its starter eval drives,
+ * plus `aai-studio-client/starters` (the same bare-vs-subpath shape, which used
+ * to be aai-evals' entry and moved with the eval that needed it); aai-server
  * and aai-cli → aai-ui, for its `client-dir`; aai-studio-client → aai-ui, the
  * component library both front-ends share.
+ *
+ * The aai-studio-server → aai-evals edge is the one to sanity-check when
+ * touching this map, because it is the only one whose reverse would be
+ * plausible: aai-evals depends on the SDK and the host runtime and nothing
+ * else, so the edge is one-way and the workspace stays acyclic. Its boundary
+ * denying `aai-studio-server` is what holds that, and turbo's `^build` would
+ * fail hard rather than quietly if it ever stopped.
  *
  * `allows` therefore lists a package it may import AT ALL. The subpath-only
  * edges are expressed in the config by denying the bare name, and the test
@@ -175,7 +184,7 @@ const BOUNDARY_OWNERS: Record<
   "studio-browser-boundary": { pkg: "aai-studio-client", allows: ["@alexkroman1/aai-ui"] },
   "studio-server-package-boundary": {
     pkg: "aai-studio-server",
-    allows: ["@alexkroman1/aai-runtime", "@alexkroman1/aai-ui", "aai-server"],
+    allows: ["@alexkroman1/aai-runtime", "@alexkroman1/aai-ui", "aai-evals", "aai-server"],
   },
   "evals-package-boundary": { pkg: "aai-evals", allows: ["@alexkroman1/aai-runtime"] },
   // The only owner with an EMPTY allow list: this package may import no
@@ -484,8 +493,8 @@ describe("konsistent.json", () => {
     // way, by deriving the expected set from the tree rather than reading the
     // config back to itself.
     //
-    // A subpath-only edge (aai-guest → the CLI's build hooks, aai-evals →
-    // `aai-studio-client/starters`) is still required to name the BARE
+    // A subpath-only edge (aai-guest → the CLI's build hooks, aai-studio-server
+    // → `aai-studio-client/starters`) is still required to name the BARE
     // specifier: denying the bare name and permitting subpaths is the strongest
     // half of "only that subpath" konsistent can express.
     for (const [name, owner] of Object.entries(BOUNDARY_OWNERS)) {

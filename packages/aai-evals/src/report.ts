@@ -23,8 +23,9 @@ import type { EvalCheck, EvalReport, EvalSpread } from "./runner.ts";
  * One line of at most `max` characters — how every `EvalCheck.detail` is made.
  *
  * This module owns the presentation of that field, so the rule lives here: it
- * was written out twice, `studio-target.ts` capping at 600 and
- * `template-contract.ts` at 800, with byte-identical bodies. The caps are the
+ * was written out twice, `studio-eval-target.ts` capping at 600 and
+ * `studio-template-contract.ts` at 800 (both in `aai-studio-server` now), with
+ * byte-identical bodies. The caps are the
  * tier's readability contract and there was no place to change one — and
  * {@link signature} truncates again at 110 for grouping, so a producer widening
  * its own cap silently changes which failures group together.

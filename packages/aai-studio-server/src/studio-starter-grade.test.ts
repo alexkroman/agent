@@ -2,17 +2,18 @@
 /**
  * The grader's own tests, which is the whole reason it is a module.
  *
- * It lived in `starter.eval.test.ts`, excluded by this package's
+ * It lived in `studio-starter.eval.test.ts`, excluded by this package's
  * `vitest.config.ts`, so the function deciding WHICH checks exist and what each
  * is labelled was exercised only by a run needing a live key and a live studio —
  * while every function it calls was unit-tested next door. The labels are the
  * keys `EvalReport.unstable` reports and `AAI_EVAL_ONLY` matches, so a rename is
  * a silent reset of the flip history.
  */
+
+import { createRecorder } from "aai-evals/runner";
 import { describe, expect, test } from "vitest";
-import { createRecorder } from "./runner.ts";
-import { gradeStarter, type StarterRun } from "./starter-grade.ts";
-import type { StudioTurn } from "./studio-target.ts";
+import type { StudioTurn } from "./studio-eval-target.ts";
+import { gradeStarter, type StarterRun } from "./studio-starter-grade.ts";
 
 const GREEN_OUTPUT = 'Agent "Desk" (pipeline mode), tools: a, b, c, d, e.';
 

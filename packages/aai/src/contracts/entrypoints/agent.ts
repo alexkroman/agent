@@ -46,6 +46,12 @@
  * them is `withMcpTools` on `@alexkroman1/aai-runtime` and belongs to that
  * package's own `tools` capability — this SDK opens no sockets.
  *
+ * `SystemPromptOption` is here for the same reason as the two telephony types:
+ * it is the TYPE of a field of an agent declaration. `agent({ systemPrompt })`
+ * takes a string or a thunk, and narrowing that union back is a change to what
+ * declaring an agent looks like — the reader who would find out otherwise is an
+ * author whose prompt builder stops compiling.
+ *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -81,6 +87,7 @@ export {
   type SessionEventType,
   type SharedAgentParams,
   type StaticAgentParams,
+  type SystemPromptOption,
   type TelephonyAccess,
   type TelephonyCarrier,
   type TextAgentParams,

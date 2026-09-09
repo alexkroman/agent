@@ -36,7 +36,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: string;
+    systemPrompt: SystemPromptOption;
     telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
@@ -1004,6 +1004,9 @@ export interface SubagentToolCall {
 
 // @public
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
+
+// @public
+export type SystemPromptOption = string | (() => string);
 
 // @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];

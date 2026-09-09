@@ -3057,10 +3057,13 @@ built some version of that by hand.
 ##### systemPrompt
 
 ```ts
-systemPrompt: string;
+systemPrompt: SystemPromptOption;
 ```
 
-System prompt driving the LLM.
+System prompt driving the LLM — the text, or a thunk resolved on every
+turn. A string behaves exactly as it always has; a function is for a prompt
+not knowable until the turn is assembled, and what it owes in exchange is
+on [SystemPromptOption](#systempromptoption).
 
 ###### Default Value
 
@@ -8463,6 +8466,35 @@ The specialists an agent publishes for the MODEL to choose between —
 Every entry needs a [SubagentDef.description](#description-2): it is the only thing the
 router reads, and `agent()` refuses a roster without one rather than shipping
 an agent that picks off a list of bare names.
+
+***
+
+### SystemPromptOption
+
+```ts
+type SystemPromptOption = string | (() => string);
+```
+
+An agent's system prompt: the text, or a function returning it.
+
+Resolved per turn, so a thunk may answer differently on each one. See this
+module's doc for what a thunk owes in exchange — chiefly that it is callable
+at build time, where the serializable config takes its snapshot.
+
+#### Example
+
+**A prompt that carries the phase the call is in**
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+declare const currentPhase: () => string;
+
+export default agent({
+  name: "Intake",
+  systemPrompt: () => `You are taking an intake call.\n\nPhase: ${currentPhase()}`,
+});
+```
 
 ***
 

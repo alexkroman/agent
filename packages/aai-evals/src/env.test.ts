@@ -7,7 +7,7 @@
  * value that is present and whitespace-only as distinctly as a literal can.
  */
 import { describe, expect, test } from "vitest";
-import { envFlag, envInt, envValue, evalStepCapHint } from "./_env.ts";
+import { envFlag, envInt, envValue } from "./env.ts";
 
 describe("envValue", () => {
   test.each([
@@ -61,11 +61,4 @@ describe("envInt", () => {
       expect(() => envInt({ X: raw }, "X", 7)).toThrow(/^X must be a positive integer/);
     },
   );
-});
-
-describe("evalStepCapHint", () => {
-  test("defaults to 80 and is overridden by AAI_STEP_CAP_HINT", () => {
-    expect(evalStepCapHint({})).toBe(80);
-    expect(evalStepCapHint({ AAI_STEP_CAP_HINT: "12" })).toBe(12);
-  });
 });

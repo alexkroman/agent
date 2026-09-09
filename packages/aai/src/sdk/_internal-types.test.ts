@@ -168,6 +168,28 @@ describe("toAgentConfig", () => {
     expect(Object.keys(config).sort()).toEqual(["greeting", "mode", "name", "s2s", "systemPrompt"]);
   });
 
+  test("a systemPrompt THUNK is snapshotted — the wire carries a string", () => {
+    // The config is structured-cloned to the host and stored on the platform, so
+    // a function cannot survive on it; the schema would refuse one, and refusing
+    // is not the answer for a field an agent may legitimately declare that way.
+    // What resolves per turn is the LIVE definition, in the runtime.
+    const config = toAgentConfig({ ...base, systemPrompt: () => "computed" });
+    expect(config.systemPrompt).toBe("computed");
+    expect(typeof config.systemPrompt).toBe("string");
+  });
+
+  test("the thunk is called ONCE per conversion, not per field read", () => {
+    let calls = 0;
+    toAgentConfig({
+      ...base,
+      systemPrompt: () => {
+        calls += 1;
+        return "computed";
+      },
+    });
+    expect(calls).toBe(1);
+  });
+
   test("injects the default AssemblyAI pipeline when no providers are declared", () => {
     const config = toAgentConfig(base);
     expect(config.mode).toBe("pipeline");

@@ -34,7 +34,7 @@
  */
 
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import { envInt, envValue } from "./_env.ts";
+import { envInt, envValue } from "./env.ts";
 
 /** One recorded assertion: what was claimed, and whether it held. */
 export type EvalCheck = {

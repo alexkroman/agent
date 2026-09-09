@@ -4,14 +4,14 @@
  *
  * ## The gap this closes
  *
- * `starter.eval.test.ts` grades generated SOURCE: does a tool whose name or
+ * `studio-starter.eval.test.ts` grades generated SOURCE: does a tool whose name or
  * description carries "cancel" exist, is the mode pipeline, is there a client
  * that reads live state. Every one of those is a question about structure, and
  * a generated retail desk can answer all of them while authenticating nobody.
- * The other half of this package — `openEvalSession`, `describeEval` — grades
- * BEHAVIOUR, and nothing has ever run it against generated code. So the two
- * halves sit disjoint, and the starter eval's verdict stops exactly where the
- * interesting question starts.
+ * The behaviour half — `openEvalSession` and `describeEval`, published from
+ * `@alexkroman1/aai-runtime/eval` — has never been run against generated code.
+ * So the two halves sit disjoint, and the starter eval's verdict stops exactly
+ * where the interesting question starts.
  *
  * ## Why the template's own eval file is the right contract
  *
@@ -51,7 +51,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { condense } from "./report.ts";
+import { condense } from "aai-evals/report";
 
 /** The shipped templates, whose `agent.eval.test.ts` files are the contracts. */
 export const TEMPLATES_DIR = fileURLToPath(
@@ -65,6 +65,10 @@ export const TEMPLATES_DIR = fileURLToPath(
  * `@alexkroman1/aai-runtime/eval`, `vitest` and `zod`, and Node resolution walks
  * UPWARD — a directory here resolves all four through the package's own
  * `node_modules` with nothing installed, where one in `tmpdir()` resolves none.
+ * `aai-studio-server` declares all four, which is what let this module move here
+ * without the constraint changing; the `.gitignore` entry moved with it, and it
+ * had to be corrected on the way, having named a directory one level above the
+ * one this URL resolves to.
  *
  * Exported beside {@link TEMPLATES_DIR} because both were spelled out again by
  * the eval file that calls {@link runTemplateContract}, this paragraph included
@@ -110,7 +114,7 @@ export const CONTRACT_FILE = "agent.eval.test.ts";
 /**
  * The template a prompt names, if it names one.
  *
- * The same pattern `starter-expectations.test.ts` uses to decide that a prompt's
+ * The same pattern `studio-starter-expectations.test.ts` uses to decide that a prompt's
  * ask IS a template — one declaration, because the two must agree: a prompt this
  * says names no template is one the grader holds to its capability list instead,
  * and a disagreement grades some starter twice and another not at all.
@@ -191,7 +195,7 @@ export async function readContract(
  * The scratch directory lives UNDER this package on purpose: a template contract
  * imports `@alexkroman1/aai/protocol`, `@alexkroman1/aai-runtime/eval`, `vitest`
  * and `zod`, and Node resolution walks upward — so a directory inside
- * `packages/aai-evals/` resolves all four through the package's own
+ * `packages/aai-studio-server/` resolves all four through the package's own
  * `node_modules` with nothing installed. A scratch directory in `tmpdir()`
  * resolves none of them.
  */

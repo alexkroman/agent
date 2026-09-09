@@ -1,7 +1,9 @@
 # aai-evals
 
-The repo's **behaviour eval tier**: the runner, its assertion vocabulary over the
-session event stream, and its two targets. Private — it ships nowhere.
+The repo's **eval framework**: the runner, its assertion vocabulary over the
+session event stream, the key gate, and the level-1 behaviour cases that use
+them. Private — it ships nowhere, but it IS importable, and
+`aai-studio-server` drives the same runner for the studio starter eval.
 
 An eval is not a test. A test asserts a deterministic fact and gates a merge; an
 eval measures a probabilistic system and **reports**. Identical code has scored
@@ -15,7 +17,7 @@ The tier needs a live AssemblyAI key and spends real tokens on it.
 
 ```sh
 pnpm dev:aai-server            # in another shell — the starter eval drives a real studio
-pnpm test:eval                 # every eval, live
+pnpm test:eval                 # every eval, live (all four packages that declare one)
 pnpm test:eval:templates       # just the 25 template evals, live
 ```
 
@@ -45,12 +47,19 @@ it also wants `ANTHROPIC_API_KEY`; without it, use `--allow-scripted`.
 | --- | --- |
 | `runner.ts` | one case, N times, every assertion RECORDED rather than thrown |
 | `report.ts` | the spread, the flip list, failure grouping |
-| `assertions.ts` | the vocabulary over a session's event stream |
+| `assertions.ts`, `tool-assertions.ts` | the vocabulary over a session's event stream |
+| `gate.ts` | the live-key precondition, and how a skip announces itself |
+| `register.ts` | registering cases with vitest |
+| `env.ts` | how this tier reads an environment variable |
 | `behaviour.eval.test.ts` | **level 1** — four cases against a small fixture agent |
-| `starter.eval.test.ts` | the **studio codegen** eval, one case per starter |
-| `studio-target.ts` | drives the studio's real HTTP/SSE surface |
-| `starter-expectations.ts` | what each starter prompt asked for, as checkable facts |
-| `template-contract.ts` | runs a template's own eval against the generated agent |
+
+The **studio codegen** eval is not here: it drives the studio's own HTTP surface
+and grades the source its coding agent writes, so it lives in the package it is
+about — `packages/aai-studio-server/src/studio-starter.eval.test.ts` and the five
+`studio-*` modules beside it, documented in
+`packages/aai-studio-server/STARTER-EVAL-CLAUDE.md`. It imports this package
+through five subpath exports (`/runner`, `/report`, `/gate`, `/register`,
+`/env`).
 
 ## Three things worth knowing before reading the code
 

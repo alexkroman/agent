@@ -421,7 +421,7 @@ describe("the vocabulary over a TEXT agent's events", () => {
     const rec = recorder();
     const scope = eventScope(rec, (await codingTurn()).events);
     // The write came back red, the check did not, and every write was followed
-    // by a check — the three claims `studio-target.ts` hand-rolls as
+    // by a check — the three claims `studio-eval-target.ts` hand-rolls as
     // `redChecks`, `redExcerpts` and a tool-name walk.
     scope.toolResultMatching(/error TS\d/, { tools: ["write_file"] });
     scope.noToolResultMatching(/error TS\d/, { tools: ["check_types"] });

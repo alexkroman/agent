@@ -413,11 +413,19 @@ rewriting it makes the order of two imports decide what an agent can do.
 **It is also the seam every registry NOT assembled by a bundler goes on
 through.** Two do. `withToolsDir` (`@alexkroman1/aai-runtime`) scans a real
 directory for a self-hosted process and comes back here. And the studio's own
-coding agent builds four tool families per turn, every one of them closed
-over a single session's workspace directory (`aai-guest/studio-agent.ts`) —
-those cannot be files at all, and this is what makes that honest rather than
-an exception: a registry resolved from a session instead of from a directory,
+coding agent resolves its tool families from a session
+(`aai-guest/studio-agent.ts`), which is what makes that honest rather than an
+exception: a registry resolved from a session instead of from a directory,
 attached the same way.
+
+**Closing over a directory is NOT what puts a registry here** — this said so,
+and `templates/coding-agent/` disproves it: nine tools that all close over one
+directory, shipped as FILES, each re-exporting an entry from a registry
+`shared.ts` builds once. What the studio has that a template does not is a
+directory chosen per SESSION and re-materialized under a running process,
+where a file's default export is evaluated once at import. The distinction is
+LIFETIME, not closure, and it matters because the closure reading would tell
+an author their tools cannot be files when they can.
 
 A name the def ALREADY holds is an error. Through `agent()` that is now
 unreachable — it returns an empty table and refuses a `tools` argument — so
@@ -481,7 +489,9 @@ config that flows CLI → server → runtime unchanged.
 ### AgentConfigSource
 
 ```ts
-type AgentConfigSource = Omit<AgentConfig, "mode"> & { [K in HostOnlyAgentField]?: unknown };
+type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+  systemPrompt?: SystemPromptOption;
+} & { [K in HostOnlyAgentField]?: unknown };
 ```
 
 What [toAgentConfig](#toagentconfig) accepts: every serializable [AgentConfig](#agentconfig)
@@ -490,6 +500,20 @@ fields the deny-list strips. `AgentDef` is assignable to this by
 construction; the explicit `| undefined` on the host-only members keeps
 spread call sites (`{...agent, stt: maybeUndefined}`) legal under
 `exactOptionalPropertyTypes`.
+
+#### Type Declaration
+
+##### systemPrompt?
+
+```ts
+optional systemPrompt?: SystemPromptOption;
+```
+
+A string on the wire, but an `AgentDef` may declare a THUNK — see
+[SystemPromptOption](index.md#systempromptoption). Widened here rather than on [AgentConfig](#agentconfig)
+so `AgentDef` stays assignable to this by construction, which is what every
+`toAgentConfig(agent)` call site relies on; [toAgentConfig](#toagentconfig) resolves
+it once and the config carries the string.
 
 ***
 

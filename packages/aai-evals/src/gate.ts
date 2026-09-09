@@ -13,6 +13,19 @@
  * `runner.ts`. It exists for the person who ran `pnpm test:eval` and wants to
  * know the tier really ran.
  *
+ * Nothing here names a TARGET, which is what makes it publishable as
+ * `aai-evals/gate` — the policy is the same whichever agent a case drives, and
+ * `aai-studio-server`'s starter eval takes it from here rather than carrying a
+ * second copy of "what a missing precondition means". The two settings that DID
+ * name one, `evalOrigin` (the studio's HTTP origin) and `evalContracts` (the
+ * opt-in behaviour-contract half), moved out with that eval to
+ * `packages/aai-studio-server/src/studio-eval-env.ts`. They also no longer sit
+ * behind this module's import-time announce, which is a small improvement the
+ * split fell into rather than aimed at: see that file's own module doc.
+ *
+ * The leading-underscore name this module had is gone with the same change: it
+ * said "internal to this package", and the package now publishes this module.
+ *
  * @module
  */
 
@@ -21,7 +34,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { describe } from "vitest";
-import { envFlag, envValue } from "./_env.ts";
+import { envValue } from "./env.ts";
 
 /**
  * The one env var the tier's targets are handed.
@@ -70,7 +83,7 @@ type GatedDescribe = typeof describe | typeof describe.skip;
  * hands the capture to whichever reporter it resolved — and vitest 4 resolves an
  * unset `reporters` to `std-env`'s `isAgent ? "agent" : "default"`, where the
  * agent reporter prints a passing file's captured output NOWHERE. Every line
- * this module and `_register.ts` write is about a file that PASSES: a skip
+ * this module and `register.ts` write is about a file that PASSES: a skip
  * announcing itself, a filter that matched nothing, and the eval REPORT, which
  * is the entire product of the tier. So under an agent all three vanished and
  * the tier's own rule — "the worst outcome available to a tier nobody runs is a
@@ -149,24 +162,6 @@ export function evalApiKey(): string {
  */
 export function evalKeyEnv(): Record<string, string> {
   return { [EVAL_KEY_ENV]: evalApiKey() };
-}
-
-/** The studio origin the starter eval drives. */
-export function evalOrigin(): string {
-  return process.env.AAI_EVAL_ORIGIN ?? "http://127.0.0.1:8080";
-}
-
-/**
- * Is the template behaviour contract on?
- *
- * OFF by default, and the default is the point: a contract run is a live model
- * session on top of a codegen turn that already takes minutes, so turning it on
- * for everyone would roughly double the tier's cost and wall clock to answer a
- * question most runs are not asking. `AAI_EVAL_CONTRACTS=1` opts in — see
- * `template-contract.ts` for what it then grades.
- */
-export function evalContracts(): boolean {
-  return envFlag(process.env, "AAI_EVAL_CONTRACTS");
 }
 
 /** Case-name filter, so one case can be iterated on without the rest. */

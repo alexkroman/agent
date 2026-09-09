@@ -68,7 +68,12 @@ packages/aai-cli/.dev-workflow-fixture/
 # but the DIRECTORY is committed (`.gitkeep`), because the Dockerfile's COPY of
 # it is unconditional and a missing path fails the build.
 packages/aai-guest/sdk-tarballs/*.tgz
-packages/aai-evals/.eval-workspaces/
+# Where a template-contract run materializes a workspace
+# (`studio-template-contract.ts`). It is a `src/` path because that is where the
+# module's own `new URL("./.eval-workspaces/", import.meta.url)` resolves to —
+# this entry named `packages/aai-evals/.eval-workspaces/`, one level up from the
+# directory anything ever wrote, so it matched nothing for as long as it existed.
+packages/aai-studio-server/src/.eval-workspaces/
 
 # Agent scratch: reproductions and probes, never committed.
 zz-*

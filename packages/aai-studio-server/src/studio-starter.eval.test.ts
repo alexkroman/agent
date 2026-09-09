@@ -6,9 +6,9 @@
  * `run.mjs` (485 lines), `report.mjs` (175) and `regrade.mjs` (85) — replaced by
  * the tier's own machinery. What did NOT move is the grading: those checks read
  * generated SOURCE rather than behaviour, which is a different job, so they were
- * kept when the runner was not. They are `./starter-expectations.ts`, which this
- * suite imports; they were `scripts/starter-eval/expectations.mjs` for as long
- * as that directory had anything left in it.
+ * kept when the runner was not. They are `./studio-starter-expectations.ts`,
+ * which this suite imports; they were `scripts/starter-eval/expectations.mjs`
+ * for as long as that directory had anything left in it.
  *
  * Three properties survive the move intact, each of which was learned the hard
  * way there:
@@ -28,31 +28,30 @@
  * `regrade.mjs`'s job — re-grade a SAVED run with today's expectations — is not
  * reproduced. It existed because the grader was corrected four times after the
  * runs it should have applied to, and the cheap version of that is now
- * `starter-expectations.test.ts`, which fails a grader that contradicts its own
- * prompts in the ordinary unit run.
+ * `studio-starter-expectations.test.ts`, which fails a grader that contradicts
+ * its own prompts in the ordinary unit run.
+ *
+ * It lives in `aai-studio-server` rather than in `aai-evals`: the framework this
+ * drives is general, and everything this file names — the origin, the project
+ * kinds, the starters, the grading — is the studio. See
+ * `../STARTER-EVAL-CLAUDE.md`.
  *
  * @module
  */
 
 import path from "node:path";
+import { describeEvalTier, describeEvalTierWhen, evalApiKey, evalKeyEnv } from "aai-evals/gate";
+import { evalOnlySelects, registerEvalCases } from "aai-evals/register";
 import { STARTERS } from "aai-studio-client/starters";
-import {
-  describeEvalTier,
-  describeEvalTierWhen,
-  evalApiKey,
-  evalContracts,
-  evalKeyEnv,
-  evalOrigin,
-} from "./_gate.ts";
-import { evalOnlySelects, registerEvalCases } from "./_register.ts";
-import { gradeStarter } from "./starter-grade.ts";
-import { createStudioClient } from "./studio-target.ts";
+import { evalContracts, evalOrigin } from "./studio-eval-env.ts";
+import { createStudioClient } from "./studio-eval-target.ts";
+import { gradeStarter } from "./studio-starter-grade.ts";
 import {
   CONTRACT_SCRATCH_ROOT,
   runTemplateContract,
   spawnVitest,
   TEMPLATES_DIR,
-} from "./template-contract.ts";
+} from "./studio-template-contract.ts";
 
 /** How long the studio-reachability probe waits. */
 const PROBE_MS = 3000;
@@ -60,7 +59,7 @@ const PROBE_MS = 3000;
 /**
  * Is a studio serving at `origin`?
  *
- * Probed rather than assumed, for the reason `_gate.ts` exists: with a key but
+ * Probed rather than assumed, for the reason `aai-evals/gate` exists: with a key but
  * no studio every case would fail as a HARNESS error, which reads like the
  * codegen being broken. The announcing and the `AAI_REQUIRE_EVAL` hard failure
  * are `describeEvalTierWhen`'s — this file states the precondition, not the policy.
@@ -87,7 +86,7 @@ const STARTER_CASES = Object.entries(STARTERS).flatMap(([kind, list]) =>
  * `AAI_EVAL_ONLY` is one variable across the whole tier, so selecting a level-1
  * behaviour case used to make THIS file pay a 3-second HTTP probe and then
  * announce `[skipped: no studio answered…]` about a run nobody asked it for.
- * The selection is `_register.ts`'s, imported rather than restated, so the
+ * The selection is `aai-evals/register`'s, imported rather than restated, so the
  * probe's precondition and the registration's cannot drift.
  */
 const SELECTED = STARTER_CASES.filter((starter) => evalOnlySelects(starter.label));
@@ -113,7 +112,7 @@ describeStarters("starter eval — studio codegen", () => {
           const files = await client.workspace(project);
           gradeStarter(t, { label: starter.label, kind: starter.kind, turn, files });
           // The BEHAVIOUR half, opt-in — see `evalContracts` for the cost
-          // argument and `template-contract.ts` for why the template's own eval
+          // argument and `studio-template-contract.ts` for why the template's own eval
           // is the contract. A starter naming no template, or naming one that
           // ships no eval, records NOTHING rather than a passing check: a check
           // that cannot fail is one more line saying "green" for no reason.

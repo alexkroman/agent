@@ -470,6 +470,7 @@ each is for.
 | `SubagentToolCall` | `@alexkroman1/aai` |
 | `SubmitButton` | `@alexkroman1/aai-ui` |
 | `SubmitInputOf` | `@alexkroman1/aai-ui` |
+| `SystemPromptOption` | `@alexkroman1/aai` |
 | `TELEPHONY_PATH` | `@alexkroman1/aai-runtime` |
 | `TELEPHONY_SAMPLE_RATE` | `@alexkroman1/aai-runtime` |
 | `TRANSCRIBE_API` | `@alexkroman1/aai/step` |
@@ -1244,6 +1245,7 @@ trace or a type error can be traced back to something.
 | `resolveElevenLabsSttSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveRimeTtsSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveSonioxSttSettings` | `@alexkroman1/aai/host-internal` |
+| `resolveSystemPrompt` | `@alexkroman1/aai/internal` |
 | `runCapped` | `@alexkroman1/aai/host-internal` |
 | `safeFetch` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
 | `serializeToolFailure` | `@alexkroman1/aai/host-internal` |

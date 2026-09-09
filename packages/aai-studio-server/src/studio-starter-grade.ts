@@ -2,8 +2,9 @@
 /**
  * Grading one studio turn: which checks exist, and what each is called.
  *
- * A module rather than a function inside `starter.eval.test.ts`, because that
- * file is an `*.eval.test.ts` — excluded by this package's `vitest.config.ts`,
+ * A module rather than a function inside `studio-starter.eval.test.ts`, because
+ * that file is an `*.eval.test.ts` — excluded by this package's
+ * `vitest.config.ts` and selected only by `test:eval`,
  * so nothing in the unit run and nothing in any coverage report reached it.
  * Every function this one CALLS (`checkMode`, `checkUi`, `checkWorkflowShape`,
  * `parseLoadedConfig`, `checkCapabilities`) was unit-tested next door while the
@@ -12,16 +13,22 @@
  *
  * The labels are why that matters: they are the keys {@link EvalReport.unstable}
  * reports and the strings `AAI_EVAL_ONLY` matches, so renaming one silently
- * resets the flip history with nothing red. It is also verbatim the mistake this
- * package's guide records fixing when it moved `expectations.mjs` in — "a grader
- * whose eval-only half was in no coverage report at all" — recurring one level
- * up.
+ * resets the flip history with nothing red. It is also verbatim the mistake
+ * `expectations.mjs` was moved into a package to fix — "a grader whose
+ * eval-only half was in no coverage report at all" — recurring one level up.
+ * `check:module-tests` is the repo-wide floor that keeps both fixes: every
+ * module under a package's `src/` owes a co-located spec, and its ratchet
+ * REFUSES to add a new entry, so a further module of this eval that ships
+ * without one fails in the diff that lands it. `aai-evals` states the same
+ * floor as a konsistent convention over its own `src/`
+ * (`eval-module-has-unit-test`); here the repo-wide ratchet already covers it.
  *
  * @module
  */
 
-import { evalStepCapHint } from "./_env.ts";
-import type { EvalRecorder } from "./runner.ts";
+import type { EvalRecorder } from "aai-evals/runner";
+import { evalStepCapHint } from "./studio-eval-env.ts";
+import type { StudioTurn } from "./studio-eval-target.ts";
 import {
   checkCapabilities,
   checkMode,
@@ -30,8 +37,7 @@ import {
   EXPECTATIONS,
   type Expectation,
   parseLoadedConfig,
-} from "./starter-expectations.ts";
-import type { StudioTurn } from "./studio-target.ts";
+} from "./studio-starter-expectations.ts";
 
 /** The expectation a starter label names, if one is declared for it. */
 const BY_LABEL: ReadonlyMap<string, Expectation> = new Map(EXPECTATIONS.map((e) => [e.label, e]));

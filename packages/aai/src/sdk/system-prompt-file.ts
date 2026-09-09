@@ -25,6 +25,7 @@
  */
 
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
+import { resolveSystemPrompt } from "./system-prompt-option.ts";
 import type { AgentDef } from "./types.ts";
 
 /**
@@ -53,6 +54,23 @@ import type { AgentDef } from "./types.ts";
  * at entry-generation time, since the entry is written before the build). The
  * resolved prompt answers it directly, and composition needs no special case.
  *
+ * **A def whose prompt is a THUNK is decided the same way, by RESOLVING it
+ * once.** `systemPrompt` may be a function (`SystemPromptOption`), and there is
+ * no third rule for one: the question this function answers is whether the
+ * file's text reaches the prompt, and a thunk that composes the file — the
+ * documented `import prompt from "./system-prompt.md?raw"` recipe, wrapped so
+ * the prompt can carry something per-turn — answers it in exactly the same
+ * words. So the thunk is called once, its result is compared, and outcome 2
+ * returns the def with the FUNCTION intact: the resolved text is read and
+ * discarded, never written back, or lowering the file would freeze the very
+ * prompt the author made dynamic.
+ *
+ * Outcome 1 cannot arise for a thunk — a function is never the framework
+ * default — so a def that declares one and ships an unread `system-prompt.md`
+ * gets outcome 3, which is right: that is the same silent-absence failure, and
+ * composing the file into the thunk is the same one-line fix. The call is why a
+ * thunk must be safe to run at build time, which `SystemPromptOption` states.
+ *
  * Generic in the def so a caller gets back the type it passed in —
  * `deployedAgent` (`@alexkroman1/aai/testing`) composes this with the tools
  * lowering beside it, which is generic for the same reason, and a widened
@@ -69,7 +87,9 @@ export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D 
     );
   }
   if (def.systemPrompt === DEFAULT_SYSTEM_PROMPT) return { ...def, systemPrompt: prompt };
-  if (def.systemPrompt.includes(trimmed)) return def;
+  // Resolved, never rewritten: a thunk that already composes the file keeps
+  // being the def's prompt. See the note on the thunk case above.
+  if (resolveSystemPrompt(def.systemPrompt).includes(trimmed)) return def;
   throw new Error(
     'system-prompt.md exists and nothing reads it: agent.ts declares a different `systemPrompt`. Remove the field to let the file be the prompt, or import the file and compose it (`import prompt from "./system-prompt.md?raw"`) if the agent really builds its prompt from more than one piece.',
   );
