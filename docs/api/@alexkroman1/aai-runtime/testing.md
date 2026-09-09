@@ -366,7 +366,10 @@ The agent definition. Must declare `text: true`.
 optional db?: Db;
 ```
 
-`ctx.db`. Absent makes `ctx.db` throw with the enablement guidance.
+Accepted and currently UNUSED — a text agent's tools receive no database.
+There is no `ctx.db`: the context this builds carries the same eleven
+fields a voice session's tools get, none of them a SQL handle. Kept on the
+options bag so a caller that already passes one still compiles.
 
 ##### env?
 
@@ -879,9 +882,9 @@ In-sandbox `run_code` executor, for an agent that enables that builtin.
 optional sessionId?: string;
 ```
 
-Conversation identity for `ctx.sessionId` and the session's `ctx.state`.
+Conversation identity for `ctx.sessionId` and the session's `slots`.
 Defaults to a fresh id per text agent — one instance is one conversation,
-which is what makes `state` mean the same thing here as in a session.
+which is what makes a slot mean the same thing here as in a session.
 
 ##### toolTimeoutMs?
 

@@ -230,9 +230,13 @@ paragraph has now carried stale twice, at `26` and at `29`) — plus
 
 **`API-EXPORTS.json` is a second artifact over the same reports, and the split
 between them is the point.** A report answers "what is the shape of this API"
-and churns whenever a parameter widens, a doc comment moves or an overload is
-added — what a reviewer wants, and also why a name quietly appearing or
-disappearing is one line inside a hundred-line diff. The export list answers
+and churns whenever a parameter widens or an overload is added — what a
+reviewer wants, and also why a name quietly appearing or disappearing is one
+line inside a hundred-line diff. **A doc COMMENT is not one of those things**:
+the reports strip prose (`grep -c "^ \* " packages/aai/etc/index.api.md` is 0),
+so improving a comment owes `pnpm docs:md` and nothing else — no report regen,
+no epoch. This sentence used to name a doc comment as a churn source, which is
+the one claim most likely to stop somebody fixing a stale one. The export list answers
 only "what is IN the surface", so adding an export is a one-line addition
 against an otherwise stable file. `sdk/exports.test.ts` pins some of
 the same names and stays: a test fails at the moment the surface moves and names

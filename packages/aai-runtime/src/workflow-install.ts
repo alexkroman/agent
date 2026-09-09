@@ -130,7 +130,7 @@ export function installWorkflowSupport(options: {
   // Connections open on first query, so an agent that never uploads anything
   // still pays nothing for holding the lease.
   //
-  // Sharing `ctx.db`'s connections would have been WRONG before the bytes left
+  // Sharing the app pool's connections would have been WRONG before the bytes left
   // the database: a part was a `bytea` row held for a megabyte, and it was
   // measured slowing every non-upload query on the guest to p50 1.34s against
   // 0.43s (`_upload-blobs.ts`, "The pool"). What is left here is one small

@@ -90,8 +90,8 @@ export function isHostAllowed(env: Record<string, string>): boolean {
  * `withHostCredentialFallback`, and for the same reason: this record is merged
  * into the env of the per-connection runtime, which reads far more than
  * provider keys out of it. An unbounded merge would let a `?host=1` client set
- * `DATABASE_URL` and have the server open `ctx.db` against a Postgres it
- * controls, or set `AAI_ALLOW_HOST` and self-approve.
+ * `DATABASE_URL` and have the server open the runtime's own stores against a
+ * Postgres it controls, or set `AAI_ALLOW_HOST` and self-approve.
  *
  * Unknown names are REJECTED rather than dropped. Silently ignoring them turns
  * a typo (`ASSEMBLYAI_KEY`) into a confusing provider-resolution failure two

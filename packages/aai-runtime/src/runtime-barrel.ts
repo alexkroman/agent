@@ -23,7 +23,10 @@
  * - {@link requiredProviderEnvVars} — which keys an agent config needs, before
  *   starting it.
  * - {@link resolveLlm} — turn an LLM descriptor into a Vercel AI SDK model.
- * - {@link createPostgresDb} — the `ctx.db` handle over your own database.
+ * - {@link createPostgresDb} — a `Db` over your own Postgres, for the stores the
+ *   runtime keeps there (`RuntimeOptions.db` — session slots, the workflow
+ *   journal and its key index). It is not handed to tool code; a tool needing
+ *   SQL brings its own client.
  * - {@link registerSttKind} / {@link registerTtsKind} and the opener contract
  *   below — substituting a speech stage of your own; {@link registerLlmKind}
  *   for the model stage.

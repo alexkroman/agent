@@ -38,7 +38,7 @@
  * - `builtinTools` works, so the keyless web builtins are a name in the agent
  *   definition rather than a hand-written adapter;
  * - tool calls get argument coercion, Standard Schema validation, `ctx`
- *   (`env`/`state`/`db`/`generate`/`messages`/`signal`), the per-call
+ *   (`env`/`slots`/`generate`/`messages`/`signal`), the per-call
  *   deadline, and failure-shaped-as-a-tool-result;
  * - the step budget spends its last step with `toolChoice: "none"`, so a
  *   capped turn answers instead of stopping mid-chain (see

@@ -8,7 +8,7 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | --- | --- |
 | the agent | [agent](#agent) — one object; [AgentDef](#agentdef) documents every field and default, [AgentParams](#agentparams) which combinations are legal |
 | a tool | [tool](#tool-2) — but a tool is a FILE: `tools/<name>.ts` default-exporting one IS the tool `<name>`, and `agent({ tools })` is a compile error |
-| session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projection()` shows it to the browser |
+| session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
 | conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
 | work that outlives the call | [workflow](#workflow-1) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
 | a second tool loop | [subagent](#subagent), reached with `ctx.delegate` |
@@ -17,13 +17,15 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-export const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
+export const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
+  view: (c) => ({ count: c.items.length }),
+});
 
 export default agent({
   name: "Storefront",
   systemPrompt: "You help callers order from the catalog.",
   voice: "michael",
-  syncState: cart.projection((c) => ({ count: c.items.length })),
+  syncState: cart.projected,
 });
 ```
 
@@ -3209,42 +3211,42 @@ optional syncState?:
 Project per-session state to the browser client, so a custom UI can
 render it without the agent hand-rolling a sync channel.
 
-One [SessionSlot.projection](#projection-1) per slot the client should see, or an
-array of them — the `agent_state` frame carries the merge. A slot the agent
-does not project never leaves the server, which is the point: session state
-routinely holds things a browser should not have, so the author decides what
-leaves, and whatever a projection returns is exactly what `useAgentState`
-receives.
+One projection per slot the client should see, or an array of them — the
+`agent_state` frame carries the merge. A slot the agent does not project
+never leaves the server, which is the point: session state routinely holds
+things a browser should not have, so the author decides what leaves, and
+whatever a projection returns is exactly what `useAgentState` receives.
+Pushed after every tool call, and only when a projection actually changed:
+most turns touch no state, and this shares a socket with 384 kbps of PCM.
 
-Pushed after every tool call, and only when a projection actually changed —
-most turns do not touch state, and this shares a socket with 384 kbps of
-PCM.
+**Declare the view on the slot and pass [SessionSlot.projected](#projected).**
+One object the agent pushes with and the page renders with, so the frame
+shown before the first tool call cannot describe a different view from the
+ones after it. A slot with more than one audience keeps
+[SessionSlot.projection](#projection-1), a second view over the same slot;
+`syncState` takes an array.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 type Item = { sku: string; qty: number };
-
-const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }));
-
+// `staffPin` has no view, so it stays server-side.
+const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
+  view: (s) => ({ items: s.items }),
+});
+agent({ name: "Cart", syncState: cartSlot.projected });
+// Two audiences over the one slot:
 agent({
   name: "Cart",
-  // staffPin stays server-side
-  syncState: cartSlot.projection((s) => ({ items: s.items })),
+  syncState: [cartSlot.projected, cartSlot.projection((s) => ({ count: s.items.length }))],
 });
 ```
 
 ###### Remarks
 
-It took a `(state: S) => unknown` over the whole state bag until the bag was
-removed. A projection now names its own slot, which is what lets the runtime
-render a session that has run no tool yet — the projection carries the
-slot's default — and so what let `AgentDef.state` be deleted rather than
-remembered.
-
-Without any of this, the pattern agents reach for is: return a state
-snapshot from every tool, declare a result type describing it, and mirror it
-into `useState` via `useToolResult`. Measured across generated agents, 58%
-built some version of that by hand.
+A projection names its own slot, so the runtime can render a session that
+has run no tool yet — which is what let `AgentDef.state` be deleted rather
+than remembered. Without it, agents hand-roll a snapshot returned from every
+tool and mirrored into `useState`; 58% of generated agents built one.
 
 ###### Inherited from
 
@@ -3735,42 +3737,42 @@ optional syncState?:
 Project per-session state to the browser client, so a custom UI can
 render it without the agent hand-rolling a sync channel.
 
-One [SessionSlot.projection](#projection-1) per slot the client should see, or an
-array of them — the `agent_state` frame carries the merge. A slot the agent
-does not project never leaves the server, which is the point: session state
-routinely holds things a browser should not have, so the author decides what
-leaves, and whatever a projection returns is exactly what `useAgentState`
-receives.
+One projection per slot the client should see, or an array of them — the
+`agent_state` frame carries the merge. A slot the agent does not project
+never leaves the server, which is the point: session state routinely holds
+things a browser should not have, so the author decides what leaves, and
+whatever a projection returns is exactly what `useAgentState` receives.
+Pushed after every tool call, and only when a projection actually changed:
+most turns touch no state, and this shares a socket with 384 kbps of PCM.
 
-Pushed after every tool call, and only when a projection actually changed —
-most turns do not touch state, and this shares a socket with 384 kbps of
-PCM.
+**Declare the view on the slot and pass [SessionSlot.projected](#projected).**
+One object the agent pushes with and the page renders with, so the frame
+shown before the first tool call cannot describe a different view from the
+ones after it. A slot with more than one audience keeps
+[SessionSlot.projection](#projection-1), a second view over the same slot;
+`syncState` takes an array.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 type Item = { sku: string; qty: number };
-
-const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }));
-
+// `staffPin` has no view, so it stays server-side.
+const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
+  view: (s) => ({ items: s.items }),
+});
+agent({ name: "Cart", syncState: cartSlot.projected });
+// Two audiences over the one slot:
 agent({
   name: "Cart",
-  // staffPin stays server-side
-  syncState: cartSlot.projection((s) => ({ items: s.items })),
+  syncState: [cartSlot.projected, cartSlot.projection((s) => ({ count: s.items.length }))],
 });
 ```
 
 ###### Remarks
 
-It took a `(state: S) => unknown` over the whole state bag until the bag was
-removed. A projection now names its own slot, which is what lets the runtime
-render a session that has run no tool yet — the projection carries the
-slot's default — and so what let `AgentDef.state` be deleted rather than
-remembered.
-
-Without any of this, the pattern agents reach for is: return a state
-snapshot from every tool, declare a result type describing it, and mirror it
-into `useState` via `useToolResult`. Measured across generated agents, 58%
-built some version of that by hand.
+A projection names its own slot, so the runtime can render a session that
+has run no tool yet — which is what let `AgentDef.state` be deleted rather
+than remembered. Without it, agents hand-roll a snapshot returned from every
+tool and mirrored into `useState`; 58% of generated agents built one.
 
 ***
 
@@ -9602,8 +9604,26 @@ type ToolContext = {
 
 Context passed to tool `execute` functions.
 
-Provides access to the session environment, state, database, and
-conversation history from within a tool's execute handler.
+Eleven fields, grouped by what a tool reaches for:
+
+- **Its own configuration** — `env`, the agent's secrets and settings.
+- **The session** — `slots` (its state; reach for [sessionSlot](#sessionslot-1) rather
+  than the store itself), `messages` (the conversation so far) and
+  `sessionId`.
+- **Its own deadline** — `signal` and `deadlineAt`, the two a tool doing slow
+  work has to honour: the signal aborts on barge-in, reset, stop or timeout,
+  and the deadline says WHEN that will happen, so a tool that can answer
+  partially still can.
+- **A model** — `generate` for one prompt, `delegate` for a whole subagent
+  loop.
+- **Work that outlives the call** — `workflows`, which starts and inspects
+  durable runs.
+- **The connected page** — `send`, one custom event to the browser client.
+- **Randomness** — `random`, the seam a spec can pin instead of
+  `Math.random`.
+
+There is no `ctx.db` and no `ctx.state`: the platform hands tool code no
+database, and a session's state lives in [sessionSlot](#sessionslot-1)s.
 
 #### Remarks
 
@@ -10932,10 +10952,10 @@ export async function researchFlow(
 ```
 
 Deliberately NOT the same object as a tool's `ToolContext`. A tool's `execute`
-runs once, inside a live session, and may hold a database handle; a workflow
-body is replayed and may hold nothing live at all. Sharing one type would put
-`ctx.db` in reach of a body that re-runs it on every resume, which is the bug
-the DevKit migration removed and which this must not reintroduce.
+runs once inside a live session, so it holds live things — `send`, `signal`,
+`generate`. A workflow body is REPLAYED from the top on every resume. Sharing
+one type would put those in reach of a body that re-runs them on each resume,
+the bug the DevKit migration removed and which this must not reintroduce.
 
 #### Methods
 

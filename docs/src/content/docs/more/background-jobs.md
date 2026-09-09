@@ -3,8 +3,11 @@ title: Background jobs
 description: Work that outlives a turn — a file to transcribe, an archive to summarize.
 ---
 
-Some work takes minutes — transcribing an hour of audio, say. That is too long
-to keep a caller on the line, so it goes in `workflows/` instead.
+Some work takes minutes. Transcribing an hour of audio, say. That is too long to
+keep a caller on the line, so it goes in `workflows/` instead.
+
+A workflow run survives the process it started in. Restart a sixty-segment job
+at segment 41 and the first forty are not re-done.
 
 ## The shape
 
@@ -25,9 +28,9 @@ export async function transcribeFlow(
   const { recording } = input;
   const segments = await ctx.step("plan", () => planSegments(recording));
 
-  // Four at a time, each its own step: a dropped
-  // connection costs one segment, not the run. One NAME for all of them —
-  // see "A step's name is not unique" below.
+  // Four at a time, each its own step: a dropped connection costs one
+  // segment, not the run. One NAME for all of them — see "Naming your
+  // steps" below.
   const parts = await mapConcurrent(segments, 4, (seg) =>
     ctx.step("transcribeSegment", () => transcribeSegment(seg)),
   );
@@ -46,55 +49,90 @@ async function transcribeSegment(segment: Segment): Promise<{ text: string }> {
 }
 ```
 
-`ctx.step(name, fn)` runs `fn` once and records what it returned. The body is
-re-run from the top on every resume, and each step that already finished
-returns its recorded value instead of running again.
+`ctx.step(name, fn)` runs `fn` once and records what it returned.
 
-That is what makes the run survive the process it started in: restart a
-sixty-segment job at segment 41 and the first forty are not re-done.
+The body is re-run from the top on every resume. Each step that already finished
+returns its recorded value instead of running again. That replay is what makes a
+run survive a restart.
 
-## A step's name is not unique — its identity is (name, occurrence)
+## Naming your steps
 
-A step's identity in that record is its name plus the number of times the run
-has already reached that name: `transcribeSegment#0`, `transcribeSegment#1`,
-and so on, counted per name. Two things follow, and the first reads backwards
-until you know that:
+A step is recorded under its name plus the number of times this run has already
+reached that name: `transcribeSegment#0`, `transcribeSegment#1`, and so on,
+counted per name. Two rules follow from that.
 
-- **A loop or a fan-out wants ONE name.** The sixty calls above are sixty
-  distinct rows under one literal, which is exactly what the occurrence counter
-  is for. So do not build a name per item: `` ctx.step(`segment-${seg.index}`,
-  …) `` looks like the careful version and is the bug. An interpolated name is
-  computed at run time, so a replay mints a key no earlier attempt reached, and
-  the step either runs a second time or the run is refused. Measured on a
-  one-line body: 7 of 10 runs ran the side effect twice, all 10 reporting
-  `completed`. `aai build` and `aai publish` scan for this and warn.
-- **Two DIFFERENT call sites want two names.** Sharing a literal means sharing
-  the counter, so whichever site is reached second reads the first one's
-  recorded result. Nothing checks that today, so it is a convention to keep:
-  one name per call site, one call site per name.
+### Use ONE name for a loop or a fan-out
 
-Fan-out is safe under one name because the order the calls are ISSUED in is a
-pure function of the list — `mapConcurrent` hands out the next item to whichever
-slot is free, and nothing in a journal key depends on which slot that was. What
-it asks of your callback is that it issue its step immediately: awaiting
-something first, or issuing two steps in a row, is what makes issue order depend
-on completion order.
+A fan-out of any size stays one literal: sixty segments would be sixty distinct
+records under `transcribeSegment`. That is exactly what the occurrence counter
+is for.
 
-`ctx.sleep("settle", 6 * 60 * 60 * 1000)` suspends rather than blocks — the
-container is free to exit, and the run resumes when it comes due. Six hours
-costs the same as ten seconds. Its label, and `ctx.waitFor(token)`'s token, are
-journal keys on the same (name, occurrence) scheme, so everything above applies
-to them.
+So do not build a name per item. `` ctx.step(`segment-${seg.index}`, …) ``
+looks like the careful version and is the bug.
 
-The constraints follow from the replay: no `Date.now()`, no `Math.random()`,
-no `fetch` in the body — those belong in a step, and `ctx.now()`,
-`ctx.random()` and `ctx.uuid()` are the journaled readings for a body that
-needs one anyway. A step's arguments and return value are recorded, so keep
-them JSON-shaped and small. Put bytes in an upload and pass the id.
+:::caution[An interpolated step name breaks the replay]
+An interpolated name is computed at run time, so a replay mints a key no earlier
+attempt reached — and the step either runs a second time or the run is refused.
+Measured on a one-line body: 7 of 10 runs ran the side effect twice, all 10
+reporting `completed`. `aai build` and `aai publish` scan for this and warn.
+:::
+
+**Your fan-out callback must call `ctx.step` as its first act.**
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { mapConcurrent } from "@alexkroman1/aai/step";
+
+declare const ctx: WorkflowContext;
+declare const segments: { index: number }[];
+declare function fetchAudio(segment: { index: number }): Promise<string>;
+declare function transcribe(audio: string): Promise<{ text: string }>;
+
+// ✅ The step is issued straight away, so the order is the list's.
+await mapConcurrent(segments, 4, (seg) =>
+  ctx.step("transcribeSegment", async () => transcribe(await fetchAudio(seg))),
+);
+
+// ❌ The await comes first, so the order is whichever fetch happened to land.
+await mapConcurrent(segments, 4, async (seg) => {
+  const audio = await fetchAudio(seg);
+  return ctx.step("transcribeSegment", () => transcribe(audio));
+});
+```
+
+Journal keys are handed out in the order steps are **issued**. Issue
+immediately and that order is the list's — the same on every replay, whichever
+slot `mapConcurrent` happened to run the item in. Await first and it becomes
+the order things finished in, which is a different order each run.
+
+### Use a DIFFERENT name for each call site
+
+Two call sites that share a literal share the counter, so whichever one is
+reached second reads the first one's recorded result. Nothing checks this today,
+so keep it as a convention: one name per call site, one call site per name.
+
+## Sleeping, and waiting
+
+`ctx.sleep("settle", 6 * 60 * 60 * 1000)` suspends rather than blocks. The
+container is free to exit, and the run resumes when the sleep comes due. Six
+hours costs the same as ten seconds.
+
+A sleep's label, and `ctx.waitFor(token)`'s token, are journal keys on the same
+(name, occurrence) scheme — so both naming rules above apply to them too.
+
+## What a body may not do
+
+The replay is also what constrains the body itself:
+
+- **No `Date.now()`, no `Math.random()`, no `fetch`.** Those belong in a step.
+  `ctx.now()`, `ctx.random()` and `ctx.uuid()` are the journaled readings for a
+  body that needs one anyway.
+- **Keep a step's arguments and return value JSON-shaped and small.** Both are
+  recorded. Put bytes in an upload and pass the id.
 
 ## Starting one from a call
 
-A tool starts a run and answers the turn immediately, which is what you want
+A tool starts a run and answers the turn immediately. That is what you want
 whenever the honest answer is "that'll take a few minutes":
 
 ```ts no-check
@@ -117,8 +155,9 @@ export default tool({
 ## When there is no call at all
 
 Sometimes the audio arrives as a file and there is no microphone in the story.
-Declare a `workflowApp()` instead of an `agent()` and you get an ordinary web
-page over the same runtime — no session, no live audio, no model loop:
+
+Declare a `workflowApp()` instead of an `agent()`. You get an ordinary web page
+over the same runtime — no session, no live audio, no model loop:
 
 ```ts no-check
 // agent.ts
@@ -143,8 +182,7 @@ export default workflowApp({
 ```
 
 A body lives in `workflows/`, but unlike a tool it is not picked up by being
-there — the `workflows` map above is what registers it, under the name you
-give it.
+there. The `workflows` map above registers it, under the name you give it.
 
 `aai dev`, `aai build`, and `aai publish` treat this like any other agent. The
 voice fields — `systemPrompt`, the provider stages, the voice options — are not

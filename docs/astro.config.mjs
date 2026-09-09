@@ -178,6 +178,12 @@ export default defineConfig({
           items: [
             { label: "Voices and models", link: "/more/voices-and-models/" },
             { label: "Background jobs", link: "/more/background-jobs/" },
+            // Split out of the Evals page — a workflow eval opens no session and
+            // scripts no reply, so it is a different subject that happened to sit
+            // at the end of one. It lives HERE rather than under Build because it
+            // is unreadable before Background jobs: it opens on `workflowApp()`,
+            // uploads and `app.run`, none of which Build introduces.
+            { label: "Workflow evals", link: "/more/workflow-evals/" },
             { label: "Your own UI", link: "/more/custom-ui/" },
             { label: "Self-hosting", link: "/more/self-hosting/" },
           ],

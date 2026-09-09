@@ -261,8 +261,11 @@ Called once per item, with the item and its index in `items`.
 #### Example
 
 ```ts no-check
-// In a workflow body: one step per segment, four in flight.
-const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
+// In a workflow body: one step per segment, four in flight. The callback
+// issues its `ctx.step` immediately, under ONE literal name.
+const cleaned = await mapConcurrent(segments, 4, (text) =>
+  ctx.step("postProcess", () => postProcess(text)),
+);
 ```
 
 ***
@@ -1109,8 +1112,7 @@ and the server log, so an operator watching a deploy can see which step is
 running without a page open.
 
 **Call it from a STEP, never from the workflow body.** A body replays from the
-top on every resume, so a line written there is re-emitted on each one — the
-same rule `ctx.db` follows.
+top on every resume, so a line written there is re-emitted on each one.
 
 Failures are swallowed: narration must never fail a run. It resolves either
 way, so awaiting it is safe and is what keeps the ordering of a step's own

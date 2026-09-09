@@ -3,9 +3,9 @@
  * ONE Postgres pool per app database per PROCESS, leased to every consumer that
  * wants one.
  *
- * Four things in a deployed guest talk to the app's own database with the app's
- * own credentials: `ctx.db` (the runtime), the session-state backend, the
- * workflow upload store, and the wake-hint publisher. They are the same role on
+ * Four things in a deployed guest talked to the app's own database with the
+ * app's own credentials: `ctx.db`, the session-state backend, the workflow
+ * upload store, and the wake-hint publisher. They are the same role on
  * the same URL, they run the same short statements, and none of them holds
  * session state between statements — so there was never a reason for them to be
  * four pools, and there is a hard reason for them not to be: the role's
@@ -16,7 +16,7 @@
  * ## Why a lease rather than a handle
  *
  * Because "what this call opened is what it closes" is the ownership rule every
- * caller here already follows — `runtime.ts` closes the `ctx.db` it opened so a
+ * caller here already follows — `runtime.ts` closes the lease it opened so a
  * rebuilt `aai dev` runtime does not strand a pool, and `installWorkflowSupport`
  * closes the upload pool for the same reason. A shared handle with a plain
  * `close()` would break that rule in the worst direction: the first caller to

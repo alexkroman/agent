@@ -37,6 +37,7 @@ import {
   type EvalMode,
   registerEmptySuiteFailure,
 } from "./_announce.ts";
+import { announceToollessAgent, checkStubReplyTools, hasWorkflows } from "./_declared-tools.ts";
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
@@ -243,6 +244,7 @@ export function describeEval(
       ? `eval: ${agent.name} — LIVE model (${reason}). This spends tokens.`
       : `eval: ${agent.name} — SCRIPTED model (${reason}). This checks the wiring, not the agent's behaviour.`,
   );
+  announceToollessAgent(agent);
 
   // Both default to "everything, once", so an unset environment runs exactly
   // what it ran before this was wired up. See `_env.ts` for what was silently
@@ -260,6 +262,7 @@ export function describeEval(
     // two cases that carried no marker at all.
     const filteredOut: string[] = [];
     const evalTest: EvalTest = (name, body, caseOptions) => {
+      checkStubReplyTools(agent, name, caseOptions?.stubReply);
       declared += 1;
       const wrongMode =
         (mode === "stub" && caseOptions?.live === true) ||
@@ -367,11 +370,6 @@ async function runCase(run: CaseRun): Promise<void> {
     stub?.release();
     generateStub?.release();
   }
-}
-
-/** Does this agent declare a workflow for a tool to start? */
-function hasWorkflows(agent: AgentDef): boolean {
-  return Object.keys(agent.workflows ?? {}).length > 0;
 }
 
 /**

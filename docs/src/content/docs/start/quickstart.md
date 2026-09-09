@@ -3,8 +3,10 @@ title: Quickstart
 description: Build, run, and publish a working voice agent in about five minutes.
 ---
 
-You need Node.js 24, 25, or 26 — the range a scaffolded project declares — and
-an AssemblyAI API key. That one key covers listening, thinking, and speaking.
+You need Node.js 24, 25, or 26 and an AssemblyAI API key. That one key covers
+listening, thinking, and speaking — get one from the
+[AssemblyAI dashboard](https://www.assemblyai.com/dashboard) if you don't have
+one already.
 
 ## 1. Create a project
 
@@ -14,12 +16,17 @@ aai init my-agent
 cd my-agent
 ```
 
-`aai init` scaffolds from a template, installs with whichever package manager
-you ran it from, and writes a `.env` with an empty `ASSEMBLYAI_API_KEY=`.
-**Fill it in** — paste your key there, or run `aai login` to store one
-globally.
+`aai init` scaffolds a project from a template and installs its dependencies
+with whichever package manager you ran it from.
 
-The agent it writes is five files, and the whole framework is visible in them:
+:::caution[Fill in your API key first]
+The scaffold writes a `.env` with an empty `ASSEMBLYAI_API_KEY=`. Paste your
+key there, or run `aai login` to store one globally. Nothing will run until you
+do. Keys live at
+[www.assemblyai.com/dashboard](https://www.assemblyai.com/dashboard).
+:::
+
+The agent it writes is five files:
 
 ```text
 my-agent/
@@ -33,10 +40,10 @@ my-agent/
 
 The usual project files (`package.json`, `tsconfig.json`, `.env`) come with
 them. Nothing in the five names another: the prompt and the tool are found
-where they sit, which is the one idea the rest of the framework is built on.
+where they sit.
 
-Run `aai templates` to see the other starting points;
-`--template pizza-ordering-agent` picks one.
+Run `aai templates` to see the other starting points. Pass
+`--template pizza-ordering-agent` to pick one.
 
 ## 2. Talk to it
 
@@ -44,14 +51,15 @@ Run `aai templates` to see the other starting points;
 aai dev
 ```
 
-That starts a local server and prints a URL. Open it, click the microphone,
-and ask it about the weather somewhere. It rebuilds when you save, so leave it
+That starts a local server and prints a URL. Open it, click the microphone, and
+ask it about the weather somewhere. It rebuilds when you save, so leave it
 running for the next two steps.
 
 ## 3. Change what it says
 
-The agent's personality lives in two of those files. `agent.ts` is the
-definition — three fields, all yours to change:
+The agent's personality lives in two files.
+
+`agent.ts` is the definition — three fields, all yours to change:
 
 ```ts
 // agent.ts
@@ -64,8 +72,8 @@ export default agent({
 });
 ```
 
-And `system-prompt.md` is the prompt. It is markdown, and nothing imports it —
-the build finds it because it sits beside `agent.ts`:
+`system-prompt.md` is the prompt. It is plain markdown, and nothing imports it.
+The build finds it because it sits beside `agent.ts`:
 
 ```md
 <!-- system-prompt.md -->
@@ -77,8 +85,8 @@ Save either one and the running `aai dev` picks it up.
 
 ## 4. Give it something to do
 
-A tool is a file in `tools/`. The filename is the name the model calls it by,
-so the one you already have is `get_weather`. Open it and, comments aside,
+A tool is a file in `tools/`, and the filename is the name the model calls it
+by. So the one you already have is `get_weather`. Open it — comments aside,
 this is all of it:
 
 ```ts
@@ -104,14 +112,18 @@ export default tool({
 });
 ```
 
-Three things in it are worth copying into your own: the input `z.object` is
-what the model fills in and `.describe()` is what it reads; `ctx.signal` is the
-call's deadline, so a slow service ends the request instead of being waited out
-and discarded; and a failure is RETURNED rather than thrown, because a message
-the model can read is one it can apologize for out loud.
+Three habits in it are worth copying into your own tools:
+
+- **The input `z.object` is what the model fills in**, and `.describe()` is what
+  it reads. Spend a sentence on each field.
+- **Pass `ctx.signal` to anything you call.** It carries the call's deadline, so
+  a slow service ends the request instead of being waited out and then
+  discarded.
+- **Return a failure rather than throwing one.** A message the model can read is
+  one it can apologize for out loud.
 
 Now copy the file to `tools/get_forecast.ts` and change the description and the
-body — the model can call that too. There is nothing to register, no list to
+body. The model can call that too. There is nothing to register, no list to
 join, and no import to add: a file in `tools/` is a tool because it is in
 `tools/`.
 
@@ -122,9 +134,11 @@ aai login      # once
 aai publish
 ```
 
-That uploads your source, syncs the secrets from `.env`, builds it on the
-platform, deploys, and prints a URL you can share. One command, including the
-first time. See [Publish](/agent/deploy/publish/) for the details, and
+`aai publish` uploads your source, syncs the secrets from `.env`, builds it on
+the platform, deploys, and prints a URL you can share. That is one command,
+including the first time.
+
+See [Publish](/agent/deploy/publish/) for the details, and
 [Phone calls](/agent/deploy/phone/) for putting it on a phone number.
 
 ## Next

@@ -92,10 +92,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
   const providerEnv = options.providerEnv ?? env;
-  // ctx.db: a caller-injected Db wins (the platform passes one when storage
-  // is enabled for the app); otherwise a DATABASE_URL in the provider env
-  // (self-hosted `aai dev` reads the project .env) connects one here.
-  // Neither means ctx.db access throws (see tool-executor.ts).
+  // Backs slot storage and the workflow journal, NOT anything tool code sees:
+  // a caller-injected Db wins (the platform passes one when storage is enabled);
+  // otherwise a DATABASE_URL in the provider env (self-hosted `aai dev` reads
+  // the project .env) connects one. Neither leaves both stores in memory.
   // The runtime owns — and must close on dispose — only the connection it
   // opened itself; an injected Db stays the caller's to dispose. Without the
   // close, `aai dev` (which rebuilds the runtime on every file save) strands

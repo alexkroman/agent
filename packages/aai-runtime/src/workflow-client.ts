@@ -70,7 +70,7 @@ export type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-
  * `find` and `recent` are bounded by `resolveFindLimit`, whose ceiling is
  * `MAX_WORKFLOW_FIND_LIMIT` (100) — so an unbounded `Promise.all` over the
  * result let ONE request put 100 concurrent reads on the app's Postgres, a pool
- * this shares with `ctx.db`. The route is fail-open
+ * this shares with the runtime's other stores. The route is fail-open
  * unless the operator set `AAI_WORKFLOW_API_TOKEN`, so the caller does not have
  * to be trusted for that to matter.
  *

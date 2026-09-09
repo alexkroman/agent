@@ -3388,19 +3388,33 @@ what it looks like typed as the RULE it breaks.
 
 The `text` arm is a misuse message, on the same pattern as `AgentParams`'
 misuse arms and `SyncMutationMisuse`: a string literal type nothing an author
-can pass satisfies, so the offending literal is unassignable and the rule
-itself is what `tsc` prints. It is written INLINE rather than as its own
-exported alias, because a misuse arm is machinery an author meets as a
-message and never by name — the argument `packages/aai/typedoc.json`'s
+can pass satisfies. It is written INLINE rather than as its own exported
+alias, because a misuse arm is machinery an author meets as a message and
+never by name — the argument `packages/aai/typedoc.json`'s
 `intentionallyNotExported` makes for the twenty-odd others.
 
-The misuse it names is the one `isRouteTable` cannot see. A record
-without an `object` key IS a route table, so `stubGenerate({ text: "…" })`
-type-checked as a table with one route named `text` — a system prompt no tool
-carries — and then rejected every call with "no route for this call's system
-prompt". Nothing about that failure points at the literal that caused it, and
-the documentation page spent four lines teaching readers to remember the
-discriminator instead.
+The misuse it names is the one `isRouteTable` cannot see. A record without an
+`object` key IS a route table, so `stubGenerate({ text: "…" })` type-checked
+as a table with one route named `text` — a system prompt no tool carries —
+and then rejected every call with "no route for this call's system prompt".
+
+**This arm does not reach `tsc`'s output, and the reason generalizes.** A
+misuse arm only prints when no SIBLING arm of the union shape-competes for
+the same object literal. Here [StubGenerateReply](#stubgeneratereply)'s
+`{ text?: string; object: unknown }` declares an OPTIONAL `text`, so
+TypeScript scores it the closer match for `{ text: "…" }` and elaborates
+against it — printing "Property 'object' is missing", which points at the
+wrong remedy: the author wanted a bare string, not an added `object`.
+Measured against the real declarations; three repair attempts (an extra
+`{ text: Misuse; object?: never }` arm, splitting the object arm, both) leave
+the output unchanged, because TS picks any arm requiring `object`. The only
+shape that surfaces the literal is one where no reply arm declares `text` at
+all, which would drop the legal `{ text, object }` reply.
+
+So the arm is kept for the shape it documents, and the RUNTIME guard in
+[stubGenerate](#stubgenerate-1) is what actually names the rule for a caller who gets
+past the compiler. `docs/src/content/docs/build/testing.md` describes the
+misleading message rather than promising this one.
 
 The cost is that a route table can no longer be keyed by a system prompt whose
 whole text is `"text"`, which is not a system prompt, and which the runtime

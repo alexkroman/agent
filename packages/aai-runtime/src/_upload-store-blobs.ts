@@ -38,7 +38,7 @@
  *
  * Parts land concurrently and each one reads `parts`, adds its window, and writes
  * it back — the read-modify-write that interleaves at every `await` and silently
- * drops an arrival. `ctx.db` exposes one method and no transaction, and the pool
+ * drops an arrival. `Db` exposes one method and no transaction, and the pool
  * gives no connection affinity, so `SELECT … FOR UPDATE` is not available to us
  * here; `createKeyedLock` per upload id is, and it is sound because one guest
  * process serves one sandbox's routes. It is also what the file home relies on

@@ -245,12 +245,13 @@ and the `typescript@6` pin — **and, because they answer three versions of one
 question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-Fourteen files sit outside the table for a different reason — SIBLINGS of their
+Fifteen files sit outside the table for a different reason — SIBLINGS of their
 package's guide rather than second package guides:
 
 | Sibling | Covers |
 | --- | --- |
 | `packages/aai/AUTHORING-HELPERS-CLAUDE.md` | The speech boundary both ways, the calendar/zod argument shapes, `ctx.random`, `orFail`/`failable`, `parseWav`, `roundMoney` |
+| `packages/aai/DEFAULTS-CLAUDE.md` | Every numeric default an `agent()` field carries — the value, where it is applied, and the measurement behind it |
 | `packages/aai/S2S-CLAUDE.md` | S2S wire-level: the one sample rate, tool-call captions, in-band errors, `endSession`, abandoning a handshake |
 | `packages/aai-runtime/DIALOG-CLAUDE.md` | What each dialog voice knob can and cannot do |
 | `packages/aai-runtime/JOURNAL-CLAUDE.md` | The workflow journal and the replay engine's decisions |

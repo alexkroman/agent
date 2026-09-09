@@ -2,9 +2,9 @@
 The generated API reference for the published packages — every type, every
 signature, every doc comment, rendered from the source.
 
-**New here? Start with the [guide](/agent/) instead.** It is fifteen short
-pages that build and ship an agent; this reference is what you reach for once
-you know which name you are looking up.
+**New here? Start with the [guide](/agent/) instead.** The guide is a short
+sequence of pages that build and ship an agent. Come back here once you know
+which name you are looking up.
 
 - [Quickstart](/agent/start/quickstart/) — a working agent in five minutes
 - [Tools](/agent/build/tools/) · [Session state](/agent/build/state/) ·

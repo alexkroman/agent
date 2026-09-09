@@ -135,6 +135,7 @@ const MARKDOWN_FILES = [
   "docs/src/content/docs/more/custom-ui.md",
   "docs/src/content/docs/more/self-hosting.md",
   "docs/src/content/docs/more/voices-and-models.md",
+  "docs/src/content/docs/more/workflow-evals.md",
   "docs/src/content/docs/start/how-it-works.md",
   "docs/src/content/docs/start/quickstart.md",
 ];

@@ -12,26 +12,26 @@ my-agent/
   system-prompt.md    # the system prompt — discovered, not imported
   tools/              # one file per tool; filename IS the tool name
     get_weather.ts
-  workflows/          # long-running jobs (optional)
+  workflows/          # long-running jobs (optional); registered by name
   client.tsx          # your own browser UI (optional, React)
-  shared.ts           # types and state shared by both of those
+  shared.ts           # declarations imported by more than one of the above
   agent.test.ts       # ordinary vitest — `aai test`
   agent.eval.test.ts  # does it BEHAVE — `aai eval`
   .env                # local secrets; `aai publish` syncs them
 ```
 
-That is the whole idea: **a file in `tools/` is a tool because it is in
-`tools/`.** There is no `tools` array to keep in sync, no import list to
-forget, and adding an ability is adding a file. The same goes for
-`system-prompt.md` and `client.tsx`.
+`aai init` writes five of these — `agent.ts`, `system-prompt.md`, one tool, and
+the two test files — plus the usual `package.json`, `tsconfig.json`, and `.env`.
+`workflows/`, `client.tsx`, and `shared.ts` are files you add when you need
+them, and each starts working the moment it exists.
 
-(`workflows/` is the exception, and deliberately. That directory holds a
-workflow's modules — its body and the steps it calls — rather than one file
-per workflow, and a workflow's name is stored with every run of it, so the
-name has to be something you choose: if renaming a file renamed the workflow,
-the next deploy would abandon the jobs still in flight under the old name. You
-register it by name on `agent()`. See
-[Background jobs](/agent/more/background-jobs/).)
+That is the whole idea: **a file in `tools/` is a tool because it is in
+`tools/`.** There is no `tools` array to keep in sync and no import list to
+forget. Adding an ability is adding a file, and `system-prompt.md` and
+`client.tsx` work the same way.
+
+`workflows/` is the one exception — you name those yourself. See
+"Agents and background jobs" below.
 
 ## What runs where
 
@@ -63,9 +63,13 @@ already handles these, so your first agent behaves sensibly with no tuning:
   what the caller actually heard.
 - A provider blip is spoken aloud rather than becoming a dead line.
 
-Four of those are fields on `agent()` when you disagree with the default —
-listed in the [SDK reference](/agent/reference/), and you don't need any of
-them to start. The history truncation is not tunable.
+You need none of them to start. Four of the five are fields on `agent()` for
+when you disagree with the default — `minBargeInWords` and
+`interruptionMinDurationMs` for what counts as an interruption,
+`resumeFalseInterruption` for picking the reply back up,
+`deadAirCoverMs` for the wait, and `errorPhrase` for the blip. Each one is in
+the [SDK reference](/agent/reference/). The history truncation is the one that
+is not tunable.
 
 ## Agents and background jobs
 
@@ -74,8 +78,20 @@ on the other end.
 
 There is a second kind. When the audio is a file and the job takes minutes —
 transcribe this recording, summarize this archive — you declare a
-`workflowApp()` instead and get a web page instead of a conversation. See
-[Background jobs](/agent/more/background-jobs/).
+`workflowApp()` instead and get a web page instead of a conversation.
+
+That is what `workflows/` holds: a workflow's modules, its body and the steps
+it calls, rather than one file per workflow. You register each workflow by name
+on `agent()`, which is the one place a name is yours to choose rather than
+taken from a filename.
+
+:::note[Why a workflow isn't named after its file]
+A workflow's name is stored with every run of it. If renaming a file renamed
+the workflow, the next deploy would abandon the jobs still in flight under the
+old name.
+:::
+
+See [Background jobs](/agent/more/background-jobs/) for both.
 
 ## Next
 

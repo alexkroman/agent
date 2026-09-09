@@ -186,7 +186,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   function handleToolCalled(event: Extract<TransportEventBody, { type: "tool.called" }>): void {
     resetIdle();
     // See onReplyStarted: a trailing tool.called during stop()'s transport
-    // drain must not start tool work (guest RPC, ctx.db, ctx.generate)
+    // drain must not start tool work (guest RPC, ctx.generate)
     // against a session already torn down.
     if (stopped) return;
     // Bound to the reply that issued the call, by identity — a barge-in or
