@@ -626,7 +626,7 @@
       ],
       "outputs": [
         "dist/**",
-        "public/reference/**",
+        "src/content/docs/reference/**",
         ".astro/**"
       ]
     }

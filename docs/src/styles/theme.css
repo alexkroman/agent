@@ -71,3 +71,19 @@
 .hero + .sl-markdown-content > :first-child {
   margin-top: 1.5rem;
 }
+
+/*
+ * A generated package overview page opens with the package README, whose own
+ * `# @alexkroman1/aai` is right where npm and GitHub render it — and is the
+ * page's Starlight title as well, so the two stack as identical `<h1>`s. The
+ * same defect `home.md` avoids by carrying no heading at all (see "Code
+ * examples in docs compile" in `docs/CLAUDE.md`), except here the file is a
+ * published README this site does not own.
+ *
+ * Narrow by construction rather than by page: a Starlight page takes its title
+ * from frontmatter, so no authored page in this site starts its body with a
+ * heading, and the only content this can hide is a generated duplicate.
+ */
+.sl-markdown-content > h1:first-child {
+  display: none;
+}

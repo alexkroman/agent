@@ -489,12 +489,13 @@ prevents and why the shipped SKILL carries no API guidance of its own.
 ### API reference docs
 
 The third artifact of the three above: two renderings of the published type
-surface, both from TypeDoc over the built `dist/*.d.ts` of `aai` and `aai-ui`
-(only those two, deliberately). `pnpm docs:api` builds the whole GitHub Pages
-site into `docs/dist/**` — the handwritten guide, with the TypeDoc HTML nested
-at `/reference/`; `pnpm docs:md` renders `docs/api/**` as **committed**
-markdown, so an agent can `cat` the API reference instead of a rendered site,
-and `pnpm check:docs-md` fails when it is stale.
+surface, both from TypeDoc over the built `dist/*.d.ts` of `aai`, `aai-ui` and
+three of `aai-runtime`'s subpaths. `pnpm docs:api` builds the whole GitHub Pages
+site into `docs/dist/**` in ONE Astro build — the handwritten guide, plus the
+reference at `/reference/`, which `starlight-typedoc` renders as Starlight pages
+rather than TypeDoc's own HTML; `pnpm docs:md` renders `docs/api/**` as
+**committed** markdown, so an agent can `cat` the API reference instead of a
+rendered site, and `pnpm check:docs-md` fails when it is stale.
 
 **The GUIDE is the site's other half, and it is gated like code.** Its pages
 live in `docs/src/content/docs/`; every ` ```ts ` fence on them compiles under

@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "lint": "biome check .",
-    "docs": "pnpm run docs:reference && astro build",
-    "docs:reference": "typedoc",
+    "docs": "astro build",
     "docs:dev": "astro dev",
     "docs:md": "typedoc --options typedoc.markdown.json"
   },
@@ -14,6 +13,7 @@
     "@astrojs/starlight": "^0.42.0",
     "astro": "^7.3.1",
     "starlight-links-validator": "^0.26.0",
+    "starlight-typedoc": "^0.23.1",
     "typedoc": "^0.28.20",
     "typedoc-plugin-markdown": "^4.13.0",
     "typescript": "catalog:typedoc"

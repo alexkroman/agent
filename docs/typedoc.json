@@ -3,7 +3,11 @@
   "name": "AAI SDK",
   "entryPointStrategy": "packages",
   "entryPoints": ["../packages/aai", "../packages/aai-ui", "../packages/aai-runtime"],
-  "out": "public/reference",
+  // No `out`, deliberately: neither consumer of this config would read it.
+  // The site's reference is written by `starlight-typedoc` into the content
+  // collection (it sets `outputs` itself, see `astro.config.mjs`), and
+  // `scripts/docs-markdown.mjs` passes `--out` on the command line so a render
+  // into a temp directory cannot be confused with the committed artifact.
   "readme": "./home.md",
   "includeVersion": true,
   // Every option here reaches the SUB-PROJECTS. With
