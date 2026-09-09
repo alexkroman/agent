@@ -126,6 +126,10 @@ type EvalWorkflowEngineOptions = {
     readonly workflows: Readonly<Record<string, WorkflowDef>>;
     readonly env: Readonly<Record<string, string>>;
     readonly stepFetch?: StepFetch | undefined;
+    readonly stepAttempt?: {
+        readonly attempt: number;
+        readonly maxAttempts: number;
+    } | undefined;
     readonly speech?: SpeechSynthesizer | undefined;
 };
 

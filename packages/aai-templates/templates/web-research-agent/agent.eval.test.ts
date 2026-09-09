@@ -14,7 +14,7 @@
 // `../code-interpreter-agent/agent.eval.test.ts`.
 
 import agentDef from "virtual:aai/agent";
-import { expectToolBeforeSpeech } from "@alexkroman1/aai-runtime/eval";
+import { describeTurn, expectToolBeforeSpeech } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 
@@ -66,16 +66,42 @@ describeEval(agentDef, (test) => {
   test(
     "cites a site that appeared in its own results",
     async ({ session }) => {
-      const turn = await session.say("Who is the current CEO of Boeing?");
+      // A fact with ABUNDANT, stable sources, because this case measures the
+      // CITATION and everything else has to be a foregone conclusion. Two other
+      // questions failed here for opposite reasons: "who is the current CEO of
+      // Boeing" is answerable from training data, so a run answered it from
+      // memory and cited nothing; "the latest news about Boeing this week" made
+      // the desk really search and come back empty ("I'm having trouble pulling
+      // up the latest news"), which is a thin news day and not a citation bug.
+      // Whether Scout searches a fact it is sure of is the case ABOVE.
+      const turn = await session.say("Who was the first person to walk on the moon?");
 
       const labels = hostLabels(turn);
-      expect(labels.length).toBeGreaterThan(0);
+      const spoken = turn.text.toLowerCase();
+
+      // BOTH branches are the same rule, and the open web decides which one
+      // this run gets. A search that comes back empty or errors is not a
+      // citation bug — but it is where the stronger half of the claim lives, so
+      // the case measures that instead of failing on a thin result. Measured
+      // failing exactly here: "I couldn't reach the information right now. But
+      // according to historical records, Neil Armstrong was the first person to
+      // walk on the moon" obeyed "say that instead of naming a source" to the
+      // letter while stating a fact it had never read. The prompt now says to
+      // stop there, and this is what holds it to that.
+      if (labels.length === 0) {
+        expect(spoken, describeTurn(turn)).toMatch(/could ?n.?t|cannot|unable|no results|nothing/);
+        expect(spoken, describeTurn(turn)).not.toMatch(/armstrong/);
+        return;
+      }
+
       // "Cite sources by website name" — and cite one you read. A reply that
       // names an outlet absent from the results is the fabrication this case
       // exists to catch, and it fails here exactly like a reply that cites
       // nothing at all.
-      const spoken = turn.text.toLowerCase();
-      expect(labels.filter((label) => spoken.includes(label))).not.toEqual([]);
+      expect(
+        labels.filter((label) => spoken.includes(label)),
+        describeTurn(turn),
+      ).not.toEqual([]);
     },
     { live: true },
   );

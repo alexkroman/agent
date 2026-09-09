@@ -67,6 +67,17 @@ export default roadsideCall.tool({
         freeTowMiles: rate.freeTowMiles,
         perMile: rate.perMile,
         ifNoTowNeeded: quoteFee(rate, 0).total,
+        // The figures above price the job; they are NOT a script. Handing the
+        // model every number and then telling it elsewhere not to summarise
+        // them is an invitation, and a live desk took it — it answered the
+        // policy number with a sentence about the fee and never called
+        // `service_disclosure`, so the caller was quoted terms nobody read them.
+        // The dialog's step instruction already says this; naming the next call
+        // in the RESULT puts it where the model is actually looking.
+        next:
+          "Call service_disclosure now, in this same turn, and read back exactly what it " +
+          "returns. Do not say any of these numbers in your own words — the disclosure is " +
+          "the only wording the caller may hear the fee in.",
       };
     }),
 });

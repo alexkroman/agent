@@ -30,7 +30,12 @@
  * an agent nobody deployed.
  */
 import agentDef from "virtual:aai/agent";
-import { type EvalTurn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  type EvalTurn,
+  lastToolResultIn,
+  toolCallsInTurns,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -135,10 +140,24 @@ describeEval(agentDef, (test) => {
   test(
     "the rank the score earned is still the player's rank a turn later",
     async ({ session }) => {
-      const scored = await session.say(
-        "I set the golden chalice down on the stone pedestal. That must be worth something.",
-      );
-      const earned = answerOf(scored, "game_state_score", Scored);
+      // The chalice has to be IN HAND first. The prompt's scoring rule is that a
+      // treasure CARRIED BACK to the pedestal earns points, and
+      // `game_state_drop` refuses an item the player is not holding — so asked
+      // cold, "I set the chalice down" is a drop, which is what a live model
+      // reached for twice (`game_state_drop`, then no tool at all) while this
+      // case blamed the score tool.
+      const turns = await session.sayAll([
+        "I pick up the golden chalice.",
+        "I carry the chalice back to the Cave Mouth.",
+        "I set the chalice on the stone pedestal. Award me the points for returning it.",
+      ]);
+      // `lastToolResultIn` rather than `answerOf`, which is `toolResultIn` and
+      // refuses a scope holding two calls. Across three turns the narrator may
+      // well award twice — settling the return on the carry and again on the
+      // request — and the SETTLED total is the one the player was told. Reading
+      // one turn instead was the workaround, and it made this case depend on
+      // which turn the narrator chose to score on.
+      const earned = lastToolResultIn(toolCallsInTurns(turns), "game_state_score", Scored);
       // Whatever the model awarded — a live run picks its own number — the rank
       // that came back is the one the ladder says that score earns. The tool
       // computes it from `rankFor` because the slot's `after` hook has not run
@@ -154,6 +173,10 @@ describeEval(agentDef, (test) => {
     },
     {
       stubReply: [
+        { tool: "game_state_take", args: { value: "golden chalice" } },
+        "The golden chalice is cool and heavier than it looks.",
+        { tool: "game_state_move", args: { value: "Cave Mouth" } },
+        "You retrace your steps to the cave mouth, chalice in hand.",
         { tool: "game_state_score", args: { value: 30 } },
         "The chalice settles onto the pedestal with a satisfying weight.",
         { tool: "game_state_get" },

@@ -15,7 +15,13 @@ import agentDef from "virtual:aai/agent";
 // a script names — so a stub run proves the wiring and proves nothing about
 // what the agent chose.
 import { dialogResultSchema } from "@alexkroman1/aai/testing";
-import { toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  describeToolCalls,
+  lastToolResultIn,
+  toolCallsInTurns,
+  toolNames,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -115,17 +121,42 @@ describeEval(agentDef, (test) => {
   test(
     "reads the disclosure the plan it actually found priced",
     async ({ session }) => {
-      await session.say(
+      // Three turns, and the third asks for the TRUCK. Two other wordings failed
+      // for opposite reasons: a neutral "okay, go on" was heard as the
+      // acknowledgement, so the desk called `acknowledge_disclosure` for a
+      // disclosure it had never read; and "what is the fee?" invited it to
+      // answer out of the figures `lookup_coverage` hands back, which is the
+      // summarising the brief forbids. Asking for the truck cannot be either —
+      // `dispatch_truck` is gated on `onCall.dispatching` and the only way there
+      // is through the disclosure, so the DIALOG enforces the order rather than
+      // this case hoping for it. The lookup moves the
+      // call to `onCall.disclosure` and that step's instruction rides back in
+      // the tool result, so the desk is holding its next move — but a live model
+      // usually SPEAKS after one tool rather than chaining, so demanding the
+      // disclosure land in the same reply as the lookup measured its verbosity.
+      // What this case is for is that the words are the TOOL's and priced for
+      // the plan the lookup actually found, which no turn boundary affects.
+      const turns = await session.sayAll([
         "My car won't start — route nine past Millfield, silver Corolla, I'm off the road.",
+        "The number on the card is R S four four one seven.",
+        "Alright, send the truck.",
+      ]);
+      const calls = toolCallsInTurns(turns);
+      // Still in order: the coverage is looked up before anything is priced.
+      const names = toolNames(calls);
+      expect(names.indexOf("lookup_coverage"), describeToolCalls(calls)).toBeLessThan(
+        names.indexOf("service_disclosure"),
       );
-      const turn = await session.say("The number on the card is R S four four one seven.");
 
       // The disclosure is not a sentence the model composes: it comes back from
       // the tool, and it must be the one this plan priced. Computed here from
       // the template's own function rather than pasted, so a change to the
       // wording moves both together and a change to the PLAN does not.
-      const handed = toolResultIn(
-        turn.toolCalls,
+      // The disclosure as finally handed over: read across the turns, and the
+      // LAST one, because a desk that re-read it after an interruption has
+      // called this twice and the words the caller heard last are the words.
+      const handed = lastToolResultIn(
+        calls,
         "service_disclosure",
         dialogResultSchema(z.object({ readThisVerbatim: z.string() })),
       );
@@ -156,6 +187,7 @@ describeEval(agentDef, (test) => {
         },
         "Thanks. What's the policy number?",
         { tool: "lookup_coverage", args: { policyNumber: "RS-4417" } },
+        "Got it — you're on the Plus plan.",
         { tool: "service_disclosure" },
         "Before I send anyone, I have to read you this.",
       ],

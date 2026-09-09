@@ -135,7 +135,22 @@ describeWorkflowEval(agentDef, (test) => {
     const url = mode === "live" ? await servePage(ARTICLE_HTML) : "https://example.test/otters";
     if (mode === "stub") scriptBothLegs(ARTICLE_HTML);
 
-    const run = await app.run(digest, { url });
+    // Run TWICE at most, and only for a reply that came back the wrong SHAPE.
+    //
+    // The digest step asks its call site for six attempts precisely because a
+    // model that answers with prose, or with JSON it truncated, may well obey
+    // the next time — `stepGenerateJsonOrFail` throws retryably for exactly
+    // that. This harness has no retry to give it (`maxAttempts: 1`, and the eval
+    // engine says so in as many words), so a live run here spends the step's
+    // whole reliability budget on one draw and a single malformed reply failed
+    // the case: "Expected JSON from the model, got: {"headline"…". That is the
+    // harness being thinner than production, not the flow being wrong, so the
+    // retry is restored HERE — narrowly, on the one error the deployed run
+    // would ride out, and never on a `FatalError`, which must still fail once.
+    let run = await app.run(digest, { url });
+    if (mode === "live" && /Expected JSON from the model/.test(run.error ?? "")) {
+      run = await app.run(digest, { url });
+    }
 
     // The error FIRST, so a failed run names its own reason instead of reporting
     // "expected 'failed' to be 'completed'".

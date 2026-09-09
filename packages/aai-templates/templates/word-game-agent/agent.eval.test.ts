@@ -56,7 +56,7 @@ describeEval(agentDef, (test) => {
 
   test(
     "a description goes to the player, and a wrong guess is relayed without a point",
-    async ({ session }) => {
+    async ({ session, mode }) => {
       await session.say("Ready!");
       const turn = await session.say(
         "It's an animal with black and white stripes, lives in Africa.",
@@ -67,20 +67,46 @@ describeEval(agentDef, (test) => {
         turn.toolCalls,
         "relay_description",
         dialogResultSchema(
-          z.object({ verdict: z.string(), playerSaid: z.string(), score: z.number() }),
+          z.object({
+            verdict: z.string(),
+            playerSaid: z.string(),
+            guess: z.string(),
+            score: z.number(),
+          }),
         ),
       );
-      expect(relayed.result).toMatchObject({
-        verdict: "wrong",
-        playerSaid: "Is it a zebra crossing?",
-        score: 0,
-      });
-      // The round is still on: a wrong guess moves nothing.
-      expect(relayed.state).toBe("playing");
-      expect(lastStateIn(turn.events, Board)).toMatchObject({
-        score: 0,
-        wrongGuesses: ["zebra crossing"],
-      });
+      // The player really answered, and the host relayed rather than ruling on
+      // the guess itself — the claim in this case's name, and the half that
+      // holds in either mode.
+      expect(relayed.result.playerSaid.length).toBeGreaterThan(0);
+      // WHICH verdict came back is the game's business, not this case's: the
+      // word is drawn at random and `zebra` is in the pool, so live — where a
+      // real model plays the player — this description is right about as often
+      // as the draw allows. What holds either way is that the verdict and the
+      // score agree, and that a wrong guess leaves the round standing.
+      if (relayed.result.verdict === "wrong") {
+        expect(relayed.result.score).toBe(0);
+        expect(relayed.state).toBe("playing");
+        expect(lastStateIn(turn.events, Board)).toMatchObject({
+          score: 0,
+          wrongGuesses: [relayed.result.guess],
+        });
+      } else {
+        expect(relayed.result.verdict).toBe("correct");
+        expect(relayed.result.score).toBe(1);
+      }
+      // Only a SCRIPT can pin the player's exact words. `WRONG_PLAYER` is what
+      // makes them predictable, so asserting them against a live model asserts
+      // the script rather than the agent — which is how this case used to fail
+      // on "Is it a zebra?" being a perfectly good wrong guess.
+      if (mode === "stub") {
+        expect(relayed.result).toMatchObject({
+          verdict: "wrong",
+          playerSaid: "Is it a zebra crossing?",
+          guess: "zebra crossing",
+          score: 0,
+        });
+      }
     },
     {
       stubReply: [
@@ -105,9 +131,15 @@ describeEval(agentDef, (test) => {
         "start_game",
         dialogResultSchema(z.object({ word: z.string() })),
       ).result;
+      // A DESCRIPTION that happens to contain the word, not a question about it.
+      // "How would I even describe that?" is the describer asking for help, and
+      // a host that answered it in words — or reached for `repeat_word` — was
+      // reading the turn correctly while this case failed it for not relaying.
       // The host's relay below is sanitized — the word is not in the script's
       // args — and the tool still rules a foul off what the caller actually said.
-      const turn = await session.say(`Okay, my word is ${word}. How would I even describe that?`);
+      const turn = await session.say(
+        `Okay, so ${word} — it's the sort of thing you would find around a house.`,
+      );
 
       const relayed = toolResultIn(
         turn.toolCalls,
@@ -122,7 +154,10 @@ describeEval(agentDef, (test) => {
       stubReply: [
         { tool: "start_game" },
         "Here's your first word.",
-        { tool: "relay_description", args: { description: "how would I even describe that" } },
+        {
+          tool: "relay_description",
+          args: { description: "it's the sort of thing you would find around a house" },
+        },
         "You said the word - that one's forfeited. Your next word is on the screen.",
       ],
       stubGenerate: WRONG_PLAYER,

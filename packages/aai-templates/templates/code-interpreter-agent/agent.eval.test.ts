@@ -29,6 +29,7 @@ import agentDef from "virtual:aai/agent";
 import {
   createVmRunCode,
   describeTurn,
+  expectCalled,
   expectToolBeforeSpeech,
   type RunCodeExecutor,
   runCodeIn,
@@ -82,7 +83,7 @@ describeEval(
         // The template's CRITICAL RULE, and the whole reason it declares
         // run_code: a model that answers this one directly has regressed, and it
         // is the easiest question in the file to answer wrongly with confidence.
-        expect(toolNames(turn.toolCalls), describeTurn(turn)).toContain("run_code");
+        expectCalled(turn, "run_code");
         const code = runCodeIn(turn.toolCalls);
         expect(code).toContain("127");
         expect(code).toContain("849");
@@ -110,7 +111,7 @@ describeEval(
         // The prompt lists this exact question under "you MUST use code for".
         // It is the case a narrower reading of the rule ("code is for maths")
         // silently drops.
-        expect(toolNames(turn.toolCalls), describeTurn(turn)).toContain("run_code");
+        expectCalled(turn, "run_code");
         expect(runCodeIn(turn.toolCalls)).toMatch(/Date|2000/);
         // The code RAN rather than being refused (`runCodeOutput` throws on the
         // refusal) — but the ANSWER is deliberately not asserted here, and the

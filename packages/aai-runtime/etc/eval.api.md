@@ -171,6 +171,10 @@ export type EvalWorkflowEngineOptions = {
     readonly workflows: Readonly<Record<string, WorkflowDef>>;
     readonly env: Readonly<Record<string, string>>;
     readonly stepFetch?: StepFetch | undefined;
+    readonly stepAttempt?: {
+        readonly attempt: number;
+        readonly maxAttempts: number;
+    } | undefined;
     readonly speech?: SpeechSynthesizer | undefined;
 };
 
@@ -219,6 +223,9 @@ export type EvalWorkflowsOptions = {
 };
 
 // @public
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+
+// @public
 export function expectToolBeforeSpeech(turn: EvalTurn): void;
 
 // @public
@@ -237,6 +244,9 @@ export function lastStateIn<T>(events: readonly SessionEvent[], schema: Standard
 
 // @public (undocumented)
 export function lastStateIn(events: readonly SessionEvent[]): unknown;
+
+// @public
+export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
 export type LogContext = Record<string, unknown>;

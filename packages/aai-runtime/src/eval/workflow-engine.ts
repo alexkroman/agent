@@ -177,10 +177,22 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   // when something has gone wrong. `maxAttempts: 1` is the truth here: this
   // engine has no retry to spend, which is the same limit
   // {@link EvalWorkflowEngineOptions} states about `maxRetries` being INERT.
+  //
+  // Which makes `isLastAttempt` always TRUE by default, and that is the cost
+  // {@link EvalWorkflowEngineOptions.stepAttempt} exists to let a case pay
+  // differently: a body with a last-chance branch is otherwise measured on it
+  // every time and on its primary path never.
+  const attempt = opts.stepAttempt ?? { attempt: 1, maxAttempts: 1 };
   publishStepInfoReader(() =>
     current.getStore() === undefined
       ? undefined
-      : { name: "eval", key: "eval#0", attempt: 1, maxAttempts: 1, isLastAttempt: true },
+      : {
+          name: "eval",
+          key: "eval#0",
+          attempt: attempt.attempt,
+          maxAttempts: attempt.maxAttempts,
+          isLastAttempt: attempt.attempt >= attempt.maxAttempts,
+        },
   );
   // Both are caller-supplied and both default to NOTHING, which is what keeps
   // `undici` and `ws` out of the module graph an eval file drags into its own

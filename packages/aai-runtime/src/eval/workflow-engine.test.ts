@@ -13,7 +13,8 @@
  */
 
 import { workflow } from "@alexkroman1/aai";
-import { stepEmit, stepEnv, stepReport } from "@alexkroman1/aai/step";
+import { stepEmit, stepEnv, stepInfo, stepReport } from "@alexkroman1/aai/step";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createEvalWorkflowEngine, type EvalWorkflowEngine } from "./workflow-engine.ts";
@@ -220,3 +221,59 @@ async function drain(stream: ReadableStream<unknown>): Promise<unknown[]> {
   for await (const chunk of stream) chunks.push(chunk);
   return chunks;
 }
+
+describe("stepAttempt", () => {
+  /** A body that reports which branch `isLastAttempt` sent it down. */
+  const branching = workflow({
+    input: z.object({}),
+    async run(_input, ctx) {
+      return await ctx.step("branch", () => {
+        const info = stepInfo();
+        return {
+          attempt: info?.attempt ?? 0,
+          maxAttempts: info?.maxAttempts ?? 0,
+          degraded: info?.isLastAttempt === true,
+        };
+      });
+    },
+  });
+
+  /** Drive `branching` once and hand back what the step reported. */
+  async function branchTaken(stepAttempt?: {
+    attempt: number;
+    maxAttempts: number;
+  }): Promise<unknown> {
+    engine = createEvalWorkflowEngine({
+      workflows: { branching },
+      env: {},
+      ...omitUndefined({ stepAttempt }),
+    });
+    const runId = await engine.adapter.start("branching", [{}]);
+    const record = engine.record(runId);
+    // A plain throw, not `expect.fail`: an assertion in a helper is
+    // `noMisplacedAssertion`, which reads the callee identifier and cannot see
+    // that every caller is a test.
+    if (record === undefined) throw new Error("the engine did not record the run it started");
+    await record.settled;
+    return record.output;
+  }
+
+  test("defaults to a first-and-only attempt, so a body takes its LAST-chance arm", async () => {
+    // The honest default and the documented cost of it, pinned together.
+    expect(await branchTaken()).toEqual({ attempt: 1, maxAttempts: 1, degraded: true });
+  });
+
+  test("a case can ask for the PRIMARY arm, which no eval could otherwise reach", async () => {
+    // `link-digest-workflow`'s digest step asks for six attempts and swaps in a
+    // blunter prompt on the last; this is how the other five get measured.
+    expect(await branchTaken({ attempt: 1, maxAttempts: 6 })).toEqual({
+      attempt: 1,
+      maxAttempts: 6,
+      degraded: false,
+    });
+  });
+
+  test("derives isLastAttempt with `>=`, like the real reader", async () => {
+    expect(await branchTaken({ attempt: 7, maxAttempts: 6 })).toMatchObject({ degraded: true });
+  });
+});

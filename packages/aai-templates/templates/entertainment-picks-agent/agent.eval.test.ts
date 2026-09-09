@@ -32,6 +32,7 @@ import {
   createVmRunCode,
   customEventsIn,
   describeTurn,
+  expectCalled,
   lastStateIn,
   runCodeIn,
   runCodeOutput,
@@ -133,6 +134,12 @@ describeEval(
         await session.say("I want something cozy to watch tonight.");
         const turn = await session.say("Now give me something spooky to read.");
 
+        // `expectCalled` first, because "the host named something out of its own
+        // head and ended the turn" is how this case actually fails — the night's
+        // log stays empty and `revisit` has nothing to find. It reports the
+        // sentence spoken in place of the call, where `expected [] to deeply
+        // equal [ 'recommend' ]` reported neither.
+        expectCalled(turn, "recommend");
         expect(toolNames(turn.toolCalls)).toEqual(["recommend"]);
         expect(turn.toolCalls[0]!.args).toEqual({ category: "book", mood: "spooky" });
 
@@ -229,7 +236,7 @@ describeEval(
         // about a companion that talked its way through the sum instead, and it
         // names a cancelled reply, which is the usual reason a turn reached for
         // nothing.
-        expect(toolNames(turn.toolCalls), describeTurn(turn)).toContain("run_code");
+        expectCalled(turn, "run_code");
         // The recipe is the prompt's, and it is two constants: a 90-minute cycle
         // plus the 15 minutes it takes to fall asleep. Arithmetic done in the
         // model's head has neither of them anywhere in the code. `runCodeIn`

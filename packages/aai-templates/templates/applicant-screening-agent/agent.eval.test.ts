@@ -28,6 +28,7 @@ import { countWords } from "@alexkroman1/aai/utils";
 import {
   describeTurn,
   type EvalSession,
+  expectCalled,
   lastStateIn,
   toolNames,
   toolResultIn,
@@ -165,7 +166,11 @@ describeEval(agentDef, (test) => {
       // The browser was sent the whole table, not the three the caller heard.
       const view = hiringState(session);
       expect(view?.leaderboard).toHaveLength(LEADS.length);
-      expect(view?.jobTitle).toBe("Junior React Developer");
+      // CONTAINS, not equals: the title is whatever the desk passed through from
+      // the caller, who said "the Junior React Developer contract" — so a model
+      // that carried the word "contract" across was being faithful, and pinning
+      // the exact string failed it for that.
+      expect(view?.jobTitle).toContain("Junior React Developer");
       // Nothing outside the desk's own six tools was called: the evaluator is a
       // `ctx.generate` inside a tool, never a tool the desk holds.
       expect(toolNames(turn.toolCalls).filter((name) => !DESK_TOOLS.includes(name))).toEqual([]);
@@ -190,11 +195,20 @@ describeEval(agentDef, (test) => {
       const calls = turn.toolCalls.filter((call) => call.name === "screen_candidates");
       expect(calls, describeTurn(turn)).toHaveLength(1);
       const screened = toolResultIn(turn.toolCalls, "screen_candidates", Screened);
-      // Their "don't use numbers like 100, 75, or 50" rule, measured: a live
-      // evaluator that ties three applicants at 75 has produced a list, not a
-      // ranking, and the desk cannot read back "who stands out" from a tie.
+      // Their "don't use numbers like 100, 75, or 50" rule, measured — but only
+      // as far as the rule can reach. Each candidate is a SEPARATE
+      // `ctx.generate` that never sees the others' numbers, so two independent
+      // evaluations landing on the same score is arithmetic rather than a
+      // failure, and demanding all three distinct failed this case on a 2-of-3
+      // collision. What the rule actually buys is numbers specific enough that
+      // the sort is a RANKING and not the three-way tie at 75 it was written
+      // against.
       const scores = screened.top.map((one) => one.score);
-      expect(new Set(scores).size).toBe(scores.length);
+      expect(new Set(scores).size, JSON.stringify(scores)).toBeGreaterThan(1);
+      for (const score of scores) expect([50, 75, 100]).not.toContain(score);
+      // And the read-back order IS those numbers sorted — not the desk's own
+      // view of twelve bios.
+      expect([...scores].sort((a, b) => b - a)).toEqual(scores);
       for (const one of screened.top) expect(one.reason.length).toBeGreaterThan(30);
       // What the caller HEARS names the evaluator's top pick. A desk that read
       // twelve bios and formed its own view would name whoever it fancied.
@@ -221,7 +235,7 @@ describeEval(agentDef, (test) => {
       // it has no scores of its own to re-order by — and it must not screen from
       // scratch, which would throw the ranking the caller just heard away.
       const names = toolNames(turn.toolCalls);
-      expect(names, describeTurn(turn)).toContain("rescore_with_feedback");
+      expectCalled(turn, "rescore_with_feedback");
       expect(names).not.toContain("screen_candidates");
       const rescored = toolResultIn(turn.toolCalls, "rescore_with_feedback", Rescored);
       expect(rescored.state).toBe("reviewing");

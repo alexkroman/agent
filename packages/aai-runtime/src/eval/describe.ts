@@ -38,6 +38,8 @@ import {
   type EvalMode,
   registerEmptySuiteFailure,
 } from "./_announce.ts";
+import { evalOnlySelects, evalRepeat } from "./_env.ts";
+import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
 import {
   type EvalCredentials,
@@ -123,7 +125,46 @@ export type { EvalMode } from "./_announce.ts";
 export type EvalTestContext = {
   /** Open for this case, closed after it. */
   readonly session: EvalSession;
-  /** Which model this run got. A case may branch on it, and most should not. */
+  /**
+   * Which model this run got. A case may branch on it, and most should not.
+   *
+   * ## The one branch that is always right
+   *
+   * **A value a SCRIPT determined may only be asserted under
+   * `mode === "stub"`.** `stubReply` and `stubGenerate` are what make a value
+   * predictable, so pinning one against a live model is pinning the script — and
+   * it presents as the agent misbehaving, which is the expensive part. Three
+   * shipped template evals had it, and each read as a defect in the template
+   * until the script was checked:
+   *
+   * - `word-game-agent` asserted `playerSaid: "Is it a zebra crossing?"`, the
+   *   exact remark of a scripted player, in a game whose word is drawn at
+   *   random. Live, "Is it a zebra?" is a perfectly good wrong guess.
+   * - `executive-inbox-agent` pinned `2 closed / 6 queued`, a split decided by
+   *   eight live triage verdicts. A run that found every email worth answering
+   *   failed on "expected [] to have a length of 2".
+   * - `topic-briefing-agent` required a verdict word from a subagent its own
+   *   tool documents as allowed to come back unusable.
+   *
+   * So: assert the INVARIANT in both modes — the tool was called, the verdict
+   * and the score agree, nothing was sent before a yes — and put the exact
+   * strings behind the branch.
+   *
+   * ```ts no-check
+   * test("a wrong guess is relayed without a point", async ({ session, mode }) => {
+   *   const relayed = await play(session);
+   *   // True either way: the player answered and the round stands.
+   *   expect(relayed.playerSaid.length).toBeGreaterThan(0);
+   *   if (relayed.verdict === "wrong") expect(relayed.score).toBe(0);
+   *   // Only a script can pin the words.
+   *   if (mode === "stub") expect(relayed.playerSaid).toBe("Is it a zebra crossing?");
+   * });
+   * ```
+   *
+   * A case that cannot be written that way wants `{ scripted: true }` instead,
+   * which skips it live rather than weakening it — see
+   * {@link EvalCaseOptions.scripted}.
+   */
   readonly mode: EvalMode;
   /**
    * The workflow app behind this session's `ctx.workflows`, for an agent that
@@ -286,21 +327,58 @@ export function describeEval(
       : `eval: ${agent.name} — SCRIPTED model (${reason}). This checks the wiring, not the agent's behaviour.`,
   );
 
+  // Both default to "everything, once", so an unset environment runs exactly
+  // what it ran before this was wired up. See `_env.ts` for what was silently
+  // ignored until it was.
+  const repeat = evalRepeat();
+  const spread = new SuiteSpread(agent.name);
+
   describe(agent.name, () => {
     let declared = 0;
     let skippedCases = 0;
+    // Counted SEPARATELY from the mode skips, because the two mean different
+    // things and the coverage line reports the reason. A case dropped by
+    // `AAI_EVAL_ONLY` is not "live-only", and saying so was this filter's first
+    // bug: `AAI_EVAL_ONLY=nonexistent` announced "2 skipped as live-only" about
+    // two cases that carried no marker at all.
+    const filteredOut: string[] = [];
     const evalTest: EvalTest = (name, body, caseOptions) => {
       declared += 1;
-      const skipped =
+      const wrongMode =
         (mode === "stub" && caseOptions?.live === true) ||
         (mode === "live" && caseOptions?.scripted === true);
-      if (skipped) skippedCases += 1;
-      const run = skipped ? test.skip : test;
-      run(name, () => runCase({ agent, mode, options, caseOptions, body }));
+      const filtered = !(wrongMode || evalOnlySelects(name));
+      if (wrongMode) skippedCases += 1;
+      if (filtered) filteredOut.push(name);
+      const run = wrongMode || filtered ? test.skip : test;
+      run(name, () =>
+        runRepeats(
+          () => runCase({ agent, mode, options, caseOptions, body }),
+          name,
+          repeat,
+          spread,
+        ),
+      );
     };
     define(evalTest);
-    announceEvalCoverage(agent.name, mode, declared, skippedCases);
-    registerEmptySuiteFailure(agent.name, mode, declared, skippedCases);
+    announceEvalCoverage(agent.name, mode, declared, skippedCases, filteredOut.length);
+    // A FILTERED run has opted out of coverage on purpose, so the empty-suite
+    // failure is not its business — and must not be. `AAI_EVAL_ONLY` is one
+    // variable across the whole tier while each suite sees only its own cases,
+    // so a filter aimed at one template would otherwise fail the other
+    // twenty-seven for not containing it. `aai-evals/_register.ts` reached the
+    // same conclusion for the same reason and warns instead; this warns too.
+    if (declared > 0 && filteredOut.length === declared) {
+      announceEvalMode(
+        `eval: ${agent.name} — AAI_EVAL_ONLY matched none of its ${declared} case(s), so this ` +
+          `suite ran nothing. Its cases are: ${filteredOut
+            .map((one) => JSON.stringify(one))
+            .join(", ")}.`,
+      );
+    } else {
+      registerEmptySuiteFailure(agent.name, mode, declared - filteredOut.length, skippedCases);
+    }
+    spread.report();
   });
 }
 
