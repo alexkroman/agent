@@ -20,6 +20,7 @@
  */
 
 import path from "node:path";
+import { expectDeployable } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { runTool } from "./_test-utils.ts";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS, type StudioAgentDeps } from "./studio-agent.ts";
@@ -73,6 +74,42 @@ describe("the studio coding agent's definition", () => {
     // The model is host configuration delivered by `studio/session-init`; the
     // KEY is the caller's and must never ride on the definition.
     expect(JSON.stringify(def)).not.toContain("caller-key");
+  });
+
+  test("is DEPLOYABLE: it converts, it is nameable, and it has no audio path", () => {
+    // The claim every shipped template's `agent.test.ts` opens with, made here
+    // for the first time. `expectDeployable` runs `toAgentConfig` — the same
+    // conversion `aai build` runs — and then asserts three things per derived
+    // MODE, which is what makes it survive an edit to this definition: the
+    // config passes manifest validation, the platform has a name to list, and
+    // the stages the mode needs are filled while the ones it forbids are not.
+    //
+    // For a text agent the third is "no audio path", and that is the one worth
+    // having here. `createStudioAgent` is the one definition in the repo that
+    // is assembled in CODE rather than authored in an `agent.ts`, so a `voice:`
+    // or an `stt` added to it has no author reviewing an agent file — and
+    // `createTextAgent` would accept the def regardless, leaving a config
+    // carrying a stage nothing in text mode can use. `not.toThrow()` because
+    // the helper's throw IS the finding: vitest quotes the message, which names
+    // the invariant that went.
+    expect(() => expectDeployable(makeAgent())).not.toThrow();
+    const config = expectDeployable(makeAgent());
+    expect(config.mode).toBe("text");
+    expect(config.name).toBe("AAI Studio");
+    // The builtins survive the conversion; the nineteen DECLARED tools do not,
+    // and that asymmetry is worth pinning because it is surprising and it is
+    // load-bearing. `toAgentConfig` carries `builtinTools` and no
+    // `toolSchemas` — a tool registry is extracted where the bundle is
+    // assembled, not by this conversion — which is exactly why `test_agent`
+    // reports the tool list off the loaded BUNDLE's own `__aaiConfig` rather
+    // than off anything reachable from this definition.
+    expect(config.builtinTools).toEqual(["visit_webpage", "get_page_design", "web_search"]);
+    // Read off the KEYS, because `toolSchemas` is not a field of `AgentConfig`
+    // at all — naming it is a type error, which is the strongest form this
+    // claim takes and the reason `describeConfig` casts the BUNDLE's config to
+    // reach the list.
+    expect(Object.keys(config)).not.toContain("toolSchemas");
+    expect(Object.keys(makeAgent().tools)).toHaveLength(19);
   });
 
   test("names the three web builtins rather than adapting them", () => {

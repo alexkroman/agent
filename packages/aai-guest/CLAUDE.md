@@ -200,6 +200,17 @@ than a boundary — `bash` can read `/proc/<pid>/environ` regardless — which i
 exactly why it should be uniform: an exception here is not a smaller hole, it is
 an unexplained one.
 
+## Testing the coding agent — see `CODING-AGENT-TESTS-CLAUDE.md`
+
+Five tiers, and the two newest are where the interesting claims are: an
+agent-level unit spec through the SDK's own `runTextAgent` (the reserved
+final-answer step, the event-stream bridge, a schema rejection reaching the
+model as something repairable) and the coding agent's own EVAL against a live
+model over a real workspace. Both are in the sibling
+[`CODING-AGENT-TESTS-CLAUDE.md`](CODING-AGENT-TESTS-CLAUDE.md), with what is
+real in a case, the one thing that is not (the system prompt), and why the eval
+lives in this package rather than in `aai-evals`.
+
 ## One claim on the workspace at a time — turns AND re-installs
 
 `createTurnGate` (`studio-turn-stream.ts`) holds a single process-wide claim,
