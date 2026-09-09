@@ -22,17 +22,28 @@
  *   `web_search`, and it lands them in the same executor as everything else,
  *   with a real `ctx` — the hand-written adapter this replaces had to
  *   fabricate a context whose `db` and `generate` both rejected.
- * - **The tools go on with `withTools`, because they are not files.** A user's
- *   agent declares no tools at all: `tools/` IS the list, enumerated where the
- *   bundle is assembled, and `agent({ tools })` is a compile error naming the
- *   file to create. These families cannot be files — almost every one of them
- *   closes over ONE session's workspace directory and its type-check runner, and
- *   they are built per turn precisely so a re-installed session cannot serve
- *   tools bound to the previous tree. `withTools` is the seam a resolved
- *   registry goes on through, and that is what this is: a registry resolved from
- *   the session rather than from a directory. (`read_logs` closes over nothing —
- *   it asks the HOST, which resolves the project from the sandbox's own pinned
- *   identity — and joins here because the registry is where the tool set is.)
+ * - **The tools go on with `withTools`, because their LIFETIME is a session.**
+ *   A user's agent declares no tools at all: `tools/` IS the list, enumerated
+ *   where the bundle is assembled, and `agent({ tools })` is a compile error
+ *   naming the file to create. `withTools` is the seam a registry resolved
+ *   somewhere other than a directory goes on through, and that is what this is.
+ *
+ *   **The reason is not that these tools close over a directory.** That was the
+ *   reason this paragraph gave, and `templates/coding-agent/` disproves it:
+ *   nine tools that all close over one directory, shipped as FILES, each
+ *   re-exporting an entry from a registry `shared.ts` builds once. A closure is
+ *   no obstacle to being a file.
+ *
+ *   What rules it out here is that the directory is chosen per SESSION and a
+ *   file's default export is evaluated once per process, at import. The
+ *   template's `WORKSPACE_DIR` is read from the environment at load and never
+ *   changes; this workspace is re-materialized whenever a tab refreshes or a
+ *   replica takes the session over, and a tool bound to the previous tree is
+ *   the exact failure {@link createStudioAgent} exists to prevent. Files could
+ *   express these tools; they could not express that lifetime.
+ *   (`read_logs` closes over nothing — it asks the HOST, which resolves the
+ *   project from the sandbox's own pinned identity — and joins here because the
+ *   registry is where the tool set is.)
  */
 
 import { type AgentDef, agent, type BuiltinTool } from "@alexkroman1/aai";
