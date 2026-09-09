@@ -1,6 +1,6 @@
 ---
 title: Your agent
-description: The agent.ts file, the system prompt, and the fields worth knowing first.
+description: The agent.ts file, the fields worth setting first, and how the system prompt works.
 ---
 
 `agent.ts` exports one call. The only required field is a name:
@@ -36,16 +36,21 @@ export default agent({
 | `llm` | A model id, e.g. `"claude-sonnet-4-6"`; defaults to AssemblyAI's |
 | `requiredEnv` | Keys your tools read — a missing one is warned about at deploy |
 
-Both `voice` and `llm` autocomplete the ids this SDK release knows, and neither
-is checked by the compiler: each catalog belongs to the service, so an id added
-after your release still has to work. A misspelled one is refused when the
-session opens rather than when you build — a wrong voice leaves an agent that
-never speaks, and a wrong model id is a gateway error on the first turn.
-`aai build` and `aai dev` warn about a voice they do not recognise. See
-[Voices and models](/agent/more/voices-and-models/).
-
 Every other field is in the [SDK reference](/agent/reference/). You do not
 need any of them to build something good.
+
+### About `voice` and `llm`
+
+Both autocomplete the ids this SDK release knows about. Neither is checked by
+the compiler: each catalog belongs to the service, so an id added after your
+release still has to work. See
+[Voices and models](/agent/more/voices-and-models/).
+
+:::caution[A wrong id fails when the session opens, not when you build]
+A wrong `voice` leaves an agent that never speaks. A wrong `llm` is a gateway
+error on the first turn. `aai build` and `aai dev` warn about a voice they do
+not recognise, which catches most of it before you deploy.
+:::
 
 ## The system prompt is a file
 
@@ -67,24 +72,25 @@ Write the prompt in one place. If `system-prompt.md` exists and `agent.ts`
 also sets `systemPrompt`, the build stops and tells you, rather than letting
 you edit a file that is being ignored.
 
-## Your prompt is ADDED to the defaults, not swapping them out
+## Your prompt is added to the framework's, not swapped in for it
+
+**Write only your own domain rules.** `"You only ever discuss pizza."` is a
+complete system prompt.
 
 Whatever you write — in `system-prompt.md` or in `systemPrompt` — is appended
 to the voice rules the framework always sends: how to speak a number, how to
 read a transcript, one question per turn, today's date. Your rules come last,
 under a header saying they win where the two conflict.
 
-**So write only your own domain rules.** "You only ever discuss pizza." is a
-complete system prompt.
+:::caution[Never interpolate `DEFAULT_SYSTEM_PROMPT` into your prompt]
+That sends the ~10,000-character voice core twice, once by the framework and
+once by you, under two precedence headers arguing with each other — and you pay
+for it on every turn. A leading copy is dropped automatically and a warning is
+printed. A copy anywhere else is warned about and sent.
+:::
 
-Never interpolate `DEFAULT_SYSTEM_PROMPT` into it. That sends the ~10,000
-character voice core twice — once by the framework and once by you, under two
-precedence headers arguing with each other — and pays for it on every turn. A
-leading copy is dropped automatically and a warning is printed; a copy anywhere
-else is warned about and sent.
-
-The constant is exported to be READ, not composed: print it while tuning, or
-diff it across SDK versions.
+The constant is exported to be READ, not composed. Print it while tuning, or
+diff it across SDK versions:
 
 ```ts
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
@@ -92,9 +98,9 @@ import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 console.log(DEFAULT_SYSTEM_PROMPT); // what your rules are added to
 ```
 
-When part of the prompt is computed — a menu, a catalogue — build that string
+When part of your prompt is computed — a menu, a catalogue — build that string
 and pass it as `systemPrompt`. It is still only your own rules. Today's date is
-already in every prompt, so it is not one of the reasons.
+already in every prompt, so that is not one of the reasons to compute one.
 
 ## A prompt that changes during the call
 
