@@ -19,12 +19,13 @@ You are helping build a voice agent using the **aai** framework.
 The fast loop: edit → `pnpm dev` (browser, talk to it) →
 `pnpm test` (logic) → `pnpm build` (validate bundle).
 
-1. **Iterate in `pnpm dev`** — browser UI, and `pnpm dev -- --watch` to
-   rebuild and restart on every save. Speak to the agent to verify behavior
-   end-to-end. This is the primary feedback loop. Watching is OPT-IN because a
-   restart ends in-flight voice sessions, which is right while you are editing
-   and wrong while something is driving the agent for twenty minutes;
-   `AAI_DEV_WATCH=1` is the same switch for a process supervisor.
+1. **Iterate in `pnpm dev`** — browser UI, and it rebuilds and restarts on
+   every save when you are at a terminal. Speak to the agent to verify behavior
+   end-to-end. This is the primary feedback loop. Watching is on for a PERSON
+   and off for everything else: a restart ends in-flight voice sessions, which
+   is right while you are editing and wrong while something drives the agent
+   for twenty minutes, and a harness or supervisor has no TTY. `AAI_DEV_WATCH=0`
+   turns it off at a terminal, `AAI_DEV_WATCH=1` on for a process supervisor.
 2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
    `agent.test.ts` (see `custom-pipeline-agent` template for a reference).
    **When the project has an `agent.test.ts` (the default `quickstart-agent`
@@ -129,8 +130,8 @@ Then:
 aai init             # Scaffold a new agent
 aai templates        # List available templates
 aai dev              # Start local dev server
-aai test             # Run agent.test.ts via vitest
-aai test --all       # ...or every spec in the project
+aai test             # Run the project's specs via vitest
+aai test --only      # ...or agent.test.ts alone
 aai eval             # Run agent.eval.test.ts against a model
 aai build            # Bundle and validate
 aai deploy           # Deploy to production
@@ -144,12 +145,11 @@ The scaffold's `package.json` exposes `dev`, `build`, `test`, `eval` and
 `deploy` as `pnpm <name>` shortcuts, which run the project's own copy of the
 CLI. Other commands (`init`, `templates`, `delete`, `secret`) are CLI-only.
 
-**`aai test` targets `agent.test.ts` and nothing else**, which `--all` widens.
-What matters is that a narrowed run does not report itself as a pass: when the
-project holds spec files the run did not cover, it FAILS and names them rather
-than printing a green line that says nothing about `tools/*.test.ts`. `pnpm
-test` (the scaffold's own script) already runs the whole suite, and so does the
-gate in front of `aai build`.
+**`aai test` runs every non-eval spec in the project**, which `--only` narrows
+to `agent.test.ts` for the fast inner loop. A narrowed run does not report
+itself as a pass: it names the spec files it did not cover and answers
+`complete: false`. `pnpm test` (the scaffold's own script) is `aai test`, and so
+is the gate in front of `aai build`.
 
 ## Running it yourself (`npm start`)
 
@@ -423,18 +423,12 @@ import { agent } from "@alexkroman1/aai";
 export default agent({ name: "My Agent" });
 ```
 
-Declare neither and the agent runs on `DEFAULT_SYSTEM_PROMPT`, exported from
-`@alexkroman1/aai` so you can read what you are replacing — or compose against
-it, rather than restating the voice rules at the bottom of this guide:
-
-```ts
-import { DEFAULT_SYSTEM_PROMPT, agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "My Agent",
-  systemPrompt: `${DEFAULT_SYSTEM_PROMPT}\n\nYou only ever discuss pizza.`,
-});
-```
+**Your prompt is ADDED to the defaults, never a replacement** — the framework
+emits its voice sections and appends yours last, yours winning on conflict.
+Write ONLY your own domain rules; never interpolate `DEFAULT_SYSTEM_PROMPT`
+(exported to be READ). Nothing is replaced, so composing sends ~10,000
+characters twice a turn; a leading copy is dropped with a warning, one
+elsewhere is sent.
 
 ```markdown
 <!-- system-prompt.md -->

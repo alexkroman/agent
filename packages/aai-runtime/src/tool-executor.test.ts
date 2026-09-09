@@ -336,3 +336,47 @@ describe("executeToolCall — cancellation", () => {
     expect(JSON.parse(result)).toMatchObject({ error: expect.stringMatching(/abort/i) });
   });
 });
+
+describe("executeToolCall — a result larger than MAX_TOOL_RESULT_CHARS", () => {
+  // The documented cap is a CLIENT cap. `ToolDef.execute` and the tools page
+  // both promised it applied "for the LLM and the client", so an unshaped
+  // `await res.json()` read as free — while what actually happens is that the
+  // whole string is appended to the conversation and re-sent on every later
+  // turn of the call. Nothing said so anywhere, which is what these tests are
+  // for: the size stays uncapped (changing that is a behaviour decision), and
+  // the warning is what makes it visible.
+  const big = (n: number) => "x".repeat(n);
+
+  test("the provider's copy is NOT capped — the model gets the whole result", async () => {
+    const tool = makeTool({ execute: () => big(9000) });
+    const result = await run("fetch_report", {}, tool);
+    expect(result).toHaveLength(9000);
+    expect(result).not.toContain("[truncated]");
+  });
+
+  test("warns once, naming the tool and the size", async () => {
+    const warn = vi.fn();
+    const logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() };
+    const tool = makeTool({ execute: () => big(9000) });
+    // A distinct name per test: the once-latch is process-wide (one agent per
+    // process), so a shared name would make this assertion depend on order.
+    await run("oversized_once", {}, tool, { logger });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [message, fields] = warn.mock.calls[0] ?? [];
+    expect(message).toContain('"oversized_once"');
+    expect(message).toContain("9000 characters");
+    expect(message).toContain("MAX_TOOL_RESULT_CHARS");
+    expect(fields).toMatchObject({ tool: "oversized_once", chars: 9000 });
+
+    // Second call, same tool: one line per process, not one per turn.
+    await run("oversized_once", {}, tool, { logger });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  test("says nothing about a result inside the cap", async () => {
+    const warn = vi.fn();
+    const logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() };
+    await run("small_result", {}, makeTool({ execute: () => big(3999) }), { logger });
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

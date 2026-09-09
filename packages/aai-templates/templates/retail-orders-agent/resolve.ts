@@ -93,7 +93,22 @@ export const resolveOrder = failable((state: RetailState, spoken: string): Order
     };
   }
 
-  // A position, then exactly-one, then an ambiguity that lists them — and never
-  // a guess, because the consequence here is cancelling the wrong order.
-  return resolveOne(candidates, spoken, { label: "order", describe: describeOrder });
+  // A code, then a position, then exactly-one, then an ambiguity that lists
+  // them — and never a guess, because the consequence here is cancelling the
+  // wrong order.
+  //
+  // `code` is the id match this module used to own outright, moved inside the
+  // primitive: it compares through `spokenAlphanumeric` exactly as
+  // `normalizeOrderId` does, so an id the caller read aloud in a shape
+  // `LOOKS_LIKE_ORDER_ID` does not recognise still resolves. The branch above
+  // stays, because what it answers is not a match at all: an id-shaped
+  // utterance that names no order of THEIRS is a closed question ("not on this
+  // account"), which needs this store's `#W` prefix rule and this customer's
+  // list — neither of which `resolveOne` can know, and a fall-through to "the
+  // only order" would be the wrong order.
+  return resolveOne(candidates, spoken, {
+    label: "order",
+    describe: describeOrder,
+    code: (order) => order.order_id,
+  });
 });

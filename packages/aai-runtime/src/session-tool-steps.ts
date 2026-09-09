@@ -105,7 +105,10 @@ export function runToolStep(
       // Full result goes to the provider; the client `tool.completed` event is
       // capped by the wire schema (MAX_TOOL_RESULT_CHARS), so truncate it or the
       // client silently drops the whole message and the UI tool-call block stays
-      // "pending" forever.
+      // "pending" forever. The asymmetry is deliberate and it is the one thing
+      // about the cap an author gets wrong — `warnOversizedResult` in
+      // `tool-executor.ts` says so once per tool, since a result that arrives
+      // here over the cap is re-sent to the provider on every later turn.
       reply.pendingTools.push({ callId, result });
       emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(result) });
     } catch (err) {

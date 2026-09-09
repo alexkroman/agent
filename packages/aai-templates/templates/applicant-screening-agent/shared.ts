@@ -327,21 +327,21 @@ export function describeRanked(candidate: RankedCandidate): string {
  * How a caller names one of twelve applicants — the desk's own vocabulary,
  * which is the half {@link resolveOne} does not own.
  *
- * A name matches on WHOLE parts: every part of the candidate's name the
- * utterance contains scores one, so "Priya" and "Raman" each resolve and
- * "Priya Raman" outscores both — a substring test would let "an" match Raman,
- * Tanaka and Kowalski at once. Declared as a constant rather than inline
- * because the annotation is what types `candidate` and `text` here; the three
- * tools that resolve a candidate all reach it through the one function below.
+ * A name matches on WHOLE parts, which is `resolveOne`'s `match`: every part of
+ * the candidate's name the utterance also says scores one, so "Priya" and
+ * "Raman" each resolve and "Priya Raman" outscores both. The hand-written
+ * version this replaces argued for exactly that and did not deliver it — it
+ * tested each part as a SUBSTRING of the utterance with a two-character floor,
+ * which is the shape that lets "an" match Raman, Tanaka and Kowalski at once.
+ * It also split on whitespace, so `Liam O'Connor` matched only an utterance
+ * STT punctuated identically. Declared as a constant rather than inline
+ * because the annotation is what types `candidate` here; the three tools that
+ * resolve a candidate all reach it through the one function below.
  */
 const CANDIDATE_MATCH: ResolveOneOptions<RankedCandidate> = {
   label: "candidate",
   describe: describeRanked,
-  score: (candidate, text) =>
-    candidate.name
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((part) => part.length > 1 && text.includes(part)).length,
+  match: (candidate) => candidate.name,
 };
 
 /**

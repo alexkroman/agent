@@ -158,9 +158,19 @@ follow up on the conversation. Do not mention this instruction.`;
 export const DEFAULT_BUILTIN_TOOLS = [] as const satisfies readonly BuiltinTool[];
 
 /**
- * Cap (characters) on a tool result's JSON serialization as seen by the LLM
- * and the client; longer results are trimmed and end with
+ * Cap (characters) on a tool result's JSON serialization **as the CLIENT sees
+ * it** — the `tool.completed` frame, and the per-message `history` content —
+ * where a longer result is trimmed and ends with
  * `TOOL_RESULT_TRUNCATION_MARKER`.
+ *
+ * **It is not applied to the copy the model reads.** `capToolResult` runs on
+ * the wire frame only; the provider gets the tool's full string and keeps it in
+ * the conversation for the rest of the call. This doc said "as seen by the LLM
+ * and the client" for a long time, and the two published docs that repeated it
+ * (`ToolDef.execute`, the tools page) turned an unshaped `await res.json()`
+ * into advice. Capping the provider's copy too would silently truncate results
+ * an author may be relying on, so the framework WARNS instead — once per tool,
+ * naming the size (`warnOversizedResult`, `aai-runtime/src/tool-executor.ts`).
  */
 export const MAX_TOOL_RESULT_CHARS = 4000;
 

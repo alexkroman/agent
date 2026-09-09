@@ -36,6 +36,14 @@ export default agent({
 | `llm` | A model id, e.g. `"claude-sonnet-4-6"`; defaults to AssemblyAI's |
 | `requiredEnv` | Keys your tools read — a missing one is warned about at deploy |
 
+Both `voice` and `llm` autocomplete the ids this SDK release knows, and neither
+is checked by the compiler: each catalog belongs to the service, so an id added
+after your release still has to work. A misspelled one is refused when the
+session opens rather than when you build — a wrong voice leaves an agent that
+never speaks, and a wrong model id is a gateway error on the first turn.
+`aai build` and `aai dev` warn about a voice they do not recognise. See
+[Voices and models](/agent/more/voices-and-models/).
+
 Every other field is in the [SDK reference](/agent/reference/). You do not
 need any of them to build something good.
 
@@ -59,21 +67,34 @@ Write the prompt in one place. If `system-prompt.md` exists and `agent.ts`
 also sets `systemPrompt`, the build stops and tells you, rather than letting
 you edit a file that is being ignored.
 
-Declare neither and you get `DEFAULT_SYSTEM_PROMPT`, which is exported so you
-can read what you are replacing:
+## Your prompt is ADDED to the defaults, not swapping them out
+
+Whatever you write — in `system-prompt.md` or in `systemPrompt` — is appended
+to the voice rules the framework always sends: how to speak a number, how to
+read a transcript, one question per turn, today's date. Your rules come last,
+under a header saying they win where the two conflict.
+
+**So write only your own domain rules.** "You only ever discuss pizza." is a
+complete system prompt.
+
+Never interpolate `DEFAULT_SYSTEM_PROMPT` into it. That sends the ~10,000
+character voice core twice — once by the framework and once by you, under two
+precedence headers arguing with each other — and pays for it on every turn. A
+leading copy is dropped automatically and a warning is printed; a copy anywhere
+else is warned about and sent.
+
+The constant is exported to be READ, not composed: print it while tuning, or
+diff it across SDK versions.
 
 ```ts
-import { DEFAULT_SYSTEM_PROMPT, agent } from "@alexkroman1/aai";
+import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 
-export default agent({
-  name: "Pizza Line",
-  systemPrompt: `${DEFAULT_SYSTEM_PROMPT}\n\nYou only ever discuss pizza.`,
-});
+console.log(DEFAULT_SYSTEM_PROMPT); // what your rules are added to
 ```
 
-That is also the one case where you write the import: when part of the prompt
-is computed — a menu, a catalogue, today's date — import the file and build the
-field.
+When part of the prompt is computed — a menu, a catalogue — build that string
+and pass it as `systemPrompt`. It is still only your own rules. Today's date is
+already in every prompt, so it is not one of the reasons.
 
 ## Writing for a voice
 

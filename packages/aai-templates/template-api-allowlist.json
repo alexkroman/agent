@@ -1,6 +1,7 @@
 {
   "@alexkroman1/aai": [
     "ASSEMBLYAI_TTS_VOICES",
+    "AssemblyAIGatewayModel",
     "AssemblyAIS2sOptions",
     "AssemblyAITtsVoice",
     "BuiltinTool",
@@ -270,6 +271,8 @@
     "StubGatewayRoute",
     "StubGenerate",
     "StubGenerateReply",
+    "StubGenerateRoutes",
+    "StubGenerateScript",
     "StubReporter",
     "StubSpeech",
     "StubSpeechCall",

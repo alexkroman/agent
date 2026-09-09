@@ -62,10 +62,19 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
    */
   inputSchema?: P;
   /**
-   * Function that executes the tool and returns a result. The result is
-   * JSON-serialized for the LLM and the client, and capped at
-   * `MAX_TOOL_RESULT_CHARS` (4000) characters — longer results are
-   * trimmed and end with a `[truncated]` marker.
+   * Function that executes the tool and returns a result, JSON-serialized for
+   * the LLM and the client.
+   *
+   * **The model gets it WHOLE; only the client's copy is capped.**
+   * `MAX_TOOL_RESULT_CHARS` (4000) bounds the `tool.completed` frame — a longer
+   * result is trimmed there and ends with a `[truncated]` marker — and bounds
+   * nothing on the provider side, where the full string is appended to the
+   * conversation and re-sent on every later turn of the call. This doc used to
+   * say the cap applied to both, which made an unshaped `await res.json()` look
+   * free: it is the whole response, in the prompt, for the rest of the turn.
+   * Return the fields the model needs. A result over the cap is warned about
+   * once per tool (see `warnOversizedResult` in `aai-runtime`'s
+   * `tool-executor.ts`).
    */
   execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 };

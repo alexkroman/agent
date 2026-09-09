@@ -23,27 +23,19 @@ import {
 } from "../shared.ts";
 
 /**
- * Words too common in a subject line to be what the executive meant — "the
- * Northwind one" is about Northwind. Six of them, kept short deliberately: a
- * longer list starts deciding which real words do not count.
- */
-const FILLER = new Set(["the", "that", "one", "your", "with", "for"]);
-
-const wordsIn = (text: string) =>
-  (text.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((word) => !FILLER.has(word));
-
-/**
  * How the executive refers to an email when they are not reading an id: by who
- * sent it and what it is about. The SENDER and SUBJECT only — a body match on
- * "meeting" would tie half the inbox.
+ * sent it and what it is about.
+ *
+ * `match` is `resolveOne`'s own word overlap — the filler list and the
+ * three-character floor this template used to declare here are the SDK's now,
+ * along with the tokenizer; four templates had written four different versions
+ * of them. What stays is the domain part: the SENDER and SUBJECT only, because a
+ * body match on "meeting" would tie half the inbox.
  */
 const BY_WHAT_IT_IS: ResolveOneOptions<DeepReadonly<InboxEmail>> = {
   label: "email",
   describe: (email) => `${email.id}: "${email.subject}" from ${email.from}`,
-  score: (email, spoken) => {
-    const said = new Set(wordsIn(spoken));
-    return wordsIn(`${email.from} ${email.subject}`).filter((word) => said.has(word)).length;
-  },
+  match: (email) => `${email.from} ${email.subject}`,
 };
 
 /**

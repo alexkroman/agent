@@ -14,6 +14,7 @@
  */
 
 import type { AgentConfig } from "./_internal-types.ts";
+import { warnDuplicatedDefaultPrompt } from "./_prompt-duplicate-warning.ts";
 
 /**
  * Role framing and precedence. Always first.
@@ -441,13 +442,28 @@ export function buildSystemPrompt(
  * point the function is editing prose rather than dropping a duplicate prefix —
  * a much larger promise, for a shape the docs never suggested.
  *
+ * **Both cases now SAY so** ({@link warnDuplicatedDefault}). A silent repair is
+ * how the false premise survived so long: an author following the old advice
+ * saw a prompt that worked, and the one shape this function will not repair —
+ * the mid-string copy, which the old advice's own rationale (interpolate when
+ * part of the prompt is computed) produces — cost ~10,000 duplicated characters
+ * a turn with nothing anywhere reporting it. Detecting a contained copy is one
+ * `includes`; splicing it out is still out of scope.
+ *
  * `undefined` covers three cases that mean the same thing to the caller: no
  * prompt was given, the prompt IS the default (the check this replaces), and the
  * prompt was the default plus nothing but whitespace.
  */
 function stripDefaultPrefix(systemPrompt: string | undefined): string | undefined {
   if (systemPrompt === undefined || systemPrompt === "") return undefined;
-  const rest = systemPrompt.startsWith(DEFAULT_SYSTEM_PROMPT)
+  const leading = systemPrompt.startsWith(DEFAULT_SYSTEM_PROMPT);
+  if (leading || systemPrompt.includes(DEFAULT_SYSTEM_PROMPT)) {
+    warnDuplicatedDefaultPrompt(systemPrompt, {
+      leading,
+      defaultLength: DEFAULT_SYSTEM_PROMPT.length,
+    });
+  }
+  const rest = leading
     ? // Only the leading blank line the composed form puts between the two —
       // `trimStart` rather than a fixed `\n\n`, since an author may have used
       // one newline or three.

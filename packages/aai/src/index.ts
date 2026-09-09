@@ -88,6 +88,23 @@ export * from "./sdk/procedure.ts";
 // imports to reach it is what made the wrong mode the easy one.
 export * from "./sdk/providers/assemblyai-pipeline.ts";
 /**
+ * The gateway model ids `agent({ llm })` is written against — the same
+ * forgotten-export defect as `AssemblyAITtsVoice` below, one field over.
+ *
+ * `AgentParams.llm` accepts this union (a bare id routes through the AssemblyAI
+ * LLM Gateway on the key every agent already has), and until now it was typed
+ * bare `string` while the identical `assemblyAILlm({ model })` next door was
+ * typed against the union — so `llm: "claude-sonnet-4-6"`, which is how the
+ * docs write it, had no autocomplete and a typo reached the author as a gateway
+ * 400 at the first live session. Autocomplete, not a guard: the catalog is
+ * GENERATED from what `/v1/models` advertises, so a model shipped after this
+ * release still compiles and still runs.
+ *
+ * `@alexkroman1/aai/llm` keeps it too — that is where an explicit
+ * `assemblyAILlm({ model })` stage is written.
+ */
+export type { AssemblyAIGatewayModel } from "./sdk/providers/llm/shared/gateway-models.ts";
+/**
  * S2S is opt-in now that the pipeline is the default mode, so the opt-in
  * descriptor lives next to `agent()` too.
  *
