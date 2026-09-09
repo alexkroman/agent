@@ -5,7 +5,7 @@
  *
  * Split out of `session-core.ts`: this module owns the interpretation of
  * server→client frames (audio chunks + JSON {@link SessionEvent}s) and the
- * turn-boundary generation counters, while `session-core.ts` owns the state
+ * turn-boundary epoch, while `session-core.ts` owns the state
  * store and connection lifecycle. The handlers read and mutate session state
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
@@ -14,6 +14,7 @@ import { safeJsonParse } from "@alexkroman1/aai";
 import { DEFAULT_MAX_HISTORY, toArgsRecord } from "@alexkroman1/aai/internal";
 import { lenientParse, type SessionEvent, SessionEventSchema } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { AudioPath } from "./session-core-audio-state.ts";
 import type { SessionStateMachine } from "./session-core-state.ts";
 import { bargeIn, type ConnState, type SessionSnapshot, STOPPED } from "./session-core-types.ts";
 import type { SessionError } from "./types.ts";
@@ -23,11 +24,6 @@ const MAX_CUSTOM_EVENTS = 200;
 
 /** Cap on `messages` retained in the session snapshot; matches the host-side history cap. */
 const MAX_MESSAGES = DEFAULT_MAX_HISTORY;
-
-/** Cap on pre-init audio chunks buffered while `voiceIO` is initializing. ~100 chunks at
- *  typical S2S chunk sizes is well over a second of audio — far longer than init takes
- *  in practice, but bounded against pathological cases (mic-permission stalls). */
-const MAX_PREINIT_AUDIO_CHUNKS = 100;
 
 /**
  * Snapshot fields cleared when a session's conversation state is wiped —
@@ -66,8 +62,14 @@ type MessageHandlerDeps = {
   conn: ConnState;
   /** The session's state and error, as one fact — see `session-core-state.ts`. */
   agentState: SessionStateMachine;
-  /** Release the microphone/VoiceIO (the session core's `cleanupAudio`). */
-  cleanupAudio: () => void;
+  /**
+   * The microphone and the playback queue — see
+   * `session-core-audio-state.ts`. Frames say what happened (`enqueue`,
+   * `done`, `teardown`); whether the path is up, and what to do with audio
+   * that arrives before it is, are the machine's answers rather than this
+   * module's.
+   */
+  audio: AudioPath;
 };
 
 type MessageHandlers = {
@@ -81,14 +83,6 @@ type MessageHandlers = {
    * otherwise `undefined`.
    */
   handleMessage(data: unknown): SessionConfigMessage | undefined;
-  /**
-   * Wait for `io`'s playback queue to drain, then transition to `"listening"`
-   * — guarded by the same turn-boundary generation the live `audio.completed`
-   * path uses. `initAudioCapture` routes the pre-init greeting replay
-   * through this so a barge-in mid-greeting can't be stomped by the
-   * replayed completion resolving late.
-   */
-  settleWhenAudioDrained(io: NonNullable<ConnState["voiceIO"]>): void;
 };
 
 /**
@@ -101,7 +95,7 @@ type MessageHandlers = {
  * `ConnState.turn`).
  */
 export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers {
-  const { getSnapshot, updateState, conn, agentState, cleanupAudio } = deps;
+  const { getSnapshot, updateState, conn, agentState, audio } = deps;
 
   /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
   let customEventSeq = 0;
@@ -229,13 +223,12 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       // Fatal: the session is over — release the microphone too, or the
       // capture worklet keeps streaming into a socket the server may hold
       // open, with the mic indicator lit on a dead session.
-      cleanupAudio();
-      // Invalidate any audio init still awaiting getUserMedia (same reason
-      // the reconnect close-handler bumps the generation): the server may
-      // hold the socket open briefly after a fatal frame, and a late mic
-      // grant would otherwise pass the same-generation guard, assign a live
-      // VoiceIO, and flip the state back to "listening" over this error.
-      conn.generation.bump();
+      // Stops a bring-up still awaiting getUserMedia, too: the server may hold
+      // the socket open briefly after a fatal frame, and a late mic grant would
+      // otherwise come up live and flip the state back to "listening" over this
+      // error. The abandoned grant is released rather than leaked — see
+      // `session-core-audio-state.ts`.
+      audio.teardown();
       updateState({
         ...agentState.apply({ type: "FATAL", error }),
         ...STOPPED,
@@ -302,12 +295,12 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         toListening();
         break;
       case "reply.cancelled":
-        bargeIn(conn);
+        bargeIn(conn, audio);
         commitAgentTranscript();
         toListening({ userTranscript: null });
         break;
       case "session.reset": {
-        bargeIn(conn);
+        bargeIn(conn, audio);
         // A fatal session keeps its banner AND its conversation:
         // CLEARED_SESSION_STATE nulls `error`, and only a fresh handshake may
         // do that. `RESET` is the machine's half (listening + the banner
@@ -377,48 +370,21 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     // with no banner up. A declined event leaves the phase where it was, so
     // this stays one write whether it moved or not.
     updateState(agentState.apply({ type: "SPEAK" }));
-    if (conn.voiceIO) {
-      conn.voiceIO.enqueue(chunk);
-    } else if (conn.preInitAudio.length < MAX_PREINIT_AUDIO_CHUNKS) {
-      conn.preInitAudio.push(chunk);
-    }
-  }
-
-  /** See {@link MessageHandlers.settleWhenAudioDrained}. Captures
-   *  `conn.turn` so a completion (or failure) that lands after a turn
-   *  boundary — including an audio-path teardown — is discarded instead of
-   *  overwriting the newer turn's (or the dead session's) state. */
-  function settleWhenAudioDrained(io: NonNullable<ConnState["voiceIO"]>): void {
-    const gen = conn.turn.current();
-    void io
-      .done()
-      .then(() => {
-        if (!conn.turn.isCurrent(gen)) return;
-        updateState(agentState.apply({ type: "LISTEN" }));
-      })
-      .catch((err: unknown) => {
-        console.warn("Audio playback done failed:", err);
-      });
+    // Played now, or held until there is somewhere to play it: which of those
+    // happens is the audio path's position, not a null check here.
+    audio.enqueue(chunk);
   }
 
   /**
    * Signal that the server has finished sending audio for this turn.
-   * Waits for the audio queue to drain, then transitions state to `"listening"`.
-   * Uses `conn.turn` to discard stale completions from interrupted turns.
+   *
+   * A path that is up waits for its queue to drain before going back to
+   * listening; one still coming up records the done and answers optimistically,
+   * then replays it once the buffered greeting has somewhere to go. Both arms
+   * live in `session-core-audio-state.ts`.
    */
   function playAudioDone(): void {
-    const io = conn.voiceIO;
-    if (io) {
-      settleWhenAudioDrained(io);
-    } else {
-      // voiceIO isn't up yet (mic permission / worklet load still pending) and
-      // greeting chunks are buffering in preInitAudio. Record the done so
-      // initAudioCapture replays it after draining — otherwise a greeting
-      // shorter than the worklet's jitter buffer never starts playing. Still
-      // transition optimistically (no audio pipeline → nothing to wait for).
-      conn.preInitDone = true;
-      updateState(agentState.apply({ type: "LISTEN" }));
-    }
+    audio.done();
   }
 
   function handleMessage(data: unknown): SessionConfigMessage | undefined {
@@ -465,5 +431,5 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     handleEvent(msg);
   }
 
-  return { handleMessage, settleWhenAudioDrained };
+  return { handleMessage };
 }

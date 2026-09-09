@@ -1,34 +1,18 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 /**
- * Audio-path initialization for the voice session core.
+ * How the audio path is OPENED: the module load, the mic grant, the worklet
+ * registration, and the {@link VoiceIO} those three produce.
  *
- * Split out of `session-core.ts`: this module owns the async
- * mic-permission → worklet-registration → `VoiceIO` bring-up (and its
- * staleness/failure handling), while `session-core.ts` owns the state store
- * and connection lifecycle.
+ * WHEN one is opened, whether it is still wanted by the time it settles, and
+ * what happens to audio that arrives meanwhile all live in
+ * `session-core-audio-state.ts` — the same split `s2s-lifecycle.ts` and
+ * `pipeline-speech-edges.ts` draw in the runtime, and for the same reason:
+ * nothing here reads or writes session state, so it is callable from an
+ * invoked actor and testable without one.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
-import { WS_OPEN } from "@alexkroman1/aai/internal";
-import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
-import type { SessionStateMachine } from "./session-core-state.ts";
-import { type ConnState, type SessionSnapshot, STOPPED } from "./session-core-types.ts";
-
-/** Dependencies `initAudioCapture` needs from the owning session core. */
-export type AudioSetupDeps = {
-  sendJson: (msg: SessionCommand) => void;
-  sendAudio: (bytes: ArrayBuffer) => void;
-  updateState: (partial: Partial<SessionSnapshot>) => void;
-  /** The session's state and error, as one fact — see `session-core-state.ts`. */
-  agentState: SessionStateMachine;
-  /** Turn-boundary-guarded drain from the message handlers — replays a
-   *  buffered `audio_done` without stomping a barge-in's state. */
-  settleWhenAudioDrained: (io: VoiceIO) => void;
-  /** Release the mic/VoiceIO (used when the audio path dies non-fatally). */
-  cleanupAudio: () => void;
-};
 
 type AudioModules = [typeof import("./audio.ts"), string, string];
 
@@ -52,121 +36,59 @@ export function loadAudioModules(): Promise<AudioModules> {
   return audioModulesPromise;
 }
 
+/** The audio parameters the server's `config` frame carries. */
+export type AudioPathConfig = {
+  sampleRate: number;
+  ttsSampleRate: number;
+};
+
 /**
- * Initialize audio capture and playback after the server sends a ready config.
+ * What a live audio path reports back.
  *
- * Lifecycle: dynamically import audio modules -> request microphone access ->
- * register AudioWorklet processors -> create a `VoiceIO` instance -> send
- * `audio_ready` to the server -> transition state to `"listening"`.
- *
- * Uses the connection `generation` counter to detect if `connect()` was called
- * (or a reconnect happened) while awaiting async operations; if so, the stale
- * VoiceIO is closed immediately to prevent it from being assigned to a newer
- * connection.
- *
- * A failure is fatal: a voice session can't function without the mic, so it
- * sets the error state and ends the session.
+ * Both of the last two used to be guarded at the callback by
+ * `conn.generation.isCurrent(gen)`; they are plain reports now, and whether
+ * one still matters is the state machine's answer — see
+ * `session-core-audio-state.ts`.
  */
-export async function initAudioCapture(
-  conn: ConnState,
-  msg: { sampleRate: number; ttsSampleRate: number },
-  deps: AudioSetupDeps,
-): Promise<void> {
-  if (conn.audioSetupInFlight) return;
-  conn.audioSetupInFlight = true;
-  const gen = conn.generation.current();
-  const stale = (): boolean =>
-    !(conn.generation.isCurrent(gen) && conn.ws) || conn.ws.readyState !== WS_OPEN;
-  const reportAudioFailure = (message: string): void => {
-    // The dead audio path is released — a playback-worklet crash must not
-    // leave the healthy capture worklet streaming into the socket with the
-    // mic indicator lit.
-    deps.cleanupAudio();
-    // `FAILED`, not `FATAL`: the socket may well still be fine, so a later
-    // server frame is allowed to recover this banner. See
-    // `session-core-state.ts`.
-    deps.updateState({
-      ...deps.agentState.apply({ type: "FAILED", error: { code: "audio", message, fatal: false } }),
-      ...STOPPED,
-    });
-  };
-  try {
-    const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await loadAudioModules();
-    const io = await createVoiceIO({
-      sttSampleRate: msg.sampleRate,
-      ttsSampleRate: msg.ttsSampleRate,
-      captureWorkletSrc: captureWorklet,
-      playbackWorkletSrc: playbackWorklet,
-      onMicData: (pcm16: ArrayBuffer) => {
-        try {
-          deps.sendAudio(pcm16);
-        } catch {
-          console.debug("[aai-ui] sendAudio dropped: connection closed");
-        }
-      },
-      // Close the host's playback loop. Without this the host models playback
-      // open-loop — every forwarded chunk assumed to start playing on arrival
-      // at exactly 1.0x — so a buffer that has run ahead of the wall clock is
-      // invisible to it, and it opens the speaking-edge gate, retires the
-      // barge-in floor, and records words as heard while the caller is still
-      // listening to them. Dropped silently on a closed socket: the report is
-      // advisory (the host clamps upward only) and a missed one costs at most
-      // one interval of staleness, so it is not worth a log line per half
-      // second of teardown.
-      onPlaybackProgress: (bufferedMs: number) => {
-        if (!conn.generation.isCurrent(gen)) return;
-        try {
-          deps.sendJson({ type: "playback_progress", bufferedMs });
-        } catch {
-          /* connection closed — the host falls back to its own estimate */
-        }
-      },
-      // A worklet processor crash after setup: the audio path is dead even
-      // though the socket is fine, so surface it instead of staying in a
-      // healthy-looking listening/speaking state forever.
-      onError: (err: Error) => {
-        if (!conn.generation.isCurrent(gen)) return;
-        reportAudioFailure(err.message);
-      },
-    });
-    if (stale()) {
-      void io.close().catch(() => {
-        /* stale connection — nothing to report the failure to */
-      });
-      return;
-    }
-    // Defensive: if a previous VoiceIO somehow survived to this point, close
-    // it before overwriting the slot — an orphaned instance keeps its mic
-    // tracks live and pumps duplicate audio.
-    void conn.voiceIO?.close().catch(() => {
-      /* already closing */
-    });
-    conn.voiceIO = io;
-    if (conn.preInitAudio.length > 0) {
-      for (const chunk of conn.preInitAudio) {
-        io.enqueue(chunk);
-      }
-      conn.preInitAudio = [];
-    }
-    deps.sendJson({ type: "audio_ready" });
-    deps.updateState({ recording: true });
-    // If audio_done arrived while we were initializing, replay it now so the
-    // buffered greeting plays to completion (and state flips to "listening"
-    // only when playback actually drains) instead of the done being lost.
-    if (conn.preInitDone) {
-      conn.preInitDone = false;
-      deps.settleWhenAudioDrained(io);
-    } else {
-      deps.updateState(deps.agentState.apply({ type: "LISTEN" }));
-    }
-  } catch (err: unknown) {
-    if (stale()) return;
-    reportAudioFailure(`Microphone access failed: ${errorMessage(err)}`);
-  } finally {
-    // Only the init that still owns the flag may clear it: a stale
-    // generation's settle must not unlock a newer init that is in flight
-    // (which would let a second same-generation init start and orphan a
-    // live microphone).
-    if (conn.generation.isCurrent(gen)) conn.audioSetupInFlight = false;
-  }
+export type AudioPathCallbacks = {
+  /** Buffered PCM16 from the microphone, for the socket. */
+  onMicData(pcm16: ArrayBuffer): void;
+  /** Unplayed agent audio in the buffer, in ms — the host's closed playback loop. */
+  onProgress(bufferedMs: number): void;
+  /** A worklet processor died after setup: the audio path is gone. */
+  onFailure(message: string): void;
+};
+
+/**
+ * Open one audio path: load the worklets, ask for the microphone, and build
+ * the {@link VoiceIO} wired to `callbacks`.
+ *
+ * Rejects when any of the three refuses — a denied mic prompt being the
+ * ordinary case. The caller owns closing what this resolves: a path that comes
+ * up for a connection nobody wants any more is a live microphone, and no
+ * amount of cancellation upstream releases the device.
+ */
+export async function openAudioPath(
+  config: AudioPathConfig,
+  callbacks: AudioPathCallbacks,
+): Promise<VoiceIO> {
+  const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await loadAudioModules();
+  return createVoiceIO({
+    sttSampleRate: config.sampleRate,
+    ttsSampleRate: config.ttsSampleRate,
+    captureWorkletSrc: captureWorklet,
+    playbackWorkletSrc: playbackWorklet,
+    onMicData: callbacks.onMicData,
+    // Close the host's playback loop. Without this the host models playback
+    // open-loop — every forwarded chunk assumed to start playing on arrival
+    // at exactly 1.0x — so a buffer that has run ahead of the wall clock is
+    // invisible to it, and it opens the speaking-edge gate, retires the
+    // barge-in floor, and records words as heard while the caller is still
+    // listening to them.
+    onPlaybackProgress: callbacks.onProgress,
+    // A worklet processor crash after setup: the audio path is dead even
+    // though the socket is fine, so surface it instead of staying in a
+    // healthy-looking listening/speaking state forever.
+    onError: (err: Error) => callbacks.onFailure(err.message),
+  });
 }

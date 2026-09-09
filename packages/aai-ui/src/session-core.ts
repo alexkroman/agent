@@ -15,7 +15,9 @@
 
 import { createEpoch, WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
-import { initAudioCapture, loadAudioModules } from "./session-core-audio-setup.ts";
+import { createAudioEffects } from "./session-core-audio-effects.ts";
+import { loadAudioModules } from "./session-core-audio-setup.ts";
+import { createAudioPath } from "./session-core-audio-state.ts";
 import { closeFailure } from "./session-core-close.ts";
 import { createDialer } from "./session-core-dial.ts";
 import { createHandshakeGuard, HANDSHAKE_ERROR } from "./session-core-handshake.ts";
@@ -141,12 +143,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   const conn: ConnState = {
     ws: null,
     retiredByServer: false,
-    voiceIO: null,
-    audioSetupInFlight: false,
-    generation: createEpoch(),
     turn: createEpoch(),
-    preInitAudio: [],
-    preInitDone: false,
   };
   let connectionController: AbortController | null = null;
 
@@ -154,21 +151,6 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   // `session-core-dial.ts`, which owns the session id, the storage that carries
   // it across a page RELOAD, the handshake flag, and the broker latch.
   const dialer = createDialer(options);
-
-  function cleanupAudio(): void {
-    conn.audioSetupInFlight = false;
-    // Releasing the audio path ends whatever turn was playing: closing the
-    // AudioContext is what makes a pending `done()` resolve, so without this
-    // bump the drain's continuation lands on a session that has already gone
-    // disconnected/errored and stamps `state: "listening"` over it.
-    conn.turn.bump();
-    void conn.voiceIO?.close().catch(() => {
-      /* already tearing down — nothing to report the failure to */
-    });
-    conn.voiceIO = null;
-    conn.preInitAudio = [];
-    conn.preInitDone = false;
-  }
 
   function resetState(): void {
     updateState(CLEARED_SESSION_STATE);
@@ -199,24 +181,28 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     ws.send(bytes);
   }
 
+  // ─── Audio path ───────────────────────────────────────────────────────────
+
+  /**
+   * The microphone, the worklets and the buffer in front of them, as a
+   * statechart — see `session-core-audio-state.ts`, which carries what the
+   * in-flight latch, the generation epoch and the two pre-init fields on
+   * `ConnState` cost. `session-core-audio-effects.ts` is the other half: every
+   * frame and snapshot write the machine decides on but cannot make.
+   */
+  const audio = createAudioPath(
+    createAudioEffects({ conn, updateState, agentState, sendJson, sendAudio }),
+  );
+
   // ─── Message handling ─────────────────────────────────────────────────────
 
-  const { handleMessage, settleWhenAudioDrained } = createMessageHandlers({
+  const { handleMessage } = createMessageHandlers({
     getSnapshot,
     updateState,
     conn,
     agentState,
-    cleanupAudio,
+    audio,
   });
-
-  const audioDeps = {
-    sendJson,
-    sendAudio,
-    updateState,
-    agentState,
-    settleWhenAudioDrained,
-    cleanupAudio,
-  };
 
   // ─── Connection management ──────────────────────────────────────────────
 
@@ -224,7 +210,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   function teardownConnection(): void {
     connectionController?.abort();
     connectionController = null;
-    cleanupAudio();
+    audio.teardown();
     conn.ws?.close();
     conn.ws = null;
   }
@@ -243,8 +229,8 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   function onServerConfig(config: SessionConfigMessage): void {
     dialer.configured(config.sid);
     if (config.sid) options.onSessionId?.(config.sid);
-    // initAudioCapture handles its own failures (sets error state internally).
-    void initAudioCapture(conn, config, audioDeps);
+    // The audio path reports its own failures — see `session-core-audio-state.ts`.
+    audio.start(config);
   }
 
   function connect(opts?: { signal?: AbortSignal }): void {
@@ -257,13 +243,12 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     updateState(agentState.apply({ type: "CONNECT" }));
     // Prefetch the audio module + worklet sources so the chunk fetch overlaps
     // the WebSocket handshake instead of starting only when the server's
-    // `config` frame arrives. Failures are reported by initAudioCapture,
-    // which awaits the same memoized load.
+    // `config` frame arrives. Failures are reported by the audio path, whose
+    // bring-up awaits the same memoized load.
     void loadAudioModules().catch(() => {
-      /* surfaced by initAudioCapture */
+      /* surfaced by the audio path's bring-up */
     });
     teardownConnection();
-    conn.generation.bump();
     // A fresh connect is the user asking for a session again — clear the
     // previous one's idle retirement so THIS socket can auto-reconnect.
     conn.retiredByServer = false;
@@ -291,12 +276,11 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
       socket,
       signal: sig,
       onRetry: () => {
-        cleanupAudio();
-        conn.generation.bump();
+        audio.teardown();
         updateState({ ...agentState.apply({ type: "CONNECT" }), recording: false });
       },
       onExhausted: () => {
-        cleanupAudio();
+        audio.teardown();
         // Abort first so these listeners are detached and the close below
         // cannot re-enter them with a contradicting state.
         controller.abort();
@@ -346,7 +330,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
         // Whatever ends this socket, its handshake is no longer pending —
         // a survivor would fire against the NEXT attempt's open window.
         handshake.disarm();
-        cleanupAudio();
+        audio.teardown();
         // A FATAL error is the server saying the session cannot work, and it is
         // not retryable by construction — the same rule as `retiredByServer`,
         // read off the latch that already owns the question rather than a second
@@ -360,11 +344,10 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
           // partysocket retries with backoff. Keep the listeners attached
           // and the session logically alive: the URL provider re-derives the
           // resume URL, and the server restores the conversation itself.
-          // Invalidate any audio init still awaiting getUserMedia — the retry
-          // will start its own, and cleanupAudio just cleared the in-flight
-          // flag, so a survivor would otherwise pass the same-generation
-          // guard and double-run (two live mics, duplicate `audio_ready`).
-          conn.generation.bump();
+          // The `audio.teardown()` above already stopped a bring-up still
+          // awaiting getUserMedia, and released it if the grant lands late —
+          // that used to need a second mechanism (a generation bump) because
+          // clearing the in-flight flag could not stop the work it guarded.
           // A socket error here is part of the retry cycle, not terminal —
           // clear it so a later clean disconnect isn't misreported.
           socketErrored = false;
@@ -417,13 +400,13 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     // A client-side barge-in is a turn boundary exactly as the server's
     // `cancelled` frame is: the flush below settles the interrupted turn's
     // drain, whose continuation must not outlive the turn it belonged to.
-    bargeIn(conn);
+    bargeIn(conn, audio);
     updateState(agentState.apply({ type: "LISTEN" }));
     sendJson({ type: "cancel" });
   }
 
   function reset(): void {
-    bargeIn(conn);
+    bargeIn(conn, audio);
     if (openSocket()) {
       sendJson({ type: "reset" });
       return;
