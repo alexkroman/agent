@@ -100,7 +100,23 @@ The full set — `stubGateway`, guardrails, workflow contexts, upload fixtures,
 run snapshots — is in the [SDK reference](/agent/reference/) under
 `@alexkroman1/aai/testing`.
 
+## What a test cannot settle
+
+Everything here runs your code without a model. That settles what a tool does
+with the arguments it is given, and it says nothing about whether the agent
+reached for that tool, with the arguments the caller actually said. For that
+there is a second command:
+
+```sh
+aai eval          # agent.eval.test.ts
+```
+
+An eval drives a real session — your prompt, your tools, the real event
+stream, with only the microphone and the speaker faked — and asserts on what
+the agent did. See [Evals](/agent/build/evals/).
+
 ## Next
 
+- [Evals](/agent/build/evals/) — driving a real session, and what a green run means
 - [Run it locally](/agent/deploy/local/) — `aai dev`, then a plain Node process
 - [Publish](/agent/deploy/publish/) — ship it, and where your secrets go
