@@ -10,6 +10,7 @@ import {
   inFlightReplyScript,
   llmCalls,
   makeOpts,
+  spoken,
   useVirtualTime,
 } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
@@ -517,7 +518,7 @@ describe("PipelineTransport", () => {
 
         stt.last()?.fireFinal("what is my balance");
         await vi.waitFor(() => {
-          if ((tts.last()?.textChunks ?? []).join("").length <= 30) {
+          if (spoken(tts).length <= 30) {
             throw new Error("not enough text reached TTS yet");
           }
         });
@@ -525,7 +526,7 @@ describe("PipelineTransport", () => {
         // `heardMs` has actually played.
         speakFor(tts, clock, 4000, heardMs);
         const callsBefore = llm.calls.length;
-        const spoken = (tts.last()?.textChunks ?? []).join("");
+        const said = spoken(tts);
         stt.last()?.firePartial("stop");
         clock.advance(settleDelayMs);
 
@@ -535,7 +536,10 @@ describe("PipelineTransport", () => {
         });
         const prompt = JSON.stringify(llm.calls.at(-1)?.prompt);
         await t.stop();
-        return { spoken, recorded: prompt.match(/"text":"([^"]*) \[interrupted\]"/)?.[1] ?? "" };
+        return {
+          spoken: said,
+          recorded: prompt.match(/"text":"([^"]*) \[interrupted\]"/)?.[1] ?? "",
+        };
       }
 
       test("a partly heard reply records the prefix the caller heard, not the tail", async () => {

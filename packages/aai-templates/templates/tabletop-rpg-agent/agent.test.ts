@@ -1,6 +1,11 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { InferToolInput, RandomSource, SlotHolder } from "@alexkroman1/aai";
+import type {
+  AgentSessionContext,
+  InferToolInput,
+  RandomSource,
+  SlotHolder,
+} from "@alexkroman1/aai";
 import { createSeededRandom, isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
@@ -20,6 +25,7 @@ import {
   gameView,
   inCrisis,
   isGameOver,
+  liveSheet,
   MAX_LOG_ENTRIES,
   MAX_NPCS,
   MIN_MOMENTUM,
@@ -893,4 +899,122 @@ describe("the story flow", () => {
   // are gone with `ctx.db`. What they proved about the FLOW (a resumed position is
   // restored rather than recomputed) has no path left to exercise it: a session
   // is the whole life of a game now.
+});
+
+// ── The prompt carries the sheet ─────────────────────────────────────────────
+//
+// `systemPrompt` is a RESOLVER here: `system-prompt.md` supplies the rules and
+// `liveSheet` appends the campaign as it stands before every model request.
+// What that replaced was FLOW rule 1 — "call check_state as your FIRST tool
+// call every turn" — a model round trip in front of every turn of a live voice
+// game, enforced by nothing.
+
+describe("the campaign sheet the narrator is given", () => {
+  /** The def's resolver, which is what a request assembles the instructions from. */
+  const resolve = (ctx: AgentSessionContext): string => {
+    const prompt = agentDef.systemPrompt;
+    if (typeof prompt !== "function") throw new Error("systemPrompt is not a resolver");
+    return prompt(ctx);
+  };
+
+  test("it is a resolver, and the rules file survives into it", () => {
+    // The build discovers `system-prompt.md` and hands it to `withSystemPrompt`,
+    // which leaves a resolver alone — so the file reaches the model through the
+    // resolver's own import, and this is what proves it does.
+    expect(typeof agentDef.systemPrompt).toBe("function");
+    expect(resolve(createToolContext())).toContain("CORE MECHANIC - ACTION ROLL");
+  });
+
+  test("before setup it says so, rather than printing an empty sheet", () => {
+    const ctx = createToolContext();
+    const sheet = liveSheet(gameSlot.get(ctx));
+    expect(sheet).toContain("no character yet");
+    expect(sheet).toContain("setup_character");
+    // The tracks of a campaign that does not exist would read as a live sheet.
+    // (Asserted on the sheet, not the whole prompt: the rules file has its own
+    // MOMENTUM section and always will.)
+    expect(sheet).not.toContain("Momentum");
+    expect(resolve(ctx).endsWith(sheet)).toBe(true);
+  });
+
+  test("a roll's consequences are in the NEXT request's prompt, with no tool call in between", async () => {
+    const ctx = createToolContext();
+    seedPlaying(ctx);
+    // A MISS: the tracks and the momentum move, and the chaos factor with them.
+    const before = resolve(ctx);
+    expect(before).toContain(`Momentum ${DEFAULT_STATE.momentum}`);
+
+    expectToolOk(
+      await run(
+        "action_roll",
+        { move: "face_danger", stat: "iron", position: "desperate", effect: "standard" },
+        createToolContext({ ...ctx, random: dice(1, 1, 10, 10) }),
+      ),
+    );
+
+    const after = resolve(ctx);
+    const game = gameSlot.get(ctx);
+    expect(after).toContain(`Momentum ${game.momentum}`);
+    expect(after).toContain(`chaos factor ${game.chaosFactor}`);
+    expect(after).toContain(`Health ${game.health}/`);
+    // And the burn window, which is the one thing the narrator most often lost
+    // track of between turns.
+    expect(after).toContain("burn_momentum can still upgrade it");
+  });
+
+  test("the cast, the clocks and the act are all on it", () => {
+    const ctx = createToolContext();
+    const state = playingState();
+    state.playerName = "Kael";
+    state.currentLocation = "Ashfall Keep";
+    state.clocks[0]!.filled = 2;
+    state.storyBlueprint = {
+      structureType: "3act",
+      centralConflict: "c",
+      antagonistForce: "a",
+      thematicThread: "t",
+      currentAct: 2,
+      storyComplete: false,
+      acts: [
+        { phase: "setup", title: "One", goal: "g1", mood: "m1", transitionTrigger: "t1" },
+        { phase: "turn", title: "Two", goal: "g2", mood: "m2", transitionTrigger: "t2" },
+      ],
+    };
+    seedPlaying(ctx, state);
+
+    const sheet = resolve(ctx);
+    expect(sheet).toContain("Kael");
+    expect(sheet).toContain("Doom 2/4 (threat)");
+    expect(sheet).toContain("Mira (neutral, bond 0)");
+    expect(sheet).toContain("Act 2 of 2 (turn)");
+  });
+
+  test("crisis and game over are DERIVED, so an emptied track cannot read as survivable", () => {
+    const ctx = createToolContext();
+    const hurt = playingState();
+    hurt.spirit = 0;
+    seedPlaying(ctx, hurt);
+    expect(liveSheet(gameSlot.get(ctx))).toContain("CRISIS");
+    expect(inCrisis(gameSlot.get(ctx))).toBe(true);
+
+    const dead = playingState();
+    dead.health = 0;
+    dead.spirit = 0;
+    seedPlaying(ctx, dead);
+    expect(liveSheet(gameSlot.get(ctx))).toContain("GAME OVER");
+    expect(isGameOver(gameSlot.get(ctx))).toBe(true);
+  });
+
+  test("each session is told its OWN campaign", () => {
+    // The resolver reads through `ctx.slots`, so it is per session for the same
+    // reason every tool is.
+    const one = createToolContext();
+    const two = createToolContext();
+    const named = playingState();
+    named.playerName = "Kael";
+    seedPlaying(one, named);
+
+    expect(resolve(one)).toContain("Kael");
+    expect(resolve(two)).toContain("no character yet");
+  });
 });

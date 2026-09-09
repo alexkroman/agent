@@ -18,12 +18,14 @@ import {
 } from "@alexkroman1/aai/internal";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
-import { makeAgent } from "./_test-utils.ts";
+import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
+import { makeAgent, makeUsageMeter } from "./_test-utils.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import { createSessionEmitter, type SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state-store.ts";
+import type { UsageMeter } from "./usage-meter.ts";
 
 /** The counter these cases bump — declared once, so both sinks project the same slot. */
 const countSlot = sessionSlot("count", () => ({ count: 0 }));
@@ -79,6 +81,7 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
     workflows: undefined,
     logger,
     emitters,
+    meters: createOwnedMap<string, UsageMeter>(),
     stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
   });
   return { executeTool, emitters, release, parked };
@@ -293,5 +296,56 @@ describe("a builtin shadowed by a tools/ file", () => {
     const { release } = parkedToolRuntime({ builtinTools: ["web_search"] }, logger);
     release();
     expect(lines).toEqual([]);
+  });
+});
+
+/**
+ * The meter a tool call spends against is resolved BY SESSION ID, the same way
+ * its emitter is — and this is the wiring that had no test.
+ *
+ * `ctx.generate` and `ctx.delegate` are dispatched by a per-RUNTIME executor
+ * and spend on a per-SESSION budget, so the lookup is the whole mechanism: get
+ * it wrong and the meter stays at zero while the model really runs, which is
+ * exactly the failure `usageLimits` shipped with.
+ */
+describe("self-hosted tool surface: a tool's model call finds its session's meter", () => {
+  test("ctx.generate from a tool moves the meter claimed under that session id", async () => {
+    const model = createScriptedOneShotModel([{ text: "a summary" }, { text: "another summary" }]);
+    const fakes = registerFakeProviders({ llm: model });
+    if (!fakes.llm) throw new Error("fake llm descriptor missing");
+    const meters = createOwnedMap<string, UsageMeter>();
+    const { meter: usage } = makeUsageMeter();
+    meters.claim(SID, usage);
+
+    const agent = makeAgent({
+      tools: {
+        summarize: {
+          description: "summarize",
+          execute: async (_args: unknown, ctx: ToolContext) =>
+            (await ctx.generate({ prompt: "summarize" })).text,
+        },
+      },
+    });
+    const { executeTool } = setupTools({
+      agent,
+      options: { agent, env: {} },
+      llm: fakes.llm,
+      env: fakes.env,
+      providerEnv: fakes.env,
+      workflows: undefined,
+      logger: consoleLogger,
+      emitters: createOwnedMap<string, SessionEmitter>(),
+      meters,
+      stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
+    });
+
+    expect(await executeTool("summarize", {}, SID, [])).toBe("a summary");
+    expect(usage.snapshot().totalTokens).toBe(2);
+
+    // A call on ANOTHER session does not spend this one's budget — the lookup
+    // is by id, not "whatever meter the runtime last saw".
+    expect(await executeTool("summarize", {}, "session-2", [])).toBe("another summary");
+    expect(usage.snapshot().totalTokens).toBe(2);
+    fakes.unregister();
   });
 });

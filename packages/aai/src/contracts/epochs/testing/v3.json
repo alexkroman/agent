@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "testing",
   "epoch": 3,
-  "sha256": "8cd845b90108055bd7f4ff651741a53162b5b769e299b66e06f4ba1eff74ddbd",
+  "sha256": "97742f27885f1df8f6d6ca0d3296a9d90fb43c987b5df109fdd620b990062467",
   "exports": [
     "ProjectFiles",
     "RecordedSleep",

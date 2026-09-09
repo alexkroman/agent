@@ -51,18 +51,23 @@ Four decisions worth not relitigating:
 
 ### The agent's system prompt is RESOLVED here, per turn
 
-`AgentDef.systemPrompt` is `string | (() => string)` (`SystemPromptOption` in
-the SDK), so `stream()` passes it through `resolveSystemPrompt` when it
-assembles the request — the same reader the three transports use, and for the
-same reason. This path had been reading the field BARE, which was correct while
-the field was a string and became a silent defect the moment it was not:
-`streamText` takes whatever `system` is and stringifies a function, so the model
-would have been instructed with `text-agent.ts`'s own source, fluently and with
-nothing failing.
+`AgentDef.systemPrompt` is `string | ((ctx: AgentSessionContext) => string)`
+(`AgentSystemPrompt`, `sdk/agent-instructions.ts`), so `stream()` splits it with
+`staticSystemPrompt` / `systemPromptResolver` and calls a resolver with this
+agent's session context when it assembles the request. This path had been
+reading the field BARE, which was correct while the field was a string and
+became a silent defect the moment it was not: `streamText` takes whatever
+`system` is and stringifies a function, so the model would have been instructed
+with `text-agent.ts`'s own source, fluently and with nothing failing.
+
+**Once per TURN here, not once per step.** This door assembles one request and
+lets the AI SDK step it, where a voice session re-resolves at each
+`startLlmStream`. A resolver that moves between two steps of the same reply
+therefore does not move here.
 
 A turn's own `TextTurnOptions.systemPrompt` stays a plain `string` and still
-wins. It is written for one turn, so there is nothing left for a thunk to answer
-later — and a caller that wants one calls the function itself.
+wins. It is written for one turn, so there is nothing left for a resolver to
+answer later — and a caller that wants one calls the function itself.
 
 ### A text agent's turns are the SAME event stream, narrowed
 

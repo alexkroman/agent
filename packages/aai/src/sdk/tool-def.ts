@@ -15,6 +15,33 @@
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { ToolContext } from "./tool-context.ts";
+import type { ToolFailure } from "./utils.ts";
+
+/**
+ * What a tool does with an exception its `execute` threw — the shape of
+ * {@link ToolDef.onError}.
+ *
+ * **Returning decides what the MODEL sees; throwing decides that it sees
+ * nothing.** A returned {@link ToolFailure} or `string` is handed to the model
+ * as that call's result, exactly as if `execute` had returned it — so the model
+ * can apologise, ask again, or try another route. Throwing (including
+ * re-throwing `err` unchanged) declares the failure UNRECOVERABLE: the runtime
+ * reports it and the tool call ends in a rejection rather than a result, so the
+ * model is never invited to retry a tool that cannot work.
+ *
+ * It is called with the same {@link ToolContext} `execute` was given, so a
+ * handler can read `ctx.env` to tell a missing credential from a bad one, or
+ * `ctx.signal.aborted` to tell a real fault from a cancelled turn.
+ *
+ * **Synchronous, deliberately.** It runs after the call's deadline has already
+ * passed on the timeout path, so there is no budget left to await anything in;
+ * the runtime refuses a thenable return and treats it as fatal, the same rule
+ * `slot.updateTool` applies to a mutator body. Do the awaiting inside
+ * `execute`, where the deadline still applies.
+ *
+ * @public
+ */
+export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 /**
  * Definition of a custom tool that the agent can invoke.
@@ -77,6 +104,58 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
    * `tool-executor.ts`).
    */
   execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+  /**
+   * What to do when `execute` throws — and, by omission, the SDK's default.
+   *
+   * **Without it, every exception becomes an ordinary tool result.** The
+   * runtime catches whatever `execute` threw and hands `errorMessage(err)` back
+   * to the model as that call's result, which is the same channel a deliberate
+   * {@link toolFailure} uses — so a stale credential, a `TypeError` in the
+   * author's own code and "no such order" are one thing as far as the model can
+   * tell, and it will keep calling a permanently broken tool until the reply's
+   * `maxSteps` budget runs out. That default is unchanged and stays the default:
+   * for the failures a model really can recover from it is the right answer, and
+   * every tool written before this field existed depends on it.
+   *
+   * **With it, the author classifies.** Return a {@link ToolFailure} or a string
+   * and that is what the model gets — the same outcome as the default, with a
+   * sentence the author chose. Throw — `throw err` re-raises the original — and
+   * the failure is FATAL to the call: the runtime logs it, reports it as a
+   * session error (`code: "tool"`), and the tool call REJECTS instead of
+   * answering, so nothing hands the model something to retry against.
+   *
+   * It sees only a THROW. A `ToolFailure` that `execute` RETURNED never reaches
+   * it: that is already the author saying "expected, let the model recover", and
+   * routing it through here would make the two channels one again.
+   *
+   * @example Fatal on a missing credential, recoverable on a bad lookup
+   * ```ts
+   * import { tool, toolFailure } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * class MissingKeyError extends Error {}
+   *
+   * export default tool({
+   *   description: "Look up an order",
+   *   inputSchema: z.object({ id: z.string() }),
+   *   execute: async ({ id }, ctx) => {
+   *     if (!ctx.env.ORDERS_API_KEY) throw new MissingKeyError("ORDERS_API_KEY is unset");
+   *     const res = await fetch(`https://api.example.com/orders/${id}`, {
+   *       headers: { authorization: `Bearer ${ctx.env.ORDERS_API_KEY}` },
+   *     });
+   *     if (res.status === 404) return toolFailure(`No order ${id}.`);
+   *     return await res.json();
+   *   },
+   *   // A credential the deploy is missing cannot be fixed by asking the model
+   *   // to try again; a flaky upstream can.
+   *   onError: (err) => {
+   *     if (err instanceof MissingKeyError) throw err;
+   *     return toolFailure("The orders service is unavailable right now.");
+   *   },
+   * });
+   * ```
+   */
+  onError?: ToolErrorHandler;
 };
 
 /**
@@ -111,13 +190,55 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["e
 export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
 
 /**
- * How the LLM should select tools during a turn. Mirrors the Vercel AI
- * SDK's `toolChoice`.
+ * How the LLM should select tools. Mirrors the Vercel AI SDK's `toolChoice`.
  *
- * - `"auto"` — The model decides whether to call a tool (default).
- * - `"required"` — The model must call at least one tool each step.
- * - `"none"` — The model may not call tools this session.
- * - `{ type: "tool", toolName }` — The model must call the named tool.
+ * **It is resolved PER REQUEST, and one value can arrive from four different
+ * scopes**, which is why none of the arms below can be described as a property
+ * of "the session". Every LLM request carries whichever of these is set, each
+ * one overriding the ones above it:
+ *
+ * 1. **The agent** — `agent({ toolChoice })` is the standing default for every
+ *    request the agent makes, and what an unset field falls back to. A
+ *    DEMANDING value is put back to `"auto"` after the reply's first step
+ *    unless `resetToolChoice: false` says otherwise — see the `"required"`
+ *    arm below.
+ * 2. **The turn** — in text mode a caller may override it for one turn
+ *    (`stream({ toolChoice })`). A voice session has no such caller.
+ * 3. **The dialog state** — a `dialog()` state may carry `toolChoice`, read
+ *    deepest-active-state-first, so a state that must not act overrides the
+ *    two above for exactly as long as the conversation is in it, one step at a
+ *    time.
+ * 4. **The step** — the runtime forces `"none"` on the reply's LAST step
+ *    (`forceFinalAnswer`), so a reply that ran out of tool-calling budget still
+ *    ends in an answer instead of silence. That override wins over all three,
+ *    including an agent-level `"required"`, which would otherwise demand a tool
+ *    call on the one step where tools are switched off.
+ *
+ * So the same value means "for every reply", "for this turn", "while in this
+ * state" or "on this one step" depending on where it was written. The arms:
+ *
+ * - `"auto"` — the model decides whether to call a tool on this request
+ *   (the default, and what an unset field resolves to).
+ * - `"required"` — the model must call at least one tool on this request.
+ *   **By default it lasts ONE step, not the whole reply.** Each step is its own
+ *   request, so a demand left standing re-obliges the model to call a tool after
+ *   it already has, and again after that, until the reply has spent its whole
+ *   `maxSteps` budget and the forced final step rescues it — bounded, but the
+ *   caller waits through every round trip it had no use for. What `"required"`
+ *   almost always means is "start by calling something", which is exactly one
+ *   step, so `agent({ resetToolChoice })` — `true` unless you set it, the same
+ *   default as OpenAI's Agents SDK ships as `reset_tool_choice` — puts the
+ *   choice back to `"auto"` from the second step on. `resetToolChoice: false`
+ *   is how an agent that really does want a tool call on every step says so,
+ *   and it is the only way to get that behaviour. The reset applies to the
+ *   demand resolved from scope 1 or 2; a dialog state's `toolChoice` (scope 3)
+ *   is re-read on every step and holds for as long as the conversation is in
+ *   that state, and scope 4 still wins over both.
+ * - `"none"` — the model may not call a tool on this request. It is not a
+ *   session-wide switch, and cannot be one: a later request in the same session
+ *   is resolved again from whatever scope applies to it.
+ * - `{ type: "tool", toolName }` — the model must call the named tool on this
+ *   request.
  *
  * @public
  */

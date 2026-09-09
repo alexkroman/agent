@@ -2,8 +2,7 @@
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import { sessionSlot } from "./session-slot.ts";
-import type { SystemPromptOption } from "./system-prompt-option.ts";
-import type { AgentDef, Message, ToolContext, ToolDef } from "./types.ts";
+import type { AgentDef, AgentSystemPrompt, Message, ToolContext, ToolDef } from "./types.ts";
 
 const baseAgent = {
   systemPrompt: "Be helpful.",
@@ -107,8 +106,10 @@ describe("AgentDef type inference", () => {
 
   test("required fields are present", () => {
     const agent: AgentDef = { ...baseAgent, name: "defaults", tools: {} };
-    // A string OR the thunk resolved per turn — see `system-prompt-option.ts`.
-    expectTypeOf(agent.systemPrompt).toEqualTypeOf<SystemPromptOption>();
+    // A union now: the text, or a resolver called per request. `toBeString`
+    // would pass again the day the resolver arm was dropped, which is the
+    // regression worth catching here.
+    expectTypeOf(agent.systemPrompt).toEqualTypeOf<AgentSystemPrompt>();
     expectTypeOf(agent.greeting).toBeString();
     expectTypeOf(agent.tools).toBeObject();
   });

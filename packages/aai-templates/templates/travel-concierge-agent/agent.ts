@@ -29,6 +29,10 @@ import { gateFlow, tripProjection } from "./shared.ts";
  */
 export default agent({
   name: "Swiss Air Concierge",
+  // What the desk does, for whoever is reading a list of agents. It names the
+  // four specialists as the four things a caller can ask for, which is how a
+  // caller would say it and how the dialog stack is organised.
+  description: "Changes flights, hotels, car rentals and excursions for a booked traveller",
   // The stack, the ticket and the itinerary exist before the first tool call,
   // so a resumed connection has something to project.
   // One projection replaces a `ctx.send` in each of eleven tools — and is the

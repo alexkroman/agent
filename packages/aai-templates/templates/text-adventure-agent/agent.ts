@@ -1,8 +1,16 @@
 import { agent } from "@alexkroman1/aai";
-import { gameStatus, recordTurn } from "./shared.ts";
+import { gameSlot, gameStatus, recordTurn, statusBlock } from "./shared.ts";
+// The prose half of the prompt. `system-prompt.md` beside this file is
+// discovered by the build either way — importing it is what lets the resolver
+// below compose against it, and `withSystemPrompt` then leaves the resolver
+// exactly as written.
+import prompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Cavern Adventure",
+  // The listing line — a registry row, `aai list`, the studio's picker. Never
+  // the model: the world and the voice rules are `system-prompt.md`'s.
+  description: "Runs a spoken text adventure through an underground cave system",
   // The world exists before the first command, so a resumed connection has
   // something to project rather than an empty state object.
   // A narrator wants a narrative voice; everything else stays on the
@@ -20,6 +28,27 @@ export default agent({
    * one the narrator was told. `syncState` sends the game's own.
    */
   syncState: gameStatus,
+  /**
+   * The world's rules, plus the board as it stands RIGHT NOW.
+   *
+   * A `systemPrompt` resolver is called once per model request, so the four
+   * facts of the status line and the player's inventory are in front of the
+   * narrator on every turn — which is what makes drift impossible rather than
+   * discouraged. The prompt used to carry a section demanding a
+   * `game_state_get` call before answering any question about the board, and
+   * "never from memory": advice that cost a round trip when it was obeyed and a
+   * desynced world when it was not. Four scalars and a list are cheaper to
+   * state than to ask for.
+   *
+   * `ctx` is an `AgentSessionContext` — the session id, the env and the slots,
+   * which is everything `gameSlot.get` needs and deliberately nothing that
+   * could speak. Synchronous by contract: the request is being assembled.
+   *
+   * `game_state_get` is NOT retired by this. It answers with the flags and the
+   * recent commands too, and it is still the tool for "check the game state".
+   * What went is the compulsory read-back.
+   */
+  systemPrompt: (ctx) => `${prompt}\n\n${statusBlock(gameSlot.get(ctx))}`,
   // The opening scene here must agree with DEFAULT_GAME_STATE.currentRoom
   // (shared.ts) and the world map in system-prompt.md.
   greeting:

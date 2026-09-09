@@ -1,10 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ToolDef } from "@alexkroman1/aai";
-import { describe, expect, test, vi } from "vitest";
+import { toolFailure } from "@alexkroman1/aai/utils";
+import { TimeoutError } from "p-timeout";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { makeTool, sleep } from "./_test-utils.ts";
-import { executeToolCall } from "./tool-executor.ts";
+import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
+import { makeLogger, makeTool, makeUsageMeter, malformedOnError, sleep } from "./_test-utils.ts";
+import { createGenerateFn } from "./generate.ts";
+import { executeToolCall, type FatalToolError, isFatalToolError } from "./tool-executor.ts";
 
 function run(
   name: string,
@@ -250,6 +254,248 @@ describe("executeToolCall — reporting a THROW", () => {
   });
 });
 
+describe("executeToolCall — onError classifies a THROW", () => {
+  // The gap this closes: without `onError` every exception reaches the model as
+  // an ordinary tool result, so a bad credential, a TypeError and a deliberate
+  // toolFailure() are one thing as far as the model can tell — and it retries a
+  // permanently broken tool until the reply's maxSteps budget burns.
+
+  test("no onError: a throw is still the model's result, unchanged", async () => {
+    const onUncaught = vi.fn();
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("boom");
+      },
+    });
+    const result = await run("t", {}, tool, { onUncaught });
+    expect(JSON.parse(result)).toEqual({ error: "boom" });
+    expect(onUncaught).toHaveBeenCalledWith('Tool "t" threw: boom', { fatal: false });
+  });
+
+  test("no onError: a RETURNED ToolFailure is unchanged too", async () => {
+    const onUncaught = vi.fn();
+    const tool = makeTool({ execute: () => toolFailure("No order A1.") });
+    const result = await run("t", {}, tool, { onUncaught });
+    expect(JSON.parse(result)).toEqual({ error: "No order A1." });
+    expect(onUncaught).not.toHaveBeenCalled();
+  });
+
+  test("a RETURNED ToolFailure never reaches onError — that channel is already the author's", async () => {
+    const onError = vi.fn(() => toolFailure("handled"));
+    const tool = makeTool({ execute: () => toolFailure("No order A1."), onError });
+    expect(JSON.parse(await run("t", {}, tool))).toEqual({ error: "No order A1." });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test("onError returning a ToolFailure: that is what the model gets, and it is not reported", async () => {
+    const onUncaught = vi.fn();
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("ECONNRESET");
+      },
+      onError: () => toolFailure("The orders service is unavailable right now."),
+    });
+    const result = await run("lookup_order", {}, tool, { onUncaught });
+    expect(JSON.parse(result)).toEqual({ error: "The orders service is unavailable right now." });
+    // Handled is handled: the same silence a RETURNED failure gets.
+    expect(onUncaught).not.toHaveBeenCalled();
+  });
+
+  test("onError returning a string: sent verbatim, like any string result", async () => {
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("nope");
+      },
+      onError: () => "Nothing found; ask the caller for the order number.",
+    });
+    expect(await run("lookup_order", {}, tool)).toBe(
+      "Nothing found; ask the caller for the order number.",
+    );
+  });
+
+  test("onError is handed the error and the same ctx execute ran with", async () => {
+    const seen: { err?: unknown; env?: unknown; sessionId?: unknown } = {};
+    const cause = new Error("ORDERS_API_KEY is unset");
+    const tool = makeTool({
+      execute: () => {
+        throw cause;
+      },
+      onError: (err, ctx) => {
+        seen.err = err;
+        seen.env = ctx.env;
+        seen.sessionId = ctx.sessionId;
+        return toolFailure("handled");
+      },
+    });
+    await run("lookup_order", {}, tool, { env: { ORDERS_API: "x" }, sessionId: "s1" });
+    expect(seen.err).toBe(cause);
+    expect(seen.env).toEqual({ ORDERS_API: "x" });
+    expect(seen.sessionId).toBe("s1");
+  });
+
+  test("onError RETHROWING is fatal: the call rejects, so the model gets nothing to retry against", async () => {
+    const onUncaught = vi.fn();
+    const cause = new Error("ORDERS_API_KEY is unset");
+    const tool = makeTool({
+      execute: () => {
+        throw cause;
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
+    const failure = await run("lookup_order", {}, tool, { onUncaught }).then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+    expect(isFatalToolError(failure)).toBe(true);
+    expect((failure as FatalToolError).toolName).toBe("lookup_order");
+    expect((failure as FatalToolError).cause).toBe(cause);
+    expect((failure as Error).message).toBe(
+      'Tool "lookup_order" failed fatally: ORDERS_API_KEY is unset',
+    );
+    // The rejection is invisible to the model by design, so the report is the
+    // only trace — and it says which of the two throws this was.
+    expect(onUncaught).toHaveBeenCalledWith(
+      'Tool "lookup_order" failed fatally: ORDERS_API_KEY is unset',
+      { fatal: true },
+    );
+  });
+
+  test("a fatal call logs at error level, not warn", async () => {
+    const logger = makeLogger();
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("no key");
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
+    await expect(run("t", {}, tool, { logger })).rejects.toThrow(/failed fatally/);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("a handler that throws for its OWN reason is fatal too", async () => {
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("upstream");
+      },
+      onError: () => {
+        throw new TypeError("cannot read properties of undefined");
+      },
+    });
+    const failure = await run("t", {}, tool).then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+    expect(isFatalToolError(failure)).toBe(true);
+    expect((failure as FatalToolError).cause).toBeInstanceOf(TypeError);
+  });
+
+  test("onError returning undefined falls through to the default", async () => {
+    const onUncaught = vi.fn();
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("boom");
+      },
+      // A handler written to observe and nothing else. Stringifying its
+      // `undefined` would hand the model the string "null" as the result.
+      onError: malformedOnError(() => undefined),
+    });
+    const result = await run("t", {}, tool, { onUncaught });
+    expect(JSON.parse(result)).toEqual({ error: "boom" });
+    expect(onUncaught).toHaveBeenCalledWith('Tool "t" threw: boom', { fatal: false });
+  });
+
+  test("an async onError is refused, fatally — the promise would serialize as {}", async () => {
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("boom");
+      },
+      onError: malformedOnError(() => Promise.resolve(toolFailure("late"))),
+    });
+    const failure = await run("t", {}, tool).then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+    expect(isFatalToolError(failure)).toBe(true);
+    expect((failure as Error).message).toContain("returned a promise");
+  });
+
+  test("a CANCELLED call never reaches onError — an interruption is not a tool fault", async () => {
+    const onError = vi.fn(() => {
+      throw new Error("would be fatal");
+    });
+    const controller = new AbortController();
+    let started = false;
+    const tool = makeTool({
+      execute: () => {
+        started = true;
+        return new Promise<never>(() => {
+          /* never resolves */
+        });
+      },
+      onError,
+    });
+    const promise = run("hang", {}, tool, { signal: controller.signal, onError });
+    await vi.waitFor(() => expect(started).toBe(true));
+    controller.abort();
+    // Settles with the ordinary cancellation failure rather than rejecting.
+    expect(JSON.parse(await promise)).toMatchObject({ error: expect.stringMatching(/abort/i) });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test("a DEADLINE never reaches onError either — a timeout is not a tool fault", async () => {
+    // The fourth cancellation source, and the only one the per-call controller
+    // cannot report: `pTimeout` rejects the deadline without aborting anything,
+    // so `cancelled` read from the signal alone was `false` for a timeout. An
+    // `onError` written as "rethrow anything I do not recognise" — the natural
+    // way to write one, and what `topic-briefing-agent` ships — then turned a
+    // transient timeout into a `FatalToolError` that killed the turn.
+    const onError = vi.fn((err: unknown) => {
+      throw err;
+    });
+    vi.useFakeTimers();
+    try {
+      const tool = makeTool({
+        execute: () =>
+          new Promise<never>(() => {
+            /* never resolves */
+          }),
+        onError,
+      });
+      const promise = run("slow", {}, tool);
+      await vi.advanceTimersByTimeAsync(30_000);
+      // The ordinary timeout failure the model has always read, not a rejection.
+      expect(await promise).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a slow tool's OWN TimeoutError still reaches onError — the deadline is matched by IDENTITY", async () => {
+    // The other half of the rule above. A tool that runs its own `pTimeout`
+    // inside `execute` throws the same CLASS the executor's deadline does, and
+    // that one is the tool's own failure — classified, not swallowed. An
+    // `instanceof TimeoutError` test here would have taken it for the executor's
+    // deadline and silently skipped the handler.
+    const onError = vi.fn(() => toolFailure("The orders service is slow; try again."));
+    const tool = makeTool({
+      execute: async () => {
+        await sleep(5);
+        throw new TimeoutError("inner orders lookup timed out after 5ms");
+      },
+      onError,
+    });
+    const result = await run("lookup_order", {}, tool, { timeoutMs: 1000 });
+    expect(JSON.parse(result)).toEqual({ error: "The orders service is slow; try again." });
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("executeToolCall — cancellation", () => {
   test("ctx.signal follows the caller's signal", async () => {
     // ctx.signal is a per-call signal (so a timeout can fire it too), chained
@@ -378,5 +624,72 @@ describe("executeToolCall — a result larger than MAX_TOOL_RESULT_CHARS", () =>
     const logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() };
     await run("small_result", {}, makeTool({ execute: () => big(3999) }), { logger });
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * What a tool's OWN model calls cost, and who is told.
+ *
+ * `ctx.generate` is a real model request on the session's bill, and the meter
+ * shipped fed by the conversational loop alone — so an agent that reasons
+ * inside a tool (a planner re-planning, a grader scoring) reported none of it
+ * on `usage.updated` and could blow a `usageLimits.totalTokens` budget without
+ * the budget noticing. These are the specs whose absence let that ship: they
+ * drive the REAL `createGenerateFn` through the real forwarder, because a spec
+ * asserting on the meter directly would have passed against the broken wiring.
+ */
+describe("ctx.generate spends on the session's meter", () => {
+  let unregister: (() => void) | undefined;
+  afterEach(() => {
+    unregister?.();
+    unregister = undefined;
+  });
+
+  /** The real host `ctx.generate` over a fake model that reports 2 tokens a call. */
+  function generating() {
+    const model = createScriptedOneShotModel([{ text: "first" }, { text: "second" }]);
+    const fakes = registerFakeProviders({ llm: model });
+    unregister = fakes.unregister;
+    if (!fakes.llm) throw new Error("fake llm descriptor missing");
+    return { model, generate: createGenerateFn({ llm: fakes.llm, env: fakes.env }) };
+  }
+
+  /** A tool whose whole body is one generation — the shape the defect was found in. */
+  const asking = makeTool({
+    execute: async (_args, ctx) => (await ctx.generate({ prompt: "summarize" })).text,
+  });
+
+  test("one generation from a tool body moves the meter", async () => {
+    const { generate } = generating();
+    const { meter: usage, updates } = makeUsageMeter();
+
+    expect(await run("ask", {}, asking, { generate, usage })).toBe("first");
+
+    expect(usage.snapshot()).toEqual({ inputTokens: 1, outputTokens: 1, totalTokens: 2, steps: 1 });
+    // Announced, not merely accumulated: `usage.updated` is how an author sees
+    // a tool's spend at all, and it is emitted off this callback.
+    expect(updates).toHaveLength(1);
+  });
+
+  test("a generation past the cap is REFUSED, and the model is never dialled", async () => {
+    const { model, generate } = generating();
+    const { meter: usage } = makeUsageMeter({ totalTokens: 2 });
+
+    // The first call reaches the cap; the rule is that the request in flight
+    // finishes and the NEXT one is refused, so this one answers.
+    expect(await run("ask", {}, asking, { generate, usage })).toBe("first");
+    expect(usage.exhausted()).toBeDefined();
+
+    const refused = await run("ask", {}, asking, { generate, usage });
+    // The tool did not handle the rejection, so the executor serialized it —
+    // which is the shape the model reads and can say something true about.
+    expect(JSON.parse(refused).error).toContain("usageLimits.totalTokens");
+    // The check is BEFORE the request, so the refusal costs nothing.
+    expect(model.calls).toHaveLength(1);
+  });
+
+  test("no meter means uncounted, never refused — a sessionless caller still generates", async () => {
+    const { generate } = generating();
+    expect(await run("ask", {}, asking, { generate })).toBe("first");
   });
 });

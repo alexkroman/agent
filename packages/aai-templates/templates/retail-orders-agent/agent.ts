@@ -4,6 +4,27 @@ import { callFlow, gateFor, record, retailSlot } from "./store.ts";
 
 export default agent({
   name: "Retail Support",
+  description: "Looks up orders, returns and store credit for an authenticated retail caller",
+
+  /**
+   * A per-session ceiling on what the model may spend.
+   *
+   * This is the template where a budget earns its place: authentication, an
+   * order lookup and a staged change are three tool chains deep, the store's
+   * projection is large, and a caller who keeps re-asking can run a session for
+   * as long as they like. `maxSteps` bounds a REPLY and says nothing about a
+   * call — one step that sends a 100k-token context and one that sends a
+   * greeting are the same step.
+   *
+   * Tokens rather than money: a price is per-model and per-contract, and the
+   * SDK carries no table of them (see `UsageLimits`). The number here is a
+   * generous ceiling for a support call, not a target — pick yours from what
+   * `usage.updated` reports on a real conversation.
+   *
+   * Reaching it ends the session. An agent that wants a softer landing watches
+   * `usage.updated` through `agent({ events })` and says something first.
+   */
+  usageLimits: { totalTokens: 200_000 },
 
   // No provider spread: pipeline mode is the default, and an unset stage is
   // filled from the all-AssemblyAI pipeline at parse time. Only `stt` is

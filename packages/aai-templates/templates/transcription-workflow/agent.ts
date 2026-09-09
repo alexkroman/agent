@@ -178,6 +178,9 @@ export const transcribeBatch = workflow({
 
 export default workflowApp({
   name: "Transcription Desk",
+  // The listing line. It names all THREE routes because choosing between them
+  // is the product.
+  description: "Transcribes a recording three ways: chunked, streaming while it uploads, or batch",
   workflows: { transcribe, transcribeStream, transcribeBatch },
   // Checked at deploy time, so a missing key is a warning naming it rather than
   // a run that fails on its second step.

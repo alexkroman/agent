@@ -3,12 +3,24 @@
  * Conversation memory for a pipeline session.
  *
  * Keeps two parallel views of the dialogue:
- * - `conversation` — text-only {@link Message}s, used for the client protocol,
- *   session resume, and tool context (all of which expect plain text).
+ * - `conversation` — the TOOL-FACING view: what `ctx.messages` hands a tool.
+ *   Transcripts as `user`/`assistant` text, plus a `tool` message per settled
+ *   tool call ({@link PipelineHistory.pushToolResult}) so a tool can read what
+ *   an earlier one answered. Text only: an image part, a reasoning block and a
+ *   provider's replay metadata have no string form a tool body would read.
  * - `llm` — Vercel AI SDK {@link ModelMessage}s, the source of truth for what
  *   the model actually sees. Each turn appends `streamText`'s per-step response
  *   messages (the assistant tool-call message AND its `tool` result), so tool
  *   calls and their results carry into the next turn — not just spoken text.
+ *
+ * **The two are not each other's shape, and a `tool` message may only ever
+ * cross from the first to the second by way of a real step message.** In the
+ * LLM view a `tool` message is one half of a PAIR — the assistant message
+ * carrying the `tool-call` part is the other — and both providers reject a
+ * result with no call to answer (that is the whole of {@link capLlm}). The
+ * conversation view has no pairs, so {@link PipelineHistory.seed} drops the
+ * `tool` messages a resume brings when it maps them across; they are already
+ * inside the step messages the turn itself pushed.
  *
  * Both views are capped at `DEFAULT_MAX_HISTORY` (oldest trimmed) — and each
  * push records what its own cap evicted, so `dropTrailingUser` can undo the
@@ -23,12 +35,41 @@ import { toModelMessage } from "./pipeline-stream.ts";
 
 /** Conversation memory handle returned by {@link createPipelineHistory}. */
 export interface PipelineHistory {
-  /** Text-only history for the client protocol, resume, and tool context. */
+  /** The tool-facing history — what `ctx.messages` reads. */
   readonly conversation: Message[];
   /** ModelMessage history — what the LLM sees (includes tool calls/results). */
   readonly llm: ModelMessage[];
-  /** Append text message(s) to the conversation (client/resume) view. */
+  /** Append text message(s) to the conversation (tool-facing) view. */
   pushConversation(...msgs: Message[]): void;
+  /**
+   * Append one settled tool call's result to the conversation view ONLY.
+   *
+   * Separate from {@link pushConversation} on three counts, each of which is
+   * the reason it is not simply that method with a different role:
+   *
+   * - **It never touches `llm`.** A `tool` message there needs the assistant
+   *   `tool-call` message that answers it, and the turn pushes both together
+   *   as step messages; a second copy from here would be an orphan result of
+   *   exactly the kind {@link capLlm} exists to remove.
+   * - **It does not bump {@link revision}.** That epoch gates adopting a
+   *   preemptive speculation, and what a speculation's request is assembled
+   *   from is `llm` — untouched here, so the request in flight is still the
+   *   one the real turn would build. Bumping would discard a legitimate
+   *   speculation every time a tool finished, which is precisely when one is
+   *   in flight (a barge-in during a tool chain).
+   * - **It records no {@link PushUndo}.** A rollback pops a trailing USER
+   *   message, and a tool result is never one; the slot is CLEARED instead,
+   *   under the same "an intervening push spends the slot" rule the pop
+   *   follows. A synthetic prompt whose turn produced a tool result therefore
+   *   stays in this view — correct, because such a turn left a trace, which is
+   *   the same test `persistBargeIn` applies before asking for the rollback.
+   *
+   * A result written by a turn a barge-in then abandons STAYS, for the reason
+   * {@link persistInterruptedTurn} keeps that turn's step messages: the call
+   * really ran and really answered, and a later tool told otherwise would ask
+   * for it again. A `reset` clears it with everything else.
+   */
+  pushToolResult(msg: Message): void;
   /** Append ModelMessage(s) — e.g. a turn's response messages — to the LLM view. */
   pushLlm(...msgs: ModelMessage[]): void;
   /**
@@ -60,7 +101,13 @@ export interface PipelineHistory {
    * unit test picks.
    */
   dropTrailingUser(content: string): void;
-  /** Seed both views from resent text history (e.g. reconnect/resume). */
+  /**
+   * Seed both views from resent history (e.g. reconnect/resume).
+   *
+   * `tool` messages reach the conversation view and NOT the LLM one — see the
+   * module doc: a replayed result has no assistant `tool-call` message to
+   * answer, and both providers reject that outright.
+   */
   seed(msgs: readonly Message[]): void;
   /** Clear both views. */
   reset(): void;
@@ -86,6 +133,19 @@ export interface PipelineHistory {
 function cap<T>(arr: T[]): T[] {
   if (arr.length <= DEFAULT_MAX_HISTORY) return [];
   return arr.splice(0, arr.length - DEFAULT_MAX_HISTORY);
+}
+
+/**
+ * Whether a conversation message may be mapped into the LLM view.
+ *
+ * Only `tool` messages are refused, and the module doc says why: the LLM view
+ * holds tool-call PAIRS and this half arrives without the other one.
+ * `toModelMessage` would render it as an assistant message — the model would be
+ * told it had SAID a tool's serialized output — which is the wrong repair for
+ * the right reason.
+ */
+function isLlmSeedable(m: Message): boolean {
+  return m.role !== "tool";
 }
 
 /**
@@ -273,7 +333,9 @@ type PushUndo<T> = { readonly pushed: T; readonly evicted: readonly T[] } | null
 /** Create a {@link PipelineHistory}, optionally seeded from prior text history. */
 export function createPipelineHistory(seed?: readonly Message[]): PipelineHistory {
   const conversation: Message[] = seed ? [...seed] : [];
-  const llm: ModelMessage[] = conversation.map(toModelMessage);
+  // Same subtraction `seed()` below makes, for the same reason — a `tool`
+  // message has no half to pair with here.
+  const llm: ModelMessage[] = conversation.filter(isLlmSeedable).map(toModelMessage);
   // The existing primitive rather than a hand-rolled counter — see
   // `PipelineHistory.revision`.
   const revision = createEpoch();
@@ -315,6 +377,12 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
       conversationUndo = pushed ? { pushed, evicted } : null;
       revision.bump();
     },
+    pushToolResult(msg: Message): void {
+      conversation.push(msg);
+      cap(conversation);
+      // Spent, not recorded — see the member's doc for all three halves.
+      conversationUndo = null;
+    },
     pushLlm(...msgs: ModelMessage[]): void {
       // The message RECORDED is the cleaned one that reached the array, not the
       // argument: `withoutReasoning` may rewrite it, or drop it entirely, and an
@@ -343,7 +411,7 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
       if (msgs.length === 0) return;
       conversation.push(...msgs);
       cap(conversation);
-      llm.push(...msgs.map(toModelMessage));
+      llm.push(...msgs.filter(isLlmSeedable).map(toModelMessage));
       capLlm(llm);
       // A reconnect seed is never rolled back — nothing pushes a synthetic
       // prompt through this door — and its eviction is therefore not owed back

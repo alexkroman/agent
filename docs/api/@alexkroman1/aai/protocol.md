@@ -409,6 +409,26 @@ event(event:
   type: "state.updated";
 }
   | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -586,6 +606,26 @@ event the stream had already recorded under another.
   \};
   `state`: `unknown`;
   `type`: `"state.updated"`;
+\}
+  \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
 \}
   \| \{
   `messages`: \{
@@ -1132,6 +1172,27 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
   }, z.core.$strip>;
   state: z.ZodUnknown;
   type: z.ZodLiteral<"state.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  inputTokens: z.ZodNumber;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  outputTokens: z.ZodNumber;
+  steps: z.ZodNumber;
+  totalTokens: z.ZodNumber;
+  type: z.ZodLiteral<"usage.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  direction: z.ZodEnum<{
+     input: "input";
+     output: "output";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  replacement: z.ZodString;
+  type: z.ZodLiteral<"guardrail.blocked">;
 }, z.core.$strip>, z.ZodObject<{
   messages: z.ZodArray<z.ZodObject<{
      content: z.ZodString;

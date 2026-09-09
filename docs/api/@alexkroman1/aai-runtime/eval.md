@@ -383,6 +383,26 @@ function customEventsIn(events: readonly (
   type: "state.updated";
 }
   | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -563,6 +583,26 @@ readonly (
   \};
   `state`: `unknown`;
   `type`: `"state.updated"`;
+\}
+  \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
 \}
   \| \{
   `messages`: \{
@@ -858,6 +898,26 @@ function errorsIn(events: readonly (
   type: "state.updated";
 }
   | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -1061,6 +1121,26 @@ readonly (
   \};
   `state`: `unknown`;
   `type`: `"state.updated"`;
+\}
+  \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
 \}
   \| \{
   `messages`: \{
@@ -1522,6 +1602,26 @@ function lastStateIn<T>(events: readonly (
   type: "state.updated";
 }
   | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -1714,6 +1814,26 @@ readonly (
   `type`: `"state.updated"`;
 \}
   \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
+\}
+  \| \{
   `messages`: \{
      `content`: `string`;
      `role`: `"assistant"` \| `"user"`;
@@ -1891,6 +2011,26 @@ function lastStateIn(events: readonly (
   };
   state: unknown;
   type: "state.updated";
+}
+  | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
 }
   | {
   messages: {
@@ -2077,6 +2217,26 @@ readonly (
   \};
   `state`: `unknown`;
   `type`: `"state.updated"`;
+\}
+  \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
 \}
   \| \{
   `messages`: \{
@@ -2521,6 +2681,26 @@ function saidIn(events: readonly (
   type: "state.updated";
 }
   | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -2700,6 +2880,26 @@ readonly (
   `type`: `"state.updated"`;
 \}
   \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
+\}
+  \| \{
   `messages`: \{
      `content`: `string`;
      `role`: `"assistant"` \| `"user"`;
@@ -2877,6 +3077,26 @@ function statesIn<T>(events: readonly (
   };
   state: unknown;
   type: "state.updated";
+}
+  | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
 }
   | {
   messages: {
@@ -3075,6 +3295,26 @@ readonly (
   `type`: `"state.updated"`;
 \}
   \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
+\}
+  \| \{
   `messages`: \{
      `content`: `string`;
      `role`: `"assistant"` \| `"user"`;
@@ -3252,6 +3492,26 @@ function statesIn(events: readonly (
   };
   state: unknown;
   type: "state.updated";
+}
+  | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
 }
   | {
   messages: {
@@ -3442,6 +3702,26 @@ readonly (
   \};
   `state`: `unknown`;
   `type`: `"state.updated"`;
+\}
+  \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
 \}
   \| \{
   `messages`: \{
@@ -3725,6 +4005,26 @@ function toolCallsInEvents(events: readonly (
   type: "state.updated";
 }
   | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -3901,6 +4201,26 @@ readonly (
   \};
   `state`: `unknown`;
   `type`: `"state.updated"`;
+\}
+  \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
 \}
   \| \{
   `messages`: \{
@@ -4157,6 +4477,43 @@ readonly [`EvalTurn`](#evalturn)[]
 #### Returns
 
 [`EvalTurn`](#evalturn)
+
+## Interfaces
+
+### StepUsage
+
+What one completed step reported.
+
+Every field optional and possibly `undefined`, because that is what the
+vendor type says and what real providers do: a gateway that omits
+`inputTokens` on a cached turn is common, and `NaN`/`undefined` arriving into
+a running total is how a budget silently stops working.
+
+Public rather than `@internal`, unlike its two neighbours here: it is the
+parameter of `HostGenerateFn`'s `onUsage`, which `/eval` publishes, so an
+eval supplying a `generate` double has to be able to write this type.
+`UsageMeter` and `UsageSnapshot` stay internal and are reachable only from
+`@alexkroman1/aai-runtime/internal`.
+
+#### Properties
+
+##### inputTokens?
+
+```ts
+optional inputTokens?: number;
+```
+
+##### outputTokens?
+
+```ts
+optional outputTokens?: number;
+```
+
+##### totalTokens?
+
+```ts
+optional totalTokens?: number;
+```
 
 ## Type Aliases
 
@@ -4424,6 +4781,29 @@ type EvalSession = {
      type: z.ZodLiteral<"state.updated">;
    }
      | {
+     inputTokens: z.ZodNumber;
+     meta: z.ZodObject<{
+        at: z.ZodNumber;
+        id: z.ZodString;
+     }, z.core.$strip>;
+     outputTokens: z.ZodNumber;
+     steps: z.ZodNumber;
+     totalTokens: z.ZodNumber;
+     type: z.ZodLiteral<"usage.updated">;
+   }
+     | {
+     direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+     }>;
+     meta: z.ZodObject<{
+        at: z.ZodNumber;
+        id: z.ZodString;
+     }, z.core.$strip>;
+     replacement: z.ZodString;
+     type: z.ZodLiteral<"guardrail.blocked">;
+   }
+     | {
      messages: z.ZodArray<z.ZodObject<{
         content: z.ZodString;
         role: z.ZodEnum<{
@@ -4626,6 +5006,29 @@ events(): readonly (
   type: z.ZodLiteral<"state.updated">;
 }
   | {
+  inputTokens: z.ZodNumber;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  outputTokens: z.ZodNumber;
+  steps: z.ZodNumber;
+  totalTokens: z.ZodNumber;
+  type: z.ZodLiteral<"usage.updated">;
+}
+  | {
+  direction: z.ZodEnum<{
+     input: "input";
+     output: "output";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  replacement: z.ZodString;
+  type: z.ZodLiteral<"guardrail.blocked">;
+}
+  | {
   messages: z.ZodArray<z.ZodObject<{
      content: z.ZodString;
      role: z.ZodEnum<{
@@ -4808,6 +5211,29 @@ readonly (
   \}, `z.core.$strip`\>;
   `state`: `z.ZodUnknown`;
   `type`: `z.ZodLiteral`\<`"state.updated"`\>;
+\}
+  \| \{
+  `inputTokens`: `z.ZodNumber`;
+  `meta`: `z.ZodObject`\<\{
+     `at`: `z.ZodNumber`;
+     `id`: `z.ZodString`;
+  \}, `z.core.$strip`\>;
+  `outputTokens`: `z.ZodNumber`;
+  `steps`: `z.ZodNumber`;
+  `totalTokens`: `z.ZodNumber`;
+  `type`: `z.ZodLiteral`\<`"usage.updated"`\>;
+\}
+  \| \{
+  `direction`: `z.ZodEnum`\<\{
+     `input`: `"input"`;
+     `output`: `"output"`;
+  \}\>;
+  `meta`: `z.ZodObject`\<\{
+     `at`: `z.ZodNumber`;
+     `id`: `z.ZodString`;
+  \}, `z.core.$strip`\>;
+  `replacement`: `z.ZodString`;
+  `type`: `z.ZodLiteral`\<`"guardrail.blocked"`\>;
 \}
   \| \{
   `messages`: `z.ZodArray`\<`z.ZodObject`\<\{
@@ -5285,6 +5711,29 @@ type EvalTextAgent = {
      type: z.ZodLiteral<"state.updated">;
    }
      | {
+     inputTokens: z.ZodNumber;
+     meta: z.ZodObject<{
+        at: z.ZodNumber;
+        id: z.ZodString;
+     }, z.core.$strip>;
+     outputTokens: z.ZodNumber;
+     steps: z.ZodNumber;
+     totalTokens: z.ZodNumber;
+     type: z.ZodLiteral<"usage.updated">;
+   }
+     | {
+     direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+     }>;
+     meta: z.ZodObject<{
+        at: z.ZodNumber;
+        id: z.ZodString;
+     }, z.core.$strip>;
+     replacement: z.ZodString;
+     type: z.ZodLiteral<"guardrail.blocked">;
+   }
+     | {
      messages: z.ZodArray<z.ZodObject<{
         content: z.ZodString;
         role: z.ZodEnum<{
@@ -5494,6 +5943,29 @@ events(): readonly (
   type: z.ZodLiteral<"state.updated">;
 }
   | {
+  inputTokens: z.ZodNumber;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  outputTokens: z.ZodNumber;
+  steps: z.ZodNumber;
+  totalTokens: z.ZodNumber;
+  type: z.ZodLiteral<"usage.updated">;
+}
+  | {
+  direction: z.ZodEnum<{
+     input: "input";
+     output: "output";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  replacement: z.ZodString;
+  type: z.ZodLiteral<"guardrail.blocked">;
+}
+  | {
   messages: z.ZodArray<z.ZodObject<{
      content: z.ZodString;
      role: z.ZodEnum<{
@@ -5676,6 +6148,29 @@ readonly (
   \}, `z.core.$strip`\>;
   `state`: `z.ZodUnknown`;
   `type`: `z.ZodLiteral`\<`"state.updated"`\>;
+\}
+  \| \{
+  `inputTokens`: `z.ZodNumber`;
+  `meta`: `z.ZodObject`\<\{
+     `at`: `z.ZodNumber`;
+     `id`: `z.ZodString`;
+  \}, `z.core.$strip`\>;
+  `outputTokens`: `z.ZodNumber`;
+  `steps`: `z.ZodNumber`;
+  `totalTokens`: `z.ZodNumber`;
+  `type`: `z.ZodLiteral`\<`"usage.updated"`\>;
+\}
+  \| \{
+  `direction`: `z.ZodEnum`\<\{
+     `input`: `"input"`;
+     `output`: `"output"`;
+  \}\>;
+  `meta`: `z.ZodObject`\<\{
+     `at`: `z.ZodNumber`;
+     `id`: `z.ZodString`;
+  \}, `z.core.$strip`\>;
+  `replacement`: `z.ZodString`;
+  `type`: `z.ZodLiteral`\<`"guardrail.blocked"`\>;
 \}
   \| \{
   `messages`: `z.ZodArray`\<`z.ZodObject`\<\{
@@ -6637,6 +7132,7 @@ Overrides the default per-run timeout for every run of this app.
 
 ```ts
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
+  onUsage?: (usage: StepUsage) => void;
   signal?: AbortSignal;
 }) => Promise<GenerateResult>;
 ```
@@ -6659,6 +7155,23 @@ published a field of this type.
 [`GenerateOptions`](../aai/index.md#generateoptions)
 
 ##### callOptions?
+
+###### onUsage?
+
+(`usage`: [`StepUsage`](#stepusage)) => `void`
+
+Fold this call's reported usage into the issuing session's meter.
+
+A `ctx.generate` from a tool body is a real model request on the
+session's bill, and until this existed it was invisible to both
+`usage.updated` and `usageLimits` — a planner that reasons in a tool
+spent most of what it spent here. Passed per CALL rather than built into
+the function because the meter is per SESSION and this function is per
+runtime; the tool executor is what knows which session is asking.
+
+Called once per completed step (there is one, unless a future option
+makes this a loop), with what the provider reported — see
+`usage-meter.ts`.
 
 ###### signal?
 

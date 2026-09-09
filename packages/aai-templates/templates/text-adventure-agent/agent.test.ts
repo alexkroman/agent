@@ -1,6 +1,11 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import { createSeededRandom, type RandomSource, type SessionEventContext } from "@alexkroman1/aai";
+import {
+  type AgentSessionContext,
+  createSeededRandom,
+  type RandomSource,
+  type SessionEventContext,
+} from "@alexkroman1/aai";
 import { createToolContext, parseToolInput, toolOf, toolRunner } from "@alexkroman1/aai/testing";
 import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
@@ -13,6 +18,7 @@ import {
   REPORTED_HISTORY,
   rankFor,
   SCAVENGER_FLAG,
+  statusBlock,
   statusLine,
 } from "./shared.ts";
 
@@ -371,5 +377,77 @@ describe("the game is per context", () => {
     const ctx = createToolContext();
     await run("game_state_take", { value: "lantern" }, ctx);
     expect(DEFAULT_GAME_STATE.inventory).toEqual([]);
+  });
+});
+
+// ─── The prompt carries the board ────────────────────────────────────────────
+//
+// `systemPrompt` is a RESOLVER here, not a string: `system-prompt.md` supplies
+// the world and the voice rules, and `statusBlock` appends the live board to
+// them before every model request. What that replaced was six lines of prompt
+// ordering the narrator to call `game_state_get` before answering any question
+// about where the player is or what they hold — advice, enforced by nothing,
+// and a model round trip on every turn it was obeyed on.
+
+describe("the prompt the narrator is actually given", () => {
+  /** The def's resolver, which is what a request assembles the instructions from. */
+  const resolve = (ctx: AgentSessionContext): string => {
+    const prompt = agentDef.systemPrompt;
+    if (typeof prompt !== "function") throw new Error("systemPrompt is not a resolver");
+    return prompt(ctx);
+  };
+
+  test("it is a resolver, and the file's prose survives into it", () => {
+    // The build discovers `system-prompt.md` and hands it to `withSystemPrompt`,
+    // which leaves a resolver exactly as written — so the file has to reach the
+    // model through the resolver's own import, and this is what proves it does.
+    expect(typeof agentDef.systemPrompt).toBe("function");
+    expect(resolve(createToolContext())).toContain("CAVERN ADVENTURE");
+  });
+
+  test("a fresh session is told the opening board, before any tool has run", () => {
+    const opening = resolve(createToolContext());
+    expect(opening).toContain(`- Location: ${DEFAULT_GAME_STATE.currentRoom}`);
+    expect(opening).toContain("- Score: 0 (Beginner)");
+    expect(opening).toContain("- Turns taken: 0");
+    expect(opening).toContain("- Carrying: nothing");
+  });
+
+  test("every mutation is in the NEXT request's prompt, with no tool call in between", async () => {
+    const ctx = createToolContext();
+    await run("game_state_take", { value: "lantern" }, ctx);
+    await run("game_state_move", { value: "Echoing Hall" }, ctx);
+    await run("game_state_score", { value: 30 }, ctx);
+    say("go down to the hall", ctx);
+
+    const now = resolve(ctx);
+    expect(now).toContain("- Location: Echoing Hall");
+    expect(now).toContain("- Score: 30 (Amateur Adventurer)");
+    expect(now).toContain("- Turns taken: 1");
+    expect(now).toContain("- Carrying: lantern");
+  });
+
+  test("the block is built from the same status line the CRT and the read tool get", async () => {
+    const ctx = createToolContext();
+    await run("game_state_move", { value: "Crystal Grotto" }, ctx);
+    await run("game_state_score", { value: 60 }, ctx);
+
+    // One helper, three readers: `syncState`, `game_state_get`, and the prompt.
+    // A fourth rendering of these four numbers is a fourth thing to drift.
+    expect(resolve(ctx).endsWith(statusBlock(gameSlot.get(ctx)))).toBe(true);
+    const bar = statusLine(gameSlot.get(ctx));
+    expect(resolve(ctx)).toContain(`- Score: ${bar.score} (${bar.rank})`);
+  });
+
+  test("each session is told its OWN board", async () => {
+    // The resolver reads through `ctx.slots`, so it is per session for the same
+    // reason every tool is — a resolver that closed over a module-level game
+    // would put one player's inventory in another player's prompt.
+    const one = createToolContext();
+    const two = createToolContext();
+    await run("game_state_take", { value: "jade idol" }, one);
+
+    expect(resolve(one)).toContain("- Carrying: jade idol");
+    expect(resolve(two)).toContain("- Carrying: nothing");
   });
 });

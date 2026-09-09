@@ -8,6 +8,26 @@
 
 // ---- Tool / agent shapes ----------------------------------------------------
 
+/**
+ * A conversation message, as `ToolContext.messages` carries them.
+ *
+ * A MIRROR of the SDK's `Message` (`@alexkroman1/aai`, `sdk/message.ts`), for
+ * this file's stated reason: zero workspace imports, because it is bundled into
+ * the self-contained guest artifact.
+ *
+ * **Deliberately NARROWER than the SDK's, and the narrowing is the point.** The
+ * SDK's `"tool"` arm carries `toolName` and `toolCallId`, which say WHICH call a
+ * result belongs to. Only the trial runner builds a {@link ToolContext} here and
+ * it hands every tool an EMPTY `messages` (`trial.ts`) — a trial is one shot
+ * against no conversation — so the two fields could never be populated, and
+ * mirroring them would publish a promise this side cannot keep. A real session's
+ * `ctx.messages` comes from the embedded SDK runtime and carries the full shape.
+ *
+ * `harness-types.test.ts` is what keeps the two honest: it pins the role union
+ * and the EXACT set of fields the SDK has that this copy omits, so a third field
+ * — or a fourth role — fails there rather than diverging quietly. That file is a
+ * test, never bundled, so it may import the SDK this module may not.
+ */
 export type Message = {
   role: "user" | "assistant" | "tool";
   content: string;

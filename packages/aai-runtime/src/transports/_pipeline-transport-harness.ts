@@ -17,6 +17,19 @@ export type SttFake = ReturnType<typeof createFakeSttProvider>;
 export type TtsFake = ReturnType<typeof createFakeTtsProvider>;
 
 /**
+ * Everything the TTS provider was asked to say on the LAST session, joined.
+ *
+ * The spec vocabulary for "what the caller heard", which is the only thing most
+ * of these cases are really about — a guardrail that fires after the sentence
+ * has been synthesized has not prevented anything, so a boolean would pass
+ * against an implementation that speaks first. It was written out longhand at
+ * seven sites across four files before it was a function.
+ */
+export function spoken(tts: { last: () => { textChunks: string[] } | undefined }): string {
+  return (tts.last()?.textChunks ?? []).join("");
+}
+
+/**
  * The recorded calls of a {@link createFakeLanguageModel} passed through
  * `makeOpts`. `PipelineTransportOptions.llm` is the plain `LanguageModel`
  * type, which drops the fake's `calls` array — recovering it needs a cast, so

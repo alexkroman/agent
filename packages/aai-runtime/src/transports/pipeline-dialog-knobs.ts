@@ -29,6 +29,17 @@
  * `forceFinalAnswer`, which keeps its override of `toolChoice` on the reserved
  * answering step — a state pinning a tool must not un-reserve the one step that
  * exists so the model has no move left but to speak.
+ *
+ * ## And AFTER the agent-scoped reset, which is the same rule from the other end
+ *
+ * `resetToolChoiceAfterFirstStep` puts a DEMANDING agent-level `toolChoice`
+ * back to `"auto"` once the first step has run, and it shares this preparer's
+ * one key. `ToolChoice`'s scope list puts the dialog state above the agent, so
+ * the reset is composed first and this preparer overwrites it — see the
+ * `prepareStep` composition in `pipeline-llm-stream.ts`, which spells the whole
+ * order out. Composed the other way round the reset won from step 1 on, and a
+ * state's pin quietly stopped applying after the first step of every turn on
+ * any agent that declares a demanding `toolChoice` of its own.
  */
 
 import type { ToolChoice } from "@alexkroman1/aai";

@@ -5,9 +5,9 @@
 // server's IsolateConfigSchema run the same asserts.
 
 import { describe, expect, test } from "vitest";
+import { rawConfig } from "./_test-utils.ts";
 import { agentConfigWarnings, assertProviderTriple } from "./config-rules.ts";
 import type { AgentConfig } from "./manifest-barrel.ts";
-import { toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropicLlm } from "./providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
@@ -21,22 +21,6 @@ const pipelineFields = {
   llm: anthropicLlm({ model: "claude-haiku-4-5" }),
   tts: cartesiaTts({ voice: "v" }),
 };
-
-/**
- * `toAgentConfig` over a RAW record — one seam for every "the type rejects this
- * shape, does the runtime accept/reject it too" case below, rather than a
- * laundering cast per assertion.
- *
- * `AgentConfigSource` deliberately forbids the shapes this file exercises (a
- * `system` alias, a string `llm`, `text: true`, a `mode` on a hand-written
- * `export default {...}`), because a TYPED caller must not write them — but the
- * function is documented to accept them from a raw object, and that behaviour
- * is what these tests cover. Narrowing once means adding a case costs no new
- * suppression.
- */
-function rawConfig(fields: Record<string, unknown>): AgentConfig {
-  return toAgentConfig(fields as never);
-}
 
 function config(fields: Record<string, unknown>): AgentConfig {
   return rawConfig({ name: "x", systemPrompt: "p", greeting: "g", ...fields });

@@ -103,6 +103,8 @@ export const redline = workflow({
 
 export default workflowApp({
   name: "Redline",
+  description:
+    "Takes a brief or a draft and returns a piece that has been through rounds of critique",
   workflows: { redline },
   // Checked at deploy time, so a missing key is a warning naming it rather than
   // a run that fails on its first step.

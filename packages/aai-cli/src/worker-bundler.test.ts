@@ -30,6 +30,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
@@ -184,6 +185,41 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
       // must not apply the file a second time, and must not call this a mistake.
       const agentDef = await loadWorker(dir);
       expect(agentDef.systemPrompt).toBe(`${PROMPT}\nTODAY: fish`);
+    });
+  });
+
+  test("a RESOLVER survives the build, and puts nothing on the wire", async () => {
+    await withTempDir(async (dir) => {
+      await linkSdkNodeModules(dir);
+      await fs.writeFile(
+        path.join(dir, "agent.ts"),
+        `import { agent } from "@alexkroman1/aai";\n` +
+          `import prompt from "./system-prompt.md?raw";\n` +
+          'export default agent({ name: "T", systemPrompt: (ctx) => `${prompt}\\nSession ${ctx.sessionId}.` });\n',
+        "utf-8",
+      );
+      await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
+
+      // `text-adventure-agent`'s shape: the file, plus something only a live
+      // session knows. Discovery must not apply the file a second time and must
+      // not call the function a mistake — it used to THROW here, which made
+      // dynamic instructions unreachable from any project with a prompt file.
+      const code = await buildWorker(dir, { runtime: false });
+      const out = path.join(dir, "worker-resolver.mjs");
+      await fs.writeFile(out, code, "utf-8");
+      const mod = (await import(pathToFileURL(out).href)) as {
+        default: { systemPrompt: (ctx: { sessionId: string }) => string };
+        __aaiConfig: Record<string, unknown>;
+      };
+
+      expect(typeof mod.default.systemPrompt).toBe("function");
+      expect(mod.default.systemPrompt({ sessionId: "s_1" })).toBe(`${PROMPT}\nSession s_1.`);
+      // A function cannot be serialized, so `toAgentConfig` drops it and the
+      // schema fills the framework default in its place — what a resolver adds
+      // is APPENDED to that, by the runtime, which is the side that can call it.
+      // What this pins against is a config carrying the resolver's SOURCE TEXT,
+      // which nothing downstream rejects.
+      expect(mod.__aaiConfig.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
     });
   });
 

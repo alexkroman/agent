@@ -98,6 +98,10 @@ import { research } from "./shared.ts";
 
 export default agent({
   name: "Research Desk",
+  // For a reader of a LIST of agents, never for the model. It names the
+  // HANDOFF, because that is what a caller actually gets from this line: an
+  // answer later, not an answer now.
+  description: "Takes research requests over the phone and reports back when the run lands",
   greeting: "Research desk. What would you like me to look into?",
   systemPrompt: [
     "You take research requests over the phone and read back results.",

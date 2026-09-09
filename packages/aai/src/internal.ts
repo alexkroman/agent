@@ -185,12 +185,6 @@ export {
 // zod's graph into every importer of this subpath — the startup cost the
 // `/utils` module doc has always guarded, now guarded here too.
 export { formatSchemaIssues } from "./sdk/standard-schema.ts";
-// The one way to READ `AgentDef.systemPrompt`, which is a string or a thunk.
-// Here rather than on the root because its reader is the framework — every
-// transport, the text agent, the config boundary and `aai build`'s prompt
-// report — and never an `agent.ts`, which WRITES the field and never resolves
-// one. The type it takes is authoring API and is on the root barrel.
-export { resolveSystemPrompt } from "./sdk/system-prompt-option.ts";
 // The carrier vocabulary an agent's `telephony` declaration is written in.
 // The TYPES are authoring API and live on the root barrel beside `AgentDef`;
 // this is the list as a VALUE, which `aai-runtime` needs to resolve a

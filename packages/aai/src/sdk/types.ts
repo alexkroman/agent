@@ -3,6 +3,10 @@
  * Core type definitions for the AAI agent SDK.
  */
 
+import type { AgentGuardrails } from "./agent-guardrails.ts";
+import type { AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentModelTuning } from "./agent-model-tuning.ts";
+import type { AgentObservation } from "./agent-observation.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 // Imported as well as re-exported below, for the reason `ToolDef` is: a
 // re-export does not bring the name into this module's scope, and
@@ -12,16 +16,46 @@ import type { AnyDialog } from "./dialog-handle.ts";
 import type { McpServers } from "./mcp-config.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import type { SessionEventHandlers } from "./session-events.ts";
-import type { StateProjection } from "./session-state.ts";
 import type { SubagentRoster } from "./subagent-roster.ts";
-import type { SystemPromptOption } from "./system-prompt-option.ts";
 import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolDef`.
 import type { ToolChoice, ToolDef } from "./tool-def.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
+/**
+ * The guardrail vocabulary `AgentDef.inputGuardrails`/`outputGuardrails` are
+ * written in — one of the three field groups split off this file at the cap
+ * alongside {@link AgentModelTuning} and {@link AgentObservation}, and
+ * re-exported here like every earlier split so no import moved. (No ordinal:
+ * three landed together, so "the sixth" was a number about nothing.)
+ * `agent-guardrails.ts` carries what a guardrail can and cannot prevent, which
+ * is most of the design.
+ */
+export type {
+  AgentGuardrail,
+  AgentGuardrails,
+  GuardrailVerdict,
+} from "./agent-guardrails.ts";
+/**
+ * A system prompt computed per request — see `agent-instructions.ts` for where
+ * the resolved text lands and how often it is asked for.
+ */
+export type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
+/**
+ * The knobs on the model loop this runtime runs, and the one rule they share
+ * (S2S refuses all of them). Split off this file at the source-length cap, on
+ * the seam {@link PipelineVoiceTuning} established.
+ */
+export type { AgentModelTuning, UsageLimits } from "./agent-model-tuning.ts";
+/**
+ * The two observe-only declarations (`syncState`, `events`), split off this
+ * file at the cap. `agent-observation.ts` argues why they are one group and
+ * why the boundary against `agent-guardrails.ts` is worth keeping visible.
+ */
+export type { AgentObservation } from "./agent-observation.ts";
+/** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
+export type { AgentSessionContext } from "./agent-session-context.ts";
 export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 /**
  * The built-in tool vocabulary. A re-export because this module is the import
@@ -80,6 +114,7 @@ export type {
   InferToolOutput,
   ToolChoice,
   ToolDef,
+  ToolErrorHandler,
 } from "./tool-def.ts";
 
 /**
@@ -87,7 +122,7 @@ export type {
  *
  * **This is what `agent()` RETURNS, not what you write.** You write
  * {@link AgentParams} — the same fields with the defaulted ones optional, plus the
- * conveniences `agent()` normalizes away (`system`, `llm` as a model-id string,
+ * three conveniences `agent()` normalizes away (`llm` as a model-id string,
  * `voice`, `minTurnSilenceMs`/`maxTurnSilenceMs`). This is the reference for what
  * a field MEANS; `AgentParams` is the one for which combinations are legal.
  *
@@ -96,27 +131,72 @@ export type {
  * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
  * optional — `undefined` means "not configured."
  *
- * The pipeline-only voice-UX knobs live on {@link PipelineVoiceTuning}, which
- * this extends: they share one rule (pipeline transport or nothing), and
- * both `agent()` and the deploy-time config check derive their field lists from
- * that interface, so a new one cannot skip either gate.
+ * Four groups of fields live on interfaces this extends, each because the
+ * group shares ONE rule that is derived from the declaration rather than
+ * restated beside it: {@link PipelineVoiceTuning} (pipeline transport or
+ * nothing), {@link AgentModelTuning} (this runtime assembles the request, so
+ * S2S refuses them), {@link AgentGuardrails} (the only declarations that may
+ * stop a turn) and {@link AgentObservation} (the two that deliberately may
+ * not). `agent()` and the deploy-time config check both derive their field
+ * lists from those interfaces, so a new one cannot skip either gate.
  *
  * @public
  */
-export interface AgentDef extends PipelineVoiceTuning {
+export interface AgentDef
+  extends PipelineVoiceTuning,
+    AgentModelTuning,
+    AgentGuardrails,
+    AgentObservation {
   /** Display name shown by the default client UI. */
   name: string;
   /**
-   * System prompt driving the LLM — the text, or a thunk resolved on every
-   * turn. A string behaves exactly as it always has; a function is for a prompt
-   * not knowable until the turn is assembled, and what it owes in exchange is
-   * on {@link SystemPromptOption}.
+   * What this agent IS, in one line, for whoever is reading a LIST of them.
+   *
+   * Its audience is never the model — a registry page, an A2A card, the
+   * studio's agent picker, the CLI's `aai list`. Write it as the job the agent
+   * does ("Books and reschedules dental appointments"), not as instructions;
+   * the instructions are {@link AgentDef.systemPrompt}.
+   *
+   * Serializable, unlike most of what an author declares, and that is the whole
+   * point: `tools`, `events` and `workflows` are host-only because a consumer
+   * of a stored config could not act on a function, but a description is
+   * exactly what such a consumer wants and could not get. Every peer SDK puts
+   * one on the agent (Anthropic's `AgentDefinition.description` is required);
+   * this SDK had one on {@link SubagentDef}, {@link WorkflowDef} and
+   * {@link ToolDef} and none on the agent itself.
+   */
+  description?: string;
+  /**
+   * System prompt driving the LLM — the text, or a function that computes it
+   * per request from {@link AgentSessionContext}.
+   *
+   * A resolver is how a prompt reads the session's own state: which phase the
+   * dialog is in, whether the caller is authenticated, what is in the cart.
+   * It is called once per model request (so once per STEP of a tool-calling
+   * reply), synchronously, and its answer lands exactly where a string's does —
+   * appended under the agent-specific-instructions header, after the
+   * framework's voice sections. See `agent-instructions.ts`, which owns the
+   * rest, including what an S2S agent gets (per-CONNECTION, not per-turn).
+   *
+   * ```ts
+   * import { agent, sessionSlot } from "@alexkroman1/aai";
+   *
+   * const caller = sessionSlot("caller", () => ({ verified: false }));
+   *
+   * export default agent({
+   *   name: "Bank Line",
+   *   systemPrompt: (ctx) =>
+   *     caller.get(ctx).verified
+   *       ? "The caller is verified. You may discuss balances."
+   *       : "The caller is NOT verified. Verify them before discussing anything.",
+   * });
+   * ```
    *
    * @defaultValue {@link DEFAULT_SYSTEM_PROMPT} — the framework's own voice-agent
    * prompt. It is assembled from parts, so it is the one default here whose
    * VALUE cannot usefully be inlined; read the constant.
    */
-  systemPrompt: SystemPromptOption;
+  systemPrompt: AgentSystemPrompt;
   /**
    * Sentence spoken when a session starts. Set `""` to start silent.
    * @defaultValue `"Hey there! I'm an AI voice assistant. What can I help you
@@ -145,22 +225,6 @@ export interface AgentDef extends PipelineVoiceTuning {
    * @defaultValue `10` (`DEFAULT_MAX_STEPS`)
    */
   maxSteps: number;
-  /**
-   * Sampling temperature for the agent's OWN model calls — the conversational
-   * loop, in pipeline and text modes.
-   *
-   * Omitted by default, so the model's own default applies; some models (Claude
-   * 5 among them) ignore it and warn, so set it only for a temperature-capable
-   * one. A booking desk and a game master want different values, and until this
-   * existed neither could say so: `ctx.generate` and `subagent()` both took a
-   * temperature while the main loop — the one that does almost all the talking
-   * — took no sampling parameter at all.
-   *
-   * S2S REJECTS it rather than ignoring it (`assertSamplingScope`): there the
-   * model runs inside the provider's service and this runtime never sees the
-   * request.
-   */
-  temperature?: number;
   /**
    * How the LLM selects tools each step.
    *
@@ -202,7 +266,7 @@ export interface AgentDef extends PipelineVoiceTuning {
    */
   tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
   /**
-   * Specialists the MODEL may hand a task to, published as one `delegate` tool.
+   * Subagents the MODEL may hand a task to, published as one `delegate` tool.
    *
    * The other half of `ctx.delegate`: a tool body naming a subagent is the
    * AUTHOR routing in code, a roster is the MODEL routing per turn. Every entry
@@ -278,92 +342,6 @@ export interface AgentDef extends PipelineVoiceTuning {
    * ```
    */
   telephony?: TelephonyAccess;
-  /**
-   * Project per-session state to the browser client, so a custom UI can
-   * render it without the agent hand-rolling a sync channel.
-   *
-   * One projection per slot the client should see, or an array of them — the
-   * `agent_state` frame carries the merge. A slot the agent does not project
-   * never leaves the server, which is the point: session state routinely holds
-   * things a browser should not have, so the author decides what leaves, and
-   * whatever a projection returns is exactly what `useAgentState` receives.
-   * Pushed after every tool call, and only when a projection actually changed:
-   * most turns touch no state, and this shares a socket with 384 kbps of PCM.
-   *
-   * **Declare the view on the slot and pass {@link SessionSlot.projected}.**
-   * One object the agent pushes with and the page renders with, so the frame
-   * shown before the first tool call cannot describe a different view from the
-   * ones after it. A slot with more than one audience keeps
-   * {@link SessionSlot.projection}, a second view over the same slot;
-   * `syncState` takes an array.
-   *
-   * ```ts
-   * import { agent, sessionSlot } from "@alexkroman1/aai";
-   * type Item = { sku: string; qty: number };
-   * // `staffPin` has no view, so it stays server-side.
-   * const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
-   *   view: (s) => ({ items: s.items }),
-   * });
-   * agent({ name: "Cart", syncState: cartSlot.projected });
-   * // Two audiences over the one slot:
-   * agent({
-   *   name: "Cart",
-   *   syncState: [cartSlot.projected, cartSlot.projection((s) => ({ count: s.items.length }))],
-   * });
-   * ```
-   *
-   * @remarks
-   * A projection names its own slot, so the runtime can render a session that
-   * has run no tool yet — which is what let `AgentDef.state` be deleted rather
-   * than remembered. Without it, agents hand-roll a snapshot returned from every
-   * tool and mirrored into `useState`; 58% of generated agents built one.
-   */
-  syncState?: StateProjection | readonly StateProjection[];
-  /**
-   * Observe the session's own event stream — an audit log, per-turn metrics, or
-   * "write every call to my own database".
-   *
-   * Keyed by event type, with `"*"` matching every event. Typed handlers run
-   * first, then `"*"`, and both run AFTER the event has been recorded in the
-   * session's retained stream and sent to the client:
-   *
-   * ```ts
-   * import { agent } from "@alexkroman1/aai";
-   *
-   * agent({
-   *   name: "Audited",
-   *   events: {
-   *     "tool.called": (e, ctx) => {
-   *       // A hook gets `ctx.env` and `ctx.slots`, never a database — persist
-   *       // through a client of your own if you need to.
-   *       void fetch(`${ctx.env.AUDIT_URL}`, {
-   *         method: "POST",
-   *         body: JSON.stringify({ id: e.meta.id, tool: e.toolName }),
-   *       });
-   *     },
-   *     "*": (e) => console.log(e.meta.at, e.type),
-   *   },
-   * });
-   * ```
-   *
-   * Three properties are load-bearing, and each is a rule rather than a detail:
-   *
-   * - **Observe-only.** A handler cannot inject model context, change a reply, or
-   *   cancel anything. That is what keeps the stream a LOG rather than a second
-   *   control path, and it is why a handler receives no way to reply.
-   * - **A throw is NON-FATAL.** It is logged against the event and the session
-   *   continues — a failing audit hook must not end a phone call. An async
-   *   handler is not awaited either, for the same reason: the caller is mid-turn.
-   * - **Delivery is at-least-once, and `meta.id` is the key.** The id is stable
-   *   across replays, so a handler storing content keys on it; a handler doing a
-   *   non-idempotent side effect keys on the work's own coordinates instead,
-   *   because retried work re-emits under fresh ids.
-   *
-   * Before this there was no way for an agent author to observe their own agent
-   * at all: the framework carried 51 internal `on*` callback options and not one
-   * of them was reachable from `agent.ts`.
-   */
-  events?: SessionEventHandlers;
   /**
    * How long the session may go with no inbound audio before it is closed
    * (ms). Measures silence, not call length — re-armed on every audio frame.

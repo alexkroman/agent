@@ -28,6 +28,7 @@ import type { RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
 import type { DialogTurnSource } from "./transports/pipeline-dialog-knobs.ts";
+import type { TurnGuardrails } from "./transports/pipeline-guardrails.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type {
@@ -37,6 +38,7 @@ import type {
   TransportCallbacks,
 } from "./transports/types.ts";
 import { resolveSystemPrompt } from "./transports/types.ts";
+import type { UsageMeter } from "./usage-meter.ts";
 
 /**
  * Read the author-set `assemblyAIS2s({ voice, languages, keyterms })` options
@@ -116,6 +118,23 @@ export type BuildTransportArgs = {
    * instead — this file is the one that knows which branch a session took.
    */
   dialogTurn?: DialogTurnSource | undefined;
+  /**
+   * This session's guardrails, already bound to their context.
+   *
+   * **Only the pipeline branch takes it**, and here the asymmetry is not a
+   * limitation to work around later: `assertGuardrailScope` refuses the fields
+   * outright for an s2s agent, because the provider synthesizes the audio and
+   * the caller has heard the sentence by the time this process sees the text.
+   * A guardrail forwarded to an S2S transport could only report.
+   */
+  guardrails?: TurnGuardrails | undefined;
+  /**
+   * This session's token meter — same rule as `guardrails`, same reason:
+   * `assertSamplingScope` refuses `usageLimits` in s2s mode because the host
+   * sees no token counts there, so a meter forwarded to an S2S transport would
+   * report zeroes and a budget over it would never trip.
+   */
+  usage?: UsageMeter | undefined;
 };
 
 /**
@@ -199,7 +218,11 @@ export function createTransportFactory(
       ttsSampleRate: s2sConfig.outputSampleRate,
       maxSteps: agentConfig.maxSteps,
       toolChoice: agentConfig.toolChoice,
+      resetToolChoice: agentConfig.resetToolChoice,
       temperature: agentConfig.temperature,
+      maxOutputTokens: agentConfig.maxOutputTokens,
+      maxRetries: agentConfig.maxRetries,
+      ...omitUndefined({ guardrails: args.guardrails, usage: args.usage }),
       ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
       silenceTimeoutMs: agentConfig.silenceTimeoutMs,
       silencePrompt: agentConfig.silencePrompt,

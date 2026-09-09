@@ -9,10 +9,12 @@ import type { ModelMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { flush } from "../_test-utils.ts";
+import { createUsageMeter } from "../usage-meter.ts";
 import {
   llmCalls,
   makeOpts,
   noopToolSchema,
+  spoken,
   useVirtualTime,
 } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
@@ -114,7 +116,7 @@ describe("preemptive generation — guardrail 2: nothing speculative executes a 
       expect(executeTool).toHaveBeenCalledTimes(1);
     });
     await vi.waitFor(() => {
-      expect((tts.last()?.textChunks ?? []).join("")).toContain("It shipped yesterday.");
+      expect(spoken(tts)).toContain("It shipped yesterday.");
     });
     // The real turn re-ran the request from scratch, against the FINAL text.
     expect(llmCalls(opts).calls.length).toBeGreaterThanOrEqual(2);
@@ -145,7 +147,7 @@ describe("preemptive generation — adoption", () => {
 
     // The head start was real generation, not a second request.
     expect(llmCalls(opts).calls).toHaveLength(1);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");
+    expect(spoken(tts)).toContain("Your order shipped.");
     expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
     await t.stop();
   });
@@ -160,6 +162,13 @@ describe("preemptive generation — adoption", () => {
       const { opts, stt, callbacks } = makeOpts({
         preemptiveGeneration,
         llm: createFakeLanguageModel({ script }),
+        // Two of today's `streamText` settings that the speculative assembly
+        // reached one release LATE, which is what put both request assemblies
+        // behind ONE `SharedLlmRequest` object. Only the cap is observable
+        // through the fake — `maxRetries` is consumed by the SDK's retry
+        // wrapper and never reaches `doStream` — but they travel together now.
+        maxOutputTokens: 256,
+        maxRetries: 0,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -181,9 +190,71 @@ describe("preemptive generation — adoption", () => {
     // Compared field by field rather than whole-object: `abortSignal` and
     // `includeRawChunks`-style handles are per-run objects that can never be
     // equal, while everything that DECIDES the generation must be.
-    for (const key of ["prompt", "tools", "toolChoice", "temperature"]) {
+    for (const key of ["prompt", "tools", "toolChoice", "temperature", "maxOutputTokens"]) {
       expect(adopted[key]).toStrictEqual(plain[key]);
     }
+  });
+
+  test("an adopted speculation's tokens reach the session METER", async () => {
+    // A speculation nobody adopts must not move a budget the author reasons
+    // about per turn, so its reported usage is held back — and it used to be
+    // held back for ever, adoption included. But an adopted speculation IS the
+    // turn: dropping its steps made `usage.updated` under-report the session
+    // and left `usageLimits` unable to trip on tokens really spent.
+    const usage = createUsageMeter({ onUpdate: () => undefined });
+    const { opts, stt, callbacks } = makeOpts({
+      preemptiveGeneration: true,
+      usage,
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "Your order shipped." }] }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    stt.last()?.fireFinal(UTTERANCE);
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
+    });
+
+    // One request, so exactly one step — the head start is not billed twice,
+    // and it is not free either.
+    expect(llmCalls(opts).calls).toHaveLength(1);
+    expect(usage.snapshot().steps).toBe(1);
+    await t.stop();
+  });
+
+  test("a DISCARDED speculation's tokens do not", async () => {
+    // The other half, and the reason the meter is fed at adoption rather than
+    // at `onStepFinish`: the caller revised what they said, so nothing that run
+    // produced is ever spoken or recorded, and a per-turn budget must not be
+    // spent by a turn that never happened.
+    const usage = createUsageMeter({ onUpdate: () => undefined });
+    const { opts, stt, callbacks } = makeOpts({
+      preemptiveGeneration: true,
+      usage,
+      llm: createFakeLanguageModel({
+        steps: [[{ type: "text", text: "Speculated." }], [{ type: "text", text: "Real." }]],
+      }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await vi.waitFor(() => {
+      expect(llmCalls(opts).calls).toHaveLength(1);
+    });
+    stt.last()?.fireFinal(`${UTTERANCE} for the blue one`);
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
+    });
+
+    // Two requests were billed by the provider; one turn happened.
+    expect(llmCalls(opts).calls).toHaveLength(2);
+    expect(usage.snapshot().steps).toBe(1);
+    await t.stop();
   });
 });
 
@@ -214,8 +285,8 @@ describe("preemptive generation — mismatch", () => {
 
     expect(llmCalls(opts).calls).toHaveLength(2);
     expect(userTexts(llmCalls(opts).calls[1] as { prompt?: unknown })).toContain(final);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Real answer.");
-    expect((tts.last()?.textChunks ?? []).join("")).not.toContain("Speculated answer.");
+    expect(spoken(tts)).toContain("Real answer.");
+    expect(spoken(tts)).not.toContain("Speculated answer.");
     // The client sees exactly one reply.
     expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
     await t.stop();
@@ -336,7 +407,7 @@ describe("preemptive generation — OFF by default", () => {
       expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
     });
     expect(llmCalls(opts).calls).toHaveLength(1);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");
+    expect(spoken(tts)).toContain("Your order shipped.");
     await t.stop();
   });
 
@@ -389,9 +460,9 @@ describe("preemptive generation — the SYSTEM PROMPT is part of request parity"
     // A SECOND request — the head start was thrown away rather than adopted…
     expect(llmCalls(opts).calls).toHaveLength(2);
     // …and what the caller heard came from it, under the phase that is current.
-    const spoken = (tts.last()?.textChunks ?? []).join("");
-    expect(spoken).toContain("regenerated");
-    expect(spoken).not.toContain("speculated");
+    const said = spoken(tts);
+    expect(said).toContain("regenerated");
+    expect(said).not.toContain("speculated");
     await t.stop();
   });
 
@@ -417,7 +488,7 @@ describe("preemptive generation — the SYSTEM PROMPT is part of request parity"
     });
 
     expect(llmCalls(opts).calls).toHaveLength(1);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");
+    expect(spoken(tts)).toContain("Your order shipped.");
     await t.stop();
   });
 });

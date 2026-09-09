@@ -15,7 +15,6 @@ import type { AssemblyAIGatewayModel } from "./providers/llm/shared/gateway-mode
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
-import type { SystemPromptOption } from "./system-prompt-option.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
 import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
@@ -314,40 +313,6 @@ test("sttPrompt is declarable in BOTH modes", () => {
   // attempts correct to 6 of 6) was to skip `agent()` for a raw config object.
   expectTypeOf<{ name: string; s2s: S2sProvider; sttPrompt: string }>().toExtend<AgentParams>();
   expectTypeOf<{ name: string; sttPrompt: string }>().toExtend<AgentParams>();
-});
-
-/**
- * `systemPrompt` takes a THUNK as well as a string, in every mode.
- *
- * Both halves are pinned, and the second is the one worth having: the widening
- * is only useful if `agent()` gives the FUNCTION back, so `createRuntime` has
- * something left to resolve per turn. A `SystemPromptOption` narrowed to
- * `string` on the way out — the shape a "resolve it once in `agent()`" fix
- * would take — compiles everywhere and turns every dynamic prompt into a
- * snapshot of its first answer, with nothing anywhere reporting it.
- *
- * The mode arms are named individually because `AgentParams` is a union and a
- * field re-declared on one arm is a field the other arms may not carry: that is
- * exactly how `sttPrompt` above came to be refused in S2S mode.
- */
-test("systemPrompt accepts a thunk, and agent() hands the function back", () => {
-  expectTypeOf<AgentDef["systemPrompt"]>().toEqualTypeOf<SystemPromptOption>();
-  expectTypeOf<{ name: string; systemPrompt: () => string }>().toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    s2s: S2sProvider;
-    systemPrompt: () => string;
-  }>().toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    text: true;
-    systemPrompt: () => string;
-  }>().toExtend<AgentParams>();
-  // A string is still a string — the union may only ever have been widened.
-  expectTypeOf<{ name: string; systemPrompt: string }>().toExtend<AgentParams>();
-  expectTypeOf(agent({ name: "T", systemPrompt: () => "now" }).systemPrompt).toEqualTypeOf<
-    string | (() => string)
-  >();
 });
 
 /**

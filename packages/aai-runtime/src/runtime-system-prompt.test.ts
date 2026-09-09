@@ -1,10 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Specs for the two halves of a session's system prompt: the base cached per
-// calendar day, and the per-turn suffix the `dialog()` integration will install.
+// Specs for the three parts of a session's system prompt: the base cached per
+// calendar day, the agent's own instructions when `systemPrompt` is a RESOLVER,
+// and the per-turn suffix the `dialog()` integration will install.
 
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { makeSessionContext } from "./_test-utils.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
+
+const TEST_SESSION_CONTEXT = makeSessionContext();
 
 function resolverFor(systemPrompt = "Be brief."): ReturnType<typeof createSystemPromptResolver> {
   return createSystemPromptResolver({
@@ -42,78 +46,17 @@ describe("the base is cached per calendar day", () => {
   });
 });
 
-describe("an agent whose own systemPrompt is a thunk", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-14T09:00:00Z"));
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  /** A resolver over a LIVE thunk, the way `createRuntime` builds one. */
-  function thunkResolver(
-    systemPrompt: () => string,
-  ): ReturnType<typeof createSystemPromptResolver> {
-    return createSystemPromptResolver({
-      // What the config carries is the SNAPSHOT `toAgentConfig` took; the live
-      // definition is passed beside it, and is what must win.
-      agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt }),
-      systemPrompt,
-      hasTools: false,
-      toolGuidance: undefined,
-    });
-  }
-
-  test("the base moves when the thunk does, on the same calendar day", () => {
-    // The failure this exists for: a base keyed on the day alone resolves the
-    // author's function once at boot and serves that answer for the life of the
-    // process — a dynamic prompt silently frozen at its first value.
-    let phase = "intake";
-    const prompts = thunkResolver(() => `Phase: ${phase}.`);
-    expect(prompts.base()).toContain("Phase: intake.");
-    phase = "wrap-up";
-    expect(prompts.base()).toContain("Phase: wrap-up.");
-  });
-
-  test("an unchanged answer is the SAME string — the assembled prompt is not rebuilt", () => {
-    // Identity, so the date stamp (the expensive half) stays off the per-turn
-    // path for the common case of a thunk that answers the same thing twice.
-    const prompts = thunkResolver(() => "Be brief.");
-    expect(prompts.base()).toBe(prompts.base());
-  });
-
-  test("a session resolves through the same live thunk", () => {
-    let phase = "intake";
-    const session = thunkResolver(() => `Phase: ${phase}.`).forSession();
-    expect(session.resolve()).toContain("Phase: intake.");
-    phase = "wrap-up";
-    expect(session.resolve()).toContain("Phase: wrap-up.");
-  });
-
-  test("with no live prompt passed, the config's snapshot is what answers", () => {
-    // The default arm: every caller that does not hold a definition (the specs
-    // above, a config off the wire) still gets a working resolver.
-    const prompts = createSystemPromptResolver({
-      agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt: () => "Snapshot." }),
-      hasTools: false,
-      toolGuidance: undefined,
-    });
-    expect(prompts.base()).toContain("Snapshot.");
-  });
-});
-
 describe("a session's prompt", () => {
   test("with no suffix installed it IS the base, byte for byte", () => {
     // The property that makes this seam safe to land before anything consumes
     // it: every agent that ships today sends exactly what it sent before.
     const prompts = resolverFor();
-    expect(prompts.forSession().resolve()).toBe(prompts.base());
+    expect(prompts.forSession(TEST_SESSION_CONTEXT).resolve()).toBe(prompts.base());
   });
 
   test("an installed suffix is appended below the base, as one more section", () => {
     const prompts = resolverFor();
-    const session = prompts.forSession();
+    const session = prompts.forSession(TEST_SESSION_CONTEXT);
     session.setSuffix(() => "Phase: collecting the shipping address.");
     expect(session.resolve()).toBe(`${prompts.base()}\n\nPhase: collecting the shipping address.`);
   });
@@ -123,7 +66,7 @@ describe("a session's prompt", () => {
     // prompt by two characters, or every such agent's prompt differs from the
     // one an agent without a dialog sends.
     const prompts = resolverFor();
-    const session = prompts.forSession();
+    const session = prompts.forSession(TEST_SESSION_CONTEXT);
     session.setSuffix(() => "");
     expect(session.resolve()).toBe(prompts.base());
   });
@@ -132,7 +75,7 @@ describe("a session's prompt", () => {
     // The whole point: a turn on which no tool ran still sees where the call
     // has got to. A captured value would be the frozen string this replaced.
     const prompts = resolverFor();
-    const session = prompts.forSession();
+    const session = prompts.forSession(TEST_SESSION_CONTEXT);
     let phase = "greeting";
     session.setSuffix(() => `Phase: ${phase}.`);
     expect(session.resolve()).toContain("Phase: greeting.");
@@ -145,8 +88,8 @@ describe("a session's prompt", () => {
     // caller's dialog phase leaking into every concurrent call — invisible on a
     // machine serving one session at a time, which is every developer's.
     const prompts = resolverFor();
-    const a = prompts.forSession();
-    const b = prompts.forSession();
+    const a = prompts.forSession(TEST_SESSION_CONTEXT);
+    const b = prompts.forSession(TEST_SESSION_CONTEXT);
     a.setSuffix(() => "Phase: refund.");
     expect(a.resolve()).toContain("Phase: refund.");
     expect(b.resolve()).toBe(prompts.base());
@@ -154,16 +97,90 @@ describe("a session's prompt", () => {
 
   test("both sessions share the cached base", () => {
     const prompts = resolverFor();
-    const a = prompts.forSession();
-    const b = prompts.forSession();
+    const a = prompts.forSession(TEST_SESSION_CONTEXT);
+    const b = prompts.forSession(TEST_SESSION_CONTEXT);
     expect(a.resolve()).toBe(b.resolve());
   });
 
   test("the agent's own instructions survive into every resolution", () => {
     const prompts = resolverFor("Always confirm the order number.");
-    const session = prompts.forSession();
+    const session = prompts.forSession(TEST_SESSION_CONTEXT);
     session.setSuffix(() => "Phase: intake.");
     expect(session.resolve()).toContain("Always confirm the order number.");
     expect(session.resolve()).toContain("Phase: intake.");
+  });
+});
+
+describe("a systemPrompt RESOLVER", () => {
+  /** A resolver's answer lands under the same header a static prompt's does. */
+  const INSTRUCTIONS_HEADER = "Agent-specific instructions";
+
+  function withResolver(
+    instructions: (ctx: typeof TEST_SESSION_CONTEXT) => string,
+  ): ReturnType<typeof createSystemPromptResolver> {
+    return createSystemPromptResolver({
+      // Exactly what `toAgentConfig` produces for a resolver: no
+      // agent-specific section on the wire, because a function cannot cross it.
+      agentConfig: toAgentConfig({ name: "Desk", greeting: "" }),
+      hasTools: false,
+      toolGuidance: undefined,
+      instructions,
+    });
+  }
+
+  test("its answer is appended under the precedence header, not in place of the prompt", () => {
+    // The rule an author has to be able to rely on: a resolver does not replace
+    // the framework's voice sections any more than a string does.
+    const session = withResolver(() => "The caller is verified.").forSession(TEST_SESSION_CONTEXT);
+    const resolved = session.resolve();
+    expect(resolved).toContain(INSTRUCTIONS_HEADER);
+    expect(resolved).toContain("The caller is verified.");
+    expect(resolved.indexOf("The caller is verified.")).toBeGreaterThan(
+      resolved.indexOf(INSTRUCTIONS_HEADER),
+    );
+  });
+
+  test("it is re-asked on every resolve, and sees the session it was given", () => {
+    // The reason the resolver takes a context at all: a nullary thunk can vary
+    // by wall clock and by nothing else, so it could not read a slot.
+    const seen: string[] = [];
+    let phase = "greeting";
+    const session = withResolver((ctx) => {
+      seen.push(ctx.sessionId);
+      return `phase: ${phase}`;
+    }).forSession(TEST_SESSION_CONTEXT);
+
+    expect(session.resolve()).toContain("phase: greeting");
+    phase = "payment";
+    expect(session.resolve()).toContain("phase: payment");
+    expect(seen).toEqual(["s-1", "s-1"]);
+  });
+
+  test("a NULLARY resolver still works — it simply ignores the context", () => {
+    // The compatibility claim the ctx-taking signature rests on: `() => string`
+    // is assignable to `(ctx) => string`, so every prompt thunk written against
+    // the older nullary shape keeps resolving per request, unchanged.
+    const nullary = (): string => "Written without a context.";
+    const session = withResolver(nullary).forSession(TEST_SESSION_CONTEXT);
+    expect(session.resolve()).toContain("Written without a context.");
+  });
+
+  test("an empty answer changes the prompt by not one byte", () => {
+    const prompts = withResolver(() => "");
+    expect(prompts.forSession(TEST_SESSION_CONTEXT).resolve()).toBe(prompts.base());
+  });
+
+  test("a dialog suffix composes with it rather than replacing it", () => {
+    // A session may legitimately have both, which is why the resolver is NOT
+    // installed through `setSuffix` — that slot is the dialogs', last writer
+    // wins.
+    const session = withResolver(() => "Instructions.").forSession(TEST_SESSION_CONTEXT);
+    session.setSuffix(() => "Current phase: checkout.");
+    const resolved = session.resolve();
+    expect(resolved).toContain("Instructions.");
+    expect(resolved).toContain("Current phase: checkout.");
+    expect(resolved.indexOf("Instructions.")).toBeLessThan(
+      resolved.indexOf("Current phase: checkout."),
+    );
   });
 });

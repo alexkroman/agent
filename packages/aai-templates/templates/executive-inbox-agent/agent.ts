@@ -35,6 +35,7 @@ import systemPrompt from "./system-prompt.md?raw";
  */
 export default agent({
   name: "Executive Assistant",
+  description: "Triages an executive's inbox by phone and drafts the replies for their approval",
   // The voice rules in the file, plus who the principal is — their
   // `config.yaml`'s `full_name`, `name`, `background` and `timezone`, rendered
   // from the one place `inbox.ts` declares them so the prompt cannot name a

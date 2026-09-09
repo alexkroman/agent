@@ -30,6 +30,7 @@ function commandedBuiltins(config: {
      | "recall"
     | "calculate")[];
   deadAirCoverMs?: number;
+  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -38,6 +39,8 @@ function commandedBuiltins(config: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  maxOutputTokens?: number;
+  maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
      pinnedTools?: Record<string, string>;
@@ -50,6 +53,7 @@ function commandedBuiltins(config: {
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
+  resetToolChoice?: boolean;
   resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
@@ -78,6 +82,9 @@ function commandedBuiltins(config: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  usageLimits?: {
+     totalTokens?: number;
+  };
 }): BuiltinTool[];
 ```
 
@@ -94,6 +101,17 @@ A reader, not an assertion — [expectPromptBuiltinsDeclared](#expectpromptbuilt
 claim most specs want. This is exported for the spec that wants to say more:
 that a particular builtin is among the commanded ones, or that the prompt
 commands exactly the set the template is about.
+
+**It reads what the CONFIG carries, which for a RESOLVER is nothing.**
+`AgentDef.systemPrompt` may be a function, and `toAgentConfig` cannot
+serialize one — it drops the field and the schema fills in
+`DEFAULT_SYSTEM_PROMPT` — so a config converted from a resolver-based agent
+hands this function the FRAMEWORK's prompt and gets `[]` back, which is a
+true answer to the wrong question. Nothing here can tell that config from one
+whose author simply wrote no prompt; the def can, which is why the check that
+refuses is [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) and not this reader. To scan a
+resolver's own text, resolve it and substitute it:
+`commandedBuiltins({ ...toAgentConfig(def), systemPrompt: resolver(ctx) })`.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -127,6 +145,10 @@ readonly (
 
 `number`
 
+###### description?
+
+`string`
+
 ###### errorPhrase?
 
 `string`
@@ -157,6 +179,14 @@ readonly (
 ###### llm.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### maxOutputTokens?
+
+`number`
+
+###### maxRetries?
+
+`number`
 
 ###### maxSteps?
 
@@ -193,6 +223,10 @@ readonly (
 ###### requiredEnv?
 
 readonly `string`[]
+
+###### resetToolChoice?
+
+`boolean`
 
 ###### resumeFalseInterruption?
 
@@ -284,6 +318,16 @@ readonly `string`[]
 ###### tts.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### usageLimits?
+
+\{
+  `totalTokens?`: `number`;
+\}
+
+###### usageLimits.totalTokens?
+
+`number`
 
 #### Returns
 
@@ -577,8 +621,8 @@ const agentDef = deployedAgent(authored, {
 Every rule the build applies applies here too, and each is an error naming
 the file: the tool-name grammar, the default-export requirement, no nested
 files, a name declared twice, an empty prompt file, and a
-`system-prompt.md` that exists while `agent.ts` declares a DIFFERENT prompt —
-the "I edited the prompt and nothing changed" failure.
+`system-prompt.md` that exists while `agent.ts` declares a different prompt
+STRING — the "I edited the prompt and nothing changed" failure.
 
 #### Type Parameters
 
@@ -736,6 +780,7 @@ function expectDeployable(def: AgentConfigSource): {
      | "recall"
     | "calculate")[];
   deadAirCoverMs?: number;
+  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -744,6 +789,8 @@ function expectDeployable(def: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  maxOutputTokens?: number;
+  maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
      pinnedTools?: Record<string, string>;
@@ -756,6 +803,7 @@ function expectDeployable(def: AgentConfigSource): {
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
+  resetToolChoice?: boolean;
   resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
@@ -783,6 +831,9 @@ function expectDeployable(def: AgentConfigSource): {
   tts?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  usageLimits?: {
+     totalTokens?: number;
   };
 };
 ```
@@ -848,6 +899,7 @@ The agent under test — an `agent()` definition, or the raw
      | "recall"
     | "calculate")[];
   deadAirCoverMs?: number;
+  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -856,6 +908,8 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  maxOutputTokens?: number;
+  maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
      pinnedTools?: Record<string, string>;
@@ -868,6 +922,7 @@ The agent under test — an `agent()` definition, or the raw
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
+  resetToolChoice?: boolean;
   resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
@@ -896,6 +951,9 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  usageLimits?: {
+     totalTokens?: number;
+  };
 }
 ```
 
@@ -920,6 +978,12 @@ optional builtinTools?: readonly (
 
 ```ts
 optional deadAirCoverMs?: number;
+```
+
+##### description?
+
+```ts
+optional description?: string;
 ```
 
 ##### errorPhrase?
@@ -953,6 +1017,18 @@ optional interruptionMinDurationMs?: number;
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }
+```
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
 ```
 
 ##### maxSteps?
@@ -1005,6 +1081,12 @@ optional preemptiveGeneration?: boolean;
 
 ```ts
 optional requiredEnv?: readonly string[];
+```
+
+##### resetToolChoice?
+
+```ts
+optional resetToolChoice?: boolean;
 ```
 
 ##### resumeFalseInterruption?
@@ -1098,6 +1180,14 @@ optional toolChoice?:
 {
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### usageLimits?
+
+```ts
+{
+  totalTokens?: number;
 }
 ```
 
@@ -1249,6 +1339,21 @@ The converse is deliberately NOT asserted: declaring a builtin the prompt never
 mentions is an ordinary edit, and the model learns about it from its own tool
 schema rather than from the prose.
 
+**A RESOLVER is CALLED, and refused when it cannot be.** `systemPrompt` may be
+a function, and `toAgentConfig` drops one rather than putting it on the wire —
+so scanning the converted config would read the FRAMEWORK's default prompt and
+report on a prompt this agent never sends. That is the one outcome a check may
+not have: the default names no builtin, so scanning it fails for the wrong
+reason — pointing at an unapplied `system-prompt.md` that is not the problem —
+and PASSES the day the default happens to name one. So the resolver is
+called with a bare [createToolContext](#createtoolcontext) — a fresh session id, no env, an
+empty slot store — and its answer is what gets scanned. That is enough for the
+prose half, which is a `?raw` import closed over by the function and does not
+vary with session state. A resolver that cannot answer from a bare context
+(it reads an env var, or a slot it expects seeded) THROWS, and this refuses by
+name rather than falling back to the default: seed a context and scan the text
+yourself with [commandedBuiltins](#commandedbuiltins), or assert on `builtinTools` directly.
+
 ```ts
 import { agent } from "@alexkroman1/aai";
 import { expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
@@ -1280,7 +1385,8 @@ The commanded builtins, for a spec that wants to say more about them.
 
 #### Throws
 
-When the prompt names no builtin, or names one `builtinTools` lacks.
+When the prompt names no builtin, when it names one `builtinTools`
+lacks, or when a `systemPrompt` resolver cannot answer from a bare context.
 
 ***
 
@@ -2895,9 +3001,10 @@ readonly optional systemPrompt?: string;
 `import prompt from "./system-prompt.md?raw"`.
 
 Omit it for a project with no `system-prompt.md`. Pass it even when
-`agent.ts` imports the file itself and composes it — that case is
-recognised and the def is left exactly as the author built it, so a spec
-never has to know which of the two its own template does.
+`agent.ts` imports the file itself — whether it composes a string out of it
+or closes over it in a `systemPrompt` resolver, the def is left exactly as
+the author built it, so a spec never has to know which of the three shapes
+its own project uses.
 
 ##### tools?
 

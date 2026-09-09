@@ -99,24 +99,32 @@ already in every prompt, so that is not one of the reasons to compute one.
 
 ## A prompt that changes during the call
 
-Pass a function instead of a string and it is called as each turn is assembled,
-so what the agent is told can move with the conversation:
+Pass a function instead of a string and it is called as each model request is
+assembled, with the live session, so what the agent is told can move with the
+conversation:
 
 ```ts
-import { agent } from "@alexkroman1/aai";
+import { agent, sessionSlot } from "@alexkroman1/aai";
 
-declare const currentPhase: () => string;
+const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
 
 export default agent({
   name: "Intake",
-  systemPrompt: () => `Take the caller's details.\n\nPhase: ${currentPhase()}`,
+  systemPrompt: (ctx) =>
+    `Take the caller's order.\n\nIn the cart: ${cart.get(ctx).items.join(", ") || "nothing yet"}`,
 });
 ```
 
-Everything above still applies: what it returns is added to the framework's own
-rules, not swapped in for them. Two things it owes — it must return a string,
-and it must be safe to call at build time, because `aai build` asks it once for
-the config it ships.
+What it is handed is the session: its id, the agent's `env`, and its slots — so
+the prompt can say what no tool result told the model. Everything above still
+applies: what it returns is added to the framework's own rules, not swapped in
+for them. Two things it owes — it must return a string, and it must be
+synchronous, because the request is being assembled and there is nowhere to
+await that does not put a round trip in front of every turn.
+
+It is never called at build time, so nothing it reads has to exist before a
+session does. `aai build` reports the prompt as "a per-request resolver" rather
+than a value.
 
 Most agents want a string. Reach for this when the model has to know something
 mid-call that no tool result tells it.

@@ -118,7 +118,7 @@ export const meetingAssistant = subagent({
 });
 
 /**
- * Their `find_meeting_time`: hand the thread to the specialist and return what
+ * Their `find_meeting_time`: hand the thread to the subagent and return what
  * it concluded, plus what the wait cost — the sentence the caller was owed
  * while the line was quiet.
  *

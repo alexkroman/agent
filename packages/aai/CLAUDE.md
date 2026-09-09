@@ -145,6 +145,34 @@ getting the old rule wrong.
 helpers reading them), the eighteen narrowed `*Provider` aliases (gone), and
 `ProviderDescriptor` (the root alone).
 
+## Four groups of `AgentDef` fields, four modules, one rule each
+
+`sdk/types.ts` sits at the source-length cap, so a group of fields that shares
+ONE rule is declared on its own interface and `AgentDef` extends it. That is not
+tidying: each rule is DERIVED from the declaration, so a field added to the
+group cannot skip the gate.
+
+| Interface | Module | The rule |
+| --- | --- | --- |
+| `PipelineVoiceTuning` | `agent-voice-tuning.ts` | pipeline transport or nothing |
+| `AgentModelTuning` | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
+| `AgentGuardrails` | `agent-guardrails.ts` | the only declarations that may STOP a turn |
+| `AgentObservation` | `agent-observation.ts` | the two that deliberately may not |
+
+`assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
+total over `AgentModelTuning`, so a sixth knob that skips the table fails to
+compile. `resetToolChoice` defaults **true** (OpenAI's `reset_tool_choice`) and
+is inert unless `toolChoice` demands a call.
+
+**A guardrail is pipeline-only, and the two refusals are different claims** —
+s2s has already spoken the sentence, text mode hands its caller the model stream
+and owns no funnel. `assertGuardrailScope` refuses both by name;
+`agent-guardrails.ts` carries what the pipeline one does and does not prevent.
+
+**`systemPrompt` takes a RESOLVER**, `(ctx: AgentSessionContext) => string`,
+called per model request and landing under the same precedence header a string
+does — `agent-instructions.ts` owns the rest.
+
 ## Session modes
 
 Each agent runs in one of three session modes, selected by `toAgentConfig()`
@@ -643,6 +671,35 @@ also works. `GenerateFn` is generic, so a Standard Schema call returns a
 typed `object`. Note zod 4.4 stamps `~standard` onto its plain
 `toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
 marker, never the `~standard` interface (`isConvertibleSchema`).
+
+## `ctx.messages` has a THIRD arm, and it used to be dead
+
+`Message.role` has always been `"user" | "assistant" | "tool"`, and nothing in
+the repo ever produced a `"tool"`: the pipeline's tool-facing view held
+transcripts only, the text agent's projection kept `text` parts (a
+`ToolModelMessage` carries `tool-result` parts and never one), and the resume
+walk answered `user`/`assistant`. So a tool could see every word of the call and
+not one thing any tool had returned — including the tool that ran two steps
+earlier in the same reply. Every peer SDK exposes this.
+
+It is real now, in all three modes and on resume. A settled call contributes
+`{ role: "tool", content, toolName?, toolCallId? }` — `content` is the result
+the tool returned, capped exactly as the client's `tool.completed` frame caps it
+so live and resumed histories are the same history. Read the arm by ROLE: the
+two id fields are optional, and a result whose `tool.called` fell off the front
+of the log has no name to give.
+
+**It does not reach the MODEL, and that is deliberate.** In an LLM message list
+a `tool` message is one half of a pair the assistant's `tool-call` message
+completes, and both providers reject an orphan; the model already has the whole
+pair from the step that produced it. `ctx.messages` is a tool's view, not the
+model's.
+
+`aai-runtime`'s `_tool-result-message.ts` is the one statement of the shape, and
+the four producers that share it (`to-vercel-tools.ts`, `text-agent.ts`,
+`session-tool-steps.ts`, `session-event-history.ts`) each carry why they are
+where they are. Filters by role (`m.role === "user"`) are unaffected, which is
+what made this additive.
 
 ## `ctx.delegate` (subagents)
 
@@ -1203,28 +1260,12 @@ The audio path depends on the session mode:
 
 All numeric constants live in `packages/aai/src/sdk/constants.ts` (client-audio
 budgets are split into `sdk/client-audio-constants.ts` for file-length reasons
-and re-exported from `constants.ts`, so the import path is unchanged). Key
-defaults that affect agent behavior:
+and re-exported, so the import path is unchanged).
 
-| Default | Value | Where applied | Notes |
-| --- | --- | --- | --- |
-| `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max **tool-calling** steps per reply, LiveKit's `max_tool_steps` analog. **The cap and the forced final answer are ONE change and must not be separated, whatever the number is.** `stopWhen: stepCountIs(n)` alone ends the turn wherever the budget runs out — including straight after a tool result with nothing said — and that reply completes *successfully* with an empty transcript, so `errorPhrase` never fires and the caller hears the agent stop. So the `stopWhen` budget is `maxSteps + 1` and `prepareStep` forces `toolChoice: "none"` on that extra step (`forceFinalAnswer`, `pipeline-llm-stream.ts`); the override also beats an agent-level `toolChoice: "required"`, which would demand a tool call on the one step where tools are off. **`DEFAULT_MAX_STEPS`'s own doc (`sdk/tool-loop-constants.ts`) carries the measurement** — the 815-reply tau2-bench distribution, the reverted cap of 3, and why the single 10-step reply is a DEAD-AIR finding (tune the silence, not the cap). Note S2S enforces the same cap service-side by refusing tool calls past it (`session-core.ts`), where no forced final step is possible. |
-| `toolChoice` | `"auto"` | runtime resolution | LLM decides when to use tools vs respond directly. Full AI SDK set: `"auto"`, `"required"`, `"none"`, `{ type: "tool", toolName }`. |
-| `idleTimeoutMs` | 300,000 (5 min) | `constants.ts` | `0` or non-finite disables the timer entirely. Re-armed on every inbound audio frame (`resetIdle`), so it measures silence, not call length. On expiry session-core emits `idle_timeout` **and closes the socket** — the event alone retires nothing. |
-| `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
-| `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |
-| `interruptionMinDurationMs` | 500 (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`) | `constants.ts` | Pipeline only: sustained speech (ms since the utterance's first partial) required before an interim-triggered barge-in fires — LiveKit's `min_interruption_duration` analog. Non-zero by default: room noise and echo of the agent's own voice produce short interim transcripts, and each one used to abandon a reply mid-word. Finals are never gated. 0 disables. |
-| AssemblyAI `min_turn_silence` / `max_turn_silence` | 1600 / 3500 (`DEFAULT_MIN_TURN_SILENCE_MS`, `DEFAULT_MAX_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | **Two knobs, not one, and the pause-tolerance one is the MAX.** The minimum is when the model runs its end-of-turn CHECK (the turn ends only if it READS as complete), so it is the latency floor on every finished utterance; the maximum force-ends regardless of content and is paid only by utterances that never read complete. Both are always sent, because the service defaults them independently and sending only one is how they invert — the bug this pair replaced, where raising the minimum past the unset maximum's 1536 made every ending come from the acoustic fallback that splits utterances. **The evidence lives in `sdk/endpointing-constants.ts`'s module doc** — the 800 and 3000 reverts, the 600-2000 sweep putting the knee at 1600, why a pause histogram is the wrong instrument, and the measured no-ops (`interruption_delay`, `mode`, ~470 ms to first partial being a model floor). Read it before changing either number. Override via `assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })`. |
-| AssemblyAI `voice_focus` / `voice_focus_threshold` | `near-field` / 0.9 (`DEFAULT_VOICE_FOCUS_THRESHOLD`) | `host/providers/stt/assemblyai.ts` | **Both are always sent together; the threshold is above the service's own 0.7.** The interferer this tunes for is background SPEECH, and the symptom reads as a hallucinating model and is not one. **`DEFAULT_VOICE_FOCUS_THRESHOLD`'s doc owns the evidence** — why no VAD setting substitutes (suppression before the model vs. a frame gate after it), the 15 dB SNR tau2-bench measurement behind 0.9, why `far-field` is much worse, and why disabling Voice Focus surfaces as a TURN-TAKING failure rather than a transcription one. What it does not carry is the **`vad_threshold` sweep run in the same harness, which loses in BOTH directions** — why that knob stays unset. 0.6 cut leakage to 15% but collapsed recall to 51% and took key facts *below* baseline (8/12): the caller's quiet spelled letters are what a stricter gate discards. 0.05-0.20 left recall flat at 70-71% (voice focus had saturated it) while leakage rose 19% -> 27%, buying one content-free recovered utterance for five words of traffic report. Override via `assemblyAIStt({ voiceFocus, voiceFocusThreshold })`; the threshold is omitted entirely when voice focus is off. |
-| Deepgram `endpointing` | 1500 (`DEEPGRAM_DEFAULT_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Same role as `min_turn_silence` above — the provider owns end-of-turn; override via `deepgramStt({ endpointing })`. |
-| `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |
-| `deadAirCoverMs` (dead-air cover) | 5000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream-parts.ts` | Pipeline only, **ON by default**: a turn that sends nothing to TTS for this long gets a short filler, armed as the turn's stream opens and re-armed across every tool call so it covers the pre-first-token gap as well as the chain; `0` disables. **It used to be silently disabled in the shipped default** — the enable was `holdPhrase.length > 0` and `holdPhrase` defaulted to `""`, so one knob turned off two mechanisms and no spec noticed. **Why 5000 rather than 2000 or t=0 is argued on `DEFAULT_DEAD_AIR_COVER_MS`**, and **`DEAD_AIR_COVER_PHRASES` owns the rule that a phrase must be purely declarative**, with the call it derailed. The fillers are emitted `record: false`: they reach TTS and the INTERIM transcript so the caption matches the audio, and never `onDelta`, so they stay out of history, `ctx.messages`, resume and the STT agent-context hint. That flag has a SECOND consumer — the heard cursor (`pipeline-heard.ts`) reads it, so filler moves the heard position (it is audible) and is never truncatable into the record. **The prompt no longer asks for a holding line either** — see `PROMPT_TOOLS`, which records the 15% -> 43% -> 29% measurement that retired it. |
-| `resumeFalseInterruption` | `true` | `pipeline-transport-options.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn. `false` disables. **It is a boolean because the WAIT cannot be an author knob** — it fires when the transcript stream goes quiet with no committed final (the speaking edge's idle watchdog, `DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, 4000, internal), and the rule is stated on `PipelineVoiceTuning.resumeFalseInterruption`. Nothing shorter is safe: this was a `falseInterruptionTimeoutMs: number` defaulting to 2000, measured from roughly the same instant as the STT's `min_turn_silence`, so EVERY genuine barge-in raced its own resume and the resume won often enough to be the common case — each costing a billed LLM turn, putting "the user did not actually say anything" in history directly ahead of the real user turn, and making the caller hear the agent continue the reply they had just interrupted. The floor on the deadline is the STT's endpointing plus final-emission latency, which the transport cannot see, and the ceiling is patience — no useful range to expose, and the old number never governed anything anyway (a probe at `falseInterruptionTimeoutMs: 3` resumed at ~3500ms). A mid-turn cut resumes from the `[interrupted]` history marker only when no cut point is known; otherwise the prompt quotes the estimated last-heard words (`buildTailResumePrompt`) — measured, resuming from the marker instead repeated 60%+ of the words in 10% of consecutive agent utterances. That anchor is the SAME cursor history is truncated with (`pipeline-heard.ts`), so it can never name words the record denies. |
-| `preemptiveGeneration` | `false` | `pipeline-speculation.ts` | Pipeline only, **OFF by default because it was finally measured.** Starts the reply from a high-confidence STT INTERIM (`SttTurnMeta.endOfTurnConfidence` >= `PREEMPTIVE_CONFIDENCE_THRESHOLD`, 0.9) and ADOPTS that running stream when the committed final says the same thing. **The whole measurement is on `PipelineTransportOptions.preemptiveGeneration` (`pipeline-transport-options.ts`) and restated for authors on `PipelineVoiceTuning` (`sdk/agent-voice-tuning.ts`)** — the head start against time-to-first-token, the share poisoned after adoption, the net cost per caller turn, the reverted `hasText()` adoption gate, and the tau2-bench run still owed before it goes back on. Read it there. What lives only here: the two structural guardrails that made ON survivable — no speculative speech (`createStreamPartHandler` is the only path to `sendTtsText` and is built only inside `consumeLlmStream`) and no speculative tool execution (`toDeclaredTools` omits `execute`, so a speculation reaching a tool call is discarded WHOLE, preamble included) — the match rule `normalizeUtterance(final) === normalizeUtterance(partial)` (an extension, truncation or revision all discard), the sawtooth rules (a differing partial aborts at once, identical text at rising confidence never re-fires, at most `MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE` (2) per utterance), inertness unless `toolChoice` is `"auto"`/`"none"`, the double pin of the default (`pipeline-transport-options.test.ts` at the resolver, `pipeline-preemption.test.ts` end-to-end) so a flip either way is a deliberate edit, and that a speculation must never call `emitError` — it has no reply the client knows about. |
-| `HEARD_AUDIO_LAG_MS` | 750 ms | `pipeline-heard.ts` | Pipeline only, internal (no agent field; the transport takes a `heardLagMs` for tests). How far behind the "audio forwarded" bookkeeping the caller's ear is — subtracted from the estimated playback position to get the cursor that decides what an interrupted reply records and where the resume anchor sits. **DERIVED, not measured**, and its own doc says why it is a SECOND constant rather than a reuse of `PIPELINE_PLAYBACK_GRACE_MS`. See "History records what was HEARD". |
-| `maxHistory` | 200 | `constants.ts` | Sliding window of conversation messages retained. **The LLM view is trimmed by `capLlm`, not `cap`** (`pipeline-history.ts`): that view holds tool-call/result PAIRS, and an index trim can land between an assistant `tool-call` message and the `tool` message answering it. Both providers reject an unmatched tool result outright, so every remaining turn of the call failed at the provider and the caller heard `errorPhrase` instead of a reply. Turn sizes vary — 2 messages for a text-only turn, 4 for one tool call, more for a chain — so the window drifts out of alignment on its own; nothing about the conversation has to be unusual. Only the FRONT is trimmed, so dropping leading `tool` messages suffices. A uniform turn size hides the whole class: 4 divides 200, so every trim lands on a turn boundary. **What a step SENDS is bounded separately, in tokens** — a `prepareStep` preparer against the model's context window (`aai-runtime`'s `pipeline-context-budget.ts`), leaving this the guard on unbounded growth. |
-| resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's slot state survives awaiting a `?sessionId=<id>` resume; the constant's doc carries the ~105s client-reconnect span it is sized against. It bounds the IN-PROCESS half only: a durable value outlives it and is reclaimed by the platform's TTL sweep (`aai-server/_session-state-sweep.ts`), because an agent guest that self-exits on idle can reclaim nothing. |
-| `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (empty) | `constants.ts` | NO built-ins are enabled by default — omitting the field and passing `[]` mean the same thing, and every built-in is opt-in by name. A custom or relayed tool with the same name wins. **The constant's doc carries the evidence that argues the OTHER way** (the reverted trim to `["calculate"]`, the tau2 measurement where the model invoked neither `think` nor `calculate`, the prompt-size cost) and should have to be answered by any change. This row read "`think`, `remember`, `recall`, `calculate` … on by default" long after the constant went empty; it is `as const satisfies` now, so emptiness is a type-level fact. |
+**The table of every default — the value, where it is applied, and the
+measurement behind it — is [`DEFAULTS-CLAUDE.md`](DEFAULTS-CLAUDE.md).** Read it
+there before changing any of them: several rows exist because the number was
+already changed once on an intuition the measurement contradicts.
 
 ## Provider sockets disable permessage-deflate
 

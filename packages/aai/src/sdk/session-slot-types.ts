@@ -14,7 +14,7 @@
 
 import type { DeepReadonly } from "./deep-readonly.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import type { ToolContext, ToolDef } from "./types.ts";
+import type { ToolContext, ToolDef, ToolErrorHandler } from "./types.ts";
 
 /**
  * The compile error a mutation body gets for being `async`.
@@ -110,6 +110,17 @@ export interface SlotToolDef<P extends ToolInputSchema, V, R> {
   inputSchema?: P;
   /** The tool body, handed this session's slot value alongside the usual args. */
   execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
+  /**
+   * See {@link ToolDef.onError} — what a THROW out of this body means, and the
+   * only way to say that a failure is fatal rather than something the model
+   * should try again.
+   *
+   * It is forwarded to the {@link ToolDef} this builds and behaves identically:
+   * the slot is not involved, because there is nothing left to hand a handler —
+   * an `updateTool` mutator that threw stored nothing, by that method's own
+   * contract, so `onError` is classifying a call that changed no state.
+   */
+  onError?: ToolErrorHandler;
 }
 
 /**

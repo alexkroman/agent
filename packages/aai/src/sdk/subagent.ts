@@ -57,7 +57,7 @@
  *   with a complaint, up to {@link SubagentDef.maxRetries} times. The retry
  *   continues the run it is correcting, so the tool results the first attempt
  *   paid for are not bought twice.
- * - {@link SubagentDef.description} — what this specialist is for, read by
+ * - {@link SubagentDef.description} — what this subagent is for, read by
  *   whoever is CHOOSING one. Required of a roster entry (`agent({ subagents })`),
  *   ignored at a call site, where the choice was made in code.
  *
@@ -67,7 +67,7 @@
  * decision is as testable as any other branch. A ROSTER —
  * `agent({ subagents: { researcher, factChecker } })` — publishes the set as
  * one `delegate` tool and lets the MODEL choose from it per turn, which is the
- * shape a front desk with eight specialists needs and the one an eight-way
+ * shape a front desk with eight subagents needs and the one an eight-way
  * `if` was standing in for. See `sdk/subagent-roster.ts`; the two compose, and
  * a roster subagent is an ordinary `SubagentDef` a tool may still delegate to
  * by name.
@@ -109,7 +109,7 @@ export interface SubagentDef {
   name: string;
   /**
    * What this subagent is FOR, in one line, written for whoever is choosing
-   * between specialists rather than for the subagent itself.
+   * between subagents rather than for the subagent itself.
    *
    * Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
    * subagent in code, so the choice is already made and there is nothing to
@@ -117,7 +117,7 @@ export interface SubagentDef {
    * `agent({ subagents })`, and that is the whole reason it exists: a roster is
    * routed by the model, which reads this and nothing else. `agent()` refuses a
    * roster entry without one rather than shipping an agent that picks a
-   * coworker off a list of bare names.
+   * subagent off a list of bare names.
    *
    * Write it as the job, not the mechanism: "Researches a topic on the open web
    * and reports what it found" — not "calls web_search".

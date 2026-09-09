@@ -4,6 +4,14 @@
  *
  * {@link executeToolCall} is the single entry point used by both the
  * direct (self-hosted) runtime and the platform sandbox sidecar.
+ *
+ * **It answers with a string on almost every path, and REJECTS on exactly
+ * one.** Bad arguments, an unknown tool, a cancelled call, a deadline and an
+ * ordinary throw all come back as a result the model reads, because the model
+ * is the one who can do something about them. The exception is a tool whose
+ * {@link ToolDef.onError} threw: the author has declared that failure
+ * unrecoverable, so there is nothing to hand back and the call rejects with a
+ * `FatalToolError`. `tool-error-policy.ts` owns which is which.
  */
 
 import type {
@@ -27,18 +35,21 @@ import {
   serializeToolFailure,
 } from "@alexkroman1/aai/host-internal";
 import {
-  MAX_TOOL_RESULT_CHARS,
   rejectingWorkflows,
   TOOL_EXECUTION_TIMEOUT_MS,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "@alexkroman1/aai/internal";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
-import pTimeout from "p-timeout";
+import pTimeout, { TimeoutError } from "p-timeout";
+import { stringifyResult, warnOversizedResult } from "./_tool-result-text.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
+import { resolveToolError } from "./tool-error-policy.ts";
+import type { UsageMeter } from "./usage-meter.ts";
 
 export type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
+export { FatalToolError, isFatalToolError } from "./tool-error-policy.ts";
 
 /**
  * Everything one tool call is given EXCEPT the tool — the bag a subagent's own
@@ -92,6 +103,18 @@ type ExecuteToolCallOptions = {
    * already has.
    */
   subagents?: SubagentRunner | undefined;
+  /**
+   * The issuing SESSION's token meter — what a model call made from inside this
+   * tool costs, and whether one may still be made. Both capabilities above
+   * spend on the session's bill, and until this was carried neither reached the
+   * meter: `usage.updated` under-reported and `usageLimits` bounded only the
+   * conversational loop. On the option bag rather than inside
+   * `createGenerateFn` / `createSubagentRunner` (per RUNTIME, where a meter is
+   * per SESSION), and because {@link ToolCallDefaults} is a subtraction, so a
+   * delegated run carries it with nothing to forget. Absent for a sessionless
+   * caller means uncounted, not refused — see `usage-meter.ts`.
+   */
+  usage?: UsageMeter | undefined;
   logger?: Logger | undefined;
   /**
    * Report that `execute` THREW — as distinct from returning a `ToolFailure`.
@@ -107,8 +130,20 @@ type ExecuteToolCallOptions = {
    *
    * Non-fatal by construction at the call sites — the turn continues, the model
    * still gets the failure, and the frame is for whoever is watching.
+   *
+   * `info.fatal` says which of the two throws this is. `false` is the case
+   * above: the model got the failure and the reply carries on. `true` means the
+   * tool declared the failure UNRECOVERABLE through {@link ToolDef.onError} and
+   * this call is about to REJECT with a `FatalToolError` — the model is handed
+   * nothing, so whoever is watching is the only one who will ever hear about
+   * it. The SESSION is still alive either way, which is why neither maps to a
+   * `fatal: true` error frame (that one releases the caller's microphone).
+   *
+   * A second parameter rather than a second callback, so a reporter that does
+   * not care — `text-agent.ts`'s `toolFault`, which takes only the message —
+   * stays assignable and needed no change.
    */
-  onUncaught?: ((message: string) => void) | undefined;
+  onUncaught?: ((message: string, info: { readonly fatal: boolean }) => void) | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
   /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
    *  as `ctx.signal`) when the issuing turn is cancelled or the session stops. */
@@ -141,7 +176,8 @@ type ExecuteToolCallOptions = {
 function buildToolContext(
   options: ExecuteToolCallOptions & { signal: AbortSignal; deadlineAt: number },
 ): ToolContext {
-  const { env, slots, messages, sessionId, send, signal, generate, subagents, workflows } = options;
+  const { env, slots, messages, sessionId, send, signal, generate, subagents, workflows, usage } =
+    options;
   return {
     env,
     deadlineAt: options.deadlineAt,
@@ -163,10 +199,17 @@ function buildToolContext(
       if (!generate) {
         return Promise.reject(new Error("generate is not available in this execution context"));
       }
+      // Checked where the request is about to be made — the turn loop's rule
+      // one level up, at the other place a session spends. A rejection, not an
+      // empty answer: the tool's `catch` can act on it, and an unhandled one
+      // becomes a failure the model reads.
+      const spent = usage?.exhausted();
+      if (spent !== undefined) return Promise.reject(new Error(spent));
       // The per-call signal cancels an in-flight generation the same way it
       // unblocks the tool await. Passed unconditionally — it is always present
-      // now that `ToolContext.signal` is.
-      return generate(genOpts, { signal });
+      // now that `ToolContext.signal` is. `onUsage` puts what it spends on this
+      // session's meter.
+      return generate(genOpts, { signal, onUsage: usage ? (u) => usage.record(u) : undefined });
     }) as GenerateFn,
     // The runner is handed this call's whole option bag — MINUS the tool, which
     // is the one thing a delegated run supplies itself — plus the per-call
@@ -203,61 +246,77 @@ function buildToolContext(
 }
 
 /**
- * Tool names already warned about by {@link warnOversizedResult}, so a chatty
- * tool costs one line for the life of the process rather than one per call.
+ * Turn a throw out of `execute` into this call's answer — or into a rejection.
  *
- * Process-wide rather than per session, deliberately: tool bodies run in the
- * agent's OWN guest sandbox (or its `aai dev` / self-hosted runtime), one agent
- * per process, so a name here cannot suppress another tenant's first warning.
- * Bounded by the tool roster, which is fixed at deploy time.
+ * The three arms {@link resolveToolError} chooses between, plus the reporting
+ * each one owes. Extracted from {@link executeToolCall}'s `catch` because the
+ * classification is a decision with its own argument (see `tool-error-policy.ts`)
+ * and inlining it put that function over the complexity gate — the seam is the
+ * one a reader already uses: everything above is about RUNNING the tool, and
+ * everything here is about what its failure means.
+ *
+ * @throws {FatalToolError} when the tool's `onError` declared the failure
+ * unrecoverable. Nothing is returned on that path on purpose: an answered call
+ * is something the model reads and reacts to, and a rejected one is not.
  */
-const warnedOversizedTools = new Set<string>();
-
-/**
- * Say — once per tool — that a result is larger than the cap, because the cap
- * does not apply to the copy that matters.
- *
- * `MAX_TOOL_RESULT_CHARS` bounds the CLIENT's `tool.completed` frame
- * (`capToolResult`, in `session-tool-steps.ts` and the pipeline stream) and
- * nothing else. The string this module returns goes to the provider WHOLE and
- * is appended to the conversation, so it is re-sent on every later turn of the
- * call: an unshaped `await res.json()` is the whole response, in the prompt,
- * for the rest of the turn. Two published docs promised the cap applied to both
- * sides, which is what made that shape look free.
- *
- * A warning rather than a cap: the framework cannot tell a deliberately large
- * result (a transcript a subagent summarizes, a table a later step reads) from a
- * forgotten projection, and silently trimming the first would corrupt data an
- * author is relying on — the same argument `assemblyAIVoiceWarning` makes for
- * saying something about a voice it may not refuse. Capping here is a behaviour
- * change and needs a decision, not a patch.
- *
- * Logged, not emitted as a session error: nothing is broken, and the reader is
- * whoever is watching the build or the server log.
- */
-function warnOversizedResult(name: string, result: string, logger: Logger | undefined): void {
-  if (result.length <= MAX_TOOL_RESULT_CHARS || warnedOversizedTools.has(name)) return;
-  warnedOversizedTools.add(name);
-  const message =
-    `Tool "${name}" returned ${result.length} characters, over MAX_TOOL_RESULT_CHARS ` +
-    `(${MAX_TOOL_RESULT_CHARS}). The model receives the WHOLE result and re-reads it on every ` +
-    "later turn of this call; only the client's tool.completed frame is truncated. If this is an " +
-    "unshaped API response, return the fields the model needs.";
-  if (logger) logger.warn(message, { tool: name, chars: result.length });
-  else console.warn(`[tool-executor] ${message}`);
-}
-
-function stringifyResult(result: unknown): string {
-  if (result == null) return "null";
-  if (typeof result === "string") return result;
-  // JSON.stringify returns undefined for functions/symbols — fall back to
-  // String() so the provider always gets a string, never `undefined`.
-  return JSON.stringify(result) ?? String(result);
+function settleToolThrow(params: {
+  name: string;
+  err: unknown;
+  tool: ToolDef;
+  ctx: ToolContext | undefined;
+  cancelled: boolean;
+  logger: Logger | undefined;
+  onUncaught: ExecuteToolCallOptions["onUncaught"];
+}): string {
+  const { name, err, tool, ctx, cancelled, logger, onUncaught } = params;
+  const resolution = resolveToolError({ name, err, onError: tool.onError, ctx, cancelled });
+  if (resolution.kind === "recovered") {
+    // The author classified this throw as recoverable, which makes it the same
+    // kind of answer a RETURNED `ToolFailure` is — so no `onUncaught`, no warn
+    // line, and the result travels the path a success takes. Installing an
+    // `onError` that answers is therefore also how an author silences a throw
+    // they already understand.
+    const text = stringifyResult(resolution.value);
+    logger?.debug("Tool threw and onError answered", { tool: name, error: errorDetail(err) });
+    warnOversizedResult(name, text, logger);
+    return text;
+  }
+  if (resolution.kind === "fatal") {
+    const { error } = resolution;
+    // At ERROR level, not warn: the reply is losing this call outright, and the
+    // only trace the model leaves behind is that it never got a result.
+    if (logger) {
+      logger.error("Tool execution failed fatally", {
+        tool: name,
+        error: errorDetail(error.cause),
+      });
+    } else {
+      console.error(`[tool-executor] Tool execution failed fatally: ${name}`, error.cause);
+    }
+    onUncaught?.(error.message, { fatal: true });
+    throw error;
+  }
+  if (logger) {
+    logger.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
+  } else {
+    console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
+  }
+  // The message names the TOOL, which the raw error never does: what reaches
+  // the model is `errorMessage(err)` alone, so a bare "Cannot read properties
+  // of undefined" was the whole diagnostic an author got for a bug in a file
+  // this function knows the name of.
+  onUncaught?.(`Tool "${name}" threw: ${errorMessage(err)}`, { fatal: false });
+  return serializeToolFailure(errorMessage(err));
 }
 
 /**
  * Validate a tool call's arguments and invoke its handler, returning the
  * stringified (and capped) result.
+ *
+ * @throws {FatalToolError} only when the tool's {@link ToolDef.onError} threw —
+ * see this module's doc and {@link settleToolThrow}. Every caller in this
+ * package lets that rejection propagate rather than converting it back into a
+ * result, which is the whole point of it.
  *
  * @internal
  */
@@ -288,14 +347,39 @@ export async function executeToolCall(
   if (turnSignal?.aborted) followTurn();
   else turnSignal?.addEventListener("abort", followTurn, { once: true });
 
+  // Resolved BEFORE the context is built, because the context carries it:
+  // `ctx.deadlineAt` is what lets a tool budget under its own deadline rather
+  // than be cut off by it. Read here rather than at the `pTimeout` below, so
+  // the instant a tool is told is a hair EARLIER than the one it is held to —
+  // the safe direction for a budget.
+  const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
+  // Set by the `fallback` below, which `pTimeout` runs on the deadline and on
+  // nothing else. It is what tells the catch that THIS call timed out.
+  // `pTimeout` rejects a deadline without aborting anything, so the `cancelled`
+  // read below could not see one: a timeout reached `tool.onError` as though the
+  // tool had faulted, and an `onError` written as "rethrow anything I do not
+  // recognise" — the natural way to write one — turned a transient timeout into
+  // a `FatalToolError` that killed the turn. Rule 1 in `tool-error-policy.ts`
+  // says the deadline is not a tool fault; this is what makes that true.
+  //
+  // A FLAG rather than an error minted up front and matched by identity: the
+  // error was constructed on every call including the ones that succeed — a V8
+  // stack capture per tool call, and a step runs its calls concurrently — and it
+  // is only ever read on the one path that throws it. It also retires a
+  // subtlety: a tool that runs its own `pTimeout` inside `execute` throws the
+  // same CLASS, and that one is the tool's own failure which `onError` must
+  // still see. Raised only in here, it cannot be confused with one from there.
+  let timedOut = false;
+
+  // Declared outside the try because the CATCH needs it: `tool.onError` is
+  // handed the same context `execute` ran with, so a handler can read
+  // `ctx.env` to tell a missing credential from a rejected one. It stays
+  // `undefined` only when `buildToolContext` itself threw, which is a
+  // framework bug rather than a tool one — and `resolveToolError` answers
+  // "default" for it rather than calling a handler with half a context.
+  let ctx: ToolContext | undefined;
   try {
-    // Resolved BEFORE the context is built, because the context carries it:
-    // `ctx.deadlineAt` is what lets a tool budget under its own deadline rather
-    // than be cut off by it. Read here rather than at the `pTimeout` below, so
-    // the instant a tool is told is a hair EARLIER than the one it is held to —
-    // the safe direction for a budget.
-    const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
-    const ctx = buildToolContext({
+    ctx = buildToolContext({
       ...options,
       signal: callController.signal,
       deadlineAt: Date.now() + timeoutMs,
@@ -308,7 +392,12 @@ export async function executeToolCall(
     // underlying execute keeps running unless it observes ctx.signal itself.
     const result = await pTimeout(Promise.resolve(tool.execute(parsed.value, ctx)), {
       milliseconds: timeoutMs,
-      message: `Tool "${name}" timed out after ${timeoutMs}ms`,
+      // Runs on the deadline and never otherwise, so the throw and the flag it
+      // sets are both free on every call that answers in time.
+      fallback: (): never => {
+        timedOut = true;
+        throw new TimeoutError(`Tool "${name}" timed out after ${timeoutMs}ms`);
+      },
       signal: callController.signal,
     });
     await yieldTick();
@@ -319,20 +408,17 @@ export async function executeToolCall(
     warnOversizedResult(name, text, logger);
     return text;
   } catch (err: unknown) {
+    // Read BEFORE the abort below, or every failure would look like one: an
+    // already-aborted controller means something else cut this call — a
+    // barge-in, a reset or `stop()` — and that describes the runtime rather
+    // than the tool. The DEADLINE is the fourth such source and the only one
+    // the controller cannot report, since `pTimeout` settles the await without
+    // touching it; see `timedOut` above.
+    const cancelled = callController.signal.aborted || timedOut;
     // The call is over (timeout or failure): fire the per-call signal so a
     // still-running execute can observe ctx.signal and stop its side effects.
     callController.abort(err);
-    if (logger) {
-      logger.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
-    } else {
-      console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
-    }
-    // The message names the TOOL, which the raw error never does: what reaches
-    // the model is `errorMessage(err)` alone, so a bare "Cannot read properties
-    // of undefined" was the whole diagnostic an author got for a bug in a file
-    // this function knows the name of.
-    onUncaught?.(`Tool "${name}" threw: ${errorMessage(err)}`);
-    return serializeToolFailure(errorMessage(err));
+    return settleToolThrow({ name, err, tool, ctx, cancelled, logger, onUncaught });
   } finally {
     // The turn signal outlives this call; drop the follower or every tool
     // call in the reply leaks a listener on it.

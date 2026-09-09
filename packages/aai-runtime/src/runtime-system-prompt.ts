@@ -1,29 +1,28 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The system prompt a session sends, in two halves.
+ * The system prompt a session sends, in three parts.
  *
  * - The **base** is `buildSystemPrompt(agentConfig, …)` — fixed for the
  *   runtime's lifetime except for the date it stamps, and cached per calendar
- *   day for exactly that reason (see {@link createSystemPromptResolver}). The
- *   one other thing that can move it is an agent whose own `systemPrompt` is a
- *   THUNK, which the cache keys on as well as the day: a base that ignored it
- *   would resolve the author's function once at boot and serve that answer for
- *   the life of the process, which is the whole thing a thunk is not.
+ *   day for exactly that reason (see {@link createSystemPromptResolver}).
+ * - The agent's own **instructions**, when `systemPrompt` is a RESOLVER rather
+ *   than a string: asked once per model request and folded in under the same
+ *   precedence header a static prompt gets. Nothing of it is on the wire — the
+ *   config carries only the static half — so it cannot live in the base.
  * - The **suffix** is per TURN, resolved fresh every time a request is
  *   assembled, and empty on every session that ships today.
  *
  * It is its own module rather than two closures in `runtime.ts` because that
- * file is 5 lines under the 500-line cap and because the two halves want
- * different lifetimes: the base belongs to the RUNTIME (one agent, many
- * sessions), the suffix to one SESSION. Written as one `let` beside the other
+ * file is 5 lines under the 500-line cap and because the parts want different
+ * lifetimes: the base belongs to the RUNTIME (one agent, many sessions), the
+ * instructions resolver and the suffix to one SESSION. Written as one `let` beside the other
  * they read as the same scope, and a suffix accidentally hoisted to runtime
  * scope is one call's dialog phase leaking into every concurrent call — a bug
  * with no symptom on a machine running one session at a time.
  */
 
-import type { SystemPromptOption } from "@alexkroman1/aai";
-import { buildSystemPrompt } from "@alexkroman1/aai/host-internal";
-import { resolveSystemPrompt } from "@alexkroman1/aai/internal";
+import type { AgentInstructions, AgentSessionContext } from "@alexkroman1/aai";
+import { agentInstructionsSection, buildSystemPrompt } from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 
 /**
@@ -76,8 +75,17 @@ export interface SessionSystemPrompt {
 export interface SystemPromptResolver {
   /** Today's base prompt. Exposed for the transports that cannot vary it per turn. */
   base(): string;
-  /** A fresh per-session resolver, starting with no suffix. */
-  forSession(): SessionSystemPrompt;
+  /**
+   * A fresh per-session resolver, starting with no suffix.
+   *
+   * The context is what an {@link AgentInstructions} resolver is called with —
+   * this session's id, env and slots. Passed per SESSION rather than held on
+   * the runtime for the reason the suffix is per session: a resolver reading
+   * one call's slots and answering for another is the concurrency bug this
+   * module's header describes, and it has no symptom on a machine running one
+   * session at a time.
+   */
+  forSession(context: AgentSessionContext): SessionSystemPrompt;
 }
 
 /**
@@ -94,39 +102,42 @@ export interface SystemPromptResolver {
  */
 export function createSystemPromptResolver(deps: {
   agentConfig: AgentConfig;
-  /**
-   * The agent's own `systemPrompt` — a string, or the THUNK an `agent.ts` may
-   * declare (`SystemPromptOption`). Defaults to the config's, which is the
-   * snapshot `toAgentConfig` took of exactly this value: passing the live
-   * definition is what makes a thunk answer per turn rather than once at boot.
-   */
-  systemPrompt?: SystemPromptOption;
   /** Does this runtime have any tool at all — declared or built-in? */
   hasTools: boolean;
   toolGuidance: readonly string[] | undefined;
+  /**
+   * The agent's `systemPrompt` when it is a RESOLVER rather than a string —
+   * `systemPromptResolver(agent.systemPrompt)`.
+   *
+   * A THIRD part between the base and the suffix, not a replacement for either.
+   * `toAgentConfig` puts nothing on the wire for a resolver, so the base carries
+   * no agent-specific section for one, and this fills that section per request
+   * under the same precedence header a static prompt gets
+   * ({@link agentInstructionsSection}) — which is what makes a resolver and a
+   * string land in the same place rather than merely near each other.
+   *
+   * Deliberately NOT `setSuffix`: that slot belongs to the session's dialogs,
+   * last writer wins, and a session may legitimately have both.
+   */
+  instructions?: AgentInstructions | undefined;
 }): SystemPromptResolver {
-  let promptCache: { day: string; authored: string; text: string } | null = null;
+  let promptCache: { day: string; text: string } | null = null;
 
   function base(): string {
     const day = new Date().toDateString();
-    // The AUTHOR's prompt as it stands right now. A string resolves to itself,
-    // so the comparison below is `===` on the same reference and this stays the
-    // once-a-day build it was; a thunk is called per turn, and the assembled
-    // prompt is rebuilt only when what it answers has actually moved — which is
-    // what keeps the date stamp (the expensive half) off the per-turn path.
-    const authored = resolveSystemPrompt(deps.systemPrompt ?? deps.agentConfig.systemPrompt);
-    if (promptCache?.day !== day || promptCache.authored !== authored) {
+    // Keyed on the DAY alone, and that stays right with a resolver in play: the
+    // base is built from the serialized config, which carries only the STATIC
+    // half of `systemPrompt` — a resolver never reaches it (`toAgentConfig`
+    // drops one) and is asked per request in `forSession` instead. So nothing
+    // an author can vary is baked in here.
+    if (promptCache?.day !== day) {
       promptCache = {
         day,
-        authored,
-        text: buildSystemPrompt(
-          { ...deps.agentConfig, systemPrompt: authored },
-          {
-            hasTools: deps.hasTools,
-            voice: true,
-            toolGuidance: deps.toolGuidance,
-          },
-        ),
+        text: buildSystemPrompt(deps.agentConfig, {
+          hasTools: deps.hasTools,
+          voice: true,
+          toolGuidance: deps.toolGuidance,
+        }),
       };
     }
     return promptCache.text;
@@ -134,11 +145,15 @@ export function createSystemPromptResolver(deps: {
 
   return {
     base,
-    forSession(): SessionSystemPrompt {
+    forSession(context: AgentSessionContext): SessionSystemPrompt {
       let suffix: SystemPromptSuffix | null = null;
       return {
         resolve(): string {
-          const text = base();
+          const dynamic = deps.instructions?.(context) ?? "";
+          const text =
+            dynamic === ""
+              ? base()
+              : `${base()}${SUFFIX_SEPARATOR}${agentInstructionsSection(dynamic)}`;
           const extra = suffix?.() ?? "";
           // The identity return is load-bearing, not a micro-optimisation: with
           // no suffix installed this function IS `systemPromptForToday()`, so

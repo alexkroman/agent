@@ -25,6 +25,7 @@
  * inside the one turn assembler that happens to have declared it first.
  */
 
+import type { ToolChoice } from "@alexkroman1/aai";
 import type { PrepareStepFunction, PrepareStepResult, ToolSet } from "ai";
 import type { Logger } from "./runtime-config.ts";
 
@@ -57,6 +58,36 @@ export function composePrepareStep(
     }
     return merged;
   };
+}
+
+/**
+ * Put a DEMANDING `toolChoice` back to `"auto"` after the first step.
+ *
+ * `streamText` applies the request's `toolChoice` to every step, so
+ * `toolChoice: "required"` re-obliges the model to call a tool after it already
+ * has — and again, and again, until the whole `maxSteps` budget is gone and
+ * {@link forceFinalAnswer} spends the reserved step on an answer. Bounded, not
+ * a loop; but the caller waits through every round trip, and what the setting
+ * almost always means is "start by calling something".
+ *
+ * Returns `undefined` — contributing no keys at all — when there is nothing to
+ * reset: `"auto"` and `"none"` are not demands, and an agent that set no
+ * `toolChoice` has the default `"auto"`. That is what makes this safe to
+ * compose in unconditionally and safe to default ON.
+ *
+ * Composed BEFORE {@link forceFinalAnswer}, which owns the same key on the one
+ * step it fires for: the reserved step must have no tools at all, and `"auto"`
+ * there would let the model spend it on another call.
+ *
+ * @internal
+ */
+export function resetToolChoiceAfterFirstStep(
+  toolChoice: ToolChoice,
+  enabled: boolean,
+): ((opts: { stepNumber: number }) => { toolChoice: "auto" } | undefined) | undefined {
+  const demands = toolChoice !== "auto" && toolChoice !== "none";
+  if (!(enabled && demands)) return undefined;
+  return ({ stepNumber }) => (stepNumber === 0 ? undefined : { toolChoice: "auto" });
 }
 
 /**

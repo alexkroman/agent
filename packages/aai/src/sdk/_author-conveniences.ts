@@ -1,10 +1,19 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Normalization of the author-only conveniences `AgentParams` allows on top
- * of `AgentDef` — `system` as an alias of `systemPrompt`, a model-id string
- * for `llm`, `voice` as shorthand for `tts: assemblyAITts({ voice })`, and
- * `minTurnSilenceMs`/`maxTurnSilenceMs` as shorthand for the same two options
- * on `assemblyAIStt()`.
+ * Normalization of the author-only conveniences `AgentParams` allows on top of
+ * `AgentDef`. There are THREE, and they are exactly what this function
+ * implements: a model-id string for `llm`, `voice` as shorthand for
+ * `tts: assemblyAITts({ voice })`, and `minTurnSilenceMs`/`maxTurnSilenceMs` as
+ * shorthand for the same two options on `assemblyAIStt()`.
+ *
+ * **There is no `system` alias, and this doc claimed one for a long time** —
+ * `AgentParams`' own doc did too. `agent({ system: "…" })` is not normalized to
+ * `systemPrompt`; it reaches `assertNoStrayFields` and is refused BY NAME,
+ * which is the better error and is what a reader of that claim would never have
+ * found out. Do not add the alias to make the doc true: two spellings of one
+ * field is a precedence rule somebody has to remember, and the stray-field
+ * message already names the rename.
+ *
  * Used by `agent()` and, for configs that never went through `agent()` (a
  * raw `export default {...}` object), by `toAgentConfig`, so the
  * conveniences work on every authoring path rather than only the

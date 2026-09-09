@@ -7,7 +7,7 @@
  * lifecycle hooks, and session management.
  */
 
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS, systemPromptResolver } from "@alexkroman1/aai/host-internal";
 import { createOwnedMap, invariant } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
@@ -16,10 +16,10 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
 import { openAppDb } from "./app-db.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
-import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
 import { logResolvedRuntime, resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
+import { openSessionWiring } from "./runtime-session-controls.ts";
 import { attachSessionState, createRuntimeSessionState } from "./runtime-session-state.ts";
 import { attachSessionStream } from "./runtime-session-stream.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
@@ -31,8 +31,9 @@ import {
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type ServerSession } from "./session-core.ts";
-import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
+import type { SessionEmitter } from "./session-emitter.ts";
 import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
+import type { UsageMeter } from "./usage-meter.ts";
 import { platformGuestOptions } from "./workflow-platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow-runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
@@ -163,6 +164,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   // What `ctx.send` and a `syncState` push resolve through, for the same resume
   // reason as the sink map beside it — see `liveEmitter` in `runtime-tools.ts`.
   const emitters = createOwnedMap<string, SessionEmitter>();
+  // And the same for the token meter: `ctx.generate` and `ctx.delegate` are
+  // dispatched by a per-RUNTIME executor and spend on a per-SESSION budget, so
+  // the tool path resolves this by id exactly as it resolves the emitter above.
+  const meters = createOwnedMap<string, UsageMeter>();
   // The Voice Agent API accepts exactly one sample rate and honours no
   // declaration to the contrary, so its rates are pinned rather than
   // negotiated. Pinned BEFORE the ready config is built, because that frame is
@@ -208,6 +213,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       workflows,
       logger,
       emitters,
+      meters,
       stateStore: sessionState.store,
     });
 
@@ -238,14 +244,18 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     logger,
   });
 
-  // The system prompt, in two halves — the day-cached base and a per-turn
-  // suffix. Both, the cache, and why the LIVE definition's prompt is passed
-  // beside the config's snapshot of it, are in `runtime-system-prompt.ts`.
+  // The system prompt, in three parts — the day-cached base, the agent's own
+  // instructions when `systemPrompt` is a resolver, and a per-turn suffix. All
+  // three, and the reason the expensive part stays cached, are in
+  // `runtime-system-prompt.ts`.
   const systemPrompts = createSystemPromptResolver({
     agentConfig,
-    systemPrompt: agent.systemPrompt,
     hasTools: toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0,
     toolGuidance,
+    // `undefined` unless the author declared a RESOLVER, in which case
+    // `toAgentConfig` put nothing on the wire for it and this is what fills the
+    // agent-specific section per request — see `runtime-system-prompt.ts`.
+    ...omitUndefined({ instructions: systemPromptResolver(agent.systemPrompt) }),
   });
 
   function createSession(sessionOpts: TransportSessionOpts): ServerSession {
@@ -254,44 +264,23 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     sessionState.sweeps.cancel(sessionOpts.id);
     const releaseSink = sinkMap.claim(sessionOpts.id, sessionOpts.client);
 
-    // The one way this session publishes an event: recorded into the retained
-    // stream, sent to the client, then announced to the agent's own hooks. Built
-    // BEFORE the transport callbacks, because two of them emit directly. Hook
-    // deps carry no database — a hook that persists brings its own client, like
-    // tool code; see `hookDepsFor`, which dropped its `db` thunk with `ctx.db`.
-    const hooks = hookDepsFor({
-      handlers: agent.events,
+    // Everything one session is wired with before its transport exists — the
+    // event emitter and its hooks, the dialogs that address the prompt, the
+    // token meter and the guardrails. See `runtime-session-controls.ts`.
+    const { dialogs, emitter, usage, guardrails } = openSessionWiring({
+      agent,
       env,
-      // The same view a tool call's `ctx.slots` is, so a hook and a tool that
-      // touch one slot are touching one value rather than two caches of it.
-      slots: sessionState.store.viewFor(sessionOpts.id),
-    });
-    // Fire-and-forget: `commitSessionState` never rejects, and the emit path is
-    // synchronous — a hook's write must not put a backend round trip in front of
-    // the next frame on a live call.
-    const commit = commitSessionState
-      ? (): void => void commitSessionState(sessionOpts.id)
-      : undefined;
-    // This session's prompt and the dialogs that address it: every session event
-    // is offered to each declared dialog, its per-state deadline is armed, and
-    // the active instructions become the prompt's per-turn suffix. Inert for an
-    // agent that declares none — see `runtime-dialogs.ts`.
-    const dialogs = openSessionDialogs(agent.dialogs, sessionOpts.id, {
-      prompt: systemPrompts.forSession(),
-      slots: sessionState.store.viewFor(sessionOpts.id),
-      transport: () => transport,
-      logger,
-      ...omitUndefined({ commit }),
-    });
-    const emitter = createSessionEmitter({
       sessionId: sessionOpts.id,
       client: sessionOpts.client,
-      stream: sessionState.stream,
-      observe: dialogs.observe,
+      state: sessionState,
+      prompt: systemPrompts,
+      limits: agentConfig.usageLimits,
+      transport: () => transport,
       logger,
-      ...omitUndefined({ hooks, commit }),
+      ...omitUndefined({ commitSessionState }),
     });
     const releaseEmitter = emitters.claim(sessionOpts.id, emitter);
+    const releaseMeter = meters.claim(sessionOpts.id, usage);
 
     // Call it — `pipelineProviders` is a thunk (see above), so `Boolean(...)` on
     // the function itself is always true and would route every S2S session down
@@ -330,6 +319,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       // and one that cannot resolves it once (see `runtime-transport.ts`).
       systemPrompt: () => dialogs.prompt.resolve(),
       callbacks,
+      guardrails,
+      usage,
       ...omitUndefined({ dialogTurn: dialogs.turnKnobs }),
     });
 
@@ -361,6 +352,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         dialogs.stop();
         const owned = releaseSink();
         releaseEmitter();
+        releaseMeter();
         return owned;
       },
       pushStateSnapshot,
@@ -421,6 +413,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     sessions.clear();
     sinkMap.clear();
     emitters.clear();
+    meters.clear();
     // Watches outlive nothing: every session they could announce to is gone,
     // and a poll loop left running would hold the process past shutdown.
     notifier?.stop();

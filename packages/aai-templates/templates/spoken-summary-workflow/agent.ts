@@ -151,6 +151,10 @@ export const spokenSummary: WorkflowDef<typeof spokenSummaryInput, SpokenSummary
 
 export default workflowApp({
   name: "Spoken Summary",
+  // The listing line — a registry row, the studio's picker, `aai list`; never
+  // the model, which a workflow app does not have. It names what comes OUT,
+  // which is what tells this desk apart from every other one that takes audio.
+  description: "Turns a recording into a written summary and an audio one you can play back",
   workflows: { spokenSummary },
   // Checked at deploy time, so a missing key is a warning naming it rather than
   // a run that fails on its second step. A workflow app declares no providers,

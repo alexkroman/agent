@@ -9,6 +9,9 @@ import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Pizza Palace",
+  // What the shop DOES, for a reader of a list of agents — not for the model,
+  // which gets `system-prompt.md` and the generated menu below.
+  description: "Takes pizza orders over the phone, from first topping to checkout",
   // `orderSlot.state` IS the `() => ({ [slot.key]: slot.create() })` factory,
   // so the session's cart exists before the first tool call — which is what a
   // resumed connection needs to have something to project.

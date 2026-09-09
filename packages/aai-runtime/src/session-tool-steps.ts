@@ -28,6 +28,7 @@ import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { capToolResult } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { toolResultMessage } from "./_tool-result-message.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 
@@ -52,6 +53,17 @@ export type ToolStepDeps = {
   log: Logger;
   /** The live conversation, snapshotted per call. */
   history: () => readonly Message[];
+  /**
+   * Append this call's own result to that conversation, so the NEXT tool call
+   * of the reply reads what this one answered — the `"tool"` arm of
+   * {@link Message}.
+   *
+   * Called beside every `tool.completed` emit below and with the SAME string
+   * the event carries, which is what makes the live view and the one a resume
+   * rebuilds out of that event stream (`session-event-history.ts`) the same
+   * history rather than two nearly-equal ones.
+   */
+  recordToolResult: (message: Message) => void;
   /** True in relay/host mode, where the relay executor emits `tool.called` itself. */
   relayed: boolean;
 };
@@ -91,6 +103,7 @@ export function runToolStep(
       result: serializeToolFailure("Maximum tool steps reached. Please respond to the user now."),
     });
     emit({ type: "tool.completed", toolCallId: callId, result: "{}" });
+    deps.recordToolResult(toolResultMessage({ result: "{}", toolName: name, toolCallId: callId }));
     return undefined;
   }
   return (async () => {
@@ -111,10 +124,17 @@ export function runToolStep(
       // here over the cap is re-sent to the provider on every later turn.
       reply.pendingTools.push({ callId, result });
       emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(result) });
+      deps.recordToolResult(toolResultMessage({ result, toolName: name, toolCallId: callId }));
     } catch (err) {
       const message = errorMessage(err);
       reply.pendingTools.push({ callId, result: serializeToolFailure(message) });
       emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(message) });
+      // The EVENT's string, not the provider's — see `recordToolResult`. The
+      // two differ here (the provider gets `serializeToolFailure(message)`),
+      // and it is the event a resume replays.
+      deps.recordToolResult(
+        toolResultMessage({ result: message, toolName: name, toolCallId: callId }),
+      );
     }
   })();
 }

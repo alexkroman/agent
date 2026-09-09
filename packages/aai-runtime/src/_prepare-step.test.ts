@@ -5,7 +5,12 @@
 
 import type { ModelMessage, PrepareStepFunction, ToolSet } from "ai";
 import { describe, expect, test, vi } from "vitest";
-import { composePrepareStep } from "./_prepare-step.ts";
+import {
+  composePrepareStep,
+  forceFinalAnswer,
+  resetToolChoiceAfterFirstStep,
+} from "./_prepare-step.ts";
+import { silentLogger } from "./runtime-config.ts";
 
 /** The `prepareStep` options object, with only the fields a case varies set. */
 function step(
@@ -92,5 +97,48 @@ describe("composePrepareStep", () => {
     // composed function would be fine too, but the empty object is what every
     // other branch returns and one shape is easier to reason about.
     expect(await composePrepareStep()(step())).toEqual({});
+  });
+});
+
+describe("resetToolChoiceAfterFirstStep", () => {
+  test("a demanding toolChoice is reset from step 1 on", () => {
+    // The sharp edge it removes: `"required"` is applied to EVERY step, so the
+    // model is re-obliged to call a tool after it already has, burning the
+    // whole `maxSteps` budget before `forceFinalAnswer` rescues the turn.
+    const preparer = resetToolChoiceAfterFirstStep("required", true);
+    expect(preparer?.({ stepNumber: 0 })).toBeUndefined();
+    expect(preparer?.({ stepNumber: 1 })).toEqual({ toolChoice: "auto" });
+    expect(preparer?.({ stepNumber: 7 })).toEqual({ toolChoice: "auto" });
+  });
+
+  test("a NAMED tool is a demand too", () => {
+    const preparer = resetToolChoiceAfterFirstStep({ type: "tool", toolName: "lookup" }, true);
+    expect(preparer?.({ stepNumber: 1 })).toEqual({ toolChoice: "auto" });
+  });
+
+  test("it does not exist at all for an agent that set no toolChoice", () => {
+    // The opt-out default is only safe because this contributes NO preparer —
+    // not a preparer that returns nothing — when there is no demand to reset.
+    expect(resetToolChoiceAfterFirstStep("auto", true)).toBeUndefined();
+    expect(resetToolChoiceAfterFirstStep("none", true)).toBeUndefined();
+  });
+
+  test("disabled, it does not exist either", () => {
+    expect(resetToolChoiceAfterFirstStep("required", false)).toBeUndefined();
+  });
+
+  test("forceFinalAnswer still WINS on the reserved step", async () => {
+    // Composed before it deliberately: the reserved step exists so the model
+    // has no move left but to speak, and `"auto"` there would let it spend the
+    // step on another call.
+    const composed = composePrepareStep(
+      resetToolChoiceAfterFirstStep("required", true),
+      forceFinalAnswer(2, silentLogger, "sid"),
+    );
+    // `step()` is the real `prepareStep` options shape, which is what the
+    // composed function takes — the two preparers under it read only
+    // `stepNumber`, but the seam between them is typed and stays typed.
+    expect(await composed(step({ stepNumber: 1 }))).toEqual({ toolChoice: "auto" });
+    expect(await composed(step({ stepNumber: 2 }))).toEqual({ toolChoice: "none" });
   });
 });

@@ -40,6 +40,7 @@ function toAgentConfig(source: AgentConfigSource): {
      | "recall"
     | "calculate")[];
   deadAirCoverMs?: number;
+  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -48,6 +49,8 @@ function toAgentConfig(source: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  maxOutputTokens?: number;
+  maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
      pinnedTools?: Record<string, string>;
@@ -60,6 +63,7 @@ function toAgentConfig(source: AgentConfigSource): {
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
+  resetToolChoice?: boolean;
   resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
@@ -87,6 +91,9 @@ function toAgentConfig(source: AgentConfigSource): {
   tts?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  usageLimits?: {
+     totalTokens?: number;
   };
 };
 ```
@@ -117,6 +124,7 @@ the runtime.
      | "recall"
     | "calculate")[];
   deadAirCoverMs?: number;
+  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -125,6 +133,8 @@ the runtime.
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  maxOutputTokens?: number;
+  maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
      pinnedTools?: Record<string, string>;
@@ -137,6 +147,7 @@ the runtime.
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
+  resetToolChoice?: boolean;
   resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
@@ -165,6 +176,9 @@ the runtime.
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  usageLimits?: {
+     totalTokens?: number;
+  };
 }
 ```
 
@@ -187,6 +201,12 @@ optional builtinTools?: readonly (
 
 ```ts
 optional deadAirCoverMs?: number;
+```
+
+##### description?
+
+```ts
+optional description?: string;
 ```
 
 ##### errorPhrase?
@@ -220,6 +240,18 @@ optional interruptionMinDurationMs?: number;
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }
+```
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
 ```
 
 ##### maxSteps?
@@ -272,6 +304,12 @@ optional preemptiveGeneration?: boolean;
 
 ```ts
 optional requiredEnv?: readonly string[];
+```
+
+##### resetToolChoice?
+
+```ts
+optional resetToolChoice?: boolean;
 ```
 
 ##### resumeFalseInterruption?
@@ -365,6 +403,14 @@ optional toolChoice?:
 {
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### usageLimits?
+
+```ts
+{
+  totalTokens?: number;
 }
 ```
 
@@ -490,7 +536,7 @@ config that flows CLI → server → runtime unchanged.
 
 ```ts
 type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
-  systemPrompt?: SystemPromptOption;
+  systemPrompt?: AgentSystemPrompt;
 } & { [K in HostOnlyAgentField]?: unknown };
 ```
 
@@ -506,14 +552,16 @@ spread call sites (`{...agent, stt: maybeUndefined}`) legal under
 ##### systemPrompt?
 
 ```ts
-optional systemPrompt?: SystemPromptOption;
+optional systemPrompt?: AgentSystemPrompt;
 ```
 
-A string on the wire, but an `AgentDef` may declare a THUNK — see
-[SystemPromptOption](index.md#systempromptoption). Widened here rather than on [AgentConfig](#agentconfig)
-so `AgentDef` stays assignable to this by construction, which is what every
-`toAgentConfig(agent)` call site relies on; [toAgentConfig](#toagentconfig) resolves
-it once and the config carries the string.
+Wider than the config's own `string`, because `AgentDef.systemPrompt`
+may be a RESOLVER — a function this layer cannot serialize and must not
+hand onward. Widened here rather than on [AgentConfig](#agentconfig) so `AgentDef`
+stays assignable to this by construction, which is what every
+`toAgentConfig(agent)` call site relies on. `toAgentConfig` drops it (see
+`staticSystemPrompt`); the runtime holds the agent's own module and asks
+the function per request.
 
 ***
 
@@ -612,7 +660,7 @@ type: "function";
 ### HOST\_ONLY\_AGENT\_FIELDS
 
 ```ts
-const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events"];
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
 ```
 
 `AgentDef` fields that must never cross the serialization boundary — the

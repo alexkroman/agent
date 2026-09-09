@@ -326,6 +326,27 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     state: z.ZodUnknown;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"usage.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    inputTokens: z.ZodNumber;
+    outputTokens: z.ZodNumber;
+    totalTokens: z.ZodNumber;
+    steps: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"guardrail.blocked">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+    }>;
+    replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;

@@ -20,8 +20,8 @@
     "dropped": {}
   },
   "coding": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "defaults": {
@@ -30,8 +30,8 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "ffmpeg": {
@@ -75,13 +75,13 @@
     "dropped": {}
   },
   "state": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "step": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "step-errors": {
@@ -100,8 +100,8 @@
     "dropped": {}
   },
   "subagent": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "testing": {
@@ -112,8 +112,8 @@
     }
   },
   "tool": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "transcribe": {

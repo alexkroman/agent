@@ -292,6 +292,8 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -428,6 +430,15 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
+};
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
 };
 
 // @public
@@ -684,11 +695,18 @@ type AgentConfig = z.infer<typeof AgentConfigSchema>;
 // @internal
 const AgentConfigSchema: z.ZodObject<{
     name: z.ZodString;
+    description: z.ZodOptional<z.ZodString>;
     systemPrompt: z.ZodDefault<z.ZodString>;
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
     temperature: z.ZodOptional<z.ZodNumber>;
+    maxOutputTokens: z.ZodOptional<z.ZodNumber>;
+    maxRetries: z.ZodOptional<z.ZodNumber>;
+    resetToolChoice: z.ZodOptional<z.ZodBoolean>;
+    usageLimits: z.ZodOptional<z.ZodObject<{
+        totalTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -760,6 +778,25 @@ const AgentConfigSchema: z.ZodObject<{
 export type AgentEnv = Record<string, string> & {
     readonly [hostCredentialsMarker]?: never;
 };
+
+// @public
+type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @internal
+export function agentInstructionsSection(instructions: string): string;
+
+// @public
+interface AgentSessionContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    slots: SlotStore;
+}
+
+// @public
+type AgentSystemPrompt = string | AgentInstructions;
 
 // @public
 export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
@@ -1379,6 +1416,8 @@ export const MAX_WS_PAYLOAD_BYTES: number;
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -1579,6 +1618,9 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
 // @public
 export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
 
+// @internal
+export function runAgentGuardrails(guardrails: readonly AgentGuardrail[] | undefined, text: string, ctx: AgentSessionContext, onError: (err: unknown) => void): Promise<string | undefined>;
+
 // @public
 export function runCapped(cmd: string, args: string[], opts: RunCappedOptions): Promise<SpawnCappedResult>;
 
@@ -1699,6 +1741,9 @@ type StartOptions = {
     key?: string;
     notify?: boolean | string;
 };
+
+// @internal
+export function staticSystemPrompt(prompt: AgentSystemPrompt | undefined): string | undefined;
 
 // @internal
 export const STEP_FETCH_CONNECTIONS = 64;
@@ -1871,6 +1916,9 @@ interface SubagentToolCall {
 }
 
 // @internal
+export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): AgentInstructions | undefined;
+
+// @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 // @public
@@ -1893,10 +1941,19 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
 };
 
 // @public
 export type ToolDefRecord = Record<string, ToolDef>;
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
@@ -2205,10 +2262,10 @@ export function addDays(iso: string, days: number): string;
 export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning {
+export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
     dialogs?: readonly AnyDialog[];
-    events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
     llm?: LlmProvider;
@@ -2223,10 +2280,8 @@ export interface AgentDef extends PipelineVoiceTuning {
     stt?: SttProvider;
     sttPrompt?: string;
     subagents?: SubagentRoster;
-    syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: SystemPromptOption;
+    systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
-    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -2235,7 +2290,44 @@ export interface AgentDef extends PipelineVoiceTuning {
 }
 
 // @public
+export type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+export interface AgentGuardrails {
+    inputGuardrails?: readonly AgentGuardrail[];
+    outputGuardrails?: readonly AgentGuardrail[];
+}
+
+// @public
+export type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @public
+export interface AgentModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    resetToolChoice?: boolean;
+    temperature?: number;
+    usageLimits?: UsageLimits;
+}
+
+// @public
+export interface AgentObservation {
+    events?: SessionEventHandlers;
+    syncState?: StateProjection | readonly StateProjection[];
+}
+
+// @public
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
+
+// @public
+export interface AgentSessionContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    slots: SlotStore;
+}
+
+// @public
+export type AgentSystemPrompt = string | AgentInstructions;
 
 // @public
 export type AnyDialog = Dialog<AnyStateMachine, unknown>;
@@ -2448,6 +2540,7 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
+    onError?: ToolErrorHandler;
     send?: E;
     sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
     when: string | readonly string[];
@@ -2612,6 +2705,8 @@ export function mcpToolName(serverKey: string, remoteName: string): string;
 export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -2938,6 +3033,27 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     state: z.ZodUnknown;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"usage.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    inputTokens: z.ZodNumber;
+    outputTokens: z.ZodNumber;
+    totalTokens: z.ZodNumber;
+    steps: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"guardrail.blocked">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+    }>;
+    replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -3042,6 +3158,7 @@ export interface SlotToolDef<P extends ToolInputSchema, V, R> {
     description: string;
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
     inputSchema?: P;
+    onError?: ToolErrorHandler;
 }
 
 // @public
@@ -3194,9 +3311,6 @@ export interface SubagentToolCall {
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
-export type SystemPromptOption = string | (() => string);
-
-// @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
@@ -3248,7 +3362,11 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
 };
+
+// @public
+export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 // @public
 export type ToolFailure = {
@@ -3275,6 +3393,11 @@ export interface TypedDelegateResult<T> extends DelegateResult {
 export interface TypedSubagentDef<T> extends SubagentDef {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+export interface UsageLimits {
+    totalTokens?: number;
 }
 
 // @public
@@ -3311,7 +3434,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
@@ -3690,9 +3813,6 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
-export function resolveSystemPrompt(prompt: SystemPromptOption): string;
-
-// @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public
@@ -3761,9 +3881,6 @@ type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
-
-// @public
-type SystemPromptOption = string | (() => string);
 
 // @public
 export const TELEPHONY_CARRIERS: readonly ["twilio", "telnyx"];
@@ -4023,11 +4140,18 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 // @internal
 export const AgentConfigSchema: z.ZodObject<{
     name: z.ZodString;
+    description: z.ZodOptional<z.ZodString>;
     systemPrompt: z.ZodDefault<z.ZodString>;
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
     temperature: z.ZodOptional<z.ZodNumber>;
+    maxOutputTokens: z.ZodOptional<z.ZodNumber>;
+    maxRetries: z.ZodOptional<z.ZodNumber>;
+    resetToolChoice: z.ZodOptional<z.ZodBoolean>;
+    usageLimits: z.ZodOptional<z.ZodObject<{
+        totalTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -4097,7 +4221,7 @@ export const AgentConfigSchema: z.ZodObject<{
 
 // @public
 export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
-    systemPrompt?: SystemPromptOption;
+    systemPrompt?: AgentSystemPrompt;
 } & {
     [K in HostOnlyAgentField]?: unknown;
 };
@@ -4111,10 +4235,10 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineVoiceTuning {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
     dialogs?: readonly AnyDialog[];
-    events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
     llm?: LlmProvider;
@@ -4129,16 +4253,51 @@ interface AgentDef extends PipelineVoiceTuning {
     stt?: SttProvider;
     sttPrompt?: string;
     subagents?: SubagentRoster;
-    syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: SystemPromptOption;
+    systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
-    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
+
+// @public
+type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+interface AgentGuardrails {
+    inputGuardrails?: readonly AgentGuardrail[];
+    outputGuardrails?: readonly AgentGuardrail[];
+}
+
+// @public
+type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @public
+interface AgentModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    resetToolChoice?: boolean;
+    temperature?: number;
+    usageLimits?: UsageLimits;
+}
+
+// @public
+interface AgentObservation {
+    events?: SessionEventHandlers;
+    syncState?: StateProjection | readonly StateProjection[];
+}
+
+// @public
+interface AgentSessionContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    slots: SlotStore;
+}
+
+// @public
+type AgentSystemPrompt = string | AgentInstructions;
 
 // @public (undocumented)
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[];
@@ -4225,6 +4384,7 @@ interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
+    onError?: ToolErrorHandler;
     send?: E;
     sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
     when: string | readonly string[];
@@ -4283,7 +4443,7 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -4313,6 +4473,8 @@ type McpServers = Readonly<Record<string, McpServerConfig>>;
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -4526,6 +4688,27 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     state: z.ZodUnknown;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"usage.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    inputTokens: z.ZodNumber;
+    outputTokens: z.ZodNumber;
+    totalTokens: z.ZodNumber;
+    steps: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"guardrail.blocked">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+    }>;
+    replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -4679,9 +4862,6 @@ interface SubagentToolCall {
 }
 
 // @public
-type SystemPromptOption = string | (() => string);
-
-// @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
@@ -4716,7 +4896,11 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
 };
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 // @public
 type ToolFailure = {
@@ -4765,6 +4949,11 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSubagentDef<T> extends SubagentDef {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UsageLimits {
+    totalTokens?: number;
 }
 
 // @public
@@ -5204,6 +5393,27 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     state: z.ZodUnknown;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"usage.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    inputTokens: z.ZodNumber;
+    outputTokens: z.ZodNumber;
+    totalTokens: z.ZodNumber;
+    steps: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"guardrail.blocked">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+    }>;
+    replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -5388,6 +5598,8 @@ export function mapSettled<T, R>(items: readonly T[], width: number, run: (item:
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -5732,6 +5944,15 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
+};
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
 };
 
 // @public
@@ -6324,11 +6545,18 @@ type AgentConfig = z.infer<typeof AgentConfigSchema>;
 // @internal
 const AgentConfigSchema: z.ZodObject<{
     name: z.ZodString;
+    description: z.ZodOptional<z.ZodString>;
     systemPrompt: z.ZodDefault<z.ZodString>;
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
     temperature: z.ZodOptional<z.ZodNumber>;
+    maxOutputTokens: z.ZodOptional<z.ZodNumber>;
+    maxRetries: z.ZodOptional<z.ZodNumber>;
+    resetToolChoice: z.ZodOptional<z.ZodBoolean>;
+    usageLimits: z.ZodOptional<z.ZodObject<{
+        totalTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -6398,16 +6626,16 @@ const AgentConfigSchema: z.ZodObject<{
 
 // @public
 type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
-    systemPrompt?: SystemPromptOption;
+    systemPrompt?: AgentSystemPrompt;
 } & {
     [K in HostOnlyAgentField]?: unknown;
 };
 
 // @public
-interface AgentDef extends PipelineVoiceTuning {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
     dialogs?: readonly AnyDialog[];
-    events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
     llm?: LlmProvider;
@@ -6422,16 +6650,51 @@ interface AgentDef extends PipelineVoiceTuning {
     stt?: SttProvider;
     sttPrompt?: string;
     subagents?: SubagentRoster;
-    syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: SystemPromptOption;
+    systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
-    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
+
+// @public
+type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+interface AgentGuardrails {
+    inputGuardrails?: readonly AgentGuardrail[];
+    outputGuardrails?: readonly AgentGuardrail[];
+}
+
+// @public
+type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @public
+interface AgentModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    resetToolChoice?: boolean;
+    temperature?: number;
+    usageLimits?: UsageLimits;
+}
+
+// @public
+interface AgentObservation {
+    events?: SessionEventHandlers;
+    syncState?: StateProjection | readonly StateProjection[];
+}
+
+// @public
+interface AgentSessionContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    slots: SlotStore;
+}
+
+// @public
+type AgentSystemPrompt = string | AgentInstructions;
 
 // @public
 type AnyDialog = Dialog<AnyStateMachine, unknown>;
@@ -6541,6 +6804,7 @@ interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
+    onError?: ToolErrorHandler;
     send?: E;
     sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
     when: string | readonly string[];
@@ -6614,7 +6878,7 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events"];
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
 
 // @public
 type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -6644,6 +6908,8 @@ type McpServers = Readonly<Record<string, McpServerConfig>>;
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -6907,6 +7173,27 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     state: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"usage.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    inputTokens: z.ZodNumber;
+    outputTokens: z.ZodNumber;
+    totalTokens: z.ZodNumber;
+    steps: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"guardrail.blocked">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+    }>;
+    replacement: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -7312,9 +7599,6 @@ interface SubagentToolCall {
 }
 
 // @public
-type SystemPromptOption = string | (() => string);
-
-// @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
@@ -7368,7 +7652,11 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
 };
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 // @public
 type ToolFailure = {
@@ -7407,6 +7695,11 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSubagentDef<T> extends SubagentDef {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UsageLimits {
+    totalTokens?: number;
 }
 
 // @public
@@ -7663,6 +7956,8 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -7962,6 +8257,15 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
+};
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
 };
 
 // @public
@@ -9064,6 +9368,7 @@ export function expectToolBeforeSpeech(turn: EvalTurn): void;
 // @public
 export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
 // @public
@@ -9120,6 +9425,16 @@ export function statesIn<T>(events: readonly SessionEvent[], schema: StandardSch
 export function statesIn(events: readonly SessionEvent[]): readonly unknown[];
 
 export { StepFetch }
+
+// @public
+export interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
 
 // @public
 export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
@@ -9428,6 +9743,7 @@ export type EvalWorkflowTestContext = {
 // @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
 // @public
@@ -9456,6 +9772,16 @@ export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string
     mode: EvalMode;
     reason: string;
 };
+
+// @public
+interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
 
 // @public
 type StubScript = string | readonly (string | StubStep)[];
@@ -9488,9 +9814,9 @@ import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { McpServers } from '@alexkroman1/aai';
 import type { Message } from '@alexkroman1/aai';
-import { ModelMessage } from 'ai';
+import type { ModelMessage } from 'ai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import { PrepareStepFunction } from 'ai';
+import type { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
@@ -9499,8 +9825,8 @@ import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
 import type { SlotStore } from '@alexkroman1/aai';
-import { StepResult } from 'ai';
-import { streamText } from 'ai';
+import type { StepResult } from 'ai';
+import type { streamText } from 'ai';
 import { SttError } from '@alexkroman1/aai/host-internal';
 import { SttEvents } from '@alexkroman1/aai/host-internal';
 import { SttOpener } from '@alexkroman1/aai/host-internal';
@@ -9747,6 +10073,7 @@ export { HostCredentialEnv }
 // @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
 // @public
@@ -10229,6 +10556,16 @@ type StepEntry = {
 };
 
 // @public
+interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
+
+// @public
 export type StoredSessionEvent = {
     index: number;
     json: string;
@@ -10591,8 +10928,11 @@ type ExecuteToolCallOptions = {
     messages?: readonly Message[] | undefined;
     generate?: HostGenerateFn | undefined;
     subagents?: SubagentRunner | undefined;
+    usage?: UsageMeter | undefined;
     logger?: Logger | undefined;
-    onUncaught?: ((message: string) => void) | undefined;
+    onUncaught?: ((message: string, info: {
+        readonly fatal: boolean;
+    }) => void) | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
@@ -10639,6 +10979,7 @@ type HookRecord = {
 // @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
 // @internal
@@ -11019,6 +11360,16 @@ type StepEntry = {
 };
 
 // @public
+interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
+
+// @public
 type StoredSessionEvent = {
     index: number;
     json: string;
@@ -11082,6 +11433,21 @@ type UploadStore = UploadReader & {
 };
 
 // @internal
+export interface UsageMeter {
+    exhausted(): string | undefined;
+    record(usage: StepUsage | undefined): void;
+    snapshot(): UsageSnapshot;
+}
+
+// @internal
+export interface UsageSnapshot {
+    inputTokens: number;
+    outputTokens: number;
+    steps: number;
+    totalTokens: number;
+}
+
+// @internal
 export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOptions): void;
 
 // @internal
@@ -11136,16 +11502,16 @@ type WsSessionOptions = {
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai/internal';
-import { LanguageModel } from 'ai';
-import { ModelMessage } from 'ai';
-import { PrepareStepFunction } from 'ai';
+import type { LanguageModel } from 'ai';
+import type { ModelMessage } from 'ai';
+import type { PrepareStepFunction } from 'ai';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
-import { StepResult } from 'ai';
+import type { StepResult } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
-import { ToolSet } from 'ai';
+import type { ToolSet } from 'ai';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';

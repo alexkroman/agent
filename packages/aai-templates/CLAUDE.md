@@ -255,6 +255,11 @@ once, and the templates are now their reference use:
 | `.aai-scroll` (`@alexkroman1/aai-ui/styles.css`) | not an export, but the same rule: the four chromes that each drew a thin scrollbar with three `::-webkit-scrollbar` rules take the class and say only the thumb colour, as `--aai-scrollbar-thumb` on an ancestor (`text-adventure-agent` sets thumb and track from `useTheme()`, the two-value case that read is still for). `tabletop-rpg-agent`'s `.et-scroll` rules had applied to no element at all; its sidebar takes the class now. `aai-pulse` replaced `dc-pulse`/`rt-pulse` on every DOT the same way — the one badge that pulsed a WORD (`emergency-dispatch-agent`'s red alert) took Tailwind's `animate-pulse`, because `aai-pulse` also scales |
 | `agent({ mcpServers })` (`McpServerConfig` / `McpServers` / `mcpToolName`) | `web-research-agent` ALONE — the OTHER way an agent gets tools, and it had no worked example anywhere in the repo until this sweep. The server is GATED on its URL env var, so the starter still deploys with no credential and makes no boot-time connect attempt; configured, it also lists `tokenEnv` in `requiredEnv`, which nothing derives for you. The prompt half matters as much: `mcp_`-prefixed tools are a SOURCE, so they fall under the same citation and prompt-injection rules as the builtins |
 | `createKeyedLock` / `withLock` (`@alexkroman1/aai/utils`) | `roadside-assistance-agent` (`yard.ts`, keyed by truck kind) and `applicant-screening-agent` (`screening-lock.ts`, keyed by session) — and the reason both exist is the rule below them. **The LLM loop runs one step's tool calls CONCURRENTLY, so a read-modify-write tool body does NOT run alone.** Both templates shipped that bug: `roadside-assistance-agent` handed every concurrent caller the same truck because nothing marked one taken, and `applicant-screening-agent` lost an increment when two re-scores both read `rounds: 0` and both wrote `1`, silently unbounding `MAX_FEEDBACK_ROUNDS`. The primitive existed the whole time with nothing pointing at it. A lock is NOT the answer inside `slot.update` — that window is synchronous and atomic already, which is why `emergency-dispatch-agent`, `retail-orders-agent` and `hotel-reception-agent` correctly decline it |
+| `agent({ systemPrompt })` as a RESOLVER | `text-adventure-agent` (`statusBlock`) and `tabletop-rpg-agent` (`liveSheet`) — the two whose prompt used to spend a section ORDERING the model to read state back before answering, `check_state` "as your FIRST tool call every turn" being a model round trip in front of every turn of a live voice game. A resolver puts the board in the instructions instead, so drift is impossible rather than discouraged. Both close over their own `import prompt from "./system-prompt.md?raw"`, which is how the file reaches a function — `withSystemPrompt` leaves a resolver exactly as written. Neither lost its read TOOL: what went is the compulsory read-back, not the way to see the rest of the board |
+| `agent({ description })` | all 29, and it is the one field with no model reader: a registry row, `aai list`, the studio's picker. What the agent DOES for someone choosing it, not instructions |
+| `agent({ outputGuardrails })` | `emergency-dispatch-agent` (`guardrails.ts`, a set) and `medication-safety-agent` (`refuseDoses`) — the only declaration that may STOP a turn, and pipeline-only for a reason its own type carries: s2s has already spoken the sentence |
+| `agent({ usageLimits })` | `retail-orders-agent` (`totalTokens: 200_000`), `web-research-agent` (`500_000`) and `applicant-screening-agent` (`750_000`) — the three whose loops can legitimately run long, which is exactly where an unbounded one is invisible until the bill. The third is the one that shows the cap covers `ctx.generate` and `ctx.delegate` too, where almost all of its spend is |
+| `ToolDef.onError` | `topic-briefing-agent`'s `send_briefing`, and the lesson is that it is a CLASSIFIER: re-throwing declares the failure fatal, so an unset webhook stops the reply instead of being handed to the model, which apologises and retries the same call until `maxSteps` runs out |
 | `agent({ events })` + `SessionEventHandlers` | `roadside-assistance-agent`, `travel-concierge-agent`, `emergency-dispatch-agent` and `hotel-reception-agent` — a session event is how anything reaches the agent when NO TOOL IS RUNNING, and a hang-up is the case each of them needed. `hotel-reception-agent` is the clearest: it had an `abandoned_booking` followup defined with no caller at all, so a guest who hung up mid-booking left nothing behind. `emergency-dispatch-agent` is the deliberate contrast — its `session.timed-out` records a dropped call on the incident timeline and does NOT move the dialog, because there the caller is one input to a shift rather than the conversation itself |
 | `resolveOne` + `ResolveOneOptions` | `retail-orders-agent` (`resolve.ts`), `applicant-screening-agent`, `topic-briefing-agent`, `entertainment-picks-agent` (`revisit`), `hotel-reception-agent` (a folio line) and `executive-inbox-agent` (`open_email`) — the never-guess contract. **Do not reach for `spokenOrdinal` beside it**: `resolveOne` consults it internally, so calling it directly re-derives step one of the primitive you just adopted. Six templates weighed that and only `tabletop-rpg-agent` (`findClock`, name-first then ordinal) had a use for the bare helper. Four of these adopted the built-in `match`/`code` scorers; `entertainment-picks` keeps a hand `score` because its plurals need stemming the built-in has none of |
 | `roundMoney` (`@alexkroman1/aai/utils`) | `pizza-ordering-agent` and `travel-concierge-agent`, both load-bearing rather than tidy — the first could total `38.980000000000004`, and the second has one rate with cents where `179.95 * 3 === 539.8499999999999`. `hotel-reception-agent` is the counterexample worth reading beside them: it counts in integer CENTS, so there is no float to drift and adopting it would be theatre |
@@ -550,55 +555,25 @@ first, or the starter fails to build the moment somebody runs it.
 
 `spoken-summary-workflow` is the audio round trip — upload a recording, get back
 a summary you can read AND one you can listen to — and it is the reference use
-of three SDK additions that only make sense together. It is worth reading
-against `transcription-workflow`, which owns the way IN (uploads, and what it
-costs to cut a long recording up) and stops at text.
+of `stepSpeak`, `stepWriteUpload` and `api.download(id)`, three SDK additions
+that only make sense together. Read it against `transcription-workflow`, which
+owns the way IN and stops at text.
 
-```text
-   a WAV  →  transcript  →  summary  →  a WAV of the summary
-              async STT     LLM Gateway   streaming TTS
-```
-
-The first three arrows are ordinary step work. The fourth needed the SDK to
-grow, twice:
-
-- **`stepSpeak`** synthesizes from inside a step. The session TTS surface cannot
-  be used there at all — a `TtsSession` is an event stream wired into a live
-  pipeline's playback, with a turn tracker and barge-in behind it, and a step has
-  no turn to be part of and has to return a VALUE. `sdk/step-speak.ts` and
-  `host/step-speak.ts` carry the argument, including why the one-socket exchange
-  reuses nothing from the session opener.
-- **`stepWriteUpload`** is `stepReadUpload`'s other direction. A run's OUTPUT is
-  read back as JSON, so audio cannot travel in one — the same rule that keeps a
-  recording's bytes out of a run's INPUT, arriving at the other end of the run.
-- **`api.download(id)`** is the browser half, and it answers a `Blob` rather
-  than a URL for a reason a page cannot discover on its own: the byte route
-  takes the same bearer every other route does, and neither `<audio src>` nor
-  `<a href>` can send one — so a page built on a URL works under `aai dev` and
-  401s the moment the agent has a token.
-
-Three rules the template is written to demonstrate, each of which a first draft
-gets wrong:
+Three rules it is written to demonstrate, each of which a first draft gets
+wrong:
 
 - **Speak and store in ONE step.** A step is journaled by its RETURN VALUE, so
   an id is replayed and bytes are not; split in two, the audio crosses the queue
-  between them on every resume. The cost is that a retried step writes a second
-  upload and abandons the first — cheap next to a step that cannot retry.
-- **Ask the model for a SPOKEN script, not just points.** A template that
-  synthesized its own bullet list produces a voice reading "one. two. three."
-  with no connective tissue, so the schema asks for both and only the script is
-  spoken. It is the same decision `meeting-recap-agent` makes for the sentence it
-  reads down a phone, and one a prompt alone does not hold — hence a required
-  `spoken` field rather than a defaulted one, so a missing script is a retry
-  instead of half a second of silence.
+  between them on every resume.
+- **Ask the model for a SPOKEN script, not just points** — a required `spoken`
+  field, so a missing script is a retry rather than half a second of silence.
 - **Derive the voice list from `ASSEMBLYAI_TTS_VOICES`.** A wrong voice id is a
-  SILENT failure — the service accepts the socket and refuses in band — so the
-  form's enum is read from the SDK's catalog rather than typed out, which also
-  makes the control a `<select>` for free.
+  SILENT failure: the service accepts the socket and refuses in band.
 
-It transcribes through the ASYNC API rather than cutting the file up, and that
-is a deliberate narrowing: the fan-out is a whole subject and it already has a
-template. Here the transcription should be the boring leg.
+**[`STEP-IO-CLAUDE.md`](STEP-IO-CLAUDE.md) owns the rest** — why the session TTS
+surface cannot be reached from a step at all, why `api.download` answers a
+`Blob` rather than a URL, what each rule above costs, and why this template
+transcribes through the async API instead of cutting the file up.
 
 ## ffmpeg is what lets a desk cut a recording where a HUMAN would
 
@@ -1281,19 +1256,15 @@ a workflow template.
 ## `system-prompt.md` IS the system prompt
 
 The same rule as `tools/`, applied to the one part of an agent that is a
-DOCUMENT rather than a value. Nineteen templates keep a `system-prompt.md`; not
-one imports it, and only `pizza-ordering-agent` declares a `systemPrompt` at all
-— because it composes (the file plus `menuText()`).
+DOCUMENT rather than a value. Twenty of the 29 templates keep a
+`system-prompt.md`, and five name it in `agent.ts`: three compose a STRING out
+of it (`pizza-ordering-agent`'s file plus `menuText()`), and two close over it
+in a `systemPrompt` RESOLVER — see that row in the table above.
 `entertainment-picks-agent/agent.ts` is three fields.
 
-`withSystemPrompt` (`@alexkroman1/aai/manifest`) owns the rules, and the reason
-it is worth a function rather than an assignment is the third one:
-
-- The def carries the framework default → the file becomes the prompt.
-- The def's prompt CONTAINS the file's text → the author imported and composed
-  it; left exactly as built.
-- Neither → a `system-prompt.md` exists and nothing reads it. **Build error.**
-
+`withSystemPrompt` (`@alexkroman1/aai/manifest`) owns the rules and its module
+doc owns the argument. Four outcomes, one of them a build error: a
+`system-prompt.md` exists while `agent.ts` declares a different prompt STRING.
 **That error exists because "I edited the prompt and nothing changed" is the
 silent-absence failure tool discovery was built to kill, pointing the other
 way** — and it is worse here: a prompt is edited far more often than a tool is
@@ -1301,13 +1272,13 @@ added, and a prompt that is quietly ignored produces an agent that behaves
 plausibly and wrongly rather than one that visibly cannot do something. An empty
 file is an error too, for the same reason.
 
-**The check compares VALUES, and that is what makes it possible at all.**
-The plan for it expected to ask rollup's AST whether
-`agent.ts` imports the file — the entry is generated BEFORE the build, so there
-is no module graph to ask, and a source scrape is fragile. The resolved prompt
-answers it directly and answers a better question: an AST can only see that a
-file was IMPORTED, while an import whose value never reaches `systemPrompt` is
-exactly the bug. Composition then needs no special case.
+**The check compares VALUES, and that is what makes it possible at all.** The
+entry is generated BEFORE the build, so there is no module graph to ask, and a
+source scrape is fragile; an AST could only see that a file was IMPORTED, while
+an import whose value never reaches `systemPrompt` is exactly the bug.
+Composition then needs no special case — and it is the same fact that makes a
+RESOLVER pass through unchecked, a function having no text to compare. The file
+reaches one through the author's own `?raw` import.
 
 `greeting` stays a field, and `sttPrompt` too: one sentence with no structure to
 lose, crossing the wire in `/client-config` beside `name` and `page`. The line is

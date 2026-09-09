@@ -29,6 +29,34 @@ import { hiringProjection } from "./shared.ts";
  */
 export default agent({
   name: "Hiring Desk",
+  description:
+    "Screens a stack of applicants against a role and drafts each of them a follow-up email",
+  /**
+   * A ceiling on what one hiring call may spend.
+   *
+   * **This is the template where a budget has to cover DELEGATION, and until
+   * the meter did, it could not.** Almost nothing this desk spends is spent in
+   * the conversation: one screening round is twelve `ctx.generate({ schema })`
+   * calls through `scoreCandidates`, the caller may ask for up to
+   * `MAX_FEEDBACK_ROUNDS` more (`shared.ts`), and `proceed_to_emails` then runs twelve
+   * `ctx.delegate` subagents — each a full tool loop with a guardrail that may
+   * send an answer back. A cap that counted only the turns would bound the
+   * cheapest part of the call while reading as though it bounded the call;
+   * `UsageLimits` says which calls count, and all of the above do.
+   *
+   * The number is an ORDER OF MAGNITUDE rather than a measurement — nobody has
+   * run this against a real model and totalled it. It is sized from the shape:
+   * four scoring rounds of twelve, plus twelve emails and their revisions, plus
+   * the conversation around them, then multiplied to leave a legitimate call
+   * comfortably clear. What it catches is a desk left in a loop, not a hiring
+   * manager who is thorough. Pick yours from what `usage.updated` reports on a
+   * real screening.
+   *
+   * Reaching it ends the session at the next turn; a `ctx.generate` or
+   * `ctx.delegate` in between is refused with the same reason, which
+   * `mapSettled` reports per candidate rather than losing the whole fan-out.
+   */
+  usageLimits: { totalTokens: 750_000 },
   // The ranking, the feedback trail and the drafts' subject lines, pushed after
   // every tool call — a leaderboard is the one thing here nobody can hold by ear.
   syncState: hiringProjection,

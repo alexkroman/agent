@@ -229,6 +229,7 @@ export type EvalWorkflowTestContext = {
 // @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
 // @public
@@ -257,6 +258,16 @@ export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string
     mode: EvalMode;
     reason: string;
 };
+
+// @public
+interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
 
 // @public
 type StubScript = string | readonly (string | StubStep)[];

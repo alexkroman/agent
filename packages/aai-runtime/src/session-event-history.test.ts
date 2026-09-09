@@ -52,7 +52,7 @@ describe("messagesFromEvents", () => {
     expect(messagesFromEvents(events)).toEqual([{ role: "user", content: "stop" }]);
   });
 
-  test("everything else in the log is ignored", () => {
+  test("everything but a transcript and a settled tool call is ignored", () => {
     const events = [
       at({ type: "session.configured", audioFormat: "pcm16", sampleRate: 1, ttsSampleRate: 1 }),
       at({ type: "speech.started" }),
@@ -62,7 +62,10 @@ describe("messagesFromEvents", () => {
       at({ type: "state.updated", state: {} }),
       at({ type: "reply.completed" }),
     ];
-    expect(messagesFromEvents(events)).toEqual([{ role: "user", content: "hi" }]);
+    expect(messagesFromEvents(events)).toEqual([
+      { role: "user", content: "hi" },
+      { role: "tool", content: "{}", toolName: "look", toolCallId: "c1" },
+    ]);
   });
 
   test("a reset DISCARDS everything before it", () => {
@@ -134,5 +137,89 @@ describe("historyFromEvents", () => {
       { role: "assistant", content: "hello" },
     ]);
     expect(toolCalls[0]?.afterMessageIndex).toBe(0);
+  });
+
+  test("a settled call contributes a tool message and the anchors SKIP it", () => {
+    // The anchor indexes the messages the CLIENT receives — `restoreHistory`
+    // filters the tool arm off before `history.restored` goes on the wire — so
+    // counting the result would slide every later row down by one.
+    const events = [
+      user("where is order 4471"),
+      at({ type: "tool.called", toolCallId: "c1", toolName: "lookup_order", args: { id: "4471" } }),
+      at({ type: "tool.completed", toolCallId: "c1", result: '{"eta":"tue"}' }),
+      agent("Tuesday."),
+      user("and the other one"),
+      at({ type: "tool.called", toolCallId: "c2", toolName: "lookup_order", args: { id: "9" } }),
+    ];
+
+    const { messages, toolCalls } = historyFromEvents(events);
+
+    expect(messages).toEqual([
+      { role: "user", content: "where is order 4471" },
+      { role: "tool", content: '{"eta":"tue"}', toolName: "lookup_order", toolCallId: "c1" },
+      { role: "assistant", content: "Tuesday." },
+      { role: "user", content: "and the other one" },
+    ]);
+    // Three VISIBLE messages precede the second call, so its anchor is 2 —
+    // where `messages` puts that turn at index 3, one further along for the
+    // tool result the client never receives.
+    expect(toolCalls.map((c) => c.afterMessageIndex)).toEqual([0, 2]);
+  });
+
+  test("a PENDING call contributes no message", () => {
+    // It may genuinely have been in flight when the process died; there is no
+    // result to report and inventing one is the failure this avoids.
+    const events = [
+      user("hi"),
+      at({ type: "tool.called", toolCallId: "c1", toolName: "look", args: {} }),
+    ];
+
+    const { messages, toolCalls } = historyFromEvents(events);
+
+    expect(messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(toolCalls[0]?.status).toBe("pending");
+  });
+
+  test("a completion whose call the front trim ate keeps the RESULT and drops the name", () => {
+    // `Message.toolName` is optional precisely so this case has an answer that
+    // is not a guess — the result is the half a tool reads.
+    const events = [at({ type: "tool.completed", toolCallId: "c1", result: "42" })];
+
+    expect(historyFromEvents(events).messages).toEqual([
+      { role: "tool", content: "42", toolCallId: "c1" },
+    ]);
+  });
+
+  test("a reset discards tool messages with the turns", () => {
+    const events = [
+      user("old"),
+      at({ type: "tool.called", toolCallId: "c1", toolName: "look", args: {} }),
+      at({ type: "tool.completed", toolCallId: "c1", result: "{}" }),
+      at({ type: "session.reset" }),
+      user("new"),
+    ];
+
+    expect(historyFromEvents(events)).toEqual({
+      messages: [{ role: "user", content: "new" }],
+      toolCalls: [],
+    });
+  });
+
+  test("the front trim moves the anchors by the VISIBLE messages it dropped", () => {
+    // A raw count would over-shift by the number of tool results that came off
+    // with them, which reads as every tool row sliding toward the top.
+    const events: SessionEvent[] = [];
+    for (let i = 0; i < DEFAULT_MAX_HISTORY; i++) {
+      events.push(user(`m${i}`));
+      events.push(at({ type: "tool.completed", toolCallId: `t${i}`, result: "{}" }));
+    }
+    events.push(at({ type: "tool.called", toolCallId: "last", toolName: "look", args: {} }));
+
+    const { messages, toolCalls } = historyFromEvents(events);
+
+    expect(messages).toHaveLength(DEFAULT_MAX_HISTORY);
+    const visible = messages.filter((m) => m.role !== "tool").length;
+    // The last call followed every visible message that survived the trim.
+    expect(toolCalls.at(-1)?.afterMessageIndex).toBe(visible - 1);
   });
 });

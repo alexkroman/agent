@@ -2,17 +2,33 @@
 /**
  * Frozen authoring example: `aai:agent` epoch 2.
  *
- * Epoch 3 widened `systemPrompt` from `string` to `string | (() => string)`, so
- * a prompt can be resolved per turn. Every epoch-2 agent wrote the string, and
- * a widened union accepts each of them unchanged — that is the promise this
- * file tests rather than asserts.
+ * Epoch 3 reshaped the agent declaration in two ways at once, and both are
+ * widenings this file exists to hold to.
  *
- * The shapes below are the ones the transition could plausibly have broken, and
- * they are here because the ways an author reaches this field are not one:
- * `agent()` at the call site, `AgentParams` as an options bag assembled
- * elsewhere, and `AgentDef` as the def a helper takes or returns. A narrowing —
- * or a `SystemPromptOption` that stopped admitting a bare string — reddens all
- * three, which is the signal to DROP this epoch rather than to edit the file.
+ * **`AgentDef` grew, partly by extension.** It gained `description` and, by
+ * extending three new field-group interfaces, `maxOutputTokens`, `maxRetries`,
+ * `resetToolChoice`, `usageLimits`, `inputGuardrails` and `outputGuardrails`.
+ * Two fields an epoch-2 author already wrote — `temperature`, and the
+ * `events` / `syncState` pair — moved out of `AgentDef`'s own body and onto
+ * `AgentModelTuning` and `AgentObservation` in the same change. A moved field
+ * is only harmless if the object literal an author writes cannot tell, which
+ * is exactly what `desk` below asserts: all three are still written FLAT, in
+ * one `agent({ … })` literal, beside `name` and `greeting`.
+ *
+ * **`systemPrompt` widened from `string` to `string | AgentInstructions`**, so
+ * an agent may now compute its instructions per request. The arm that keeps
+ * this file compiling is the plain `string` one — every agent below passes
+ * text, which is what an epoch-2 author had and the only thing they could
+ * pass. Note what this file deliberately does NOT do: it never reads
+ * `def.systemPrompt` back out into a `string`-typed binding, because an
+ * authoring example is code somebody WRITES an agent with, and the reading
+ * half belongs to a host.
+ *
+ * That is the whole promise — new optional fields, a regrouping the literal
+ * cannot see, and one union arm added. If a later epoch drops the string arm,
+ * makes any of the new fields required, or moves a field somewhere an inline
+ * literal cannot reach, this file reddens, which is the signal to DROP the
+ * epoch rather than to edit the example.
  *
  * ## Two things about its SHAPE, both imposed rather than chosen
  *
@@ -60,27 +76,95 @@ import {
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
   mcpToolName,
+  sessionSlot,
+  workflow,
   workflowApp,
 } from "../../../index.ts";
 
-// The prompt as a string, written at the call site.
-export const inline = agent({
-  name: "Inline",
-  systemPrompt: "Be brief.",
-  voice: "michael",
+const queueSlot = sessionSlot("queue", () => ({ waiting: 0, agentNotes: "" }), {
+  view: (queue) => ({ waiting: queue.waiting }),
 });
 
-// The same field arriving in an options bag — the shape that makes a widening
-// worth testing, since `AgentParams` is where a narrowing would bite an author
-// who never names the field's type.
-const bag: AgentParams = { name: "Composed", systemPrompt: "Be brief." };
-export const composed = agent(bag);
+/** An epoch-2 `events` map: typed handlers, then `"*"`, and observe-only. */
+const events: SessionEventHandlers = {
+  "tool.called": (event, ctx) => {
+    void `${ctx.sessionId}:${event.toolName}`;
+  },
+  "*": (event) => {
+    void event.meta.id;
+  },
+};
 
-// A helper over the resolved definition, which is how a project shares prompt
-// rules between agents. Its parameter type is `AgentDef["systemPrompt"]` by way
-// of the def, so it is the third way the field's type reaches user code.
-export function promptOf(def: AgentDef): AgentDef["systemPrompt"] {
-  return def.systemPrompt;
+const mcpServers: McpServers = {
+  docs: {
+    url: "https://docs.example/mcp",
+    tokenEnv: "DOCS_TOKEN",
+    pinnedTools: { search: "abc123" },
+  } satisfies McpServerConfig,
+};
+
+/**
+ * The declaration an epoch-2 author wrote, and the shape the transition has to
+ * keep accepting: one flat literal in which `temperature`, `events` and
+ * `syncState` sit beside `name` — even though all three now arrive through an
+ * extended interface rather than off `AgentDef`'s own body.
+ */
+export const desk = agent({
+  name: "Front desk",
+  systemPrompt: "Answer in one or two sentences. Never guess an order number.",
+  greeting: "Front desk, how can I help?",
+  voice: "michael",
+  llm: "claude-sonnet-4-6",
+  // AgentModelTuning, written flat.
+  temperature: 0.4,
+  // AgentObservation, written flat.
+  events,
+  syncState: queueSlot.projected,
+  // PipelineVoiceTuning, which was already an extended interface at epoch 2 —
+  // the seam the three new groups were cut on.
+  errorPhrase: "Sorry, something went wrong on my end.",
+  deadAirCoverMs: 1200,
+  preemptiveGeneration: true,
+  // And the rest of an ordinary declaration.
+  builtinTools: ["web_search", "think"],
+  toolChoice: "auto",
+  telephony: ["twilio"],
+  maxSteps: 8,
+  mcpServers,
+});
+
+/** The same agent's stages named explicitly, rather than by the defaults. */
+export const tuned = agent({
+  name: "Tuned desk",
+  systemPrompt: "Be brief.",
+  ...assemblyAIPipeline({ region: "eu", voice: "michael", minTurnSilenceMs: 300 }),
+});
+
+/** A text agent — no audio path, and the same flat literal. */
+export const overChat = agent({
+  name: "Chat desk",
+  text: true,
+  systemPrompt: "Answer in writing.",
+  temperature: 0.1,
+  events,
+});
+
+/** A workflow app: an AGENT declaration too, selecting a different front door. */
+export const uploads = workflowApp({
+  name: "Uploads",
+  workflows: {
+    ingest: workflow({ description: "Ingest one upload.", run: () => ({ done: true }) }),
+  },
+});
+
+/** The MCP naming rules a host has to honour when it merges its own servers. */
+export function isUsableServerKey(key: string, remote: string): boolean {
+  const name = mcpToolName(key, remote);
+  return (
+    MCP_SERVER_KEY_RE.test(key) &&
+    name.startsWith(MCP_TOOL_PREFIX) &&
+    name.length <= MCP_TOOL_NAME_MAX
+  );
 }
 
 // ── The rest of epoch 2's promised surface.
@@ -118,6 +202,7 @@ export const epoch2Values = [
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
+  agent,
   assemblyAIPipeline,
   mcpToolName,
   workflowApp,

@@ -154,6 +154,75 @@ describe("createPipelineHistory", () => {
     expect(h.llm).toHaveLength(1);
     expect(JSON.stringify(h.llm)).toContain("enc-blob");
   });
+
+  test("pushToolResult reaches the tool-facing view and NOT the model's", () => {
+    // The LLM view already holds the step's own assistant/`tool` PAIR; a second
+    // copy from here would be the orphan result `capLlm` exists to remove.
+    const h = createPipelineHistory([{ role: "user", content: "where is my order" }]);
+    h.pushToolResult({
+      role: "tool",
+      content: "eta=tue",
+      toolName: "lookup_order",
+      toolCallId: "c1",
+    });
+    expect(h.conversation).toEqual([
+      { role: "user", content: "where is my order" },
+      { role: "tool", content: "eta=tue", toolName: "lookup_order", toolCallId: "c1" },
+    ]);
+    expect(h.llm).toEqual([{ role: "user", content: "where is my order" }]);
+  });
+
+  test("pushToolResult does not bump the revision", () => {
+    // That epoch gates adopting a preemptive speculation, and a speculation's
+    // request is assembled from `llm` — untouched here. Bumping would discard a
+    // legitimate speculation every time a tool finished, which is exactly when
+    // one is in flight.
+    const h = createPipelineHistory();
+    const before = h.revision.current();
+    h.pushToolResult({ role: "tool", content: "{}", toolCallId: "c1" });
+    expect(h.revision.isCurrent(before)).toBe(true);
+  });
+
+  test("pushToolResult caps the tool-facing view like every other push", () => {
+    const h = createPipelineHistory(
+      Array.from({ length: DEFAULT_MAX_HISTORY }, (_, i) => ({
+        role: "user" as const,
+        content: `m${i}`,
+      })),
+    );
+    h.pushToolResult({ role: "tool", content: "{}", toolCallId: "c1" });
+    expect(h.conversation).toHaveLength(DEFAULT_MAX_HISTORY);
+    expect(h.conversation[0]).toEqual({ role: "user", content: "m1" });
+  });
+
+  test("a seeded tool result reaches the tool-facing view only", () => {
+    // What a reconnect hands `seedHistory`. In the LLM view it would be an
+    // orphan, and mapping it to an assistant message — which is what
+    // `toModelMessage` does with any non-`user` role — would tell the model it
+    // had SAID the tool's serialized output.
+    const h = createPipelineHistory();
+    h.seed([
+      { role: "user", content: "hi" },
+      { role: "tool", content: "eta=tue", toolName: "lookup_order", toolCallId: "c1" },
+      { role: "assistant", content: "Tuesday." },
+    ]);
+    expect(h.conversation).toHaveLength(3);
+    expect(h.llm).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Tuesday." },
+    ]);
+  });
+
+  test("a CONSTRUCTOR seed makes the same subtraction as `seed`", () => {
+    // Two doors onto one rule: `createPipelineHistory(seed)` is what the
+    // transport takes at construction, `seed()` what a reconnect calls.
+    const h = createPipelineHistory([
+      { role: "user", content: "hi" },
+      { role: "tool", content: "eta=tue", toolCallId: "c1" },
+    ]);
+    expect(h.conversation).toHaveLength(2);
+    expect(h.llm).toEqual([{ role: "user", content: "hi" }]);
+  });
 });
 
 /** Tool-call ids that appear as a result with no preceding call. */

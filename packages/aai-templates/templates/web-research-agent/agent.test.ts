@@ -85,6 +85,22 @@ describe("web-research-agent template", () => {
     // never says "search" is the framework default wearing Scout's name.
     expect(expectPromptBuiltinsDeclared(agentDef)).toContain("web_search");
   });
+
+  test("one call has a ceiling on what it can spend", () => {
+    // Scout is the only starter whose context grows with text it did not write:
+    // every `visit_webpage` result is appended to the conversation and re-sent
+    // on every later turn, and `maxSteps` bounds one reply rather than a call.
+    // So the failure this catches is a deletion — the budget is a whole line
+    // that reads like tidy-up, and losing it is invisible until somebody's bill
+    // arrives.
+    //
+    // The NUMBER is deliberately not pinned, per this file's own rule: raising
+    // or lowering the ceiling is a first customization, and a spec that fails
+    // on it fails inside a file the user never wrote. What must survive is that
+    // there is a ceiling at all.
+    const totalTokens = expectDeployable(agentDef).usageLimits?.totalTokens;
+    expect(totalTokens).toBeGreaterThan(0);
+  });
 });
 
 /** A plausible endpoint, only ever read back out of the config this sets. */

@@ -21,6 +21,8 @@ import systemPrompt from "./system-prompt.md?raw";
  */
 export default agent({
   name: "The Harborlight Hotel",
+  description:
+    "Takes a hotel front desk's calls: room bookings, restaurant tables, folios and concierge requests",
   // The receptionist's own screen: who is verified, what is being booked, and
   // the ledger of everything this call wrote — their SQLite changeset stream.
   syncState: deskProjection,

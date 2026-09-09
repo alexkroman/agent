@@ -19,6 +19,7 @@
 // The policy that decides when to start one, and whether to adopt it, lives in
 // `pipeline-speculation.ts`. This module only knows how to run one and hold it.
 
+import type { LanguageModelUsage } from "ai";
 import type { Logger } from "../runtime-config.ts";
 import type { AdoptedLlmStream, LlmRequest, StepResult, TapeEntry } from "./pipeline-llm-stream.ts";
 import { startLlmStream } from "./pipeline-llm-stream.ts";
@@ -89,6 +90,19 @@ export function startSpeculativeStream(
   const tape: TapeEntry[] = [];
   let poisoned = false;
   let finished = false;
+  /**
+   * Reported usage held back until this run becomes a real turn.
+   *
+   * The session meter must not move for a speculation nobody adopts — billing
+   * is real either way, but a discarded speculation is not spend the author
+   * reasons about per turn, which is why `ConsumeLlmStreamParams.onUsage` says
+   * it is absent here. DROPPING it was the other half of that decision and it
+   * was wrong: an adopted speculation IS the turn, so its steps went unmetered,
+   * `usage.updated` under-reported the session and `usageLimits` could not trip
+   * on tokens it had really spent. Buffered, both halves hold.
+   */
+  const unadoptedUsage: LanguageModelUsage[] = [];
+  let adopted = false;
   // Woken on every append and on completion, so a follower parked on an empty
   // tape resumes without polling. Replaced (not reused) per notification.
   let arrival = Promise.withResolvers<void>();
@@ -106,6 +120,10 @@ export function startSpeculativeStream(
   const started = startLlmStream({
     ...req,
     signal: AbortSignal.any([sessionSignal, ctl.signal]),
+    onUsage: (usage) => {
+      if (adopted) req.onUsage?.(usage);
+      else unadoptedUsage.push(usage);
+    },
     // Step markers are taped in arrival order so a replay fires
     // `onStepPersisted` exactly where the live run would have. With no
     // `execute` on any tool there can be at most one.
@@ -155,6 +173,10 @@ export function startSpeculativeStream(
       // discard paths use.
       if (turnSignal.aborted) ctl.abort();
       else turnSignal.addEventListener("abort", () => ctl.abort(), { once: true });
+      // This run is the turn now, so everything it has already spent — and
+      // everything it spends from here — is the SESSION's spend.
+      adopted = true;
+      for (const usage of unadoptedUsage.splice(0)) req.onUsage?.(usage);
       return {
         entries: follow,
         steps: (): Promise<readonly StepResult[]> => started.steps,

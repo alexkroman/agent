@@ -147,6 +147,68 @@ describe("expectPromptBuiltinsDeclared", () => {
     );
   });
 
+  test("a `systemPrompt` RESOLVER is called, and its own prompt is what gets scanned", () => {
+    // The trap this closes: `toAgentConfig` cannot serialize a function, so it
+    // drops the field and the schema fills in the framework default — and the
+    // scan then reports on a prompt this agent never sends. It named no builtin,
+    // so the check failed for the wrong reason today and would have PASSED the
+    // day the default prompt happened to name one.
+    expect(
+      expectPromptBuiltinsDeclared(
+        agent({
+          name: "Cavern",
+          systemPrompt: () => "Roll every check with run_code. Look prices up with fetch_json.",
+          builtinTools: ["run_code", "fetch_json"],
+        }),
+      ),
+    ).toEqual(["run_code", "fetch_json"]);
+  });
+
+  test("a resolver's undeclared builtin fails naming IT, not the unapplied-prompt cause", () => {
+    expect(() =>
+      expectPromptBuiltinsDeclared(
+        agent({
+          name: "Cavern",
+          systemPrompt: () => "Roll every check with run_code.",
+          builtinTools: [],
+        }),
+      ),
+    ).toThrow(/commands "run_code" and `builtinTools` declares none/);
+  });
+
+  test("a resolver that cannot answer from a bare context is REFUSED, not silently defaulted", () => {
+    // The honest arm: a resolver reaching for something a bare session has no
+    // value for. Falling back to the framework default here is the outcome that
+    // must not exist — a green from a check that inspected nothing.
+    expect(() =>
+      expectPromptBuiltinsDeclared(
+        agent({
+          name: "Cavern",
+          systemPrompt: (ctx) => {
+            const url = ctx.env.PROMPT_URL;
+            if (url === undefined) throw new Error("PROMPT_URL is unset");
+            return `Fetch the brief from ${url}, then use run_code.`;
+          },
+          builtinTools: ["run_code"],
+        }),
+      ),
+    ).toThrow(/`systemPrompt` is a resolver and calling it threw.*builtinTools/s);
+  });
+
+  test("a resolver answering no prompt at all is refused too", () => {
+    // The other way a resolver can leave nothing to scan. Falling through to
+    // the framework default here would be the same green-on-nothing.
+    expect(() =>
+      expectPromptBuiltinsDeclared(
+        agent({
+          name: "Cavern",
+          systemPrompt: () => "",
+          builtinTools: ["run_code"],
+        }),
+      ),
+    ).toThrow(/is a resolver and it answered "" rather than a prompt/);
+  });
+
   test("the converse is not asserted: an undeclared-in-prose builtin is fine", () => {
     expect(() =>
       expectPromptBuiltinsDeclared(

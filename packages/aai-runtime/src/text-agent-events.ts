@@ -53,6 +53,7 @@
  * | `reply.completed` / `reply.cancelled` | the turn's terminator, exactly one |
  * | `error.reported` | the model stream failed (`llm`), or a tool THREW (`tool`) |
  * | `custom.emitted` | `ctx.send` from a tool body |
+ * | `usage.updated` | one completed step's tokens, folded into the running total |
  *
  * ### The eleven that are not, each for a stated reason
  *
@@ -150,6 +151,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StreamTextOnChunkCallback, TextStreamPart, ToolSet } from "ai";
 import type { Logger } from "./runtime-config.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
+import type { UsageSnapshot } from "./usage-meter.ts";
 
 /** What a text agent reports, one stamped event at a time. */
 export type TextAgentEventHandler = (event: SessionEvent) => void;
@@ -183,6 +185,14 @@ export type TextAgentEvents = {
   /** A tool that THREW rather than returning a failure — `executeToolCall`'s `onUncaught`. */
   readonly toolFault: (message: string) => void;
   /**
+   * The conversation's running token total — see `usage-meter.ts`.
+   *
+   * Conversation-scoped like `custom` above, and CUMULATIVE like the pipeline's,
+   * so an eval asserting on what a run spent reads the same frame whichever mode
+   * produced it.
+   */
+  readonly usage: (snapshot: UsageSnapshot) => void;
+  /**
    * Open one turn: emit its user transcript and hand back its hooks.
    *
    * `undefined` when nobody is listening, which is what keeps a text agent with
@@ -201,6 +211,9 @@ const NO_EVENTS: TextAgentEvents = {
     // that leaves a capability wired on one path and dropped on the other.
   },
   toolFault: () => {
+    // As above.
+  },
+  usage: () => {
     // As above.
   },
   openTurn: () => undefined,
@@ -235,6 +248,9 @@ export function createTextAgentEvents(
         return;
       }
       emit({ type: "custom.emitted", event, data });
+    },
+    usage(snapshot: UsageSnapshot): void {
+      emit({ type: "usage.updated", ...snapshot });
     },
     toolFault(message: string): void {
       // Non-fatal by construction: the model is handed the failure and the turn

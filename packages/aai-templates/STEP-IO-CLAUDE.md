@@ -275,3 +275,60 @@ the same view. Note the LINE COUNT barely moved (measured: net +4 code lines
 across the six, most of that a Biome import reflow) — this is a
 single-source-of-truth change and a memoization fix, not a volume one, which is
 the honest shape of most remaining wins at this seam.
+
+## A step that SPEAKS returns an id — the account
+
+The rule and the three demonstrated points are in `CLAUDE.md`'s section of this
+name; this is the argument behind them.
+
+`spoken-summary-workflow` is the audio round trip — upload a recording, get back
+a summary you can read AND one you can listen to — and it is the reference use
+of three SDK additions that only make sense together. It is worth reading
+against `transcription-workflow`, which owns the way IN (uploads, and what it
+costs to cut a long recording up) and stops at text.
+
+```text
+   a WAV  →  transcript  →  summary  →  a WAV of the summary
+              async STT     LLM Gateway   streaming TTS
+```
+
+The first three arrows are ordinary step work. The fourth needed the SDK to
+grow, twice:
+
+- **`stepSpeak`** synthesizes from inside a step. The session TTS surface cannot
+  be used there at all — a `TtsSession` is an event stream wired into a live
+  pipeline's playback, with a turn tracker and barge-in behind it, and a step has
+  no turn to be part of and has to return a VALUE. `sdk/step-speak.ts` and
+  `host/step-speak.ts` carry the argument, including why the one-socket exchange
+  reuses nothing from the session opener.
+- **`stepWriteUpload`** is `stepReadUpload`'s other direction. A run's OUTPUT is
+  read back as JSON, so audio cannot travel in one — the same rule that keeps a
+  recording's bytes out of a run's INPUT, arriving at the other end of the run.
+- **`api.download(id)`** is the browser half, and it answers a `Blob` rather
+  than a URL for a reason a page cannot discover on its own: the byte route
+  takes the same bearer every other route does, and neither `<audio src>` nor
+  `<a href>` can send one — so a page built on a URL works under `aai dev` and
+  401s the moment the agent has a token.
+
+Three rules the template is written to demonstrate, each of which a first draft
+gets wrong:
+
+- **Speak and store in ONE step.** A step is journaled by its RETURN VALUE, so
+  an id is replayed and bytes are not; split in two, the audio crosses the queue
+  between them on every resume. The cost is that a retried step writes a second
+  upload and abandons the first — cheap next to a step that cannot retry.
+- **Ask the model for a SPOKEN script, not just points.** A template that
+  synthesized its own bullet list produces a voice reading "one. two. three."
+  with no connective tissue, so the schema asks for both and only the script is
+  spoken. It is the same decision `meeting-recap-agent` makes for the sentence it
+  reads down a phone, and one a prompt alone does not hold — hence a required
+  `spoken` field rather than a defaulted one, so a missing script is a retry
+  instead of half a second of silence.
+- **Derive the voice list from `ASSEMBLYAI_TTS_VOICES`.** A wrong voice id is a
+  SILENT failure — the service accepts the socket and refuses in band — so the
+  form's enum is read from the SDK's catalog rather than typed out, which also
+  makes the control a `<select>` for free.
+
+It transcribes through the ASYNC API rather than cutting the file up, and that
+is a deliberate narrowing: the fan-out is a whole subject and it already has a
+template. Here the transcription should be the boring leg.

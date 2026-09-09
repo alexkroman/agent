@@ -17,7 +17,9 @@ import { z } from "zod";
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
+import { type AgentSystemPrompt, staticSystemPrompt } from "./agent-instructions.ts";
 import {
+  assertGuardrailScope,
   assertPipelineTuning,
   assertProviderTriple,
   assertSamplingScope,
@@ -28,7 +30,6 @@ import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
-import { resolveSystemPrompt, type SystemPromptOption } from "./system-prompt-option.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
 import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
@@ -160,6 +161,12 @@ const McpServersSchema = z.record(
  */
 export const AgentConfigSchema = z.object({
   name: AgentName,
+  /**
+   * What the agent IS, for a reader of a LIST — see `AgentDef.description`.
+   * Serializable because that reader is a registry, an A2A card or the studio's
+   * picker, none of which runs the agent.
+   */
+  description: z.string().optional(),
   // Defaulted rather than required: `agent()` fills these in, but a raw
   // `export default {...}` agent.ts (no `agent()` wrapper) reaches
   // `toAgentConfig` without them — the old mapper shipped a config with
@@ -168,9 +175,15 @@ export const AgentConfigSchema = z.object({
   greeting: z.string().default(DEFAULT_GREETING),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().int().positive().optional(),
-  // Sampling temperature for the agent's OWN model calls (pipeline and text
-  // modes). `assertSamplingScope` rejects it for s2s rather than dropping it.
+  // The five `AgentModelTuning` knobs: this runtime assembles the request, so
+  // `assertSamplingScope` rejects every one of them for s2s rather than
+  // dropping it silently. Serializable — they are numbers and flags, and a
+  // deployed guest has to carry them.
   temperature: z.number().min(0).max(2).optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  maxRetries: z.number().int().nonnegative().optional(),
+  resetToolChoice: z.boolean().optional(),
+  usageLimits: z.object({ totalTokens: z.number().int().positive().optional() }).optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
@@ -256,6 +269,11 @@ export const HOST_ONLY_AGENT_FIELDS = [
   // Handlers are functions, same as `workflows` — and unlike `page`, nothing
   // downstream of the wire has any use for knowing an agent observes itself.
   "events",
+  // Guardrails are functions too. Nothing downstream of the wire could run one,
+  // and the guest holds the agent's own module — which is the only side that
+  // could have called them anyway.
+  "inputGuardrails",
+  "outputGuardrails",
 ] as const;
 
 /** A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`, …). */
@@ -284,13 +302,15 @@ export const KNOWN_AGENT_FIELDS: ReadonlySet<string> = new Set([
  */
 export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
   /**
-   * A string on the wire, but an `AgentDef` may declare a THUNK — see
-   * {@link SystemPromptOption}. Widened here rather than on {@link AgentConfig}
-   * so `AgentDef` stays assignable to this by construction, which is what every
-   * `toAgentConfig(agent)` call site relies on; {@link toAgentConfig} resolves
-   * it once and the config carries the string.
+   * Wider than the config's own `string`, because `AgentDef.systemPrompt`
+   * may be a RESOLVER — a function this layer cannot serialize and must not
+   * hand onward. Widened here rather than on {@link AgentConfig} so `AgentDef`
+   * stays assignable to this by construction, which is what every
+   * `toAgentConfig(agent)` call site relies on. `toAgentConfig` drops it (see
+   * `staticSystemPrompt`); the runtime holds the agent's own module and asks
+   * the function per request.
    */
-  systemPrompt?: SystemPromptOption;
+  systemPrompt?: AgentSystemPrompt;
 } & {
   [K in HostOnlyAgentField]?: unknown;
 };
@@ -306,20 +326,13 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // (S2S requires an explicit `s2s` descriptor). Runs inside the generated
   // bundle entry, so the defaults are baked into the deployed config at
   // build time.
-  // Author conveniences (`system`, string `llm`) normalize here too, so a
-  // raw `export default {...}` that skipped `agent()` behaves the same.
+  // Author conveniences normalize here too, so a raw `export default {...}`
+  // that skipped `agent()` behaves the same: `voice`, a model-id string for
+  // `llm`, and the `minTurnSilenceMs`/`maxTurnSilenceMs` endpointing pair.
+  // (There is no `system` alias — `agent({ system })` is refused by name at the
+  // stray-field check below, which is the better error.)
   const normalized = normalizeAgentConveniences(source) as AgentConfigSource;
-  // The config is the SERIALIZABLE shape and a function cannot cross a wire, so
-  // a `systemPrompt` THUNK is resolved here, once — the config carries the
-  // snapshot it answered with. It is not how a session gets its prompt: the
-  // runtime holds the live definition and re-resolves it per turn, so this
-  // value is what a config REPORTS. `SystemPromptOption` owns the rest,
-  // including the obligation this places on a thunk (callable at build time,
-  // with no session anywhere).
   const src = { ...normalized, ...(defaultProviders(normalized) ?? {}) };
-  if (typeof src.systemPrompt === "function") {
-    src.systemPrompt = resolveSystemPrompt(src.systemPrompt);
-  }
   // BEFORE the cross-field rules, so a misspelled field is reported as itself
   // rather than as whatever rule notices its absence three checks later.
   assertNoStrayFields(src, KNOWN_AGENT_FIELDS);
@@ -328,7 +341,8 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s, src.text);
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
-  assertSamplingScope(mode, src.temperature);
+  assertSamplingScope(mode, src);
+  assertGuardrailScope(mode, src);
   // Runs inside the generated bundle entry too, so the studio's test_agent
   // surfaces a bad TTS language as a load error rather than shipping a mute agent.
   assertAssemblyAITtsLanguage(src.tts);
@@ -342,6 +356,15 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
     if (value === undefined || HOST_ONLY_FIELD_SET.has(key)) continue;
     wire[key] = value;
   }
+  // A RESOLVER is host-only in a field that is otherwise serializable, which no
+  // deny-list entry can express — the key belongs on the wire and only one of
+  // its two shapes does. Dropped here rather than filtered above so the schema
+  // still supplies `DEFAULT_SYSTEM_PROMPT` for it: what a resolver adds is
+  // appended to the framework prompt exactly as a string would be, and the
+  // runtime is the side that can call it. Without this the deny-list copy hands
+  // `z.string()` a function, and the sentence an author gets names a field they
+  // set correctly.
+  if (staticSystemPrompt(src.systemPrompt) === undefined) delete wire.systemPrompt;
   // AFTER the copy, never before it. `mode` is DERIVED — `AgentConfigSource`
   // omits it precisely so a typed caller cannot supply one — but the copy is a
   // deny-list over `Object.entries`, so a `mode` on a raw object (a hand-written

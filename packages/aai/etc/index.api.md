@@ -17,10 +17,10 @@ export function addDays(iso: string, days: number): string;
 export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning {
+export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
     dialogs?: readonly AnyDialog[];
-    events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
     llm?: LlmProvider;
@@ -35,10 +35,8 @@ export interface AgentDef extends PipelineVoiceTuning {
     stt?: SttProvider;
     sttPrompt?: string;
     subagents?: SubagentRoster;
-    syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: SystemPromptOption;
+    systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
-    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -47,7 +45,44 @@ export interface AgentDef extends PipelineVoiceTuning {
 }
 
 // @public
+export type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+export interface AgentGuardrails {
+    inputGuardrails?: readonly AgentGuardrail[];
+    outputGuardrails?: readonly AgentGuardrail[];
+}
+
+// @public
+export type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @public
+export interface AgentModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    resetToolChoice?: boolean;
+    temperature?: number;
+    usageLimits?: UsageLimits;
+}
+
+// @public
+export interface AgentObservation {
+    events?: SessionEventHandlers;
+    syncState?: StateProjection | readonly StateProjection[];
+}
+
+// @public
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
+
+// @public
+export interface AgentSessionContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    slots: SlotStore;
+}
+
+// @public
+export type AgentSystemPrompt = string | AgentInstructions;
 
 // @public
 export type AnyDialog = Dialog<AnyStateMachine, unknown>;
@@ -260,6 +295,7 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
+    onError?: ToolErrorHandler;
     send?: E;
     sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
     when: string | readonly string[];
@@ -424,6 +460,8 @@ export function mcpToolName(serverKey: string, remoteName: string): string;
 export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -750,6 +788,27 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     state: z.ZodUnknown;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"usage.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    inputTokens: z.ZodNumber;
+    outputTokens: z.ZodNumber;
+    totalTokens: z.ZodNumber;
+    steps: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"guardrail.blocked">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+    }>;
+    replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -854,6 +913,7 @@ export interface SlotToolDef<P extends ToolInputSchema, V, R> {
     description: string;
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
     inputSchema?: P;
+    onError?: ToolErrorHandler;
 }
 
 // @public
@@ -1006,9 +1066,6 @@ export interface SubagentToolCall {
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
-export type SystemPromptOption = string | (() => string);
-
-// @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
@@ -1060,7 +1117,11 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
 };
+
+// @public
+export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 // @public
 export type ToolFailure = {
@@ -1087,6 +1148,11 @@ export interface TypedDelegateResult<T> extends DelegateResult {
 export interface TypedSubagentDef<T> extends SubagentDef {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+export interface UsageLimits {
+    totalTokens?: number;
 }
 
 // @public
@@ -1123,7 +1189,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;

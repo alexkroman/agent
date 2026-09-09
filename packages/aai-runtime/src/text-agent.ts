@@ -54,173 +54,57 @@
  * `text-agent-events.ts` carries the vocabulary and its argument.
  */
 
-import type { AgentDef, Message, ToolChoice } from "@alexkroman1/aai";
-import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
-import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
-import { DEFAULT_MAX_STEPS, resolveSystemPrompt } from "@alexkroman1/aai/internal";
+import type { AgentDef, AgentSessionContext, Message } from "@alexkroman1/aai";
+import {
+  createDetachedSlotStore,
+  staticSystemPrompt,
+  systemPromptResolver,
+} from "@alexkroman1/aai/host-internal";
+import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
 import {
-  type LanguageModel,
-  type ModelMessage,
-  type PrepareStepFunction,
-  type StepResult,
-  stepCountIs,
-  streamText,
-  type ToolSet,
-} from "ai";
-import { composePrepareStep, forceFinalAnswer } from "./_prepare-step.ts";
+  composePrepareStep,
+  forceFinalAnswer,
+  resetToolChoiceAfterFirstStep,
+} from "./_prepare-step.ts";
 import { createGenerateFn } from "./generate.ts";
 import { resolveLlm } from "./providers/resolve.ts";
-import { consoleLogger, type Logger } from "./runtime-config.ts";
+import { consoleLogger } from "./runtime-config.ts";
 import { mergeBuiltinSurface } from "./runtime-tools.ts";
 import { createSubagentRunner } from "./subagent.ts";
 import { createTextAgentEvents } from "./text-agent-events.ts";
+import { toContextMessages } from "./text-agent-messages.ts";
+// Imported as well as re-exported below: a re-export does not bring a name into
+// this module's scope, and the factory's own signature needs all four.
+import type {
+  TextAgent,
+  TextAgentOptions,
+  TextTurnOptions,
+  TextTurnResult,
+} from "./text-agent-types.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { createToolCallRepair } from "./tool-call-repair.ts";
+import { createFatalToolLatch, type FatalToolLatch, withFatalSignal } from "./tool-error-policy.ts";
 import { createToolDispatcher, executeToolCall } from "./tool-executor.ts";
+import { createUsageMeter } from "./usage-meter.ts";
 
 /**
- * What one turn hands back: the AI SDK's own `streamText` result, with this
- * SDK's tool set.
- *
- * Spelled as `ReturnType<typeof streamText<ToolSet>>` rather than by naming
- * `StreamTextResult`'s three type parameters, so the two type arguments we
- * have no opinion about (the runtime context and the structured-output shape)
- * keep tracking the vendor's own defaults instead of being pinned to whatever
- * they were on the day this was written.
+ * The four public TYPES — `TextTurnResult`, `TextAgentOptions`,
+ * `TextTurnOptions` and `TextAgent` — live in `text-agent-types.ts`, split off
+ * when this file passed the source-length cap. They are the surface a caller
+ * writes against and carry a paragraph per field; what is left here is the
+ * factory. Re-exported below, so no importer moved.
  */
-export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
-
-/** Session-fixed configuration for {@link createTextAgent}. */
-export interface TextAgentOptions {
-  /** The agent definition. Must declare `text: true`. */
-  agent: AgentDef;
-  /**
-   * Tenant-owned env: what tool code reads as `ctx.env`, and — unless
-   * `providerEnv` overrides it — where the LLM credential is read from.
-   */
-  env?: AgentEnv;
-  /**
-   * Env used for provider-credential resolution only. Defaults to `env`.
-   * Split for the same reason `RuntimeOptions` splits them: a host-fallback
-   * env may resolve a model and must never become `ctx.env`.
-   */
-  providerEnv?: ProviderEnv;
-  /**
-   * Pre-resolved model, bypassing descriptor resolution entirely. For a
-   * caller that already holds a `LanguageModel` (and for tests, which is the
-   * majority use — a text agent's whole observable behaviour is what it
-   * sends the model).
-   */
-  model?: LanguageModel;
-  /**
-   * Accepted and currently UNUSED — a text agent's tools receive no database.
-   * There is no `ctx.db`: the context this builds carries the same eleven
-   * fields a voice session's tools get, none of them a SQL handle. Kept on the
-   * options bag so a caller that already passes one still compiles.
-   */
-  db?: Db | undefined;
-  /** `ctx.workflows`. Absent substitutes a client that rejects with the reason. */
-  workflows?: WorkflowClient | undefined;
-  /** In-sandbox `run_code` executor, for an agent that enables that builtin. */
-  runCode?: RunCodeExecutor;
-  /** Override the builtins' fetch. Tests only — see `BuiltinToolOptions`. */
-  fetch?: typeof globalThis.fetch;
-  /** Defaults to `consoleLogger`. */
-  logger?: Logger;
-  /**
-   * Where this conversation's typed events go — the same {@link SessionEvent}
-   * stream a voice session emits, narrowed to what a text agent can honestly
-   * report, so every reader in `@alexkroman1/aai-runtime/eval` and every
-   * assertion built on them works over a text turn unchanged.
-   *
-   * ADDITIVE, and deliberately so: {@link TextAgent.stream} still returns the
-   * vendor's `StreamTextResult` and nothing about it changes. A chat surface
-   * consumes that; this is for whoever is GRADING or auditing the agent.
-   * `text-agent-events.ts` carries which events are emitted, which eleven are
-   * not, and why the turn terminator fires exactly once.
-   *
-   * **Conversation-scoped, and the envelope carries no turn coordinate** (see
-   * `protocol-events.ts`, which argues that absence), so two overlapping
-   * `stream()` calls on ONE text agent interleave into one stream with nothing
-   * to tell them apart. A caller that needs them separate builds a text agent
-   * per turn — which is what `runTextAgent` does.
-   */
-  onEvent?: (event: SessionEvent) => void;
-  /**
-   * Conversation identity for `ctx.sessionId` and the session's `slots`.
-   * Defaults to a fresh id per text agent — one instance is one conversation,
-   * which is what makes a slot mean the same thing here as in a session.
-   */
-  sessionId?: string;
-  /**
-   * Per-tool-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS`
-   * (30s), which is a voice-turn budget; a text agent whose tools install
-   * packages or type-check a workspace wants a larger one.
-   */
-  toolTimeoutMs?: number;
-}
-
-/** Per-turn parameters for {@link TextAgent.stream}. */
-export interface TextTurnOptions {
-  /** The conversation so far, in AI SDK `ModelMessage` form. */
-  messages: ModelMessage[];
-  /** Aborts the LLM stream and every in-flight tool call. */
-  signal?: AbortSignal;
-  /** Overrides the agent's `systemPrompt` for this turn. */
-  systemPrompt?: string;
-  /** Overrides the agent's `maxSteps` for this turn. */
-  maxSteps?: number;
-  /** Overrides the agent's `temperature` for this turn. */
-  temperature?: number;
-  /** Overrides the agent's `toolChoice` for this turn. */
-  toolChoice?: ToolChoice;
-  /**
-   * Extra stop conditions, ANDed into the step budget as alternatives — a
-   * wall-clock deadline is the usual one, since a step cap says nothing
-   * about how long a caller waits.
-   */
-  stopWhen?: readonly ((options: {
-    steps: readonly StepResult<ToolSet>[];
-  }) => boolean | PromiseLike<boolean>)[];
-  /**
-   * Per-step hook, composed WITH this module's own: whatever it returns is
-   * applied first, and the forced final answer is layered over the result, so
-   * a caller may rewrite the step's messages (compaction, an injected notice)
-   * without being able to hand the model tools on the step the budget
-   * reserved for answering.
-   */
-  prepareStep?: PrepareStepFunction<ToolSet>;
-  /** Fires after each completed step, with that step's result. */
-  onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
-}
-
-/** A text agent bound to one conversation — see {@link createTextAgent}. */
-export interface TextAgent {
-  /** The resolved model every turn runs on. */
-  readonly model: LanguageModel;
-  /**
-   * The agent's tools as the AI SDK sees them — its own plus its enabled
-   * builtins, each bound to the shared executor. Exposed because a caller
-   * rendering a tool console needs the names it will see in the stream.
-   *
-   * These declarations belong to NO turn: {@link TextAgent.stream} builds its
-   * own set bound to that turn's messages, so `ctx.messages` cannot be handed a
-   * conversation from a concurrent turn. A tool invoked through this copy reads
-   * an empty `ctx.messages`.
-   */
-  readonly tools: ToolSet;
-  /** This conversation's id — `ctx.sessionId` for every tool call. */
-  readonly sessionId: string;
-  /** Run one turn, streaming. */
-  stream(turn: TextTurnOptions): TextTurnResult;
-}
+export type {
+  TextAgent,
+  TextAgentOptions,
+  TextTurnOptions,
+  TextTurnResult,
+} from "./text-agent-types.ts";
 
 /**
  * The LLM a text agent runs on when its definition names none.
@@ -337,6 +221,29 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
    */
   const events = createTextAgentEvents(options.onEvent, logger);
 
+  /**
+   * This conversation's token meter — see `usage-meter.ts`.
+   *
+   * Built unconditionally, because usage is worth REPORTING whether or not a
+   * budget is declared; the cap is `agent.usageLimits` and is `undefined` for
+   * almost every agent. A text agent's numbers come from the same place a
+   * pipeline session's do (each completed step's reported usage), which is what
+   * makes an eval's assertion about spend mean the same thing in both.
+   */
+  const usage = createUsageMeter({
+    limits: agent.usageLimits,
+    onUpdate: (snapshot) => events.usage(snapshot),
+  });
+
+  /**
+   * What a per-session author function is handed — a `systemPrompt` resolver
+   * here, and nothing else yet: guardrails are refused in text mode
+   * (`assertGuardrailScope`) because this door returns the model stream
+   * directly and owns no point at which to hold a reply.
+   */
+  const sessionContext: AgentSessionContext = { sessionId, env, slots };
+  const instructions = systemPromptResolver(agent.systemPrompt);
+
   const executeTool = createToolDispatcher(allTools, (tool, call) =>
     executeToolCall(call.name, call.args, {
       tool,
@@ -350,6 +257,10 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
       messages: call.messages,
       generate,
       subagents,
+      // A text agent's tools spend on the same meter its turns do — one
+      // conversation, one budget. Handed over directly rather than resolved by
+      // id: this door builds exactly one meter and one dispatcher.
+      usage,
       logger,
       signal: call.options?.signal,
       timeoutMs: options.toolTimeoutMs,
@@ -368,9 +279,27 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
    * turn 1's in-flight tool call turn 2's conversation, silently, and the
    * comment on that variable claimed the opposite outright. A turn's tools are
    * built with a value, so there is nothing left to overwrite.
+   *
+   * **That value GROWS within the turn, and only within it.** Each settled tool
+   * call appends its own result, so a second tool in the same reply reads what
+   * the first answered — the `"tool"` arm of {@link Message}, which nothing
+   * produced before. The array is minted here, per call, so it is still the
+   * case that nothing outlives the turn and nothing another turn can reach is
+   * ever written: the hazard the paragraph above records was ONE array shared
+   * by every turn, not a mutable one.
    */
-  const toolsFor = (messages: readonly Message[]): ToolSet =>
-    toVercelTools(builtins.schemas, { executeTool, sessionId, messages: () => messages });
+  const toolsFor = (messages: readonly Message[], fatalTool: FatalToolLatch): ToolSet => {
+    const view: Message[] = [...messages];
+    return toVercelTools(builtins.schemas, {
+      executeTool,
+      sessionId,
+      onFatalToolError: (error) => fatalTool.report(error),
+      messages: () => view,
+      recordToolResult: (message) => {
+        view.push(message);
+      },
+    });
+  };
 
   /**
    * The declarations a caller renders, bound to NO turn.
@@ -379,45 +308,84 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
    * stream; it is not the set a turn runs on, which `stream()` builds from that
    * turn's messages. A tool invoked through this copy reads an empty
    * `ctx.messages` — correct, since it belongs to no conversation.
+   *
+   * Built WITHOUT `recordToolResult`, and that is the difference from
+   * `toolsFor([])`: this set is agent-scoped, so a growing view behind it would
+   * be exactly the instance-scoped accumulator `toolsFor` exists to avoid —
+   * every call made through this copy leaking into the next one's
+   * `ctx.messages` for the life of the agent.
    */
-  const tools = toolsFor([]);
+  const tools = toVercelTools(builtins.schemas, {
+    executeTool,
+    sessionId,
+    messages: () => [],
+  });
 
   return {
     model,
     tools,
     sessionId,
     stream(turn: TextTurnOptions): TextTurnResult {
-      const turnTools = toolsFor(toContextMessages(turn.messages));
+      // One latch per RUN here, where the pipeline keeps one per session: a text
+      // agent's turns are not serialized (two `stream()` calls may overlap), so
+      // a shared latch would let one run's fatal tool abort another's request.
+      const fatalTool = createFatalToolLatch();
+      const turnTools = toolsFor(toContextMessages(turn.messages), fatalTool);
       // Opened before the request, so the turn's own user transcript is the
       // first event of it. `undefined` when nothing is listening, which is what
       // keeps an unobserved turn from installing a per-part callback at all.
       const turnEvents = events.openTurn(turn.messages);
       const maxSteps = turn.maxSteps ?? agent.maxSteps ?? DEFAULT_MAX_STEPS;
       const forceFinal = forceFinalAnswer(maxSteps, logger, sessionId);
+      const toolChoice = turn.toolChoice ?? agent.toolChoice ?? "auto";
+      // The budget, checked where the request is about to be made — see
+      // `usage-meter.ts`. A throw rather than a silently empty stream: this
+      // door's caller is code, not a person on a phone, and it can act on one.
+      const exhausted = usage.exhausted();
+      if (exhausted !== undefined) throw new Error(exhausted);
       return streamText({
         model,
         // `system` is the AI SDK's key; `systemPrompt` is ours, at both levels.
-        // The agent's is RESOLVED here, per turn, because it may be a thunk
-        // (`SystemPromptOption`) — and `streamText` would take the function,
-        // stringify it, and instruct the model with this module's source. The
-        // turn's own override is already a string: it is written for one turn,
-        // so there is nothing left for a thunk to answer later.
-        system: turn.systemPrompt ?? resolveSystemPrompt(agent.systemPrompt),
+        // A per-turn override wins; otherwise the agent's own, which may be a
+        // RESOLVER called here — once per turn rather than once per step, since
+        // this door assembles one request and lets the SDK step it.
+        ...omitUndefined({
+          system:
+            turn.systemPrompt ??
+            instructions?.(sessionContext) ??
+            staticSystemPrompt(agent.systemPrompt),
+        }),
         messages: turn.messages,
         tools: turnTools,
-        toolChoice: turn.toolChoice ?? agent.toolChoice ?? "auto",
+        toolChoice,
         // Only when set — some models ignore it and warn. Per-turn beats the
         // agent's own, the way `maxSteps` and `toolChoice` above already do.
-        ...omitUndefined({ temperature: turn.temperature ?? agent.temperature }),
+        ...omitUndefined({
+          temperature: turn.temperature ?? agent.temperature,
+          maxOutputTokens: agent.maxOutputTokens,
+          maxRetries: agent.maxRetries,
+        }),
         // `maxSteps` bounds TOOL-CALLING steps; the budget is one larger so
         // the forced answer step has somewhere to run. Caller conditions are
         // alternatives, not replacements — a wall-clock deadline must be able
         // to end a turn early and must never extend one past the step cap.
         stopWhen: [stepCountIs(maxSteps + 1), ...(turn.stopWhen ?? [])],
-        prepareStep: composePrepareStep(turn.prepareStep, forceFinal),
+        prepareStep: composePrepareStep(
+          turn.prepareStep,
+          // Before `forceFinalAnswer`, which owns the same key on the reserved
+          // step — see `_prepare-step.ts`.
+          resetToolChoiceAfterFirstStep(toolChoice, agent.resetToolChoice ?? true),
+          forceFinal,
+        ),
         experimental_repairToolCall: createToolCallRepair(model, logger, () => turn.signal),
-        ...omitUndefined({ abortSignal: turn.signal }),
-        ...omitUndefined({ onStepFinish: turn.onStepFinish }),
+        // The caller's signal PLUS the fatal-tool latch, so a tool the author
+        // declared unrecoverable stops the run instead of handing the model a
+        // `tool-error` part to retry against — see `tool-error-policy.ts`.
+        ...omitUndefined({ abortSignal: withFatalSignal(turn.signal, fatalTool) }),
+        onStepFinish: (step) => {
+          usage.record(step.usage);
+          return turn.onStepFinish?.(step);
+        },
         // Both halves of the event stream: every part maps through `onChunk`,
         // and `onEnd` is the guarded backstop terminator.
         ...omitUndefined({ onChunk: turnEvents?.onChunk }),
@@ -435,26 +403,9 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
 }
 
 /**
- * Project the turn's messages into the `{ role, content }` shape
- * `ctx.messages` promises a tool.
- *
- * Text content only, and joined across parts: `ctx.messages` is documented as
- * conversation CONTEXT for a tool to read, and a tool reading it wants the
- * words. Non-text parts (a tool call's arguments, an image) have no string
- * form that belongs in that field, and the roles narrow to the three the
- * public {@link Message} type declares — a `system` message is the agent's
- * own prompt, which a tool does not need handed back to it.
+ * The message projection — `toContextMessages` and the three helpers under it —
+ * lives in `text-agent-messages.ts`, split off when this file passed the
+ * 500-line cap. The seam is the natural one: everything there is about turning
+ * the AI SDK's `ModelMessage` list into the `{ role, content }` view
+ * `ctx.messages` promises a tool, and nothing in it knows this module exists.
  */
-function toContextMessages(messages: readonly ModelMessage[]): readonly Message[] {
-  const out: Message[] = [];
-  for (const message of messages) {
-    if (message.role === "system") continue;
-    const role = message.role === "tool" ? "tool" : message.role;
-    const content =
-      typeof message.content === "string"
-        ? message.content
-        : message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
-    if (content !== "") out.push({ role, content });
-  }
-  return out;
-}

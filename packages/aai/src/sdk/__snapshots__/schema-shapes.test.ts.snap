@@ -4,11 +4,14 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 [
   "builtinTools",
   "deadAirCoverMs",
+  "description",
   "errorPhrase",
   "greeting",
   "idleTimeoutMs",
   "interruptionMinDurationMs",
   "llm",
+  "maxOutputTokens",
+  "maxRetries",
   "maxSteps",
   "mcpServers",
   "minBargeInWords",
@@ -17,6 +20,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "page",
   "preemptiveGeneration",
   "requiredEnv",
+  "resetToolChoice",
   "resumeFalseInterruption",
   "s2s",
   "silencePrompt",
@@ -30,6 +34,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "text",
   "toolChoice",
   "tts",
+  "usageLimits",
 ]
 `;
 
@@ -104,6 +109,12 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
     "meta",
     "type",
   ],
+  "guardrail.blocked": [
+    "direction",
+    "meta",
+    "replacement",
+    "type",
+  ],
   "history.restored": [
     "messages",
     "meta",
@@ -158,6 +169,14 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
     "meta",
     "result",
     "toolCallId",
+    "type",
+  ],
+  "usage.updated": [
+    "inputTokens",
+    "meta",
+    "outputTokens",
+    "steps",
+    "totalTokens",
     "type",
   ],
   "user-transcript.committed": [

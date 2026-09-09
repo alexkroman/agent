@@ -3,6 +3,7 @@ import { nightProjection } from "./shared.ts";
 
 export default agent({
   name: "Night Owl",
+  description: "Recommends films, music and books for the evening, and works out when to go to bed",
   // The night's recommendation log, pushed to the client after every tool
   // call. The page renders `useAgentState(nightProjection)` and keeps no copy
   // of its own, so a reload resumes with the list intact.

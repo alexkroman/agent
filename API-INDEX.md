@@ -33,11 +33,18 @@ each is for.
 | `AgentCustomEvent` | `@alexkroman1/aai-ui` |
 | `AgentDef` | `@alexkroman1/aai` |
 | `AgentEnv` | `@alexkroman1/aai-runtime` |
+| `AgentGuardrail` | `@alexkroman1/aai` |
+| `AgentGuardrails` | `@alexkroman1/aai` |
+| `AgentInstructions` | `@alexkroman1/aai` |
+| `AgentModelTuning` | `@alexkroman1/aai` |
+| `AgentObservation` | `@alexkroman1/aai` |
 | `AgentParams` | `@alexkroman1/aai` |
 | `AgentRuntime` | `@alexkroman1/aai-runtime` |
 | `AgentServer` | `@alexkroman1/aai-runtime` |
 | `AgentServerOptions` | `@alexkroman1/aai-runtime` |
+| `AgentSessionContext` | `@alexkroman1/aai` |
 | `AgentState` | `@alexkroman1/aai-ui` |
+| `AgentSystemPrompt` | `@alexkroman1/aai` |
 | `AnthropicLlmOptions` | `@alexkroman1/aai/llm` |
 | `AnyDialog` | `@alexkroman1/aai` |
 | `AnyWorkflowDef` | `@alexkroman1/aai/workflow-api` |
@@ -415,6 +422,7 @@ each is for.
 | `StepSchemaOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
 | `StepTransportError` | `@alexkroman1/aai/step` |
 | `StepUnmatched` | `@alexkroman1/aai/testing` |
+| `StepUsage` | `@alexkroman1/aai-runtime/eval` |
 | `StoredSessionEvent` | `@alexkroman1/aai-runtime` |
 | `StreamOptions` | `@alexkroman1/aai/workflow-api` |
 | `SttError` | `@alexkroman1/aai-runtime` |
@@ -470,7 +478,6 @@ each is for.
 | `SubagentToolCall` | `@alexkroman1/aai` |
 | `SubmitButton` | `@alexkroman1/aai-ui` |
 | `SubmitInputOf` | `@alexkroman1/aai-ui` |
-| `SystemPromptOption` | `@alexkroman1/aai` |
 | `TELEPHONY_PATH` | `@alexkroman1/aai-runtime` |
 | `TELEPHONY_SAMPLE_RATE` | `@alexkroman1/aai-runtime` |
 | `TRANSCRIBE_API` | `@alexkroman1/aai/step` |
@@ -506,6 +513,7 @@ each is for.
 | `ToolContextOverrides` | `@alexkroman1/aai/testing` |
 | `ToolDef` | `@alexkroman1/aai` |
 | `ToolDisplayConfig` | `@alexkroman1/aai-ui` |
+| `ToolErrorHandler` | `@alexkroman1/aai` |
 | `ToolFailure` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `ToolInputSchema` | `@alexkroman1/aai` |
 | `ToolModules` | `@alexkroman1/aai/manifest` |
@@ -558,6 +566,7 @@ each is for.
 | `UploadStore` | `@alexkroman1/aai-runtime` |
 | `UploadTooLargeError` | `@alexkroman1/aai-runtime` |
 | `UploadsUnavailableError` | `@alexkroman1/aai-runtime` |
+| `UsageLimits` | `@alexkroman1/aai` |
 | `UseConversationResult` | `@alexkroman1/aai-ui` |
 | `UseCopyResult` | `@alexkroman1/aai-ui` |
 | `UseDownloadUrlOptions` | `@alexkroman1/aai-ui` |
@@ -1157,6 +1166,8 @@ trace or a type error can be traced back to something.
 | `UploadReader` | `@alexkroman1/aai/host-internal` |
 | `UploadWriteMeta` | `@alexkroman1/aai/host-internal` |
 | `UploadWriter` | `@alexkroman1/aai/host-internal` |
+| `UsageMeter` | `@alexkroman1/aai-runtime/internal` |
+| `UsageSnapshot` | `@alexkroman1/aai-runtime/internal` |
 | `VALID_SLUG_RE` | `@alexkroman1/aai/internal` |
 | `VOICE_CAPTURE_CONSTRAINTS` | `@alexkroman1/aai-ui/internal` |
 | `WORKFLOWS_UNAVAILABLE_MESSAGE` | `@alexkroman1/aai/internal` |
@@ -1168,6 +1179,7 @@ trace or a type error can be traced back to something.
 | `WS_OPEN` | `@alexkroman1/aai/internal` |
 | `XAI_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `XAI_KIND` | `@alexkroman1/aai/host-internal` |
+| `agentInstructionsSection` | `@alexkroman1/aai/host-internal` |
 | `agentServerEnv` | `@alexkroman1/aai-runtime/internal` |
 | `applyWorkflowJournalDdl` | `@alexkroman1/aai-runtime/internal` |
 | `asDispatcher` | `@alexkroman1/aai/host-internal` |
@@ -1245,7 +1257,7 @@ trace or a type error can be traced back to something.
 | `resolveElevenLabsSttSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveRimeTtsSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveSonioxSttSettings` | `@alexkroman1/aai/host-internal` |
-| `resolveSystemPrompt` | `@alexkroman1/aai/internal` |
+| `runAgentGuardrails` | `@alexkroman1/aai/host-internal` |
 | `runCapped` | `@alexkroman1/aai/host-internal` |
 | `safeFetch` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
 | `serializeToolFailure` | `@alexkroman1/aai/host-internal` |
@@ -1253,6 +1265,8 @@ trace or a type error can be traced back to something.
 | `sleep` | `@alexkroman1/aai/internal` |
 | `ssrfSafeFetch` | `@alexkroman1/aai/host-internal` |
 | `stampSessionEvent` | `@alexkroman1/aai-runtime/internal` |
+| `staticSystemPrompt` | `@alexkroman1/aai/host-internal` |
+| `systemPromptResolver` | `@alexkroman1/aai/host-internal` |
 | `toArgsRecord` | `@alexkroman1/aai/internal` |
 | `toToolJsonSchema` | `@alexkroman1/aai/host-internal` |
 | `traceIdOf` | `@alexkroman1/aai-runtime/internal` |

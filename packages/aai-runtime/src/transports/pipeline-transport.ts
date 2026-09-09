@@ -8,19 +8,21 @@
 // already handled by streamText.
 
 import { setMaxListeners } from "node:events";
-import type { Message } from "@alexkroman1/aai";
 import { normalizeSpeechText } from "@alexkroman1/aai/internal";
-import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
+import { pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
+import { createFatalToolLatch } from "../tool-error-policy.ts";
 import { createContextBudget } from "./pipeline-context-budget.ts";
 import { createDialogKnobs } from "./pipeline-dialog-knobs.ts";
 import { createEmitError } from "./pipeline-error.ts";
+import { createSpeechGate, NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
-import { createTurnLlmRunner } from "./pipeline-llm-stream.ts";
+import { createTurnLlmRunner, type SharedLlmRequest } from "./pipeline-llm-stream.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createPipelineSpeculation } from "./pipeline-speculation.ts";
 import { flushTtsAndWait } from "./pipeline-stream.ts";
+import { createPipelineCommands } from "./pipeline-transport-commands.ts";
 import { createPipelineLifecycle } from "./pipeline-transport-lifecycle.ts";
 import {
   type PipelineTransportOptions,
@@ -63,9 +65,19 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     preemptiveGeneration,
     speechIdleTimeoutMs,
     toolChoice,
+    resetToolChoice,
     toolSchemas,
     executeTool,
   } = resolvePipelineOptions(opts);
+  // This session's guardrails and its token meter, both absent for the
+  // overwhelming majority of agents — see `pipeline-guardrails.ts` and
+  // `usage-meter.ts`.
+  const guardrails = opts.guardrails ?? NO_GUARDRAILS;
+  const usage = opts.usage;
+  // One latch per SESSION, reset at the top of every turn: turns are serialized
+  // by the turn chain, and the tool set below is built once. See
+  // `tool-error-policy.ts` for why the latch's signal is not the turn's.
+  const fatalTool = createFatalToolLatch();
 
   const { callbacks, sessionConfig } = opts;
   // The three per-STATE knobs a `dialog()` can move mid-call, over the agent's
@@ -145,7 +157,28 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     now: opts.heardNow,
   });
 
-  // PREEMPTIVE GENERATION (on by default). Constructed before the speech
+  // Everything a `streamText` request carries that a turn and a speculation
+  // must AGREE on, built once and spread into both — see `SharedLlmRequest`.
+  // Two assemblies meant two lists to keep in sync, and they had already
+  // drifted by three fields: `maxOutputTokens`, `maxRetries` and `onUsage`
+  // reached the turn and not the speculation, so an ADOPTED one ran uncapped,
+  // on the vendor's default retries, and off this session's meter.
+  const llmRequest: SharedLlmRequest = {
+    llm: opts.llm,
+    toolChoice,
+    resetToolChoice,
+    temperature: opts.temperature,
+    maxOutputTokens: opts.maxOutputTokens,
+    maxRetries: opts.maxRetries,
+    onUsage: usage === undefined ? undefined : (reported) => usage.record(reported),
+    dialogStep: knobs.dialogStep,
+    maxSteps,
+    contextBudget,
+    log,
+    sid: opts.sid,
+  };
+
+  // PREEMPTIVE GENERATION (OFF by default). Constructed before the speech
   // handlers because they drive it, and deliberately NOT wired into `turns` or
   // the turn chain: a speculation occupies no turn, so every barge-in gate
   // below behaves exactly as it does with the flag off. See
@@ -156,21 +189,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // state that pins a tool would make every speculation end at the tool
     // boundary and be discarded, with the gate still believing it is free.
     enabled: preemptiveGeneration && knobs.dialogStep === undefined,
-    toolChoice,
+    request: llmRequest,
     toolSchemas,
-    llm: opts.llm,
     systemPrompt,
-    temperature: opts.temperature,
-    maxSteps,
-    // The SAME preparer the real turn gets: a speculation is adopted into a
-    // turn, and request parity is the premise adoption rests on.
-    contextBudget,
     history,
     sessionSignal: sessionAbort.signal,
     // "The floor is free": no turn running and nothing still playing out.
     isIdle: () => !(turns.inFlight() || heard.pending()),
-    log,
-    sid: opts.sid,
   });
 
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
@@ -243,7 +268,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const tools = toVercelTools(toolSchemas, {
     executeTool,
     sessionId: opts.sid,
+    // The one thing that makes `ToolDef.onError`'s fatal arm stop a turn rather
+    // than merely reject a call: the AI SDK swallows the rejection, so the
+    // latch is how the in-flight request finds out.
+    onFatalToolError: (error) => fatalTool.report(error),
     messages: () => history.conversation,
+    // What makes a tool able to read what an earlier tool in the SAME turn
+    // answered: the step's own messages only reach `llm` when the step ends,
+    // and this view is the one `ctx.messages` reads.
+    recordToolResult: (message) => history.pushToolResult(message),
   });
 
   function runChainedTurn(
@@ -278,7 +311,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    * tool chain speaks filler long before the answer exists. `publishTranscript:
    * false` skips it for the greeting/start-failure lines, which publish their own
    * final. The tail advances either way: it feeds the tail-resume estimate. */
-  function sendTtsText(text: string, opts?: SendTtsOptions): void {
+  function sendTtsTextNow(text: string, opts?: SendTtsOptions): void {
     turns.openAudioGate();
     // ASCII-fold typographic quotes for the engine; length-preserving, so the
     // heard cursor below still indexes the same positions (normalizeSpeechText).
@@ -287,6 +320,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (opts?.publishTranscript !== false)
       callbacks.report({ type: "agent-transcript.updated", text: tail });
   }
+
+  /**
+   * The funnel every collaborator below is handed — the raw send when this
+   * session declares no output guardrail, and a HOLDABLE wrapper around it when
+   * it does. Wrapping here rather than at each call site is what makes "one
+   * place all speech goes through" true of the hold as well as of the send.
+   */
+  const speech = createSpeechGate(guardrails.holdsSpeech, sendTtsTextNow);
+  const sendTtsText = speech.send;
 
   // How a turn is wrapped up once its stream settles — interrupted, failed, or
   // spoken. See pipeline-turn-outcome.ts.
@@ -302,15 +344,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   });
 
   const consumeLlmStream = createTurnLlmRunner({
-    llm: opts.llm,
+    ...llmRequest,
     systemPrompt,
     messages: history.llm,
     tools,
-    toolChoice,
-    temperature: opts.temperature,
-    dialogStep: knobs.dialogStep,
-    maxSteps,
-    contextBudget,
+    fatalTool,
     deadAirCoverMs,
     // An open speech edge means an utterance is in progress (0 when not).
     callerSpeaking: () => speechEdges.durationMs() > 0,
@@ -387,6 +425,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     consumeLlmStream,
     speculation,
     runReply,
+    guardrails,
+    speech,
+    fatalTool,
+    usage,
+    sendTtsText,
+    emitError,
   });
 
   // Session lifecycle: open/greet/teardown — see
@@ -421,80 +465,18 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     logTurnCrash,
   });
 
-  return {
-    start: () => lifecycle.start(),
-
-    stop: () => lifecycle.stop(),
-
-    sendUserAudio(bytes: Uint8Array): void {
-      if (terminated || !lifecycle.audioReady()) return;
-      providers.stt?.sendAudio(bytesToPcm16(bytes));
-    },
-
-    // Tool execution stays inside toVercelTools/streamText; results aren't
-    // routed through the transport.
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op for pipeline mode
-    sendToolResult(_callId: string, _result: string): void {},
-
-    cancelReply(): void {
-      if (terminated) return;
-      // A client-initiated cancel is intentional — never resume from it.
-      recovery.clear();
-      // "Stop responding": strand turns already queued behind the cancelled
-      // one. History persistence stays valid — the conversation continues.
-      gate.invalidateQueued();
-      speculation.discard("reset");
-      abortInFlightTurn();
-      // Silence after a client-initiated cancel should still nudge.
-      nudger.arm();
-      // Do NOT report `reply.cancelled` here — the session's own `cancel` command
-      // (client-initiated) calls client.cancelled() itself. Barge-in fires
-      // onCancelled directly in onSttPartial where the cancel originates here.
-    },
-
-    injectTurn(instruction: string): void {
-      if (terminated) return;
-      // The same path the silence nudge takes — queued on the turn chain, so it
-      // waits its turn behind a reply in flight rather than talking over one,
-      // and `synthetic` keeps the instruction out of the user transcript while
-      // leaving it in the LLM's history where the reply is built from it.
-      runChainedTurn(instruction, "Pipeline injected turn crashed", { synthetic: true });
-    },
-
-    seedHistory(messages: readonly Message[]): void {
-      // Client-resent history on reconnect; restore both views so the resumed
-      // agent keeps memory of the prior conversation.
-      history.seed(messages);
-    },
-
-    onPlaybackProgress(bufferedMs: number): void {
-      // The one closed-loop input to a playback estimate that is otherwise
-      // bytes-sent times 1.0x — see the `playback_progress` doc in
-      // sdk/protocol.ts for what it costs when the client drains slower, and
-      // `PlaybackClock.onClientReport` for why it may only ever clamp upward.
-      // Ignored after teardown: the clock belongs to a session that is gone.
-      if (terminated) return;
-      heard.onClientPlaybackReport(bufferedMs);
-    },
-
-    reset(): void {
-      // Bumped before the abort/history.reset below so the aborted turn's
-      // deferred persistence and any queued turns see the change.
-      gate.invalidateAll();
-      // A reset is user activity: restore the resume budget as well.
-      recovery.onUserTurn();
-      speechEdges.reset();
-      speculation.discard("reset");
-      abortInFlightTurn();
-      history.reset();
-      // A reset is user activity: restore the budget, restart the window.
-      nudger.onUserSpeech();
-      // A reset starts a NEW conversation, so it opens the way every
-      // conversation does. Queued after the invalidateAll above, so the
-      // greeting turn's epoch is the fresh one and the strand does not catch
-      // it; queued on the turn chain, so it runs after the aborted turn
-      // unwinds rather than interleaving with it.
-      lifecycle.greet();
-    },
-  };
+  return createPipelineCommands({
+    lifecycle,
+    providers: () => providers,
+    history,
+    heard,
+    gate,
+    recovery,
+    speechEdges,
+    nudger,
+    speculation,
+    abortInFlightTurn,
+    runChainedTurn,
+    isTerminated: () => terminated,
+  });
 }

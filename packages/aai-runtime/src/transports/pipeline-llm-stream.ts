@@ -14,24 +14,26 @@
 // else different. That is what makes adopting a speculative stream into a real
 // turn legitimate — see `pipeline-speculation.ts`.
 
-import type { ToolChoice } from "@alexkroman1/aai";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import { type ModelMessage, stepCountIs, streamText } from "ai";
 import {
-  type LanguageModel,
-  type ModelMessage,
-  type PrepareStepFunction,
-  stepCountIs,
-  streamText,
-  type Tool,
-  type ToolCallRepairFunction,
-  type ToolSet,
-} from "ai";
-import { composePrepareStep, forceFinalAnswer } from "../_prepare-step.ts";
-import type { Logger } from "../runtime-config.ts";
+  composePrepareStep,
+  forceFinalAnswer,
+  resetToolChoiceAfterFirstStep,
+} from "../_prepare-step.ts";
 import { createToolCallRepair } from "../tool-call-repair.ts";
-import type { ContextBudgetPreparer } from "./pipeline-context-budget.ts";
+import { withFatalSignal } from "../tool-error-policy.ts";
 import { drainEntries, partsAsEntries } from "./pipeline-llm-drain.ts";
 import { createTurnTrace } from "./pipeline-llm-trace.ts";
+import type {
+  AdoptedLlmStream,
+  ConsumeLlmStreamParams,
+  LlmRequest,
+  LlmStreamResult,
+  StartedLlmStream,
+  StepResult,
+  TapeEntry,
+} from "./pipeline-llm-types.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
 import { createTtsTextCoalescer } from "./pipeline-stream.ts";
 import {
@@ -41,177 +43,26 @@ import {
   type StreamPart,
   type StreamPartHandler,
 } from "./pipeline-stream-parts.ts";
-import type { EmitError, SendTtsText, SystemPromptOption, TransportCallbacks } from "./types.ts";
 import { resolveSystemPrompt } from "./types.ts";
 
-/** Parameters for {@link consumeLlmStream}, threading session state explicitly. */
-export interface ConsumeLlmStreamParams {
-  /** LLM provider (Vercel AI SDK LanguageModel). */
-  llm: LanguageModel;
-  /**
-   * System prompt for the turn — a string or a thunk ({@link SystemPromptOption}),
-   * resolved in {@link startLlmStream}: the ONE place a `streamText` request is
-   * assembled, and so the one place a per-turn prompt can enter without breaking
-   * the parity preemption rests on. A caller that resolved it and passed the
-   * string would be back to a value frozen at whatever moment that caller ran.
-   */
-  systemPrompt: SystemPromptOption;
-  /** Conversation history in Vercel AI SDK ModelMessage form. */
-  messages: ModelMessage[];
-  /** Tool set bound to the transport's executeTool. */
-  tools: Record<string, Tool>;
-  /** Tool selection policy passed to `streamText`. */
-  toolChoice: ToolChoice;
-  /** LLM sampling temperature; omitted entirely from streamText when unset. */
-  temperature: number | undefined;
-  /** The active dialog state's `toolChoice`/`temperature`, per STEP — see `pipeline-dialog-knobs.ts`. */
-  dialogStep?: PrepareStepFunction<ToolSet> | undefined;
-  /** Repairs malformed tool-call arguments by re-asking the model. */
-  repairToolCall: ToolCallRepairFunction<ToolSet>;
-  /** Max LLM tool-call steps for this turn. */
-  maxSteps: number;
-  /**
-   * Bounds what each step SENDS to the model — see `pipeline-context-budget.ts`.
-   *
-   * A `prepareStep` preparer, composed with `forceFinalAnswer` rather than
-   * replacing it (`composePrepareStep`), and `undefined` when the model's
-   * context window is not known, at which point nothing is trimmed. It is
-   * SESSION-scoped: the fixed cost it learns from one step's reported usage is
-   * the right number for the next turn's first step.
-   */
-  contextBudget?: ContextBudgetPreparer | undefined;
-  /**
-   * Forwards text to the active TTS session (no-op if none). `record: false`
-   * marks dead-air filler: audible, but never part of the record.
-   */
-  sendTtsText: SendTtsText;
-  /** Dead-air cover window (ms); 0 disables — see {@link StreamPartHandlerDeps}. */
-  deadAirCoverMs?: number | undefined;
-  /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
-  callerSpeaking?: (() => boolean) | undefined;
-  /** Tool-call/tool-result observability hooks, forwarded to ServerSession. */
-  callbacks: Pick<TransportCallbacks, "report">;
-  /** Report an LLM-stream error. */
-  emitError: EmitError;
-  log: Logger;
-  sid: string;
-  /** The turn's abort signal (turn cancellation / barge-in / session end). */
-  signal: AbortSignal;
-  /** Receives each assistant text delta (accumulated into the transcript). */
-  onDelta: (delta: string) => void;
-  /**
-   * Fires after each completed LLM step, once that step's response messages
-   * are safe in the collected history. The transport uses it to snapshot how
-   * much of the accumulated transcript is already persisted, so an aborted
-   * turn's `[interrupted]` marker carries only the unpersisted tail.
-   */
-  onStepPersisted?: (() => void) | undefined;
-  /**
-   * The adopted run was abandoned and the turn is starting from the top. This
-   * module resets its own copies; `onDelta` has been appending to a string the
-   * CALLER owns, and left standing the abandoned preamble sits in front of the
-   * restarted text and is committed to history twice. See the late-poison
-   * restart in {@link consumeLlmStream}.
-   */
-  onRestart?: (() => void) | undefined;
-  /**
-   * A speculative stream, already running against this exact request, to drain
-   * instead of launching a new one — see `pipeline-speculation.ts`. Present
-   * only when the committed user text matched what the speculation was started
-   * from, so the request the caller would have assembled is the request already
-   * in flight.
-   */
-  adopted?: AdoptedLlmStream | undefined;
-}
-
-/** Outcome of one {@link consumeLlmStream} turn. */
-export interface LlmStreamResult {
-  /**
-   * Response messages of every step that COMPLETED, for history.
-   *
-   * On abort or stream error this holds the steps finished before the
-   * interruption (tool calls with their results) — never `undefined` — so
-   * barge-in does not erase work already done: the next turn's LLM still sees
-   * which tools ran and what they returned. An in-flight step is dropped whole
-   * (no dangling tool call without its result).
-   */
-  messages: ModelMessage[];
-  /**
-   * The stream errored out rather than completing or being aborted.
-   *
-   * The caller needs this to speak a recovery phrase: a failed turn usually
-   * produces no text at all, so nothing reaches TTS and the caller hears
-   * silence. An empty `messages` array cannot express it — a successful turn
-   * that produced no tool steps looks identical. A deliberate barge-in is NOT
-   * a failure; it has its own recovery path.
-   */
-  failed: boolean;
-}
-
-/** One completed `streamText` step, narrowed to the part history needs. */
-export interface StepResult {
-  response: { messages: ModelMessage[] };
-}
-
 /**
- * A speculative stream handed over to the real turn that adopted it.
- *
- * `entries()` replays what the speculation already drained and then FOLLOWS the
- * same live run — one continuous sequence, which is why preemption is a head
- * START rather than a cache lookup. See `pipeline-speculative-stream.ts` for why
- * the speculation stays the sole reader of the underlying stream.
+ * Every TYPE this module's two functions speak — the request parameters, the
+ * turn result, the adopted-speculation handover and its tape — lives in
+ * `pipeline-llm-types.ts`, split off when this file passed the source-length
+ * cap. They carry more argument than code (each field is a decision about what
+ * one turn may say), and separating them leaves this file as the two functions
+ * themselves. Re-exported here, so no importer moved.
  */
-export interface AdoptedLlmStream {
-  /** Taped entries then live ones, in arrival order, ending when the run does. */
-  entries(): AsyncIterable<TapeEntry>;
-  /** `result.steps`, for the same final gather the ordinary path does. */
-  steps(): Promise<readonly StepResult[]>;
-  /**
-   * Abandon the adopted run WITHOUT aborting the turn that adopted it.
-   *
-   * `adopt()` re-parents the speculation onto the turn's signal, so by this
-   * point aborting the turn is the only other way to stop the request — and the
-   * turn is precisely what must survive. See the late-poison restart in
-   * {@link consumeLlmStream}.
-   */
-  abandon(): void;
-}
-
-/**
- * One entry of a speculation's tape. `step` markers keep `onStepPersisted`
- * ordering exact on replay: the transport snapshots how much text a completed
- * step covers, and taping only the parts would put that snapshot in the wrong
- * place.
- */
-export type TapeEntry =
-  | { readonly kind: "part"; readonly part: StreamPart }
-  | { readonly kind: "step"; readonly messages: readonly ModelMessage[] };
-
-/** What {@link startLlmStream} hands back to whoever drains it. */
-export interface StartedLlmStream {
-  /** Parts as `streamText` produces them. */
-  fullStream: AsyncIterable<StreamPart>;
-  /** Settles with every step of the turn, after the stream ends. */
-  steps: Promise<readonly StepResult[]>;
-}
-
-/** The request half of {@link ConsumeLlmStreamParams} — see {@link startLlmStream}. */
-export type LlmRequest = Pick<
+export type {
+  AdoptedLlmStream,
   ConsumeLlmStreamParams,
-  | "llm"
-  | "systemPrompt"
-  | "messages"
-  | "tools"
-  | "toolChoice"
-  | "temperature"
-  | "dialogStep"
-  | "repairToolCall"
-  | "maxSteps"
-  | "contextBudget"
-  | "log"
-  | "sid"
-  | "signal"
-> & { onStep?: ((messages: readonly ModelMessage[]) => void) | undefined };
+  LlmRequest,
+  LlmStreamResult,
+  SharedLlmRequest,
+  StartedLlmStream,
+  StepResult,
+  TapeEntry,
+} from "./pipeline-llm-types.ts";
 
 /**
  * Assemble and launch one `streamText` request.
@@ -236,25 +87,50 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     messages: req.messages,
     tools: req.tools,
     toolChoice: req.toolChoice,
-    // Temperature only when set — Claude 5 ignores it and warns.
-    ...omitUndefined({ temperature: req.temperature }),
+    // Temperature only when set — Claude 5 ignores it and warns. The other two
+    // follow the same rule for the same reason: an explicit `undefined` is not
+    // the same request as an absent key to every provider, and `maxRetries: 0`
+    // is a legitimate value a `??` default would swallow.
+    ...omitUndefined({
+      temperature: req.temperature,
+      maxOutputTokens: req.maxOutputTokens,
+      maxRetries: req.maxRetries,
+    }),
     // Word-coalesce text for TTS, keeping thinking signatures (see pipeline-smooth.ts).
     experimental_transform: smoothTextStream(),
     experimental_repairToolCall: req.repairToolCall,
     // `maxSteps` bounds TOOL-CALLING steps; the budget is one larger so the
     // forced answer step below has somewhere to run. See forceFinalAnswer.
     stopWhen: stepCountIs(req.maxSteps + 1),
-    // ONE slot, TWO things to say — see `_prepare-step.ts`. The budget decides
-    // which messages this step may send and must keep them; `forceFinalAnswer`
-    // goes last and wins on `toolChoice`, the one key it sets. Writing either
-    // straight into the slot deletes the other, silently.
+    // ONE slot, FOUR things to say — see `_prepare-step.ts`. Last writer wins
+    // per key, so the ORDER is `ToolChoice`'s documented scope precedence
+    // (agent → turn → dialog state → forced final step) written out:
+    //
+    // 1. the context budget, which owns `messages` and shares no key with the
+    //    three below;
+    // 2. the AGENT-scoped reset, which puts a demanding `toolChoice` back to
+    //    `"auto"` after step 0;
+    // 3. the DIALOG STATE's knobs, which beat the agent's for exactly as long
+    //    as the conversation is in that state — so this must come AFTER the
+    //    reset. It used to come before, and the reset then overwrote a state's
+    //    pin with `"auto"` from step 1 on: a state that must call a tool (or
+    //    must not) silently stopped meaning it after the first step of every
+    //    turn, on every agent whose own `toolChoice` demands something;
+    // 4. `forceFinalAnswer`, which owns the same key on the one step the budget
+    //    reserved and must win there over all three.
+    //
+    // Writing any of them straight into the slot deletes the others, silently.
     prepareStep: composePrepareStep(
       req.contextBudget,
+      resetToolChoiceAfterFirstStep(req.toolChoice, req.resetToolChoice ?? true),
       req.dialogStep,
       forceFinalAnswer(req.maxSteps, req.log, req.sid),
     ),
     abortSignal: req.signal,
     onStepFinish: (step) => {
+      // The provider's own counts, folded in before the messages: a step that
+      // completes has been billed whether or not the turn survives to use it.
+      req.onUsage?.(step.usage);
       // `onStep` is the ONLY way out: each consumer keeps the copy it needs
       // (`consumeLlmStream`'s own array, the speculation's tape), and a second
       // accumulator here was write-only — two collections of one thing, with
@@ -335,6 +211,24 @@ export function createTurnLlmRunner(deps: TurnLlmRunnerDeps): TurnLlmRunner {
 }
 
 /**
+ * One pass's entry stream and step promise: the adopted tape's, or a freshly
+ * launched request's.
+ *
+ * A function rather than an `if`/`else` inside {@link consumeLlmStream} because
+ * that function sits at its cognitive-complexity ceiling, and this branch is
+ * the most self-contained thing in it. `launch` is a thunk so the request is
+ * assembled only on the arm that needs one.
+ */
+function openPass(
+  adopted: AdoptedLlmStream | undefined,
+  launch: () => StartedLlmStream,
+): { entries: AsyncIterable<TapeEntry>; steps: Promise<readonly StepResult[]> } {
+  if (adopted) return { entries: adopted.entries(), steps: adopted.steps() };
+  const started = launch();
+  return { entries: partsAsEntries(started.fullStream), steps: started.steps };
+}
+
+/**
  * Run one `streamText` turn against the LLM, fan its stream parts out via
  * {@link createStreamPartHandler}, and return the accumulated response
  * messages plus whether the stream failed.
@@ -359,7 +253,16 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     onStepPersisted,
     onRestart,
     adopted,
+    fatalTool,
   } = params;
+  // The REQUEST's signal, which is the turn's plus the fatal-tool latch. The
+  // two are deliberately not the same signal: aborting the turn's would make
+  // this indistinguishable from a barge-in (an `[interrupted]` tail persisted,
+  // no TTS drain, nothing spoken), where what a fatal tool error should produce
+  // is a FAILED turn — the caller hears `errorPhrase` and the session lives.
+  // `AbortSignal.any` holds its sources weakly, so a settled turn leaves no
+  // listener behind on either.
+  const requestSignal = withFatalSignal(signal, fatalTool);
   // Batch word-granularity deltas into fewer TTS provider sends; the
   // transcript path (onDelta) keeps full delta granularity.
   let ttsText = createTtsTextCoalescer(sendTtsText);
@@ -372,22 +275,16 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // hold a tool call — one fresh run with the real, executable tools.
     let useAdopted = adopted;
     for (;;) {
-      let entries: AsyncIterable<TapeEntry>;
-      let steps: Promise<readonly StepResult[]>;
-      if (useAdopted) {
-        entries = useAdopted.entries();
-        steps = useAdopted.steps();
-      } else {
-        const started = startLlmStream({
+      const { entries, steps } = openPass(useAdopted, () =>
+        startLlmStream({
           ...params,
+          signal: requestSignal,
           onStep: (messages) => {
             collected.push(...messages);
             onStepPersisted?.();
           },
-        });
-        entries = partsAsEntries(started.fullStream);
-        steps = started.steps;
-      }
+        }),
+      );
       handler = createStreamPartHandler({
         onDelta,
         sendTtsText: ttsText.send,
@@ -479,6 +376,30 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // A barge-in is not a failure — it has its own recovery path, and an
     // apology on top of a deliberate interruption would be wrong.
     if (signal.aborted) return { messages: collected, failed: false };
+    // A fatal tool error IS one, and it is checked before the generic LLM
+    // reporting below: what reaches here is the `AbortError` this module raised
+    // on itself (aborting `requestSignal` rejects `result.steps`, which the
+    // happy path awaits), whose message names neither the tool nor the reason.
+    //
+    // Reported as a `tool` error rather than an `llm` one — the model did
+    // nothing wrong — and NON-fatally, on this transport's standing rule that a
+    // failing turn is not a failing session. `failed: true` is what makes the
+    // outcome speak the recovery phrase, so the caller is handed the
+    // conversation back instead of hearing the agent stop. The flush comes
+    // first, so speech matches the transcript already accumulated; it reads
+    // `ttsText` HERE rather than through a captured reference, because the
+    // coalescer is REPLACED on a poisoned-adoption restart.
+    const fatalErr = fatalTool?.error();
+    if (fatalErr !== undefined) {
+      ttsText.flush();
+      log.error("Tool failed fatally; turn stopped", {
+        tool: fatalErr.toolName,
+        error: fatalErr.message,
+        sid,
+      });
+      emitError("tool", fatalErr.message, { fatal: false });
+      return { messages: collected, failed: true };
+    }
     // Flush buffered TTS text so speech matches the transcript already
     // accumulated via onDelta for the pre-error portion of the turn.
     ttsText.flush();

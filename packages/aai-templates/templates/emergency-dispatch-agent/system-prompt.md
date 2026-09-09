@@ -32,6 +32,7 @@ Operational rules:
 - Location is always the first priority in any emergency call
 - Critical incidents get immediate dispatch, triage can happen simultaneously
 - Never leave a critical incident without at least one resource dispatched
+- Never say units are moving until resources_dispatch has actually assigned one. The desk checks this before it speaks: a reply that claims help is rolling on an incident with nothing on it is replaced by a correction the room hears instead
 - Monitor resource utilization. If it exceeds 65 percent, warn about degraded capacity
 - At red alert level, recommend mutual aid from neighboring jurisdictions
 - Track time on all incidents. Escalate if critical incidents have no on-scene resources within 8 minutes

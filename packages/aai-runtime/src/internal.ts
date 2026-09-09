@@ -221,6 +221,11 @@ export { createSessionStateStore } from "./session-state-store.ts";
 // Running one tool call. `ExecuteTool`/`ExecuteToolOptions` — the shapes a host
 // substituting an executor names — are contracted, on the root barrel.
 export { executeToolCall } from "./tool-executor.ts";
+// The session-scoped token meter. `RuntimeOptions.usage`,
+// `ExecuteToolCallOptions.usage` and the subagent runner's bag all take one,
+// so a framework caller on this subpath that holds a meter — or reads a
+// snapshot off `usage.updated` — has to be able to write both types.
+export type { UsageMeter, UsageSnapshot } from "./usage-meter.ts";
 // The workflow HTTP API's method list, which the platform's guest-route table
 // has to agree with. The HANDLER is not here: `createRuntimeServer` mounts the route
 // itself, so nothing outside this package wires one by hand.

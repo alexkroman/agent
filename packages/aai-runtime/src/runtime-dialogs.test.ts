@@ -5,10 +5,12 @@ import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeConfig, makeLogger } from "./_test-utils.ts";
+import { makeConfig, makeLogger, makeSessionContext } from "./_test-utils.ts";
 import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import type { Transport } from "./transports/types.ts";
+
+const TEST_SESSION_CONTEXT = makeSessionContext();
 
 const SID = "s-dialog";
 
@@ -97,7 +99,7 @@ function setup(
     toolGuidance: undefined,
   });
   const bound = openSessionDialogs(dialogs, SID, {
-    prompt: prompts.forSession(),
+    prompt: prompts.forSession(TEST_SESSION_CONTEXT),
     slots,
     transport: () => transport,
     logger,
