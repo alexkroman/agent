@@ -188,7 +188,8 @@ wants a specific entry file gets one EMITTED into the build output rather than
 committed to the project — `_build-target.ts` carries the argument and the
 precedent, and each host's own constants and emitted sources sit one module over
 (`_vercel-target.ts`, `_deno-target.ts`, `_modal-target.ts`, with
-`_target-drain.ts` for the fragment the two long-lived ones share). That is
+`_target-entry.ts` for the entry the two long-lived ones share and
+`_target-drain.ts` for the signal handler inside it). That is
 Nitro's `presets/<provider>/` shape and it is also just where the file ended up:
 holding all three it went over the 500-line cap. The dependency runs one way —
 `_build-target.ts` reads each host's output directory for `TARGET_OUTPUTS`, and
@@ -304,40 +305,36 @@ declaration of the runtime's needs that drifts the first time one changes. Deno
 Deploy grants its own permissions regardless — this file is what makes the
 directory runnable BY HAND, which is how a failed deployment gets diagnosed.
 
-**Its scenario suite needs a real `deno`, so CI pins one.**
-`_deno-output.scenario.test.ts`'s portability case copies the output to a
-SIBLING directory and boots it — copied to a CHILD it passed with the client
-removed, because module resolution walks UP and found the project's own
-`node_modules`, so the whole "no install step" claim was false while the test
-was green. Nothing installed Deno, so that case ALSO reported green on every CI
-leg through an `expect.soft(true, …)`: a skip spelled as a pass, over the one
-assertion the target rests on. It is `describeWithDeno` now
-(`aai/host/ffmpeg.scenario.test.ts`'s shape), and **`AAI_REQUIRE_DENO`** turns
-the skip into a hard failure — set by the `integration-and-scenario` job only
-after `deno --version` really answered, and declared in `check:scenario`'s
-`env` in `turbo.json` because strict env mode would otherwise strip it and the
-enforcement would be silently inert. Same shape as `AAI_REQUIRE_REGISTRY`
-below. The runtime version is pinned EXACT (2.9.5, what the target was verified
-against) rather than to a range: a moving runtime turns somebody else's
-regression into a red required check on unrelated pull requests.
+**Its scenario suite needs a real `deno`, so CI pins one.** What
+`_deno-output.scenario.test.ts` keeps is the claim only Deno can settle: that
+the emitted module GRAPH has nothing left to resolve. `deno run` resolves a
+module when it EVALUATES it, so a specifier sitting in a comment is never
+looked at — the directory booted and served every route while `deno info` on
+the same file reported NINE unresolvable dependencies (undici's JSDoc,
+html-to-text's, and our own workflow docs' `{@link import(…)}`). Boot-and-serve
+is blind to a dangling edge by construction. `--json` and the MODULES rather
+than the exit code, because `deno info` reports an unresolvable dependency and
+still exits 0.
 
-**And it probes three routes, not one.** `/health` was the whole assertion, and
-it is the one route that reads NOTHING off disk — so both failures the emit
-exists to prevent were invisible to it. It now also fetches `/client-config`
-(what a browser reads before it dials) and `/` (the client SERVED, not merely
-copied — the unit test proves the directory was written, only this can say the
-server resolves it with no `node_modules` to answer `defaultClientDir()`).
-A/B'd: removing the client directory from the deployed copy fails the suite,
-where the `/health`-only version passed. The driver fences its JSON between
-sentinels because booting the server writes a banner to stdout — which is why
-the old assertion was a `toContain("200")` that a banner could satisfy.
+Nothing installed Deno for a long time, so that suite's one case reported green
+on every CI leg through an `expect.soft(true, …)`: a skip spelled as a pass,
+over the assertion the target rests on. The gate is `describeWithBinary` now
+(`_test-utils.ts`, the generalisation of the `describeWithDeno` that used to
+live in that file, itself `aai/host/ffmpeg.scenario.test.ts`'s shape), and
+**`AAI_REQUIRE_DENO`** turns the skip into a hard failure — set by the
+`integration-and-scenario` job only after `deno --version` really answered, and
+declared in `check:scenario`'s `env` in `turbo.json` because strict env mode
+would otherwise strip it and the enforcement would be silently inert. Same
+shape as `AAI_REQUIRE_BUN` and as `AAI_REQUIRE_REGISTRY` below. The runtime
+version is pinned EXACT (2.9.5, what the target was verified against) rather
+than to a range: a moving runtime turns somebody else's regression into a red
+required check on unrelated pull requests.
 
-**It also has the Modal suite's SIGTERM twin**, and that is worth running in
-both places rather than once: the drain is one shared source, but whether a
-signal ARRIVES is a property of the runtime — Deno routes
-`process.on("SIGTERM")` through `Deno.addSignalListener`, so this is the only
-thing in the repo that says the handler is reached under Deno rather than under
-Node.
+**BOOTING the emit is one suite over now, and it runs three runtimes.** The
+Deno suite used to boot the directory and drain it on SIGTERM as well; both are
+`_target-runtimes.scenario.test.ts`'s, because both are properties of the
+ARTIFACT rather than of Deploy — see "Self-hosted output must run on Node, Deno
+and Bun" below.
 
 **`--target modal` emits a self-contained directory AND an `app.py`**, and
 that second file is what makes it differ in KIND from the other three. Every
@@ -1292,6 +1289,103 @@ tests — Linux by design, not by accident. Running them on Windows would test t
 runner rather than the code. The three remaining `*.integration.test.ts` files
 are pure in-memory property tests, so they would tell you about fast-check, not
 about Windows.
+
+## Self-hosted output must run on Node, Deno and Bun
+
+**The contract is about the SERVE half, and only the serve half.** `aai build`
+is Node — vite and rolldown with native bindings, and the emitted bundle is
+asserted to carry none of them (`_deno-output.scenario.test.ts`, "carries no
+build toolchain"). What has to be portable is what the emit RUNS:
+`createProjectServer` + `listen` + the drain, over a directory with no
+`node_modules`, no toolchain and one file to boot. Do not try to certify the
+build under another runtime; do not let anything runtime-specific into the
+entry.
+
+**One entry, not one per host** (`_target-entry.ts`). The two long-lived entries
+were separate sources, on the reading that "the two read the port from different
+runtimes, and a shared entry would be a template with a hole where that goes" —
+and that hole is exactly what pinned each artifact to one runtime: the Deno
+entry read `globalThis.Deno.env.get("PORT")` and nothing else, the Modal entry
+read `process.env.PORT` and nothing else. So `.aai/deno/` ignored `PORT` under
+`node` and `bun` while looking perfectly healthy on its default, and nobody had
+decided that. `RUNTIME_PORT_SOURCE` reads both; `_target-entry.test.ts` pins the
+two real entries to one body modulo a banner and a default port, which is what
+lets the matrix below prove things about both from a synthetic emit.
+
+**`_target-runtimes.scenario.test.ts` is the certification**: one bundle, booted
+under `node`, `deno` and `bun` in turn, each arm asserting the emit boots with
+no `node_modules`, serves `/health` + `/client-config` + `/`, dials
+`/websocket`, and exits 0 on SIGTERM. Three things about its shape:
+
+- **It DIALS.** Every host suite before it probed HTTP only, and the `/websocket`
+  upgrade is how every browser and every phone call reaches the agent — through
+  `ws` over a `node:http` server, which is the part of `node:http` a
+  reimplementation is likeliest to get wrong. `_deno-target.ts` had the leg
+  recorded as "verified against a live deployment with real speech": by hand,
+  once, on one runtime. The frame it waits for is `session.configured`, which
+  the runtime sends even against a placeholder credential, so no arm spends a
+  key.
+- **One emit for all six arms**, memoized. A rolldown pass per test would mean
+  six different bundles, so a difference between two runtimes could be a
+  difference between two builds.
+- **The bundle's `node:` imports are pinned** to `PORTABLE_NODE_BUILTINS`
+  (`_target-bundle.ts`) — a static gate, the only one there that needs no
+  runtime installed. It catches what boot arms cannot: a dependency bump
+  dragging `node:vm`, `node:cluster` or `node:v8` into the deployment reaches a
+  runtime that half-implements it at the first CALL, i.e. on a live session days
+  after the deploy. `FEATURE_DETECTED_NODE_BUILTINS` is the deliberate second
+  list — `node:sqlite`, which undici NAMES behind a `try` that tolerates
+  `ERR_UNKNOWN_BUILTIN_MODULE` and never requires; the spec pins that guard by
+  refusing it as a static import, since Deno does not ship it at all.
+
+**Two things were found by running it, and both are Bun's.**
+
+**One is fixed here.** undici 8.10.1 assigns
+`webidl.util.markAsUncloneable = markAsUncloneable`, destructured from
+`node:worker_threads` with no guard. Node has had that symbol since 21; **Bun
+does not implement it**, and undici's own `CacheStorage` calls it in a
+constructor that runs at module scope — so the emitted server died on IMPORT
+under `bun ./server.mjs`, before any of our code. `guardUndiciMarkAsUncloneable`
+(`_target-bundle.ts`) gives it a destructuring default, which costs nothing
+where the symbol exists. The plugin FAILS THE BUILD if undici's webidl module is
+in the graph and the pinned line is not, because a pinned string is only
+load-bearing while it matches and the alternative is shipping the crash
+silently.
+
+**The other is not, and it is why `bun` is not a supported self-hosting runtime
+today.** With that fix Bun boots the emit, serves all three routes and drains on
+SIGTERM with exit 0 — and the `/websocket` upgrade never reaches the client. The
+server side gets further than it looks: our handler logs `WS upgrade
+/websocket`, `ws`'s `handleUpgrade` callback runs, a session is created. Then
+nothing is written. Measured with a raw socket: an upgrade request to a
+Bun-hosted `ws` server receives **zero bytes** — no `101`, no error — so a
+browser sits in CONNECTING until it gives up.
+
+It is not a general gap in Bun's `node:http`. A nine-line `ws` + `node:http`
+server works perfectly under Bun when `ws` is imported by NAME, because **Bun
+substitutes its own native implementation for the `ws` package** — and fails
+identically to the emit when the same script imports ws's real JavaScript by
+path. A bundle inlines that JavaScript, so the substitution never happens and
+ws's write to the hijacked socket goes nowhere. Closing it means either Bun
+writing those bytes or the runtime growing a Bun-native socket path
+(`Bun.serve`), which would be a second server implementation in `aai-runtime`
+rather than anything this package can do.
+
+So the bun arm asserts the GAP rather than skipping the leg — a voice agent that
+serves its own UI and accepts no call is not a working deployment, and a suite
+that quietly declined to look would let "runs on Bun" be said. A failure there
+is good news: it means the bytes are arriving, and `acceptsSessions` flips with
+the evidence attached.
+
+**There is deliberately no `--target bun`.** `TARGET_OUTPUTS` is host-shaped —
+every target owes the command that ships it, and `_build-target.test.ts` holds a
+target that writes a directory to a non-empty `deploy` sequence. Bun is a
+RUNTIME, not a host: there is no `bun deploy`, the deployment story is a
+container, and inventing `docker build` lines nobody has run is exactly what
+that record exists to prevent (every flag in the `deno` sequence was established
+by a failed revision). A container payload is what `--target deno` and
+`--target modal` already emit, and the matrix is what says which runtimes can
+run one.
 
 ## Self-hosting is the scaffold's default, and it runs the BUILT worker
 

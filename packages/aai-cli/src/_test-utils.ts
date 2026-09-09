@@ -1,9 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { vi } from "vitest";
+import { describe, vi } from "vitest";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
 
 /** Create a temp directory, run `fn`, then clean up. */
@@ -187,4 +188,67 @@ export async function linkProjectNodeModules(dir: string): Promise<void> {
       "dir",
     );
   }
+}
+
+/**
+ * A binary this suite needs, and how a machine without it is told.
+ *
+ * @see describeWithBinary
+ */
+export interface BinaryGate {
+  /** The binary, resolved on PATH. */
+  readonly bin: string;
+  /** The variable that turns a SKIP into a hard failure — declared in `turbo.json`. */
+  readonly requireEnv: string;
+  /** How to install it, printed with the skip. */
+  readonly howTo: string;
+  /** Args that make it print its version. Defaults to `--version`. */
+  readonly versionArgs?: readonly string[];
+}
+
+/**
+ * Whether {@link BinaryGate.bin} answers on PATH.
+ *
+ * `spawnSync` rather than an `await`, and callers must call it at MODULE scope:
+ * a probe awaited in a test BODY can only produce a pass or a fail, never a
+ * skip, so the gate has to be decided at COLLECTION time to be a gate at all.
+ */
+export function hasBinary(gate: BinaryGate): boolean {
+  const args = [...(gate.versionArgs ?? ["--version"])];
+  return spawnSync(gate.bin, args, { stdio: "ignore" }).status === 0;
+}
+
+// Biome's `noSkippedTests` flags the `describe.skip(…)` CALL form, so the gated
+// suite below references it instead — exactly as `aai/host/ffmpeg.scenario.test.ts`
+// and `_pg-test-utils.ts` do.
+const skipSuite = describe.skip;
+
+/**
+ * A suite that needs a real binary — and whose skip ANNOUNCES itself.
+ *
+ * The generalisation of `describeWithDeno`, which generalised
+ * `describeWithFfmpeg`, which followed `describeWithPg`. It is one helper
+ * because the shape is one shape and the failure it prevents is one failure:
+ * the Deno arm shipped as an `expect.soft(true, "deno not on PATH …")` inside
+ * a test body — a skip spelled as a PASS — and since nothing in CI installed
+ * Deno, the only case proving `aai build --target deno` emits a directory that
+ * BOOTS reported green on every leg while checking nothing. That is the shape
+ * AGENTS.md names a gate reporting success over a comparison it could not make.
+ *
+ * So: skip LOUDLY, and let {@link BinaryGate.requireEnv} — which CI sets only
+ * once the binary really answered — turn the skip into a hard failure, so a
+ * broken setup step cannot read as a green run either. The variable has to be
+ * declared in that task's `env` in `turbo.json` or turbo's strict env mode
+ * strips it before the task starts and the enforcement silently does nothing.
+ */
+export function describeWithBinary(gate: BinaryGate, name: string, body: () => void): void {
+  if (hasBinary(gate)) {
+    describe(name, body);
+    return;
+  }
+  if ((process.env[gate.requireEnv] ?? "") !== "") {
+    throw new Error(`${gate.requireEnv} is set but no ${gate.bin} was found.\n${gate.howTo}`);
+  }
+  console.warn(`\n[skipped: no ${gate.bin}] ${name}\n${gate.howTo}\n`);
+  skipSuite(name, body);
 }

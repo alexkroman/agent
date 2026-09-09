@@ -8,19 +8,28 @@
  * server starts a runtime whose only shutdown door is `AgentServer.close()`,
  * and the emitted module exports nothing.
  *
- * What earns the runtime here is the claim the whole target rests on: that a
- * directory with NO `node_modules` boots. Two separate things had to be copied
- * in before that was true, and each was found by a real deployment failing —
- * the worker artifact, and the prebuilt browser client, whose absence crashed
- * `defaultClientDir()` on a `require.resolve` with nothing to answer it.
+ * What earns the runtime here is the one claim only `deno` can settle: that the
+ * emitted module GRAPH has nothing left to resolve. `deno info` walks a graph
+ * instead of executing it, which is why booting the directory cannot make this
+ * claim and why the gate is a graph walk.
+ *
+ * ## Booting it is `_target-runtimes.scenario.test.ts`'s job now
+ *
+ * This suite used to boot the directory and drain it on SIGTERM as well, and
+ * the emit it booted is the shared one — `_target-entry.test.ts` pins the Deno
+ * entry to the same body as Modal's, modulo a banner and a port. So those two
+ * arms were one host's observation of a property that belongs to the ARTIFACT,
+ * and they now run there against `node`, `deno` and `bun` in turn, off ONE
+ * bundle. What stayed here is Deno's own: the graph, and the `deno.json` that
+ * makes the directory runnable by hand.
  */
 
-import { execFile, spawn, spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, onTestFinished, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import { emitDenoOutput } from "./_deno-output.ts";
 import {
   DENO_CONFIG_FILE,
@@ -29,87 +38,31 @@ import {
   DENO_OUTPUT_DIR,
 } from "./_deno-target.ts";
 import { bundleTargetEntry } from "./_target-bundle.ts";
-import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
+import {
+  type BinaryGate,
+  describeWithBinary,
+  linkProjectNodeModules,
+  silenced,
+  withTempDir,
+} from "./_test-utils.ts";
 
 const run = promisify(execFile);
 
-/** Fence around the driver's JSON, so the server's startup banner cannot land inside it. */
-const PROBE_START = "<<<aai-probes";
-const PROBE_END = "aai-probes>>>";
-
 /**
- * Whether a `deno` binary is on PATH.
+ * The gate: a real `deno`, or a skip that ANNOUNCES itself.
  *
- * `spawnSync` at module scope rather than an `await` inside the test, and that
- * is the whole fix below: a probe awaited in a test BODY can only produce a
- * pass or a fail, never a skip, so the gate has to be decided at COLLECTION
- * time to be a gate at all.
+ * `describeWithBinary` (`_test-utils.ts`) is the generalisation of the
+ * `describeWithDeno` that used to live here — its doc carries the argument,
+ * including the `expect.soft(true, …)` this suite shipped with, which was a
+ * skip spelled as a pass over the only assertion the target rests on.
  */
-const HAVE_DENO = spawnSync("deno", ["--version"], { stdio: "ignore" }).status === 0;
-
-const HOW_TO =
-  "Install Deno (`brew install deno`, or `curl -fsSL https://deno.land/install.sh | sh`).\n" +
-  "CI's integration-and-scenario job pins one via denoland/setup-deno.";
-
-// Biome's `noSkippedTests` flags the `describe.skip(…)` CALL form, so the gated
-// suite references it instead — exactly as `aai/host/ffmpeg.scenario.test.ts`
-// and `_pg-test-utils.ts` do.
-const skipSuite = describe.skip;
-
-/**
- * A suite that needs a real Deno — and whose skip ANNOUNCES itself.
- *
- * This replaced an `expect.soft(true, "deno not on PATH …")` inside the test
- * body, which was a skip spelled as a PASS. Nothing in CI installed Deno, so
- * that case reported green on every leg — meaning the only test in the repo
- * that proves `aai build --target deno` emits a directory which BOOTS was
- * gated by nothing, on the branch that added the target. That is the shape
- * `AGENTS.md` names a gate reporting success over a comparison it could not
- * make.
- *
- * So it follows `describeWithFfmpeg` (`aai/host/ffmpeg.scenario.test.ts`),
- * which follows `describeWithPg`: skip loudly, and let **`AAI_REQUIRE_DENO`** —
- * which CI's scenario job sets only once `deno --version` really answered —
- * turn the skip into a hard failure, so a broken setup step cannot read as a
- * green run either.
- */
-function describeWithDeno(name: string, body: () => void): void {
-  if (HAVE_DENO) {
-    describe(name, body);
-    return;
-  }
-  if ((process.env.AAI_REQUIRE_DENO ?? "") !== "") {
-    throw new Error(`AAI_REQUIRE_DENO is set but no deno was found.\n${HOW_TO}`);
-  }
-  console.warn(`\n[skipped: no deno] Deno portability arm not run.\n${HOW_TO}\n`);
-  skipSuite(name, body);
-}
-
-/**
- * A project whose `node_modules` resolves the CLI as well as the SDK.
- *
- * `linkSdkNodeModules` symlinks this package's own `node_modules`, which holds
- * every dependency the bundle needs but NOT `@alexkroman1/aai-cli` itself — a
- * package has no self-link — and the entry imports the published subpath.
- */
-async function linkProjectNodeModules(dir: string): Promise<void> {
-  await linkSdkNodeModules(dir);
-  const packages = path.resolve(import.meta.dirname, "../..");
-  const real = await fs.realpath(path.join(dir, "node_modules"));
-  await fs.rm(path.join(dir, "node_modules"), { force: true });
-  await fs.mkdir(path.join(dir, "node_modules", "@alexkroman1"), { recursive: true });
-  for (const entry of await fs.readdir(real)) {
-    if (entry === "@alexkroman1") continue;
-    await fs.symlink(path.join(real, entry), path.join(dir, "node_modules", entry));
-  }
-  for (const pkg of ["aai", "aai-runtime", "aai-ui", "aai-cli"]) {
-    await fs.symlink(
-      path.join(packages, pkg),
-      path.join(dir, "node_modules", "@alexkroman1", pkg),
-      "dir",
-    );
-  }
-}
+const DENO: BinaryGate = {
+  bin: "deno",
+  requireEnv: "AAI_REQUIRE_DENO",
+  howTo:
+    "Install Deno (`brew install deno`, or `curl -fsSL https://deno.land/install.sh | sh`).\n" +
+    "CI's integration-and-scenario job pins one via denoland/setup-deno.",
+};
 
 /** A built project: the worker the entry loads, and its env declaration. */
 async function builtProject(dir: string): Promise<void> {
@@ -157,6 +110,28 @@ describe("the bundled Deno entry", () => {
       }),
     );
   }, 120_000);
+
+  test("lands where `deno.json`'s task says it will", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await builtProject(dir);
+        await emitDenoOutput(dir);
+
+        // `deno task start` has to work in the directory that gets uploaded,
+        // which is the only reason the config is emitted at all — so the task
+        // has to name a file the BUNDLER really wrote. `_deno-output.test.ts`
+        // asserts the same pairing over a stubbed bundle, which cannot tell you
+        // that a real rolldown pass writes where the task looks; this needs no
+        // `deno` and so runs on every machine.
+        const config = JSON.parse(
+          await fs.readFile(path.join(dir, DENO_OUTPUT_DIR, DENO_CONFIG_FILE), "utf-8"),
+        ) as { tasks?: Record<string, string> };
+        expect(config.tasks?.start).toContain(DENO_ENTRY_FILE);
+        const entry = await fs.stat(path.join(dir, DENO_OUTPUT_DIR, DENO_ENTRY_FILE));
+        expect(entry.size).toBeGreaterThan(1_000_000);
+      }),
+    );
+  }, 120_000);
 });
 
 /**
@@ -175,7 +150,7 @@ async function deployedCopy(dir: string): Promise<string> {
   return deployed;
 }
 
-describeWithDeno("the emitted Deno output, run under Deno", () => {
+describeWithBinary(DENO, "the emitted Deno output, read by Deno", () => {
   /**
    * The graph gate: the emit really has nothing left to resolve.
    *
@@ -224,122 +199,6 @@ describeWithDeno("the emitted Deno output, run under Deno", () => {
         // The graph was really walked, so an empty `modules` cannot pass as a
         // clean one.
         expect(graph.modules.length).toBeGreaterThan(1);
-      }),
-    );
-  }, 120_000);
-
-  test("boots from a directory with no node_modules", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await builtProject(dir);
-        await emitDenoOutput(dir);
-
-        // `deno task start` has to work in the directory that gets uploaded,
-        // which is the only reason the config is emitted at all.
-        const task = JSON.parse(
-          await fs.readFile(path.join(dir, DENO_OUTPUT_DIR, DENO_CONFIG_FILE), "utf-8"),
-        ) as { tasks?: Record<string, string> };
-        expect(task.tasks?.start).toContain(DENO_ENTRY_FILE);
-
-        const deployed = await deployedCopy(dir);
-
-        // Three routes rather than one, because BOOTING is not the claim —
-        // serving out of this layout is. `/health` was all this asserted, and
-        // it is the one route that reads nothing off disk, so the two failures
-        // the emit exists to prevent (a worker that did not travel, a client
-        // directory `defaultClientDir()` cannot resolve) were both invisible
-        // to it. Probed in one process so the cost stays one boot.
-        const driver = path.join(deployed, "driver.mjs");
-        await fs.writeFile(
-          driver,
-          `const PROBE_START = ${JSON.stringify(PROBE_START)};
-const PROBE_END = ${JSON.stringify(PROBE_END)};
-await import("./${DENO_ENTRY_FILE}");
-const base = \`http://127.0.0.1:\${globalThis.Deno.env.get("PORT")}\`;
-const probes = [];
-for (const route of ["/health", "/client-config", "/"]) {
-  const res = await fetch(base + route);
-  probes.push({ route, status: res.status, body: (await res.text()).slice(0, 400) });
-}
-process.stdout.write(PROBE_START + JSON.stringify(probes) + PROBE_END);
-process.exit(0);
-`,
-        );
-
-        const { stdout } = await run("deno", ["run", "-A", driver], {
-          cwd: deployed,
-          env: { ...process.env, PORT: "8791", ASSEMBLYAI_API_KEY: "scenario-test-key" },
-        });
-        // Fenced rather than parsed off raw stdout: booting the server writes a
-        // startup banner there, so `JSON.parse(stdout)` fails on it. The old
-        // assertion was `toContain("200")`, which tolerated the banner by
-        // checking almost nothing — the fence is what buys a real parse.
-        const fenced = new RegExp(`${PROBE_START}(.*)${PROBE_END}`, "s").exec(stdout);
-        if (fenced?.[1] === undefined) {
-          throw new Error(`driver printed no probe block:\n${stdout}`);
-        }
-        const probes = new Map(
-          (JSON.parse(fenced[1]) as { route: string; status: number; body: string }[]).map((p) => [
-            p.route,
-            p,
-          ]),
-        );
-
-        // The worker travelled and was LOADED: the name can only come from
-        // `.aai/worker.mjs`, which no bundler could have inlined.
-        expect(probes.get("/health")?.status).toBe(200);
-        expect(probes.get("/health")?.body).toContain("Deno Probe");
-
-        // What a browser reads before it dials.
-        expect(probes.get("/client-config")?.status).toBe(200);
-        expect(probes.get("/client-config")?.body).toContain("Deno Probe");
-
-        // The client is SERVED, not merely copied. `_deno-output.test.ts`
-        // asserts the directory was written; only this can say the server
-        // resolves it with no `node_modules` to answer `defaultClientDir()`.
-        expect(probes.get("/")?.status).toBe(200);
-        expect(probes.get("/")?.body).toContain("<html");
-      }),
-    );
-  }, 120_000);
-
-  test("closes the server on SIGTERM instead of dropping the process", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await builtProject(dir);
-        await emitDenoOutput(dir);
-        const deployed = await deployedCopy(dir);
-
-        // The Modal suite's twin, and the reason it is worth running twice:
-        // the drain is one shared source, but whether a signal ARRIVES is a
-        // property of the runtime. Deno routes `process.on("SIGTERM")` through
-        // `Deno.addSignalListener`, so this is the only thing in the repo that
-        // says the handler is reached under Deno rather than under Node — and
-        // a zero exit is what says the server closed rather than the process
-        // being killed with live sessions still open.
-        const child = spawn("deno", ["run", "-A", path.join(deployed, DENO_ENTRY_FILE)], {
-          cwd: deployed,
-          env: { ...process.env, PORT: "8792", ASSEMBLYAI_API_KEY: "scenario-test-key" },
-          stdio: "ignore",
-        });
-        onTestFinished(() => {
-          if (child.exitCode === null) child.kill("SIGKILL");
-        });
-
-        // `vi.waitFor`, never a hand-rolled poll: a bare loop over `fetch` to
-        // a closed port spins as fast as the connection is refused.
-        await vi.waitFor(
-          async () => {
-            expect((await fetch("http://127.0.0.1:8792/health")).ok).toBe(true);
-          },
-          { timeout: 30_000, interval: 100 },
-        );
-
-        const exit = new Promise<number | null>((resolve) => {
-          child.once("exit", (code) => resolve(code));
-        });
-        child.kill("SIGTERM");
-        expect(await exit).toBe(0);
       }),
     );
   }, 120_000);

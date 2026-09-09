@@ -1,0 +1,11 @@
+---
+"@alexkroman1/aai-cli": patch
+---
+
+Make a self-hosted deployment runnable under any of Node, Deno and Bun — and certify it under all three.
+
+The emitted deployment is a directory with no `node_modules`, no toolchain and one file to boot, so which runtime an operator puts in front of it is their choice. It was not: each long-lived entry read `PORT` through one runtime's global — `globalThis.Deno.env` in the Deno entry, `process.env` in the Modal one — so `.aai/deno/` ignored `PORT` under `node` and `bun` while looking perfectly healthy on its default. Both entries now come from one shared source (`RUNTIME_PORT_SOURCE` reads either runtime), differing only in a banner and a default port.
+
+`_target-runtimes.scenario.test.ts` is the new gate: one bundle, booted under `node`, `deno` and `bun` in turn, each arm asserting the emit boots with no `node_modules`, serves `/health`, `/client-config` and `/`, **dials `/websocket`** and exits 0 on SIGTERM. Nothing dialled a session before — all three host suites probed HTTP only, and the `ws`-over-`node:http` upgrade is the part of `node:http` compatibility a reimplementation is likeliest to get wrong. The bundle's `node:` imports are pinned to a portable set as well, which is what catches a dependency dragging `node:vm` or `node:cluster` into a deployment before a live session does.
+
+Two Bun findings came out of running it. The emitted server used to die on IMPORT under `bun`: undici assigns `webidl.util.markAsUncloneable` unguarded from `node:worker_threads`, which Bun does not implement, and undici's own `CacheStorage` calls it at module scope. A bundler plugin gives it a destructuring default and fails the build if undici's pinned line ever moves. With that, Bun boots the emit, serves every route and drains cleanly — but the `/websocket` upgrade writes zero bytes to the client, because Bun substitutes its own native `ws` for the npm package and a bundle inlines the package's real JavaScript, whose write to the hijacked socket goes nowhere. So Bun is not a supported self-hosting runtime yet; the suite asserts the gap rather than skipping the leg, and `AAI_REQUIRE_BUN` (with a pinned `oven-sh/setup-bun` in CI) keeps that arm from silently not running.

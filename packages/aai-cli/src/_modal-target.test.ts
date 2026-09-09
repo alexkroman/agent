@@ -32,8 +32,17 @@ describe("the emitted Modal entry", () => {
     // the fallback for a container started without it.
     expect(code).toContain("process.env.PORT");
     expect(code).toContain(String(MODAL_PORT));
-    // Node's own env, not Deno's — this entry is never bundled for Deploy.
-    expect(code).not.toContain("globalThis.Deno");
+  });
+
+  test("reads Deno's env TOO, though Modal runs node", () => {
+    // This used to assert the opposite — "Node's own env, not Deno's, since
+    // this entry is never bundled for Deploy" — and the claim was about the
+    // HOST when the cost lands on the RUNTIME. Modal runs whatever the image's
+    // command is, and the emitted directory is a container payload somebody
+    // may run under `bun` or `deno` for reasons that have nothing to do with
+    // Deploy. Reading one runtime's env pinned the artifact to one runtime by
+    // accident; see `_target-entry.ts`.
+    expect(code).toContain("globalThis.Deno?.env");
   });
 
   test("resolves its artifacts from the MODULE, not the process", () => {
