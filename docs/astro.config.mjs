@@ -74,6 +74,7 @@ export default defineConfig({
             { label: "Tools", link: "/build/tools/" },
             { label: "Remembering things", link: "/build/state/" },
             { label: "Testing", link: "/build/testing/" },
+            { label: "Evals", link: "/build/evals/" },
           ],
         },
         {
