@@ -22,6 +22,7 @@
     "check:api-nameable": "node scripts/check-api-nameable.mjs",
     "check:api-report": "node scripts/api-report.mjs --check",
     "check:authoring-guide": "node scripts/check-authoring-guide.mjs",
+    "check:bundled-deps": "node scripts/check-bundled-deps.mjs",
     "check:claude-md": "node scripts/check-claude-md.mjs",
     "check:coverage-per-file": "node scripts/check-coverage-per-file.mjs",
     "check:dedupe": "pnpm dedupe --check",

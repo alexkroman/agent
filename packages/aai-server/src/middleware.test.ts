@@ -11,6 +11,7 @@ import {
   createTestStore,
   deploy,
   deployAgent,
+  NO_CLIENT_DIR,
 } from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
@@ -18,6 +19,7 @@ test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
+    clientDir: NO_CLIENT_DIR,
   });
   const res = await app.fetch(new Request("http://localhost/health"));
   expect(res.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
@@ -29,6 +31,7 @@ test("orchestrator returns 401 on deploy without auth", async () => {
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
+    clientDir: NO_CLIENT_DIR,
   });
   const res = await app.fetch(new Request("http://localhost/deploy", { method: "POST" }));
   expect(res.status).toBe(401);

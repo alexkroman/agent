@@ -10,7 +10,13 @@ import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { SLUG_WS_RE, wsSlugFromPath } from "./orchestrator-ws.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestOrchestrator, createTestStore, deploy, deployAgent } from "./test-utils.ts";
+import {
+  createTestOrchestrator,
+  createTestStore,
+  deploy,
+  deployAgent,
+  NO_CLIENT_DIR,
+} from "./test-utils.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 
@@ -53,6 +59,7 @@ describe("security headers on all response types", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
+      clientDir: NO_CLIENT_DIR,
     });
     const res = await app.fetch(new Request("http://localhost/health"));
 
@@ -68,6 +75,7 @@ describe("security headers on all response types", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
+      clientDir: NO_CLIENT_DIR,
     });
     const res = await app.fetch(new Request("http://localhost/nonexistent"));
 
@@ -100,6 +108,7 @@ describe("security headers on all response types", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
+      clientDir: NO_CLIENT_DIR,
       allowedOrigins: ["https://trusted.example.com"],
     });
 
@@ -128,6 +137,7 @@ describe("security headers on all response types", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
+      clientDir: NO_CLIENT_DIR,
     });
 
     const res = await app.fetch(

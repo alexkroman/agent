@@ -1523,6 +1523,45 @@ own location is no longer where its source lives.** `createRequire(import.meta
 harness path. Anything else that resolves a workspace sibling by module
 location owes the same fallback.
 
+**So aai-server may not resolve a sibling package at all — THIS root does, and
+passes the result in.** `createOrchestrator` takes a required `clientDir` and
+this entry passes `defaultClientDir()`; the reader built from it is closed over
+by `createDefaultClientHandlers`. That is the shape every other consumer of
+this value already used (`createAgentServer` in `@alexkroman1/aai-runtime` takes
+`clientDir`; the CLI's four entries and the self-hosted example all pass
+`defaultClientDir()`), and aai-server was the one reaching for it — at module
+scope, in `transport-websocket.ts`. Bundled here, that import put
+`defaultClientDir()` outside the package whose `package.json` it
+self-references, which Node permits only from inside it, and every deployed
+agent page answered 500 with **"Could not locate the default client UI — is
+@alexkroman1/aai-ui installed?"** on a platform where it plainly was.
+
+Four properties. The option is **required with no fallback** — a
+`clientDir?: string` defaulting to `defaultClientDir()` here is the same bug
+with an option in front of it, since the IMPORT is what breaks, and a silently
+absent one puts the 500 back on whichever composition forgot; required, a
+composition that forgets does not compile. `ServiceConfig` therefore
+**`Omit`s** it: everything else there is read from the environment, and this is
+read from a sibling's module location, which only this package can ask for. It
+is resolved **eagerly**, so a missing aai-ui fails the boot rather than 500ing
+one route on first hit. And nothing types the resolution itself away — a
+`require.resolve` returns `string` whether or not it resolved — so
+`bundled-deps.test.ts` holds every workspace package aai-server's SHIPPED
+source imports to this manifest, for the next value that is not injectable.
+
+**The npm half is a BASELINE, because that next value is not injectable.**
+Compiling aai-server in swallows its dependencies too — 52 of them, named
+nowhere. `modal` and `microsandbox` are `external` in tsdown.config.ts because
+they resolve files relative to their own package (modal's tree carries
+`protobufjs`, `@grpc/*`, and `cbor-x` → `cbor-extract` → the native-addon
+lookup; microsandbox finds its addon from `import.meta.url`, reached by a live
+`await import()` in shipped code). Naming modal rather than its five hazards
+takes 26 of the 52 out at one declaration. `check:bundled-deps` baselines the 25
+that remain — pure JS, where inlining is free — so a 26th is a decision rather
+than a discovery in production; and `bundled-deps.test.ts` holds the config to
+`deps.alwaysBundle`, since `onlyBundle` externalizes aai-server ITSELF and every
+specifier check there passes through it.
+
 **The shared core is the `exports` map, and nothing else.** It is an
 explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
 machinery, schemas, app composition, the routes the studio reuses), and

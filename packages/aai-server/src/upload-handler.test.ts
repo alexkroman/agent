@@ -14,7 +14,7 @@ import { UPLOAD_PART_BYTES } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStore, fakeAdminDbOver } from "./test-utils.ts";
+import { createTestStore, fakeAdminDbOver, NO_CLIENT_DIR } from "./test-utils.ts";
 import { createMemoryUploadBytes, type UploadBytes, uploadKey } from "./upload-bytes.ts";
 import { MAX_UPLOAD_WINDOW_BYTES } from "./upload-handler.ts";
 
@@ -42,6 +42,7 @@ async function serve(
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
+    clientDir: NO_CLIENT_DIR,
     uploadBytes: bytes,
     ...omitUndefined({ adminDb }),
   });

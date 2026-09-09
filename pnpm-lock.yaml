@@ -586,9 +586,6 @@ importers:
       '@alexkroman1/aai-runtime':
         specifier: workspace:*
         version: link:../aai-runtime
-      '@alexkroman1/aai-ui':
-        specifier: workspace:*
-        version: link:../aai-ui
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.5)
@@ -656,6 +653,9 @@ importers:
         specifier: 'catalog:'
         version: 4.5.4
     devDependencies:
+      '@alexkroman1/aai-ui':
+        specifier: workspace:*
+        version: link:../aai-ui
       '@types/mime-types':
         specifier: 'catalog:'
         version: 3.0.1
@@ -759,6 +759,9 @@ importers:
       '@alexkroman1/aai-runtime':
         specifier: workspace:*
         version: link:../aai-runtime
+      '@alexkroman1/aai-ui':
+        specifier: workspace:*
+        version: link:../aai-ui
       '@hono/zod-validator':
         specifier: 'catalog:'
         version: 0.9.1(hono@4.13.5)(zod@4.5.4)
@@ -780,6 +783,9 @@ importers:
       mime-types:
         specifier: 'catalog:'
         version: 3.0.2
+      modal:
+        specifier: ^0.10.0
+        version: 0.10.0
       p-timeout:
         specifier: 'catalog:'
         version: 7.0.1

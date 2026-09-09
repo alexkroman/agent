@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import path from "node:path";
 import type { Image } from "modal";
 import { afterEach, beforeEach, vi } from "vitest";
 import { emptyLogPage } from "./agent-logs.ts";
@@ -208,6 +209,23 @@ export function deployBody(overrides?: Record<string, unknown>): string {
 
 export type TestFetch = (input: string | Request, init?: RequestInit) => Promise<Response>;
 
+/**
+ * `createTestOrchestrator`'s default `clientDir`: a path with no browser client
+ * in it, so the default-client fallbacks answer "not built" (404/500) instead of
+ * serving files.
+ *
+ * A test that exercises the REAL fallback passes `clientDir: defaultClientDir()`
+ * and imports `@alexkroman1/aai-ui/client-dir` itself — which is the point of
+ * defaulting to nothing here. This package's SHIPPED source imports aai-ui
+ * nowhere, because it is compiled into `aai-studio-server`'s single-file entry
+ * and a module of ours therefore does not run from where its source lives: the
+ * import is what put `defaultClientDir()` outside the package it
+ * self-references, and every deployed agent page 500'd. Keeping it to test
+ * files keeps it out of every bundle by construction. See
+ * `createDefaultClientHandlers`.
+ */
+export const NO_CLIENT_DIR = path.join(import.meta.dirname, "no-default-client");
+
 export async function createTestOrchestrator(
   overrides: Partial<Parameters<typeof createOrchestrator>[0]> = {},
 ): Promise<{
@@ -228,6 +246,7 @@ export async function createTestOrchestrator(
     slots: createSlotCache(),
     store,
     events: memoryEvents.events,
+    clientDir: NO_CLIENT_DIR,
     ...overrides,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);

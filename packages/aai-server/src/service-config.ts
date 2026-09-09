@@ -76,8 +76,15 @@ const log = createLogger("service");
 // rest of storage wiring through `buildServiceConfig`.
 export { assertStorageBucket } from "./platform-storage-config.ts";
 
-/** buildOpts plus what service entries need beyond the orchestrator's opts. */
-export type ServiceConfig = OrchestratorOpts & {
+/**
+ * buildOpts plus what service entries need beyond the orchestrator's opts.
+ *
+ * `clientDir` is the one orchestrator option this builder must not answer, so
+ * it is `Omit`ted: everything else here is read from the ENVIRONMENT, and that
+ * one is read from a sibling package's module location — which only the entry
+ * package can ask for. See `OrchestratorOpts.clientDir`.
+ */
+export type ServiceConfig = Omit<OrchestratorOpts, "clientDir"> & {
   /**
    * Studio project workspaces and chat histories. Built here because this is
    * the one place that wires the platform database, but deliberately NOT part

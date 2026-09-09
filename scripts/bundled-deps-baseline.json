@@ -1,0 +1,31 @@
+{
+  "_description": "Every npm package INLINED into packages/aai-studio-server/dist/index.mjs, which compiles aai-server in. Only ever lowered — see scripts/check-bundled-deps.mjs for what a new entry costs.",
+  "_external": "modal and microsandbox are deliberately NOT here: they are `external` in that package's tsdown.config.ts because they (and modal's whole tree — protobufjs, @grpc/*, cbor-x/cbor-extract, detect-libc, node-gyp-build-optional-packages) resolve files relative to their own package, which a bundled copy cannot do.",
+  "inlined": [
+    "@hono/node-server",
+    "@hono/otel",
+    "@opentelemetry/api",
+    "@opentelemetry/api-logs",
+    "@opentelemetry/core",
+    "@opentelemetry/exporter-trace-otlp-proto",
+    "@opentelemetry/otlp-exporter-base",
+    "@opentelemetry/otlp-transformer",
+    "@opentelemetry/resources",
+    "@opentelemetry/sdk-metrics",
+    "@opentelemetry/sdk-trace",
+    "@opentelemetry/sdk-trace-base",
+    "@opentelemetry/semantic-conventions",
+    "@supabase/auth-js",
+    "@supabase/phoenix",
+    "@supabase/realtime-js",
+    "@supabase/storage-js",
+    "human-id",
+    "iceberg-js",
+    "is-network-error",
+    "json-rpc-2.0",
+    "lru-cache",
+    "p-retry",
+    "tslib",
+    "ws"
+  ]
+}

@@ -38,11 +38,15 @@ import {
 } from "./guest-routes.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStore } from "./test-utils.ts";
+import { createTestStore, NO_CLIENT_DIR } from "./test-utils.ts";
 
 /** Every `method path` the orchestrator registers, middleware included. */
 function registeredRoutes(): { method: string; path: string }[] {
-  const { app } = createOrchestrator({ slots: createSlotCache(), store: createTestStore() });
+  const { app } = createOrchestrator({
+    slots: createSlotCache(),
+    store: createTestStore(),
+    clientDir: NO_CLIENT_DIR,
+  });
   return app.routes.map(({ method, path }) => ({ method, path }));
 }
 

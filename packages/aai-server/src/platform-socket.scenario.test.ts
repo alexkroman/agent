@@ -26,7 +26,7 @@ import WebSocket from "ws";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { bearerFor, createTestStore } from "./test-utils.ts";
+import { bearerFor, createTestStore, NO_CLIENT_DIR } from "./test-utils.ts";
 
 const SLUG = "socket-agent";
 
@@ -41,6 +41,7 @@ beforeAll(async () => {
   const { app, injectWebSocket } = createOrchestrator({
     slots: createSlotCache(),
     store,
+    clientDir: NO_CLIENT_DIR,
     events: events.events,
     isDraining: () => draining,
   });

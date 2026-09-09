@@ -3,7 +3,14 @@ import { expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { authFetch, createTestStore, deployAgent, makeSlot, type TestFetch } from "./test-utils.ts";
+import {
+  authFetch,
+  createTestStore,
+  deployAgent,
+  makeSlot,
+  NO_CLIENT_DIR,
+  type TestFetch,
+} from "./test-utils.ts";
 
 async function setup() {
   // Store + event bus are a pair: the delete route only removes the row, and
@@ -14,6 +21,7 @@ async function setup() {
   const { app } = createOrchestrator({
     slots,
     store,
+    clientDir: NO_CLIENT_DIR,
     events: memoryEvents.events,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);

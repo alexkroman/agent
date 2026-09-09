@@ -22,6 +22,39 @@ import { defineConfig } from "tsdown";
  */
 const BUNDLED_WORKSPACE_DEPS = [/^aai-server(\/.*)?$/];
 
+/**
+ * Kept WHOLE, because a bundled copy cannot find its own files.
+ *
+ * Compiling `aai-server` in swallows its dependencies too — 52 of them, none
+ * named anywhere until `check:bundled-deps` started baselining the set. Inlining
+ * is free for pure JS and it is fatal for a package that resolves anything by
+ * its own module location, silently: the build succeeds, tsc is happy, and the
+ * module still evaluates. `@alexkroman1/aai-ui` was one, and every deployed
+ * agent page answered 500 for a default client UI that was installed.
+ *
+ * `modal` is the ROOT of that hazard rather than the five packages under it
+ * (`protobufjs` and `@grpc/proto-loader` read descriptors off disk; `cbor-x`
+ * loads `cbor-extract`, which finds a native addon through
+ * `node-gyp-build-optional-packages` and `detect-libc`). Externalizing the root
+ * keeps them resolving through modal's own `node_modules`, so this is one
+ * declaration instead of five — and it takes 26 of the 52 out with it.
+ *
+ * `microsandbox` is the same shape found by audit rather than by outage:
+ * `dist/internal/resolve-binary.js` locates a native addon from
+ * `import.meta.url`, and shipped code reaches it through
+ * `await import("microsandbox")`, which rolldown inlines. Unlike `modal` it is
+ * deliberately NOT declared in this package: it is a local-dev sandbox backend
+ * behind a `try`/`catch` and a devDependency of aai-server, so being
+ * unresolvable in production is correct — bundling it is the only reason that
+ * backend was ever reachable there, native-addon lookup and all.
+ *
+ * Anything added here must be DECLARED in this package's `dependencies` unless,
+ * like microsandbox, production is meant not to load it: an external specifier
+ * is resolved at runtime from `dist/`, where pnpm's strict layout offers only
+ * what this manifest names. `bundled-deps.test.ts` holds both halves.
+ */
+const EXTERNAL_LOCATION_DEPENDENT = ["modal", "microsandbox"];
+
 export default defineConfig([
   {
     // Service entry: AAI_SERVICE=studio (standalone) or combined (default).
@@ -33,9 +66,10 @@ export default defineConfig([
     platform: "node",
     target: "node22",
     outDir: "dist",
+    external: EXTERNAL_LOCATION_DEPENDENT,
     deps: { alwaysBundle: BUNDLED_WORKSPACE_DEPS },
   },
 ]);
 
 /** @internal Exposed so `bundled-deps.test.ts` can hold the pattern to the real specifiers. */
-export { BUNDLED_WORKSPACE_DEPS };
+export { BUNDLED_WORKSPACE_DEPS, EXTERNAL_LOCATION_DEPENDENT };

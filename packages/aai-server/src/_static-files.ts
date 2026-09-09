@@ -16,18 +16,27 @@ import { isPathInside } from "@alexkroman1/aai-runtime/internal";
 export { isPathInside } from "@alexkroman1/aai-runtime/internal";
 
 /**
+ * A reader built by {@link createCachedDirReader} — one directory's files by
+ * relative path, or null.
+ *
+ * Named because it is an INJECTED collaborator: the agent surface's
+ * default-client routes take one (`createDefaultClientHandlers`) rather than
+ * resolving a directory themselves, so the signature is written down once
+ * instead of at each end of that seam.
+ */
+export type CachedDirReader = (relPath: string) => Promise<Buffer | null>;
+
+/**
  * Content-cached reader over one directory.
  *
- * - `getBaseDir` is called lazily, so `require.resolve` costs land on first
- *   use rather than at import time.
+ * - `getBaseDir` is called lazily, so a caller whose base directory costs
+ *   something to compute pays it on first use rather than at import time.
  * - Misses are NOT cached: during parallel build+test runs (turbo) the file
  *   may be written after the first read, and caching null would permanently
  *   shadow it.
  * - Paths resolving outside the directory return null, never a file.
  */
-export function createCachedDirReader(
-  getBaseDir: () => string,
-): (relPath: string) => Promise<Buffer | null> {
+export function createCachedDirReader(getBaseDir: () => string): CachedDirReader {
   const cache = new Map<string, Buffer>();
   return async (relPath: string): Promise<Buffer | null> => {
     const cached = cache.get(relPath);
