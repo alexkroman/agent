@@ -255,7 +255,7 @@ describe("workspace channels", () => {
 
   test("no (scope, project) pair can forge another's pool key", () => {
     // The pool keyed on `ws:${scope} ${project}` — a SPACE — while the
-    // separator's whole argument (see projectKey in platform-events.ts) is
+    // separator's whole argument (see projectKey in platform/events.ts) is
     // that no pair can spell another's key. Under a printable separator these
     // two pairs collide, and the second watcher silently joins the FIRST
     // pair's channel: it would then receive the other project's events and

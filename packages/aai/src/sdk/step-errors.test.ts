@@ -28,7 +28,7 @@ import { stubGateway } from "./testing-gateway.ts";
  * Both statics read a branding symbol rather than the prototype chain, because a
  * guest bundle can hold two copies of `step-error-classes.ts` and `instanceof`
  * answers false across them. Asserting through the statics is therefore
- * asserting the thing `workflow-replay.ts` will actually ask, which is the whole
+ * asserting the thing `workflow/replay.ts` will actually ask, which is the whole
  * point of the helper: a classifier that produced an error only `instanceof`
  * recognised would pass a spec written the other way and silently retry a
  * `FatalError` in production.

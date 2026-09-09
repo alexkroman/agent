@@ -22,7 +22,7 @@
  * self-hosted operator's own tables would land.
  */
 
-import { projectKey, splitProjectKey } from "./platform-events.ts";
+import { projectKey, splitProjectKey } from "./platform/events.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /** A stored workspace document with its optimistic-concurrency version. */
@@ -196,7 +196,7 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
  */
 export function createMemoryWorkspaceStore(): WorkspaceStore {
   const rows = new Map<string, WorkspaceRecord>();
-  // `projectKey` (platform-events.ts), not a hand-rolled `${scope}/${project}`.
+  // `projectKey` (platform/events.ts), not a hand-rolled `${scope}/${project}`.
   // The declared spelling is NUL-separated precisely so no (scope, project)
   // pair can spell another's key, and the `/` copy here gave that up twice
   // over: the composite could collide, and `list`'s prefix scan below matched

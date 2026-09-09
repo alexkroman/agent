@@ -1,0 +1,54 @@
+{
+  "name": "aai-guest-studio",
+  "version": "0.6.5",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./build": "./src/build.ts",
+    "./bundle-access": "./src/bundle-access.ts",
+    "./chat": "./src/chat.ts",
+    "./publish": "./src/publish.ts",
+    "./session": "./src/session.ts",
+    "./session-init": "./src/session-init.ts",
+    "./workspace-fs": "./src/workspace-fs.ts"
+  },
+  "scripts": {
+    "check:eval": "pnpm run test:eval",
+    "check:scenario": "pnpm run test:scenario",
+    "lint": "biome check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:eval": "VITEST_PROFILE=eval VITEST_INCLUDE=**/*.eval.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-cli": "workspace:*",
+    "@alexkroman1/aai-runtime": "workspace:*",
+    "@alexkroman1/aai-ui": "workspace:*",
+    "@opentelemetry/api": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "aai-guest-core": "workspace:*",
+    "ai": "catalog:",
+    "p-timeout": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "xstate": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -8,7 +8,7 @@ import { bearerFailureMessage } from "./_bearer.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import { type ApiKeyVerifier, assemblyAiUnavailable } from "./api-key-verify.ts";
 import type { HonoEnv } from "./context.ts";
-import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
+import { PlatformServiceUnavailableError } from "./platform/service-errors.ts";
 import { RESERVED_SLUGS, VALID_SLUG_RE } from "./schemas.ts";
 import type { SecretStore } from "./secret-store.ts";
 import { verifySlugOwner } from "./secrets.ts";

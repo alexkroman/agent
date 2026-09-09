@@ -232,7 +232,7 @@ export const WORKFLOW_BODY_RULES = [
       "The sharp case is a read that reaches a step NAME. Measured on a body one\n" +
       "line long — a coin flip interpolated into a `ctx.step` name, followed by a\n" +
       "`ctx.sleep` — **7 of 10 runs charged twice and all 10 reported\n" +
-      "`completed`**. `workflow-replay-divergence.ts` refuses that at runtime now;\n" +
+      "`completed`**. `workflow/replay/divergence.ts` refuses that at runtime now;\n" +
       "this rule is the cheap half, and the only layer that sees the mistake\n" +
       "before it ships.\n" +
       "\n" +

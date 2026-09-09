@@ -47,7 +47,7 @@ import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
  *
  * `ctx.db`, the session-state backend, workflow uploads and the wake hint all used
  * to lease off it; all four are gone, and what still does is the workflow
- * correlation-key index (`workflow-runtime.ts`) and the queue-lock sweep. Three
+ * correlation-key index (`workflow/runtime.ts`) and the queue-lock sweep. Three
  * remains the size because a pool that is full QUEUES the next query
  * (postgres.js), where a role at its limit REFUSES the next connection — so a
  * tight pool costs a few milliseconds of latency and a loose one costs a failure,

@@ -22,7 +22,7 @@ import type { ServerSession } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
-import type { JournalStore } from "./workflow-journal-types.ts";
+import type { JournalStore } from "./workflow/journal/types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
 
 /** Per-session options passed to {@link AgentRuntime.startSession}. */

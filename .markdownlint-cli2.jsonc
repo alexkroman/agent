@@ -48,7 +48,7 @@
     // that would close a workspace cycle. Ignored on AGENT_GUIDE.md's grounds
     // and one more: most of the body is the scaffold guide again, so linting
     // these would report every finding a THIRD time.
-    "packages/aai-guest/studio-prompts/*.md",
+    "packages/aai-guest-studio/studio-prompts/*.md",
     // The root guide is AGENTS.md; this file is the single line `@AGENTS.md`
     // that makes Claude Code resolve it. It is an import directive, not a
     // document, so "first line should be a top-level heading" cannot be

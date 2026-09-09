@@ -142,7 +142,7 @@ the gate checks it:
   run; a message goes when it is delivered or its retry budget runs out
   (`ack`, `fail`, `failUnreachable`).
 - `workflow_run_owner` — retired, written and read by nothing, owed a `drop`
-  (`RETIRED_OBJECTS` in `platform-schema.test.ts`). Its rows are frozen rather
+  (`RETIRED_OBJECTS` in `platform/schema.test.ts`). Its rows are frozen rather
   than growing.
 
 Adding a table means adding a verdict. If it is `unpruned`, the reason belongs

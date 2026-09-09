@@ -21,7 +21,7 @@ import {
 } from "./_test-utils.ts";
 import type { SignInCredentials } from "./auth.tsx";
 import { readSignInMethods, type SignInMethods } from "./auth-methods.ts";
-import { SignInGate } from "./gates.tsx";
+import { SignInGate } from "./components/gates.tsx";
 
 const GITHUB_ONLY: SignInMethods = { github: true, password: false };
 const PASSWORD_ONLY: SignInMethods = { github: false, password: true };

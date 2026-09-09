@@ -28,7 +28,7 @@ import {
   type SessionEventHookDeps,
 } from "./session-emitter.ts";
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
-import { createMemoryStateBackend } from "./session-state-store.ts";
+import { createMemoryStateBackend } from "./session-state/store.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 import { createUsageMeter, type UsageMeter, type UsageSnapshot } from "./usage-meter.ts";
 
@@ -580,7 +580,7 @@ export type RecordingDb = Db & {
  * so there is exactly one of it. `Db.query<T>` lets the CALLER name the row
  * type, so no runtime queue can satisfy an arbitrary `T` — a fake for a generic
  * read is a cast by construction. What is avoidable is a copy of it per suite:
- * `workflow-keys.test.ts` and `workflow-journal-postgres.test.ts` had written
+ * `workflow/keys.test.ts` and `workflow/journal/postgres.test.ts` had written
  * the same eight lines, each laundering through its own `as never`, which is
  * the pattern this repo counts precisely because it multiplies.
  *

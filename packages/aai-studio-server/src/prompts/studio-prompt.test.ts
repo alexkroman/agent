@@ -201,7 +201,7 @@ describe("studioSystemPrompt", () => {
     // And now the THIRD direction, which is why the comment above says "both"
     // and this says otherwise: uploads used to be the one real limitation — an
     // upload's record needed a database the author supplied, so a run outlived
-    // its own bytes — and they are the platform's too now (`platform-uploads.ts`,
+    // its own bytes — and they are the platform's too now (`platform/uploads.ts`,
     // the `workflow_uploads` table). So the exception is GONE, and what has to
     // be absent is the advice it justified: a deployed app needs no database of
     // its own for durability of either half, and telling an author to set one

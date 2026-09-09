@@ -31,7 +31,7 @@
  * that are both properties of the engine rather than opinions:
  *
  * - **A step may not wait.** `ctx.sleep` and `ctx.waitFor` reached inside a step
- *   fail the run (`workflow-replay-wait.ts`), so the only wait available here is
+ *   fail the run (`workflow/replay/wait.ts`), so the only wait available here is
  *   a plain timer holding a worker open and journaling nothing — which is the
  *   shape the durable engine exists to replace.
  * - **An upload that died stays incomplete forever.** The `stream.ts` template

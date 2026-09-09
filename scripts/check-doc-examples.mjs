@@ -165,7 +165,7 @@ const PROMPT_SOURCES = [
   ...sourceFiles(repo, PROMPT_DIR)
     .map((absolute) => path.relative(repo, absolute))
     .sort(),
-  "packages/aai-guest/src/studio-chat.ts",
+  "packages/aai-guest-studio/src/chat.ts",
 ];
 
 /** Four modules in `prompts/` plus the guest's chat surface. Lower it deliberately. */

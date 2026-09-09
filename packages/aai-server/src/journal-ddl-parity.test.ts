@@ -6,7 +6,7 @@
  * `aai_platform.workflow_*` (this package's migration) and `aai_workflow_*`
  * (`aai-runtime/workflow-journal-schema.ts`) are hand-maintained copies of the
  * same five tables, and the migration says so out loud: "Everything else
- * mirrors `workflow-journal-schema.ts`, deliberately, so the two stores are the
+ * mirrors `workflow/journal/schema.ts`, deliberately, so the two stores are the
  * same contract and a scenario test over one is evidence about the other." The
  * runtime side makes the reciprocal claim on `CREATE_RUNS` — "`input` is
  * NULLABLE, matching `aai_platform.workflow_runs`" — a claim about a file in a
@@ -109,8 +109,8 @@ const DECLARED_DIVERGENCES: Readonly<Record<string, { platform: string; runtime:
   "workflow_hooks.token": { platform: "text not null", runtime: "text not null unique" },
   // NOT declared anywhere, and a real drift: the platform gives `kind` a
   // DEFAULT and the runtime does not. Latent today — both stores bind the
-  // column explicitly (`platform-workflow-journal.ts` and
-  // `workflow-journal-postgres.ts` both list it in the insert) — but the
+  // column explicitly (`platform/workflow-journal.ts` and
+  // `workflow/journal/postgres.ts` both list it in the insert) — but the
   // PLATFORM is the side to change, and the migration's own comment on this
   // column is the argument: journaling a hook's deadline as an ordinary sleep
   // once meant a bare `wakeUp()` closed every open approval window on the run.

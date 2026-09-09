@@ -119,8 +119,8 @@ const TEST_ONLY_ENTRIES = {
  */
 const TEST_ONLY_EDGES = {
   "packages/aai-runtime/src/internal.ts": [
-    "./journal-conformance.ts",
-    "./session-state-conformance.ts",
+    "./workflow/journal/conformance.ts",
+    "./session-state/conformance.ts",
   ],
 };
 

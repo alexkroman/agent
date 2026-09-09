@@ -8,7 +8,7 @@
   "rule4_inlineTickPromise": {
     "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts": 1,
     "packages/aai-runtime/src/tool-executor.ts": 1,
-    "packages/aai-server/src/platform-lock.test.ts": 3,
+    "packages/aai-server/src/platform/lock.test.ts": 3,
     "packages/aai-server/src/slug-lock.test.ts": 1,
     "packages/aai-studio-client/src/_test-utils.ts": 1,
     "packages/aai-studio-server/src/studio-session-broker.test.ts": 2
@@ -20,7 +20,7 @@
     "packages/aai-studio-server/src/studio-sse.ts": 1
   },
   "rule11_hardcodedTmp": {
-    "packages/aai-server/src/modal-agent-sandbox.ts": 2
+    "packages/aai-server/src/modal/agent-sandbox.ts": 2
   },
   "rule16_sessionCallbackName": {
     "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts": 2,
@@ -52,9 +52,9 @@
     "packages/aai-runtime/src/_test-utils.ts": 1,
     "packages/aai-runtime/src/providers/stt/elevenlabs.ts": 1,
     "packages/aai-runtime/src/transports/pipeline-llm-trace.ts": 1,
-    "packages/aai-runtime/src/workflow-report.ts": 2,
-    "packages/aai-server/src/guest-forward.ts": 1,
-    "packages/aai-server/src/modal-agent-sandbox.test.ts": 1,
+    "packages/aai-runtime/src/workflow/report.ts": 2,
+    "packages/aai-server/src/guest/forward.ts": 1,
+    "packages/aai-server/src/modal/agent-sandbox.test.ts": 1,
     "packages/aai-server/src/supabase-auth.test.ts": 2,
     "packages/aai-studio-server/src/_test-combined.ts": 1,
     "packages/aai-studio-server/src/studio-account-routes.ts": 1,

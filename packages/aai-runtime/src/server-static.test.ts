@@ -8,7 +8,7 @@
  * one is invisible from up there. `clientDir` is a `@public` option that states
  * no absolute-path requirement, so this is the contract, not an edge case.
  *
- * Driven through a REAL `node:http` server for the reason `workflow-serve.test.ts`
+ * Driven through a REAL `node:http` server for the reason `workflow/serve.test.ts`
  * gives: `serveStatic` writes headers and pipes a read stream into the response,
  * and a hand-built `ServerResponse` cannot be produced without a cast — which is
  * the signal that the fake is the wrong tool.

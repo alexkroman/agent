@@ -123,7 +123,7 @@ voice agents without the CLI:
   workspace naming a foreign slug is never a deletion oracle.
 - **Projects are created from the chat, not a dialog.** The client has no
   new-project modal: typing the first message (the home hero's prompt box,
-  `home.tsx`) posts it as `prompt` to
+  `components/home.tsx`) posts it as `prompt` to
   `POST /studio/projects`, and the SERVER mints the name — prompt-derived
   base + random suffix, v0-style (`contact-form-x7k2mq`), via the same
   `aai-server/slug-generate.ts` generator slugless CLI deploys use (those
@@ -202,7 +202,7 @@ voice agents without the CLI:
   server: opencode's post-edit-diagnostics loop without a ~200 MB
   language-server process in a memory-capped sandbox. The write is never
   rejected on type errors (mid-refactor states are legitimate — the
-  syntax gate in `studio-syntax.ts` owns the unrecoverable class), and a
+  syntax gate in `studio/syntax.ts` owns the unrecoverable class), and a
   slow or missing compiler degrades to the plain write result. This
   replaced the standalone `check_types` tool — evals showed agents
   thrashing on it (sixteen checks, zero builds); `test_agent` is the one
@@ -283,7 +283,7 @@ voice agents without the CLI:
   `node_modules/@alexkroman1/aai` instead of assuming an offset, emits
   absolute paths (the only form that survives a `bash` call with an
   unexpected cwd), and returns `""` rather than naming paths it could not
-  resolve. `studio-build.test.ts` asserts every path the section emits
+  resolve. `studio/build.test.ts` asserts every path the section emits
   exists.
 - **The workspace manifest declares what the agent may import.**
   `ensureProjectShape` writes a `package.json` whose `dependencies` mirror
@@ -330,7 +330,7 @@ voice agents without the CLI:
   every tool is wrapped in a 120s timeout resolving to an error tool
   result, and `bash` has its own wall-clock kill (60s default, 300s max)
   with capped, tail-kept output. The client side of a hung turn is the
-  composer's **Stop button** (`chat.tsx`): `useChat().stop()` aborts the
+  composer's **Stop button** (`panes/chat.tsx`): `useChat().stop()` aborts the
   SSE fetch to the sandbox, whose request-close handler aborts
   `streamText` and in-flight tools in the guest.
 - **A turn's delivery has three rules, all in `aai-guest/studio-turn-stream.ts`**,
@@ -470,7 +470,7 @@ voice agents without the CLI:
   returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`,
   and `GET /studio/projects/:project/events` streams the same payload as
   SSE (`project` frames), pushed on every workspace-row change (Supabase
-  Realtime `postgres_changes` server-side — see `platform-events.ts`; the
+  Realtime `postgres_changes` server-side — see `platform/events.ts`; the
   events are signals and the route re-reads the row per push), plus `chat`
   frames carrying the settled conversation whenever a turn persists, so
   other tabs/devices stay current. `GET /studio/events` streams the
@@ -902,9 +902,9 @@ key↔account mapping — stay in that guide's "Auth" block.
 
 ### Sync to GitHub
 
-`studio-github-*.ts` plus the client's `github-card.tsx`: a signed-in account
-connects a **GitHub App installation**, picks a repository, and pushes a
-project's workspace to a branch as ONE commit.
+`studio-github-*.ts` plus the client's `components/github-card.tsx`: a
+signed-in account connects a **GitHub App installation**, picks a repository,
+and pushes a project's workspace to a branch as ONE commit.
 
 - **A GitHub App, not the GitHub OAuth the studio already signs in with.**
   Supabase Auth stays the identity layer; this is authorization to write
@@ -1008,7 +1008,7 @@ project's workspace to a branch as ONE commit.
   attempt: a 409 still standing after it is not an empty repository, and a loop
   around a refusal is the shape this module already removed once.
 - **The picker lists the installation NEWEST-FIRST** (`pickerOrder` in
-  `github-card.tsx`). GitHub answers `GET /installation/repositories`
+  `components/github-card.tsx`). GitHub answers `GET /installation/repositories`
   oldest-first, so the repository a user just made in order to sync into it —
   the one entry they are certain of, and the one the bootstrap above exists for
   — sat at the bottom of a list that runs to a thousand. Reversed rather than
@@ -1315,7 +1315,7 @@ works.
   dial the guest sandbox's tunnel directly, and `/:slug/websocket` upgrades
   are handshake redirects — but the studio's SSE streams sit under the same
   cap, so it stays pinned rather than inherited. The sandbox layer hit the same
-  trap first and documents it in `modal-sandbox-env.ts`.
+  trap first and documents it in `modal/sandbox-env.ts`.
 
   **The 4h ceiling is load-bearing for the studio's event streams, which is a
   trap for anyone re-splitting the deployment.** The removed studio app set 30
@@ -1360,7 +1360,7 @@ works.
   goes. It is also matched on TWO discriminators (the exception name **and**
   `_proxy_http_request` in the record), so it can never decay into swallowing
   asyncio errors: one of our own tasks dying the same way, or Modal's proxy
-  task dying of anything else, still prints in full. `modal-image-inputs.test.ts`
+  task dying of anything else, still prints in full. `modal/image-inputs.test.ts`
   pins all three properties, which is worth the ceremony because every way this
   rots is silent and in the same direction — toward eating a traceback you
   needed, in a log nobody reads until an incident.
@@ -1526,7 +1526,7 @@ One consequence to keep in mind when adding code to aai-server: **the module's
 own location is no longer where its source lives.** `createRequire(import.meta
 .url)` resolves from `packages/aai-studio-server/dist/`, whose pnpm
 `node_modules` has no `aai-guest` above it — which is why `guestPackageDir`
-(modal-harness-image.ts) falls back to deriving that package root from the
+(modal/harness-image.ts) falls back to deriving that package root from the
 harness path. Anything else that resolves a workspace sibling by module
 location owes the same fallback.
 
@@ -1572,7 +1572,7 @@ specifier check there passes through it.
 **The shared core is the `exports` map, and nothing else.** It is an
 explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
 machinery, schemas, app composition, the routes the studio reuses), and
-`platform-surface.test.ts` holds it to the imports that actually exist in
+`platform/surface.test.ts` holds it to the imports that actually exist in
 both directions — an entry nobody imports fails, and so does an import with
 no entry. It was `"./*": "./*.ts"` for a long time, which meant every one of
 the package's ~70 modules was published to the sibling: the prose above
@@ -1621,9 +1621,9 @@ down, like the file-length allowlist.
   claimed a default of "any origin": fail-closed, so never a hole, but the only
   documentation there gave the wrong answer to "is CORS open?".
 - **Cross-service invalidation is the agents row's CHANGE STREAM**
-  (`agent-store.ts` for the row; `platform-events.ts` /
+  (`agent-store.ts` for the row; `platform/events.ts` /
   `realtime-events.ts` for the stream; `watchAgentInvalidation` in
-  `sandbox-resolve.ts` for the handler). Mutation handlers ONLY write the
+  `sandbox/resolve.ts` for the handler). Mutation handlers ONLY write the
   row — deploy upserts it (bumping `version`), delete removes it — and
   every replica, the writer included, reacts to the resulting Supabase
   Realtime `postgres_changes` event: the handler drops the bundle-store
@@ -1695,7 +1695,7 @@ down, like the file-length allowlist.
   and change with the code that owns them.
   The env carries `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for the
   Realtime socket, required in production alongside `SUPABASE_DB_URL`.
-- **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
+- **A superseded sandbox is RETIRED, not terminated** (`sandbox/retire.ts`).
   A mutation replaces the code a slug runs; it says nothing about the calls
   already in flight on the old sandbox, and closing their sockets inline —
   which every mutation path used to do — meant shipping during the day
@@ -1705,7 +1705,7 @@ down, like the file-length allowlist.
   routing point, so from that instant no NEW session can reach it and the
   slug is free to rebuild — then FIRE-AND-FORGETS one deadline-carrying
   `POST /manage/drain` to the guest. The GUEST owns the drain from there
-  (`harness-agent-mode.ts`): it refuses new direct-dial sessions, exits the
+  (`harness/agent-mode.ts`): it refuses new direct-dial sessions, exits the
   instant its last session ends, and exits at the deadline
   (`SANDBOX_RETIRE_DRAIN_MS`, 10 min, env overridable; 0 terminates
   immediately) regardless — a retired sandbox is a billed guest running

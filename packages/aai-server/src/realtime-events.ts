@@ -27,7 +27,7 @@
  *   chat turns to other tabs/devices.
  *
  * Handlers receive SIGNALS, not payloads: watchers re-read the row (see
- * platform-events.ts). That makes delivery semantics forgiving — a
+ * platform/events.ts). That makes delivery semantics forgiving — a
  * duplicated event re-reads, a reconnect resubscribes, and Realtime's
  * payload cap can never truncate anything we depend on.
  *
@@ -52,7 +52,7 @@
 
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { RealtimeClient } from "@supabase/realtime-js";
-import { type PlatformEvents, projectKey, type Unwatch } from "./platform-events.ts";
+import { type PlatformEvents, projectKey, type Unwatch } from "./platform/events.ts";
 import { createSubscriptionMonitor } from "./realtime-subscription-monitor.ts";
 
 /** The schema every watched table lives in — see the module doc's grant note. */

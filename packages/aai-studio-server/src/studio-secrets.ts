@@ -7,7 +7,7 @@
  * platform primitive; this is the project-level switch over them. It had a
  * sibling, `studio-database.ts`, doing the same for `ctx.db`; that went with
  * per-app databases, so this is the only one left. The fan-out
- * used to live in the browser (`settings.tsx` PUT the production slug, then
+ * used to live in the browser (`panes/settings.tsx` PUT the production slug, then
  * mirrored to the preview one), which made it a property of the STUDIO CLIENT
  * rather than of a project — so every other caller silently wrote to
  * production alone. See `studio-project-slugs.ts` for what that cost.

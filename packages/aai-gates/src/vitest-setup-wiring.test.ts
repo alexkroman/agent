@@ -144,7 +144,7 @@ describe("shared vitest setupFiles wiring", () => {
       .filter(([, source]) => source.includes("aai.expectsProcessWarnings"))
       .map(([key]) => repoPathOf(key));
     expect(users, "the opt-out spread beyond the guest's leak-watch spec").toEqual([
-      "packages/aai-guest/src/harness-leak-watch.test.ts",
+      "packages/aai-guest/src/harness/leak-watch.test.ts",
     ]);
   });
 

@@ -3,7 +3,7 @@
  * Does the database under test contain anything `supabase/migrations` does not
  * declare?
  *
- * This is the REVERSE of `platform-schema.test.ts`, and the direction nothing
+ * This is the REVERSE of `platform/schema.test.ts`, and the direction nothing
  * checked. That suite greps the source for `aai_platform.<table>` and asserts a
  * migration declares each one, which catches a table the code needs and the
  * schema lacks. A table that is queried NOWHERE and declared NOWHERE satisfies

@@ -52,12 +52,12 @@
 
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createSingleFlight } from "./_memo.ts";
-import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { guestTokenFor } from "./guest-token.ts";
+import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
+import { guestTokenFor } from "./guest/token.ts";
 import { createLogger } from "./logger.ts";
-import { brokerSessionUrl } from "./sandbox-broker.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import { brokerSessionUrl } from "./sandbox/broker.ts";
+import { agentSandboxName } from "./sandbox/directory.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import { GuestUnreachableError } from "./workflow-queue-failure.ts";
 import { envelopeBody, parseEnvelope, type QueuedMessage } from "./workflow-queue-store.ts";
 import type { DeliverMessage } from "./workflow-queue-sweep.ts";

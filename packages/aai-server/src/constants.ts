@@ -230,7 +230,7 @@ export function resolveHarnessPath(env: NodeJS.ProcessEnv = process.env): string
  *
  * The four guest-called platform routes — the workflow journal, the queue,
  * session state, upload records — each run their work on a RESERVATION from
- * this pool (`_platform-route.ts`'s `withReserved`), held for the whole
+ * this pool (`platform/_route.ts`'s `withReserved`), held for the whole
  * request. So this number is not merely a connection budget: it is the count
  * of guest platform calls a replica may have in flight AT ALL, and the fifth
  * queues on `reserve()`.
@@ -330,7 +330,7 @@ export const SLUG_LOCK_POOL_MAX = 4;
  *
  * These are session-mode connections by construction — `assertSessionModeUrl`
  * refuses a transaction-mode pooler, because an advisory lock needs connection
- * affinity to mean anything (platform-lock.ts). So they consume the database's
+ * affinity to mean anything (platform/lock.ts). So they consume the database's
  * `max_connections` directly, with no Supavisor in front to multiplex them,
  * and the fleet total is `MAX_CONTAINERS × per-replica` — a number that lived
  * in two files that never referred to each other.
@@ -342,13 +342,13 @@ export const SLUG_LOCK_POOL_MAX = 4;
  * control-plane outage, at peak, with nothing before it to read as a warning.
  *
  * **This number is a claim about the provisioned instance, and boot now CHECKS
- * it** (`platform-db-capacity.ts`): the server holds a connection, so
+ * it** (`platform/db-capacity.ts`): the server holds a connection, so
  * `show max_connections` and a `pg_stat_activity` count are one query each, and
  * a budget that promises more than the instance can give says so at boot
  * instead of at peak. It went unchecked for as long as it did because this
  * paragraph asserted it could not be. Still verify by hand (and leave room for
  * migrations, the dashboard, and Supavisor) when changing either side;
- * `platform-db-budget.test.ts` holds the arithmetic so that raising
+ * `platform/db-budget.test.ts` holds the arithmetic so that raising
  * `MAX_CONTAINERS`, a pool size, or the cluster list fails a check instead of
  * failing in production.
  *
@@ -362,7 +362,7 @@ export const SLUG_LOCK_POOL_MAX = 4;
  *
  * **Nothing per-tenant is in this number any more, and the admin pool never was.**
  * So what this bounds is `MAX_CONTAINERS x platformDbConnectionsPerReplica()`,
- * which is what `platform-db-budget.test.ts` asserts and what `platformDbBudget()`
+ * which is what `platform/db-budget.test.ts` asserts and what `platformDbBudget()`
  * returns unchanged.
  *
  * It used to carry a second term, an allowance for per-app DATABASES, and the
@@ -388,7 +388,7 @@ export const SLUG_LOCK_POOL_MAX = 4;
  * reading this is the boot capacity CHECK: production announced
  * `budget OVERRUNS the instance by 17` on an instance whose real overrun was 7,
  * and a warning that overstates by 10 is one nobody can act on. The paragraph
- * above already said this number IS the product; `platform-db-budget.test.ts`
+ * above already said this number IS the product; `platform/db-budget.test.ts`
  * asserted only `<=`, which let the two drift, and now asserts EQUALITY — so a
  * pool bump fails a check rather than silently spending headroom that the
  * capacity warning has already promised away.
@@ -402,8 +402,8 @@ export const SLUG_LOCK_POOL_MAX = 4;
  * It was 30 while `platformDbConnectionsPerReplica` still carried the DevKit
  * world's `pg.Pool` and `LISTEN` client — 5 per replica for something that opens
  * no connection at all, since the replay engine replaced that world with HTTP
- * clients. `platform-db-limits.ts` has the account; the effect of the stale terms
- * was that `platform-db-capacity.ts` subtracted 15 connections from the headroom
+ * clients. `platform/db-limits.ts` has the account; the effect of the stale terms
+ * was that `platform/db-capacity.ts` subtracted 15 connections from the headroom
  * it reports at boot.
  */
 export const MAX_PLATFORM_DB_CONNECTIONS = 15;

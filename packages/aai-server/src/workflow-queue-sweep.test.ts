@@ -11,7 +11,7 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import type { AdminDb } from "./platform-lock.ts";
+import type { AdminDb } from "./platform/lock.ts";
 import { captureLogs, fakeAdminDbOver } from "./test-utils.ts";
 import { claimDue } from "./workflow-queue-claim.ts";
 import { GuestUnreachableError } from "./workflow-queue-failure.ts";

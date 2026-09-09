@@ -4,7 +4,7 @@
  * that ride the same path.
  *
  * The guest runs the LITERAL `aai deploy` CLI (see aai-guest/
- * studio-publish.ts); this module is only the host half: pick a sandbox to
+ * studio/publish.ts); this module is only the host half: pick a sandbox to
  * run it in, send `workspace/deploy`, and turn whatever comes back — a CLI
  * success, CLI diagnostics, or a sandbox that died — into one
  * {@link WorkspaceDeployOutcome}.

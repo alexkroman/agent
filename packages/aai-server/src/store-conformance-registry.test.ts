@@ -101,7 +101,7 @@ function moduleDeps(file: string, text: string): string[] {
  * They used to ask whether the case list's own name appears inside a
  * `*.test.ts`, which encodes an assumption a split breaks: the journal's list
  * outgrew the 500-line cap, so `journalRunConformance` and
- * `journalWaitConformance` are composed by `journal-conformance.ts` and invoked
+ * `journalWaitConformance` are composed by `workflow/journal/conformance.ts` and invoked
  * THROUGH it — demonstrably run, and reported as possibly-dead. Four case lists
  * hit that cap in one evening, and `store-conformance-cases.ts` is the next one
  * to hit it, at which point the very gate guarding this registry would have

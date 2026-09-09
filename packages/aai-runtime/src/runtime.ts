@@ -34,8 +34,8 @@ import { createSessionCore, type ServerSession } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
 import type { UsageMeter } from "./usage-meter.ts";
-import { platformGuestOptions } from "./workflow-platform-world.ts";
-import { buildRunNotifier, buildWorkflowClient } from "./workflow-runtime.ts";
+import { platformGuestOptions } from "./workflow/platform-world.ts";
+import { buildRunNotifier, buildWorkflowClient } from "./workflow/runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 export type {
@@ -194,7 +194,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   const workflows = options.workflows ?? builtWorkflows?.client;
 
   // Watches runs a tool asked to be told about (`start(…, { notify })`) and
-  // makes the agent say so — see `workflow-notify.ts`. The session map is the
+  // makes the agent say so — see `workflow/notify.ts`. The session map is the
   // half only this scope has.
   const notifier = buildRunNotifier(
     workflows,

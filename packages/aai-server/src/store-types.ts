@@ -23,7 +23,7 @@ export type BundleStore = {
     credential_hashes: string[];
     /**
      * The harness snapshot image tag this deploy runs against (see
-     * `currentHarnessImageTag` in sandbox-vm.ts). Null outside the Modal
+     * `currentHarnessImageTag` in sandbox/vm.ts). Null outside the Modal
      * backend.
      */
     harnessImageTag?: string | null | undefined;

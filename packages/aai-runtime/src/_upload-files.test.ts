@@ -21,7 +21,7 @@ import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { UploadIdTakenError } from "./_upload-store.ts";
 import { body, digest, ramp } from "./_upload-store-test-utils.ts";
-import { createUploadStore } from "./workflow-uploads.ts";
+import { createUploadStore } from "./workflow/uploads.ts";
 
 let dir: string;
 

@@ -186,7 +186,7 @@ export const QUEUE_DUE_SOON_MS = envMs(process.env.WORKFLOW_QUEUE_INTERVAL_MS, 1
  * next tick — and the tick is on its own cadence, so `ctx.sleep("beat", 100)` and
  * `ctx.sleep("beat", 900)` resumed at the SAME moment, one full
  * `WORKFLOW_QUEUE_INTERVAL_MS` from the enqueue on average, with a poll-shaped
- * body paying it per iteration. `workflow-platform-dispatch.ts` measured the
+ * body paying it per iteration. `workflow/platform-dispatch.ts` measured the
  * residual at ~780 ms and named this line as the cause.
  *
  * So a delay at or under {@link QUEUE_DUE_SOON_MS} announces too. The pass that
@@ -345,7 +345,7 @@ export async function enqueue(sql: SqlExec, params: EnqueueParams): Promise<{ id
  * `WORKFLOW_QUEUE_INTERVAL_MS` cost the SAME as one full interval, so an author's
  * `ctx.sleep("beat", 100)` and `ctx.sleep("beat", 900)` resumed at the same
  * moment and a poll-shaped body paid that per iteration.
- * `workflow-platform-dispatch.ts`'s own note measured the residual at ~780 ms and
+ * `workflow/platform-dispatch.ts`'s own note measured the residual at ~780 ms and
  * named it as the cause.
  *
  * So a short park announces (see {@link announce}), the pass it wakes ASKS this,

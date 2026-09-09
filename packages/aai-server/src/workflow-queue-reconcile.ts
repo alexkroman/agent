@@ -28,7 +28,7 @@
  * request to walk it. So "this run is not finished and nothing is scheduled to
  * touch it" is answerable in one query, and it is the honest definition of
  * stalled — it covers an abandoned message, an enqueue that failed on the way
- * out (`workflow-platform-dispatch.ts` logs one and cannot do more), and a row
+ * out (`workflow/platform-dispatch.ts` logs one and cannot do more), and a row
  * lost to any future bug in the queue itself.
  *
  * That is the change this makes to what the platform considers authoritative,
@@ -55,7 +55,7 @@
  *   warning ("once they have been idle for 10 minutes") is finally true.
  * - **A PARK is not a stall.** `await ctx.waitFor(token)` with no `timeoutMs` is
  *   the steady state of the human-approval workflow the SDK documents, and it
- *   looks exactly like abandonment from here: `workflow-replay.ts` suspends the
+ *   looks exactly like abandonment from here: `workflow/replay.ts` suspends the
  *   walk with `wakeAt: undefined` and `workflow-engine.ts` dispatches only when
  *   `wakeAt !== undefined`, "a HOOK does not [schedule its own delivery] …
  *   dispatching anyway would poll a run that may be parked for a week". So the
@@ -89,7 +89,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { abandonStalledRun, RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { createLogger } from "./logger.ts";
-import { sqlState } from "./platform-db-errors.ts";
+import { sqlState } from "./platform/db-errors.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { enqueue } from "./workflow-queue-store.ts";
 
@@ -199,7 +199,7 @@ export async function findStalledRuns(
   // almost every run, so the planner should stop at the first matching row.
   //
   // `pending` as well as `running`, because a `start` whose enqueue failed never
-  // left pending — that is the case `workflow-platform-dispatch.ts` logs and
+  // left pending — that is the case `workflow/platform-dispatch.ts` logs and
   // cannot recover on its own. The status list is written out rather than
   // negated so it keeps matching `workflow_runs_stalled_idx`'s predicate, which
   // is the index serving the filter, the ordering and the bound in one walk

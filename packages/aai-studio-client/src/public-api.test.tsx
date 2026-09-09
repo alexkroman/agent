@@ -5,7 +5,7 @@
 //
 // What matters here is what it does NOT do. The page shares its whole body
 // with the studio's API pane, so the assertions that the docs are generated
-// from the agent's own listing live in docs.test.tsx; these pin the boundary
+// from the agent's own listing live in panes/docs.test.tsx; these pin the boundary
 // that makes the page publishable — it reads the AGENT and nothing else, so a
 // signed-out reader triggers no account-scoped request, and the two
 // account-scoped things the studio pane adds (the project's secrets, and the

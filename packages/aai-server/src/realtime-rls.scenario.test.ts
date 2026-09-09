@@ -19,7 +19,7 @@
  * stream from a dead one, which is why every assertion here waits for a frame
  * to arrive rather than for an error not to.
  *
- * Complements `platform-schema.scenario.test.ts`, which applies the same
+ * Complements `platform/schema.scenario.test.ts`, which applies the same
  * migrations to a stock Postgres and drives the stores against them. That
  * covers the SQL and the owner-connection path (owners bypass policies, so
  * enabling RLS is inert for the platform's own queries). It has no Realtime,
@@ -57,7 +57,7 @@ import type { CloseableDb } from "@alexkroman1/aai-runtime";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { describeWithStack, pgUrl, stackEnv } from "./_pg-test-utils.ts";
-import type { PlatformEvents } from "./platform-events.ts";
+import type { PlatformEvents } from "./platform/events.ts";
 import { createRealtimePlatformEvents } from "./realtime-events.ts";
 
 // `describeWithStack` IS the gate, and it is the ONLY one in this file. It is
@@ -95,7 +95,7 @@ const migrationsDir = path.resolve(import.meta.dirname, "../../../supabase/migra
  * because the first drop must not read as a stale stack. `workflow_run_owner`
  * was expected to be the first and is not: the Workflow DevKit's schema is
  * RETIRED by rename rather than dropped (see `RETIRED_OBJECTS` in
- * `platform-schema.test.ts`), and that table is left in place entirely so a
+ * `platform/schema.test.ts`), and that table is left in place entirely so a
  * rollback can still say whose rows those are.
  */
 function rlsTables(): string[] {

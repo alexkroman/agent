@@ -5,7 +5,7 @@
  *
  * Two properties carry the feature and neither is visible from the guest's own
  * suite: that the route EXISTS under `/:slug` for every verb a third party
- * might use (guest-routes.test.ts asserts the registration; these assert the
+ * might use (guest/routes.test.ts asserts the registration; these assert the
  * forward), and that a delivery to a run whose sandbox has EXITED boots one
  * rather than 404ing — which is the normal case, not the edge, since a durable
  * run outlives the call that started it and an agent guest self-exits on idle.
@@ -13,8 +13,8 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
-import { createSlotCache, setSlot } from "./sandbox-slots.ts";
+import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
+import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import {
   captureLogs,
   createTestOrchestrator,
@@ -31,8 +31,8 @@ const { mockSpawnAgentServer } = vi.hoisted(() => ({
   mockSpawnAgentServer: vi.fn(),
 }));
 
-vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
+vi.mock("./sandbox/vm.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./sandbox/vm.ts")>()),
   spawnAgentServer: mockSpawnAgentServer,
 }));
 

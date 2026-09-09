@@ -10,7 +10,7 @@
  *
  * ## Why the existing guards cannot answer it
  *
- * `platform-schema.test.ts` asserts a table is DECLARED and has RLS;
+ * `platform/schema.test.ts` asserts a table is DECLARED and has RLS;
  * `pg-cron.test.ts` asserts a sweep body says what its own comment says. Neither
  * pairs the two, so a table with no retention at all is invisible to both — and
  * `20260901020000_workflow_reconcile_cost.sql` records paying for exactly that
@@ -44,8 +44,8 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { platformCronJobs } from "./pg-cron.ts";
-import { SESSION_STATE_RETENTION } from "./platform-session-state.ts";
-import { UPLOAD_RECORD_RETENTION } from "./platform-uploads.ts";
+import { SESSION_STATE_RETENTION } from "./platform/session-state.ts";
+import { UPLOAD_RECORD_RETENTION } from "./platform/uploads.ts";
 import { STALL_GRACE_MS } from "./workflow-queue-reconcile.ts";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
@@ -78,7 +78,7 @@ function migrationSql(): string {
  * Derived, never listed, which is the property the whole suite rests on: a table
  * added without a verdict below fails, and that is the only way this cannot go
  * stale. The drop half matters even though no migration drops a table today —
- * `RETIRED_OBJECTS` in `platform-schema.test.ts` holds three that are owed one,
+ * `RETIRED_OBJECTS` in `platform/schema.test.ts` holds three that are owed one,
  * and the release that lands a drop must not then have to argue about retention
  * for a table that is gone.
  */
@@ -224,7 +224,7 @@ const RETENTION: Record<string, Verdict> = {
   workflow_run_owner: {
     pruned: "unpruned",
     evidence: { cascadeFrom: "agents" },
-    why: "retired: written and read by nothing, kept only so the DevKit schema rename stays reversible, and owed a `drop` (see RETIRED_OBJECTS in platform-schema.test.ts)",
+    why: "retired: written and read by nothing, kept only so the DevKit schema rename stays reversible, and owed a `drop` (see RETIRED_OBJECTS in platform/schema.test.ts)",
   },
   workflow_runs: {
     pruned: "sweep",

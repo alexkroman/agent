@@ -95,7 +95,7 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
     // database, so the job had to be scheduled INTO that database at provisioning
     // time and its cost scaled with the number of tenants; the rows are in
     // `aai_platform.session_slots` / `session_events` now
-    // (`platform-session-state.ts`), which one statement reaches.
+    // (`platform/session-state.ts`), which one statement reaches.
     {
       name: "aai-sweep-session-state",
       schedule: "23 * * * *",

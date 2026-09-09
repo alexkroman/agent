@@ -12,7 +12,7 @@
  * **A rejection clears the memo.** That is the half the two hand-rolled copies
  * disagreed on: `workflow-wake-hint.ts` cleared its flag in its runner's catch
  * (its comment argues the case — a transient privilege or connection fault has
- * to be recoverable without a redeploy), while `workflow-keys.ts` kept the
+ * to be recoverable without a redeploy), while `workflow/keys.ts` kept the
  * rejected promise, so one failed DDL made every later `record` and `lookup`
  * re-throw that same error for the life of the store. One primitive is what
  * stops two halves of one feature answering a transient fault differently.

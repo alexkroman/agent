@@ -6,7 +6,7 @@
  * Scenario tier because that pairing is the whole point. Both halves of this were
  * already specced and both were right: `sdk/workflow-upload-parts.test.ts` pins
  * which requests the client issues against a scripted `fetch`, and
- * `workflow-api-uploads.test.ts` pins how the routes answer them against a real
+ * `workflow/api/uploads.test.ts` pins how the routes answer them against a real
  * router. What neither could see is the AGREEMENT — that the shape the client
  * chooses for a file is one the store can resume — and that is exactly where the
  * bug was: for any file under one part (8 MiB, so most recordings) the client sent
@@ -44,7 +44,7 @@ import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";
 import { afterEach, expect, test } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
 import { memoryStore } from "./_upload-store-test-utils.ts";
-import { createWorkflowApi } from "./workflow-api.ts";
+import { createWorkflowApi } from "./workflow/api.ts";
 
 /** Six windows' worth, and so ONE part at the default size — the case that broke. */
 const TOTAL = UPLOAD_CHUNK_BYTES * 6;

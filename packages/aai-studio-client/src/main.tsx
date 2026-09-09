@@ -4,7 +4,7 @@
 // a `?cli-link=<code>` open stashes the code per-tab and strips the URL
 // (cli-link.ts — it must not ride the OAuth redirect), then renders a
 // link-the-CLI gate once signed in + onboarded. The gate screens themselves
-// live in gates.tsx; this file is the composition root.
+// live in components/gates.tsx; this file is the composition root.
 //
 // The browser's bearer is a SESSION token (Supabase in production, the dev
 // token locally — see auth.tsx), never an AssemblyAI key. The key is the
@@ -21,7 +21,7 @@
 //
 // What per-tab `sessionStorage` bought here, and why it was given up: it did NOT
 // protect against the studio's own Live pane, which iframes `/:slug/`
-// same-origin (preview.tsx) — a same-origin iframe shares the tab's storage
+// same-origin (panes/preview.tsx) — a same-origin iframe shares the tab's storage
 // either way and can script the parent, so a hostile published client.tsx owned
 // the studio session under both. The delta was a malicious agent page opened in
 // a SEPARATELY-opened tab, and a session that did not survive a tab close.
@@ -41,8 +41,8 @@ import { App } from "./app.tsx";
 import { useStudioAuth } from "./auth.tsx";
 import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
 import { clearCliLinkCode, consumeCliLinkCode } from "./cli-link.ts";
-import { GateCard, GateProblem, gateProblem } from "./gate-card.tsx";
-import { CliLinkGate, KeyGate, SignInGate } from "./gates.tsx";
+import { GateCard, GateProblem, gateProblem } from "./components/gate-card.tsx";
+import { CliLinkGate, KeyGate, SignInGate } from "./components/gates.tsx";
 import { apiDocsSlugFromPath } from "./project-route.ts";
 import { PublicApiPage } from "./public-api.tsx";
 import { queryKeys } from "./query-keys.ts";

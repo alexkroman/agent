@@ -8,7 +8,7 @@ import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
-import { guestTokenFor } from "./guest-token.ts";
+import { guestTokenFor } from "./guest/token.ts";
 import { type Logger, type RecordedLine, recordingSink, setLogSink } from "./logger.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import {
@@ -18,11 +18,11 @@ import {
   withAgentEvents,
   withChatEvents,
   withWorkspaceEvents,
-} from "./platform-events.ts";
-import type { AdminDb } from "./platform-lock.ts";
+} from "./platform/events.ts";
+import type { AdminDb } from "./platform/lock.ts";
+import { agentSandboxName } from "./sandbox/directory.ts";
+import { type AgentSlot, createSlotCache } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
-import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore, type SecretStore, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
@@ -235,7 +235,7 @@ export async function createTestOrchestrator(
   chats: ChatStore;
   events: PlatformEvents;
 }> {
-  // Stores + event bus are a PAIR (see platform-events.ts): the
+  // Stores + event bus are a PAIR (see platform/events.ts): the
   // orchestrator's event-driven sandbox invalidation and the studio's SSE
   // pushes only fire when row writes emit.
   const memoryEvents = createMemoryPlatformEvents();
@@ -316,7 +316,7 @@ export async function deployAgent(
  *
  * The GUEST-side counterpart of {@link authHeaders}: those five platform routes
  * verify `HMAC(secret, agentSandboxName(slug, version))` rather than an API key
- * (`guest-bearer.ts`). Five suites had written this identically — the same reason
+ * (`guest/bearer.ts`). Five suites had written this identically — the same reason
  * AGENTS.md gives for building a request with `authFetch` rather than a header
  * literal, on the other half of the surface.
  *

@@ -396,7 +396,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // production is the kind of difference a feature is developed against.
       //
       // `deliver` is a THUNK and `logger` is `devLogger`, both spelled the way
-      // `agent-server.ts` and the guest's `harness-manage.ts` spell them so the
+      // `agent-server.ts` and the guest's `harness/manage.ts` spell them so the
       // three mounts of this one door cannot drift. The logger matters here in
       // particular: the door's fallback is `consoleLogger`, whose `info` is
       // `console.log`, and `aai dev --json` owes stdout exactly one line.

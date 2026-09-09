@@ -1,12 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The reference semantics for `platform-workflow-journal.ts` and
- * `platform-workflow-journal-hooks.ts` — the twelve journal methods, in three
+ * The reference semantics for `platform/workflow-journal.ts` and
+ * `platform/workflow-journal-hooks.ts` — the twelve journal methods, in three
  * appliers over ONE tenant's bucket.
  *
  * Split three ways along the tables: runs, the per-step ledgers (steps,
  * attempts, sleeps), and the hook window. That is the same seam the code under
- * test has — `-hooks.ts` was already carved off `platform-workflow-journal.ts`
+ * test has — `-hooks.ts` was already carved off `platform/workflow-journal.ts`
  * for the 500-line cap, and the hook half is a self-contained subject.
  *
  * Every case names the statement it mirrors, because a mistake here surfaces as
@@ -101,7 +101,7 @@ export type Targets = {
   events: readonly Tables[];
 };
 
-/** Mirrors `platform-workflow-journal.ts`'s `TERMINAL`. */
+/** Mirrors `platform/workflow-journal.ts`'s `TERMINAL`. */
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
 export type RunOp = Extract<Op, { t: "createRun" | "getRun" | "listRuns" | "setStatus" }>;
@@ -209,7 +209,7 @@ export function applyStepOp(t: Tables, op: StepOp, targets: Targets): Answer {
       };
     case "claimAttempt": {
       // ONE statement over ONE row, holding a MAP of holder to when it claimed —
-      // `_workflow-journal-attempts.ts` carries the shape. What the model has to
+      // `workflow/journal/_attempts.ts` carries the shape. What the model has to
       // reproduce is that a re-claim by a holder that already holds one answers
       // the SAME number, which a counter cannot.
       //

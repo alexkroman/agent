@@ -116,7 +116,7 @@ grants). Three places differ, each a decision rather than an oversight:
   publication for its TABLE list alone and decodes with **wal2json**, which has
   no notion of publications and emits every column regardless (measured on
   realtime v2.112.6 / PG 17.6). The lists were written, measured and reverted;
-  `platform-schema.test.ts` guards AGAINST them, because the cost of the attempt
+  `platform/schema.test.ts` guards AGAINST them, because the cost of the attempt
   is the comment explaining a mechanism that isn't there. Bringing the decode cost
   down takes a different mechanism — Broadcast from Database, or a skinny signal
   table that does not carry `doc`.
@@ -130,7 +130,7 @@ grants). Three places differ, each a decision rather than an oversight:
   add a grant to `authenticated`, or expose the schema, and the result is zero
   rows rather than every tenant's workspace. **ENABLE, never FORCE** — forcing
   applies policies to the owner too, i.e. to every query the platform makes.
-  Three guards in `platform-schema.test.ts` hold all of this, and they exist
+  Three guards in `platform/schema.test.ts` hold all of this, and they exist
   because NOTHING EXTERNAL WILL: splinter's `rls_disabled_in_public` (0013)
   and the RLS-disabled email alerts both key on `public`, so a table added
   here without RLS is invisible to every check Supabase runs on the project.
@@ -190,7 +190,7 @@ plus the boot-time publication/grant setup. The trade is deploy ORDERING —
 `supabase db push` before the deploy — and a missed migration now fails
 loudly with "relation does not exist" instead of being papered over by a lazy
 create that runs on whichever connection first noticed.
-`platform-schema.test.ts` guards two things statically: every
+`platform/schema.test.ts` guards two things statically: every
 `aai_platform.<table>` the source queries must be declared in a migration, and
 the store suites assert that no store issues DDL.
 
@@ -256,7 +256,7 @@ of:
   timestamp, never `--include-all` — that flag applies every pending file
   whatever its order, making the applied schema a function of merge order rather
   than filename order.
-- **`platform-schema.test.ts`, "no two migrations share a version"** — the
+- **`platform/schema.test.ts`, "no two migrations share a version"** — the
   neighbouring hazard: two files claiming ONE version abort the whole
   `supabase start` with a duplicate-key error naming neither.
 

@@ -57,7 +57,7 @@ if (UPLOAD_KEY_PREFIX.includes("/")) {
  * That gap is bounded by ONE REQUEST. `create` receives the whole body inside a
  * single guest request, so it cannot outlive the sandbox serving it, and
  * `SANDBOX_TIMEOUT_SECS` clamps a sandbox's life to at most 86,400 seconds
- * (`modal-sandbox-env.ts`). Three days is three times that hard ceiling. It is
+ * (`modal/sandbox-env.ts`). Three days is three times that hard ceiling. It is
  * also far past `UPLOAD_READ_URL_TTL_SECONDS` (5 min), so a signed URL cannot
  * outlive the window protecting the object it names — the same property the
  * blobs arm's day buys against the worker-bundle URL.

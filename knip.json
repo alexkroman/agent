@@ -199,7 +199,7 @@
       "includeEntryExports": true,
       // These are declared so a STUDIO WORKSPACE can resolve them, not because
       // this package imports them: they are the third-party half of
-      // `WORKSPACE_DEPENDENCIES` (`studio-project-shape.ts`), and declaring them
+      // `WORKSPACE_DEPENDENCIES` (`studio/project-shape.ts`), and declaring them
       // here is what lets `sync-guest-toolchain.mjs` read the version this
       // checkout installed — which is the only thing keeping the baked toolchain
       // and the toolchain the repo builds and tests with from drifting.
@@ -210,6 +210,45 @@
       // runtime and the declaration was what put a copy in this package's
       // `node_modules`. Neither is a dependency of this package any more, so both
       // entries became redundant patterns knip reports as configuration hints.
+      "ignoreDependencies": [
+        // `@alexkroman1/aai-cli` is EXTERNAL in the harness bundle
+        // (`neverBundle` in tsdown.config.ts), so it is resolved at run time
+        // from the node_modules beside `dist/harness.mjs` — this package's own.
+        // Removing it on knip's word was tried and Publish died with
+        // "Cannot find package '@alexkroman1/aai-cli' imported from
+        // .../dist/harness.mjs", which no static import graph can predict.
+        "@alexkroman1/aai-cli",
+        "@alexkroman1/aai-ui",
+        "@tailwindcss/vite",
+        "@types/react",
+        "@types/react-dom",
+        "@vitejs/plugin-react",
+        "react",
+        "react-dom",
+        "tailwindcss",
+        "xstate"
+      ]
+    },
+    "packages/aai-guest-core": {
+      "entry": [
+        "**/*.test.ts"
+      ],
+      "includeEntryExports": true
+    },
+    "packages/aai-guest-studio": {
+      "entry": [
+        "**/*.test.ts"
+      ],
+      "includeEntryExports": true,
+      // Declared so a STUDIO WORKSPACE can resolve them, not because this
+      // package imports them: they are the third-party half of
+      // `WORKSPACE_DEPENDENCIES` (`project-shape.ts`), and `build.ts`'s
+      // `toolchainModules()` hands the workspace this package's own
+      // `node_modules` to resolve against. Removing them on knip's word was
+      // tried and broke two `build.test.ts` cases that assert
+      // `@alexkroman1/aai-ui/dist/**` really resolves — a RESOLUTION is
+      // invisible to a static import graph, which is the whole reason this
+      // list has to be written down.
       "ignoreDependencies": [
         "@alexkroman1/aai-ui",
         "@types/react",

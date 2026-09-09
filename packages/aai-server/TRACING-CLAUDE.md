@@ -30,7 +30,7 @@ predicate, never re-parsed.
 the platform HTTP request that caused it are ONE trace. Three things had to be
 true together, and any one of them missing puts it silently back to two:
 
-- `guest-forward.ts` injects the platform's ACTIVE span context on the hop
+- `guest/forward.ts` injects the platform's ACTIVE span context on the hop
   (`withTraceparent`). The header is minted, never relayed — this hop's callers
   are the open internet and third-party webhook senders, so forwarding an
   inbound `traceparent` would let any of them choose the trace id a tenant's

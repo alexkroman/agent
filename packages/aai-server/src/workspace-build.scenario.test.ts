@@ -26,8 +26,8 @@ import { type ServerType, serve } from "@hono/node-server";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { resolveHarnessPath } from "./constants.ts";
 import { createOrchestrator } from "./orchestrator.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
-import type { WarmHarness } from "./sandbox-vm.ts";
+import { createSlotCache } from "./sandbox/slots.ts";
+import type { WarmHarness } from "./sandbox/vm.ts";
 import { createTestStore, NO_CLIENT_DIR } from "./test-utils.ts";
 import { dialGuest, getFreePort, startGuestLogging, warmFromGuest } from "./warm-harness.ts";
 

@@ -21,7 +21,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createRuntimeServer, type SessionRuntime } from "./server.ts";
-import { MAX_WEBHOOK_BODY_BYTES } from "./workflow-webhook.ts";
+import { MAX_WEBHOOK_BODY_BYTES } from "./workflow/webhook.ts";
 
 /**
  * A `ctx.workflows` that declares one workflow and nothing else.
@@ -264,7 +264,7 @@ describe("the workflow API mount", () => {
     });
 
     test("an oversized body is refused with a 413 rather than delivered", async () => {
-      // The wiring half — the bound itself is `workflow-http-adapter.test.ts`,
+      // The wiring half — the bound itself is `workflow/http-adapter.test.ts`,
       // which is where "refused as it arrives" is asserted. What this pins is
       // that the SERVER declares a cap at all: the route is the one public,
       // unauthenticated door in the product, so an absent cap is an attacker

@@ -34,7 +34,7 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { UNKNOWN_CLIENT_IP } from "./client-ip.ts";
-import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
+import { ensurePlatformTables } from "./platform/schema-test-utils.ts";
 import {
   createPgAgentRateLimiters,
   createPgRateLimiter,

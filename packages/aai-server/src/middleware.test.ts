@@ -2,7 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { invalidateApiKeyOwner, requireOwner, resolveBearer } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { createSlotCache } from "./sandbox/slots.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
 import { apiKeyOwnerSecretName } from "./supabase-auth.ts";
 import {

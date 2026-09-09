@@ -2,7 +2,7 @@
 // What the Docs pane says, as data and pure builders — the pane itself only
 // renders it.
 //
-// Split from `docs.tsx` for the reason every extracted-logic module in this
+// Split from `panes/docs.tsx` for the reason every extracted-logic module in this
 // package is: a pane is browser-shaped and its assertions have to go through a
 // render, while the interesting part here is a pure function of a JSON Schema.
 // The snippet builders are also the half most likely to be WRONG in a way a

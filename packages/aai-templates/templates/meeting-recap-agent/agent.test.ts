@@ -37,8 +37,8 @@
  * RECORDED and its `waitFor` answers out of `hooks`, so no wait it serves ever
  * suspended. A wait now hands the body a promise that never settles, so a
  * suspension cannot reach a `catch` at all and there is no branch left to test:
- * `aai-runtime`'s `workflow-replay-suspend.ts` carries the mechanism and
- * `workflow-replay.test.ts` the engine-level proof, for every template at once.
+ * `aai-runtime`'s `workflow/replay/suspend.ts` carries the mechanism and
+ * `workflow/replay.test.ts` the engine-level proof, for every template at once.
  */
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */

@@ -29,7 +29,7 @@
  *
  * **The prompt is already data, not code.** The guest never imports it in
  * production either: `studio-session-ensure.ts` puts `studioSystemPrompt(kind)`
- * in the session-init payload and `studio-session.ts` appends
+ * in the session-init payload and `studio/session.ts` appends
  * `toolchainPromptSection()` to whatever arrives over the wire. The guest is the
  * thing that RUNS that string. Handing the same string to the eval is the
  * runtime arrangement, not a new privilege.
@@ -59,7 +59,7 @@
  * The prompt is composed by TypeScript that resolves workspace packages through
  * the `@dev/source` export condition, so it is imported by a node child spawned
  * with `--conditions=@dev/source` — the same thing `build-guest-image.mjs` does
- * to reach `modal-harness-image.ts` from a `.mjs` script.
+ * to reach `modal/harness-image.ts` from a `.mjs` script.
  */
 
 import { spawnSync } from "node:child_process";
@@ -70,7 +70,7 @@ import { parseScriptArgs } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
-const DESTINATION_DIR = join(ROOT, "packages/aai-guest/studio-prompts");
+const DESTINATION_DIR = join(ROOT, "packages/aai-guest-studio/studio-prompts");
 const { values: FLAGS } = parseScriptArgs({
   script: import.meta.url,
   options: { check: { type: "boolean" } },
@@ -155,13 +155,13 @@ const { prompts, starters } = composePrompts();
 const files = Object.entries(prompts).map(([kind, prompt]) => ({
   kind,
   path: join(DESTINATION_DIR, `${kind}.md`),
-  rel: `packages/aai-guest/studio-prompts/${kind}.md`,
+  rel: `packages/aai-guest-studio/studio-prompts/${kind}.md`,
   expected: `${banner(kind)}${prompt}`,
 }));
 files.push({
   kind: "starters",
   path: join(DESTINATION_DIR, STARTERS_FILE),
-  rel: `packages/aai-guest/studio-prompts/${STARTERS_FILE}`,
+  rel: `packages/aai-guest-studio/studio-prompts/${STARTERS_FILE}`,
   expected: `${JSON.stringify(
     {
       _generated:

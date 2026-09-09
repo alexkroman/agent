@@ -57,7 +57,7 @@ describe("uint8ToBase64 / base64ToUint8", () => {
 describe("base64ToUint8 on input it did not write", () => {
   test("malformed base64 decodes to nothing instead of arbitrary bytes", () => {
     // The measured defect, and the same one recorded one module over at
-    // `workflow-typed-json.ts`'s `bytesFromBase64`: `Buffer.from(s, "base64")`
+    // `workflow/typed-json.ts`'s `bytesFromBase64`: `Buffer.from(s, "base64")`
     // DROPS every character outside the alphabet and returns whatever the
     // survivors decode to, so `"not base64 at all!!"` came back as ten
     // arbitrary bytes with nothing raised — a burst of noise into a caller's
@@ -73,7 +73,7 @@ describe("base64ToUint8 on input it did not write", () => {
 
   test("a sloppy but unambiguous encoding is still accepted", () => {
     // `lastChunkHandling` stays at its default rather than `"strict"`, which
-    // is the one place this diverges from `workflow-typed-json.ts`: there both
+    // is the one place this diverges from `workflow/typed-json.ts`: there both
     // ends of the wire are ours and every string it reads is one it wrote, so
     // it can demand canonical padding. Here the far end is a third party, and
     // each of these has exactly ONE decoding — refusing them would drop real

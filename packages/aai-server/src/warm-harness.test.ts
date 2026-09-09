@@ -3,7 +3,7 @@
  * Tests for the shared guest-harness wiring: stdio draining (log cap
  * included) and the guest WebSocket dial against a real loopback server.
  * The WarmHarness lifecycle itself (exit fan-out, memoized cleanup) is
- * exercised through both backends' suites — modal-sandbox.test.ts and
+ * exercised through both backends' suites — modal/sandbox.test.ts and
  * subprocess-sandbox.test.ts.
  */
 
@@ -136,9 +136,9 @@ describe("agentBootEnv", () => {
    * caller was `subprocess`, passing `null` to opt OUT — because
    * `guestExecBaseEnv()`, where a contained guest's ambient keys belong, was one
    * line from its file's length cap. The cost was three copies of one value: this
-   * one plus both studio spawn sites. It is `guest-exec-env.ts` now, spread by the
+   * one plus both studio spawn sites. It is `guest/exec-env.ts` now, spread by the
    * four contained exec sites and by no other, so this env is `AAI_*` boot
-   * parameters and nothing else. `guest-exec-env.test.ts` owns the other half.
+   * parameters and nothing else. `guest/exec-env.test.ts` owns the other half.
    */
   it("names no TMPDIR: a scratch directory is the container's, not the mode's", () => {
     expect(agentBootEnv(boot, {})).not.toHaveProperty("TMPDIR");

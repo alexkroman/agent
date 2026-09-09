@@ -3,7 +3,7 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { CRON_JOB_PREFIX, platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
-import { SESSION_STATE_RETENTION } from "./platform-session-state.ts";
+import { SESSION_STATE_RETENTION } from "./platform/session-state.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**

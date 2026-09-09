@@ -76,7 +76,7 @@ export function queueReducer(state: MessageQueue, action: QueueAction): MessageQ
       // Whether the queue may hold a latch it can no longer release is a
       // different question, and the answer is not here: nothing in the reducer
       // can know. It is the handover's own settlement — see `releaseLatch` in
-      // use-message-queue.ts.
+      // hooks/use-message-queue.ts.
       return state.items.length === 0 ? state : { ...state, items: [] };
     default:
       return unhandled(action);

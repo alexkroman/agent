@@ -5,8 +5,8 @@ import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
 import { createOrchestrator } from "./orchestrator.ts";
+import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import {
   createTestOrchestrator,
   createTestStore,

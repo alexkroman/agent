@@ -2,7 +2,7 @@
 /**
  * The guest harness HONOURS the warm-up the snapshot image build asks for.
  *
- * `modal-harness-image.test.ts` proves the host half — the build execs the
+ * `modal/harness-image.test.ts` proves the host half — the build execs the
  * harness with `AAI_GUEST_WARMUP=1` and `NODE_COMPILE_CACHE`, before taking the
  * filesystem snapshot. This is the half a fake cannot check, and the half that
  * silently rots: warm-up mode has to be reached BEFORE the `AAI_GUEST_TOKEN`

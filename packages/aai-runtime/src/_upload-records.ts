@@ -147,7 +147,7 @@ type StoredRow = {
 export function createPostgresUploadRecords(db: Db): UploadRecords {
   const ensure = ensureOnce(async () => {
     // Created lazily and idempotently rather than by a migration step, for the
-    // reason `workflow-keys.ts` gives: an agent's first workflow may be its first
+    // reason `workflow/keys.ts` gives: an agent's first workflow may be its first
     // ever deploy, and there is no provisioning pass to hang a DDL step off.
     await db.query(`create table if not exists ${UPLOADS_TABLE} (
       id text primary key,

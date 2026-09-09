@@ -15,7 +15,7 @@
  *   files at exec time, no control channel exists, the platform's only
  *   surfaces are the public session endpoints plus the token-gated
  *   `/manage/*` pair, and lifecycle is guest-owned (see
- *   harness-agent-mode.ts). Deployed agents run this mode, on the harness
+ *   harness/agent-mode.ts). Deployed agents run this mode, on the harness
  *   image PINNED at deploy time.
  * - **default (studio)** — the control-channel mode below,
  *   platform-versioned (always the current image), serving:
@@ -72,33 +72,32 @@ import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { createRuntimeServer } from "@alexkroman1/aai-runtime";
 import { startTracingDetached } from "@alexkroman1/aai-runtime/tracing";
-import { type WebSocket, WebSocketServer } from "ws";
-import { z } from "zod";
-import { mainAgent } from "./harness-agent-mode.ts";
-import { verifyBearer } from "./harness-auth.ts";
-import { emptyHarnessState, type HarnessState, lazyRuntime } from "./harness-bundle.ts";
-import { installCrashGuards } from "./harness-crash-guards.ts";
-import { installLeakWatch } from "./harness-leak-watch.ts";
-import { captureGuestOutput } from "./harness-logs.ts";
-import { resolveGuestPort } from "./harness-port.ts";
+import { verifyBearer } from "aai-guest-core/auth";
+import { emptyHarnessState, type HarnessState, lazyRuntime } from "aai-guest-core/bundle";
+import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "aai-guest-core/limits";
 import {
   handleHostResponse,
   rejectAllPendingHostRequests,
   sendError,
   sendResponse,
   setHostSend,
-} from "./harness-rpc.ts";
-import { guestSdkVersion } from "./harness-sdk-version.ts";
-import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "./harness-types.ts";
-
-import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
-import { withBuildDir } from "./studio-build.ts";
-import { studioBundleAccess } from "./studio-bundle-access.ts";
-import { handleStudioRequest } from "./studio-chat.ts";
-import { deployWorkspaceDir } from "./studio-publish.ts";
-import { initStudioSession } from "./studio-session.ts";
-import { handleSessionInitRequest, SessionInitParamsSchema } from "./studio-session-init.ts";
-import { materializeWorkspace } from "./studio-workspace-fs.ts";
+} from "aai-guest-core/rpc";
+import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "aai-guest-core/types";
+import { withBuildDir } from "aai-guest-studio/build";
+import { studioBundleAccess } from "aai-guest-studio/bundle-access";
+import { handleStudioRequest } from "aai-guest-studio/chat";
+import { deployWorkspaceDir } from "aai-guest-studio/publish";
+import { initStudioSession } from "aai-guest-studio/session";
+import { handleSessionInitRequest, SessionInitParamsSchema } from "aai-guest-studio/session-init";
+import { materializeWorkspace } from "aai-guest-studio/workspace-fs";
+import { type WebSocket, WebSocketServer } from "ws";
+import { z } from "zod";
+import { mainAgent } from "./harness/agent-mode.ts";
+import { installCrashGuards } from "./harness/crash-guards.ts";
+import { installLeakWatch } from "./harness/leak-watch.ts";
+import { captureGuestOutput } from "./harness/logs.ts";
+import { resolveGuestPort } from "./harness/port.ts";
+import { guestSdkVersion } from "./harness/sdk-version.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
 
@@ -149,7 +148,7 @@ function parseParams<S extends z.ZodType>(req: JsonRpcRequest, schema: S): z.out
 export async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
   switch (req.method) {
     // Publish: run `aai deploy` IN THIS SANDBOX against a materialized
-    // snapshot of the workspace (see studio-publish.ts) — the literal CLI,
+    // snapshot of the workspace (see studio/publish.ts) — the literal CLI,
     // so studio publishes and laptop deploys are one path, and the CLI's
     // output rides back for the chat.
     case "workspace/deploy": {
@@ -240,7 +239,7 @@ export function main(): void {
     console.error("AAI_GUEST_TOKEN is required");
     process.exit(1);
   }
-  // Validated up front, in `harness-port.ts` so the rule has a test: an
+  // Validated up front, in `harness/port.ts` so the rule has a test: an
   // unparseable AAI_GUEST_PORT would otherwise reach listen(NaN), which binds
   // an EPHEMERAL port — the guest looks healthy while the host dials the tunnel
   // for the published port until its deadline, and the spawn fails blaming the
@@ -311,7 +310,7 @@ export function main(): void {
 
   // The studio chat surface's view of this harness's own loader + trial
   // executor — test_agent loads and trials bundles in-place. Built by
-  // `studio-bundle-access.ts` rather than here: the studio eval harness needs
+  // `studio/bundle-access.ts` rather than here: the studio eval harness needs
   // the same REAL pair, and the two rules inside it (an inspection load carries
   // an empty env; a trial answers in prose a model can read) are not the kind
   // that should exist twice.
@@ -325,7 +324,7 @@ export function main(): void {
     request: (req, res, url, method) =>
       // Ahead of the chat surface: the install route is gated by the HOST
       // token and MINTS the chat token the chat surface checks, so it cannot
-      // sit behind a session that may not exist yet (see studio-session-init.ts).
+      // sit behind a session that may not exist yet (see studio/session-init.ts).
       handleSessionInitRequest(state, token, req, res, url, method) ||
       handleStudioRequest(state.studio, studioDeps, req, res, url, method),
     upgrade: (req, socket, head) => {
@@ -376,7 +375,7 @@ export function main(): void {
       // The SDK version rides the readiness line because a sandbox's boot output
       // is all anyone outside it ever sees, and the copy an agent RUNS is the one
       // beside the harness rather than the one bundled into it — see
-      // `harness-sdk-version.ts` for the 500 that cost.
+      // `harness/sdk-version.ts` for the 500 that cost.
       console.error(`harness listening on ${host}:${port} (aai ${guestSdkVersion()})`);
     },
     (err: unknown) => {

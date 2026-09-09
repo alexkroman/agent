@@ -23,38 +23,38 @@ import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { ADMIN_POOL_MAX, SLUG_LOCK_POOL_MAX } from "./constants.ts";
-import { assertGuestTokenSecret } from "./guest-token.ts";
+import { assertGuestTokenSecret } from "./guest/token.ts";
 import { createLogger } from "./logger.ts";
-import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
+import { createModalSandboxDirectory } from "./modal/sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
-import { announceDirectDbHost, platformPoolerUrl } from "./platform-connection-config.ts";
-import { announcePlatformDbCapacity } from "./platform-db-capacity.ts";
+import { announceDirectDbHost, platformPoolerUrl } from "./platform/connection-config.ts";
+import { announcePlatformDbCapacity } from "./platform/db-capacity.ts";
 import {
   PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
   PLATFORM_DB_QUERY_TIMEOUT_MS,
   PLATFORM_DB_RESERVE_TIMEOUT_MS,
   platformDb,
-} from "./platform-db-errors.ts";
-import { QUEUE_NOTIFY_LISTEN } from "./platform-db-limits.ts";
+} from "./platform/db-errors.ts";
+import { QUEUE_NOTIFY_LISTEN } from "./platform/db-limits.ts";
 import {
   createMemoryPlatformEvents,
   type PlatformEvents,
   withAgentEvents,
   withChatEvents,
   withWorkspaceEvents,
-} from "./platform-events.ts";
+} from "./platform/events.ts";
 import {
   type AdminDb,
   assertSessionModeUrl,
   createPgSlugLock,
   localSlugLock,
   type SlugMutationLock,
-} from "./platform-lock.ts";
-import { buildStorage, buildUploadBytes } from "./platform-storage-config.ts";
+} from "./platform/lock.ts";
+import { buildStorage, buildUploadBytes } from "./platform/storage-config.ts";
 import { createRealtimePlatformEvents } from "./realtime-events.ts";
-import { resolveSandboxBackend } from "./sandbox-backend.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { resolveSandboxBackend } from "./sandbox/backend.ts";
+import { createSlotCache } from "./sandbox/slots.ts";
 import {
   createMemorySecretStore,
   createVaultSecretStore,
@@ -74,7 +74,7 @@ const log = createLogger("service");
 // Re-exported for the studio entry, which calls it at boot; `buildStorage` is
 // NOT re-exported — this module is its only caller, and the studio reaches the
 // rest of storage wiring through `buildServiceConfig`.
-export { assertStorageBucket } from "./platform-storage-config.ts";
+export { assertStorageBucket } from "./platform/storage-config.ts";
 
 /**
  * buildOpts plus what service entries need beyond the orchestrator's opts.
@@ -232,7 +232,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   }
   // Session mode, not a transaction-mode pooler: the per-slug mutation lock
   // is a Postgres advisory lock, which needs connection affinity to mean
-  // anything (see platform-lock.ts). Checked before the pool is built so the
+  // anything (see platform/lock.ts). Checked before the pool is built so the
   // failure names the setting rather than surfacing as lost exclusion later.
   // Asserted on every tier, local included: the local stack's 54322 is a direct
   // session-mode port, and a `[db.pooler]` port pasted here is exactly the
@@ -263,7 +263,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   }
   // `platformDb` wraps the pool so a REACHABILITY failure arrives typed — the
   // HTTP surface answers 503 rather than logging `unhandled error` and returning
-  // an opaque 500 (see platform-db-errors.ts for the production outage that
+  // an opaque 500 (see platform/db-errors.ts for the production outage that
   // shape produced). Applied at the pool because every platform read crosses
   // it; a classification per route is a classification per route to forget.
   const admin = platformDb(
@@ -275,7 +275,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       // The RESERVED path takes the same deadline, and this pool is the reason
       // that option exists. Every guest platform route — the workflow journal,
       // the queue, session state, upload records — runs its work on a
-      // reservation from HERE (`_platform-route.ts`'s `withReserved`) and takes
+      // reservation from HERE (`platform/_route.ts`'s `withReserved`) and takes
       // no advisory lock, so the exemption `reserve()` grants by default left
       // them unbounded: on a silent partition, ADMIN_POOL_MAX hung reads is
       // every other platform read on this replica — Vault, the agents row the
@@ -297,7 +297,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // a transaction pooler returns the backend after every statement, so it
   // cannot hold one; opened on the admin pool it established without error and
   // received nothing, and the only symptom was every step-to-step hop paying
-  // the poll interval again. `QUEUE_NOTIFY_LISTEN` (`platform-db-limits.ts`)
+  // the poll interval again. `QUEUE_NOTIFY_LISTEN` (`platform/db-limits.ts`)
   // carries that account and what the handle costs.
   //
   // LAZY and memoized: postgres.js connects on first use, so this costs nothing
@@ -362,7 +362,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // either service) can serve any request: per-slug mutation exclusion
     // survives replica restarts and scale-out. (Cross-replica sandbox
     // invalidation rides the agents row's change stream — see
-    // sandbox-resolve.ts.)
+    // sandbox/resolve.ts.)
     // Its OWN pool, deliberately: a held slug lock pins its connection for
     // the whole critical section — a deploy's blob uploads, config
     // extraction, and sandbox spawn, i.e. seconds — while every other
@@ -376,7 +376,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // deploy's duration, so `reservedQueryTimeoutMs` — which the admin pool
     // above does set — would abort deploys here. The wait that does need a
     // bound, the ACQUIRE, carries its own `lock_timeout` on the connection
-    // (`platform-lock.ts`). This is the whole reason that option is per-pool
+    // (`platform/lock.ts`). This is the whole reason that option is per-pool
     // rather than a blanket on `reserve()`.
     //
     // `reserveTimeoutMs` is refused on the same ground and it is the sharper
@@ -442,7 +442,7 @@ export async function buildServiceConfig(env: NodeJS.ProcessEnv): Promise<Servic
   // the studio session registry exists to prevent (see
   // ServiceConfig.replicaId).
   const replicaId = randomUUID();
-  // The fleet-wide sandbox directory is Modal itself (sandbox-directory.ts):
+  // The fleet-wide sandbox directory is Modal itself (sandbox/directory.ts):
   // a sandbox's identity is its NAME, so there is no table to register in and
   // nothing to heartbeat. Only the Modal backend has a control plane to ask.
   const directory =

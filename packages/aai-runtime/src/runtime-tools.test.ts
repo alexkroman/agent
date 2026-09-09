@@ -24,7 +24,7 @@ import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import { createSessionEmitter, type SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
-import { createMemoryStateBackend, createSessionStateStore } from "./session-state-store.ts";
+import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 
 /** The counter these cases bump — declared once, so both sinks project the same slot. */

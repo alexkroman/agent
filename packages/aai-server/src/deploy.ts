@@ -4,7 +4,7 @@ import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
-import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import { localSlugLock, type SlugMutationLock } from "./platform/lock.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
@@ -25,7 +25,7 @@ export type DeployDeps = {
    * The harness snapshot image tag new sandboxes currently spawn from —
    * recorded on the agents row so this deploy keeps running on the SAME
    * guest image across platform upgrades (see `currentHarnessImageTag` in
-   * sandbox-vm.ts). Absent (tests) or resolving null (subprocess backend)
+   * sandbox/vm.ts). Absent (tests) or resolving null (subprocess backend)
    * records no pin.
    */
   harnessImageTag?: (() => Promise<string | null>) | undefined;
@@ -161,7 +161,7 @@ async function deployLocked(
 
   // The row upsert IS the invalidation: it bumps the deploy version, and the
   // agents row's change stream retires every replica's superseded resident —
-  // this one's included (see watchAgentInvalidation in sandbox-resolve.ts).
+  // this one's included (see watchAgentInvalidation in sandbox/resolve.ts).
   // No local slot surgery here: mutation handlers write rows, the change
   // stream moves sandboxes.
 

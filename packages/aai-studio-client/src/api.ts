@@ -285,7 +285,7 @@ export const api = {
   /**
    * Does the platform serve an agent page at `/:slug/` yet? Unauthenticated,
    * like the page itself — the Preview pane frames that URL directly, so it
-   * asks first (see the probe in preview.tsx). The agent health route is the
+   * asks first (see the probe in panes/preview.tsx). The agent health route is the
    * exact question: it 404s when there is no agents row, which is precisely
    * when the page 404s, and it says nothing about the sandbox (a booting
    * sandbox is the page's own business — its client re-brokers).

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Backend-independent guest-harness wiring, shared by the sandbox backends
- * (Modal in `modal-sandbox.ts`, the local child process in
+ * (Modal in `modal/sandbox.ts`, the local child process in
  * `subprocess-sandbox.ts`): dialing the harness WebSocket while its
  * server boots, draining guest stdio into host logs, and wrapping a running
  * guest process + dialed socket into the `WarmHarness` shape the studio
@@ -20,16 +20,16 @@ import { createServer } from "node:net";
 import type { LogPage } from "@alexkroman1/aai-runtime";
 import { readGuestLogs } from "./agent-logs.ts";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
-import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
+import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest/routes.ts";
 import { createLogger } from "./logger.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
-import type { WarmHarness } from "./sandbox-vm.ts";
+import type { WarmHarness } from "./sandbox/vm.ts";
 
 // Re-exported rather than moved at every call site: three backends and a
-// scenario test take the dial from here, and `guest-dial.ts` is a split for the
+// scenario test take the dial from here, and `guest/dial.ts` is a split for the
 // line cap rather than a new boundary anyone asked for.
-export { type DialGuest, dialGuest } from "./guest-dial.ts";
+export { type DialGuest, dialGuest } from "./guest/dial.ts";
 
 const log = createLogger("guest");
 
@@ -203,10 +203,10 @@ export function startGuestLogging(proc: GuestProcLike, label: string): void {
   void drainProcStream(proc.stderr, `[${label}] stderr`);
 }
 
-// The agent guest's boot env, split for the line cap — see `guest-boot-env.ts`.
+// The agent guest's boot env, split for the line cap — see `guest/boot-env.ts`.
 // Re-exported rather than moved at every call site: both spawners and the
 // specs take it from here, exactly as `dialGuest` above.
-export { agentBootEnv, OTEL_GUEST_ENV_KEYS } from "./guest-boot-env.ts";
+export { agentBootEnv, OTEL_GUEST_ENV_KEYS } from "./guest/boot-env.ts";
 
 /**
  * The host's handle on one AGENT-MODE guest — the whole surviving surface of

@@ -5,7 +5,7 @@
  *
  * ## Why this needs its own sweep
  *
- * `workflow-api-error-classification.test.ts` already sweeps environmental
+ * `workflow/api/error-classification.test.ts` already sweeps environmental
  * CODES against `workflowApiErrorStatus`, and it is a pure-function test: it
  * mints an error carrying a code and asks what status that code maps to. What
  * it cannot see is whether anything ever ATTACHES that code — and on this hop
@@ -41,7 +41,7 @@ import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
 import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
 import { type PlatformCall, platformPost } from "./platform-rpc.ts";
-import { workflowApiErrorStatus } from "./workflow-api-error-status.ts";
+import { workflowApiErrorStatus } from "./workflow/api/error-status.ts";
 
 /** What the CALLER should be told when the platform answers this status. */
 type Verdict =

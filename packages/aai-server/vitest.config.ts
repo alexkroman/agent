@@ -37,7 +37,7 @@ export default defineConfig({
     // name and stays in THIS tier, despite booting a real harness subprocess
     // (which is why the 20s timeout above exists) — by the membership rule it is
     // a scenario test. It is the only test exercising subprocess-sandbox.ts /
-    // warm-harness.ts / sandbox-vm.ts, so promoting it drops this package's
+    // warm-harness.ts / sandbox/vm.ts, so promoting it drops this package's
     // measured line coverage from ~92% to 88.74% and trips the 89% floor below.
     // Moving it means restoring that coverage first, not lowering the floor. It is
     // the same deliberate exception as aai-cli's `integration.test.ts`: the name

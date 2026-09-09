@@ -19,7 +19,7 @@ import {
   type ServerRoute,
   WORKFLOW_CALLBACK_ROUTES,
 } from "./server-routes.ts";
-import { WORKFLOW_WEBHOOK_PATH, WORKFLOW_WEBHOOK_PREFIX } from "./workflow-serve.ts";
+import { WORKFLOW_WEBHOOK_PATH, WORKFLOW_WEBHOOK_PREFIX } from "./workflow/serve.ts";
 
 const ALL: [string, ServerRoute][] = [
   ...Object.entries(SERVER_ROUTES),

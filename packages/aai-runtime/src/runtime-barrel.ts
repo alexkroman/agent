@@ -208,14 +208,14 @@ export { SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
 // Applying the session-state DDL to a database this deployment OWNS. The tables
 // come with the database and the owner applies them; a self-hosted server is that
 // owner, so it needs a way to say so at boot. See the function's own doc.
-export { ensureSessionStateSchema } from "./session-state-postgres.ts";
+export { ensureSessionStateSchema } from "./session-state/backends/postgres.ts";
 export type {
   SessionStateBackend,
   SessionStateStore,
   // `SessionStateBackend.readEvents` returns these, so a host implementing the
   // backend has to name the type. It is only reachable from here.
   StoredSessionEvent,
-} from "./session-state-store.ts";
+} from "./session-state/store.ts";
 export {
   CARRIER_CODECS,
   type CarrierCodec,
@@ -279,7 +279,7 @@ export {
   MAX_WORKFLOW_INPUT_BYTES,
   WORKFLOW_API_PREFIX,
   WORKFLOW_API_TOKEN_ENV,
-} from "./workflow-api.ts";
+} from "./workflow/api.ts";
 // The durable-workflow host side's TYPES. The client that becomes
 // `ctx.workflows`, and the DevKit binding itself, are on
 // `@alexkroman1/aai-runtime/internal`; `resolveKeyStore` is below, beside the
@@ -292,22 +292,22 @@ export type {
   // warnings are errors — see the root guide's `includeForgottenExports` note.
   WdkStreamOptions,
   WorkflowClientOptions,
-} from "./workflow-client.ts";
+} from "./workflow/client.ts";
 // The journal's tables, for the same reason and the same operator: a self-hosted
 // deployment owns its database and `server.mjs` may import only this surface.
-export { ensureWorkflowJournalSchema } from "./workflow-journal-schema.ts";
+export { ensureWorkflowJournalSchema } from "./workflow/journal/schema.ts";
 export {
   createMemoryKeyStore,
   createPostgresKeyStore,
   DEFAULT_WORKFLOW_FIND_LIMIT,
   MAX_WORKFLOW_FIND_LIMIT,
   type WorkflowKeyStore,
-} from "./workflow-keys.ts";
+} from "./workflow/keys.ts";
 // An embedder's choice between the two LOCAL key stores — Postgres when it holds
 // a `Db`, memory otherwise. A DEPLOYED guest does not come through it: the
-// platform's own index is selected by `selectKeyStore` (`workflow-runtime.ts`)
+// platform's own index is selected by `selectKeyStore` (`workflow/runtime.ts`)
 // out of the environment, beside `selectJournal`.
-export { resolveKeyStore } from "./workflow-keys-select.ts";
+export { resolveKeyStore } from "./workflow/keys-select.ts";
 // The upload store's two blob backends and the key grammar a window is written
 // under. `createUploadStore` and `resolveUploadBlobs`, which JOIN them to a
 // record, are `@internal` and on `@alexkroman1/aai-runtime/internal` — the
@@ -330,5 +330,5 @@ export {
   type UploadStore,
   UploadsUnavailableError,
   UploadTooLargeError,
-} from "./workflow-uploads.ts";
+} from "./workflow/uploads.ts";
 export type { SessionWebSocket } from "./ws-handler.ts";

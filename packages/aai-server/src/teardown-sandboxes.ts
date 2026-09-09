@@ -30,7 +30,7 @@ import { sleep } from "@alexkroman1/aai/internal";
 
 import { envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
-import { retireSlot, type SlotCache } from "./sandbox-slots.ts";
+import { retireSlot, type SlotCache } from "./sandbox/slots.ts";
 
 const log = createLogger("sandbox.teardown");
 

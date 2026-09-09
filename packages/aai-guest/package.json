@@ -12,13 +12,9 @@
   },
   "scripts": {
     "build": "tsdown",
-    "check:eval": "pnpm run test:eval",
-    "check:scenario": "pnpm run test:scenario",
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:eval": "VITEST_PROFILE=eval VITEST_INCLUDE=**/*.eval.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -29,8 +25,8 @@
     "@opentelemetry/api": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@vitejs/plugin-react": "catalog:",
-    "ai": "catalog:",
-    "p-timeout": "catalog:",
+    "aai-guest-core": "workspace:*",
+    "aai-guest-studio": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwindcss": "catalog:",

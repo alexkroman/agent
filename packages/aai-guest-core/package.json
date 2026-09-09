@@ -1,0 +1,37 @@
+{
+  "name": "aai-guest-core",
+  "version": "0.6.5",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./auth": "./src/auth.ts",
+    "./bundle": "./src/bundle.ts",
+    "./http": "./src/http.ts",
+    "./limits": "./src/limits.ts",
+    "./rpc": "./src/rpc.ts",
+    "./test-utils": "./src/test-utils.ts",
+    "./trial": "./src/trial.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-runtime": "workspace:*",
+    "p-timeout": "catalog:",
+    "typescript": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vitest": "catalog:"
+  }
+}

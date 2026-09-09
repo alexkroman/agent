@@ -160,7 +160,7 @@ export function wireGuest(
  *
  * This used to reverse-engineer `sessionUrl` — swap the scheme, overwrite the
  * pathname — to reach a surface this package was never handed. Deriving from
- * the origin means a guest route rename is one edit in `guest-routes.ts`
+ * the origin means a guest route rename is one edit in `guest/routes.ts`
  * rather than two backends plus URL surgery in another package.
  */
 export function chatUrlForGuest(guestOrigin: string): string {

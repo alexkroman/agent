@@ -31,12 +31,12 @@
 
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "./context.ts";
-import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
+import { GUEST_ROUTES, guestWsUrl } from "./guest/routes.ts";
 import { createLogger } from "./logger.ts";
 import { verifyPhoneWebhook } from "./phone-signature.ts";
 import { resolvePublicOrigin } from "./public-origin.ts";
-import { brokerSessionUrl } from "./sandbox-broker.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import { brokerSessionUrl } from "./sandbox/broker.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import type { BundleStore } from "./store-types.ts";
 
 const log = createLogger("phone");

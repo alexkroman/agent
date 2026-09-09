@@ -2,8 +2,8 @@
 /**
  * The things every upload-store spec needs, and no single test file may own.
  *
- * `workflow-uploads.test.ts` hit the 700-line test cap when the parts specs grew, so
- * the PARTS block moved to `workflow-uploads-parts.test.ts` — and a helper copied
+ * `workflow/uploads.test.ts` hit the 700-line test cap when the parts specs grew, so
+ * the PARTS block moved to `workflow/uploads-parts.test.ts` — and a helper copied
  * into both files is the drift this repo keeps paying for. `recordingDb` in
  * particular has had to keep up with the store's statements three times now, and the
  * failure mode every time was a fake silently answering `[]`, i.e. a green suite
@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadBackend, UploadPart } from "./_upload-blobs.ts";
-import { createMemoryUploadBackend, createUploadStore, UPLOADS_TABLE } from "./workflow-uploads.ts";
+import { createMemoryUploadBackend, createUploadStore, UPLOADS_TABLE } from "./workflow/uploads.ts";
 
 /** One body, as the routes hand it over: an async iterable of chunks. */
 export async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array> {

@@ -76,7 +76,7 @@ import {
   parsePlatformFrame,
 } from "./platform-socket-frames.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
-import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "./workflow/api/error-status.ts";
 
 /** `ws`'s `OPEN`, spelled rather than imported — {@link HeaderWebSocket} is structural. */
 const WS_OPEN = 1;

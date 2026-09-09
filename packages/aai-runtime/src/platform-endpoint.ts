@@ -4,9 +4,9 @@
  * the five paths declared once.
  *
  * Five modules reach the platform over HTTP — `session-state-platform.ts`,
- * `uploads-platform.ts`, `workflow-journal-platform.ts`,
- * `workflow-keys-platform.ts` and
- * `workflow-platform-queue.ts` — and each had grown its own `{base, token, fetch?}`
+ * `uploads-platform.ts`, `workflow/journal/platform.ts`,
+ * `workflow/keys-platform.ts` and
+ * `workflow/platform-queue.ts` — and each had grown its own `{base, token, fetch?}`
  * options type, its own `` `${base.replace(/\/+$/, "")}/…` ``, and its own copy of
  * the path the platform serves it on. That last one is the expensive copy: the
  * platform declares the same strings independently (`session-state-handler.ts`
@@ -43,7 +43,7 @@
  * @internal
  */
 export const PLATFORM_ROUTES = {
-  /** Session slots and the session event log (`platform-session-state.ts`). */
+  /** Session slots and the session event log (`platform/session-state.ts`). */
   sessionState: "/session-state",
   /** Upload records — the metadata half; the bytes are brokered separately. */
   uploadRecords: "/upload-records",
@@ -109,7 +109,7 @@ export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16_777_216;
  *
  * ONE type, aliased by each client's own name rather than restated: the four were
  * structurally identical, which is why `resolvePlatformQueue()`'s single result is
- * already handed to three of them (`runtime.ts`, `workflow-install.ts`) under three
+ * already handed to three of them (`runtime.ts`, `workflow/install.ts`) under three
  * different names.
  *
  * @internal
@@ -127,7 +127,7 @@ export type PlatformEndpoint = {
    * claim — that one is what a third party is handed, so it must resolve from the
    * INTERNET where this must resolve from inside the sandbox. Under a microVM
    * backend the two are different strings and the public one is the guest itself;
-   * `workflow-platform-world.ts`'s `dialBase` is the reader and carries the rest.
+   * `workflow/platform-world.ts`'s `dialBase` is the reader and carries the rest.
    */
   base: string;
   /**

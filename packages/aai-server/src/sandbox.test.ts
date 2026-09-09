@@ -2,11 +2,11 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { inlineWorker } from "./_sandbox-vm-test-utils.ts";
 import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
+import { inlineWorker } from "./sandbox/_vm-test-utils.ts";
+import { resolveSandbox } from "./sandbox/resolve.ts";
+import { createSlotCache } from "./sandbox/slots.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
-import { resolveSandbox } from "./sandbox-resolve.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
 import { captureLogs, createTestStore } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
@@ -34,8 +34,8 @@ function fireGuestExit(): void {
   cb();
 }
 
-vi.mock("./sandbox-vm.ts", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("./sandbox-vm.ts")>();
+vi.mock("./sandbox/vm.ts", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./sandbox/vm.ts")>();
   return {
     ...orig,
     spawnAgentServer: mockSpawnAgentServer,

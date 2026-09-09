@@ -100,7 +100,9 @@ import { parseChangesetFrontmatter } from "./guard-invariants-changesets.mjs";
  * `_ratchet.mjs` exists for. Checked PER PACKAGE rather than in total, so
  * losing one of the four is still a failure.
  */
-const MIN_TRACKED_FILES_PER_PACKAGE = 40; // measured: server 287, client 115, guest 91, studio-server 90
+const MIN_TRACKED_FILES_PER_PACKAGE = 12; // measured: server 287, client 115, studio-server 90,
+// guest-studio 66, guest 34, guest-core 15 — the guest's 91 became three packages, and the
+// floor has to clear the SMALLEST of them or it fires on a healthy tree.
 
 /**
  * The floor under the SCHEMA corpus, which is a directory rather than a package

@@ -42,7 +42,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createSingleFlight } from "./_memo.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import { createLogger } from "./logger.ts";
-import { isUnavailableStatus, PlatformServiceUnavailableError } from "./platform-service-errors.ts";
+import { isUnavailableStatus, PlatformServiceUnavailableError } from "./platform/service-errors.ts";
 
 const log = createLogger("auth");
 
@@ -106,7 +106,7 @@ const KEY_VERIFY_SERVICE = "assemblyai";
  * one condition.
  *
  * The MESSAGE stays the underlying technical one and the original rides as
- * `cause`, which is `platform-service-errors.ts`'s stated contract: the log keeps
+ * `cause`, which is `platform/service-errors.ts`'s stated contract: the log keeps
  * the diagnosis while the wire body gets the authored sentence.
  */
 export function assemblyAiUnavailable(err: unknown): PlatformServiceUnavailableError {
@@ -151,7 +151,7 @@ export function createAssemblyAiKeyVerifier(
       } catch (err) {
         // No response arrived — DNS, a reset socket, a proxy, or the timeout
         // above. The most retryable failure there is, and the one
-        // `platform-service-errors.ts` lists first.
+        // `platform/service-errors.ts` lists first.
         throw assemblyAiUnavailable(err);
       }
       // The ONLY definite rejection. Everything else is "we do not know".

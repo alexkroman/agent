@@ -76,11 +76,29 @@ rejects it, and `tsconfig.build.json` reports it as `TS6059`.
 
 ## Layout
 
-Flat, like the package it came out of. The filename prefixes are the grouping:
-`runtime-*` (the runtime object and its wiring), `session-*` (one session's
-lifecycle), `workflow-*` (the durable-workflow half), `ws-*` / `_ws*` (the
-socket layer), `_upload-*` (the upload store), and the three subdirectories
-that did keep a directory — `providers/`, `transports/`, `telephony/`.
+The filename prefix is the grouping: `runtime-*` (the runtime object and its
+wiring), `session-*` (one session's lifecycle), `ws-*` / `_ws*` (the socket
+layer), `_upload-*` (the upload store), plus `providers/`, `transports/` and
+`telephony/`.
+
+**The durable-workflow half is a DIRECTORY**, and it is the one prefix that
+outgrew the scheme: `workflow-*` had reached 166 files, a third of the package.
+The prefix became the path — `workflow/api/auth.ts` is `workflow/api/auth.ts` —
+with `api/`, `replay/` and `journal/` for the three clusters that were 20+ files
+each. Two groups moved in that never carried the prefix: the `_workflow-*` spec
+harnesses, and `journal-conformance*` (the `JournalStore` contract, which
+imports the backends directly). `step-*` deliberately stayed — those are the
+SDK's step primitives, not the replay engine.
+
+**Before splitting another prefix, find what discovers it by FILENAME.** Six
+path-keyed mechanisms broke on this move and none of them is a compiler error:
+three suites here scan for their own subject (a `startsWith("workflow-journal-")`
+matches nothing once that prefix is a directory, and a registry then compares
+two empty sets), plus `RUNTIME_ROUTE_SOURCES` in `guard-invariants-scopes.mjs`,
+`check-optional-peers.mjs`'s per-SPECIFIER exemptions, and three baseline JSONs.
+The three suites failed loudly only because each carries an
+`expect(found.length).toBeGreaterThan(0)` floor under its scan;
+[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md) carries the rest.
 
 ## Telephony: a phone call is an ordinary session
 
@@ -333,7 +351,7 @@ Two things the old wiring's failure taught, which still hold:
   because a workflow upload's record would otherwise vanish before a resumed run
   read it. `ensureWorkflowJournalSchema` is on the PUBLIC barrel for the same
   reason — see "The tables come WITH the database" in
-  `workflow-journal-postgres.ts`.
+  `workflow/journal/postgres.ts`.
 
 **The other half is the delivery door.** `createAgentServer` composes
 `handleWorkflowRequest` into `createRuntimeServer`'s `request` hook, so this
@@ -407,7 +425,7 @@ half of "the host-mode pair" and leave it out on that ground: host mode is
 `createHostServer`'s business, so an env on this door looked like an option for
 a feature this door does not have. But `createRuntimeServer` reads FOUR things
 out of that record and only one of them is the host gate —
-`AAI_WORKFLOW_API_TOKEN`, documented in `workflow-api.ts` as what CLOSES
+`AAI_WORKFLOW_API_TOKEN`, documented in `workflow/api.ts` as what CLOSES
 `/workflows/*`; `AAI_SESSION_EVENTS_TOKEN`, the same shape one route over; and
 `DATABASE_URL`, which is where a workflow upload's RECORD lives. So an operator
 who set the token was still serving the workflow API, and its upload WRITE
@@ -708,7 +726,7 @@ had been invisible while nothing rendered these subpaths.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 
-`selectJournal` (`workflow-runtime.ts`) picks the replay engine's journal:
+`selectJournal` (`workflow/runtime.ts`) picks the replay engine's journal:
 **platform, then postgres, then memory**, and the boot line names whichever won.
 `createPlatformJournal` posts one `POST /:slug/workflow-journal` per operation,
 `createPostgresJournal` runs on the agent's own `DATABASE_URL`, and memory is a
@@ -749,7 +767,7 @@ only classify the store's five typed failures, and the router's catch turned a
 plainly bad request into `500 Internal server error` with the reason in the log
 and nowhere else. One class of mistake, two statuses: `POST …/not..valid/parts`
 answered 400 and named the grammar, `GET …/not..valid/info` answered 500. It is
-`uploadIdOr400` (`workflow-api-uploads.ts`) for all five now, which also keeps the
+`uploadIdOr400` (`workflow/api/uploads.ts`) for all five now, which also keeps the
 grammar a BOUNDARY — an id that would escape the store never reaches one, whichever
 verb asked. A well-formed id nothing stored is still a 404: "malformed" and
 "reclaimed" are different answers and a client acts differently on each.
@@ -803,7 +821,7 @@ contiguous READABLE prefix), which is why the fix is the CUT and not the number:
 a `size` counting bytes that merely arrived would send a reader to a window that
 is not there. `windows(body, limit, grow)` doubles from `UPLOAD_CHUNK_BYTES` to
 `UPLOAD_PART_BYTES` — 1, 2, 4, 8, 8, … MiB — so a maximal upload gains three
-windows and `platform-uploads.ts`'s O(N²) `parts` tripwire is untouched, where a
+windows and `platform/uploads.ts`'s O(N²) `parts` tripwire is untouched, where a
 flat 1 MiB cut would have been eight times the windows. `grow` is exactly
 `publish`: only a published window's arrival is observable, and only a published
 cut may be non-uniform, because `create` derives its boundary list from
@@ -905,7 +923,7 @@ hop OUT, which is the same finding those two entries record: a client cannot
 back off on a 500, an operator cannot triage it, and a load balancer cannot shed
 on it.
 
-`isTransportFailure` (`workflow-api-http.ts`) walks the `cause` chain — the code
+`isTransportFailure` (`workflow/api/http.ts`) walks the `cause` chain — the code
 is almost never on the value that was thrown — against a closed vocabulary, and
 answers 503 with `Retry-After: 1`. Three properties are decisions:
 
@@ -957,7 +975,7 @@ without being enumerated.
 The store is `Symbol.for`-keyed now, the same mechanism the step reporter slot
 one module over already used, and for the same reason. **`vi.resetModules()` is
 a second copy**, which is what makes this testable in one process —
-`workflow-run-context.test.ts` loads two and asserts a context entered through
+`workflow/run-context.test.ts` loads two and asserts a context entered through
 one is visible through the other. A/B'd: both cross-copy cases fail against the
 module-level form.
 
@@ -993,8 +1011,8 @@ nobody can re-issue. Two properties keep it closed:
 `WorkflowClient.signal` is the delivery, and a `false` from it is a **404, never
 a 5xx**: the caller is a third party whose retry loop reads 5xx as "come back",
 so a miss used to be retried against an error forever. 404 stops it, and it is
-stable — a closed hook does not reopen. `workflow-webhook.ts` owns that
-reasoning; `workflow-http-adapter.ts` is why the failure status is a parameter
+stable — a closed hook does not reopen. `workflow/webhook.ts` owns that
+reasoning; `workflow/http-adapter.ts` is why the failure status is a parameter
 (a queue callback wants the 500 the world retries, and this route must never
 emit one).
 
@@ -1017,7 +1035,7 @@ Three properties of the URL itself are load-bearing:
 CLOSED for a BODY and its steps too, through the slot this note predicted:
 `stepWebhookUrl(token)` on `@alexkroman1/aai/step` reads a `Symbol.for` slot
 that a host fills with a MINTER — `publishWorkflowWebhookUrl(publicUrl)` in
-`workflow-serve.ts`, beside `workflowWebhookUrl`, which is the one place base +
+`workflow/serve.ts`, beside `workflowWebhookUrl`, which is the one place base +
 prefix + encoded token are composed. The minter, rather than the origin, is what
 is published: the route belongs to the package that ANSWERS it, so the SDK never
 spells this path and the two cannot drift. The guest publishes at bundle load
@@ -1026,12 +1044,12 @@ the `AAI_PUBLIC_BASE_URL` in its exec env — which is why `requireStepEnv` coul
 not have done this job: that variable is the SPAWNER's and never reaches the
 agent env. Unfilled, the reader THROWS naming the configuration; `aai dev` does
 not publish one yet, and a laptop origin would not be reachable anyway.
-`workflow-client.ts`'s own inline composition is the copy still owed a fold onto
+`workflow/client.ts`'s own inline composition is the copy still owed a fold onto
 `workflowWebhookUrl`.
 
 ## `AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials, not what the guest dials
 
-`resolvePlatformQueue` (`workflow-platform-world.ts`) resolves the base every
+`resolvePlatformQueue` (`workflow/platform-world.ts`) resolves the base every
 platform client in this package POSTs to — run storage, the queue, session state,
 upload records — and it reads **`AAI_PLATFORM_BASE_URL`**, falling back to
 `AAI_PUBLIC_BASE_URL`. Those were one key, and the two claims can require
@@ -1463,12 +1481,12 @@ tracking every `conversation.item` id to delete, which is its own change.
 an UNPROMPTED, interruptible turn when it lands — the promise
 `research-handoff-agent` used to make ("I'll let you know") and had no way to
 keep. `Transport.injectTurn` is the primitive (pipeline only; S2S has no such
-verb, so there it is a logged no-op). **See `workflow-notify.ts`'s module doc**
+verb, so there it is a logged no-op). **See `workflow/notify.ts`'s module doc**
 for the rest.
 
 ## An envelope is only the codec's if the codec WROTE it
 
-`workflow-typed-json.ts` tags binary as `{ __type: "Uint8Array", data }` and a
+`workflow/typed-json.ts` tags binary as `{ __type: "Uint8Array", data }` and a
 date as `{ __type: "Date", iso }`, and both revivers recognise one
 **structurally** — nothing in the shape says who wrote it. So an author's own
 object of that shape went in one end and a `Uint8Array` came out the other, at
@@ -1478,7 +1496,7 @@ a trust boundary: a step declaring `z.object({ __type: z.string() })` received
 bytes instead.
 
 **The fix is round-trip TOTALITY, not a guard per shape.**
-`workflow-typed-json-escape.ts` renames an author's reserved keys on encode
+`workflow/typed-json-escape.ts` renames an author's reserved keys on encode
 (`__type` → `___type`, `___type` → `____type`) and back on decode. That map is
 injective and nothing maps onto `__type`, so decode inverts it exactly. Three
 things about it are load-bearing and easy to undo by accident:
@@ -1502,7 +1520,7 @@ deployment order is decoder-first.
 makes the set extensible.** `Map` and `Set` joined it — `{ __type: "Map",
 entries: [[k, v], …] }` and `{ __type: "Set", values: […] }`, storage codec
 only, exactly where the date envelope sits and for the same reason. The escape
-never reads the tag's VALUE, so nothing in `workflow-typed-json-escape.ts`
+never reads the tag's VALUE, so nothing in `workflow/typed-json-escape.ts`
 changed. Two rules for a third kind: encode PAIRS and let the replacer recurse
 on both halves (a `Map`'s keys are values, not strings), and refuse a malformed
 payload rather than let a constructor invent one. The remaining hole is that
@@ -1527,7 +1545,7 @@ agree on the shape and differ only on what they emit.
 
 ### The suite is the point as much as the fix
 
-`workflow-typed-json-property.test.ts` states the round trip over a **generated**
+`workflow/typed-json-property.test.ts` states the round trip over a **generated**
 domain, and it is the pattern to copy for the other codecs in this repo. Its
 object keys are drawn from a pool containing the reserved family and
 `__proto__`, and its strings from one containing `"Uint8Array"`, `"Date"` and
@@ -1619,8 +1637,8 @@ nothing. An invariant is exercised by the whole suite the moment it lands.
 
 ## Every environmental error is classified
 
-`workflow-api-error-status.ts` maps a thrown value to a status, and
-`workflow-api-error-classification.test.ts` requires that there be no THIRD
+`workflow/api/error-status.ts` maps a thrown value to a status, and
+`workflow/api/error-classification.test.ts` requires that there be no THIRD
 state: every environmental code a Node service here can meet is either mapped
 or named in `DELIBERATELY_INTERNAL` with a reason a 500 is right. "Nobody
 thought about this code" is what both of the window's

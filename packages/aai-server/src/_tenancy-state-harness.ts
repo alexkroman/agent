@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The reference semantics for the two NON-journal stores: `platform-uploads.ts`
- * and `platform-session-state.ts`.
+ * The reference semantics for the two NON-journal stores: `platform/uploads.ts`
+ * and `platform/session-state.ts`.
  *
  * Cut here rather than at a line count, because this is the seam the code under
  * test already has — three modules, three subjects, and the journal is much the
@@ -71,7 +71,7 @@ function dropSession<T extends { sessionId: string }>(
   for (const [key, row] of table) if (row.sessionId === sessionId) table.delete(key);
 }
 
-/** `platform-uploads.ts`'s five methods, over one tenant's uploads. */
+/** `platform/uploads.ts`'s five methods, over one tenant's uploads. */
 export function applyUploadOp(t: StateTables, op: UploadOp): Answer {
   const upload = "id" in op ? t.uploads.get(op.id) : undefined;
   switch (op.t) {
@@ -133,7 +133,7 @@ export function applyUploadOp(t: StateTables, op: UploadOp): Answer {
 }
 
 /**
- * `platform-session-state.ts`'s six methods, over one tenant's session rows.
+ * `platform/session-state.ts`'s six methods, over one tenant's session rows.
  *
  * @param eventTargets - the buckets `discardSession` deletes EVENTS from. One
  *   (this tenant's) for the reference; the leak variant passes more, which is

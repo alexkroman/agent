@@ -27,7 +27,20 @@
  * The last two are the rows `guard-invariants` rule 20's `SHIPS_VIA` table
  * already carries, and for the same reason.
  */
-export const DEPLOY_CARRIED = ["aai-server", "aai-studio-server", "aai-studio-client", "aai-guest"];
+export const DEPLOY_CARRIED = [
+  "aai-server",
+  "aai-studio-server",
+  "aai-studio-client",
+  // All THREE guest packages: the harness bundles the other two into
+  // `dist/harness.mjs`, so a change in either reaches production the same
+  // way — through the image tag the server pins. `aai-guest` alone fell to
+  // 34 tracked files after the split and tripped the floor below, which is
+  // the check working: a prefix matching less of the tree than it used to
+  // is how this gate comes to print a checkmark over a hole.
+  "aai-guest",
+  "aai-guest-core",
+  "aai-guest-studio",
+];
 
 /**
  * The packages whose VERSION BUMP arms `ship.yml`'s deploy job.

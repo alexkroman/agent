@@ -232,8 +232,8 @@ export const RUNTIME_ROUTE_SOURCES = [
   "packages/aai-runtime/src/server-routes.ts",
   "packages/aai-runtime/src/telephony/telephony-server.ts",
   "packages/aai-runtime/src/session-events-api.ts",
-  "packages/aai-runtime/src/workflow-serve.ts",
-  "packages/aai-runtime/src/workflow-queue-dispatch.ts",
+  "packages/aai-runtime/src/workflow/serve.ts",
+  "packages/aai-runtime/src/workflow/queue-dispatch.ts",
 ];
 
 export const GUEST_SURFACE_PATHSPECS = [
@@ -251,13 +251,26 @@ export const GUEST_SURFACE_PATHSPECS = [
   // with `git ls-files`. That is the same trap `check-file-length`'s
   // `scripts/**/*.mjs` fell into; the corpus floor below is what turns a
   // future recurrence into a failure instead of a checkmark.
+  // All THREE guest packages: the guest was one, and `aai-guest-core` +
+  // `aai-guest-studio` were split out of it. The floor below is what caught
+  // that — the corpus fell to 18 against a minimum of 20 the moment the
+  // studio's 60 files left, which is a scan quietly reading less of the tree
+  // rather than a rule that stopped applying.
   "packages/aai-guest/src/*.ts",
   "packages/aai-guest/src/**/*.ts",
+  "packages/aai-guest-core/src/*.ts",
+  "packages/aai-guest-core/src/**/*.ts",
+  "packages/aai-guest-studio/src/*.ts",
+  "packages/aai-guest-studio/src/**/*.ts",
   ":!packages/aai-guest/dist/**",
   // Both spellings again: the suites sit directly in `src/`, which
   // `src/**/*.test.ts` does not match on its own.
   ":!packages/aai-guest/src/*.test.ts",
   ":!packages/aai-guest/src/**/*.test.ts",
+  ":!packages/aai-guest-core/src/*.test.ts",
+  ":!packages/aai-guest-core/src/**/*.test.ts",
+  ":!packages/aai-guest-studio/src/*.test.ts",
+  ":!packages/aai-guest-studio/src/**/*.test.ts",
   ...RUNTIME_ROUTE_SOURCES,
   "packages/aai/src/sdk/workflow-api-client.ts",
 ];
@@ -330,6 +343,19 @@ export const SCAN_CORPORA = [
     what: "rule 16's session-surface file list",
     pathspecs: SESSION_SURFACE_PATHS,
     minFiles: SESSION_SURFACE_PATHS.length,
+  },
+  // The other explicit file list, and the one that had no floor. Rule 12 does
+  // not just SCAN these — it `readFileSync`s each to resolve the `export const`
+  // a `server-routes.ts` entry references, unguarded, so a renamed module threw
+  // an uncaught ENOENT out of the gate and took the OTHER 29 rules' findings
+  // with it: one moved file, and `check:invariants` reported nothing about
+  // anything. Two of these six were repointed when `workflow-*` became
+  // `workflow/`. Being spread into GUEST_SURFACE_PATHSPECS below is not a floor
+  // for them — 32 files clear a floor of 20 with five of these missing.
+  {
+    what: "rule 12's runtime route-source file list",
+    pathspecs: RUNTIME_ROUTE_SOURCES,
+    minFiles: RUNTIME_ROUTE_SOURCES.length,
   },
   { what: "rule 12's guest HTTP-surface scan", pathspecs: GUEST_SURFACE_PATHSPECS, minFiles: 20 }, // 32
   { what: "rule 13's template scan", pathspecs: TEMPLATE_PATHSPECS, minFiles: 100 }, // 175

@@ -17,7 +17,7 @@
 import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../workflow-journal-memory.ts";
+import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { runWorkflow } from "./run-workflow.ts";
 
 /** A day, which is the point: no spec may wait one and none has to. */
@@ -273,7 +273,7 @@ describe("a worker that DIES mid-run", () => {
     // the settling WALK's own tries, so a resume starts its author-facing
     // `maxAttempts` budget over. Sharing one number between the two is exactly
     // what journaled `failed` over a step that then succeeded — see
-    // `workflow-replay-step.ts`, "An attempt is a lease".
+    // `workflow/replay/step.ts`, "An attempt is a lease".
     expect(run.steps[0]?.attempts).toBe(1);
   });
 });

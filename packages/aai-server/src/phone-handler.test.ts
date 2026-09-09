@@ -2,8 +2,8 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, test, vi } from "vitest";
 import { PHONE_READY_TIMEOUT_MS } from "./phone-handler.ts";
+import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { createTestOrchestrator, deployAgent, fakeSandbox } from "./test-utils.ts";
 
 type TestFetch = Awaited<ReturnType<typeof createTestOrchestrator>>["fetch"];

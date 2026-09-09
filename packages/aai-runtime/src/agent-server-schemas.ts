@@ -16,7 +16,7 @@
  * one. So a self-hosted agent with a database booted reporting
  * `sessionState: postgres, durable: true` and `runStore: "postgres"`, and then
  * the first session died on `relation "aai_session_events" does not exist` and
- * the first run on `42P01`. `workflow-journal-schema.ts` records that in the
+ * the first run on `42P01`. `workflow/journal/schema.ts` records that in the
  * words worth keeping: the boot line said durable and nothing was.
  *
  * Its own module rather than fifteen more lines in `agent-server.ts`, for the
@@ -32,9 +32,9 @@
 import { errorMessage } from "@alexkroman1/aai";
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import type { Logger } from "./runtime-config.ts";
-import { ensureSessionStateSchema } from "./session-state-postgres.ts";
-import { ensureWorkflowJournalSchema } from "./workflow-journal-schema.ts";
-import { platformGuestOptions } from "./workflow-platform-world.ts";
+import { ensureSessionStateSchema } from "./session-state/backends/postgres.ts";
+import { ensureWorkflowJournalSchema } from "./workflow/journal/schema.ts";
+import { platformGuestOptions } from "./workflow/platform-world.ts";
 
 /**
  * Which database this deployment owes tables to, or none.

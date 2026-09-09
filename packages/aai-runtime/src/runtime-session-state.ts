@@ -18,15 +18,15 @@ import type { ResumeFindings } from "./session-resume-found.ts";
 import {
   createPlatformStateBackend,
   type PlatformSessionStateOptions,
-} from "./session-state-platform.ts";
-import { createPostgresStateBackend } from "./session-state-postgres.ts";
+} from "./session-state/backends/platform.ts";
+import { createPostgresStateBackend } from "./session-state/backends/postgres.ts";
 import {
   createMemoryStateBackend,
   createSessionStateStore,
   type SessionStateBackend,
   type SessionStateStore,
-} from "./session-state-store.ts";
-import { createStateSweeps, type StateSweeps } from "./session-state-sweeps.ts";
+} from "./session-state/store.ts";
+import { createStateSweeps, type StateSweeps } from "./session-state/sweeps.ts";
 
 /** The store, its grace-window sweeps, and the line an operator reads at boot. */
 export type RuntimeSessionState = {

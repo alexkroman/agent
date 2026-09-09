@@ -48,7 +48,7 @@ import { ofetch } from "ofetch";
  * **There is no webhook flow.** It parked on `createWebhook()` and was resumed
  * by an HTTP delivery. It was dropped while the engine's equivalent —
  * `ctx.waitFor(token)`, ended by `ctx.workflows.signal` — had no route in front
- * of it; `createRuntimeServer` mounts one now (`workflow-webhook.ts`), so the case is
+ * of it; `createRuntimeServer` mounts one now (`workflow/webhook.ts`), so the case is
  * writable again. See `dev-workflow.scenario.test.ts` for the same hole stated
  * at length.
  */
@@ -213,7 +213,7 @@ export function readRun(url: string, runId: string): Promise<RunSnapshot> {
  * A poll rather than the SSE stream deliberately: this tier's subject is the
  * RUN reaching a terminal status, and reading it the way a `curl` script would
  * keeps a stream bug from being reported as a lifecycle failure. The SSE
- * surface has its own coverage in `workflow-api-events.test.ts`.
+ * surface has its own coverage in `workflow/api/events.test.ts`.
  */
 export async function waitForRun(
   url: string,

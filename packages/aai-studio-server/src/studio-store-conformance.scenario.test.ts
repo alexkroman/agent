@@ -16,7 +16,7 @@
  * ```
  *
  * The preview queue's arm is the REAL `pgmq`. Until the stack was resolvable,
- * `platform-schema.scenario.test.ts` hand-wrote a plpgsql `pgmq.create(text)` so
+ * `platform/schema.scenario.test.ts` hand-wrote a plpgsql `pgmq.create(text)` so
  * the migration's queue block could run against a stock server at all, and the
  * extension's own semantics — visibility timeout, redelivery, archiving — were
  * asserted against nothing but the in-memory queue.

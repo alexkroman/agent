@@ -24,8 +24,8 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { resolveHarnessPath } from "./constants.ts";
 import { registerLiveStream } from "./live-streams.ts";
-import { LOCAL_GUEST_IMAGE_TAG } from "./microsandbox-sandbox.ts";
-import { isModalConfigured, prewarmModal } from "./modal-context.ts";
+import { LOCAL_GUEST_IMAGE_TAG } from "./microsandbox/sandbox.ts";
+import { isModalConfigured, prewarmModal } from "./modal/context.ts";
 import { assertSandboxBackendOrWarn, installProcessSafetyNets } from "./service-boot.ts";
 import { captureLogs } from "./test-utils.ts";
 
@@ -44,8 +44,8 @@ const { imageGet } = vi.hoisted(() => ({
 
 vi.mock("microsandbox", () => ({ Image: { get: imageGet } }));
 
-vi.mock("./modal-context.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./modal-context.ts")>()),
+vi.mock("./modal/context.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./modal/context.ts")>()),
   isModalConfigured: vi.fn<() => boolean>(),
   prewarmModal: vi.fn<(harnessPath?: string) => void>(),
 }));

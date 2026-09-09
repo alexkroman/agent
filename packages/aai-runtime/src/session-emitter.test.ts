@@ -8,7 +8,7 @@ import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import { createSessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
-import { createMemoryStateBackend } from "./session-state-store.ts";
+import { createMemoryStateBackend } from "./session-state/store.ts";
 
 const SID = "s-1";
 

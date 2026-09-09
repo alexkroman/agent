@@ -27,9 +27,9 @@
  */
 
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
-import { SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
-import { SESSION_STATE_RETENTION } from "./platform-session-state.ts";
-import { UPLOAD_RECORD_RETENTION } from "./platform-uploads.ts";
+import { SLUG_LOCK_NAMESPACE } from "./platform/lock.ts";
+import { SESSION_STATE_RETENTION } from "./platform/session-state.ts";
+import { UPLOAD_RECORD_RETENTION } from "./platform/uploads.ts";
 import { AGENT_ENV_SECRET_PREFIX } from "./secret-store.ts";
 
 /**
@@ -101,7 +101,7 @@ export const SWEEP_PREVIEW_ARCHIVE = guarded(
  * app's own database at provisioning time, so its cost scaled with the number of
  * tenants; this does not scale with anything.
  *
- * The window is IMPORTED from `platform-session-state.ts` rather than written here:
+ * The window is IMPORTED from `platform/session-state.ts` rather than written here:
  * a cron command is text, so a literal would be a second copy of the retention
  * policy with nothing holding the two together. It is two days for the reason that
  * module gives: the cost of keeping a row is a few KB, and the cost of
@@ -206,7 +206,7 @@ end $$`;
  * Upload records nobody will read again.
  *
  * One statement over one table, and the window is IMPORTED from
- * `platform-uploads.ts` for the reason the session-state sweep's is: a cron command
+ * `platform/uploads.ts` for the reason the session-state sweep's is: a cron command
  * is text, so a literal here would be a second copy of the retention policy with
  * nothing holding the two together.
  *
@@ -228,7 +228,7 @@ export const SWEEP_UPLOAD_RECORDS = `delete from aai_platform.workflow_uploads w
 /**
  * The durable-workflow journal of runs that finished long ago.
  *
- * Nothing had ever deleted one. `platform-workflow-journal.ts`'s `setStatus` says
+ * Nothing had ever deleted one. `platform/workflow-journal.ts`'s `setStatus` says
  * so in its own comment — "nothing here sweeps them the way `forgetOldTerminalRuns`
  * does in memory" — and the cost lands somewhere non-obvious: `findStalledRuns`
  * (`workflow-queue-reconcile.ts`) scans `workflow_runs` fleet-wide on EVERY

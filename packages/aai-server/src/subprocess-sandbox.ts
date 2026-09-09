@@ -4,7 +4,7 @@
  *
  * The guest harness runs as a plain child process of the platform server,
  * listening on a loopback port. It is selected only in local dev (see
- * `sandbox-backend.ts`); production always resolves `modal`.
+ * `sandbox/backend.ts`); production always resolves `modal`.
  *
  * ## What this is for
  *
@@ -54,14 +54,14 @@ import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { pollGuestHealth } from "./guest-readiness.ts";
-import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
-import { guestTokenFor } from "./guest-token.ts";
+import { pollGuestHealth } from "./guest/readiness.ts";
+import { GUEST_ROUTES, guestWsUrl } from "./guest/routes.ts";
+import { guestTokenFor } from "./guest/token.ts";
 import { createLogger } from "./logger.ts";
-import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
-import { SandboxUnavailableError } from "./sandbox-errors.ts";
-import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
-import type { WarmHarness, WorkerSource } from "./sandbox-vm.ts";
+import { parseSandboxLimitsFromEnv } from "./modal/sandbox-env.ts";
+import { SandboxUnavailableError } from "./sandbox/errors.ts";
+import { resolveSandboxRole, type SpawnIdentity } from "./sandbox/role.ts";
+import type { WarmHarness, WorkerSource } from "./sandbox/vm.ts";
 import {
   type AgentServerHandle,
   agentBootEnv,
@@ -233,7 +233,7 @@ let warmedCompileCache = false;
  * over two real spawns through the local platform, `NODE_COMPILE_CACHE` was set
  * on both guests and the directory held zero files afterwards. The Modal image
  * does not have this problem because it warms the cache at BUILD time
- * (`AAI_GUEST_WARMUP=1`, `modal-harness-image.ts`), and this is the same trick
+ * (`AAI_GUEST_WARMUP=1`, `modal/harness-image.ts`), and this is the same trick
  * for a backend that has no image to bake.
  *
  * Measured: the harness run as an entry point costs 1167ms cold and 500ms
@@ -394,7 +394,7 @@ export async function spawnSubprocessAgentServer(
         bundleSha256: opts.worker.sha256,
         envPath,
         // No `TMPDIR`, and nothing here has to ask for that any more: it moved to
-        // `guestExecBaseEnv()` (`guest-exec-env.ts`), which this backend
+        // `guestExecBaseEnv()` (`guest/exec-env.ts`), which this backend
         // deliberately does not use. `/var/tmp` is a fact about the guest IMAGE —
         // a host's default temp directory is already a real disk rather than a
         // tmpfs, and on Windows a `/var/tmp` literal is drive-relative and breaks

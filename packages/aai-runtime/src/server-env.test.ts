@@ -58,7 +58,7 @@ describe("agentServerEnv", () => {
 /**
  * The gate read, which used to be `env?.[NAME]`.
  *
- * The FAILING observation is one layer up, in `workflow-api-http.test.ts` and
+ * The FAILING observation is one layer up, in `workflow/api/http.test.ts` and
  * `session-events-api.test.ts`: a set-but-empty value authenticated every
  * caller, `timingSafeEqual` matching two empty buffers. `bearerMatches` refuses
  * a blank secret now — what this read adds is that the ROUTE lands on the

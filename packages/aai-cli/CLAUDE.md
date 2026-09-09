@@ -1282,7 +1282,7 @@ unrelated causes:
   `aai-guest/harness-bundle.ts`), and both run on the DEVELOPER's machine under
   `aai dev`, not only in the Linux guest. **Fixed**, and
   `guard-invariants.mjs` rule 11 keeps them out; the only baselined occurrences
-  are `modal-agent-sandbox.ts`'s remote paths, which name a location inside the
+  are `modal/agent-sandbox.ts`'s remote paths, which name a location inside the
   Linux sandbox where `/tmp` is correct and `tmpdir()` would describe the wrong
   machine.
 - **The `aai` build emits differently on Windows.** `aai-cli`'s dev-server specs

@@ -30,7 +30,7 @@
 export {
   GUEST_ROUTES,
   guestHttpUrl,
-} from "./guest-routes.ts";
+} from "./guest/routes.ts";
 export {
   createOrchestrator,
   type OrchestratorOpts,
@@ -38,14 +38,14 @@ export {
 export {
   resolveSandboxBackend,
   type SandboxBackend,
-} from "./sandbox-backend.ts";
+} from "./sandbox/backend.ts";
 export {
   SandboxNameTakenError,
   studioSandboxName,
-} from "./sandbox-directory.ts";
+} from "./sandbox/directory.ts";
 export {
   guestReachableUrl,
   spawnWarmHarness,
   type WarmHarness,
-} from "./sandbox-vm.ts";
+} from "./sandbox/vm.ts";
 export { teardownSandboxes } from "./teardown-sandboxes.ts";

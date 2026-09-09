@@ -15,10 +15,10 @@
  *   SEMANTIC to the memory reference. Its own header says so. So it tests the
  *   guest side of the wire — the `{method, …}` body shape, `toSlotMap`,
  *   `toEvents`, the `event`/`json` rename — and **cannot represent a single bug
- *   `platform-session-state.ts`'s own SQL could have**;
+ *   `platform/session-state.ts`'s own SQL could have**;
  * - **this** arm is that last mile: the runtime's client, the real
  *   `POST /:slug/session-state` route with its bearer check, its body cap and
- *   its field parsing, `platform-session-state.ts`'s six statements, and the
+ *   its field parsing, `platform/session-state.ts`'s six statements, and the
  *   platform's own `aai_platform.session_slots` / `session_events` under the
  *   shipped migrations.
  *
@@ -61,7 +61,7 @@
  *   that FALLBACK rather than because anything was right, while the six
  *   non-zero ones failed. `nextEventIndex` throws now (`withReserved` maps it to
  *   a 503), so removing the read reddens every `countEvents` case on this arm
- *   including the zero-log ones. `platform-session-state.test.ts` pins the same
+ *   including the zero-log ones. `platform/session-state.test.ts` pins the same
  *   two facts in the unit tier, where they no longer need a database to be seen.
  *
  * ## What is REAL here, and what is not
@@ -88,7 +88,7 @@
  *   only where a test asks the route directly.
  * - **Cross-SLUG tenancy.** One agent's rows are invisible to another because
  *   the slug is in the primary key and comes off the BEARER, which one arm with
- *   one bearer cannot demonstrate. `platform-session-state.scenario.test.ts`
+ *   one bearer cannot demonstrate. `platform/session-state.scenario.test.ts`
  *   drives two tenants' rows for that, and stays.
  * - **Concurrency.** The cases are sequential; a racing commit and discard on
  *   one session is nothing the interface promises about.
@@ -105,7 +105,7 @@ import {
 } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
+import { ensurePlatformTables } from "./platform/schema-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
 import {
   bearerFor,
@@ -179,7 +179,7 @@ describeWithPg("the session-state contract over the platform's REAL handler", ()
 
   afterAll(async () => {
     // The agents row takes every session row with it — the cascade
-    // `platform-session-state.scenario.test.ts` asserts directly. A case that
+    // `platform/session-state.scenario.test.ts` asserts directly. A case that
     // left rows behind would collide with the next run of this file on the same
     // database, which is what `uid()` exists for.
     await sql?.("delete from aai_platform.agents where slug = $1", [SLUG]);

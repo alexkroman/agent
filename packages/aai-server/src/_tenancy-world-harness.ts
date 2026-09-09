@@ -36,7 +36,7 @@
  * real line of the code under test — most importantly `hook-release`, which is
  * `setStatus`'s `released` CTE losing its `h.slug = $1`. That is the leak a text
  * gate structurally cannot see, because the statement still carries `slug = $1`
- * on its `moved` arm afterwards. `platform-tenancy.test.ts` asserts the property FAILS
+ * on its `moved` arm afterwards. `platform/tenancy.test.ts` asserts the property FAILS
  * against each one, in the unit tier, with no database — so the discrimination
  * the scenario arm depends on is proven on every CI run rather than once by
  * hand.

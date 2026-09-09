@@ -160,7 +160,7 @@ pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 
 ## Architecture
 
-Eleven workspace packages under `packages/`:
+Thirteen workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
@@ -168,7 +168,9 @@ Eleven workspace packages under `packages/`:
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-runtime/` | `@alexkroman1/aai-runtime` | The HOST runtime: `createRuntime`/`createAgentServer`, the session core, transports, provider openers, the workflow API. What runs an `agent.ts`; an `agent.ts` imports none of it |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, eval, build, list, pull, push, publish, delete, login, secret, logs, workflow, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs). The list is PINNED to the registry in `cli.test.ts` — it named a removed `storage` for several releases |
-| `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs` |
+| `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs`. Holds `toolchain/`, which the guest image's Docker context needs beside that artifact |
+| `packages/aai-guest-core/` | `aai-guest-core` | The five modules both guest modes need (private): `rpc`, `types`, `bundle`, `auth`, `http`, plus `trial` (the `run_code`/tool executor) and `limits`. It exists to make the split a DAG — see its guide |
+| `packages/aai-guest-studio/` | `aai-guest-studio` | The studio coding agent as it runs in a guest (private): 60 modules plus the generated `studio-prompts/` copies |
 | `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
@@ -183,7 +185,17 @@ the server and the evals all take the host runtime from there, while
 `aai-guest` only to resolve its built artifact (`aai-guest/harness` →
 `dist/harness.mjs`, baked into the guest snapshot image) — it never imports
 guest source, and the guest never imports server code; that hard boundary is
-the reason the guest is its own package. The one edge to the CLI is
+the reason the guest is its own package.
+
+**The guest is now THREE packages, and the shape is forced rather than
+chosen.** `aai-guest-core` → nothing in the trio, `aai-guest-studio` → core,
+`aai-guest` → both. Two could not express it: the entry dispatches studio mode
+while studio reaches back for `rpc`/`types`/`bundle`/`auth`/`http`, so
+whichever package holds the entry must depend on studio and studio then cannot
+depend on it. `aai-guest` keeps the entry, the `./harness` subpath and
+`dist/harness.mjs`, so `aai-server`'s image pin is untouched and tsdown still
+bundles all three into one artifact. `packages/aai-guest-core/CLAUDE.md`
+carries the argument. The one edge to the CLI is
 `aai-guest` → `aai-cli`, and only for its four public subpaths: the three
 build hooks (`/worker-bundler`, `/client-bundler`, `/typecheck`), because the
 studio builds workspaces through the CLI's own Vite pipeline and typechecks
@@ -231,6 +243,8 @@ rather than here:
 | `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations, `aai dev`'s server and host mode, self-hosting (`npm start`) |
 | `packages/aai-runtime/CLAUDE.md` | The host runtime: why it is its own package, the one-way dependency on the SDK, the fifteen `host/` modules that stayed, and the `host-internal` seam |
 | `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers, guest network access + SSRF, credential separation |
+| `packages/aai-guest-core/CLAUDE.md` | Why the shared guest core is its own package (the cycle two packages could not express), where `StudioSession` is declared and why, the un-underscored `test-utils.ts`, and how coverage attribution decides where a test lives |
+| `packages/aai-guest-studio/CLAUDE.md` | The studio package boundary: what came with it, the two paths that deliberately reach out (`toolchain/`, the scaffold drift gate), and where the session scratch directory now lands |
 | `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, security architecture, auth, telephony, durable-workflow routes, stores/locks |
 | `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals, the two-package/one-deployment composition |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |

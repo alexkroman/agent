@@ -8,7 +8,7 @@
  * reservation stalls forever without `reservedQueryTimeoutMs` and rejects with
  * `QUERY_TIMEOUT` once it is set. It cannot see whether anything PASSES it, and
  * for the admin pool that is the whole protection — every guest platform route
- * runs its work on a reservation from here (`_platform-route.ts`'s
+ * runs its work on a reservation from here (`platform/_route.ts`'s
  * `withReserved`) and takes no advisory lock, so with the option absent four
  * hung reads on a silently partitioned database exhaust `ADMIN_POOL_MAX` and
  * every other platform read on the replica queues behind them. Deleting the one
@@ -44,14 +44,14 @@
 import type { CloseableDb, CreatePostgresDbOptions } from "@alexkroman1/aai-runtime";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { ADMIN_POOL_MAX, SLUG_LOCK_POOL_MAX } from "./constants.ts";
-import { GUEST_TOKEN_SECRET_ENV } from "./guest-token.ts";
+import { GUEST_TOKEN_SECRET_ENV } from "./guest/token.ts";
 import {
   PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
   PLATFORM_DB_QUERY_TIMEOUT_MS,
   PLATFORM_DB_RESERVE_TIMEOUT_MS,
-} from "./platform-db-errors.ts";
-import { QUEUE_NOTIFY_LISTEN } from "./platform-db-limits.ts";
-import type { AdminDb } from "./platform-lock.ts";
+} from "./platform/db-errors.ts";
+import { QUEUE_NOTIFY_LISTEN } from "./platform/db-limits.ts";
+import type { AdminDb } from "./platform/lock.ts";
 import { buildPlatformDb, buildServiceConfig } from "./service-config.ts";
 import { captureLogs } from "./test-utils.ts";
 
@@ -107,7 +107,7 @@ vi.mock("@alexkroman1/aai-runtime", async (importOriginal) => ({
 // that would reach the network on construction. The in-process emitter is the
 // same `PlatformEvents`, so nothing is faked beyond the transport.
 vi.mock("./realtime-events.ts", async () => {
-  const { createMemoryPlatformEvents } = await import("./platform-events.ts");
+  const { createMemoryPlatformEvents } = await import("./platform/events.ts");
   return { createRealtimePlatformEvents: () => createMemoryPlatformEvents().events };
 });
 
@@ -232,7 +232,7 @@ describe("buildPlatformDb pool wiring", () => {
     // Its reservation holds `pg_advisory_lock` for a whole deploy — blob
     // uploads, config extraction, a sandbox spawn — so either query bound
     // would abort deploys. The wait that does need one, the ACQUIRE, carries
-    // `lock_timeout` on the connection (`platform-lock.ts`).
+    // `lock_timeout` on the connection (`platform/lock.ts`).
     expect(slugLock.reservedQueryTimeoutMs).toBeUndefined();
     expect(slugLock.queryTimeoutMs).toBeUndefined();
     // And the ACQUIRE is unbounded here for a sharper reason than the queries

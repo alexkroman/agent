@@ -24,8 +24,8 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { BundleStore } from "./bundle-store.ts";
-import type { AdminDb } from "./platform-lock.ts";
-import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import type { AdminDb } from "./platform/lock.ts";
+import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import { createQueueDeliverer } from "./workflow-queue-deliver.ts";
 import { startWorkflowQueueSweep } from "./workflow-queue-scheduler.ts";
 

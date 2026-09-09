@@ -131,7 +131,7 @@
 #
 # A GHCR package is PRIVATE on first push. The `aai-guest-harness` package must
 # be set to public in the repo's Packages settings — otherwise Modal cannot pull
-# it without a registry Secret, which `guest-image-source.ts` deliberately does
+# it without a registry Secret, which `guest/image-source.ts` deliberately does
 # not thread through.
 #
 # ## EVERY job checks out `github.sha`, never `github.ref`
@@ -160,7 +160,7 @@
 # fails when two producers hash two different trees, they simply name two
 # different images. And Modal reports a missing manifest as `Image build for
 # im-<id> failed with the exception:` and then nothing at all, so the app log
-# named no tag (`guest-image-source.ts` carries that account).
+# named no tag (`guest/image-source.ts` carries that account).
 #
 # `ship-workflow-gate.test.ts` pins the SHA form and rejects the `github.ref`
 # one, because the two differ by three characters and the failure appears only
@@ -903,7 +903,7 @@ jobs:
       #
       # Pulled ANONYMOUSLY on purpose, because that is how Modal pulls: a GHCR
       # package is PRIVATE on first push (see the ONE-TIME MANUAL STEP above)
-      # and `guest-image-source.ts` deliberately threads no registry Secret. A
+      # and `guest/image-source.ts` deliberately threads no registry Secret. A
       # publish to a private package is green in every log and unpullable in
       # production, which is the exact shape this step exists to catch.
       - name: Preflight the guest image

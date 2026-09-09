@@ -200,7 +200,7 @@ jobs:
         # in CI" asymmetry running backwards, and fully green for a PR that
         # breaks them. This is NOT the documented eval-tier exemption: that is
         # scoped to `check:eval`, which is separately and deliberately absent.
-        package: [aai, aai-ui, aai-runtime, aai-cli, aai-guest, aai-server, aai-studio-server, aai-studio-client, aai-templates, aai-gates, aai-evals]
+        package: [aai, aai-ui, aai-runtime, aai-cli, aai-guest, aai-guest-core, aai-guest-studio, aai-server, aai-studio-server, aai-studio-client, aai-templates, aai-gates, aai-evals]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -286,11 +286,11 @@ jobs:
       # Postgres for the platform SCENARIO tests: the per-slug advisory lock
       # and the migration + its stores. Both assert PostgreSQL semantics that
       # their unit suites can only assert in prose (see
-      # platform-lock.scenario.test.ts).
+      # platform/lock.scenario.test.ts).
       #
       # **The PRODUCTION image, not the runner's stock cluster.** `systemctl
       # start postgresql` gave a server with no Supabase extension, which is a
-      # deployment nobody has: `platform-schema.scenario.test.ts` had to strip
+      # deployment nobody has: `platform/schema.scenario.test.ts` had to strip
       # every `create extension` line with a regex and hand-write a plpgsql
       # `pgmq.create` stub to make the migration runnable at all, and Vault,
       # pg_cron and pg_net had no arm anywhere. This is the same image the

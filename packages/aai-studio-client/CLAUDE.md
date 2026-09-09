@@ -3,6 +3,41 @@
 The studio's React front-end (private package). The server it talks to over
 HTTP/SSE is documented in `packages/aai-studio-server/CLAUDE.md`.
 
+## Layout
+
+Three directories: `panes/` (the eight modules `project-view.tsx` renders),
+`components/` (29), `hooks/` (the three `use-*` modules).
+
+**A PANE and a COMPONENT are different categories, and the roster is what
+says so.** konsistent's `studio-client-pane-modules` names the eight —
+`chat.tsx`, `preview.tsx`, `docs.tsx`, `workflows.tsx`, `code-view.tsx`,
+`logs-view.tsx`, `secrets.tsx`, `settings.tsx` — as the statement of what the
+switcher renders. Seven were moved into `components/` first, the convention
+failed on the missing files, and they came back before landing in `panes/`.
+
+**The FRAME stays at `src/` root**, and it is what a pane is mounted BY rather
+than a smaller pane: `app.tsx` (the root), `main.tsx` (the Vite entry),
+`project-view.tsx` (which renders the eight), `top-bar.tsx` (the switcher),
+`pane-shell.tsx` (the shell they share) and `public-api.tsx` — a top-level
+ROUTE `main.tsx` renders, never a tab. `auth.tsx`, `starters.ts` (an export
+subpath) and `_test-utils.ts` stay for their own reasons.
+
+**`studio-client-pane-export` names FIVE panes and that is not the roster.**
+Those five are the ones whose FILENAME is their tab id, so they export
+`<Tab>Pane`; the other two switcher panes are named for what they are
+(`code-view.tsx` → tab `code`, `logs-view.tsx` → tab `logs`) and `chat.tsx`
+sits outside the switcher entirely. Moving five of seven would have split one
+category across two directories — the shape this convention exists to prevent.
+
+**`studio-client-cleanup-is-setup` had to be widened to `src/**/`**, and this
+is the failure mode to check for on any move here: it forbids importing
+Testing Library's `cleanup` in a suite, keyed on `src/{suite}.test.tsx`, so
+moving nine specs into subdirectories dropped them from a rule that kept
+printing green — including `hooks/use-event-stream.test.ts`, the one file the
+convention's own rationale is written about. A konsistent `**` glob needs a
+subdirectory to match, so both spellings are listed, and the widening was
+A/B'd by adding the forbidden import and watching the rule fire.
+
 ## The app
 
 `packages/aai-studio-client` is a Vite-built React app (React 19 +
@@ -12,7 +47,7 @@ workspace package built into its `dist/` by
 over HTTP/SSE (no code imports in either direction); aai-server serves
 the built artifact, resolved via `require.resolve` in
 `studio-static.ts` the same way aai-ui's `dist/default-client` is.
-Panes: `chat.tsx` (chat + composer), plus the seven the top bar's segmented
+Panes: `panes/chat.tsx` (chat + composer), plus the seven the top bar's segmented
 control switches between. **Which modules those are is
 `studio-client-pane-modules` and `studio-client-pane-export` in
 `konsistent.json`, not a list here** — the list that used to be here named a
@@ -39,8 +74,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
 ## Panes and behaviour
 
 - **The home hero switches between the two things the platform builds**
-  (`home.tsx` — Voice agent / Workflow, `starters.ts`, `api.createProject`). The
-  position is not a display preference: it is sent as `kind` on
+(`components/home.tsx` — Voice agent / Workflow, `starters.ts`,
+`api.createProject`). The position is not a display preference: it is sent as
+`kind` on
   `POST /studio/projects`, stamped on the workspace, and read back at every
   session install to pick the coding agent's system prompt (see "A project has a
   KIND" in `packages/aai-studio-server/CLAUDE.md`). So it is settable ONLY here
@@ -122,14 +158,14 @@ so every piece of per-project state resets on a switch with no effect to do it.
     tab that has never existed under that name — the one copy in the product
     that a relabel here silently invalidates, because it lives in another
     package and no test reads it.
-- **Settings is a PANE, not a dropdown** (`settings.tsx`): it renders full-width
+- **Settings is a PANE, not a dropdown** (`panes/settings.tsx`): it renders full-width
   beside the chat panel like every other pane. It was a floating 384px panel
   that scrolled itself — three unrelated sections (secrets, the CLI round-trip,
   Delete project) never laid out in that width. Nothing on the pane gates on a
   build or a deploy: Delete project has to work before anything has ever been
   published, so Settings is reachable whenever a project is open.
 - **The sections are in a FIXED order**: Work locally, Database, Danger zone —
-  setting up first, destruction last. `settings.test.tsx` asserts the sequence
+  setting up first, destruction last. `panes/settings.test.tsx` asserts the sequence
   of card titles, so moving one means updating that list — and re-reading any
   copy that names a neighbour's direction, which is the trap this used to carry:
   the Phone card said "Secrets **below**" twice while sitting above it, and then
@@ -141,9 +177,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
     is that "nothing here gates on a deploy" is now literally true rather than
     nearly: every remaining card works from the moment a project exists, so
     `SettingsPane` takes no slug of any kind, and with the secrets query gone it
-    makes no request of its own at all — `settings.test.tsx` asserts it never
+    makes no request of its own at all — `panes/settings.test.tsx` asserts it never
     touches `/secret`, which is what would catch a copy of the card coming back.
-- **Secrets are a PANE; storage has none.** `secrets.tsx` talks to the project
+- **Secrets are a PANE; storage has none.** `panes/secrets.tsx` talks to the project
   route (`/studio/projects/:project/secret`) and, like every pane, reports its
   own outcome and writes NOTHING into the conversation — see "No studio action
   writes into the transcript" below.
@@ -187,7 +223,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
   rest — a bare list would report a saved-but-undelivered key as live
   everywhere.
   **`ASSEMBLYAI_API_KEY` is platform-managed and the pane neither lists,
-  deletes, nor sets it** (`PLATFORM_MANAGED_SECRETS` in `secrets.tsx`): it
+  deletes, nor sets it** (`PLATFORM_MANAGED_SECRETS` in `panes/secrets.tsx`): it
   is seeded at publish from the caller's own account key, so it is not a
   third-party key the user attached, and deleting it takes the agent off the
   air (an empty bearer → `unauthorized` from AssemblyAI) with nothing in the
@@ -211,9 +247,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
   `aai storage enable` primitive behind them are all gone, and a database is
   configured on the **Secrets** pane like anything else.
   - **The test consequence outlived the card**: its blurb contained the word
-    "Database", so `getByText("Database")` in `settings.test.tsx` matched the
-    title AND the blurb. The rule that came out of it stands for every card —
-    read card titles through `.eyebrow`.
+"Database", so `getByText("Database")` in `panes/settings.test.tsx` matched the
+title AND the blurb. The rule that came out of it stands for every card — read
+card titles through `.eyebrow`.
   - **Two arguments from it are worth keeping**, because the next project-level
     switch meets both. Intent belongs on the WORKSPACE while the action follows
     the SLUG: a switch is reachable before either agent exists (a project has a
@@ -226,8 +262,8 @@ so every piece of per-project state resets on a switch with no effect to do it.
     instance of the first (`studio-deploy-hooks.ts`); `AgentRows.touch` is the
     seam for the second, now with no caller.
 - **The Phone number card hands out the carrier webhook URLs**
-  (`phone-card.tsx`, rendered on the **API** pane) — one per carrier, each
-  with a copy button, pointing at
+(`components/phone-card.tsx`, rendered on the **API** pane) — one per carrier,
+each with a copy button, pointing at
   the platform's `/:slug/phone` route (see "Telephony" in
   `packages/aai-server/CLAUDE.md`). Pasting one into a phone number's voice
   webhook is the whole integration on the user's side, and the URL is not
@@ -268,8 +304,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
     its flash cleared early by the first click's timeout.
 
 - **The Workflows PANE reads the AGENT's own brokered API, not a studio route**
-  (`workflows.tsx` → the card in `workflows-card.tsx` → `/:slug/workflows`), and
-  the pane is only OFFERED once the project has a database — see the switcher
+(`panes/workflows.tsx` → the card in `components/workflows-card.tsx` →
+`/:slug/workflows`), and the pane is only OFFERED once the project has a
+database — see the switcher
   above. A
   workflow run is the one thing
   in this product that OUTLIVES every surface the studio already shows: the
@@ -307,7 +344,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
     declares no workflows answers, and that text is the whole difference.
 
 - **The API pane is GENERATED from the running agent, never written**
-  (`docs.tsx` + `docs-content.ts` → `GET /:slug/workflows`). A deployed agent
+  (`panes/docs.tsx` + `docs-content.ts` → `GET /:slug/workflows`). A deployed agent
   IS an API — `client-config` and a carrier webhook for a voice agent,
   `GET|POST|PUT|DELETE /workflows/*` for a workflow app — and that is
   simultaneously the most useful thing about the shape and the least
@@ -352,7 +389,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
       declares none) until the listing does. A FAILED `client-config` does
       default to voice, since `page` is optional and absent has always read
       that way.
-    - `docs.test.tsx` pins both, and each negative sits beside a positive:
+    - `panes/docs.test.tsx` pins both, and each negative sits beside a positive:
       a `queryByText(…)).toBeNull()` pair passes just as well for a pane that
       renders nothing, so the voice-agent test asserting all of it is what
       makes the absences a decision rather than a bug.
@@ -374,7 +411,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
     methods are documented, because a table listing only GET and POST would
     hide exactly the bug that table exists to catch.
   - **Every example DEFAULTS to the aai SDK, and `curl` is a disclosure**
-    (`docs-snippets.ts`, and the `Examples` component in `docs-examples.tsx`,
+    (`docs-snippets.ts`, and the `Examples` component in `components/docs-examples.tsx`,
     shared by the pane and the upload card). The
     pane used to lead with `curl` in every section, which teaches the HTTP shape
     and leaves the reader to re-derive everything the client they already have
@@ -404,7 +441,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
       why `sampleInput` takes an `upload` renderer — the same schema has to come
       out as data for one language and as an expression for the other.
     - **And the page documents how to DO the upload, not only how to use one**
-      (`docs-uploads.tsx`, the "Sending a file" card). The four
+      (`components/docs-uploads.tsx`, the "Sending a file" card). The four
       `/workflows/uploads` routes have been in the table since the pane existed
       and every generated run body for an upload-carrying workflow carried an
       id, but the only worked example of OBTAINING one was the `agent.upload`
@@ -432,7 +469,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
       well as the start, since closing the workflow API closes the upload
       routes with it.
   - **And it maps every FORM CONTROL to the JSON that sets it**
-    (`docs-forms.tsx`, the "Every form field, over HTTP" card, over
+    (`components/docs-forms.tsx`, the "Every form field, over HTTP" card, over
     `docs-form-fields.ts` and `docs-field-snippets.ts`). A workflow app's front
     door is a form, and the pane documented the form's DESTINATION while leaving
     the correspondence to inference: that one control is one property of the run
@@ -476,13 +513,13 @@ so every piece of per-project state resets on a switch with no effect to do it.
       a ragged edge reads as trailing remarks), and the upload rendered as the
       expression reading the id off the upload above it.
   - **The STUDIO pane carries no `/workflows/*` route table; the public page
-    does** (`AgentApiDocsProps.workflowRoutes`, `false` from `docs.tsx`). A
-    twelve-row route list is a reference for somebody writing a client, and a
-    studio reader is being shown what their own agent answers — with a Workflows
-    tab beside this pane for the subsystem itself. The public page's reader has
-    a slug and an integration to write, so the table is what they came for. The
-    asymmetry is the feature, and nothing is hidden by it: every route is still
-    shown being CALLED in the snippets, and the openness sentence (whether
+does** (`AgentApiDocsProps.workflowRoutes`, `false` from `panes/docs.tsx`). A
+twelve-row route list is a reference for somebody writing a client, and a studio
+reader is being shown what their own agent answers — with a Workflows tab beside
+this pane for the subsystem itself. The public page's reader has a slug and an
+integration to write, so the table is what they came for. The asymmetry is the
+feature, and nothing is hidden by it: every route is still shown being CALLED in
+the snippets, and the openness sentence (whether
     `AAI_WORKFLOW_API_TOKEN` closes the API — the one thing on this half only
     the studio can say, since it reads the project's secrets) FOLLOWS the
     reader into the "Running a workflow" blurb rather than going with the rows.
@@ -494,7 +531,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
     sampling stayed in `docs-content.ts`, which is one subject where three
     languages' worth of code generation is another.
 - **The same documentation is served PUBLICLY at `/studio/api/<slug>`, and the
-  API pane links to it** (`public-api.tsx`, the shared body in `api-docs.tsx`,
+  API pane links to it** (`public-api.tsx`, the shared body in `components/api-docs.tsx`,
   the path pair in `project-route.ts`). The pane is behind sign-in and scoped
   to the account that owns the project, so the one question it could not answer
   is the common one — "send me your API docs" — and every link it could hand a
@@ -536,12 +573,12 @@ so every piece of per-project state resets on a switch with no effect to do it.
     answered, and the environment travelled to the server, which 400s a value it
     does not know rather than picking one.
 - **The Logs pane TAILS the agent, and says which of two silences it is**
-  (`logs-view.tsx` → `GET /:slug/logs`, the platform route — same posture as the
-  Secrets card talking to `/:slug/secret`, and for the same reason: that route
-  already owns the ownership check, so a studio proxy in front of it would be a
-  second place to get it wrong). It polls by CURSOR and appends; a stream would
-  be the nicer shape and the source is not one — the guest holds a bounded RING
-  with a cursor, which a reconnecting stream would have to re-derive anyway.
+(`panes/logs-view.tsx` → `GET /:slug/logs`, the platform route — same posture as
+the Secrets card talking to `/:slug/secret`, and for the same reason: that route
+already owns the ownership check, so a studio proxy in front of it would be a
+second place to get it wrong). It polls by CURSOR and appends; a stream would be
+the nicer shape and the source is not one — the guest holds a bounded RING with
+a cursor, which a reconnecting stream would have to re-derive anyway.
   - **`running` is read from the response, never from `lines.length`.** An empty
     page means two different things — the agent is up and has printed nothing,
     or nothing is running to print — and they want opposite things from the
@@ -580,8 +617,8 @@ so every piece of per-project state resets on a switch with no effect to do it.
     each is disabled until that environment has an agent.
 
 - **The Settings pane is also where the CLI round-trip is discoverable**
-  (`cli-commands.tsx`, the "Work locally" section): the install / `aai login`
-  / `aai pull <project>` / `aai dev` sequence with the project name filled
+(`components/cli-commands.tsx`, the "Work locally" section): the install / `aai
+login` / `aai pull <project>` / `aai dev` sequence with the project name filled
   in and one copy button each. It renders whether or not the project has
   ever been published — pulling a workspace needs no deployed slug. The
   commands carry **no `--server`**: the CLI targets its own shipped default
@@ -679,8 +716,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
   moved with it, deliberately — a dev-mode developer signed out on every restart
   while a Supabase one stayed in would be a difference nothing intends.
 
-- **A gate screen never sits on an unexplained wait** (`gate-card.tsx`, the
-  pre-app cards in `main.tsx` and the `unavailable` phase in `auth.tsx`). A
+- **A gate screen never sits on an unexplained wait**
+(`components/gate-card.tsx`, the pre-app cards in `main.tsx` and the
+`unavailable` phase in `auth.tsx`). A
   gate has no app behind it to degrade into — it either resolves or it IS the
   page — so "Loading…" must always end somewhere the user can act. Two
   mechanisms, and both are needed:
@@ -712,7 +750,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
   "sign-in is not configured here" will answer that again.
 
 - **The pane probes before it frames** (`useAgentPageReady` in
-  `preview.tsx`): a stamped `previewSlug` is not proof the platform serves
+  `panes/preview.tsx`): a stamped `previewSlug` is not proof the platform serves
   `/:slug/`. The stamp outlives the deploy behind it (the swept-agent case the
   wake path regenerates — see `packages/aai-studio-server/CLAUDE.md`) and a
   first or repeat deploy takes
@@ -737,7 +775,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
   already-deployed preview doesn't flash "starting" on every open.
 
   **A BUILD IN FLIGHT takes the whole pane, first build and rebuild alike**
-  (`building` in `preview.tsx` — `previewStale && hasAgent && !previewError`).
+  (`building` in `panes/preview.tsx` — `previewStale && hasAgent && !previewError`).
   A rebuild used to leave the previous preview framed under a one-line
   "Updating preview…" banner, which is a page that does not match the code
   with a banner over it saying so; that row is gone and the "Starting your
@@ -786,7 +824,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
   matters (a preview landing at 25s noticed at 45s), trading the common case
   for the pathological one.
 
-- **The transcript does not wait on the sandbox** (`chat.tsx` — the three
+- **The transcript does not wait on the sandbox** (`panes/chat.tsx` — the three
   states of `ChatPanel`, and `PendingChat` in particular). Opening a project
   fires two requests together, and they are not remotely the same request: the
   history is a row read, while the session broker has to boot a container. The
@@ -813,8 +851,8 @@ so every piece of per-project state resets on a switch with no effect to do it.
     that one still says "Loading conversation…" rather than claiming an empty
     conversation.
   - Both the pre-sandbox view and the live chat render through one
-    `Transcript` (`chat-transcript.tsx`) with `lead`/`footer` slots. Two
-    hand-matched copies would shift the messages under the reader at the exact
+`Transcript` (`components/chat-transcript.tsx`) with `lead`/`footer` slots. Two
+hand-matched copies would shift the messages under the reader at the exact
     moment the live chat takes over.
 
 - **The chat transport is aimed at the CURRENT sandbox lease, per request**
@@ -978,7 +1016,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
     bearer change, excluding the chat session (its token comes from the broker's
     response, not from this bearer).
 - **The SSE backoff resets on a stream that SERVED, not one that opened**
-  (`EVENTS_MIN_UPTIME_MS` in `use-event-stream.ts`). Accepting a request is
+  (`EVENTS_MIN_UPTIME_MS` in `hooks/use-event-stream.ts`). Accepting a request is
   not the same as serving it: a server that answers `200` and then ends the
   body immediately — a crash-looping container, a Modal instance being
   replaced mid-rollout, a proxy that upgrades and drops — has "opened" the
@@ -1004,8 +1042,9 @@ line without dragging a second design system in behind it.
 look does not. Three things cross today and each was a duplicate before it did:
 
 - `Markdown` and `ToolCallRow` — a parse and a disclosure shape.
-- `AutoScroll` (`chat-transcript.tsx`, `logs-view.tsx`) — pin to the bottom,
-  release when the reader scrolls up, re-engage at the bottom, driven by a
+- `AutoScroll` (`components/chat-transcript.tsx`, `panes/logs-view.tsx`) — pin
+to the bottom, release when the reader scrolls up, re-engage at the bottom,
+driven by a
   `ResizeObserver` rather than a `messages` dependency. Both panes reached past
   it straight to `use-stick-to-bottom`, which is the library `AutoScroll`
   exists to have ONE owner of; the dependency is gone from this package's
@@ -1014,8 +1053,9 @@ look does not. Three things cross today and each was a duplicate before it did:
   so neither pane gave anything up: the chat keeps `instant`/`smooth` and the
   Logs tail keeps `instant`/`instant`. Both pass `scrollClassName="overflow-y-auto"`,
   because the default hides the scrollbar and these panes show a native one.
-- `useCopy` / `useFlash` (`phone-card.tsx`, `cli-commands.tsx`) — they were
-  EXTRACTED here and have moved INTO `aai-ui`, which had a third copy of the
+- `useCopy` / `useFlash` (`components/phone-card.tsx`,
+`components/cli-commands.tsx`) — they were EXTRACTED here and have moved INTO
+`aai-ui`, which had a third copy of the
   flash inside its own URL chips. See "The flash primitive is `aai-ui`'s" in
   `packages/aai-ui/CLAUDE.md`.
 
@@ -1029,7 +1069,7 @@ up for.
 **node is the default and jsdom is a per-file pragma.** Most suites here carry
 `// @vitest-environment jsdom` on line 1; the ones that do not are pure logic
 (`file-drafts`, `chat-queue`, `stale-build`, `starters`, `project-route`, the
-`api` and `docs-*` reads) plus `chat.test.tsx`, which asserts markup through
+`api` and `docs-*` reads) plus `panes/chat.test.tsx`, which asserts markup through
 `react-dom/server` and says so. A count used to stand here ("18 of the 26")
 and was wrong in both halves within a release — nothing measures it, so read
 the pragmas.
@@ -1052,7 +1092,7 @@ setup file also raises Testing Library's async ceiling to 10s, which
 
 **Constants a test asserts a cadence against are IMPORTED, never mirrored** —
 `studio-client-probe-cadence` and `studio-client-probe-cadence-imported` are the
-two halves of that for `preview.tsx`'s four `PROBE_*` figures, and the second
+two halves of that for `panes/preview.tsx`'s four `PROBE_*` figures, and the second
 one's description says why an exact bound over a mirrored number is the worst
 of both.
 

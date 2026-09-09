@@ -9,7 +9,7 @@ import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { SLUG_WS_RE, wsSlugFromPath } from "./orchestrator-ws.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { createSlotCache } from "./sandbox/slots.ts";
 import {
   createTestOrchestrator,
   createTestStore,

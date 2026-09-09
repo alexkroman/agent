@@ -4,7 +4,7 @@
  * is worth retrying, and how it reads to a user.
  *
  * Its own module because the readers are not the callers. `api.ts` mints
- * these; the gate screens (`gate-card.tsx`, `main.tsx`, `auth.tsx`) and the
+ * these; the gate screens (`components/gate-card.tsx`, `main.tsx`, `auth.tsx`) and the
  * panes read them, and the busy/broken split below is the one thing both
  * halves have to agree on.
  */

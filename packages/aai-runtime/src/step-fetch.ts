@@ -41,7 +41,7 @@ import {
 import type { StepFetchInit } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createEgressPool } from "./_egress-pool.ts";
-import { currentRun } from "./workflow-run-context.ts";
+import { currentRun } from "./workflow/run-context.ts";
 
 /**
  * A published step `fetch`, with the pool behind it.

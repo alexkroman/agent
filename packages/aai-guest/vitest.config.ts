@@ -32,32 +32,31 @@ export default defineConfig({
       "src/.workspaces/**",
       "**/*.integration.test.ts",
       "**/*.scenario.test.ts",
-      // The EVAL tier, by the same naming convention — `studio-agent.eval.test.ts`
+      // The EVAL tier, by the same naming convention — `studio/agent.eval.test.ts`
       // drives the coding agent against a live model over a real workspace, and
       // `test:eval` is what selects it. Without this glob it would also run here
       // under a 5s budget with no credential gate.
       "**/*.eval.test.ts",
     ],
     coverage: {
-      exclude: [...sharedCoverageExclude],
-      // Ratchet: floors only move up. Raise to ~2-3 points below actuals
-      // whenever a coverage run shows comfortable headroom.
-      // main() — the HTTP server + upgrade wiring — is exercised by the
-      // smoke path against the built artifact, not by unit tests, which is
-      // what keeps these floors below the other packages'.
-      // Actuals (2026-08): lines 85.79, functions 84.49, branches 75.58, statements 83.88.
-      // Actuals (2026-09, with studio-agent/http/session/tool-descriptions
-      // specs): lines 85.65, functions 84.38, branches 77.88, statements 84.12.
-      // Only `branches` moved: the two readings of it disagree (75.58 vs
-      // 77.88), so the floor is set under the LOWER one — the point of a
-      // ratchet is that it never has to come back down.
-      // Actuals (2026-09, with the studio eval's two specs — `studio-bundle-
-      // access` and the eval harness's own): lines 86.06, functions 84.86,
-      // branches 80.04, statements 84.77. Every floor gained headroom and NONE
-      // is raised, deliberately: that is ONE reading, and the disagreement
-      // recorded above is exactly what a single reading cannot see. Raise them
-      // when a second run agrees.
-      thresholds: { lines: 83, functions: 82, branches: 74, statements: 81 },
+      // A workspace dependency resolves to its `src/` through `@dev/source`,
+      // and v8 measures whatever was LOADED — so without these this package
+      // reports on its dependencies' modules, which its own tests barely
+      // exercise. `aai-guest` read 27% lines against a floor of 83 that way.
+      // `include: ["src/**"]` does NOT do it: the siblings' paths end in
+      // `src/` too and match the same glob.
+      exclude: [...sharedCoverageExclude, "**/aai-guest-core/**", "**/aai-guest-studio/**"],
+      // Ratchet: floors only move up — and these are LOWER than the numbers
+      // this package carried before the split, which needs saying. Nothing
+      // regressed: the measured SET changed. 84 well-covered modules left for
+      // `aai-guest-core` and `aai-guest-studio`, and what remains is the entry
+      // plus nine harness modules, whose `main()` — the HTTP server and upgrade
+      // wiring — is exercised by the smoke path against the BUILT artifact
+      // rather than by unit tests. That was always true and the studio's 60
+      // files used to average it away. Re-seeded ~2-3 points under the actuals
+      // (2026-09, at the split): statements 71.18, branches 77.31,
+      // functions 69.23, lines 70.25.
+      thresholds: { lines: 67, functions: 66, branches: 74, statements: 68 },
     },
   },
 });

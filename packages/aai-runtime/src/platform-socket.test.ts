@@ -30,7 +30,7 @@ import {
   ensurePlatformSocket,
   platformSocketFor,
 } from "./platform-socket-registry.ts";
-import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "./workflow/api/error-status.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";

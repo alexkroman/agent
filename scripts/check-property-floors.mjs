@@ -345,7 +345,7 @@ if (floorless.length > 0) {
       "each as a floor after the run:\n" +
       `  expect(reached.toolTurn, "no turn ever called a tool").${FLOOR_MATCHER}(670); // 2016-2489\n` +
       "See packages/aai-ui/src/fuzz-voiceio.test.ts and\n" +
-      "packages/aai-runtime/src/workflow-resume-equivalence.test.ts for the shape.",
+      "packages/aai-runtime/src/workflow/resume-equivalence.test.ts for the shape.",
   );
 }
 

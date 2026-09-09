@@ -53,10 +53,10 @@
  * ## What it still does NOT cover, stated so a spec cannot over-claim
  *
  * - **A backend other than memory.** The three `JournalStore` implementations
- *   are held against each other by `journal-conformance.ts` and its Postgres
+ *   are held against each other by `workflow/journal/conformance.ts` and its Postgres
  *   scenario arm, which is a different question from this one.
  * - **Two deliveries of one run OVERLAPPING.** The driver delivers one at a
- *   time; `workflow-concurrent-delivery.test.ts` is the property that runs them
+ *   time; `workflow/concurrent-delivery.test.ts` is the property that runs them
  *   into each other, and `workflow-interleavings/` freezes the ones worth
  *   keeping.
  * - **A body's own non-determinism.** A step that reads `Date.now()` directly
@@ -73,10 +73,10 @@ import { type Logger, silentLogger } from "../runtime-config.ts";
 import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,
-} from "../workflow-in-process.ts";
-import { createMemoryJournal } from "../workflow-journal-memory.ts";
-import { isTerminalStatus, type JournalStore } from "../workflow-journal-types.ts";
-import { type DeterminismKind, isDeterminismKey } from "../workflow-replay-determinism.ts";
+} from "../workflow/in-process.ts";
+import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
+import { isTerminalStatus, type JournalStore } from "../workflow/journal/types.ts";
+import { type DeterminismKind, isDeterminismKey } from "../workflow/replay/determinism.ts";
 import type {
   RunWorkflowOptions,
   WorkflowTestHandle,

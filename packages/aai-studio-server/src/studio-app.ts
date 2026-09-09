@@ -18,7 +18,7 @@
  * the slug mutation lock, and the Realtime change streams. A Publish here
  * reaches the agent service's resident sandboxes through the agents row's
  * change stream (their watchers retire on the version mismatch within
- * seconds; see sandbox-resolve.ts).
+ * seconds; see sandbox/resolve.ts).
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";

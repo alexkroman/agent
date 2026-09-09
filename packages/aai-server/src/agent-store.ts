@@ -14,7 +14,7 @@
  * `version` increments on every put and doubles as the cross-replica
  * invalidation signal: a resident sandbox records the version it was built
  * from, and the agents row's change stream retires residents at another
- * version (`watchAgentInvalidation` in sandbox-resolve.ts — there is no
+ * version (`watchAgentInvalidation` in sandbox/resolve.ts — there is no
  * per-broker check or idle-sweep probe). This replaced the separate
  * `aai_platform.slug_epochs` counter. Deploy and delete are the mutations that
  * WRITE a row; {@link AgentRows.touch} bumps the version on its own, for a
@@ -39,7 +39,7 @@ const AgentRecordSchema = z.object({
   client_files: z.record(z.string(), z.string()),
   /**
    * The harness snapshot image this deploy ran against (content-addressed
-   * tag — see modal-harness-image.ts), so its sandbox can be re-spawned on
+   * tag — see modal/harness-image.ts), so its sandbox can be re-spawned on
    * that same image after platform upgrades. Null for deploys made outside
    * the Modal backend (local dev, tests) and rows predating the column.
    */
@@ -70,7 +70,7 @@ export type AgentRows = {
    *
    * **Nothing calls it right now.** Its caller was app-database provisioning,
    * which composed a `DATABASE_URL` into the env at sandbox BUILD time
-   * (`sandbox-resolve.ts`) — so without a bump the running guest kept the env it
+   * (`sandbox/resolve.ts`) — so without a bump the running guest kept the env it
    * was spawned with and the change silently took effect on some later deploy.
    * The method is kept rather than deleted because it is the seam that failure
    * mode needs, it is implemented by all three stores, and the conformance cases

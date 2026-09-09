@@ -18,7 +18,7 @@
  *   has actually shipped**;
  * - **this** arm is that last mile: the runtime's client, the real
  *   `POST /:slug/workflow-journal` route with its bearer check and its body
- *   parsing, `platform-workflow-journal.ts`'s statements, and the platform's own
+ *   parsing, `platform/workflow-journal.ts`'s statements, and the platform's own
  *   tables under `aai_platform`.
  *
  * It found one on the day it was written. `createRun` was
@@ -50,7 +50,7 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { createPlatformJournal, loadJournalConformance } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
+import { ensurePlatformTables } from "./platform/schema-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
 import {
   bearerFor,

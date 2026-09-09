@@ -9,7 +9,7 @@ import {
   createSupabaseBlobStorage,
   storageEndpoint,
 } from "./blob-storage.ts";
-import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
+import { PlatformServiceUnavailableError } from "./platform/service-errors.ts";
 import { captureLogs } from "./test-utils.ts";
 
 /**

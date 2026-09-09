@@ -9,7 +9,7 @@
  *
  * - **`AAI_LOCAL_DEV=1`**, the explicit declaration that this is a local run.
  *   That is what permits the isolation-free `subprocess` sandbox backend and
- *   makes the AssemblyAI key verifier optional (`sandbox-backend.ts`,
+ *   makes the AssemblyAI key verifier optional (`sandbox/backend.ts`,
  *   `api-key-verify.ts`). It is deliberately not inferred from anything: absent,
  *   both decisions fall to their production branch, so a deploy that forgets a
  *   variable gets the safe answer rather than a hole.

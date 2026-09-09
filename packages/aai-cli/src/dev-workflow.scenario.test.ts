@@ -130,7 +130,7 @@ async function file(topic: string) {
  * table and answered `HookNotFound`, which was true when it was written.
  *
  * It is not true any more. `createWebhookHandler` (aai-runtime's
- * `workflow-webhook.ts`) answers that path from `WorkflowClient.signal`, and
+ * `workflow/webhook.ts`) answers that path from `WorkflowClient.signal`, and
  * `createRuntimeServer` mounts it — so `aai dev` serves it and this tier can reach it
  * with a plain POST. Restoring a `waitFor` fixture and delivering to that URL is
  * the missing case, and it is the ONE thing in the durable path that no cheaper
